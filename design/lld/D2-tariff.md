@@ -1,0 +1,394 @@
+# D2: Tariff and capacity
+
+| | |
+|---|---|
+| HLD section | §6.2 |
+| Depends on | D3 (closed windows, window length), D1 (holiday calendar, currency) |
+| Consumers | D6 (ceiling, hard limits, marginal cost), D5 (eligible windows, headroom), D7/D8 (level, advice, bill, events), D11 (bill of the actual and the counterfactual history) |
+| Invariants owned | INV-9 … INV-12, INV-52 |
+
+---
+
+## 1. Scope and non-scope
+
+**In scope.**
+
+- The grammar: `PeakTariff`, `ContractedPower`, `NoPeak`, `TimeFilter`, `WeightRule`, the three pricing shapes (`StepTable`, `Linear`, `Tiers`), `Ratchet`.
+- One generic evaluator over the grammar: history → weighted windows → daily → period metric → level; ceiling for the current window at a given target and risk; marginal cost; projected level; advice; bill.
+- Peak history: recording closed windows, daily maxima, monthly maxima, rolling periods, coarse-history flags, manual overrides, recorder backfill and bill-derived seeding.
+- Presets: file schema, versioning with `valid_from`, validation, the v1 set, and the plain-language rendering of a preset in the flow.
+- Target semantics (step to defend, kW to defend, automatic), the risk knob, ε scaling with window length.
+- Hard limits from `ContractedPower` (time-dependent, trip vs surcharge) delivered to D6 as `limit_now`.
+- Savings accounting hooks: pricing any history, including the counterfactual D11 records (`record_counterfactual`, `bill`).
+
+**Out of scope.** Measuring windows (D3), deciding grants (D6), energy-price components such as time-of-use energy tariffs (D1 - though a preset may *carry* one for D1 to pre-fill), and notifications (D8; D2 only produces the advice strings and events).
+
+---
+
+## 2. Answers to the HLD's open questions
+
+**`TimeFilter` and holidays.** A filter is evaluated at the **window start, in the site's local time**. `months`, `weekdays` (0 = Monday) and `hours` (`[start_min, end_min)` ranges in minutes from midnight, wrapping allowed) are each optional, `None` means no restriction. `holidays` is `ignore` (a holiday is an ordinary day), `as_sunday` (takes Sunday's value - Spain, Italy, Denmark) or `exclude` (never eligible). The calendar is D1's `HolidayCalendar`. DST is handled by evaluating in local wall time, so the repeated autumn hour has two windows with the same local start and different UTC starts, evaluated the same.
+
+**Seeding a rolling period.** Three sources in order, each only filling what the one before left empty: (1) the recorder - cumulative register rows through `reconstruct_windows` (D3 §5.11), exact for 60-min windows, and hourly long-term statistics beyond the recorder's purge, marked `coarse`; (2) the **bills**, a flow step "enter your last 12 monthly peaks" (Fluvius prints them), stored as `manual`; (3) nothing - the metric is computed on what exists and the level carries `confidence = partial` with the number of missing months. For 15-min windows hourly history is a *lower bound* on the quarter-hour peak (an hour's average never exceeds its highest quarter) and marked `coarse`. The evaluator inflates coarse values by `coarse_factor` (default 1.15) when classifying, never when billing.
+
+**`Tiers`.** Marginal €/kW by band, `[(upto_kw, price_per_kw_per_period), …]`, the last band open. `Linear` is the one-band case. `StepTable` is *not* a tier: it's a fee per period picked by band (not marginal, discontinuous), that's why they're separate shapes.
+
+**Weights before or after `per_day = max`.** Before. A weight belongs to a window (Ellevio: 22–06 counts half), the daily maximum is taken over *weighted* values and the period metric over weighted daily maxima. A 10 kW night peak is a 5 kW entry. Same order makes an `eligible = False` window a weight of 0.
+
+**Preset schema and CI validation.** JSON files under `core/tariffs/presets/<country>/<id>.json`, validated by a JSON Schema in CI, plus a golden test per preset (§9). A preset's `versions` are sorted by `valid_from`; overlapping or unsorted versions fail validation.
+
+**`Bill` and the counterfactual.** `bill(period, history) → Bill` prices the **capacity component only** from a `History` - any set of windows, the real one or the counterfactual D11 records per closed window (uncontrolled load unchanged, each controlled load replaced by its shadow, D11 §5.4). The energy component is priced by D1's curves in D11. The site's savings figure is `Σ energy savings + (bill(counterfactual) − bill(actual)).capacity_fee`, both bills from this evaluator under the same version (INV-52, INV-69). Under rolling-12 D11 takes the month's share as the rolling fee at month end minus at month start.
+
+---
+
+## 3. Module layout
+
+```
+custom_components/powerplan/core/tariffs/
+├── __init__.py
+├── grammar.py       PeakTariff, ContractedPower, NoPeak, TimeFilter, WeightRule, StepTable, Linear, Tiers, Ratchet
+├── history.py       PeakHistory: windows → days → months; coarse flags; overrides; rolling
+├── evaluator.py     Evaluator: metric(), level(), ceiling(), marginal_cost(), projected_level(), advice(), bill()
+├── target.py        Target (step | kw | auto), risk semantics, ε scaling
+├── contracted.py    limit_now(), trip model
+├── presets/
+│   ├── schema.json
+│   ├── loader.py    load(), validate(), render_plain_language()
+│   └── <cc>/*.json  no/generic-top3.json, no/tensio.json, no/elvia.json, se/ellevio.json, fi/energiavirasto-2026.json,
+│                    be/fluvius.json, dk/nopeak.json, nl/connection.json, uk/nopeak.json, es/2_0td.json,
+│                    us/aps-saver-choice-max.json, us/srp-e27.json, au/ausgrid-ea116.json, custom.json
+└── backfill.py      seed_from_windows(), seed_from_bills()
+```
+
+Public API:
+
+```python
+class TariffModel(Protocol):                          # implemented by Evaluator for all three grammar roots
+    def record_window(self, w: ClosedWindow) -> None
+    def record_counterfactual(self, w: ClosedWindow) -> None
+    def ceiling_kwh(self, now: datetime, target: Target, risk: float, eps_kwh: float) -> Ceiling
+    def limit_now_w(self, now: datetime, profile: ElectricalProfile) -> HardLimit | None
+    def eligible_now(self, now: datetime) -> bool
+    def weight_now(self, now: datetime) -> float
+    def eligible_windows(self, start: datetime, end: datetime) -> list[tuple[datetime, datetime, float]]  # for D5 headroom
+    def target_w_at(self, t: datetime, target: Target) -> float                    # flat ceiling in W for a future window: T_kw × 1000 / weight, +inf outside eligibility - no slack, no free ride (D5 §5.1)
+    def marginal_cost(self, kw_over: float, now: datetime) -> Money
+    def level(self) -> Level
+    def projected_level(self, today_projected_kwh: float | None) -> Level
+    def advice(self) -> list[Advice]
+    def bill(self, period: Period, history: History | None = None) -> Bill
+    def period_bounds(self, now: datetime) -> tuple[datetime, datetime]
+    def state(self) -> TariffState;  def restore(self, s: TariffState) -> None
+```
+
+---
+
+## 4. Types
+
+```python
+@dataclass(frozen=True)
+class TimeFilter:
+    months: frozenset[int] | None = None          # 1..12
+    weekdays: frozenset[int] | None = None        # 0 = Monday
+    hours: tuple[tuple[int, int], ...] | None = None   # [start_min, end_min) local; (1320, 360) wraps midnight
+    holidays: Literal["ignore", "as_sunday", "exclude"] = "ignore"
+    def matches(self, local_start: datetime, cal: HolidayCalendar) -> bool
+
+@dataclass(frozen=True)
+class WeightRule:  when: TimeFilter; weight: float                         # first match wins; default 1.0
+
+@dataclass(frozen=True)
+class StepTable:   steps: tuple[Step, ...]                                 # Step(upper_kw: float | None, fee_per_period: Money, name: str)
+@dataclass(frozen=True)
+class Linear:      price_per_kw: Money; free_kw: float = 0.0; min_kw: float = 0.0   # per period (month) unless period_unit says year
+@dataclass(frozen=True)
+class Tiers:       bands: tuple[tuple[float | None, Money], ...]           # (upto_kw, price_per_kw) marginal
+@dataclass(frozen=True)
+class Ratchet:     fraction: float; lookback_months: int                   # billed = max(current, fraction × max over lookback)
+
+@dataclass(frozen=True)
+class PeakTariff:
+    window_min: Literal[15, 30, 60]
+    eligible: TimeFilter | None
+    weights: tuple[WeightRule, ...]
+    per_day: Literal["max", "all"]
+    per_period: Literal["max", "mean_top_n"]; n: int = 1; distinct_days: bool = True
+    period: Literal["month", "rolling_months", "year"]; rolling_months: int = 12
+    pricing: StepTable | Linear | Tiers
+    price_period_unit: Literal["month", "year"] = "month"                 # BE quotes €/kW/year
+    ratchet: Ratchet | None = None
+    coarse_factor: float = 1.15
+
+@dataclass(frozen=True)
+class PeriodLimit:  when: TimeFilter | None; limit_kw: float
+@dataclass(frozen=True)
+class ContractedPower:
+    limits: tuple[PeriodLimit, ...]                                        # first match wins; a None filter is the default
+    on_exceed: Literal["trip", "surcharge"]
+    tolerance_pct: float = 0.0; tolerance_s: int = 0                       # ES ICP ≈ 10 % / 30 s; FR Linky ≈ 30 % / short
+    surcharge_per_kw: Money | None = None
+    unit: Literal["kw", "kva"] = "kw"; power_factor: float = 1.0           # FR kVA → kW via pf
+
+class NoPeak: pass
+
+Grammar = PeakTariff | ContractedPower | NoPeak
+# A site may combine a PeakTariff AND a ContractedPower (ES with a hypothetical peak fee); the preset holds a list.
+
+@dataclass(frozen=True)
+class Target:  kind: Literal["step", "kw", "auto"]; step_index: int | None = None; kw: float | None = None
+
+@dataclass(frozen=True)
+class Ceiling:  kwh: float; reason: str; slack_kwh: float | None; free_ride: bool; eligible: bool; weight: float
+
+@dataclass(frozen=True)
+class HardLimit:  w: float; reason: Literal["contracted_trip", "contracted_surcharge"]; tolerance_s: int; tolerance_w: float
+
+@dataclass(frozen=True)
+class Level:  kind: Literal["step", "kw", "none"]; index: int | None; name: str; metric_kw: float | None
+              fee: Money | None; confidence: Literal["exact", "partial", "coarse"]; missing_months: int
+
+@dataclass(frozen=True)
+class Advice:  key: str; severity: Literal["info", "warn"]; params: dict     # rendered by D8 translations
+
+@dataclass(frozen=True)
+class Bill:  period: Period; capacity_fee: Money; metric_kw: float; level: Level; version_id: str; windows_priced: int
+
+@dataclass
+class PeakHistory:                       # persisted
+    schema: int = 1
+    window_min: int
+    windows: dict[str, WindowRec]        # key = UTC ISO start, current period only (≤ 2976 entries at 15 min)
+    days: dict[date, DayRec]             # DayRec(max_weighted_kw, max_raw_kw, window_start, coarse, source)
+    months: dict[str, MonthRec]          # "2026-09": MonthRec(metric_kw, top_entries, coarse, source, version_id)
+    counterfactual_days: dict[date, DayRec]
+    overrides: list[Override]            # Override(date | month, kw, note, at)
+    period_start: datetime
+```
+
+`Money` is a `Decimal` with a currency code. Arithmetic in `Decimal`, floats only at the edges.
+
+---
+
+## 5. Algorithms
+
+### 5.1 Recording (INV-11)
+
+```
+record_window(w):
+    if w.window_min ≠ grammar.window_min: convert (60→15: split evenly and mark coarse; 15→60: sum) - only for history, never for the live window
+    local = w.start_utc in site tz
+    weight = 0 if eligible and not eligible.matches(local) else first matching WeightRule or 1.0
+    kw_raw = w.kwh / (w.window_min/60);  kw_w = kw_raw × weight
+    windows[key] = WindowRec(kw_raw, kw_w, weight, w.confidence, w.degraded)
+    day = local.date()
+    if per_day == "max": days[day].max_weighted = max(days[day].max_weighted, kw_w) (with the window it came from)
+    else: days[day] keeps a list of all weighted windows (bounded: top n+1 suffices for mean_top_n, all for max)
+    if new period per period_bounds(now): rollover (5.9)
+```
+The level is *never* read from anyone else's attribute; `history` is the single source (INV-11).
+
+### 5.2 The period metric
+
+```
+entries(period):
+    per_day == "max":  {d: days[d].max_weighted}                       one per day
+    per_day == "all":  all weighted windows in period                  many per day
+    if distinct_days: entries already one per day (per_day=max) or reduced to max per day for the top-n selection
+metric:
+    per_period == "max":        max(entries)
+    per_period == "mean_top_n": mean of the n largest entries (fewer than n → mean of what exists, confidence partial)
+period == "rolling_months":     metric = mean over the last `rolling_months` monthly metrics (each month's metric per above), missing months counted as absent → confidence partial
+ratchet:                        billed_metric = max(metric, fraction × max(monthly metrics over lookback))
+```
+Coarse entries are multiplied by `coarse_factor` for classification only.
+
+### 5.3 Classification and fee
+
+- `StepTable`: `index = first i with metric ≤ steps[i].upper_kw` (last step open-ended); `fee = steps[index].fee_per_period`.
+- `Linear`: `billable = max(metric − free_kw, 0)`, then `max(billable, min_kw)` if `min_kw`, `fee = billable × price_per_kw` (÷ 12 when `price_period_unit == "year"` and the period is a month). Under `period = rolling_months` the `free_kw`/`min_kw` treatment is applied to **each monthly metric before the rolling mean** (Fluvius floors every month's peak at 2.5 kW, then averages), so `mean(max(m_i, 2.5)) ≥ max(mean(m_i), 2.5)`.
+- `Tiers`: marginal integration over bands.
+
+### 5.4 Ceiling for the current window (INV-9, INV-10)
+
+Inputs: `now`, `target`, `risk ∈ [0, 1]`, `eps_kwh` (already scaled by D6, ε × window_min/60), the current period's history, `today_max_weighted`, the current window's weight `w` and eligibility.
+
+```
+if grammar is NoPeak or not eligible_now: return Ceiling(kwh=+inf, reason="not eligible", eligible=False)
+T_kw       = target_kw(target)                   # step upper bound, or target.kw, or auto (5.5)
+to_kwh(kw) = kw × window_min/60 / w              # weighted kW → raw kWh for THIS window; a weight < 1 lifts the raw ceiling (Ellevio night)
+T_kwh      = to_kwh(T_kw)
+slack_kw   = largest x such that metric(history ∪ {this window = x}) ≤ T_kw      # 5.6; ≥ today_max under per_day = max
+today_kw   = today's max weighted entry if per_day == "max" and it is not `estimated`, else 0   # a degraded window buys no free ride
+base       = T_kwh − eps
+if risk < 0.5:            kwh = base;                                                   reason = "flat target"
+elif risk < 1.0:          kwh = max(base, to_kwh(min(slack_kw, today_kw)) − eps_small); reason = "free ride" if kwh > base else "flat target"
+else:                     kwh = max(base, to_kwh(slack_kw) − eps);                      reason = "full slack"
+cap_kw = max(T_kw + cap_margin_kw, today_kw)     # never below what today has already paid for (INV-9)
+if risk ≥ 1.0 and pricing is StepTable: cap_kw = max(cap_kw, upper bound of the step above the target)   # the gamble is bounded by one step
+kwh = min(kwh, to_kwh(cap_kw))                   # recomputed from the live target on every read (INV-12)
+return Ceiling(kwh, reason, slack_kw, free_ride=(kwh > base), eligible=True, weight=w)
+```
+
+The **free ride** isn't a rule, it falls out of `slack` under `per_day = max`: once today's entry is `today_max`, any `x ≤ today_max` leaves the metric alone, so `slack ≥ today_max`. The cap therefore never sits below `today_max` - a `(T + 0.5 kW)` cap would silently clamp the free ride to half a kilowatt above the target (PLAN §7 dec. 18). The cap exists so a *lowered* target is honoured on the next read (INV-12) and the risk-1.0 gamble stays within one step. Under BE rolling-12 with `per_day = all`, `slack` for a window is simply the value that keeps this month's max where it is, which is the month's current max - also a free ride *within the month*, however only worth 1/12 of a kW-year. `marginal_cost` (§5.7) tells D6 the difference, and the middle risk setting reads "use the slack today's peak already paid for" in both markets.
+
+### 5.5 Target `auto`
+
+- `StepTable`: the smallest step whose upper bound ≥ the current period metric (i.e. defend the step already reached; never aim above it). On the first day of a period with an empty history: the step reached last period.
+- `Linear`/`Tiers`: `kw = max(current period metric, p90 of the last three periods' metrics)` - defend what has already happened; anything lower is a gamble the user should choose by hand.
+
+### 5.6 `slack`: bisection over the evaluator with a closed-form fast path
+
+Generic: bisection on `x ∈ [0, cap]` of the monotone predicate `metric(history + x) ≤ T` to 10 Wh (≤ 20 evaluations of a cheap function). Fast path when `per_day = max, per_period = mean_top_n, period = month`, the Norwegian case:
+
+```
+others = top-(n−1) daily maxima excluding today;  if len(others) < n−1 pad with 0
+slack_kw = n × T − Σ others                       # today's entry may rise to this
+slack_kw = max(slack_kw, today_max)               # never below today's own entry (free ride)
+```
+Test 5 in §9 asserts the fast path equals the bisection on 10 000 random histories.
+
+### 5.7 Marginal cost
+
+`marginal_cost(kw_over, now) = bill(period, history ∪ {this window at (current_projection + kw_over)}) − bill(period, history)`, expressed per period. For `StepTable` this is 0 until a step boundary and the step difference after it; for `Linear` it is `price × Δmetric` (≈ 0 under the free ride, `price/n` per kW under mean-top-n when this window becomes a top entry, `price/12` under rolling-12); for `ContractedPower(trip)` it is `+inf` above the limit. D6 uses it (v2) to weigh a shed's comfort cost against the tariff; in v1 it is published for the advice sensor and the dashboard.
+
+### 5.8 Hard limit now (`ContractedPower`)
+
+`limit_now_w = limit_kw(first matching PeriodLimit) × 1000 × power_factor(if kVA)`; `tolerance_w = limit × tolerance_pct`. D6 treats `trip` as a stage-4 `trip_risk` reason when measured power exceeds `limit + tolerance_w` for longer than `tolerance_s/2` (half the meter's patience), and as an ordinary cap on `P_allow` below that. A `surcharge` limit is a soft cap: D6 caps `P_allow` at it unless comfort violators require more, and the excess is priced by `surcharge_per_kw`.
+
+### 5.9 Period rollover
+
+At `period_bounds(now).end`: freeze the period's `MonthRec` (metric, level, top entries, version id), compute `bill`, emit `period_closed(Bill)` to D7, prune `windows` to the new period, keep `days` for 13 months (§7, D11's history needs them for every period kind) and re-evaluate `auto` targets. A rollover found late (HA was down at midnight) is processed from the persisted windows when the first sample of the new period arrives.
+
+### 5.10 Versions (INV-52)
+
+`active_version(at)` = the last version with `valid_from ≤ at`. Windows are recorded under the grammar of the version active at their start; when a version changes `window_min`, older history is marked `coarse` and converted (§5.1). Billing a period spanning two versions prices each window's contribution under its own version; classification uses the current version. The preset loader refuses versions that change `period` mid-period (e.g. month → rolling) without a `history_policy` field (`reset | carry`).
+
+### 5.11 Projected level and advice
+
+`projected_level(today_projected_kwh)` inserts today's projected window (from D6's projection) into the history copy and classifies. Advice is generated from the same evaluation, as keys with parameters (D8 translates):
+
+| key | when |
+|---|---|
+| `top_entries` | always: the n entries and their days |
+| `step_headroom` | StepTable: kW to the next step, and the fee difference |
+| `days_that_matter` | mean_top_n: "two more days above X would lift the level" |
+| `free_ride_today` | per_day=max and today's max already set: "the rest of today can go to X without cost" |
+| `rolling_drag` | rolling: the month that leaves the average next and what it was |
+| `coarse_history` | any coarse months in the metric |
+| `contracted_close` | ContractedPower: last window within 10 % of the limit |
+
+### 5.12 Seeding (`backfill.py`)
+
+`seed_from_windows(closed: list[ClosedWindow])` runs `record_window` for each without emitting events and marks them `recorder`. `seed_from_bills(entries: list[(month, kw)])` writes `MonthRec`s marked `manual`. An `Override` from the `set_peak` action replaces a day or month entry and is kept in `overrides`, so a re-seed never silently undoes it.
+
+---
+
+## 6. Configuration schema
+
+Site flow, step **tariff** (skipped on the *fuse only* path):
+
+| Field | Selector | Default / derivation |
+|---|---|---|
+| Country | select | site country (from the electrical step) |
+| Grid company / tariff | select of presets for the country + "I don't know / not listed" + "Custom" | if the country has one generic preset (FI, BE), that one |
+| *Rendered description* | read-only text from `render_plain_language(preset)` | e.g. "Tensio bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 137 kr, up to 5 kW 244 kr, up to 10 kW 416 kr, …" |
+| Target | select: `automatic` (default) · each step with its fee · (Linear) number kW | `auto` |
+| Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0.5** when the preset has `per_day = max` (the free ride is costless by construction - INV-9, PLAN §7 dec. 18); 0 otherwise |
+| Enter last 12 monthly peaks (rolling presets only) | 12 numbers, optional | empty |
+| Contracted power (ContractedPower presets) | per period: number kW / kVA dropdown | ES: 4.6 / 4.6; FR: 6 kVA; IT: 3 kW |
+
+Advanced: `eps_kwh` (default 0.30 per 60 min, scaled), `cap_margin_kw` (0.5), `coarse_factor`, `history_policy`, the whole grammar as a form when *Custom* is chosen (each field with the plain-language label from the schema).
+
+Validation: `eps_kwh > 2.0` refused ("this looks like watts"), a target step below the current metric warns ("you already passed this step this period"), and rolling tariffs warn with fewer than 3 months known.
+
+Preset file (excerpt):
+
+```json
+{
+  "id": "no.tensio.household", "country": "NO", "operator": "Tensio", "name": "Tensio – privatkunde",
+  "currency": "NOK", "source_url": "https://tensio.no/...", "verified": "2026-02-19",
+  "versions": [
+    {"valid_from": "2026-01-01",
+     "peak": {"window_min": 60, "per_day": "max", "per_period": "mean_top_n", "n": 3, "distinct_days": true,
+              "period": "month",
+              "pricing": {"steps": [[2, 137, "0–2 kW"], [5, 244, "2–5 kW"], [10, 416, "5–10 kW"], [15, 613, "10–15 kW"], [20, 812, "15–20 kW"], [null, 1200, "over 20 kW"]]}},
+     "energy_components": {"tou_schedule": {"periods": [{"name": "dag", "price": 0.3604, "hours": [[360, 1320]]}, {"name": "natt", "price": 0.2294}]}}
+    }
+  ]
+}
+```
+
+`energy_components` is handed to D1 as a pre-filled modifier; D2 never uses it.
+
+---
+
+## 7. Persistence
+
+Store section `tariff`: `PeakHistory` as above plus `active_version_id`, `target`, `risk`, `last_bill`, `seeded_from: {recorder: at, bills: at}`. Written on every `record_window` (once per window, cheap) and on overrides. `windows` for the current period, `days` for 13 months, `months` for 36. Migrated by `schema`, and a changed `window_min` on load triggers §5.1's conversion with `coarse`.
+
+---
+
+## 8. Failure modes and observability
+
+| Failure | Behaviour | Surface |
+|---|---|---|
+| Closed window arrives late (HA down across a boundary) | recorded with its own start; day max recomputed | INFO |
+| Closed window `degraded` / `estimated` | recorded; day marked `estimated`; advice notes it | attribute |
+| Window length mismatch (meter 60, tariff 15) | live: D3 warns, `used_confidence = estimated`; history: coarse | repair: "your meter cannot resolve quarter-hours" |
+| Missing holidays data for country | `as_sunday`/`exclude` degrade to `ignore` | repair |
+| Preset invalid / unknown id after an update | fall back to the stored grammar copy (presets are **copied** into the store at setup - INV-66 applied to tariffs) | repair: "preset changed, review" |
+| Rolling period with < 3 months | level `partial` | advice `coarse_history` |
+| Manual override contradicts a recorded window | override wins, both kept | attribute `overrides` |
+| Version boundary mid-period | §5.10 | INFO, `period_closed` bill notes two versions |
+
+Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `period_closed(bill, counterfactual_bill)`, `free_ride_available(kwh)`.
+
+---
+
+## 9. Tests that must exist before merge
+
+1. Golden per preset: a synthetic month/period of windows → expected metric, level, fee (hand-computed in the test file with the source of each number).
+2. Free ride is derived: NO preset, today's max set → `slack ≥ today_max`; BE preset → `slack == month max` and `marginal_cost` is 1/12-scaled.
+3. Weights before daily max: Ellevio night 10 kW → 5 kW entry; a 6 kW day entry beats it.
+4. Eligibility: SRP on-peak window; an 8 kW off-peak window never enters the metric; `ceiling = +inf` outside eligibility.
+5. Fast path == bisection on 10 000 random histories (Norwegian grammar).
+6. Rolling-12: adding a month drops the oldest; partial confidence with missing months; `seed_from_bills` fills them.
+7. Ratchet: 80 %/11 months keeps the billed metric up after a quiet month.
+8. FI deductible: 7 kW peak → fee 0; 9 kW → 1 kW billed.
+9. BE minimum applies per month before the rolling mean: two months at 1.0 and 2.6 kW → floored to 2.5 and 2.6 → billed 2.55, not `max(1.8, 2.5) = 2.5`.
+10. Version change: two versions, period spanning both, `bill` prices each window under its version; classification on the current one.
+11. DST: autumn repeated hour yields two windows; both recorded; spring gap yields none; daily max unaffected.
+12. `ContractedPower` ES: P1 limit weekdays 08–24, P2 otherwise; `limit_now_w` flips at 08:00 local; holidays as P2.
+13. Advice keys fire on the documented conditions.
+14. `auto` target defends the reached step; never aims above it.
+15. Coarse history: hourly windows classified with `coarse_factor`, billed without.
+16. Overrides survive a re-seed.
+17. `ceiling` re-clamps to the new target on the very next read after a target change (INV-12).
+18. `bill` on a counterfactual history: the same windows with one evening window raised from 5 kW to 9 kW moves the NO preset one step up; `bill(actual)` and `bill(counterfactual)` use the same version and the same `coarse` rules (never inflated when billing); `record_counterfactual` never touches `days` (INV-11 for the real history).
+19. The free ride survives the cap: NO preset, target 10 kW, today's max 15 kW (exact), risk 0.5 → `ceiling ≈ 15 kWh − eps_small`, `free_ride = True`; the same with today's max `estimated` → flat target; lowering the target to 5 kW mid-day yields `cap = 15` (today's entry stands) and the next day `cap = 5.5` (INV-9, INV-12).
+
+---
+
+## 10. Deliberately deferred
+
+- Export-side capacity tariffs (AU two-way from 2025) - data model allows `direction`, evaluator ignores it in v1.
+- Demand charges with *daily* periods (rare US pilots) - add `period = "day"` when needed; grammar allows it.
+- Cost-based trade-off in D6 using `marginal_cost` (v2; published from v1).
+- Automatic preset detection from the meter or address.
+- Presets beyond the v1 list; the community adds JSON files.
+
+---
+
+## 11. Alternatives considered (steelmanned)
+
+**Named tariff classes instead of a grammar.** *For:* each class is small, readable, and obviously correct for its market; no risk of an unexpressible combination silently misbehaving. *Against:* the survey found at least eight distinct shapes and they combine (weights + top-3 + distinct days; deductible + monthly max; rolling + minimum); a class per combination is a class per DSO. **Decision:** grammar plus a generic evaluator, with per-preset golden tests standing in for per-class readability.
+
+**Closed-form ceilings only.** *For:* exact, fast, auditable. *Against:* only exists for the simplest shapes, the rest need the evaluator anyway. **Decision:** bisection over the evaluator is the reference, the closed form a tested fast path.
+
+**Read the level from the DSO's own integration or an existing HA tariff integration.** *For:* zero code, matches the bill by construction. *Against:* the ratchet bug - those attributes report the level *reached*, and a controller steering by it never finds its way down. And none exists outside Norway. **Decision:** own history (INV-11).
+
+**A target the user types vs. `auto`.** *For manual:* explicit, the pyscript worked that way. *Against:* new users don't know their step, and a target above what the period already reached wastes headroom while one below is unreachable. **Decision:** `auto` by default, manual available.
+
+**ε as a percentage of the target.** *For:* scales across markets. *Against:* the guard band covers measurement and reaction latency, which are absolute (a meter's cadence, a Bluetooth round trip), not proportional, and "0.3 kWh" is something a user can reason about. **Decision:** absolute kWh, scaled by window length.
+
+**Copy the rule into the store vs. reference it by id.** *For reference:* updates flow automatically. *Against:* an edit in a release would silently change a live site's ceiling. **Decision:** copy at setup, offer "update to the current rule" with a diff.
