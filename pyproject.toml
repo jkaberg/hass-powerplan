@@ -1,0 +1,161 @@
+[project]
+name = "powerplan"
+version = "0.0.1"
+description = "Home Assistant custom integration steering flexible loads by price and grid capacity tariff"
+readme = "README.md"
+# 3.14.2 and not 3.14: Home Assistant's own pyproject pins `>=3.14.2` from
+# 2026.3.0 on (the floor, PLAN §7 dec. 1), so a looser floor does not resolve.
+requires-python = ">=3.14.2"
+license = { text = "MIT" }
+authors = [{ name = "Joel Kåberg", email = "joel@kaberg.me" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/jkaberg/hass-powerplan"
+Issues = "https://github.com/jkaberg/hass-powerplan/issues"
+
+# The repository ships a Home Assistant custom integration, not a distributable
+# wheel; uv manages the environment and the lock file only (PLAN §7 dec. 2).
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "hypothesis",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pytest-homeassistant-custom-component>=0.13.320",
+    "ruff",
+]
+
+# --------------------------------------------------------------------------- #
+# ruff - lint and format (PLAN §7 dec. 2)
+# --------------------------------------------------------------------------- #
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "A",      # builtin shadowing
+    "ASYNC",  # blocking calls in async defs
+    "B",      # bugbear
+    "C4",     # comprehensions
+    "D",      # docstrings
+    "E",      # pycodestyle
+    "F",      # pyflakes
+    "G",      # logging format: %s lazy formatting, never f-strings
+    "I",      # import order
+    "ICN",    # import conventions
+    "ISC",    # implicit string concat
+    "LOG",    # logging misuse
+    "N",      # pep8 naming
+    "PERF",   # obvious performance traps
+    "PGH",    # blanket noqa / type: ignore
+    "PIE",
+    "PL",     # pylint subset
+    "PT",     # pytest style
+    "RET",
+    "RSE",
+    "RUF",
+    "SIM",
+    "SLF",    # private member access
+    "SLOT",
+    "T20",    # no print
+    "TC",     # typing-only imports
+    "TID",    # tidy imports
+    "TRY",    # exception anti-patterns
+    "UP",     # pyupgrade
+    "W",      # pycodestyle warnings
+]
+ignore = [
+    "D203",    # incompatible with D211
+    "D213",    # incompatible with D212
+    "E501",    # the formatter owns line breaking
+    "ISC001",  # conflicts with the formatter
+    "PLR0913", # HA signatures and dataclasses take many arguments
+    "TRY003",  # messages live at the raise site, not in an exception subclass
+]
+
+# The design documents are typographically rich and the code quotes them: an
+# INV range is "13–29", a units list is "W · kWh · A". RUF001-003 would flag
+# every citation.
+allowed-confusables = ["–", "—", "−", "·", "×", "≥", "≤", "’", "ε", "σ", "Σ", "Δ", "°"]
+
+[tool.ruff.lint.flake8-type-checking]
+# A frozen dataclass's annotations are read at runtime, so its field types are
+# real imports, not typing-only ones.
+runtime-evaluated-decorators = ["dataclasses.dataclass"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "SLF001"]
+"tools/**" = ["T201"] # the CLIs print their report
+
+[tool.ruff.format]
+docstring-code-format = true
+# ruff formats fenced Python in Markdown. The HLD's and the LLDs' code blocks
+# are hand-formatted, normative sketches - several are not valid Python - and
+# the formatter must not touch them.
+exclude = ["*.md"]
+
+# --------------------------------------------------------------------------- #
+# mypy - strict on core/, standard elsewhere (PLAN §7 dec. 2)
+# --------------------------------------------------------------------------- #
+[tool.mypy]
+python_version = "3.14"
+# `custom_components` has no `__init__.py`, so without an explicit base mypy
+# would name the modules `powerplan.core.*` and the strict override below would
+# never match.
+mypy_path = "."
+namespace_packages = true
+explicit_package_bases = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+no_implicit_reexport = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "custom_components.powerplan.core.*"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "tools.*"]
+disallow_untyped_defs = false
+
+# --------------------------------------------------------------------------- #
+# pytest (D9 §5.1, §5.8)
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "--strict-markers --strict-config"
+markers = [
+    "inv(id): the invariant this test guards, e.g. inv(\"INV-17\") - HLD §7.5, D9 §5.6",
+    "perf: a timing budget, not correctness (D9 §5.1); excluded from the PR run",
+    "backtest: needs recorder history or a CSV (D9 §5.4); excluded from the PR run",
+    "bench: a reference-benchmark tier (D9 §5.11); excluded from the PR run",
+]
+
+# --------------------------------------------------------------------------- #
+# coverage - floors are declared here and GATED in WP6.1 (PLAN §9), not now
+# --------------------------------------------------------------------------- #
+[tool.coverage.run]
+source = ["custom_components/powerplan"]
+branch = false
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(typing\\.)?overload",
+]
+# Floors (D9 §2): core/ 90 %, writegate.py 100 %, overall 85 %.
+# fail_under is deliberately unset until WP6.1 turns the floors into gates.

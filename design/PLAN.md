@@ -253,7 +253,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | WP | Name | Status |
 |---|---|---|
 | 0.0 | Prerequisites | todo |
-| 0.1 | Scaffold and loadable shell | todo |
+| 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | todo |
 | 0.3 | D2 tariff | todo |
 | 0.4 | D1 pricing | todo |

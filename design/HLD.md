@@ -98,7 +98,7 @@ Corollaries: a plan **paces**, it never overrides safety. A site with `NoPeak` d
 
 | HA concept | powerplan |
 |---|---|
-| Domain | `powerplan`, `integration_type: hub`, `iot_class: calculated`. Distributed via HACS. Minimum HA: **the first release that requires Python 3.14** (PLAN §7 dec. 1; the exact version is verified in WP0.1) - config subentries (2025.3) and the subentry `reconfigure` step are then available. |
+| Domain | `powerplan`, `integration_type: hub`, `iot_class: calculated`. Distributed via HACS. Minimum HA: **2026.3.0** - the first release whose `requires-python` is `>=3.14.2` (PLAN §7 dec. 1; verified in WP0.1: 2026.2.0 still allowed 3.13.2) - config subentries (2025.3) and the subentry `reconfigure` step are then available. |
 | Config entry | one per **site** |
 | Config subentries | `load`, `group`, `zone`, `circuit`. Each has its own flow and options; added/removed without touching the site. |
 | Device registry | site = one device; every load = one device with `via_device` → site |

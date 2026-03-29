@@ -1,0 +1,117 @@
+# Home Assistant integration quality scale (PLAN §7 dec. 9, D8 §5.12).
+#
+# Target: Silver at v1.0, with the Gold rules the design already satisfies.
+# Rule names and the file schema are hassfest's (script/hassfest/quality_scale.py); hassfest does not validate this file for a custom integration,
+# so it is a tracker for the maintainer, kept in the shape hassfest would accept.
+#
+# Everything is `todo` at WP0.1 except the rules that cannot apply to a site
+# that has nothing to discover and no credentials.
+rules:
+  # --- Bronze ---------------------------------------------------------------
+  action-setup: todo
+  appropriate-polling:
+    status: exempt
+    comment: >-
+      No device is polled. The coordinator runs in push mode: the engine ticks
+      on meter updates (debounced ~10 s) and a 30 s heartbeat, and publishes
+      with async_set_updated_data (HLD §4, D7 §5.1).
+  brands: todo
+  common-modules: todo
+  config-flow: todo
+  config-flow-test-coverage: todo
+  dependency-transparency: todo
+  docs-actions: todo
+  docs-conditions:
+    status: exempt
+    comment: >-
+      powerplan provides no condition platform. Automations read the published
+      entities and the powerplan_* bus events instead (D8 §5.6).
+  docs-high-level-description: todo
+  docs-installation-instructions: todo
+  docs-removal-instructions: todo
+  docs-triggers:
+    status: exempt
+    comment: >-
+      powerplan provides no trigger platform. Every transition is fired on the
+      bus as a powerplan_* event with its reason attached (D8 §5.6).
+  entity-event-setup: todo
+  entity-unique-id: todo
+  has-entity-name: todo
+  runtime-data: todo
+  test-before-configure:
+    status: exempt
+    comment: >-
+      There is nothing to connect to at configure time. Bound entities are
+      validated by the flow's schemas (INV-49); a missing or unavailable entity
+      degrades explicitly to Quality.UNAVAILABLE with a repair issue (INV-53)
+      and never raises ConfigEntryNotReady.
+  test-before-setup:
+    status: exempt
+    comment: Same reason as test-before-configure (INV-53).
+  unique-config-entry:
+    status: exempt
+    comment: >-
+      A site is a grid connection, and a household may have more than one.
+      Nothing identifies a site but the name the user gives it.
+
+  # --- Silver ---------------------------------------------------------------
+  action-exceptions: todo
+  config-entry-unloading: todo
+  docs-configuration-parameters: todo
+  docs-installation-parameters: todo
+  entity-unavailable: todo
+  integration-owner: todo
+  log-when-unavailable: todo
+  parallel-updates: todo
+  reauthentication-flow:
+    status: exempt
+    comment: >-
+      No credentials. Every input is an HA entity, a number or a preset; there
+      is nothing that can expire.
+  test-coverage: todo
+
+  # --- Gold -----------------------------------------------------------------
+  devices: todo
+  diagnostics: todo
+  discovery:
+    status: exempt
+    comment: >-
+      There is nothing to discover: a site is a grid connection and a load is a
+      device the user already has in Home Assistant. The load flow starts from
+      an HA device picker and matches a profile against it (D4 §5.9).
+  discovery-update-info:
+    status: exempt
+    comment: Same reason as discovery - no network discovery exists.
+  docs-data-update: todo
+  docs-examples: todo
+  docs-known-limitations: todo
+  docs-supported-devices: todo
+  docs-supported-functions: todo
+  docs-troubleshooting: todo
+  docs-use-cases: todo
+  dynamic-devices:
+    status: exempt
+    comment: >-
+      Loads, groups, zones and circuits are config subentries the user adds and
+      removes; nothing appears at runtime that was not configured.
+  entity-category: todo
+  entity-device-class: todo
+  entity-disabled-by-default: todo
+  entity-translations: todo
+  exception-translations: todo
+  icon-translations: todo
+  reconfiguration-flow: todo
+  repair-issues: todo
+  stale-devices: todo
+
+  # --- Platinum -------------------------------------------------------------
+  async-dependency:
+    status: exempt
+    comment: >-
+      No client library. Prices arrive through other integrations' entities and
+      actions, meters through hass.states; the only requirement is holidays,
+      which is a pure calendar lookup.
+  inject-websession:
+    status: exempt
+    comment: powerplan opens no HTTP session of its own (see async-dependency).
+  strict-typing: todo

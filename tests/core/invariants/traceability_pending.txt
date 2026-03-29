@@ -1,0 +1,82 @@
+# Safety invariants (HLD §7.5) that have no @pytest.mark.inv test yet.
+#
+# A ratchet, not a waiver: test_inv_traceability.py fails if an id here IS
+# marked, so every WP deletes the lines its tests cover and the list can only
+# shrink. It reaches zero when the last safety INV is covered. Nothing may be
+# added to it that HLD §7.5 does not list.
+#
+# Seeded with the whole safety set at WP0.1. The WP that owns each group is the
+# one whose PLAN §3 row implements the domain the invariant belongs to.
+
+# INV-1 - precedence; core/allocation only (HLD §3) → WP0.7
+INV-1
+
+# INV-13–19 - metering, anchors, seam, blindness (HLD §6.3, D3) → WP0.2
+INV-13
+INV-14
+INV-15
+INV-16
+INV-17
+INV-18
+INV-19
+
+# INV-20–29 - write gate, releases, comfort target, cliffs (HLD §6.4, D4)
+# → WP0.5 (pure gate decision) and WP2.1 (the executor)
+INV-20
+INV-21
+INV-22
+INV-23
+INV-24
+INV-25
+INV-26
+INV-27
+INV-28
+INV-29
+
+# INV-34–42 - budget chain, ladder, trim, rotation, COP (HLD §6.6, D6) → WP0.7
+INV-34
+INV-35
+INV-36
+INV-37
+INV-38
+INV-39
+INV-40
+INV-41
+INV-42
+
+# INV-43–48 - tick order, publish, isolation, budget, knobs, startup
+# (HLD §6.7, D7) → WP0.8 (pure) and WP1.1 (runtime)
+INV-43
+INV-44
+INV-45
+INV-46
+INV-47
+INV-48
+
+# INV-54–58 - legionella, target profiles, store maxima, force expiry,
+# transport budget (HLD §6.4, D4) → WP0.5, WP2.1, WP3.3, WP3.5
+INV-54
+INV-55
+INV-56
+INV-57
+INV-58
+
+# INV-59 - a cycle is one contiguous block (HLD §6.5, D5) → WP3.6
+INV-59
+
+# INV-60 - hierarchical constraints, circuit before site (HLD §6.6, D6) → WP2.5
+INV-60
+
+# INV-61 - recorder hygiene on large attributes (HLD §6.7, D8) → WP1.4
+INV-61
+
+# INV-62–63 - a forecast is never an authority; bounded learning
+# (HLD §6.10, D10) → WP5.1
+INV-62
+INV-63
+
+# INV-64 - no shed needs powerplan to come back to be safe (HLD §7.8) → WP2.1
+INV-64
+
+# INV-68 - accounting is observation only (HLD §6.11, D11) → WP0.10
+INV-68

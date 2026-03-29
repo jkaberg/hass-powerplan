@@ -1,0 +1,14 @@
+{
+  "domain": "powerplan",
+  "name": "powerplan",
+  "after_dependencies": ["recorder", "nordpool", "zwave_js"],
+  "codeowners": ["@jkaberg"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/jkaberg/hass-powerplan",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/jkaberg/hass-powerplan/issues",
+  "requirements": ["holidays>=0.84"],
+  "version": "0.0.1"
+}

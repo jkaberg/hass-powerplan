@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a site",
+        "description": "A site is one grid connection: its meter, its prices and its capacity tariff. Loads are added afterwards, one at a time.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "What to call this grid connection. It names the site device and prefixes its entities."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Legg til et anlegg",
+        "description": "Et anlegg er ett nettilknytningspunkt: måleren, prisene og effekttariffen. Laster legges til etterpå, én om gangen.",
+        "data": {
+          "name": "Navn"
+        },
+        "data_description": {
+          "name": "Hva dette nettilknytningspunktet skal hete. Navnet brukes på anleggsenheten og som prefiks på entitetene."
+        }
+      }
+    }
+  }
+}

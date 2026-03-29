@@ -4,6 +4,7 @@
 |---|---|---|
 | [HLD.md](HLD.md) | draft v0.4.2 | High-level design: purpose, precedence, HA shape, layering, the ten domains, cross-cutting concerns, market coverage, delivery plan, changelog |
 | [PLAN.md](PLAN.md) | v0.3.1 | Project plan: work packages per phase with LLD §9 exit tests, critical path, house gates, risks, decisions taken since the LLDs, steelmanned alternatives, checklist |
+| [DECISIONS.md](DECISIONS.md) | living | Decision log: what the code forced that the HLD and the LLDs did not decide - date, WP, what, why, affected §, rejected alternative (PLAN §7 dec. 6) |
 | `lld/` | draft v0.1.1 (D9 v0.2.1, D10 v0.1), all eleven | One low-level design per domain (below). Each LLD settles the "open for the LLD" questions in its HLD section and defines modules, types, algorithms, storage, tests - and steelmans the alternatives it rejected. |
 
 ## LLD roster

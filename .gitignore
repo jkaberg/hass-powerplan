@@ -1,0 +1,23 @@
+# uv / virtualenv
+.venv/
+venv/
+__pypackages__/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+
+# coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

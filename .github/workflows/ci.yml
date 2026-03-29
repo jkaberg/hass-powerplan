@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  # D9 §5.8: ruff → mypy → pytest, over the two fixture lines.
+  # PLAN §7 dec. 1: one Python (3.14), HA floor and latest stable.
+  quality:
+    name: ruff · mypy · pytest (${{ matrix.line }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pytest-homeassistant-custom-component 0.13.320 → homeassistant 2026.3.4,
+          # the first release line that requires Python 3.14 (the hacs.json floor).
+          - line: ha-floor
+            phcc: "0.13.320"
+          # The newest release: the `dev` group's range resolves to it.
+          - line: ha-latest
+            phcc: "latest"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+
+      - name: Sync the environment
+        run: uv sync
+
+      - name: Move to the HA floor fixture line
+        if: matrix.line == 'ha-floor'
+        # The sync resolves the latest line; the floor line is installed on top of it.
+        # phcc pins homeassistant and its own test dependencies exactly, so this
+        # replaces the whole HA stack.
+        run: uv pip install "pytest-homeassistant-custom-component==${{ matrix.phcc }}"
+
+      - name: Report the versions under test
+        run: |
+          uv run python -c "from homeassistant.const import __version__ as v; print('homeassistant', v)"
+          uv run python -c "import sys; print('python', sys.version)"
+
+      - name: ruff format
+        run: uv run ruff format --check .
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: mypy --strict on core/
+        run: uv run mypy custom_components/powerplan/core
+
+      - name: pytest
+        # Coverage floors (core/ 90 %, writegate.py 100 %, overall 85 %) are
+        # configured in pyproject.toml and become gates in WP6.1.
+        run: |
+          uv run pytest -m "not perf and not backtest and not bench" -q \
+            --cov --cov-report=term-missing --cov-report=xml
+
+      - name: INV → tests matrix (D9 §5.6)
+        if: matrix.line == 'ha-latest'
+        run: |
+          {
+            echo '### INV → tests'
+            echo
+            uv run python tools/inv_report.py
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Reference benchmark (D9 §5.9–5.11) - built in WP0.11 -------------
+      # - name: bench smoke (every PR, ≤ 1 min; table posted to the PR)
+      #   run: uv run python tools/benchmark.py --tier smoke --compare
+      # - name: bench month (required before merge for any PR touching core/)
+      #   if: contains(github.event.pull_request.labels.*.name, 'core')
+      #   run: uv run python tools/benchmark.py --tier month --compare
+      # `bench full` runs nightly on main and on a PR labelled `bench-full`;
+      # `bench e2e` weekly. All four are wired up in WP0.11.
+
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hacs/action@main
+        with:
+          category: integration
