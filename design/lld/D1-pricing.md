@@ -64,14 +64,16 @@ Adapters return `RawSlot`s in the source's own unit and currency, normalisation 
 ```
 custom_components/powerplan/core/pricing/
 ├── __init__.py
-├── model.py         Slot, PriceCurve, Confidence, Carrier, Direction, RawSlot   (Money itself lives in core/model.py, HLD §5 - D2 and D11 use it without importing D1)
+├── model.py         Slot, PriceCurve, Confidence, Carrier, Direction, RawSlot, Field/FieldKind/Schema   (Money, Slot and PriceCurve themselves live in core/model.py, HLD §5 - D2 and D11 use them without importing D1 - and are re-exported here)
 ├── context.py       PriceContext, HolidayCalendar protocol
 ├── modifiers/       base.py, vat.py, levy.py, spot_scale.py, fixed_price.py, subsidy_threshold.py,
 │                    tou_schedule.py, day_type.py, cumulative_tier.py, export_price.py, registry.py
-├── forecasters/     base.py, carry_known.py, same_weekday.py, synthesised.py, registry.py
+│                    (tou_schedule.py holds TimeFilter/HolidayMode/TouPeriod until D2's grammar
+│                     lands in WP0.3, then imports them - D-0036)
+├── forecasters/     base.py (protocol + chain()), carry_known.py, same_weekday.py, synthesised.py, registry.py
 ├── events.py        Event, EventStore
 ├── compose.py       build_curve(raw, modifiers, forecaster, ctx, horizon) → PriceCurve
-├── schedule.py      Publication, next_fetch_at(), backoff(), never_on_the_hour()
+├── schedule.py      Publication, next_fetch_at(), backoff(), next_retry_at(), next_hole_check_at(), never_on_the_hour()
 ├── normalise.py     unit/currency/resolution/tz normalisation, DST checks
 └── hysteresis.py    HysteresisPolicy defaults (fraction of spread)
 
@@ -93,11 +95,16 @@ Public API:
 ```python
 async def fetch_missing(sources: list[PriceSource], store: RawStore, now: datetime) -> FetchReport
 def build_curve(raw: Sequence[RawSlot], modifiers: Sequence[PriceModifier], forecaster: PriceForecaster,
-                ctx: PriceContext, horizon: timedelta, now: datetime) -> PriceCurve
-class PriceCurve:
+                ctx: PriceContext, horizon: timedelta, now: datetime, *,
+                carrier=Carrier.ELECTRICITY, direction=Direction.IMPORT, source_priority: Sequence[str] = (),
+                max_age: timedelta = 12 h, history: Sequence[Slot] = ()) -> PriceCurve   # raises CoverageError (§5.3)
+class PriceCurve:                                          # the type lives in core/model.py (HLD §5, D-0030)
     def price_at(self, t: datetime) -> Slot | None
-    def slots_between(self, a: datetime, b: datetime) -> list[Slot]
-    def spread(self, day: date) -> float; def is_flat(self, day, threshold) -> bool; def coverage_h(self, from_: datetime) -> float
+    def slots_between(self, a: datetime, b: datetime) -> tuple[Slot, ...]
+    def spread(self, day: date, zone: tzinfo) -> Decimal    # the local day; money is Decimal
+    def mean(self, day: date, zone: tzinfo) -> Decimal      # duration-weighted; §5.7's flat threshold needs it
+    def is_flat(self, day: date, zone: tzinfo, threshold: Decimal) -> bool
+    def coverage_h(self, from_: datetime) -> float
     def resample(self, minutes: int) -> PriceCurve          # only for display; strategies use native slots
 ```
 
@@ -139,12 +146,19 @@ class PriceContext:
     day_type_at: Callable[[date], str | None] # from EventStore ("tempo_red", "cpp", …)
     holidays: HolidayCalendar
 
+class FieldKind(StrEnum): MONEY = "money"; NUMBER = "number"; BOOL = "bool"; TEXT = "text"; TIME = "time"; SELECT = "select"; LIST = "list"
+@dataclass(frozen=True)
+class Field:                                  # one renderable option of a registry entry (§6, D-0037)
+    key: str; kind: FieldKind; default: Any = None; required: bool = False
+    unit: str | None = None; options: tuple[str, ...] = (); advanced: bool = False
+type Schema = tuple[Field, ...]               # what D8 renders; D4's `Question` is the same idea for questionnaires
+
 class PriceModifier(Protocol):
     key: ClassVar[str]; schema: ClassVar[Schema]; component: ClassVar[str]
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot        # pure, must add/replace exactly its component
 
 class PriceForecaster(Protocol):
-    key: ClassVar[str]
+    key: ClassVar[str]; schema: ClassVar[Schema]
     def extend(self, curve: PriceCurve, until: datetime, ctx: PriceContext, history: Sequence[Slot]) -> PriceCurve
 
 @dataclass(frozen=True)
@@ -156,11 +170,14 @@ class PriceSource(Protocol):
     async def fetch(self, day: date) -> list[RawSlot]                 # raises SourceError subclasses
     def native_unit(self) -> tuple[str, Literal["kwh", "mwh"], Literal["major", "minor"]]   # ("NOK", "mwh", "major")
 
+class EventKind(StrEnum): DAY_TYPE = "day_type"; PRICE_OVERRIDE = "price_override"; PRICE_SPIKE = "price_spike"; REWARD = "reward"; LOAD_LIMIT = "load_limit"
+
 @dataclass(frozen=True)
 class Event:
-    id: str; source: str; kind: Literal["day_type", "price_override", "price_spike", "reward", "load_limit"]
-    start: datetime; end: datetime; issued_at: datetime; valid_until: datetime; revoked: bool = False
+    id: str; source: str; kind: EventKind
+    start: datetime; end: datetime; issued_at: datetime; valid_until: datetime
     payload: Mapping[str, Any]        # day_type: {"type": "tempo_red"}; price_override: {"price": …}; reward: {"per_kwh": …, "baseline": …}; load_limit: {"loads": [...], "max_w": …}
+    revoked: bool = False
 
 @dataclass(frozen=True)
 class HysteresisPolicy:  fraction_of_spread: float = 0.03; floor_major: Decimal = Decimal("0.01"); stale_multiplier: float = 2.0
@@ -174,15 +191,16 @@ class HysteresisPolicy:  fraction_of_spread: float = 0.03; floor_major: Decimal 
 
 ```
 for each source with a Publication:
-    tomorrow_due_at = today at publication.local_time in publication.tz + uniform(jitter)   # never lands on :00 by construction (jitter ≥ 120 s)
+    tomorrow_due_at = today at publication.local_time in publication.tz + uniform(jitter)   # never lands on :00, jitter ≥ 120 s
     if store lacks any slot of tomorrow and now ≥ tomorrow_due_at: fetch(tomorrow)
     if store lacks any slot of today: fetch(today)                                            # cold start or hole
-    on failure: schedule retry at now + retries[attempt] + uniform(30, 90), capped at 6 attempts/day; then give up until next publication
+    on failure: retry at now + retries[attempt] + uniform(30, 90), max 6 attempts/day, then wait for the next publication
 periodic hole check every 15 min at HH:07/22/37/52 (+ jitter), plus at startup
-never_on_the_hour(): if a computed fire time lands within ±60 s of HH:00, shift +90 s        # Nord Pool congestion at :00
+never_on_the_hour(): a fire time within ±60 s of HH:00 becomes that boundary + 90 s             # Nord Pool congestion at :00
+                     every computed fire time goes through it: publication, retry, hole check      # a blind +90 s from HH:59:00 is HH+1:00:30, still in the band (D-0032, D-0033)
 sources with publication None (entity): re-read on the entity's state change (D7 subscribes) and at the hole check
 ```
-A restart costs zero fetches when the store is complete. A source is `dead` after 24 h without a successful fetch (repair issue, D8).
+A restart costs zero fetches when the store is complete. A source is `dead` after 24 h without a successful fetch (repair, D8).
 
 ### 5.2 Normalisation
 
@@ -192,13 +210,13 @@ A restart costs zero fetches when the store is complete. A source is `dead` afte
 
 ```
 build_curve(raw, modifiers, forecaster, ctx, horizon, now):
-    known = [Slot(start, end, total=value, components={"spot": value}, confidence=KNOWN) for raw slots, merged across sources by priority order]
-    for m in modifiers (configured order):  known = [m.apply(s, ctx) for s in known]     # each adds its component; total recomputed as Σ components
-    mark: slots whose source fetched_at older than max_age → confidence STALE            # still used
+    known = [Slot(start, end, total=value, components={"spot": value}, confidence=KNOWN) for raw slots, merged across sources by priority]
+    for m in modifiers (configured order):  known = [m.apply(s, ctx) for s in known]     # each adds its component, total = Σ components
+    mark: slots whose source fetched_at is older than max_age → confidence STALE          # still used
     curve = forecaster.extend(curve(known), until=now + horizon, ctx, history=store.past_slots(7 d))
-    assert curve covers [now, now + horizon] with no gaps                                    # INV-5: the last forecaster always fills
+    raise CoverageError unless curve covers [now, now + horizon] with no gaps                 # INV-5, the last forecaster always fills (D-0034)
 ```
-Modifiers are pure functions of `(slot, ctx)`; the composition is deterministic and unit-tested per modifier. Component names are fixed strings so dashboards can stack them.
+Modifiers are pure functions of `(slot, ctx)`, so composition is deterministic and unit tested per modifier. Component names are fixed strings so dashboards can stack them.
 
 ### 5.4 The v1 modifiers
 
@@ -218,11 +236,11 @@ No modifier clamps at zero (INV-51). A preset's `energy_components` (D2) pre-fil
 
 ### 5.5 Forecasters
 
-Chain, each filling only what is still missing beyond the known slots:
+A chain (`forecasters.base.chain(*parts)`, D-0035), each part only filling what's still missing beyond the known slots, a hole inside the curve aswell as the tail:
 
-1. `carry_known` - nothing to add; marks slots older than `max_age` as `STALE` (the planner doubles its hysteresis).
+1. `carry_known` - nothing to add. The `STALE` marking needs each slot's `fetched_at`, which only the raw rows carry, so `build_curve` does it (§5.3, D-0035); the planner then doubles its hysteresis.
 2. `same_weekday_profile` - for each missing slot, the median of the same local time-of-day on the same weekday over the last 4 weeks, rescaled so its daily mean equals the last known day's mean; `ESTIMATED`. Requires ≥ 2 weeks of history; otherwise skipped.
-3. `synthesised` - the floor: grid `tou_schedule` component (if configured) + a constant energy component = mean of the last 7 known days (or a configured default); `SYNTHESISED`. Always succeeds. With every external source dead the planner still knows night is cheaper than day.
+3. `synthesised` - the floor: grid `tou_schedule` component (if configured) + a constant energy component = mean of the last 7 known days (or a configured default); `SYNTHESISED`. Always succeeds. With every external source dead the planner still knows night is cheaper than day. The mean is taken over `total − grid_energy` of recent `KNOWN`/`STALE` slots, so the synthesised tail sits at the composed head's level instead of ex levy and ex VAT (D-0038).
 
 Forecast horizon defaults to 48 h, configurable to 168 h for weekly EV planning (mostly `ESTIMATED` then).
 

@@ -69,3 +69,48 @@ Both legs run `uv sync --locked`, the floor leg then installs its `pytest-homeas
 ### D-0013 · `codeowners` and URLs point at `jkaberg/hass-powerplan`
 
 `manifest.json`, `pyproject.toml` (`project.urls`) and D8 §5.12 name `@jkaberg` and `github.com/jkaberg/hass-powerplan`.
+
+### D-0030 · Curve statistics are methods on `PriceCurve`
+
+`price_at`, `slots_between`, `spread`, `mean`, `is_flat`, `coverage_h` and `resample` live on `PriceCurve` in `core/model.py`. `spread`, `mean` and `is_flat` take the local `tzinfo` (a day is a local day) and return `Decimal` (D1 §3).
+**Rejected:** functions in `core/pricing/curve.py` like effektstyring had - splits one concept over two files, and every consumer imports D1 to ask a curve about itself.
+
+### D-0031 · Parent-relative imports allowed inside `core/`
+
+ruff's `TID252` is off for `custom_components/powerplan/core/**`, so `core/pricing/model.py` says `from ..model import Slot`. `core/` is meant to be liftable as `powerplan-core` (HLD §5, PLAN §7 dec. 3), a relative tree moves as a directory. Everywhere else the HA convention holds.
+**Rejected:** absolute imports - no per-file ignore, but it turns the eventual split from a move into a rewrite.
+
+### D-0032 · `never_on_the_hour` snaps to the boundary + 90 s
+
+D1 §5.1 said "shift +90 s", however `HH:59:00` + 90 s is `HH+1:00:30`, still inside the ±60 s band. Snapping is idempotent and outside the band from either edge (D1 §5.1).
+**Rejected:** loop "+90 s" until outside - the result depends on where in the band it started.
+
+### D-0033 · The fetch schedule is pure, every fire time filtered
+
+`next_fetch_at`, `backoff`, `next_retry_at` and `next_hole_check_at` take a `random.Random` the caller owns and all return times through `never_on_the_hour`. INV-6 covers every computed fetch time, so it belongs in `core/` where a test can hit it 10 000 times (D1 §3, §5.1).
+**Rejected:** module-level `random` with jitter in the runtime - the invariant would live where it can't be tested.
+
+### D-0034 · A hole in the horizon raises `CoverageError`
+
+`build_curve` raises when the forecaster chain leaves any of `[now, now + horizon]` uncovered. A chain without a terminal forecaster is a config error and should be loud (D1 §5.3, INV-5).
+**Rejected:** return the short curve - an misconfigured chain stays invisible as long as real prices happen to reach the horizon.
+
+### D-0035 · Staleness is marked in `compose`, `carry_known` is the identity
+
+`build_curve` decides `KNOWN`/`STALE` from each `RawSlot.fetched_at`, since `Slot` has no `fetched_at` and only `compose` still has the raw rows. `forecasters.base.chain(*parts)` runs D1 §5.5's chain.
+**Rejected:** `fetched_at` on every `Slot` - provenance on every slot of every curve for one boolean known once.
+
+### D-0036 · `tou_schedule` borrows D2's `TimeFilter` until D2 exists
+
+D1 §5.4's `tou_schedule` is built on D2's grammar, which lands later. The copy is structurally identical and is replaced by an import (D-0050).
+**Rejected:** writing `core/tariffs/grammar.py` ahead of its WP - lands nine more types that would be missing or invented.
+
+### D-0037 · D1 defines its own registry `Schema` for now
+
+`Field`, `FieldKind` and `Schema = tuple[Field, ...]` in `core/pricing/model.py`. Every LLD writes `schema: ClassVar[Schema]` and none defines it. The shared one belongs to the WP that first needs two of them (D1 §4).
+**Rejected:** shared in `core/model.py` right away - a schema designed against one domain is a guess at the other five.
+
+### D-0038 · The synthesised floor's energy constant is total minus the grid charge
+
+`Synthesised` uses the duration-weighted mean of `total − grid_energy` over recent known slots (`energy_default` when nothing is known) and adds the grid charge itself. Raw spot alone prices the tail ex levy and VAT, 10–15 øre/kWh under the known head, and a cheap forecast pulls every flexible load into it (D1 §5.5).
+**Rejected:** running the modifier chain over the synthesised slots - applies `tou_schedule` and VAT twice.

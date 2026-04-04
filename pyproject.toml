@@ -92,6 +92,13 @@ runtime-evaluated-decorators = ["dataclasses.dataclass"]
 convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
+# HLD §5 and PLAN §7 dec. 3: `core/` is written so it can be lifted out as
+# `powerplan-core`. Inside it a parent-relative import (`from ..model import
+# Slot`) is therefore the correct one - an absolute
+# `custom_components.powerplan.core.…` would have to be rewritten on the way
+# out. Outside `core/` the HA convention holds: single-dot relative within the
+# integration, absolute for everything else (DECISIONS D-0031).
+"custom_components/powerplan/core/**" = ["TID252"]
 "tests/**" = ["PLR2004", "SLF001"]
 "tools/**" = ["T201"] # the CLIs print their report
 

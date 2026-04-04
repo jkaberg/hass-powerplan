@@ -15,10 +15,11 @@ below and added by that WP, not invented here.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from enum import StrEnum
+from typing import Final
 
 # --------------------------------------------------------------------------- #
 # Closed vocabularies
@@ -118,11 +119,65 @@ class Slot:
         return round((self.end - self.start).total_seconds() / 60)
 
 
+#: Confidence from most to least trustworthy (INV-5). Blending slots of
+#: different confidence keeps the last one reached.
+_TRUST_ORDER: Final = (
+    Confidence.KNOWN,
+    Confidence.STALE,
+    Confidence.ESTIMATED,
+    Confidence.SYNTHESISED,
+)
+
+
+def _local_day_bounds(day: date, zone: tzinfo) -> tuple[datetime, datetime]:
+    """Return local midnight and the next local midnight as instants (D1 §5.8).
+
+    The difference is 23, 24 or 25 hours; nothing here assumes which.
+    """
+    return (
+        datetime.combine(day, time.min, tzinfo=zone),
+        datetime.combine(day + timedelta(days=1), time.min, tzinfo=zone),
+    )
+
+
+def _blend(parts: tuple[Slot, ...], start: datetime, end: datetime) -> Slot:
+    """Return one slot averaging `parts` over `[start, end)` by overlap (D1 §3)."""
+    weights = [
+        Decimal(int((min(slot.end, end) - max(slot.start, start)).total_seconds()))
+        for slot in parts
+    ]
+    span = sum(weights, Decimal(0))
+    keys = tuple(dict.fromkeys(key for slot in parts for key in slot.components))
+    components = {
+        key: sum(
+            (
+                slot.components.get(key, Decimal(0)) * weight
+                for slot, weight in zip(parts, weights, strict=True)
+            ),
+            Decimal(0),
+        )
+        / span
+        for key in keys
+    }
+    confidence = max((slot.confidence for slot in parts), key=_TRUST_ORDER.index)
+    return Slot(
+        start=start,
+        end=end,
+        total=sum(components.values(), Decimal(0)),
+        components=components,
+        confidence=confidence,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class PriceCurve:
     """One (carrier, direction) priced over a horizon (D1 §4).
 
-    `slots` is sorted; gaps are allowed only in the past.
+    `slots` is sorted; gaps are allowed only in the past. The statistics D1 §3
+    lists live here, on the type, rather than beside the composition in
+    `core/pricing/` (`design/DECISIONS.md` D-0030): D5 asks a curve what its
+    spread is, and D2 and D11 price a bill from the same type without importing
+    D1.
     """
 
     carrier: Carrier
@@ -131,6 +186,76 @@ class PriceCurve:
     slots: tuple[Slot, ...]
     built_at: datetime
     sources: tuple[str, ...]
+
+    def price_at(self, t: datetime) -> Slot | None:
+        """Return the slot containing `t`, or `None` outside the curve (D1 §5.8)."""
+        for slot in self.slots:
+            if slot.start > t:
+                return None
+            if t < slot.end:
+                return slot
+        return None
+
+    def slots_between(self, a: datetime, b: datetime) -> tuple[Slot, ...]:
+        """Return the slots overlapping `[a, b)` at their native lengths (INV-7)."""
+        return tuple(slot for slot in self.slots if slot.end > a and slot.start < b)
+
+    def spread(self, day: date, zone: tzinfo) -> Decimal:
+        """Return max − min `total` over the local day, 0 with no slots (D1 §5.7)."""
+        totals = [slot.total for slot in self.slots_between(*_local_day_bounds(day, zone))]
+        if not totals:
+            return Decimal(0)
+        return max(totals) - min(totals)
+
+    def mean(self, day: date, zone: tzinfo) -> Decimal:
+        """Return the duration-weighted mean `total` over the local day (D1 §5.7)."""
+        slots = self.slots_between(*_local_day_bounds(day, zone))
+        if not slots:
+            return Decimal(0)
+        weighted = sum((slot.total * slot.minutes for slot in slots), Decimal(0))
+        return weighted / sum(slot.minutes for slot in slots)
+
+    def is_flat(self, day: date, zone: tzinfo, threshold: Decimal) -> bool:
+        """Return whether the local day's spread is under `threshold` (INV-8).
+
+        The threshold comes from the `HysteresisPolicy` (D1 §5.7), never from
+        an absolute number of minor units decided here.
+        """
+        return self.spread(day, zone) < threshold
+
+    def coverage_h(self, from_: datetime) -> float:
+        """Return the hours of `KNOWN` slots after `from_` (D1 §5.7).
+
+        A planner must consult this and never plan past it: tomorrow's prices
+        land around 13:00, so at 05:00 the horizon is ~19 h, not 48.
+        """
+        hours = 0.0
+        for slot in self.slots:
+            if slot.end <= from_ or slot.confidence is not Confidence.KNOWN:
+                continue
+            hours += (slot.end - max(slot.start, from_)).total_seconds() / 3600.0
+        return hours
+
+    def resample(self, minutes: int) -> PriceCurve:
+        """Return the curve at one fixed resolution - **display only** (D1 §3).
+
+        Strategies use native slot lengths (INV-7). Each output slot is the
+        duration-weighted mean of the slots it covers and carries the least
+        trusted confidence among them; a gap in the source stays a gap.
+        """
+        if not self.slots:
+            return self
+        step = timedelta(minutes=minutes)
+        out: list[Slot] = []
+        cursor = self.slots[0].start
+        end = self.slots[-1].end
+        while cursor < end:
+            stop = min(cursor + step, end)
+            parts = self.slots_between(cursor, stop)
+            if parts:
+                out.append(_blend(parts, cursor, stop))
+            cursor = stop
+        return replace(self, slots=tuple(out))
 
 
 # --------------------------------------------------------------------------- #
