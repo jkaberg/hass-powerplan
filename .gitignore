@@ -21,3 +21,4 @@ dist/
 .coverage.*
 coverage.xml
 htmlcov/
+

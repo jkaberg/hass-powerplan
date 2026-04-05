@@ -11,15 +11,6 @@
 # INV-1 - precedence; core/allocation only (HLD §3) → WP0.7
 INV-1
 
-# INV-13–19 - metering, anchors, seam, blindness (HLD §6.3, D3) → WP0.2
-INV-13
-INV-14
-INV-15
-INV-16
-INV-17
-INV-18
-INV-19
-
 # INV-20–29 - write gate, releases, comfort target, cliffs (HLD §6.4, D4)
 # → WP0.5 (pure gate decision) and WP2.1 (the executor)
 INV-20
@@ -44,9 +35,10 @@ INV-40
 INV-41
 INV-42
 
-# INV-43–48 - tick order, publish, isolation, budget, knobs, startup
-# (HLD §6.7, D7) → WP0.8 (pure) and WP1.1 (runtime)
-INV-43
+# INV-44–48 - publish, isolation, budget, knobs, startup (HLD §6.7, D7)
+# → WP0.8 (pure) and WP1.1 (runtime). INV-43's metering half - the window
+# closes on the register report, not on the clock - is covered by WP0.2; its
+# trigger half (no full tick fires at the boundary) is WP1.1's.
 INV-44
 INV-45
 INV-46

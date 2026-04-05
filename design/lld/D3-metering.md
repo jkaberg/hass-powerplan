@@ -60,13 +60,18 @@ Sites with separate `total_increasing` import and export registers and no produc
 custom_components/powerplan/core/metering/
 ├── __init__.py
 ├── profile.py        ElectricalProfile, VoltageSystem, w_per_amp(), fuse_w(), plausible_w()
-├── readings.py       Reading, Quality, age(), is_fresh()
-├── window.py         WindowMeter, WindowState, ClosedWindow, AnchorKind, window_bounds()
-├── stats.py          Ema, RollingStd, Trapezoid
-├── decompose.py      uncontrolled(), controlled_power(load_view), surplus()
+├── readings.py       Reading, Quality, MeterSample, age(), is_fresh()
+├── window.py         WindowMeter, WindowState, ClosedWindow, MeterSnapshot, PendingClose, window_bounds(), reconstruct_windows()
+├── stats.py          Ema, RollingStd, trapezoid_kwh()
+├── decompose.py      ControlledView, uncontrolled(), controlled_power(load_view), surplus()
 ├── phases.py         PhaseReadings, headroom_a()
-├── loads.py          LoadMeter, LoadMeterState, LoadSlot, slot_bounds() - per-load energy per price slot (D11)
-└── health.py         MeterHealth, staleness rules
+├── loads.py          LoadMeter, LoadMeterState, LoadSlot, Trapezoid, slot_bounds()   per-load energy per price slot (D11)
+└── health.py         MeterHealth, AnchorKind (re-exported by window.py), staleness rules
+```
+
+The import graph stays acyclic, leaves first and `window.py` last. `AnchorKind` sits with the `MeterHealth` that carries it, and `Trapezoid` with `loads.py`, the only thing that needs per-sample state (D-0020).
+
+```
 
 custom_components/powerplan/providers/meters/
 ├── base.py           MeterSource protocol (async, HA side), entity→Reading adapters, unit scaling
@@ -83,16 +88,17 @@ def window_bounds(now: datetime, window_min: int, tz: tzinfo) -> tuple[datetime,
 class WindowMeter:
     def __init__(self, cfg: WindowMeterConfig, state: WindowState | None) -> None
     def sample(self, now: datetime, s: MeterSample, controlled: Sequence[ControlledView]) -> MeterSnapshot
-    def state(self) -> WindowState                       # marked dirty after every sample; D7 saves it throttled, anchor changes at once (§7)
+    def state(self) -> WindowState                       # dirty after every sample; D7 saves it throttled, anchor changes at once (§7)
+    def ack_closed(self, upto_utc: datetime) -> None      # D2 recorded them, §7 keeps them until then (D-0026)
     def set_window_min(self, window_min: int, effective_at_next_boundary: bool = True) -> None
-    def reanchor(self, register_kwh: float, now: datetime, reason: str) -> None    # service: reset_window_anchor
+    def reanchor(self, register_kwh: float, now: datetime, reason: str) -> None    # action: reset_window_anchor
 def reconstruct_windows(rows: Iterable[tuple[datetime, float]], window_min: int, tz) -> list[ClosedWindow]  # §5.11
-class LoadMeter:                                          # one per load; §5.12
+class LoadMeter:                                          # one per load, §5.12
     def __init__(self, cfg: LoadMeterConfig, state: LoadMeterState | None) -> None
     def sample(self, now: datetime, view: ControlledView, energy_kwh: Reading | None, slot_minutes: int) -> None
     def closed(self) -> tuple[LoadSlot, ...]              # slots closed since the last ack
     def ack(self, upto_utc: datetime) -> None             # D11 acknowledged
-    def state(self) -> LoadMeterState                     # marked dirty after every sample; D7 saves it throttled (§7)
+    def state(self) -> LoadMeterState                     # dirty after every sample; D7 saves it throttled (§7)
 ```
 
 ---
@@ -141,9 +147,8 @@ class MeterSample:                     # what a MeterSource yields per tick
 
 class AnchorKind(StrEnum): METER_WINDOW = "meter_window"; REGISTER_LATCHED = "register_latched"; REGISTER_INTERPOLATED = "register_interpolated"; WALL_CLOCK = "wall_clock"
 
-@dataclass
+@dataclass(frozen=True, slots=True)     # WP0.2: frozen - it crosses into D7's store
 class WindowState:                      # persisted
-    schema: int = 1
     window_min: int
     window_start_utc: datetime
     anchor_kwh: float | None            # register value at window_start
@@ -157,8 +162,21 @@ class WindowState:                      # persisted
     register_cadence_s: float | None    # learned; None until ≥ 5 intervals observed
     ema_w: float | None                 # projection EMA, τ = projection_tau_s, carried across boundaries
     degraded_gap_s: float               # unobserved seconds inside this window
-    pending_closed: list[ClosedWindow]  # emitted to D2, cleared when D2 acknowledges
+    pending_closed: tuple[ClosedWindow, ...]  # emitted to D2, cleared when D2 acknowledges
     pending_window_min: int | None      # set by set_window_min()
+    cadence_samples: tuple[float, ...]  # WP0.2: the last 8 register intervals (§7's sibling key)
+    closing: PendingClose | None        # WP0.2: a window past its boundary, awaiting its report (§5.5)
+    schema: int = 1                     # WP0.2: last, so the required fields can precede it
+
+@dataclass(frozen=True)                 # WP0.2: §5.5's wait, made a type
+class PendingClose:
+    start_utc: datetime; window_min: int
+    anchor_kwh: float | None; anchor_kind: AnchorKind    # the anchor the window started from
+    integral_kwh: float                 # its final trapezoid integral, the fallback close
+    degraded: bool                      # its degraded flag at the boundary
+    r_before_kwh: float | None; r_before_at: datetime | None   # the last reading before the boundary
+    deadline_utc: datetime              # boundary + register_grace_s
+    def end_utc(self) -> datetime       # the boundary itself: the instant a latched report describes
 
 @dataclass(frozen=True)
 class ClosedWindow:
@@ -200,6 +218,7 @@ class MeterHealth:
     power_age_s: float | None; register_age_s: float | None; stale: bool; degraded: bool
     implausible_count: int; register_cadence_s: float | None; integral_bias_w: float | None
     anchor_kind: AnchorKind; production_known: bool
+    unmetered_controlled: tuple[str, ...] = ()   # WP0.2: the loads §5.8 counts as 0 W
 
 @dataclass(frozen=True)
 class MeterSnapshot:                    # D3's output, one per tick; embedded in the engine Snapshot
@@ -247,7 +266,7 @@ Each step cites the invariant it enforces.
 
 ### 5.3 Register cadence detection (`register_mode = auto`)
 
-Keep the last 8 register update intervals. When ≥ 5 are known: `cadence = median`. If `|cadence − window_min×60| < 0.25 × window_min×60` → `latched` (the meter reports once per window, the report *is* the boundary value). If `cadence < window_min×60 / 6` → `interpolated`. Otherwise `interpolated` with a WARNING that the register is coarse for this window length (e.g. hourly register, 15-min tariff) - `used_confidence = estimated` between reports.
+Keep the last 8 register update intervals. When ≥ 5 are known: `cadence = median`. **WP0.2** - until then the mode is **`latched`**: waiting for the report is the INV-13 behaviour, and on a fast register the error is a bounded shift of one cadence that cancels across windows, where guessing `interpolated` on a once-per-window meter would interpolate across the whole window. If `|cadence − window_min×60| < 0.25 × window_min×60` → `latched` (the meter reports once per window, the report *is* the boundary value). If `cadence < window_min×60 / 6` → `interpolated`. Otherwise `interpolated` with a WARNING that the register is coarse for this window length (e.g. hourly register, 15-min tariff) - `used_confidence = estimated` between reports.
 
 ### 5.4 The sample (`WindowMeter.sample`): INV-13, 14, 15, 17
 
@@ -274,6 +293,13 @@ Keep the last 8 register update intervals. When ≥ 5 are known: `cadence = medi
 
 `t_rem_h = (bounds.end − now)/3600`, floored at `1/3600` and never zero. The allowance arithmetic divides by it, and it's the seam freeze (step 7) that protects the last seconds, not a zero.
 
+**Step 6 in detail.** A register reading's evidence applies at its **effective time**: receipt time in `interpolated` and `meter_window` mode, the **window start** in `latched` mode. That's what latched means - the report published at `HH:00:12` carries the register as it stood at `HH:00:00`, which is why two reports in a row differ by exactly one window (D-0022). So:
+
+* `used = e_integral`, the trapezoid since the boundary, **snapped** onto register evidence whenever a reading's effective time falls inside this window (`used ← register − anchor` in `interpolated` mode, `used ← meter_window_kwh` in `meter_window` mode). `e_integral` itself is never snapped, and `integral_bias_w = e_integral − used` at each snap and each close.
+* In `latched` mode there's **no snap**: `register − anchor` is 0 from the boundary report until the next one, so the register can only anchor and never measure the window in progress. A once-an-hour register read as `used` is a staircase. `used_confidence` is therefore `estimated` in `latched` mode, as for a coarse register (§5.3) and after a reset (§5.7), and only `exact` when the meter's own window value is fresh or a fine register drives `used`.
+* Steps 3 and 6 share one rule for blindness: a missing reading, one outside the plausible band and one older than the threshold all set `stale` and freeze (INV-17, §8's first row).
+* A register that simply stopped is overdue after **`cadence + register_grace_s`**, not the grace alone. A latched register is silent for a whole window by design, and the grace alone would demote every window to `wall_clock` 90 s in (D-0024).
+
 ### 5.5 Boundary handling (INV-13)
 
 At the first sample with `bounds.start > state.window_start_utc`:
@@ -285,13 +311,15 @@ At the first sample with `bounds.start > state.window_start_utc`:
 
 A late tick (a heartbeat running after the boundary while the previous window's anchor is still active) is detected as "anchor belongs to the previous window" and treated as seam, never as a recovery.
 
+**The wait, and "re-sync when the next report lands".** The window rolls at the boundary (the trapezoid segment split, `e_integral`, `e_used` and `degraded_gap_s` reset, `ema_w` carried) and the departing window becomes a `PendingClose` (§4) with `deadline = boundary + register_grace_s`. `state.closing is not None` **is** the "anchor belongs to the previous window" signal step 7 reads for the seam. A latched reading arriving while the current window has **no observed anchor** is that window's boundary value, anchor ← the reading, unless a reading already landed inside this window (the register reports more than once per window, so this one is a current value) or it arrives later than **half the window** - past that it can't be told from the previous boundary's value republished by an entity coming back from `unavailable` (effektstyring's `near_boundary`). Before any cadence is known the bound is `register_grace_s`. When neither holds the anchor is **derived** as `register − used`, which keeps `used` continuous and closes the window `estimated` (D-0025).
+
 ### 5.6 Degraded (INV-14 corollary)
 
 `degraded = degraded_gap_s > degrade_gap_s`. Only *unobserved time inside this window* counts, crossing a boundary never sets it (the pyscript bug that logged twenty warnings a day). D6 reads `degraded` to bump the reserve, D7 to suppress the PI trim's `binding` flag.
 
 ### 5.7 Meter reset / replacement
 
-Register decreases by more than `reset_drop_kwh` → treat as a new meter: `anchor_kwh ← register`, `used ← e_integral` for the rest of this window (`confidence = estimated`), log WARNING, raise a repair issue if it repeats within 24 h. A register *increase* jump larger than `plausible_w × dt / 3600 × 3` is treated as a missed interval, not a reset: `used ← register − anchor` stands (the register is right; we were blind), `degraded_gap_s += dt`.
+The register dropping by more than `reset_drop_kwh` is a new meter: `anchor ← register − used` with `anchor_kind ← WALL_CLOCK`, so `used` follows the integral for the rest of this window (`confidence = estimated`), WARNING logged, and a repair if it repeats within 24 h. Back-dating the anchor by what's been integrated leaves the new register free to drive `used` again once it has a boundary of its own (D-0022). `reanchor()` (the `reset_window_anchor` action) does exactly the same. A register *jump* larger than `plausible_w × dt / 3600 × 3` is a missed interval, not a reset: `used ← register − anchor` stands (the register is right, we were blind) and `degraded_gap_s += dt`.
 
 ### 5.8 Controlled power with settling (INV-18)
 
@@ -307,7 +335,7 @@ uncontrolled_w = grid_w − Σ controlled_power(view_i)
 
 ### 5.9 σ of uncontrolled power (INV-16)
 
-`RollingStd` over `sigma_window_s` of `uncontrolled_w` samples, sample-weighted (irregular intervals). Below `sigma_min_samples` (after a restart, the buffer is empty) it reports `sigma_default_w` and `sigma_samples`, so D6 can see it is running on a default. The buffer is **not** persisted: fifteen minutes of conservative reserve after a restart is cheaper than trusting stale statistics.
+`RollingStd` over `sigma_window_s` of `uncontrolled_w` samples, each weighted by the interval it held (the oldest gets the mean of the others, so every value in the window counts), with the Bessel correction `n/(n−1)`. On uniform intervals that's exactly effektstyring's `_stdev`, so σ doesn't step when the meter's cadence changes (D-0023). Below `sigma_min_samples` (after a restart the buffer is empty) it reports `sigma_default_w` and `sigma_samples`, so D6 sees it's running on a default. The buffer is **not** persisted: fifteen minutes of conservative reserve after a restart is cheaper than trusting stale statistics.
 
 ### 5.10 Health and staleness (INV-17)
 
@@ -375,8 +403,10 @@ Validation: fuse < 6 A or > 400 A refused, a power entity whose unit is neither 
 Store section `meter` inside the site's store (D7 owns the file):
 
 ```json
-{"schema": 1, "window": {WindowState as JSON, datetimes ISO-8601 UTC}, "cadence_samples": [..8 floats..], "closed_unacked": [...], "loads": {"<load_id>": {LoadMeterState as JSON}}}
+{"schema": 1, "window": {WindowState as JSON, datetimes ISO-8601 UTC}, "loads": {"<load_id>": {LoadMeterState as JSON}}}
 ```
+
+`WindowState` is made of primitives, ISO-8601 datetimes, `StrEnum`s and tuples of those, so D7 writes it as it stands.
 
 - Saved by D7's throttle (D7 §7): an anchor change (window boundary, `reanchor`, reset) saves at once, the integral and the per-load slot integrals at most - and atleast - once per 5 s while dirty (INV-14). A hard power loss loses at most 5 s of integral (≤ 30 Wh at 20 kW, ten times under ε), an HA restart loses nothing (flush on stop), and `lifetime_kwh` never goes backwards.
 - `pending_closed` is only cleared when D2 acknowledges recording, so a crash between "closed" and "recorded" can't lose a window from the peak table. A day lost across a restart was invisible in the old setup.

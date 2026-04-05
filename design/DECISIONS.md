@@ -70,6 +70,43 @@ Both legs run `uv sync --locked`, the floor leg then installs its `pytest-homeas
 
 `manifest.json`, `pyproject.toml` (`project.urls`) and D8 §5.12 name `@jkaberg` and `github.com/jkaberg/hass-powerplan`.
 
+### D-0020 · Where D3 §3's unplaced names live
+
+`MeterSample` in `readings.py`, `ControlledView` in `decompose.py`, `MeterSnapshot`, `PendingClose` and `reconstruct_windows` in `window.py`, `AnchorKind` in `health.py` (re-exported by `window.py`). `stats.py` has `trapezoid_kwh`, the `Trapezoid` accumulator lives in `loads.py`. The import graph has to stay acyclic, and `MeterHealth` carries an `AnchorKind`, so the enum can't live in `window.py`. Every §4 type crosses a layer, so the package exports them (D3 §3).
+**Rejected:** one `types.py` for every shared dataclass - no cycles, but it splits each algorithm from the type it owns to solve a cycle with one edge.
+
+### D-0021 · `WindowState` is frozen, and the store section is one object
+
+`WindowState` is `frozen=True, slots=True`, `schema` moves last, `pending_closed` is a tuple, `cadence_samples` and `closed_unacked` become fields, and the wait in §5.5 is a frozen `PendingClose` in `closing`. One frozen object round-trips atomically, so a save can never write a new anchor next to a stale pending list (D3 §4, §7).
+**Rejected:** mutable, with `sample()` assigning in place - fewer allocations, however the persisted state is exactly what must not be half-updated when a tick raises.
+
+### D-0022 · `used` is the integral snapped onto register evidence; a latched register only anchors
+
+`used = e_integral` since the boundary, snapped to the register whenever a reading's effective time falls inside the window. Effective time is receipt time for `interpolated` and `meter_window`, and the window start for `latched` - so a latched meter never snaps, the report anchors the window and closes the previous one. Taken literally, D3 §5.4 step 6 reads `used = 0` for the whole window on a latched AMS meter, which is the staircase that pinned the old controller to stage 4 all night (D3 §5.4, §5.5, §5.7).
+**Rejected:** the register drives `used` in every mode - only holds for a register reporting many times per window.
+
+### D-0023 · σ is time-weighted with a Bessel correction
+
+`RollingStd` weights each sample by the interval it held and multiplies by `n/(n−1)`, so σ doesn't depend on how often the meter reports, and it reduces exactly to effektstyring's `_stdev` on uniform intervals (D3 §5.9).
+**Rejected:** unweighted σ - a meter reporting on change bursts when the house is busy, which is exactly when σ matters.
+
+### D-0024 · `latched` until a cadence is known, and "overdue" is cadence + grace
+
+`detect_register_mode(None, …)` returns `latched`, and a register has stopped when its age exceeds `cadence + register_grace_s`. Waiting for the report is INV-13's behaviour, and guessing wrong costs one cadence that cancels across windows (D3 §5.3, §5.4).
+**Rejected:** "unknown" and close nothing for five intervals - leaves a five-hour hole in D2's peak table after every install.
+
+### D-0025 · A latched report is this window's boundary value within half a window
+
+In `latched` mode a reading arriving while the window has no observed anchor is its boundary value, unless one already landed in this window or it's more than half a window late. The property test found the narrower ±25 % rule this replaced over-counting a day by 10.6 % (D3 §5.5).
+**Rejected:** deciding from the integral (compare the register delta with the last window's integral) - uses evidence, however it needs one more sample of state and the timing rule is exact for every meter in HLD §8.
+
+### D-0026 · `WindowMeter.ack_closed(upto_utc)`
+
+Drops the closed windows before `upto_utc` from `pending_closed`. D3 §7 only clears them when D2 has recorded them - a day lost across a restart was invisible in the old setup - and §3 had no way to say so. `LoadMeter.ack()` already does the same (D3 §3).
+**Rejected:** D7 rebuilds `WindowState` with the list trimmed - puts metering arithmetic in the engine.
+
+### D-0027 · Folded into D-0031
+
 ### D-0030 · Curve statistics are methods on `PriceCurve`
 
 `price_at`, `slots_between`, `spread`, `mean`, `is_flat`, `coverage_h` and `resample` live on `PriceCurve` in `core/model.py`. `spread`, `mean` and `is_flat` take the local `tzinfo` (a day is a local day) and return `Decimal` (D1 §3).
