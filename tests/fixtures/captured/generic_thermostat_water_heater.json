@@ -1,0 +1,28 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "varmtvannsbereder",
+  "entities": [
+    {
+      "attributes": {
+        "current_temperature": 70.8,
+        "friendly_name": "Varmtvannsbereder",
+        "hvac_action": "idle",
+        "hvac_modes": [
+          "heat",
+          "off"
+        ],
+        "max_temp": 80,
+        "min_temp": 40,
+        "supported_features": 385,
+        "target_temp_step": 0.1,
+        "temperature": 45
+      },
+      "entity_id": "climate.varmtvannsbereder",
+      "last_changed": "2025-09-20T07:50:20.585724+00:00",
+      "last_updated": "2025-09-20T12:56:04.032971+00:00",
+      "state": "heat"
+    }
+  ],
+  "entity_count": 1,
+  "name": "generic_thermostat_water_heater"
+}

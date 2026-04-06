@@ -1,0 +1,28 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "vaskerom",
+  "entities": [
+    {
+      "attributes": {
+        "current_temperature": 21,
+        "friendly_name": "Panelovn Vaskerom",
+        "hvac_action": "idle",
+        "hvac_modes": [
+          "heat",
+          "off"
+        ],
+        "max_temp": 23,
+        "min_temp": 16,
+        "supported_features": 385,
+        "target_temp_step": 0.1,
+        "temperature": 16
+      },
+      "entity_id": "climate.vaskerom",
+      "last_changed": "2025-09-20T07:50:20.590232+00:00",
+      "last_updated": "2025-09-20T13:17:03.651879+00:00",
+      "state": "heat"
+    }
+  ],
+  "entity_count": 1,
+  "name": "generic_thermostat_panel_heater"
+}

@@ -1,0 +1,338 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "billader",
+  "entities": [
+    {
+      "attributes": {
+        "device_class": "identify",
+        "friendly_name": "Billader Identify"
+      },
+      "entity_id": "button.garasje_billader_identify",
+      "last_changed": "2025-09-20T07:50:31.194112+00:00",
+      "last_updated": "2025-09-20T07:50:31.194112+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "device_class": "restart",
+        "friendly_name": "Billader Reboot"
+      },
+      "entity_id": "button.garasje_billader_reboot",
+      "last_changed": "2025-09-20T07:50:31.193805+00:00",
+      "last_updated": "2025-09-20T07:50:31.193805+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "brightness": 191,
+        "color_mode": "brightness",
+        "friendly_name": "Billader LED",
+        "supported_color_modes": [
+          "brightness"
+        ],
+        "supported_features": 0
+      },
+      "entity_id": "light.garasje_billader_led",
+      "last_changed": "2025-09-20T07:50:31.194616+00:00",
+      "last_updated": "2025-09-20T07:50:31.194616+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Dynamic charger current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "number.garasje_billader_dynamic_charger_current",
+      "last_changed": "2025-09-20T07:55:32.042573+00:00",
+      "last_updated": "2025-09-20T07:55:32.042573+00:00",
+      "state": "10.0"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Dynamic circuit current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "number.garasje_billader_dynamic_circuit_current",
+      "last_changed": "2025-09-20T07:50:31.195720+00:00",
+      "last_updated": "2025-09-20T07:50:31.195720+00:00",
+      "state": "32.0"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Max charger current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "number.garasje_billader_max_charger_current",
+      "last_changed": "2025-09-20T07:50:31.195156+00:00",
+      "last_updated": "2025-09-20T07:50:31.195156+00:00",
+      "state": "32.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Bluetooth mode",
+        "options": [
+          "button_press",
+          "always_on"
+        ]
+      },
+      "entity_id": "select.garasje_billader_bluetooth_mode",
+      "last_changed": "2025-09-20T07:50:31.196598+00:00",
+      "last_updated": "2025-09-20T07:50:31.196598+00:00",
+      "state": "always_on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Phase mode",
+        "options": [
+          "1_phase",
+          "auto",
+          "3_phase"
+        ]
+      },
+      "entity_id": "select.garasje_billader_phase_mode",
+      "last_changed": "2025-09-20T07:50:31.196324+00:00",
+      "last_updated": "2025-09-20T07:50:31.196324+00:00",
+      "state": "1_phase"
+    },
+    {
+      "attributes": {
+        "device_class": "signal_strength",
+        "friendly_name": "Billader Bluetooth signal",
+        "state_class": "measurement",
+        "unit_of_measurement": "dBm"
+      },
+      "entity_id": "sensor.ehcqpvgq_bluetooth_signal",
+      "last_changed": "2025-09-20T13:25:13.750056+00:00",
+      "last_updated": "2025-09-20T13:25:13.750056+00:00",
+      "state": "-36"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Firmware"
+      },
+      "entity_id": "sensor.ehcqpvgq_firmware",
+      "last_changed": "2025-09-20T07:50:31.198987+00:00",
+      "last_updated": "2025-09-20T07:50:31.198987+00:00",
+      "state": "343"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Cable rating",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.garasje_billader_cable_rating",
+      "last_changed": "2025-09-20T07:50:31.199578+00:00",
+      "last_updated": "2025-09-20T07:50:31.199578+00:00",
+      "state": "32"
+    },
+    {
+      "attributes": {
+        "code": 50,
+        "description": "Secondary unit not requesting current, or no car connected",
+        "device_class": "enum",
+        "friendly_name": "Billader Charging blocked by",
+        "known": true,
+        "options": [
+          "ok",
+          "max_circuit_limit_too_low",
+          "max_dynamic_circuit_limit_too_low",
+          "max_dynamic_offline_limit_too_low",
+          "circuit_fuse_too_low",
+          "waiting_in_queue",
+          "waiting_in_fully_charged_queue",
+          "illegal_grid_type",
+          "no_current_request_received",
+          "not_connected_to_master",
+          "equalizer_current_too_low",
+          "phase_not_connected",
+          "limited_by_circuit_fuse",
+          "limited_by_circuit_max_limit",
+          "limited_by_circuit_dynamic_limit",
+          "limited_by_equalizer",
+          "limited_by_load_balancing",
+          "limited_by_offline_settings",
+          "secondary_unit_not_requesting_current",
+          "max_charger_limit_too_low",
+          "max_dynamic_charger_limit_too_low",
+          "charger_disabled",
+          "waiting_for_schedule_or_authorization",
+          "pending_authorization",
+          "charger_in_error_state",
+          "erratic_ev",
+          "limited_by_cable_rating",
+          "limited_by_schedule",
+          "limited_by_charger_max_limit",
+          "limited_by_charger_dynamic_limit",
+          "ev_not_charging",
+          "limited_by_local_adjustment",
+          "limited_by_ev",
+          "undefined"
+        ]
+      },
+      "entity_id": "sensor.garasje_billader_charging_blocked_by",
+      "last_changed": "2025-09-20T07:50:31.202673+00:00",
+      "last_updated": "2025-09-20T07:50:31.202673+00:00",
+      "state": "secondary_unit_not_requesting_current"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Circuit max current",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.garasje_billader_circuit_max_current",
+      "last_changed": "2025-09-20T07:50:31.199280+00:00",
+      "last_updated": "2025-09-20T07:50:31.199280+00:00",
+      "state": "32"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L1",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.garasje_billader_current_l1",
+      "last_changed": "2025-09-20T13:23:01.806838+00:00",
+      "last_updated": "2025-09-20T13:23:01.806838+00:00",
+      "state": "0.00700000021606684"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L2",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.garasje_billader_current_l2",
+      "last_changed": "2025-09-20T13:22:36.835755+00:00",
+      "last_updated": "2025-09-20T13:22:36.835755+00:00",
+      "state": "0.00800000037997961"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L3",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.garasje_billader_current_l3",
+      "last_changed": "2025-09-20T13:24:37.794485+00:00",
+      "last_updated": "2025-09-20T13:24:37.794485+00:00",
+      "state": "0.00899999961256981"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Billader Lifetime energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.garasje_billader_lifetime_energy",
+      "last_changed": "2025-09-20T07:50:31.197745+00:00",
+      "last_updated": "2025-09-20T07:50:31.197745+00:00",
+      "state": "13877.7232622221"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Billader Power",
+        "state_class": "measurement",
+        "unit_of_measurement": "kW"
+      },
+      "entity_id": "sensor.garasje_billader_power",
+      "last_changed": "2025-09-20T07:50:31.198441+00:00",
+      "last_updated": "2025-09-20T07:50:31.198441+00:00",
+      "state": "0"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Billader Session energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.garasje_billader_session_energy",
+      "last_changed": "2025-09-20T07:50:31.198140+00:00",
+      "last_updated": "2025-09-20T07:50:31.198140+00:00",
+      "state": "0"
+    },
+    {
+      "attributes": {
+        "device_class": "enum",
+        "friendly_name": "Billader Status",
+        "options": [
+          "offline",
+          "disconnected",
+          "awaiting_start",
+          "charging",
+          "completed",
+          "error",
+          "ready_to_charge",
+          "awaiting_authorization",
+          "de_authorizing"
+        ]
+      },
+      "entity_id": "sensor.garasje_billader_status",
+      "last_changed": "2025-09-20T07:50:31.202337+00:00",
+      "last_updated": "2025-09-20T07:50:31.202337+00:00",
+      "state": "disconnected"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Cable locked"
+      },
+      "entity_id": "switch.garasje_billader_cable_locked",
+      "last_changed": "2025-09-20T07:50:31.203592+00:00",
+      "last_updated": "2025-09-20T07:50:31.203592+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Charger enabled"
+      },
+      "entity_id": "switch.garasje_billader_charger_enabled",
+      "last_changed": "2025-09-20T07:50:31.203348+00:00",
+      "last_updated": "2025-09-20T07:50:31.203348+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Idle current"
+      },
+      "entity_id": "switch.garasje_billader_idle_current",
+      "last_changed": "2025-09-20T07:50:31.203826+00:00",
+      "last_updated": "2025-09-20T07:50:31.203826+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Require authorisation"
+      },
+      "entity_id": "switch.garasje_billader_require_authorisation",
+      "last_changed": "2025-09-20T07:50:31.204060+00:00",
+      "last_updated": "2025-09-20T07:50:31.204060+00:00",
+      "state": "off"
+    }
+  ],
+  "entity_count": 24,
+  "name": "easee_ble_charger"
+}

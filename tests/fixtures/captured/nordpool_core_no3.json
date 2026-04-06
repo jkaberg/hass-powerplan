@@ -1,0 +1,91 @@
+{
+  "captured_at": "2026-09-19T13:25:00+00:00",
+  "device": "nord_pool",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Nord Pool NO3 Tomorrow price available"
+      },
+      "entity_id": "binary_sensor.nord_pool_no3_tomorrow_price_available",
+      "last_changed": "2026-09-19T11:50:20.667607+00:00",
+      "last_updated": "2026-09-19T11:50:20.667607+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Nord Pool NO3 Currency"
+      },
+      "entity_id": "sensor.nord_pool_no3_currency",
+      "last_changed": "2026-09-19T07:50:20.817719+00:00",
+      "last_updated": "2026-09-19T07:50:20.817719+00:00",
+      "state": "NOK"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Nord Pool NO3 Current price",
+        "state_class": "measurement",
+        "unit_of_measurement": "NOK/kWh"
+      },
+      "entity_id": "sensor.nord_pool_no3_current_price",
+      "last_changed": "2026-09-19T13:15:00.000997+00:00",
+      "last_updated": "2026-09-19T13:15:00.000997+00:00",
+      "state": "0.45089"
+    },
+    {
+      "attributes": {
+        "end": "2026-09-19T17:00:00+00:00",
+        "friendly_name": "Nord Pool NO3 Highest price",
+        "start": "2026-09-19T16:45:00+00:00",
+        "unit_of_measurement": "NOK/kWh"
+      },
+      "entity_id": "sensor.nord_pool_no3_highest_price",
+      "last_changed": "2026-09-19T07:50:20.819812+00:00",
+      "last_updated": "2026-09-19T07:50:20.819812+00:00",
+      "state": "1.34911"
+    },
+    {
+      "attributes": {
+        "device_class": "timestamp",
+        "friendly_name": "Nord Pool NO3 Last updated"
+      },
+      "entity_id": "sensor.nord_pool_no3_last_updated",
+      "last_changed": "2026-09-19T07:50:20.817434+00:00",
+      "last_updated": "2026-09-19T07:50:20.817434+00:00",
+      "state": "2026-09-18T11:20:11+00:00"
+    },
+    {
+      "attributes": {
+        "end": "2026-09-19T09:45:00+00:00",
+        "friendly_name": "Nord Pool NO3 Lowest price",
+        "start": "2026-09-19T09:30:00+00:00",
+        "unit_of_measurement": "NOK/kWh"
+      },
+      "entity_id": "sensor.nord_pool_no3_lowest_price",
+      "last_changed": "2026-09-19T07:50:20.819448+00:00",
+      "last_updated": "2026-09-19T07:50:20.819448+00:00",
+      "state": "0.11243"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Nord Pool NO3 Next price",
+        "unit_of_measurement": "NOK/kWh"
+      },
+      "entity_id": "sensor.nord_pool_no3_next_price",
+      "last_changed": "2026-09-19T13:15:00.001541+00:00",
+      "last_updated": "2026-09-19T13:15:00.001541+00:00",
+      "state": "0.47997"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Nord Pool NO3 Previous price",
+        "unit_of_measurement": "NOK/kWh"
+      },
+      "entity_id": "sensor.nord_pool_no3_previous_price",
+      "last_changed": "2026-09-19T13:15:00.001287+00:00",
+      "last_updated": "2026-09-19T13:15:00.001287+00:00",
+      "state": "0.4456"
+    }
+  ],
+  "entity_count": 8,
+  "name": "nordpool_core_no3"
+}

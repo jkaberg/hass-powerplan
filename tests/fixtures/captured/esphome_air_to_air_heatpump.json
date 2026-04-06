@@ -1,0 +1,142 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "varmepumpe_1_etasje",
+  "entities": [
+    {
+      "attributes": {
+        "current_temperature": 23,
+        "fan_mode": "Automatic",
+        "fan_modes": [
+          "Automatic",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "friendly_name": "Varmepumpe 1 etasje AC 1 etasje",
+        "hvac_action": "heating",
+        "hvac_modes": [
+          "off",
+          "heat_cool",
+          "cool",
+          "heat",
+          "fan_only",
+          "dry"
+        ],
+        "max_temp": 30,
+        "min_temp": 16,
+        "preset_mode": "Normal",
+        "preset_modes": [
+          "Normal",
+          "Powerful",
+          "Quiet"
+        ],
+        "supported_features": 441,
+        "swing_mode": "off",
+        "swing_modes": [
+          "off",
+          "both",
+          "vertical",
+          "horizontal"
+        ],
+        "target_temp_step": 0.5,
+        "temperature": 21
+      },
+      "entity_id": "climate.varmepumpe_1_etasje_ac_1_etasje",
+      "last_changed": "2025-09-20T07:50:23.046824+00:00",
+      "last_updated": "2025-09-20T10:31:39.885977+00:00",
+      "state": "heat"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje Vertical Swing Mode",
+        "options": [
+          "swing",
+          "auto",
+          "up",
+          "up_center",
+          "center",
+          "down_center",
+          "down"
+        ]
+      },
+      "entity_id": "select.varmepumpe_1_etasje_vertical_swing_mode",
+      "last_changed": "2025-09-20T07:50:23.046985+00:00",
+      "last_updated": "2025-09-20T07:50:23.046985+00:00",
+      "state": "down"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Varmepumpe 1 etasje Akkumulert kwh",
+        "source": "sensor.varmepumpe_1_etasje_power_consumption",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.varmepumpe_1_etasje_energy",
+      "last_changed": "2025-09-20T13:24:43.306355+00:00",
+      "last_updated": "2025-09-20T13:24:43.306355+00:00",
+      "state": "39.30903917460416664027138343"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Varmepumpe 1 etasje Internal Temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "entity_id": "sensor.varmepumpe_1_etasje_internal_temperature",
+      "last_changed": "2025-09-20T13:11:16.047828+00:00",
+      "last_updated": "2025-09-20T13:11:16.047828+00:00",
+      "state": "62.7777786254883"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Varmepumpe 1 etasje Outside Temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "entity_id": "sensor.varmepumpe_1_etasje_outside_temperature",
+      "last_changed": "2025-09-20T13:21:58.464670+00:00",
+      "last_updated": "2025-09-20T13:21:58.464670+00:00",
+      "state": "13.0"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Varmepumpe 1 etasje Power Consumption",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.varmepumpe_1_etasje_power_consumption",
+      "last_changed": "2025-09-20T13:20:43.302524+00:00",
+      "last_updated": "2025-09-20T13:20:43.302524+00:00",
+      "state": "23.0"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Varmepumpe 1 etasje Total Energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.varmepumpe_1_etasje_total_energy",
+      "last_changed": "2025-09-20T13:20:43.302319+00:00",
+      "last_updated": "2025-09-20T13:20:43.302319+00:00",
+      "state": "14.7664108276367"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje NanoeX Switch"
+      },
+      "entity_id": "switch.varmepumpe_1_etasje_nanoex_switch",
+      "last_changed": "2025-09-20T07:50:23.046460+00:00",
+      "last_updated": "2025-09-20T07:50:23.046460+00:00",
+      "state": "on"
+    }
+  ],
+  "entity_count": 8,
+  "name": "esphome_air_to_air_heatpump"
+}

@@ -1,0 +1,204 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "bad_1_etasje_gulvvarme",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Ping"
+      },
+      "entity_id": "button.bad_1_etasje_gulvvarme_ping",
+      "last_changed": "2025-09-20T07:50:21.465834+00:00",
+      "last_updated": "2025-09-20T07:50:21.465834+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Reset accumulated values"
+      },
+      "entity_id": "button.bad_1_etasje_gulvvarme_reset_accumulated_values",
+      "last_changed": "2025-09-20T07:50:21.487180+00:00",
+      "last_updated": "2025-09-20T07:50:21.487180+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "current_temperature": 23.6,
+        "friendly_name": "Gulvvarme bad 1. etasje",
+        "hvac_modes": [
+          "off",
+          "heat",
+          "cool"
+        ],
+        "max_temp": 35,
+        "min_temp": 5,
+        "preset_mode": "none",
+        "preset_modes": [
+          "none",
+          "Energy heat"
+        ],
+        "supported_features": 401,
+        "temperature": 24
+      },
+      "entity_id": "climate.bad_1_etasje_gulvvarme",
+      "last_changed": "2025-09-20T07:50:21.480906+00:00",
+      "last_updated": "2025-09-20T13:04:52.008139+00:00",
+      "state": "heat"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Energy Saving Mode Setpoint",
+        "max": 400,
+        "min": 50,
+        "mode": "auto",
+        "step": 1,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "entity_id": "number.bad_1_etasje_gulvvarme_energy_saving_mode_setpoint_eco",
+      "last_changed": "2025-09-20T07:50:21.472094+00:00",
+      "last_updated": "2025-09-20T07:50:21.472094+00:00",
+      "state": "220.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Floor Minimum Temperature Limit",
+        "max": 400,
+        "min": 50,
+        "mode": "auto",
+        "step": 1,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "entity_id": "number.bad_1_etasje_gulvvarme_floor_minimum_temperature_limit_flo",
+      "last_changed": "2025-09-20T07:50:21.469526+00:00",
+      "last_updated": "2025-09-20T07:50:21.469526+00:00",
+      "state": "210.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Meter Report Interval",
+        "max": 32767,
+        "min": 0,
+        "mode": "auto",
+        "step": 1,
+        "unit_of_measurement": "seconds"
+      },
+      "entity_id": "number.bad_1_etasje_gulvvarme_meter_report_interval",
+      "last_changed": "2025-09-20T07:50:21.476953+00:00",
+      "last_updated": "2025-09-20T07:50:21.476953+00:00",
+      "state": "60.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Temperature Control Hysteresis",
+        "max": 30,
+        "min": 3,
+        "mode": "auto",
+        "step": 1,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "entity_id": "number.bad_1_etasje_gulvvarme_temperature_control_hysteresis_diff_i",
+      "last_changed": "2025-09-20T07:50:21.468936+00:00",
+      "last_updated": "2025-09-20T07:50:21.468936+00:00",
+      "state": "10.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Operation Mode",
+        "options": [
+          "Off",
+          "Heating mode",
+          "Cooling mode (Not implemented)",
+          "Energy saving heating mode"
+        ]
+      },
+      "entity_id": "select.bad_1_etasje_gulvvarme_operation_mode",
+      "last_changed": "2025-09-20T07:50:21.467393+00:00",
+      "last_updated": "2025-09-20T07:50:21.467393+00:00",
+      "state": "Heating mode"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Sensor Mode",
+        "options": [
+          "F-Mode, floor sensor mode",
+          "A2-mode, external room sensor mode",
+          "A2F-mode, external sensor with floor limitation"
+        ]
+      },
+      "entity_id": "select.bad_1_etasje_gulvvarme_sensor_mode",
+      "last_changed": "2025-09-20T07:50:21.467941+00:00",
+      "last_updated": "2025-09-20T07:50:21.467941+00:00",
+      "state": "F-Mode, floor sensor mode"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Gulvvarme bad 1. etasje Air temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "entity_id": "sensor.bad_1_etasje_gulvvarme_air_temperature",
+      "last_changed": "2025-09-20T13:19:25.067618+00:00",
+      "last_updated": "2025-09-20T13:19:25.067618+00:00",
+      "state": "0.0"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Gulvvarme bad 1. etasje Air temperature (3)",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "entity_id": "sensor.bad_1_etasje_gulvvarme_air_temperature_3",
+      "last_changed": "2025-09-20T13:19:25.100423+00:00",
+      "last_updated": "2025-09-20T13:19:25.100423+00:00",
+      "state": "23.6"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Gulvvarme bad 1. etasje Electric Consumption [W]",
+        "meter_type": 1,
+        "meter_type_name": "ELECTRIC",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.bad_1_etasje_gulvvarme_electric_consumption_w",
+      "last_changed": "2025-09-20T13:25:15.092857+00:00",
+      "last_updated": "2025-09-20T13:25:15.092857+00:00",
+      "state": "599.43"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Gulvvarme bad 1. etasje Gulvvarme bad 1 etg akkumulert kwh",
+        "source": "sensor.bad_1_etasje_gulvvarme_electric_consumption_w",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.bad_1_etasje_gulvvarme_energy",
+      "last_changed": "2025-09-20T13:25:15.092953+00:00",
+      "last_updated": "2025-09-20T13:25:15.092953+00:00",
+      "state": "694.2575243757651986867034176"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje Node status"
+      },
+      "entity_id": "sensor.bad_1_etasje_gulvvarme_node_status",
+      "last_changed": "2025-09-20T07:50:21.465503+00:00",
+      "last_updated": "2025-09-20T07:50:21.465503+00:00",
+      "state": "alive"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme bad 1. etasje"
+      },
+      "entity_id": "switch.bad_1_etasje_gulvvarme",
+      "last_changed": "2025-09-20T13:20:24.068098+00:00",
+      "last_updated": "2025-09-20T13:20:24.068098+00:00",
+      "state": "on"
+    }
+  ],
+  "entity_count": 15,
+  "name": "heatit_z_trm2fx_floor"
+}

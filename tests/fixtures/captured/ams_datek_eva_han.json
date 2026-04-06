@@ -1,0 +1,144 @@
+{
+  "captured_at": "2025-09-20T13:25:00+00:00",
+  "device": "strommaler",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Str\u00f8mm\u00e5ler Akkumulert Str\u00f8mforbruk per time",
+        "options": [
+          "peak",
+          "offpeak"
+        ]
+      },
+      "entity_id": "select.nettforbruk",
+      "last_changed": "2025-09-20T07:50:19.398341+00:00",
+      "last_updated": "2025-09-20T07:50:19.398341+00:00",
+      "state": "peak"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Str\u00f8mm\u00e5ler Akkumulert Str\u00f8mforbruk per innev\u00e6rende time",
+        "last_period": "1.1577091783966666671591",
+        "last_reset": "2025-09-20T13:00:00.001962+00:00",
+        "last_valid_state": "114305.9661651819152751524789",
+        "next_reset": "2025-09-20T16:00:00+02:00",
+        "state_class": "total_increasing",
+        "status": "collecting",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.akkumulert_stromforbruk_per_innevaerende_time",
+      "last_changed": "2025-09-20T13:25:11.382516+00:00",
+      "last_updated": "2025-09-20T13:25:11.382516+00:00",
+      "state": "0.5044303971813888879462"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Str\u00f8m: Akkumulert forbruk innev\u00e6rende m\u00e5ned",
+        "last_period": "1452.1112481286538886827443",
+        "last_reset": "2026-08-31T22:00:00.005037+00:00",
+        "last_valid_state": "114305.9661651819152751524789",
+        "next_reset": "2026-10-01T00:00:00+02:00",
+        "state_class": "total_increasing",
+        "status": "collecting",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.akkumulert_stromforbruk_per_innvaerende_maned",
+      "last_changed": "2025-09-20T13:25:11.382578+00:00",
+      "last_updated": "2025-09-20T13:25:11.382578+00:00",
+      "state": "949.3479390843602777316979"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Nyg\u00e5rdsvegen 6 forbruk",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.dataskap_strommaler_energy",
+      "last_changed": "2025-09-20T13:00:11.450064+00:00",
+      "last_updated": "2025-09-20T13:00:11.450064+00:00",
+      "state": "174500.96"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Str\u00f8mm\u00e5ler Effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.dataskap_strommaler_power",
+      "last_changed": "2025-09-20T13:25:11.381668+00:00",
+      "last_updated": "2025-09-20T13:25:11.381668+00:00",
+      "state": "1290"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Str\u00f8mm\u00e5ler Energi",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.dataskap_strommaler_produced_energy",
+      "last_changed": "2025-09-20T07:50:35.337309+00:00",
+      "last_updated": "2025-09-20T07:50:35.337309+00:00",
+      "state": "0"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Str\u00f8mm\u00e5ler Temperatur",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "entity_id": "sensor.dataskap_strommaler_temperature",
+      "last_changed": "2025-09-20T12:09:34.960091+00:00",
+      "last_updated": "2025-09-20T12:09:34.960091+00:00",
+      "state": "28.49"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Akkumulert Str\u00f8mforbruk Totalt",
+        "source": "sensor.dataskap_strommaler_power",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.energy_per_hour2",
+      "last_changed": "2025-09-20T13:25:11.382125+00:00",
+      "last_updated": "2025-09-20T13:25:11.382125+00:00",
+      "state": "114305.9661651819152751524789"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Str\u00f8mm\u00e5ler Kraft",
+        "restored": true,
+        "state_class": "measurement",
+        "supported_features": 0,
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.strommaler_power_phase_b",
+      "last_changed": "2025-09-20T07:50:31.208492+00:00",
+      "last_updated": "2025-09-20T07:50:31.208492+00:00",
+      "state": "unavailable"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Str\u00f8mm\u00e5ler Kraft",
+        "restored": true,
+        "state_class": "measurement",
+        "supported_features": 0,
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.strommaler_power_phase_c",
+      "last_changed": "2025-09-20T07:50:31.208503+00:00",
+      "last_updated": "2025-09-20T07:50:31.208503+00:00",
+      "state": "unavailable"
+    }
+  ],
+  "entity_count": 10,
+  "name": "ams_datek_eva_han"
+}
