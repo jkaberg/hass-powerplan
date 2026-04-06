@@ -45,7 +45,7 @@
 tests/
 ├── conftest.py                    fake hass (pytest-homeassistant-custom-component), time control, store in tmp
 ├── builders/                      curves.py histories.py houses.py devices.py events.py
-├── sim/                           slab.py room.py tank.py ev.py heatpump.py cycle.py charger_ble.py meter.py weather.py prices.py uncontrolled.py household.py
+├── sim/                           base.py (the shapes below) slab.py room.py tank.py ev.py heatpump.py cycle.py charger_ble.py meter.py weather.py prices.py uncontrolled.py household.py
 ├── core/
 │   ├── metering/ tariffs/ pricing/ loads/ strategies/ allocation/ forecasts/ engine/     one file per D-LLD §9 item group
 │   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py
@@ -80,7 +80,24 @@ class BacktestMetrics:   windows: int; over_target: int; max_window_kwh: float; 
                          comfort_violation_min: float; kwh_shifted: float; cost_energy: Money; cost_counterfactual: Money   # produced by D11's Accounting over the replay
                          writes: Mapping[str, int]; sessions_dropped: int; reconstruction: str
 
+# tests/sim/base.py owns these four: they are the simulators' own vocabulary and
+# import nothing from custom_components, so a simulator does not move when the
+# core's types move. WP0.9's runner adapts between them and core.model (D-0041).
+@dataclass(frozen=True)
+class Env:               now: datetime; outdoor_c: float; solar_w_per_m2: float = 0.0
+                         ground_c: float = 8.0; cold_water_c: float = 8.0; occupants: int = 0
+@dataclass(frozen=True)
+class Command:           on: bool | None; limit_a: float | None; setpoint_c: float | None
+                         mode: str | None; start: bool = False       # D4's four control kinds
+@dataclass(frozen=True)
+class Reads:             power_w: float; amps: tuple[float, float, float]; available: bool
+                         status: str | None; values: Mapping[str, float]   # named keys in base.py
+
 class SimLoad(Protocol): def step(self, dt_s: float, command: Any, env: Env) -> Reads     # physics forward
+class SimSource[T](Protocol): seed: int; def at(self, t: datetime) -> T
+                         # a generator (weather, prices, uncontrolled, household): a pure function of
+                         # t given the seed, so the planner may look ahead and two runs in any order
+                         # agree byte for byte. Its natural return is its own type, not Reads.
 
 @dataclass(frozen=True)
 class BenchmarkHouse:    name: str; site: SiteSpec; loads: tuple[LoadSpec, ...]; household: HouseholdSpec; uncontrolled: UncontrolledSpec

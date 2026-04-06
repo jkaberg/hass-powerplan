@@ -151,3 +151,53 @@ D1 §5.4's `tou_schedule` is built on D2's grammar, which lands later. The copy 
 
 `Synthesised` uses the duration-weighted mean of `total − grid_energy` over recent known slots (`energy_default` when nothing is known) and adds the grid charge itself. Raw spot alone prices the tail ex levy and VAT, 10–15 øre/kWh under the known head, and a cheap forecast pulls every flexible load into it (D1 §5.5).
 **Rejected:** running the modifier chain over the synthesised slots - applies `tou_schedule` and VAT twice.
+
+### D-0040 · Simulators before the engine that uses them
+
+The device simulators in `tests/sim/` come before the scenario runner. Every load, strategy and allocator change is tested against device behaviour, and without the simulators each would write a mock only to delete it later (PLAN §9, D9 §3, §4).
+**Rejected:** engine first so the simulators copy D4's command shapes - the stronger argument. Contained by giving `tests/sim` its own four frozen shapes (D-0041), so one adapter absorbs D4 when it lands.
+
+### D-0041 · `tests/sim` owns `Env`, `Command` and `Reads` and never imports `custom_components`
+
+`tests/sim/base.py` defines `Env`, `Command`, `Reads`, `SimLoad` and `SimSource[T]`, the runner adapts to `core.model` and D4. A simulator also needs things no core type has (ground and mains water temperature) and shouldn't need a config subentry to exist (D9 §3, §4).
+**Rejected:** use the core's types directly - makes the simulators depend on the layer they test.
+
+### D-0042 · A generator is a pure function of `t`
+
+`weather.py`, `prices.py`, `uncontrolled.py` and `household.py` expose `at(t)` (and `slots(day)`, `events(day)`, `day(d)`), randomness from `derive_rng(seed, *key)` keyed on the day or slot. The planner looks ahead, and a stepped generator with a running RNG answers differently depending on how many look-aheads came first, which breaks D9 §9 8's byte-identical runs.
+**Rejected:** one `step()` protocol for everything - a price curve isn't a reading.
+
+### D-0043 · RNG keys are hashed with blake2b, not `hash()`
+
+`hash()` is salted per process for `str`, and every generator key has one. `tests/sim/test_base.py` pins one derived value so a change is visible.
+**Rejected:** `PYTHONHASHSEED=0` in CI - determinism would be a property of the environment, not the code.
+
+### D-0044 · The heat pump's COP is a mechanism anchored on D4's table
+
+`cop_at(outdoor_c) = η(T_out) × Carnot(T_out, 35 °C)`, η linear and fitted through D4 §6.4's +7 °C (3.8) and −15 °C (1.8), capped at 5.5 (Toshiba's published SCOP). Interpolating D4's table would make the simulator and the planner agree by construction. The anchors are effektstyring's measured curve, a weaker source than D9 §2 asks for, marked in the file.
+**Rejected:** interpolate D4's table - exactly what the product assumes, which is the reason not to.
+
+### D-0045 · Defrost has a dip and a spike
+
+~20 s of valve swing at standby power, then the compressor at rated power while outlet air runs 5 K under the room, then 2 min recovery. D4 §5.14 detects "power up while outlet falls" and a naive watcher sees the dip first. All timings `assumed`.
+**Rejected:** one flat "rated power, no heat" phase - gives neither signature.
+
+### D-0046 · The tank is two fixed layers that merge on buoyancy
+
+Hot upper half, cold lower half, 15 W/K between them, element and thermostat sensor in the bottom, full mixing whenever the bottom would exceed the top. Fixed volumes keep the energy balance exact. `TOP_FRACTION` and `MIX_UA_W_PER_K` are `assumed` until a two-sensor capture from the reference house.
+**Rejected:** a moving thermocline - closer to reality, however conservation becomes an approximation.
+
+### D-0047 · A dropped EV session reports `awaiting_start`, never `completed`
+
+D4 §5.11 latches "session done" on `completed`, so a charger that said `completed` after a drop the controller caused would make it park the car for the night on its own mistake.
+**Rejected:** `completed` since the session did end - it mixes up "the car is full" with "we broke the pilot".
+
+### D-0048 · `Reads.power_w` stays truthful while the link is down
+
+`BleChargerSim` returns `available=False` and `status="offline"` during a link drop but keeps the real `power_w` and `amps`. The provider has to see it unavailable (INV-15), however the car still draws 16 A and the meter must see that.
+**Rejected:** `power_w = 0.0` while offline - hides a 3.7 kW load from the meter, blindness injected in the wrong place.
+
+### D-0049 · Every numeric constant in `tests/sim` has a `SOURCES` entry
+
+`SOURCES` maps each UPPER_CASE number to a URL, a document section or `assumed: <what would replace it>`, and `tests/sim/test_sources.py` fails on a missing, stale or incomplete entry. 123 of 223 are sourced (D9 §2, PLAN §6 R2).
+**Rejected:** a `Param(value, unit, source)` wrapper - every formula would read `RHO.value * CP.value`.
