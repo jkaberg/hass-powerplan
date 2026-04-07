@@ -67,6 +67,7 @@ HLD §9 phase 1. **Gate (simulated):** the `e2e` day (D9 §5.10) runs the site e
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **1.1 Runtime and storage** | HA wiring, `runtime_data`, the push coordinator | D7 §3, §2, §5.3, §5.5, §5.6, §5.8 | D7 §9 4, 6, 7, 8, 10, 11, 14; `restart_mid_window`, `engine_exception_x3` | 0.8 |
+| **1.1a Storage** | `storage.py`: sections, migrations, the save throttle | D7 §2, §7, §8 | D7 §9 10, 11 | 0.1 |
 | **1.2 Providers, read side** | the meter, Nord Pool and entity price providers | D3 §3; D1 §3 | D3 §9 (provider); D1 §9 1, 3 | 1.1 |
 | **1.3 Site config flow** | `config_flow.py`, `flow/` | D8 §5.1 | D8 §9 1 | 1.2 |
 | **1.4 Site entities, events, repairs, diagnostics, translations** | the site device in HA | D8 §3 | D8 §9 4-13 | 1.3 |
@@ -267,6 +268,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.10 | D3 `LoadMeter` and D11 accounting core | todo |
 | 0.11 | Reference benchmark | todo |
 | 1.1 | Runtime and storage | todo |
+| 1.1a | Storage | done |
 | 1.2 | Providers, read side | todo |
 | 1.3 | Site config flow | todo |
 | 1.4 | Site entities, events, repairs, diagnostics, translations | todo |

@@ -30,6 +30,13 @@
 
 **Store schema and migrations.** One `Store(hass, version=1, key=f"powerplan.{entry_id}")` per site. The JSON has a top-level `schema` and one section per domain: `meter` (D3, incl. per-load slot integrals), `tariff` (D2), `prices` (D1), `plans` (D5), `loads` (D4, keyed by subentry id), `alloc` (D6), `forecasts` (D10), `accounting` (D11), `events` (D7 dedupe state), `runtime` (last tick, failure counters). Each section carries its own `schema` integer and migrator, the top-level migrator only routes. Saves are coalesced by a **throttle**, not HA's `async_delay_save` - that cancels and reschedules on every call, so a 1 s meter cadence would starve it and a 2 s one would write 40 000 times a day. A dirty section is saved at most and atleast once per `save_period_s` (5 s) while it stays dirty, an anchor change and every lifecycle edge save at once, and `homeassistant_stop` forces a flush (INV-14, PLAN §7 dec. 17). Unknown sections are kept, so a downgrade keeps data.
 
+Four things the code settles:
+
+1. **The store reads its own file.** `load()` reads `.storage/powerplan.<entry_id>` with `json_util.load_json` in an executor job and validates the envelope itself, `Store` stays the writer. `Store.async_load` swallows a `JSONDecodeError` - renames the file, logs at ERROR, raises a repair in the `homeassistant` domain and returns `None` - which looks exactly like a first start, and isn't the `.corrupt-<ts>` + WARNING + `store_reset` §8 owes the user (D-0091). A file that parses but has no `{"version", "data"}` envelope is corruption too. A single section that isn't an object starts empty, one broken section costs that section and not the file. `SiteStore.corrupt_path` carries the quarantined name for the `store_reset` repair.
+2. **The store stamps the schema.** `SECTION_SCHEMA` holds each section's current integer and `_document()` writes it on every known section, so a domain can't put a section on disk without the integer the router reads. A section without `schema` is schema 0. The document's own `schema` is written fresh and only read to log a writer newer than this one.
+3. **A migrator is registered, not dispatched.** `@section_migrator(Section.X)` in `storage.py` registers the one function for a section, `migrate_document` routes and nothing else. The `meter` migrator folds the `cadence_samples` and `closed_unacked` siblings into `window` (D3 §7) and drops siblings it doesn't know. A section without a registered migrator is kept as it stands (D-0092).
+4. **The throttle is one period.** A `mark_dirty` on a clean timer arms one `async_call_later(save_period_s)`, the period writes the whole document, clears the dirty set and lapses, and the next mark arms the next one. Two writes are never closer than `save_period_s` and a mark is never written later than that, with one timer and nothing armed while the store is clean (D-0093). A load that migrated anything writes at once, as a lifecycle edge.
+
 **Debouncing.** Grid power changes are the fast trigger: leading-edge tick, then atmost one tick per `tick_min_interval_s` (10 s), with a trailing tick if changes came in between. Register reports trigger at once (they close the window). A heartbeat every 30 s regardless. Knob changes (mode, target, force) trigger a tick and a replan at once. Price and forecast updates trigger a planning cycle, never a tick on their own. Everything touching `EngineState` is serialised through one `asyncio.Lock`. A tick that finds the lock held sets `tick_pending` and returns, and the holder runs **one** trailing tick on release - at most one pending, never a queue of stale ticks. Inputs are read from `hass.states` at tick time and not carried in the event, so a register report that arrived while the lock was held is seen by the trailing tick: the window closes one tick late, never not at all (INV-13, INV-43). The planning cycle does its I/O - price fetches, D10 refresh, recorder executor jobs - **before** taking the lock and only holds it for the pure `engine.plan()` and the adopt step (≤ 500 ms), so a tick is never blocked behind disk or network.
 
 **Subentry changes without a reload.** `add`: build the `Load` from the subentry, run provisions, include it on the next tick, and add its entities through the platforms' `async_add_entities` callbacks. `remove`: `release()` the load, drop it from the engine, remove its entities and store rows. `update`: swap the load in place. A change to the site's own options is a full entry reload (`async_reload`).
@@ -238,6 +245,8 @@ Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `pl
 
 §2 covers the schema. Save policy (all through the 5 s throttle unless marked *at once*): `meter` while dirty, *at once* on an anchor change (carries the per-load slot integrals); `tariff` per window; `prices` per fetch; `plans` per adoption; `loads` per latch/gate change; `alloc` per change; `forecasts` per window/fit; `accounting` per closed slot; `runtime` per tick (failure counters, last edges). Lifecycle edges *at once*. Flush on stop. Store size stays under ~1 MB for a 20-load site with 15-min windows (the current period's windows dominate).
 
+The file is one file: a save writes the whole document, and the dirty set only decides *whether* to write, never *what*. The API is `get(section)` / `set(section, data, at_once=False)` over an authoritative in-memory copy, plus `mark_dirty(section, at_once=False)` for a section whose owner changed its own state. `flush()` cancels the pending period and writes what's dirty. `close()` also drops the `homeassistant_stop` listener, which `SiteStore` registers itself in `load()` so durability doesn't depend on the lifecycle remembering it. `_dirty` is only cleared after `Store.async_save` returns, so a write that raises leaves the sections dirty and the next mark re-arms the period. HA's `Store` logs and swallows disk write failures itself, which is §8's "in-memory state continues".
+
 ---
 
 ## 8. Failure modes and observability
@@ -246,15 +255,15 @@ Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `pl
 |---|---|---|
 | Tick exception in a load | load unhealthy, grant held, tick completes (INV-45) | health, repair on repeat |
 | Tick exception in the engine | previous Snapshot republished; 3 in a row → safe mode | repair `engine_failing` |
-| Tick over budget | WARNING with stage timings; nothing skipped | diagnostic sensor `tick_ms` |
-| Store write fails (disk) | in-memory state continues; repair | repair |
-| Store corrupt on load | rename to `.corrupt-<ts>`, start empty, WARNING | repair `store_reset` |
+| Tick over budget | WARNING with stage timings, nothing skipped | diagnostic sensor `tick_ms` |
+| Store write fails (disk) | in-memory state continues, repair | repair |
+| Store corrupt on load, or missing its envelope | rename to `.corrupt-<utcnow().isoformat()>`, start empty, WARNING | repair `store_reset` from `SiteStore.corrupt_path` |
 | HA restarted mid-window | state restored, integral intact (INV-14), first tick within seconds | INFO |
-| Entity used by a trigger removed | subscription dropped; load unhealthy (D4) | repair |
-| Planning cycle exception | previous plans kept; counter; repair on 3 | attribute |
+| Entity used by a trigger removed | subscription dropped, load unhealthy (D4) | repair |
+| Planning cycle exception | previous plans kept, counter, repair on 3 | attribute |
 | Clock jump | window degraded for the gap | WARNING |
 | Two sites on one meter | refused at setup | flow error |
-| Safe mode | all released, observe, publish continues | repair + notification |
+| Safe mode | all released, observe, publishing continues | repair + notification |
 
 Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, breaches and safe mode at WARNING, exceptions at ERROR with the input hash (the assembled `Inputs` can be dumped for a bug report via `dump_state`).
 

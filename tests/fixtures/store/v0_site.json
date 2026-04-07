@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "powerplan.01JSITE0STORE0TEST",
+  "data": {
+    "meter": {
+      "window": {
+        "window_min": 60,
+        "window_start_utc": "2026-01-15T09:00:00+00:00",
+        "anchor_kwh": 42003.4,
+        "anchor_kind": "register_latched",
+        "e_used_kwh": 6.214,
+        "e_integral_kwh": 6.198,
+        "last_sample_at": "2026-01-15T09:41:30+00:00",
+        "last_grid_w": 9120.0,
+        "last_register_kwh": 42003.4,
+        "last_register_at": "2026-01-15T09:00:12+00:00",
+        "register_cadence_s": 3600.0,
+        "ema_w": 8980.0,
+        "degraded_gap_s": 0.0,
+        "pending_window_min": null,
+        "closing": null
+      },
+      "loads": {
+        "01JLOAD0EV": {"slot_kwh": 1.24, "lifetime_kwh": 812.4}
+      },
+      "cadence_samples": [3600.0, 3598.0, 3601.0],
+      "closed_unacked": [
+        {
+          "start_utc": "2026-01-15T08:00:00+00:00",
+          "window_min": 60,
+          "kwh": 7.41,
+          "avg_kw": 7.41,
+          "anchor_kind": "register_latched",
+          "degraded": false,
+          "confidence": "exact"
+        }
+      ]
+    },
+    "tariff": {"period": "2026-01", "peaks": [7.41, 6.98, 6.55]},
+    "runtime": {"last_tick_utc": "2026-01-15T09:41:30+00:00", "tick_failures": 0}
+  }
+}

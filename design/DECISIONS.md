@@ -201,3 +201,28 @@ D4 §5.11 latches "session done" on `completed`, so a charger that said `complet
 
 `SOURCES` maps each UPPER_CASE number to a URL, a document section or `assumed: <what would replace it>`, and `tests/sim/test_sources.py` fails on a missing, stale or incomplete entry. 123 of 223 are sourced (D9 §2, PLAN §6 R2).
 **Rejected:** a `Param(value, unit, source)` wrapper - every formula would read `RHO.value * CP.value`.
+
+### D-0090 · `storage.py` ships before the runtime
+
+The store's sections, migrations and save throttle land on their own, with the runtime, triggers and lifecycle after. The store needs no engine, so D7 §9 10 and 11 test it against `hass` alone, and INV-14 is easy to get quietly wrong.
+**Rejected:** building it with the runtime - one big diff where the throttle is a detail nobody reviews.
+
+### D-0091 · `SiteStore` reads its own file; `Store` only writes it
+
+`load()` reads `.storage/powerplan.<entry_id>` itself and validates the envelope. Unreadable JSON, or JSON with no envelope, is renamed to `.corrupt-<ts>`, the site starts empty with a WARNING, and the repair D7 §8 promises can be raised. `Store.async_load` would log at ERROR, raise a critical issue under `homeassistant` that names no integration, and return `None`, which looks like a first start. Affects D7 §2, §8.
+**Rejected:** accepting HA's handling - powerplan would never learn its window was reset.
+
+### D-0092 · Section migrators are registered in `storage.py`, and the store stamps `schema`
+
+`@section_migrator(Section.X)` registers one function per section, and the store stamps each section's current schema integer as it writes, so no section reaches disk without it. The domains owning the sections are pure `core/` and can't import a store (INV-2). Affects D7 §2.
+**Rejected:** one document-level migration per version - every domain's shape change would edit one shared function.
+
+### D-0093 · The throttle is one period, armed by the first mark
+
+A `mark_dirty` on a clean store arms one `async_call_later(save_period_s)`; it writes everything dirty and lapses, and the next mark arms the next period. So writes are never closer than the period and nothing waits longer than it (INV-14). `at_once` writes immediately; `flush()` cancels and writes. Affects D7 §2, §7.
+**Rejected:** a cadence that keeps running while dirty - same writes in every test, plus a timer armed after the store goes clean.
+
+### D-0094 · HA-side tests that aren't flows live in `tests/runtime/`
+
+The store, and later the runtime's triggers and lifecycle, are neither flows nor pure core. Putting them in `tests/flows/` would make the directory's name a lie. Affects D9 §3.
+**Rejected:** `tests/flows/` - no new directory, but it'd come to mean "anything that starts `hass`".
