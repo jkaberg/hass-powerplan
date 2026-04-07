@@ -289,7 +289,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 3.5 | Target profiles and presence | todo |
 | 3.6 | `appliance_cycle` and `run_once` | todo |
 | 4.1 | Remaining strategies and combinators | todo |
-| 4.2 | Forecaster and remaining modifiers | todo |
+| 4.2 | Forecaster and remaining modifiers | done |
 | 4.3 | Tariffs and benchmark houses | todo |
 | 4.4 | Entity format table | todo |
 | 5.1 | D10 core and providers | todo |

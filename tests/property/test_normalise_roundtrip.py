@@ -198,10 +198,11 @@ def test_the_local_day_may_be_23_24_or_25_hours_long() -> None:
         check_day_length(26.0, source="test")
 
 
-def test_a_currency_mismatch_is_refused_without_a_rate_and_converted_with_one() -> None:
+def test_13_a_currency_mismatch_is_refused_without_a_rate_and_converted_with_one() -> None:
     """Silently converting prices is worse than refusing them (D1 §5.2).
 
-    Item 13's full form - the provider path and the repair issue - is WP4.2.
+    What is left of item 13 is the provider path and the repair issue the flow
+    raises from this exception (D1 §8) - `providers/prices/`, WP1.2.
     """
     with pytest.raises(CurrencyMismatchError):
         to_major_per_kwh(
@@ -221,3 +222,55 @@ def test_a_currency_mismatch_is_refused_without_a_rate_and_converted_with_one() 
         fx_rate=Decimal("11.5"),
     )
     assert converted == Decimal("1.15")
+
+
+@pytest.mark.inv("INV-51")
+def test_13_a_whole_foreign_day_converts_at_the_fixed_rate_or_not_at_all() -> None:
+    """A EUR/MWh day into a NOK site: refused without a rate, converted with one.
+
+    EPEX publishes in EUR/MWh and goes negative regularly (HLD §8); a Norwegian
+    site reading a German sensor is the case `fx_rate` exists for. The sign
+    survives the conversion - nothing clamps it (INV-51).
+    """
+    tz = ZoneInfo("Europe/Berlin")
+    start = datetime(2026, 12, 2, 23, tzinfo=UTC)
+    published = [Decimal("83.55"), Decimal("-12.40"), Decimal("0")]
+    rate = Decimal("11.5")
+
+    for value in published:
+        with pytest.raises(CurrencyMismatchError):
+            to_major_per_kwh(
+                value,
+                EnergyUnit.MWH,
+                Magnitude.MAJOR,
+                source_currency="EUR",
+                site_currency="NOK",
+            )
+
+    converted = [
+        to_major_per_kwh(
+            value,
+            EnergyUnit.MWH,
+            Magnitude.MAJOR,
+            source_currency="EUR",
+            site_currency="NOK",
+            fx_rate=rate,
+        )
+        for value in published
+    ]
+    slots = raw_slots(
+        [(start + index * timedelta(hours=1), value) for index, value in enumerate(converted)],
+        currency="NOK",
+        source="entity",
+        fetched_at=start,
+        source_tz=tz,
+        resolution=timedelta(hours=1),
+    )
+
+    assert [slot.value for slot in slots] == [
+        Decimal("0.960825"),
+        Decimal("-0.14260"),
+        Decimal("0"),
+    ]
+    assert {slot.currency for slot in slots} == {"NOK"}
+    assert slots[1].value < 0

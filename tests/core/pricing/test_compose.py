@@ -24,6 +24,9 @@ from custom_components.powerplan.core.pricing import (
 from custom_components.powerplan.core.pricing.compose import DEFAULT_MAX_AGE
 from custom_components.powerplan.core.pricing.forecasters.carry_known import CarryKnown
 from custom_components.powerplan.core.pricing.modifiers.base import SPOT, PriceModifier
+from custom_components.powerplan.core.pricing.modifiers.cumulative_tier import Tier
+from custom_components.powerplan.core.pricing.modifiers.day_type import DayTypeRate
+from custom_components.powerplan.core.pricing.modifiers.export_price import ExportMode
 from custom_components.powerplan.core.pricing.modifiers.levy import Levy
 from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
     TimeFilter,
@@ -244,7 +247,13 @@ def test_11_the_floor_holds_on_a_flat_day() -> None:
 
 @pytest.mark.inv("INV-51")
 def test_12_negative_prices_pass_through_every_modifier_unclamped() -> None:
-    """No registered modifier clamps a negative spot (INV-51)."""
+    """No registered modifier clamps a negative spot (INV-51).
+
+    Two of the nine write the energy component themselves - `fixed_price` above
+    its cap and `export_price` - so for those the assertion is that what they
+    write stays below zero rather than that spot is untouched. Every other
+    modifier must leave spot exactly as it found it.
+    """
     options: dict[str, dict[str, object]] = {
         "vat": {"rate": VAT_RATE},
         "levy": {"amount": ELAVGIFT},
@@ -252,12 +261,16 @@ def test_12_negative_prices_pass_through_every_modifier_unclamped() -> None:
         "fixed_price": {"price": Decimal("0.40"), "cap_kwh_per_month": 5000.0},
         "subsidy_threshold": {"threshold": Decimal("0.9125")},
         "tou_schedule": {"fallback": TENSIO_NIGHT},
+        "day_type": {"rates": {"cpp": DayTypeRate(multiplier=Decimal("3"))}},
+        "cumulative_tier": {"tiers": (Tier(upto_kwh=None, price=Decimal("0.08")),)},
+        "export_price": {"mode": ExportMode.SPOT_MINUS, "amount": Decimal("0.05")},
     }
     assert set(options) == set(modifiers.keys()), "a new modifier must be listed here"
 
     raw = volatile_no3_day()
-    # Month-to-date past the Norgespris cap, so `fixed_price` leaves spot alone.
-    ctx = context(raw[0].start, mtd_kwh=6000.0)
+    # Month-to-date past the Norgespris cap, so `fixed_price` leaves spot alone;
+    # and a `cpp` day type, so `day_type` has a multiplier to apply to it.
+    ctx = context(raw[0].start, mtd_kwh=6000.0, day_type="cpp")
     negative = Slot(
         start=raw[52].start,
         end=raw[52].end,
@@ -269,9 +282,13 @@ def test_12_negative_prices_pass_through_every_modifier_unclamped() -> None:
     for key, kwargs in options.items():
         modifier = modifiers.build(key, kwargs)
         after = modifier.apply(negative, ctx)
-        assert after.components[SPOT] == Decimal("-0.30"), key
+        if modifier.component == SPOT:
+            assert after.components[SPOT] < 0, key
+        else:
+            assert after.components[SPOT] == Decimal("-0.30"), key
         assert modifier.component in after.components, key
         assert after.total == sum(after.components.values()), key
+        assert after.total < 0, key
 
 
 @pytest.mark.inv("INV-51")

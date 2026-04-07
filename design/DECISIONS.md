@@ -202,6 +202,26 @@ D4 §5.11 latches "session done" on `completed`, so a charger that said `complet
 `SOURCES` maps each UPPER_CASE number to a URL, a document section or `assumed: <what would replace it>`, and `tests/sim/test_sources.py` fails on a missing, stale or incomplete entry. 123 of 223 are sourced (D9 §2, PLAN §6 R2).
 **Rejected:** a `Param(value, unit, source)` wrapper - every formula would read `RHO.value * CP.value`.
 
+### D-0070 · The holiday calendar lives in `core/pricing/holidays.py`
+
+`CountryCalendar` wraps the `holidays` package inside `core/`, with the site's country and subdivision, the household's extra and removed days, a per-year cache and `NO_HOLIDAYS` as D1 §8's degradation. INV-2 forbids `homeassistant` under `core/`, not a pure third-party library, and its consumers (`TimeFilter.matches`, `day_type`) are deep in the composition. `holidays>=0.84` goes into `pyproject.toml` as well. Affects D1 §2, §3.
+**Rejected:** a `providers/holidays.py` so `core/` imports only the standard library - an HA-facing adapter with no HA in it, injected through two layers.
+
+### D-0071 · `same_weekday_profile` shifts the level, it doesn't scale it
+
+The profile takes the median slot of each weekday and time-of-day bucket and adds one amount to every slot's energy component so the day's mean matches the last known day. A shift hits the mean exactly in `Decimal`, can't flip a negative hour's sign and keeps the day's absolute spread, which INV-8's hysteresis is measured in. Affects D1 §5.5.
+**Rejected:** multiplying by `target / profile_mean` - keeps price ratios, but inverts a day with a negative mean and stretches spikes with the baseline.
+
+### D-0072 · `cumulative_tier` adds a `tier` component, and may read the year
+
+The selected step's price is an additive `tier` component, and `basis` picks month-to-date (default) or year-to-date. A modifier writes one component (INV-4), and Denmark's reduced electricity tax has a yearly threshold, which is why `PriceContext` carries `ytd_kwh_at` at all. The boundary belongs to the step above. Affects D1 §5.4.
+**Rejected:** month-to-date only - leaves `ytd_kwh_at` unused and the LLD's own Danish example unexpressible.
+
+### D-0073 · `day_type`'s fallback names a configured type
+
+`DayType.fallback` is the key of one of the site's own day types (Tempo's `tempo_blue`), not a price. An unannounced day, or one with no configured rate, takes that type's rate. One rate per colour means the blue rate can't disagree with its own fallback. Affects D1 §5.4.
+**Rejected:** a separate `fallback` rate - a second sub-form for a number already on screen.
+
 ### D-0090 · `storage.py` ships before the runtime
 
 The store's sections, migrations and save throttle land on their own, with the runtime, triggers and lifecycle after. The store needs no engine, so D7 §9 10 and 11 test it against `hass` alone, and INV-14 is easy to get quietly wrong.

@@ -8,7 +8,10 @@ readme = "README.md"
 requires-python = ">=3.14.2"
 license = { text = "MIT" }
 authors = [{ name = "Joel Kåberg", email = "joel@kaberg.me" }]
-dependencies = []
+# The integration's own requirement, declared in `manifest.json` as
+# `holidays>=0.84` (DECISIONS D-0003) and used by `core/pricing/holidays.py`
+# for the site's holiday calendar (D1 §2, DECISIONS D-0070).
+dependencies = ["holidays>=0.84"]
 
 [project.urls]
 Homepage = "https://github.com/jkaberg/hass-powerplan"

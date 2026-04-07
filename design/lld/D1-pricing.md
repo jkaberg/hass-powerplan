@@ -55,7 +55,7 @@ Adapters return `RawSlot`s in the source's own unit and currency, normalisation 
 
 **Event validity and expiry.** `Event(id, source, kind, start, end, issued_at, valid_until, payload)`, stored by `(source, id)`. A later `issued_at` for the same id replaces, `valid_until` defaults to `end`, and events with `end < now − 1 h` are pruned. Sources can emit `revoked=True`. Consumers (the `day_type` modifier, D6 for `load_limit`) ask `events.active(kind, t)`.
 
-**Holiday calendar source.** The `holidays` package (already a HA dependency through Workday) with the site's country and subdivision; plus a user list of extra dates and a list of removed dates. Exposed as `HolidayCalendar.is_holiday(date) -> bool` and `name(date)`. Cached per year.
+**Holiday calendar.** The `holidays` package (already in HA through Workday) with the site's country and subdivision, plus a user list of extra and removed dates. Exposed as `HolidayCalendar.is_holiday(date) -> bool` and `name(date)`, cached per year. It lives in `core/pricing/holidays.py`: `CountryCalendar` plus `calendar_for()`, which refuses a country the package doesn't know (`UnknownCalendarError`), and `NO_HOLIDAYS`, the all-false calendar §8's "holiday data missing" row falls back to. It's the one third-party import under `core/`, and it imports no `homeassistant` (D-0070).
 
 ---
 
@@ -67,9 +67,11 @@ custom_components/powerplan/core/pricing/
 ├── model.py         Slot, PriceCurve, Confidence, Carrier, Direction, RawSlot, Field/FieldKind/Schema   (Money, Slot and PriceCurve themselves live in core/model.py, HLD §5 - D2 and D11 use them without importing D1 - and are re-exported here)
 ├── context.py       PriceContext, HolidayCalendar protocol
 ├── modifiers/       base.py, vat.py, levy.py, spot_scale.py, fixed_price.py, subsidy_threshold.py,
-│                    tou_schedule.py, day_type.py, cumulative_tier.py, export_price.py, registry.py
+│                    tou_schedule.py, tou_urdb.py, day_type.py, cumulative_tier.py, export_price.py, registry.py
 │                    (tou_schedule.py holds TimeFilter/HolidayMode/TouPeriod until D2's grammar
-│                     lands in WP0.3, then imports them - D-0036)
+│                     lands in WP0.3, then imports them - D-0036; tou_urdb.py is the URDB 12×24
+│                     importer and its inverse, not a modifier - it registers nothing)
+├── holidays.py      CountryCalendar over the `holidays` package, NO_HOLIDAYS, calendar_for()   (D-0070)
 ├── forecasters/     base.py (protocol + chain()), carry_known.py, same_weekday.py, synthesised.py, registry.py
 ├── events.py        Event, EventStore
 ├── compose.py       build_curve(raw, modifiers, forecaster, ctx, horizon) → PriceCurve
@@ -227,10 +229,10 @@ Modifiers are pure functions of `(slot, ctx)`, so composition is deterministic a
 | `spot_scale` | `supplier` | `spot × (mult − 1) + offset` - supplier markup / certificates |
 | `fixed_price` | replaces `spot` | Norgespris: `spot ← fixed` while `ctx.mtd_kwh_at(slot.start) < cap_kwh_per_month`; above the cap the spot stays. Future slots use the projected mtd → the curve *shows* where the cap will bite. The fixed price is entered **ex VAT** and `vat` follows in order (NO: 0.40 → 0.50 NOK/kWh incl. VAT) |
 | `subsidy_threshold` | `subsidy` (negative) | strømstøtte: `−share × max(0, spot − threshold)`; negative spot handled per NO rules (`spot < 0 → kraft = threshold` in the pyscript - kept as an option `negative_rule`) |
-| `tou_schedule` | `grid_energy` | periods with `TimeFilter` (months × weekdays × hours × holidays) → price; first match wins; `fallback` price. Importer: URDB `energyweekdayschedule`/`energyweekendschedule` 12×24 + `energyratestructure` → periods |
-| `day_type` | `day_type` (may be a multiplier applied to `spot`) | mapping `{type: {price | multiplier}}` looked up via `ctx.day_type_at(date)`; unknown type → fallback (Tempo: blue) |
-| `cumulative_tier` | `tier` | `[(upto_kwh, price)]` on the chosen component by `ctx.mtd_kwh_at`; US baselines; can also express Danish reduced tax above a threshold |
-| `export_price` | builds the **export** curve | `fixed` · `spot_minus(x)` · `spot_times(share)` · `from_source` - the import modifiers are *not* applied to export unless listed |
+| `tou_schedule` | `grid_energy` | periods with `TimeFilter` (months × weekdays × hours × holidays) → price; first match wins; `fallback` price. Importer in `tou_urdb.py`: `from_urdb` turns `energyweekdayschedule`/`energyweekendschedule` 12×24 + `energyratestructure` into periods - one per (period, day kind, months sharing an hour pattern), contiguous hours merged, never wrapping past midnight, the first tier's `rate + adj` as the price; `to_urdb` is its inverse, which is what §9 7's round trip checks |
+| `day_type` | `day_type` (may be a multiplier applied to `spot`) | mapping `{type: DayTypeRate(price \| multiplier)}` looked up via `ctx.day_type_at(local date)`; `price` is the type's own surcharge, `multiplier` writes `spot × (multiplier − 1)`. `fallback` is the **key** of a configured type - Tempo's blue - used for an unannounced day and for an announced type this site has no rate for (D-0073) |
+| `cumulative_tier` | `tier` | `[(upto_kwh, price)]`, the first step the running total has not passed, written as an **additive** component (tiers are differences from the base rate); `basis` reads `ctx.mtd_kwh_at` (default) or `ctx.ytd_kwh_at`, so US monthly baselines and the Danish reduced tax above 4 000 kWh/year both fit; the boundary belongs to the step above (D-0072) |
+| `export_price` | builds the **export** curve (writes `spot`) | `fixed` · `spot_minus(amount)` · `spot_times(share)` · `from_source` - the import modifiers are *not* applied to export unless listed, so the export curve is a second `build_curve` call with `direction=EXPORT` and this modifier first |
 
 No modifier clamps at zero (INV-51). A preset's `energy_components` (D2) pre-fills `tou_schedule` and `levy`.
 
@@ -238,9 +240,9 @@ No modifier clamps at zero (INV-51). A preset's `energy_components` (D2) pre-fil
 
 A chain (`forecasters.base.chain(*parts)`, D-0035), each part only filling what's still missing beyond the known slots, a hole inside the curve aswell as the tail:
 
-1. `carry_known` - nothing to add. The `STALE` marking needs each slot's `fetched_at`, which only the raw rows carry, so `build_curve` does it (§5.3, D-0035); the planner then doubles its hysteresis.
-2. `same_weekday_profile` - for each missing slot, the median of the same local time-of-day on the same weekday over the last 4 weeks, rescaled so its daily mean equals the last known day's mean; `ESTIMATED`. Requires ≥ 2 weeks of history; otherwise skipped.
-3. `synthesised` - the floor: grid `tou_schedule` component (if configured) + a constant energy component = mean of the last 7 known days (or a configured default); `SYNTHESISED`. Always succeeds. With every external source dead the planner still knows night is cheaper than day. The mean is taken over `total − grid_energy` of recent `KNOWN`/`STALE` slots, so the synthesised tail sits at the composed head's level instead of ex levy and ex VAT (D-0038).
+1. `carry_known` - adds nothing. `STALE` needs each slot's `fetched_at`, which only the raw rows have, so `build_curve` marks it (§5.3, D-0035) and the planner doubles its hysteresis.
+2. `same_weekday_profile` - each missing slot gets the **median slot** at the same local time on the same weekday over the last 4 weeks (with its component breakdown), level-shifted so the weekday's mean equals the last known local day's mean, `ESTIMATED`. The shift goes on the energy component and is one amount per weekday, computed against the profile weekday's full day, so a hole keeps its place in the day. A shift and not a multiplication since it hits the mean exactly, can't invert a negative hour and keeps the day's absolute spread (D-0071). A bucket the history doesn't reach is left for step 3 instead of guessed from a neighbour. Needs ≥ 2 weeks of history (`min_history_days`), else the curve is returned untouched.
+3. `synthesised` - the floor: the grid `tou_schedule` component (if configured) + a constant energy component, the mean of the last 7 known days (or a configured default), `SYNTHESISED`. Always succeeds, so with every source dead the planner still knows night is cheaper than day. The mean is over `total − grid_energy` of recent `KNOWN`/`STALE` slots, so the tail sits at the head's level and not ex levy and VAT (D-0038).
 
 Forecast horizon defaults to 48 h, configurable to 168 h for weekly EV planning (mostly `ESTIMATED` then).
 

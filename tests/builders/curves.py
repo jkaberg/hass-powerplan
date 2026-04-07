@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from custom_components.powerplan.core.pricing import PriceContext, RawSlot
+from custom_components.powerplan.core.pricing import HolidayCalendar, PriceContext, RawSlot
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -74,8 +74,9 @@ TENSIO_NIGHT = Decimal("0.2292")
 class NoHolidays:
     """A calendar in which nothing is a holiday (D1 §2).
 
-    The real one is the `holidays` package in WP4.2; no holiday data lives in
-    `core/` or here.
+    The real one is `core/pricing/holidays.py` over the `holidays` package
+    (D-0070); the tests that need real dates - the Spanish
+    2.0TD holidays - use it. No holiday *data* lives here.
     """
 
     def is_holiday(self, day: date) -> bool:
@@ -229,13 +230,17 @@ def context(
     mtd_kwh_per_hour: float = 0.0,
     ytd_kwh: float = 0.0,
     day_type: str | None = None,
-    holidays: NoHolidays | FixedHolidays | None = None,
+    day_types: Mapping[date, str] | None = None,
+    holidays: HolidayCalendar | None = None,
 ) -> PriceContext:
     """Return a `PriceContext` whose month-to-date grows linearly around `now`.
 
     `mtd_kwh_at` is linear in both directions: the past is the "actual", the
     future the projection - the shape D1 §2 describes and the one
     `fixed_price`'s cap projection needs.
+
+    `day_type` is one type for every day; `day_types` gives a different one per
+    local date, which is how a Tempo red day sits between two blue ones.
     """
 
     def mtd_at(when: datetime) -> float:
@@ -245,6 +250,8 @@ def context(
         return ytd_kwh + mtd_at(when)
 
     def day_type_at(day: date) -> str | None:
+        if day_types is not None:
+            return day_types.get(day, day_type)
         return day_type
 
     return PriceContext(
@@ -256,3 +263,74 @@ def context(
         day_type_at=day_type_at,
         holidays=holidays if holidays is not None else NoHolidays(),
     )
+
+
+def weekday_shape(local: datetime) -> Decimal:
+    """Return the NO3 shape scaled by the weekday, so each weekday differs.
+
+    Monday keeps the full shape and Sunday is 30 % cheaper. A weekday profile
+    forecaster (D1 §5.5) can only be shown to have picked the *same* weekday if
+    the weekdays differ from each other by more than noise.
+    """
+    return no3_shape(local) * (Decimal(10) - local.weekday()) / 10
+
+
+def raw_days(
+    first: date,
+    days: int,
+    *,
+    shape: Callable[[datetime], Decimal] = weekday_shape,
+    tz: tzinfo = OSLO,
+    minutes: int = 15,
+    source: str = "nordpool_action",
+    currency: str = "NOK",
+) -> tuple[RawSlot, ...]:
+    """Return `days` consecutive local days of raw slots, starting at `first`.
+
+    Each day carries its own `fetched_at` - the day before, as a real day-ahead
+    fetch does - so a history composed at the first day's start is `KNOWN`
+    throughout.
+    """
+    return tuple(
+        slot
+        for offset in range(days)
+        for slot in raw_day(
+            first + timedelta(days=offset),
+            shape=shape,
+            tz=tz,
+            minutes=minutes,
+            source=source,
+            currency=currency,
+        )
+    )
+
+
+def gas_daily_days(
+    first: date,
+    days: int,
+    *,
+    shape: Callable[[date], Decimal],
+    tz: tzinfo = OSLO,
+    source: str = "manual",
+    currency: str = "NOK",
+) -> tuple[RawSlot, ...]:
+    """Return `days` of **daily** gas slots - one slot per local day (D1 §2).
+
+    A gas slot is a local day long: 23, 24 or 25 hours (INV-7). Nothing about
+    the curve says 15 minutes, which is the point of item 15.
+    """
+    out: list[RawSlot] = []
+    for offset in range(days):
+        day = first + timedelta(days=offset)
+        start, end = day_bounds(day, tz)
+        out.append(
+            RawSlot(
+                start=start,
+                end=end,
+                value=shape(day),
+                currency=currency,
+                source=source,
+                fetched_at=start - timedelta(hours=11),
+            )
+        )
+    return tuple(out)
