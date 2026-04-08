@@ -269,7 +269,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.11 | Reference benchmark | todo |
 | 1.1 | Runtime and storage | todo |
 | 1.1a | Storage | done |
-| 1.2 | Providers, read side | todo |
+| 1.2 | Providers, read side | done |
 | 1.3 | Site config flow | todo |
 | 1.4 | Site entities, events, repairs, diagnostics, translations | todo |
 | 1.5 | Peak warning and advice | todo |

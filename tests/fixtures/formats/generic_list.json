@@ -1,0 +1,51 @@
+{
+  "source": "design/lld/D1-pricing.md §2, the `generic_list` row: a user-given attribute name plus keys for start/end/value and a unit. Hand-written: the shape is powerplan's own, not an upstream integration's.",
+  "entity_id": "sensor.my_price_forecast",
+  "state": "19.53",
+  "attributes": {
+    "friendly_name": "My price forecast",
+    "unit_of_measurement": "øre/kWh",
+    "forecast": [
+      {
+        "from": "2026-09-20T06:00:00+02:00",
+        "to": "2026-09-20T07:00:00+02:00",
+        "price": 19.53
+      },
+      {
+        "from": "2026-09-20T07:00:00+02:00",
+        "to": "2026-09-20T08:00:00+02:00",
+        "price": 42.16
+      },
+      {
+        "from": "2026-09-20T08:00:00+02:00",
+        "to": "2026-09-20T09:00:00+02:00",
+        "price": 73.08
+      },
+      {
+        "from": "2026-09-20T09:00:00+02:00",
+        "to": "2026-09-20T10:00:00+02:00",
+        "price": 103.99
+      },
+      {
+        "from": "2026-09-20T10:00:00+02:00",
+        "to": "2026-09-20T11:00:00+02:00",
+        "price": 126.63
+      },
+      {
+        "from": "2026-09-20T11:00:00+02:00",
+        "to": "2026-09-20T12:00:00+02:00",
+        "price": 134.91
+      },
+      {
+        "from": "2026-09-20T12:00:00+02:00",
+        "to": "2026-09-20T13:00:00+02:00",
+        "price": 126.63
+      },
+      {
+        "from": "2026-09-20T13:00:00+02:00",
+        "to": "2026-09-20T14:00:00+02:00",
+        "price": 103.99
+      }
+    ]
+  }
+}

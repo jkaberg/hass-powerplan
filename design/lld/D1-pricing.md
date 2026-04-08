@@ -51,6 +51,8 @@
 
 Adapters return `RawSlot`s in the source's own unit and currency, normalisation is shared (§5.2).
 
+An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, energy, magnitude)`, where `Interval(start, end | None, value)` is the triple before normalisation, and `providers/prices/base.normalise` is called once by `EntitySource` for every row (D-0088). The unit comes back *with* the intervals and not from config, since several rows carry it in an attribute the user can change - the HACS sensor's `price_type` is `kWh`, `MWh` or `Wh`, and a `Wh` sensor is refused instead of guessed. In `raw_today` / `raw_tomorrow` a `value` of `None` is an hour the sensor couldn't price (upstream `_calc_price` returns `None` for `None` or infinity), so it's a hole, never a zero price. `registry.py`'s `for_platform(platform)` is what the prices step pre-selects from.
+
 **Month-to-date consumption without a circular dependency.** D1 never imports D3. The runtime (D7) builds a `PriceContext` every planning cycle from what it already has - D3's month-to-date import (register delta since local month start, persisted by D3 as `month_anchor_kwh`), D10's projected consumption per slot if there is one, else a linear extrapolation of the month's daily mean - and passes it in. Modifiers see `ctx.mtd_kwh_at(t)` as a function of the slot start: actual for the past, projected for the future.
 
 **Event validity and expiry.** `Event(id, source, kind, start, end, issued_at, valid_until, payload)`, stored by `(source, id)`. A later `issued_at` for the same id replaces, `valid_until` defaults to `end`, and events with `end < now − 1 h` are pruned. Sources can emit `revoked=True`. Consumers (the `day_type` modifier, D6 for `load_limit`) ask `events.active(kind, t)`.
@@ -94,8 +96,10 @@ custom_components/powerplan/providers/events/
 
 Public API:
 
+`fetch_missing`, `RawStore`, `FetchReport` and the `PriceSource` protocol live in `providers/prices/base.py` - they take `PriceSource`s, so they can't be under `core/` (INV-2). `fetch_missing` takes the site's `tz` explicitly and only asks the clock whether a publication time has passed. Jitter, backoff and `never_on_the_hour` stay in `core/pricing/schedule.py` (D-0084). `RawStore` is the two-method protocol a fetch needs, the persisted store is D7's. `nordpool_action.py`'s one `hass.services.async_call` is a read-only response action and allowlisted in `test_single_writer.py` under INV-3 (HLD §5, D9 §5.7, D-0080).
+
 ```python
-async def fetch_missing(sources: list[PriceSource], store: RawStore, now: datetime) -> FetchReport
+async def fetch_missing(sources: list[PriceSource], store: RawStore, now: datetime, *, tz: tzinfo) -> FetchReport
 def build_curve(raw: Sequence[RawSlot], modifiers: Sequence[PriceModifier], forecaster: PriceForecaster,
                 ctx: PriceContext, horizon: timedelta, now: datetime, *,
                 carrier=Carrier.ELECTRICITY, direction=Direction.IMPORT, source_priority: Sequence[str] = (),
@@ -167,10 +171,19 @@ class PriceForecaster(Protocol):
 class Publication:  local_time: time; tz: str; jitter_s: tuple[int, int] = (120, 600); retries: tuple[int, ...] = (600, 1200, 2400, 3600, 7200)
 
 class PriceSource(Protocol):
-    key: ClassVar[str]; schema: ClassVar[Schema]; carrier: Carrier; direction: Direction
+    key: ClassVar[str]; schema: ClassVar[Schema]; carrier: Carrier; direction: Direction   # WP1.2: carrier/direction are per instance, not ClassVar (D-0086)
     def publication(self) -> Publication | None                       # None = continuous (entity updates on its own)
     async def fetch(self, day: date) -> list[RawSlot]                 # raises SourceError subclasses
-    def native_unit(self) -> tuple[str, Literal["kwh", "mwh"], Literal["major", "minor"]]   # ("NOK", "mwh", "major")
+    def native_unit(self) -> tuple[str, EnergyUnit, Magnitude]        # WP1.2: the normalise.py StrEnums, not Literals (D-0086) - ("NOK", MWH, MAJOR)
+    def entity_ids(self) -> frozenset[str]                            # WP1.2: entity-backed sources only; the runtime subscribes (INV-3)
+
+# WP1.2, providers/prices/base.py - the taxonomy §8's rows need, split by whether §5.1 should retry:
+class SourceError(Exception): retryable: ClassVar[bool] = True
+class SourceUnavailableError(SourceError): ...      # no integration, no entity, no network
+class SourceEmptyError(SourceError): ...            # reachable, nothing published for that day yet
+class SourceAuthError(SourceError): retryable = False
+class SourceParseError(SourceError): retryable = False   # the payload is no longer the shape the adapter knows
+class SourceDataError(SourceError): retryable = False    # currency, unit or day length refused (§5.2)
 
 class EventKind(StrEnum): DAY_TYPE = "day_type"; PRICE_OVERRIDE = "price_override"; PRICE_SPIKE = "price_spike"; REWARD = "reward"; LOAD_LIMIT = "load_limit"
 
@@ -250,6 +263,8 @@ Forecast horizon defaults to 48 h, configurable to 168 h for weekly EV planning 
 
 `EventStore.upsert(events)`, `active(kind, t)`, `for_day(date)` for day types. The `entity` event source reads a configured entity and maps its state (eg `sensor.rte_tempo_tomorrow: "RED"`) with a user mapping to `Event(kind="day_type", payload={"type": "tempo_red"}, start=day, end=day+1)`. `load_limit` events go to D6 unchanged. Events emit `powerplan_event_received` via D7.
 
+The entity source's remaining rules (D-0089). The **state** is the announcement and the **attributes** its window: with `start_attribute` and `end_attribute` the window is theirs, with neither it's the local day shifted by `day_offset` (1 for a sensor that publishes tomorrow's colour today). `id` is `"<entity_id>:<start ISO>"`, so a re-announced day upserts instead of piling up. `issued_at` is the entity's `last_changed`, `valid_until` a `valid_until` attribute if there is one, else `end`. The payload key is per kind (`type`, `price`, `level`, `per_kwh`, `max_w`), and the three numeric kinds coerce the state to float since D6 reads `max_w` as watts. A state in `{unavailable, unknown, off, none, ""}` gives **no** event, not a revocation - §2 makes revocation explicit and a provider has no id to revoke. An unmapped state passes through case-folded, so §9 8's fallback in `day_type` handles it. A window ending at or before its start, or with only one end configured, is dropped with a WARNING. `EventSource` also carries `entity_ids()`, same as `MeterSource` (D3 §3, INV-3).
+
 ### 5.7 Curve statistics for D5
 
 `spread(day) = max − min of total over the local day`. `is_flat(day) = spread < flat_threshold` where `flat_threshold = policy.fraction_of_spread × mean`, floored at `policy.floor_major`. `coverage_h(from)` is hours of `KNOWN` slots ahead. `HysteresisPolicy.threshold(day) = max(fraction × spread(day), floor_major) × (stale_multiplier if any slot in the plan window is STALE else 1)` (INV-8).
@@ -311,7 +326,7 @@ Entities (rendered by D8): `sensor.<site>_price` (state = current import total, 
 
 ## 9. Tests that must exist before merge
 
-1. Every format adapter parses a captured fixture (one per table row) into normalised `RawSlot`s; unit and currency handled; DST day fixtures for at least `nordpool_hacs` and `octopus_energy`.
+1. Every format adapter parses a captured fixture (one per table row) into normalised `RawSlot`s; unit and currency handled; DST day fixtures for at least `nordpool_hacs` and `octopus_energy`. **WP1.2** covers the two rows it implements, from hand-written fixtures under `tests/fixtures/formats/` - the reference house runs the *core* Nord Pool integration, so a HACS dump cannot be captured from it and a DST day cannot be captured on demand; each file names its upstream documentation in a `source` key (D-0081). The remaining ten rows, and `octopus_energy`'s DST day, are WP4.4.
 2. `never_on_the_hour` - 10 000 random schedules never fire within ±60 s of HH:00.
 3. A restart with a complete store performs zero fetches; a hole triggers exactly one.
 4. Composition: components sum to total; modifier order respected; each modifier changes only its component.

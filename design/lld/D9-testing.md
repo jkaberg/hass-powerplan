@@ -190,7 +190,7 @@ Every test may carry a marker `@pytest.mark.inv("INV-28")`. `test_inv_traceabili
 
 ### 5.7 Purity and single writer (INV-2, INV-3)
 
-`test_purity.py`: AST-walk every module under `core/`; any `import homeassistant` fails. `test_single_writer.py`: grep `hass.services.async_call` - allowed only in `writegate.py` and `notifications.py` (notify/persistent_notification); `hass.states.get`/`async_all` - allowed only in `runtime.py` and `providers/`.
+`test_purity.py`: AST-walk every module under `core/`; any `import homeassistant` fails. `test_single_writer.py`: only `writegate.py` performs device writes; a price provider may invoke a read-only response action. Concretely, grep `hass.services.async_call` - allowed only in `writegate.py`, `notifications.py` (notify/persistent_notification) and `providers/prices/nordpool_action.py` (the core Nord Pool integration's `get_prices_for_date`, registered `SupportsResponse.ONLY`) - plus an AST walk of that third file asserting every call site passes `return_response=True`, so the exemption cannot become a write; `hass.states.get`/`async_all` - allowed only in `runtime.py` and `providers/`. See `design/DECISIONS.md` D-0080.
 
 ### 5.8 CI pipeline
 

@@ -222,6 +222,56 @@ The selected step's price is an additive `tier` component, and `basis` picks mon
 `DayType.fallback` is the key of one of the site's own day types (Tempo's `tempo_blue`), not a price. An unannounced day, or one with no configured rate, takes that type's rate. One rate per colour means the blue rate can't disagree with its own fallback. Affects D1 §5.4.
 **Rejected:** a separate `fallback` rate - a second sub-form for a number already on screen.
 
+### D-0080 · INV-3 admits one read-only response action
+
+Nord Pool's core integration publishes no forecast attributes, only `get_prices_for_date`, registered `SupportsResponse.ONLY`. So `providers/prices/nordpool_action.py` may call it, and `test_single_writer.py` checks with an AST walk that every call there passes `return_response=True`. INV-3 exists for the write gate's rate limits and idempotency, which a price read can't bypass. Affects HLD §5, D9 §5.7.
+**Rejected:** an own `pynordpool` client in a coordinator - keeps INV-3 literal, but holds a second client for prices the household's integration already has in memory, doubles the load on an endpoint congested on the hour, and adds a version pin that breaks against core's.
+
+### D-0081 · Hand-written format fixtures live in `tests/fixtures/formats/` and name their source
+
+Payloads written from upstream documentation (the HACS Nord Pool attributes, DST days, the response action's shape) go in `tests/fixtures/formats/`, each with a `source` key a test requires. `captured/` stays real dumps only. A DST day can't be captured on demand, and the reference house runs the core Nord Pool integration, so hand-written fixtures are unavoidable; they just mustn't pass as captured.
+**Rejected:** installing the HACS integration in the reference house to capture it - a second price integration in a live install for a test file, and still no DST day.
+
+### D-0082 · `MeterSource` is one `async sample(now) → MeterSample`
+
+The protocol is `sample(now)` plus `entity_ids()`, not HLD §6.3's seven per-role getters. Seven getters could hand out readings from seven instants, which the window integral can't survive. `async` stays for the push sources to come, and `entity_ids()` is there because the runtime, not the source, subscribes (INV-3). Affects D3 §3, §4.
+**Rejected:** seven getters assembled by the runtime - moves "one instant" out of the type system into every caller.
+
+### D-0083 · The meter's own window start comes from `last_reset`, rounded to the second
+
+`meter_window_start` is the meter-window entity's `last_reset`, rounded to the nearest second. The window meter compares it for equality, and HA's scheduling jitter (a few ms) would otherwise demote the anchor from `METER_WINDOW` forever. A window start sits on a 15- or 60-minute boundary, so rounding can't move it to another window. Affects D3 §4, §6.
+**Rejected:** returning the runtime's own window start - always equal, which is the bug when the meter runs an hourly clock under a 15-minute window.
+
+### D-0084 · `fetch_missing` and `RawStore` live in `providers/prices/base.py`
+
+`fetch_missing` takes `PriceSource`s so it can't live in `core/` (INV-2), and it takes the site's `tz` explicitly since a provider mustn't read site settings behind the runtime's back. `RawStore` is a two-method protocol the D7 store satisfies. Scheduling (jitter, backoff) stays in `core/pricing/schedule.py`. Affects D1 §3.
+**Rejected:** implementing the raw store here too - its schema, migrations and save policy are D7's.
+
+### D-0085 · A provider scales from the unit the entity declares, on every read
+
+`EntityReader` reads `unit_of_measurement` on every sample and scales by it (W/kW, kWh/Wh). An unknown unit is `UNAVAILABLE` with one WARNING. An integration update that moves W to kW is then simply correct on the next sample, instead of 1000× wrong until plausibility trips. Affects D3 §8.
+**Rejected:** storing the unit at setup - breaks a working install until someone notices, and INV-17 says blindness freezes while a wrong number doesn't.
+
+### D-0086 · `native_unit()` returns StrEnums; `carrier` and `direction` are instance attributes
+
+`native_unit()` returns `EnergyUnit` and `Magnitude`, the StrEnums `to_major_per_kwh` already takes, not D1 §4's `Literal`s. `carrier` and `direction` vary per instance, since one `EntitySource` class serves both an electricity and a gas curve. Affects D1 §4.
+**Rejected:** keeping the `Literal`s and converting at the boundary - two spellings of one closed vocabulary.
+
+### D-0087 · An entity id is `FieldKind.TEXT`; no `MeterSource` registry yet
+
+Schema fields naming an entity or a config entry are `FieldKind.TEXT` until the flow adds `FieldKind.ENTITY`. Meters get no registry: D3 §6's meter step is a fixed list of seven roles, not an open set, so there's nothing for a registry to render.
+**Rejected:** adding `FieldKind.ENTITY` in `core/` now - one line, but only the flow consumes it.
+
+### D-0088 · An `EntityFormat` is one `parse(state) → ParsedPrices`
+
+An adapter returns intervals plus the currency, unit and magnitude it read, and `EntitySource` calls `normalise` once for every row. Several formats carry the unit in an attribute the user can change (HACS Nord Pool's `price_type`), so it's a property of the reading. `end` is optional: some rows publish only starts, and a slot's length is then the next start (INV-7). A `None` value is a hole, not a zero price. Affects D1 §2, §3.
+**Rejected:** each adapter returning `RawSlot`s - thirteen copies of the currency check, unit factor, UTC conversion and dedup.
+
+### D-0089 · `EventSource` gains `entity_ids()`; a silent entity announces nothing
+
+The runtime can't subscribe to what it can't name, same as `MeterSource` (D-0082). `EntityEventSource` reads the state as the announcement and the attributes as its window (default: the local day, shifted by `day_offset`). An `off`/`unknown` state yields `[]`, not a revocation. Affects D1 §4, §5.6.
+**Rejected:** treating `off` as revoking the last event - makes a stateless poll stateful, and `valid_until` already expires it.
+
 ### D-0090 · `storage.py` ships before the runtime
 
 The store's sections, migrations and save throttle land on their own, with the runtime, triggers and lifecycle after. The store needs no engine, so D7 §9 10 and 11 test it against `hass` alone, and INV-14 is easy to get quietly wrong.

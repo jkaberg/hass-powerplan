@@ -146,7 +146,7 @@ tests/                    core tests (no HA), provider tests, flow tests, backte
 ```
 
 **INV-2 Purity.** `core/` MUST NOT import `homeassistant`. A test asserts it.
-**INV-3 Single reader, single writer.** Only `runtime.py` and `providers/` read `hass.states`; only `writegate.py` calls `hass.services`. A grep in CI asserts both.
+**INV-3 Single reader, single writer.** Only `runtime.py` and `providers/` read `hass.states`; only `writegate.py` performs device writes. A price provider may invoke a read-only response action - `providers/prices/nordpool_action.py` calls the core Nord Pool integration's `get_prices_for_date`, registered `SupportsResponse.ONLY`, which reads prices and writes nothing. A grep in CI asserts both rules, and asserts that every action call in that one file passes `return_response=True` (D9 §5.7, `design/DECISIONS.md` D-0080).
 
 `core/` is written so it can later be published as `powerplan-core` on PyPI; that is not a v1 deliverable.
 

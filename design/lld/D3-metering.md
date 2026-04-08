@@ -81,6 +81,8 @@ custom_components/powerplan/providers/meters/
 └── tibber_pulse.py   v1.x: realtime subscription incl. accumulated consumption last hour
 ```
 
+The protocol is one call per tick, `async def sample(now) -> MeterSample`, not HLD §6.3's seven getters - seven getters would let one tick mix readings taken at seven instants (D-0082). It also carries `entity_ids() -> frozenset[str]`, since the runtime registers `async_track_state_change_event` and not the source (INV-3, D7 §5.3). `base.py`'s `EntityReader` owns the scaling tables (W/kW, kWh/Wh, A) and stamps every `Reading` with `State.last_reported`. A role bound to nothing is `None`, a bound role that can't answer is `Quality.UNAVAILABLE` (INV-53). No `registry.py` here and `MeterSource` has no `schema`: §6's meter step is a fixed list of seven roles, not an open set (D-0087).
+
 Public API of `core/metering` (the package exports the §4 types, the modules are private):
 
 ```python
@@ -141,7 +143,7 @@ class MeterSample:                     # what a MeterSource yields per tick
     export_kwh: Reading | None
     production_w: Reading | None
     meter_window_kwh: Reading | None    # meter-computed value for the CURRENT window, if the meter offers one
-    meter_window_start: datetime | None
+    meter_window_start: datetime | None # WP1.2: the entity's `last_reset`, rounded to the second (D-0083)
     phase_a: tuple[Reading, ...] | None # L1[, L2, L3]
     battery_charge_w: Reading | None    # from the battery load, for surplus; positive = charging
 
@@ -423,7 +425,8 @@ Store section `meter` inside the site's store (D7 owns the file):
 | Register late at boundary | > `register_grace_s` | close with integral, re-sync on arrival (§5.5) | `degraded` for that window |
 | Register reset / new meter | drop > 1 kWh | re-anchor, WARNING | repair if repeated |
 | Power and register disagree | `integral_bias_w` > 5 % over 6 windows | nothing automatic (register wins) | repair: "check scaling" |
-| Unit change (W → kW after an integration update) | plausibility fails 100 % for 60 s | drop samples, stale | repair with the unit seen |
+| Unit change (W → kW after an integration update) | **WP1.2:** no detection needed - the provider scales from the unit the entity declares on every read (D-0085) | correct samples continue | - |
+| Unit is neither W nor kW (energy: neither kWh nor Wh) | the scaling table has no factor for it | sample dropped, `Quality.UNAVAILABLE`, tick freezes (INV-17) | WARNING once per entity; repair with the unit seen |
 | Implausible spikes | outside ±1.2 fuse | dropped, counted | health |
 | Export with no production sensor | grid_w < 0 | consumption `partial`, surplus from export only | review-step note, attribute |
 | Clock skew between meter and HA | `at` from HA receipt time only | never trust device timestamps for windows | - |
@@ -459,7 +462,7 @@ Pure (`tests/core/metering/`):
 19. `LoadMeter` POWER: a 10 s trace integrates within 1 % of the analytic value; a 121 s gap marks the slot `estimated`; a load with neither role yields `nameplate × on-fraction` with `source = estimated`; measured power is used while `settling = True` (contrast test 9).
 20. `LoadMeter` slots follow the curve's slot length (15/30/60) and switch at the next boundary; a DST day yields 92/100 quarter slots; a restart mid-slot continues the slot (state round-trip).
 
-Provider (`tests/providers/meters/`): `ha_sensors` maps W and kW; unavailable → `Quality.UNAVAILABLE`; missing optional roles → `None`; circuit sum with settling.
+Provider (`tests/providers/meters/`): `ha_sensors` maps W and kW; unavailable → `Quality.UNAVAILABLE`; missing optional roles → `None`; circuit sum with settling. **WP1.2** ships all but the circuit sum, which arrives with `providers/meters/circuit.py` in WP2.5, and adds two the WP row named: the register read off the captured AMS dump, and per-phase currents in amps.
 
 Property: random power traces + random register report jitter, `Σ closed.kwh` over a day equals the register delta within 0.1 %. The same for every `LoadMeter` in REGISTER mode, and `Σ_loads slot.kwh ≤ import slot kWh + export` for consistent traces.
 
