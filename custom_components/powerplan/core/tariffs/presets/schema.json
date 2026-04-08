@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "powerplan/tariffs/presets/schema.json",
+  "title": "powerplan tariff preset",
+  "description": "A data-only tariff definition (D2 §2, §6). One file per DSO or utility, a list of versions sorted by valid_from, validated by core/tariffs/presets/loader.py at load time and in CI. The community adds files; no code changes with them.",
+  "type": "object",
+  "required": ["id", "name", "versions"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable identifier, e.g. no.tensio.household. Lower case, dots, dashes.",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "name": {"type": "string", "description": "What the flow shows in the select."},
+    "country": {"type": "string", "description": "ISO 3166-1 alpha-2.", "pattern": "^[A-Z]{2}$"},
+    "operator": {"type": "string", "description": "The DSO or utility."},
+    "currency": {
+      "type": "string",
+      "description": "ISO 4217. Required when any version prices a peak; a preset without prices takes the site's currency.",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "source_url": {"type": "string", "description": "Where the numbers were read."},
+    "verified": {
+      "type": ["string", "null"],
+      "description": "The date the whole file was last checked against the source, or null."
+    },
+    "assumed": {
+      "type": "string",
+      "description": "Required when verified is null: one sentence saying what was assumed and why."
+    },
+    "versions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Sorted by valid_from, strictly ascending (D2 §2).",
+      "items": {"$ref": "#/$defs/version"}
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "object",
+      "required": ["valid_from"],
+      "additionalProperties": false,
+      "properties": {
+        "valid_from": {
+          "type": "string",
+          "description": "The local date this version starts, ISO-8601.",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "verified": {"type": ["string", "null"]},
+        "assumed": {"type": "string"},
+        "source_url": {"type": "string"},
+        "history_policy": {
+          "type": "string",
+          "description": "Required when this version changes `period`: what happens to the history (D2 §5.10).",
+          "enum": ["reset", "carry"]
+        },
+        "peak": {"$ref": "#/$defs/peak"},
+        "contracted": {"$ref": "#/$defs/contracted"},
+        "no_peak": {"type": "boolean", "description": "true: no capacity component at all."},
+        "energy_components": {
+          "type": "object",
+          "description": "Handed to D1 as pre-filled modifiers; D2 never reads it (D2 §6).",
+          "additionalProperties": true
+        }
+      }
+    },
+    "peak": {
+      "type": "object",
+      "required": ["window_min", "per_day", "per_period", "period", "pricing"],
+      "additionalProperties": false,
+      "properties": {
+        "window_min": {"type": "integer", "enum": [15, 30, 60]},
+        "eligible": {"$ref": "#/$defs/time_filter"},
+        "weights": {"type": "array", "items": {"$ref": "#/$defs/weight_rule"}},
+        "per_day": {"type": "string", "enum": ["max", "all"]},
+        "per_period": {"type": "string", "enum": ["max", "mean_top_n"]},
+        "n": {"type": "integer", "minimum": 1, "maximum": 31},
+        "distinct_days": {"type": "boolean"},
+        "period": {"type": "string", "enum": ["month", "rolling_months", "year"]},
+        "rolling_months": {"type": "integer", "minimum": 2, "maximum": 36},
+        "price_period_unit": {"type": "string", "enum": ["month", "year"]},
+        "coarse_factor": {"type": "number", "minimum": 1.0, "maximum": 2.0},
+        "ratchet": {"$ref": "#/$defs/ratchet"},
+        "pricing": {"$ref": "#/$defs/pricing"}
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Exactly one of steps, linear or tiers (D2 §4).",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "[upper_kw or null, fee per period, name]; exactly one open-ended step, last.",
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+              {"type": ["number", "null"], "minimum": 0},
+              {"type": "number", "minimum": 0},
+              {"type": "string"}
+            ]
+          }
+        },
+        "linear": {
+          "type": "object",
+          "required": ["price_per_kw"],
+          "additionalProperties": false,
+          "properties": {
+            "price_per_kw": {"type": "number", "minimum": 0},
+            "free_kw": {"type": "number", "minimum": 0},
+            "min_kw": {"type": "number", "minimum": 0}
+          }
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "description": "[upto_kw or null, marginal price per kW], last band open-ended.",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {"type": ["number", "null"], "minimum": 0},
+              {"type": "number", "minimum": 0}
+            ]
+          }
+        }
+      }
+    },
+    "ratchet": {
+      "type": "object",
+      "required": ["fraction", "lookback_months"],
+      "additionalProperties": false,
+      "properties": {
+        "fraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "lookback_months": {"type": "integer", "minimum": 1, "maximum": 36}
+      }
+    },
+    "contracted": {
+      "type": "object",
+      "required": ["limits", "on_exceed"],
+      "additionalProperties": false,
+      "properties": {
+        "limits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/period_limit"}
+        },
+        "on_exceed": {"type": "string", "enum": ["trip", "surcharge"]},
+        "tolerance_pct": {
+          "type": "number",
+          "description": "A fraction of the limit: 0.10 is ten per cent (D2 §4).",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "tolerance_s": {"type": "integer", "minimum": 0},
+        "surcharge_per_kw": {"type": "number", "minimum": 0},
+        "unit": {"type": "string", "enum": ["kw", "kva"]},
+        "power_factor": {"type": "number", "minimum": 0.1, "maximum": 1}
+      }
+    },
+    "period_limit": {
+      "type": "object",
+      "required": ["limit_kw"],
+      "additionalProperties": false,
+      "properties": {
+        "when": {"$ref": "#/$defs/time_filter"},
+        "limit_kw": {"type": "number", "minimum": 0}
+      }
+    },
+    "weight_rule": {
+      "type": "object",
+      "required": ["when", "weight"],
+      "additionalProperties": false,
+      "properties": {
+        "when": {"$ref": "#/$defs/time_filter"},
+        "weight": {"type": "number", "minimum": 0, "maximum": 10}
+      }
+    },
+    "time_filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Evaluated at the window start in the site's local time (D2 §2).",
+      "properties": {
+        "months": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 12}},
+        "weekdays": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 6}},
+        "hours": {
+          "type": "array",
+          "description": "[start_min, end_min) from local midnight; may wrap.",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {"type": "integer", "minimum": 0, "maximum": 1440},
+              {"type": "integer", "minimum": 0, "maximum": 1440}
+            ]
+          }
+        },
+        "holidays": {"type": "string", "enum": ["ignore", "as_sunday", "exclude"]}
+      }
+    }
+  }
+}

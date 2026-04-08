@@ -1,0 +1,82 @@
+{
+  "_": "Golden for the no.elvia.household preset — D2 §9 1, D9 §3. Same five-day month as the Tensio golden: one grammar, two step tables, so the fee is the only thing that moves.",
+  "preset": "no/elvia",
+  "id": "no.elvia.household",
+  "tz": "Europe/Oslo",
+  "month": "2026-09",
+  "version_valid_from": "2026-07-01",
+  "sources": {
+    "steps": "elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/, fetched 2026-09-19, prices valid from 2026-07-01, NOK/month incl. VAT: 0-2 kW 150, 2-5 kW 250, 5-10 kW 420, 10-15 kW 585, 15-20 kW 755",
+    "top_step": "ASSUMED: the fee above 20 kW (Elvia's trinn 6-10) is published in a separate price list that could not be read on 2026-09-19; 925 NOK continues the 165-170 NOK interval of steps 4 and 5. The preset file marks the version accordingly.",
+    "energy": "elvia.no, same page: 46.40 ore/kWh weekdays 06-22, 31.40 ore/kWh weekday nights 22-06 and all weekends and public holidays. D2 never uses it - it is handed to D1 as a tou_schedule (D2 §6).",
+    "windows": "effektstyring README §1, the 2026-09 row: d03h21 5.26, d03h22 4.91, d03h23 4.52, d02h22 4.39, d01h22 3.97 kWh",
+    "metric_kw": "(5.26 + 4.39 + 3.97) / 3 = 4.54; after the two added evenings (10.60 + 9.15 + 5.26) / 3 = 8.336667"
+  },
+  "windows": [
+    {"local": "2026-09-01T22:00:00", "kwh": 3.97},
+    {"local": "2026-09-02T22:00:00", "kwh": 4.39},
+    {"local": "2026-09-03T21:00:00", "kwh": 5.26},
+    {"local": "2026-09-03T22:00:00", "kwh": 4.91},
+    {"local": "2026-09-03T23:00:00", "kwh": 4.52}
+  ],
+  "expected": {
+    "metric_kw": 4.54,
+    "not_metric_kw": 4.896667,
+    "level_index": 1,
+    "level_name": "2–5 kW",
+    "fee": "250",
+    "currency": "NOK",
+    "confidence": "exact"
+  },
+  "then_add": [
+    {"local": "2026-09-04T18:00:00", "kwh": 9.15},
+    {"local": "2026-09-05T18:00:00", "kwh": 10.6}
+  ],
+  "expected_after": {
+    "metric_kw": 8.336667,
+    "level_index": 2,
+    "level_name": "5–10 kW",
+    "fee": "420",
+    "currency": "NOK",
+    "confidence": "exact",
+    "top_entries": [["2026-09-05", 10.6], ["2026-09-04", 9.15], ["2026-09-03", 5.26]]
+  },
+  "checkpoints": [
+    {
+      "_": "the step boundaries are Tensio's, so the ceilings are too: only the fee differs between the two NO presets",
+      "at_local": "2026-09-05T20:00:00",
+      "after_windows": 7,
+      "risk": 0.5,
+      "eps_kwh": 0.3,
+      "target_kw": 10.0,
+      "ceiling_kwh": 10.3,
+      "reason": "free ride",
+      "free_ride": true,
+      "slack_kwh": 15.59
+    },
+    {
+      "_": "a fresh day, risk 0: the flat target and nothing else",
+      "at_local": "2026-09-30T23:00:00",
+      "after_windows": 7,
+      "risk": 0.0,
+      "eps_kwh": 0.3,
+      "target_kw": 10.0,
+      "ceiling_kwh": 9.7,
+      "reason": "flat target",
+      "free_ride": false,
+      "slack_kwh": 10.25
+    },
+    {
+      "_": "the same instant at risk 1.0: 3 x 10 - 10.60 - 9.15 = 10.25, less eps",
+      "at_local": "2026-09-30T23:00:00",
+      "after_windows": 7,
+      "risk": 1.0,
+      "eps_kwh": 0.3,
+      "target_kw": 10.0,
+      "ceiling_kwh": 9.95,
+      "reason": "full slack",
+      "free_ride": true,
+      "slack_kwh": 10.25
+    }
+  ]
+}

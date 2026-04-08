@@ -257,7 +257,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.0 | Prerequisites | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
-| 0.3 | D2 tariff | todo |
+| 0.3 | D2 tariff | done |
 | 0.4 | D1 pricing | done |
 | 0.5 | D4 core | todo |
 | 0.6 | D5 strategies | todo |

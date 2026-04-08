@@ -1,0 +1,49 @@
+{
+  "id": "no.elvia.household",
+  "name": "Elvia – privatkunde",
+  "country": "NO",
+  "operator": "Elvia",
+  "currency": "NOK",
+  "source_url": "https://www.elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/",
+  "verified": "2026-04-08",
+  "versions": [
+    {
+      "valid_from": "2026-07-01",
+      "verified": "2026-04-08",
+      "assumed": "Only the open-ended step above 20 kW: Elvia publishes trinn 6–10 in a separate price list that could not be read on 2026-09-19, and 925 NOK continues the 165–170 NOK interval of trinn 4 and 5. Trinn 1–5 and both energy rates are read from the source page.",
+      "source_url": "https://www.elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/",
+      "peak": {
+        "window_min": 60,
+        "per_day": "max",
+        "per_period": "mean_top_n",
+        "n": 3,
+        "distinct_days": true,
+        "period": "month",
+        "pricing": {
+          "steps": [
+            [2, 150, "0–2 kW"],
+            [5, 250, "2–5 kW"],
+            [10, 420, "5–10 kW"],
+            [15, 585, "10–15 kW"],
+            [20, 755, "15–20 kW"],
+            [null, 925, "over 20 kW"]
+          ]
+        }
+      },
+      "energy_components": {
+        "tou_schedule": {
+          "periods": [
+            {
+              "name": "dag",
+              "price": 0.464,
+              "hours": [[360, 1320]],
+              "weekdays": [0, 1, 2, 3, 4],
+              "holidays": "exclude"
+            },
+            {"name": "natt", "price": 0.314}
+          ]
+        }
+      }
+    }
+  ]
+}

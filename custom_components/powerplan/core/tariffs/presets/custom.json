@@ -1,0 +1,14 @@
+{
+  "id": "custom",
+  "name": "Custom – describe my tariff myself",
+  "verified": null,
+  "assumed": "Nothing is assumed about the numbers because there are none: this preset starts a site with no capacity component, and the flow's Custom step then renders the whole grammar as a form for the household to fill in (D2 §6). Until it does, the site steers on price alone, which is a supported configuration and not a half-configured one (HLD §3).",
+  "versions": [
+    {
+      "valid_from": "1970-01-01",
+      "verified": null,
+      "assumed": "The starting point for a hand-described tariff: no capacity component.",
+      "no_peak": true
+    }
+  ]
+}

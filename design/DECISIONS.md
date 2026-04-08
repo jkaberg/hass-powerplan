@@ -202,6 +202,56 @@ D4 §5.11 latches "session done" on `completed`, so a charger that said `complet
 `SOURCES` maps each UPPER_CASE number to a URL, a document section or `assumed: <what would replace it>`, and `tests/sim/test_sources.py` fails on a missing, stale or incomplete entry. 123 of 223 are sourced (D9 §2, PLAN §6 R2).
 **Rejected:** a `Param(value, unit, source)` wrapper - every formula would read `RHO.value * CP.value`.
 
+### D-0050 · `TimeFilter` lives in D2's grammar, D2 has its own `HolidayCalendar`
+
+`TimeFilter`, `HolidayMode` and `_within` move to `core/tariffs/grammar.py`, re-exported from `tou_schedule` (closes D-0036). `grammar.py` declares an one-method `HolidayCalendar` protocol so D2 doesn't import D1. `months`/`weekdays` stay tuples (D2 §4, D1 §3).
+**Rejected:** `HolidayCalendar` in `core/model.py` - HLD §5 lists what goes there.
+
+### D-0051 · A step boundary is inclusive upward
+
+`StepTable.index_for` takes the first step whose `upper_kw` the metric is strictly below, so 10,00 kW is in 10–15. Verified in effektstyring's `month.py` against the DSO's figures and a year of bills. No rounding first, `round(9.996, 2)` promotes a whole step (D2 §5.3).
+**Rejected:** `≤` as D2 §5.3 first said - mis-bills every boundary in the household's favour, which is how you quietly lose money.
+
+### D-0052 · The mean-top-n closed form needs a divisor and an infeasible case
+
+`d × T − Σ(top d−1 others)` with `d = min(n, other_days + 1)`, 0 when the metric already exceeds the target, and `slack = max(feasible(T), feasible(metric_now))`. The original sketch disagreed with the bisection with fewer than `n` days, a month already over, and a day outside the top `n` (D2 §5.4, §5.6).
+**Rejected:** always bisect - 20 metric evaluations on the hot path, and the closed form is what a household can check by hand.
+
+### D-0053 · `schema.json` is enforced by a small stdlib validator
+
+`presets/loader.py` interprets the keywords the schema uses (about a hundred lines) and adds the rules a schema can't express. `core/` has no third-party deps and `jsonschema` isn't in HA's set (D2 §2).
+**Rejected:** `jsonschema` in CI only - a community preset from HACS would be unvalidated at load, which is the moment that matters.
+
+### D-0054 · `verified: null` requires `assumed`
+
+A preset version without a `verified` date is refused unless it says what's assumed. `no/tensio`'s next-year version (the current steps × 1,06, nothing published yet), `no/elvia`'s open step above 20 kW and `no/generic-top3`'s fees ship marked (D2 §6).
+**Rejected:** ship next year only once real numbers exist - the benchmark year crosses new year and INV-52 would go untested until it matters.
+
+### D-0055 · `auto` holds last period's step while the metric is `partial`
+
+With fewer than `n` days `auto` defends the step containing `max(metric, last period's metric)`. Otherwise one 0,4 kW hour on the 1st makes `auto` defend the 0–2 kW step until the month's first real peak (D2 §5.5).
+**Rejected:** `max(current, previous)` always, like `Linear` - the ratchet INV-11 exists to avoid.
+
+### D-0056 · `marginal_cost` is measured from the metric-neutral point
+
+It prices the fee difference with this window at `neutral + kw_over × weight`, `neutral` being the largest value that can't move the metric, so `marginal_cost(0)` is 0. A `ContractedPower(trip)` site prices at 0 here, the trip limit is precedence item 1 and D6 sees it via `limit_now_w` (D2 §5.7).
+**Rejected:** add the projection to the signature - D5, D7 and D11 use the protocol too, and a curve that moves with an projection is harder to publish.
+
+### D-0057 · Types D2 §4 named but didn't define
+
+`Period(start, end, key)` and `Evaluator.period(now)`, `TariffVersion` and `TariffSpec` in `grammar.py`, `Ceiling.slack_kwh` in kWh as its name says, the free ride aims ε under `today_max` (effektstyring's `budget.py`), and `MonthRec` stores metric and version id but not the fee (D2 §3, §4).
+**Rejected:** `bill` takes two bounds - D11 passes the same period to two bills and the key files them.
+
+### D-0058 · A window that weighs nothing makes no day entry
+
+A window weighing 0 is stored as `WindowRec` but creates no `DayRec`, and a day is rebuilt from its windows on every recording. Under `mean_top_n` a 0 kW entry would count in the divisor, and the rebuild makes late windows, duplicates and re-seeds idempotent (D2 §5.1).
+**Rejected:** record zeros and ignore them in the metric - a real 0 kW day would look like an ineligible one.
+
+### D-0059 · A period spanning two versions is billed pro rata
+
+`bill` splits the period at each `valid_from`, prices the metric under each version's own table and weights the fees by each segment's share of the period. The level is classified on the version in force at the period's end, so a December bill computed in January isn't priced on January's table. Norwegian versions start on 1 January, so this only bites when a DSO changes mid-month. Affects D2 §5.10.
+**Rejected:** pricing the whole period on the version in force at its end - simpler, but a mid-month change would bill a full month at the new price, which neither version says.
+
 ### D-0070 · The holiday calendar lives in `core/pricing/holidays.py`
 
 `CountryCalendar` wraps the `holidays` package inside `core/`, with the site's country and subdivision, the household's extra and removed days, a per-year cache and `NO_HOLIDAYS` as D1 §8's degradation. INV-2 forbids `homeassistant` under `core/`, not a pure third-party library, and its consumers (`TimeFilter.matches`, `day_type`) are deep in the composition. `holidays>=0.84` goes into `pyproject.toml` as well. Affects D1 §2, §3.

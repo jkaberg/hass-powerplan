@@ -1,78 +1,30 @@
 """The grid's energy charge by time of use (D1 §5.4).
 
-`TimeFilter` is D2's grammar (`core/tariffs/grammar.py`, D2 §3). WP0.3 has not
-landed it yet, so a structurally identical copy lives here and `tou_schedule`
-switches to the shared one when it exists - same fields, same semantics, an
-import change (`design/DECISIONS.md` D-0036).
+`TimeFilter` and `HolidayMode` are D2's grammar (`core/tariffs/grammar.py`,
+D2 §2, §4) and are imported from there; WP0.4's temporary copy is gone
+(`design/DECISIONS.md` D-0036). They are re-exported here because a preset's
+`energy_components` builds a `TouSchedule` out of them and D1's callers should
+not have to know which domain owns the filter.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar
 
+from ...tariffs.grammar import HolidayMode, TimeFilter
 from ..model import Field, FieldKind, Schema
 from .base import GRID_ENERGY, with_component
 from .registry import register
 
 if TYPE_CHECKING:
-    from datetime import datetime, tzinfo
+    from datetime import datetime
 
-    from ..context import HolidayCalendar, PriceContext
+    from ..context import PriceContext
     from ..model import Slot
 
-
-class HolidayMode(StrEnum):
-    """How a period treats a public holiday (D2 §3)."""
-
-    #: Holidays are ordinary days.
-    IGNORE = "ignore"
-    #: A holiday takes Sunday's weekday value - Spain, Italy, Denmark.
-    AS_SUNDAY = "as_sunday"
-    #: The period never applies on a holiday.
-    EXCLUDE = "exclude"
-
-
-def _within(minute: int, start: int, end: int) -> bool:
-    """Return whether `minute` is in `[start, end)`, wrapping past midnight."""
-    if start <= end:
-        return start <= minute < end
-    return minute >= start or minute < end
-
-
-@dataclass(frozen=True, slots=True)
-class TimeFilter:
-    """months × weekdays × hours × holidays, evaluated in local time (D2 §3).
-
-    `None` means "no restriction". `weekdays` is 0 = Monday. `hours` are
-    `[start_min, end_min)` from local midnight and may wrap: a night rate of
-    22:00–06:00 is `(1320, 360)`. DST is handled by evaluating in local wall
-    time - the repeated autumn hour has two instants with the same local start
-    and both are evaluated identically (INV-7).
-    """
-
-    months: tuple[int, ...] | None = None
-    weekdays: tuple[int, ...] | None = None
-    hours: tuple[tuple[int, int], ...] | None = None
-    holidays: HolidayMode = HolidayMode.IGNORE
-
-    def matches(self, when: datetime, zone: tzinfo, calendar: HolidayCalendar) -> bool:
-        """Return whether the instant `when` falls inside this filter."""
-        local = when.astimezone(zone)
-        holiday = calendar.is_holiday(local.date())
-        if holiday and self.holidays is HolidayMode.EXCLUDE:
-            return False
-        if self.months is not None and local.month not in self.months:
-            return False
-        weekday = 6 if holiday and self.holidays is HolidayMode.AS_SUNDAY else local.weekday()
-        if self.weekdays is not None and weekday not in self.weekdays:
-            return False
-        if self.hours is None:
-            return True
-        minute = local.hour * 60 + local.minute
-        return any(_within(minute, start, end) for start, end in self.hours)
+__all__ = ["HolidayMode", "TimeFilter", "TouPeriod", "TouSchedule"]
 
 
 @dataclass(frozen=True, slots=True)
