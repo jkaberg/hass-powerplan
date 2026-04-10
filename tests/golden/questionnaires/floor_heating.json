@@ -1,0 +1,73 @@
+{
+  "type": "floor_heating",
+  "about": "D4 §6.1: a bathroom loop under wood, cable in screed, 12 m², on a Z-Wave thermostat whose operation-mode select the profile detected. The review sentence this derives is 'a heavy slab under wood in a bathroom: powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted'.",
+  "ctx": {
+    "area": "Bad 1. etasje",
+    "capabilities": ["mode_select"]
+  },
+  "answers": {
+    "area_m2": 12.0,
+    "comfort_c": null,
+    "command_interval_s": 600.0,
+    "covering": "wood",
+    "follow_presence": true,
+    "heating_type": "cable_in_screed",
+    "loss_coeff_w_per_k": null,
+    "max_c": null,
+    "min_c": null,
+    "min_off_s": 900.0,
+    "min_on_s": 900.0,
+    "room": "bathroom",
+    "screed_depth_mm": null,
+    "sensor": "floor",
+    "swing_k": null
+  },
+  "derived": {
+    "params": {
+      "area_m2": 12.0,
+      "command_interval_s": 600.0,
+      "comfort_c": 24.0,
+      "covering": "wood",
+      "eco_setpoint_c": 22.0,
+      "floor_c": 21.0,
+      "floor_min_limit_c": 21.0,
+      "follow_presence": true,
+      "heating_type": "cable_in_screed",
+      "hydronic": false,
+      "kind": "mode",
+      "kwh_per_k": 0.264,
+      "loss_coeff_w_per_k": null,
+      "max_c": 27.0,
+      "min_off_s": 900.0,
+      "min_on_s": 900.0,
+      "nameplate_w": 960.0,
+      "phases": 1,
+      "room": "bathroom",
+      "screed_mm": 40.0,
+      "sensor": "floor",
+      "shed_setpoint_c": 21.0,
+      "store": "slab",
+      "substitutable": false,
+      "swing_k": 1.0,
+      "w_per_m2": 80.0
+    },
+    "strategy": "heat_capacitor",
+    "strategy_params": {
+      "swing_k": 1.0
+    },
+    "priority": 32,
+    "group": "floor_heating",
+    "explanation_key": "floor_heating_review",
+    "explanation_params": {
+      "comfort_c": 24.0,
+      "covering": "wood",
+      "max_c": 27.0,
+      "nameplate_w": 960.0,
+      "room": "bathroom",
+      "store": "slab",
+      "strategy": "heat_capacitor",
+      "substitutable": false
+    },
+    "derivation_version": 1
+  }
+}

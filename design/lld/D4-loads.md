@@ -60,7 +60,9 @@
 ```
 custom_components/powerplan/core/loads/
 ├── __init__.py
-├── base.py            Load, LoadConfig, LoadState, Mode, Health, Demand, ComfortState, Urgency, ApplyResult
+├── base.py            Load, LoadConfig, LoadState, LoadCtx, Health, ApplyResult, Observation, the §5.2 mode
+│                      machinery; re-exports Mode/Urgency/ComfortState (core/model.py) and the kinds' and gate's
+│                      vocabulary, which are declared below it in the import graph (D-0060, D-0061)
 ├── kinds/
 │   ├── base.py        ControlKind protocol, Quantised
 │   ├── modulate.py    amps or watts, signed, floor with cliff, step-up ramp, write suppression
@@ -97,6 +99,8 @@ custom_components/powerplan/writegate.py    the EXECUTOR: hass.services.async_ca
 
 ### 4.1 Load runtime
 
+`Mode`, `Urgency` and `ComfortState` are defined in `core/model.py`, next to the `Demand` they compose, and re-exported from `core/loads/base.py` - `base.py` imports the gate, and the gate needs the mode (D-0060). The rest of the per-load vocabulary - `Role`, `Reads`, `Command`, `Hold`, `Action` - is declared at the bottom of the package and re-exported here for the same reason (D-0061).
+
 ```python
 class Mode(StrEnum): AUTO = "auto"; FORCE = "force"; OBSERVE = "observe"; DELEGATED = "delegated"; OFF = "off"
 class Urgency(IntEnum): NONE = 0; NORMAL = 1; DEADLINE = 2; LEGIONELLA = 3; MIN_SOC = 4; COMFORT_VIOLATION = 5
@@ -123,8 +127,12 @@ class Demand:
 class Grant:  w: float; shed: bool; shed_reason: str | None; stop_ok: bool; stage: int; blunt: bool   # defined by D6
 
 @dataclass(frozen=True)
-class ApplyResult:  action: Literal["written", "same", "held_interval", "held_dwell", "held_settling", "held_budget", "observe", "delegated", "failed", "transient"]
-                    value: Any; reason: str
+class ApplyResult:  action: Action     # StrEnum: written · same · held_interval · held_dwell · held_settling
+                                       #   · held_suppressed (D-0064: the kind's own deadband - not "same")
+                                       #   · held_budget · observe · delegated · failed · transient
+                    value: Value | None; reason: str
+                    command: Command | None; blocking: bool; verify_at: datetime | None   # WP0.5: what the
+                    effective_w: float | None; budget: TransportBudget    # executor performs, and INV-18's watts
 
 @dataclass
 class LoadState:                        # persisted per load
@@ -134,10 +142,11 @@ class LoadState:                        # persisted per load
     shed_active: bool; shed_since: datetime | None
     session_done: SessionDone | None    # EV latch
     provisioned: dict[str, bool]        # profile provision step → landed
-    legionella_last_completed: datetime | None; legionella_in_progress_since: datetime | None
-    cycle: CycleState | None            # appliance
+    legionella_last_completed: datetime | None; legionella_in_progress_since: datetime | None  # WP3.3
+    cycle: CycleState | None            # appliance - WP3.6
     learned: dict[str, Learned]         # nameplate_w, cycle profile, efficiency…
     last_target_restore_at: datetime | None
+    commanded_w: float | None           # WP0.5: what D3 counts while a write settles (INV-18)
     gate: WriteGateState
 
 @dataclass(frozen=True)
@@ -150,10 +159,11 @@ class Health:  ok: bool; unhealthy: bool; failures: int; transient_since: dateti
 class ControlKind(Protocol):
     key: ClassVar[str]
     def quantise(self, w: float, ctx: KindCtx) -> Quantised          # → (device value, effective W)
-    def command(self, q: Quantised, grant: Grant, ctx: KindCtx) -> Command | None   # what to write, or None = nothing
-    def current(self, reads: Reads) -> Any                            # device's present value in command units
-    def tolerance(self) -> float; def min_interval_s(self) -> int
-    def restore_command(self, ctx: KindCtx) -> Command | None         # for release()
+    def command(self, q: Quantised, grant: Grant, ctx: KindCtx) -> Command | Hold   # a Hold carries the Action and the reason (D-0064)
+    def current(self, reads: Reads) -> Value | None                   # device's present value in command units
+    def tolerance(self) -> float; def min_interval_s(self) -> float
+    def verify_after_s(self) -> float; def dwell_s(self) -> tuple[float, float]   # the rest of the §5.10 row, so gate.config_for() reads it off the kind
+    def restore_command(self, ctx: KindCtx) -> Command | Hold         # for release() and startup
 
 @dataclass(frozen=True)
 class ModulateCfg:   unit: Literal["a", "w"]; min_value: float; max_value: float; step: float; cliff: bool
@@ -169,10 +179,12 @@ class SwitchCfg:     min_on_s: int; min_off_s: int; inverted: bool
 
 ### 4.3 Store models (direction-agnostic)
 
+Which sensor a level comes from is the device type's sensor-mode answer, not the store's, so the type reads it and passes it in (D-0062). `direction` is a read-only property, so a frozen dataclass satisfies the protocol.
+
 ```python
 class StoreModel(Protocol):
-    direction: Literal["heat", "cool", "both"]
-    def level(self, reads) -> float | None                   # °C or SoC %
+    @property
+    def direction(self) -> Literal["heat", "cool", "both"]: ...
     def required_kwh(self, level_now, target, deadline, ctx: StoreCtx) -> float | None   # includes loss until deadline
     def max_level(self) -> float; def min_level(self) -> float
     def coast_hours(self, level_now, floor, ctx) -> float | None                            # how long before the floor
@@ -251,17 +263,25 @@ class DeviceProfile(Protocol):
 @dataclass(frozen=True)
 class Question:  key: str; kind: Literal["choice", "number", "bool", "time", "entity", "weekly_time"]; options: tuple[Option, ...] = ()
                  default: Callable[[QCtx], Any] | Any; unit: str | None; min: float | None; max: float | None; help_key: str; advanced: bool = False
+                 derived_default: bool = False
 @dataclass(frozen=True)
 class Derived:   params: Mapping[str, Any]; strategy: str; strategy_params: Mapping[str, Any]; priority: int; group: str | None
                  explanation_key: str; explanation_params: Mapping[str, Any]; derivation_version: int
-class DeviceType(Protocol):
+class TypeLogic(Protocol):              # the half one tick calls (D-0063)
+    def demand(self, load: Load, state: LoadState, ctx: LoadCtx) -> Demand
+    def latch(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState      # the §5.11 latches
+    def kind_ctx(self, load, state, ctx, *, grant: Grant | None, mode: Mode) -> KindCtx  # target, session, limits
+
+class DeviceType(TypeLogic, Protocol):
     key: ClassVar[str]; kinds: ClassVar[tuple[str, ...]]; strategies: ClassVar[tuple[str, ...]]; default_strategy: ClassVar[str]
     questionnaire: ClassVar[Questionnaire]
     def derive(self, answers: Answers, ctx: QCtx) -> Derived
-    def build(self, cfg: LoadConfig, profile: DeviceProfile, store: StoreModel | None) -> Load
+    def build(self, cfg: LoadConfig, store: StoreModel | None = None) -> Load     # the profile is the executor's, not the core's
 ```
 
 `materialise(answers, derived)` writes both into the subentry data with `derivation_version` (INV-66), and `re-derive` recomputes on request and shows a diff.
+
+`derived_default` marks the sliders §6 pre-fills "from the above": their default is a function of the other answers, so `derive()` supplies it and the review step shows the number (INV-65, INV-67). `Answers` is validated at the boundary: an unknown key, an option not offered or a number out of range raises `AnswerError(key, code)`, which D8 turns into a message on the form. `explain()` returns a translation key and its parameters, never a sentence - `core/` has no language (HLD §7.6).
 
 ---
 
@@ -270,11 +290,14 @@ class DeviceType(Protocol):
 ### 5.1 Tick contract (called by D6/D7)
 
 ```
-load.observe(reads, now)          → Demand, ComfortState, measured_w, health          (pure reads)
-load.apply(grant, ctx, now)       → ApplyResult                                          (the only writer, via WriteGate)
-load.release(now, reason)         → ApplyResult                                          (INV-26)
-load.view_for_meter()             → ControlledView (measured, commanded, settling, phases)  for D3 §5.8
+load.observe(state, ctx)          → (LoadState, Observation: Demand, measured_w, health)  (pure reads + the latches)
+load.apply(grant, state, ctx)     → (LoadState, ApplyResult)                (the only writer, via the WriteGate)
+load.release(state, ctx, reason)  → (LoadState, ApplyResult)                (INV-26)
+load.restore(state, ctx, reason)  → (LoadState, ApplyResult)                (INV-27, INV-29 - restore, never adopt)
+load.view_for_meter(state, ctx)   → ControlledView (measured, commanded, settling, phases)  for D3 §5.8
 ```
+
+The state is threaded, not held, because the `Load` is frozen and the engine has to stay a function of `(state, inputs)` - the session-done latch is set during `observe()` and has nowhere else to go (D-0063). The comfort state rides on `Demand.comfort`, it isn't returned twice. `apply()` returns the write as a `Command` on the result and performs nothing: the executor (`writegate.py`) is the only caller of `hass.services` (INV-3, INV-20).
 
 ### 5.2 Modes and transitions
 
@@ -374,6 +397,16 @@ The Heatit Z-TRM loops in the reference house are the fixture for the capability
 
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
+**The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the
+`TransportBudget` accounting, and decides with no Home Assistant in sight;
+`writegate.py` at the integration root performs `Decision.command` with
+`blocking=True`, schedules the read-back, and reports the outcome back through
+`succeeded()`, `failed()`, `transient()` and `verify()`. It has no logic of its
+own, which is what makes D9's 100 % coverage of it and the property test over
+random write sequences cheap. Every write still passes one gate (INV-20); it is
+one gate in two files, and the file that talks to HA is the only caller of
+`hass.services` (INV-3).
+
 Decision matrix, in order (first hit wins):
 
 | # | condition | result |
@@ -383,12 +416,12 @@ Decision matrix, in order (first hit wins):
 | 3 | `same(current, desired, tol)` | `same` - never send a value already held (INV-21), **even when `urgent`, even in mode `force`** |
 | 4 | target entity unavailable | if unavailable < `transient_grace_s`: `transient` (retry next tick, bypasses interval); else `failed` (+1 failure) |
 | 5 | settling (write younger than `verify_after_s`) and desired > current (upward) and not blunt | `held_settling` |
-| 6 | `now − last_write < max(kind.min_interval, cfg.command_min_interval)` and not urgent | `held_interval` |
-| 7 | dwell (`min_on/min_off`) not elapsed and not urgent | `held_dwell` |
+| 6 | `now − last_write < max(kind.min_interval, cfg.command_min_interval)` and not urgent **and not blunt** | `held_interval` |
+| 7 | dwell (`min_on/min_off`) not elapsed and not urgent **and not blunt** | `held_dwell` |
 | 8 | transport budget exhausted and not blunt | `held_budget` |
 | 9 | else write with `blocking=True` (INV-24); schedule verify at `+verify_after_s`; mark settling; consume budget |
 
-`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
+`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
 
 **Transport budgets** (INV-58): a site-level `TokenBucket` per transport: `zwave 6/min`, `zigbee 10/min`, `ble 4/min`, `cloud 2/min`, `modbus 20/min`, `local 30/min`, `mqtt 30/min`. Blunt sheds are exempt (a breaker beats a budget); everything else waits its turn, highest priority first.
 
@@ -464,6 +497,12 @@ Common to every load: pick the HA device → suggested type + bindings (§5.9) �
 
 Review: "A heavy slab under wood in a bathroom. powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted by the heat pump."
 
+**Defaults the table leaves open** (D-0066): room `other` = the
+hall's pair (21 / 19 °C, priority 30); covering = `wood`, the conservative cap,
+because a 30 °C default damages a wood floor while a 27 °C default only costs a
+tiled one a degree until the question is answered; area = 10 m². The golden
+answers and the derived parameters are `tests/golden/questionnaires/floor_heating.json`.
+
 ### 6.2 `ev`
 
 | Question | Options (default) | Drives | Source |
@@ -478,6 +517,11 @@ Review: "A heavy slab under wood in a bathroom. powerplan charges it at night, l
 | *Advanced* | efficiency 0.90, min A 6, step-up 4 A, settle 60 s, suppression 2 A / 60 s, force max hours 6, calendar entity | kind, latches | effektstyring, IEC 61851 (6 A floor) |
 
 Review: "A 64 kWh car on a 32 A single-phase charger (7.4 kW). Ready to 80 % by 07:00 on weekdays, always kept above 20 %; below that it charges as fast as the house allows regardless of price."
+
+**Priority 10** (D-0067): below the floor loops' 30 and the heat
+pumps' 50. An EV has no comfort to lose, so it is the first load the ladder trims
+and the only one a plan may stop outright. The golden answers are
+`tests/golden/questionnaires/ev.json`.
 
 ### 6.3 `water_heater`
 
@@ -528,7 +572,7 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 
 ## 7. Persistence
 
-`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`. Migration by `schema`; a subentry removed → its state deleted after `release()`.
+`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`, and `last_on_at`, `last_off_at` for row 7's dwell clocks plus `last_error` for `Health.last_error` and the repair issue. Migration by `schema`; a subentry removed → its state deleted after `release()`.
 
 ---
 

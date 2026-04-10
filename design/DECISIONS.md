@@ -252,6 +252,51 @@ A window weighing 0 is stored as `WindowRec` but creates no `DayRec`, and a day 
 `bill` splits the period at each `valid_from`, prices the metric under each version's own table and weights the fees by each segment's share of the period. The level is classified on the version in force at the period's end, so a December bill computed in January isn't priced on January's table. Norwegian versions start on 1 January, so this only bites when a DSO changes mid-month. Affects D2 §5.10.
 **Rejected:** pricing the whole period on the version in force at its end - simpler, but a mid-month change would bill a full month at the new price, which neither version says.
 
+### D-0060 · `Mode`, `Urgency` and `ComfortState` live in `core/model.py`
+
+D4 §3 puts them in `core/loads/base.py`, but `base.py` imports the gate and the gate needs the mode for rows 1-2 of D4 §5.10, which is a cycle. D6, D7 and D11 read them too. They sit next to `Demand` and `core/loads/base.py` re-exports them. `Urgency` is an `IntEnum` because the order is the point.
+**Rejected:** keeping them in `base.py` and passing the gate the mode as a `str` - literal to D4 §3, but a `str` mode is the row-1 bug `StrEnum` exists to prevent.
+
+### D-0061 · The per-load read/write vocabulary sits in `kinds/base.py`
+
+`Role`, `Reads`, `Value`, `Write`, `Command`, `Hold`, `KindCtx` and friends are declared in `core/loads/kinds/base.py`, the gate's types in `core/loads/gate.py`, and `core/loads/base.py` re-exports both. The kinds and the gate both need the vocabulary and both sit below the `Load`, so it's declared at the bottom. `providers/profiles/` imports `Role` from here too. Affects D4 §3, §4.1, §4.5.
+**Rejected:** a new `core/loads/vocabulary.py` - an obvious home, but a module D4 §3 doesn't draw.
+
+### D-0062 · A store model holds no reads
+
+`StoreModel` drops D4 §4.3's `level(reads)`: the device type reads the level and passes it to `required_kwh(level_now, …)` and `coast_hours(level_now, …)`. Which sensor a level comes from is the type's answer (floor, air or both), so a store that read it would make pure physics depend on the binding layer.
+**Rejected:** keeping `level(reads)` and giving every store the sensor mode - copies one answer into four models, and D11's shadows would implement a method they can't answer.
+
+### D-0063 · The tick contract threads the state, and `TypeLogic` is its half of `DeviceType`
+
+`observe`, `apply`, `release` and `restore` take a `LoadState` and return a new one with their result. `Load` is frozen and the core is pure (INV-2), so the latches D4 §5.11 sets during a read have nowhere to go but a returned state. `TypeLogic` (`demand`, `latch`, `kind_ctx`) is the tick half of `DeviceType`, which breaks the import cycle between the `Load` and its type. Affects D4 §4.6, §5.1.
+**Rejected:** a `Load` with mutable state, as the pyscript drivers had - the engine would no longer be a function of `(state, inputs)` and the backtest couldn't replay.
+
+### D-0064 · `ApplyResult.action` gains `held_suppressed`
+
+An eleventh action for a write the kind's own deadband swallowed (D4 §5.3: `|Δ| ≥ 2 A` or 60 s stale). It isn't `same`: the device holds 16 A and we decided 17, and the log line that explains why a grant didn't reach the charger has to say so. Affects D4 §4.1.
+**Rejected:** reusing `same` with a different reason string - D8 and D9 switch on the action, and "already there" would be a false claim about the device.
+
+### D-0065 · One settle window per kind, the longer of the two numbers
+
+`GateState.verify_due` is both the read-back deadline (D4 §5.10 row 9) and the settle window row 5 holds an upward write inside. For `MODULATE` it's `max(settle_s, 30 s)`, 60 s in the reference house. A deficit measured inside our own write is our own write, so the longer window is the safe one. It costs one poll of latency on a deviation.
+**Rejected:** a separate `settling_until` - two clocks to persist and keep in step, for a read-back 30 s earlier.
+
+### D-0066 · The three gaps in D4 §6.1's tables
+
+Room `other` takes the hall's pair (21 / 19 °C, priority 30), the covering defaults to `wood` (cap 27 °C) and the area to 10 m². INV-65 needs a default for every question. Wood is the conservative cap: a tiled floor held to 27 °C loses a degree, a wooden floor allowed 30 °C gets damaged.
+**Rejected:** defaulting to `tile`, the first option - the wrong-on-wood default damages a floor, the wrong-on-tile one costs a degree.
+
+### D-0067 · `ev` priority 10
+
+D4 §6.2 gives the EV no priority. It goes below the floor loops' 30: a deferred kWh costs patience, not a cold room, so it's the first load the ladder trims and the only one a plan may stop outright.
+**Rejected:** above the thermal loads because a departure is real - deadlines are D5's job (`deadline_fill`), and priority is only the tie-break among satisfiable loads (INV-1).
+
+### D-0068 · A blunt reason buys past rows 6 and 7 as well
+
+In `gate.decide()`, `command.blunt` passes the command interval and the dwell clocks like `urgent` does; row 3 still binds. Read literally, D4 §5.10 would let a 600 s politeness clock hold a main-fuse shed. A blunt reason is physical or contractual by definition (INV-36).
+**Rejected:** relying on every kind to set `urgent` on a blunt command - makes the guarantee a property of four kinds instead of one gate.
+
 ### D-0070 · The holiday calendar lives in `core/pricing/holidays.py`
 
 `CountryCalendar` wraps the `holidays` package inside `core/`, with the site's country and subdivision, the household's extra and removed days, a per-year cache and `NO_HOLIDAYS` as D1 §8's degradation. INV-2 forbids `homeassistant` under `core/`, not a pure third-party library, and its consumers (`TimeFilter.matches`, `day_type`) are deep in the composition. `holidays>=0.84` goes into `pyproject.toml` as well. Affects D1 §2, §3.

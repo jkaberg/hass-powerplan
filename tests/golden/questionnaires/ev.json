@@ -1,0 +1,79 @@
+{
+  "type": "ev",
+  "about": "D4 §6.2: a 64 kWh car on a 32 A single-phase charger (7.4 kW), ready to 80 % by 07:00 on weekdays, always kept above 20 %. The advanced row is effektstyring's, measured in the reference house, plus IEC 61851's 6 A floor.",
+  "ctx": {
+    "phases": 3
+  },
+  "answers": {
+    "calendar_entity": null,
+    "capacity_kwh": 64.0,
+    "charge_eff": 0.9,
+    "departures": {
+      "0": "07:00",
+      "1": "07:00",
+      "2": "07:00",
+      "3": "07:00",
+      "4": "07:00"
+    },
+    "force_max_h": 6.0,
+    "max_a": "32",
+    "min_a": 6.0,
+    "min_soc_now": 20.0,
+    "phases": "1",
+    "settle_s": 60.0,
+    "soc_entity": null,
+    "step_up_a": 4.0,
+    "suppress_delta_a": 2.0,
+    "suppress_stale_s": 60.0,
+    "target_soc": 80.0
+  },
+  "derived": {
+    "params": {
+      "calendar_entity": null,
+      "capacity_kwh": 64.0,
+      "charge_eff": 0.9,
+      "departures": {
+        "0": "07:00",
+        "1": "07:00",
+        "2": "07:00",
+        "3": "07:00",
+        "4": "07:00"
+      },
+      "force_max_h": 6.0,
+      "max_a": 32.0,
+      "min_a": 6.0,
+      "min_soc_now": 20.0,
+      "nameplate_w": 7360.0,
+      "phases": 1,
+      "settle_s": 60.0,
+      "soc_entity": null,
+      "step_up_a": 4.0,
+      "suppress_delta_a": 2.0,
+      "suppress_stale_s": 60.0,
+      "target_soc": 80.0
+    },
+    "strategy": "deadline_fill",
+    "strategy_params": {
+      "target_soc": 80.0
+    },
+    "priority": 10,
+    "group": null,
+    "explanation_key": "ev_review",
+    "explanation_params": {
+      "capacity_kwh": 64.0,
+      "departures": {
+        "0": "07:00",
+        "1": "07:00",
+        "2": "07:00",
+        "3": "07:00",
+        "4": "07:00"
+      },
+      "max_a": 32.0,
+      "min_soc_now": 20.0,
+      "nameplate_w": 7360.0,
+      "phases": 1,
+      "target_soc": 80.0
+    },
+    "derivation_version": 1
+  }
+}

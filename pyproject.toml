@@ -84,7 +84,7 @@ ignore = [
 # The design documents are typographically rich and the code quotes them: an
 # INV range is "13–29", a units list is "W · kWh · A". RUF001-003 would flag
 # every citation.
-allowed-confusables = ["–", "—", "−", "·", "×", "≥", "≤", "’", "ε", "σ", "Σ", "Δ", "°"]
+allowed-confusables = ["–", "—", "−", "·", "×", "≥", "≤", "’", "ε", "σ", "Σ", "Δ", "°", "ρ"]
 
 [tool.ruff.lint.flake8-type-checking]
 # A frozen dataclass's annotations are read at runtime, so its field types are

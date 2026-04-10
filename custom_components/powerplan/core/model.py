@@ -2,7 +2,10 @@
 
 Only the vocabulary HLD §2 and §5 name lives here - `Slot`, `PriceCurve`,
 `Demand`, `Plan`, `Grant`, `Snapshot`, `Carrier`, `Confidence`, `Money`,
-`Quality`. Everything else belongs to the domain that owns it.
+`Quality` - plus the three D4 vocabularies a `Demand` is made of (`Mode`,
+`Urgency`, `ComfortState`), which live here because `Demand` does and
+`core/loads/` is below its own gate in the import graph (`design/DECISIONS.md`
+D-0060). Everything else belongs to the domain that owns it.
 
 Conventions (HLD §7.1–7.2): every `datetime` is tz-aware and keyed
 in UTC; power is signed (import +, export −) and in watts; energy is kWh;
@@ -18,8 +21,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
-from enum import StrEnum
-from typing import Final
+from enum import IntEnum, StrEnum
+from typing import Final, Literal
 
 # --------------------------------------------------------------------------- #
 # Closed vocabularies
@@ -58,6 +61,40 @@ class Confidence(StrEnum):
     STALE = "stale"
     ESTIMATED = "estimated"
     SYNTHESISED = "synthesised"
+
+
+class Mode(StrEnum):
+    """What a load lets the controller do (HLD §6.4, D4 §5.2).
+
+    `force` ignores price and keeps the ceiling; `observe` decides and
+    publishes but never writes; `delegated` means someone else drives the
+    device and powerplan only reserves its nameplate; `off` means the
+    controller has let go - and let go loudly, with a `release()` first
+    (INV-26). The effective mode folds the site switch in (PLAN §7 dec. 20,
+    `core/loads/base.py`).
+    """
+
+    AUTO = "auto"
+    FORCE = "force"
+    OBSERVE = "observe"
+    DELEGATED = "delegated"
+    OFF = "off"
+
+
+class Urgency(IntEnum):
+    """How hard a load is asking (D4 §4.1).
+
+    An `IntEnum` where the rest of the core's vocabularies are `StrEnum`s,
+    because the order is the point: D5 and D6 both ask "is this at least a
+    deadline?" and compare.
+    """
+
+    NONE = 0
+    NORMAL = 1
+    DEADLINE = 2
+    LEGIONELLA = 3
+    MIN_SOC = 4
+    COMFORT_VIOLATION = 5
 
 
 class Quality(StrEnum):
@@ -263,13 +300,41 @@ class PriceCurve:
 # --------------------------------------------------------------------------- #
 
 
+#: Which way a thermal store works (D4 §4.1, §4.3). Heating and cooling are one
+#: model with the sign flipped, so the direction is carried, never assumed.
+type HeatDirection = Literal["heat", "cool"]
+
+
+@dataclass(frozen=True, slots=True)
+class ComfortState:
+    """Where a load's comfort variable stands against its configuration (D4 §4.1).
+
+    `target`, `floor` and `ceiling` come from configuration, never from the
+    device: a thermostat in eco reports its eco setpoint, and reading that as
+    the target closes a loop with no external cause (INV-27). `floor` is the
+    one number no schedule and no presence mode may lower (INV-55).
+
+    `deficit` is signed by `direction`: `target − current` when heating,
+    `current − target` when cooling, so `≥ 0` always means "wants energy".
+    """
+
+    current: float | None
+    target: float
+    floor: float
+    ceiling: float | None
+    violated: bool
+    deficit: float
+    direction: HeatDirection = "heat"
+
+
 @dataclass(frozen=True, slots=True)
 class Demand:
     """What one load wants now and by when (HLD §2, D4 §4).
 
-    `min_w` is negative for a battery or V2H (power is signed). `urgency:
-    Urgency` and `comfort: ComfortState | None` are deferred to WP0.5, which
-    is where those two vocabularies are defined.
+    `min_w` is negative for a battery or V2H (power is signed).
+    `price_sensitive` is False under `force`, a min-SoC floor, a legionella
+    cycle or a comfort violation - the four cases where the plan does not get
+    a vote.
     """
 
     wants: bool
@@ -277,6 +342,8 @@ class Demand:
     deadline: datetime | None
     min_w: float
     max_w: float
+    urgency: Urgency
+    comfort: ComfortState | None
     price_sensitive: bool
     reason: str
 
