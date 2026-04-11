@@ -15,7 +15,6 @@ subscribed here - `entity_ids()` is what the runtime registers (INV-3).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, ClassVar
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -23,7 +22,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from custom_components.powerplan.core.pricing import Carrier, Direction, Publication, RawSlot
 from custom_components.powerplan.core.pricing.normalise import EnergyUnit, Magnitude
 
-from .base import SourceEmptyError, SourceUnavailableError, normalise
+from .base import SourceEmptyError, SourceUnavailableError, normalise, within_local_day
 
 if TYPE_CHECKING:
     from datetime import date, tzinfo
@@ -109,21 +108,13 @@ class EntitySource:
             fx_rate=self._fx_rate,
         )
 
-        start, end = self._local_day(day)
-        wanted = [slot for slot in slots if slot.end > start and slot.start < end]
+        wanted = within_local_day(slots, day, self._tz)
         if not wanted:
             raise SourceEmptyError(f"{self._entity_id} has no prices for {day}")
         _LOGGER.debug(
             "%s: %d of %d slots are within %s", self._entity_id, len(wanted), len(slots), day
         )
         return wanted
-
-    def _local_day(self, day: date) -> tuple[datetime, datetime]:
-        """Return the instants the local day `day` runs between (23, 24 or 25 h)."""
-        return (
-            datetime.combine(day, time.min, tzinfo=self._tz),
-            datetime.combine(day + timedelta(days=1), time.min, tzinfo=self._tz),
-        )
 
 
 __all__ = ["EntitySource"]

@@ -13,17 +13,13 @@ then ends where the next one begins (INV-7).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, ClassVar
-
-from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.core.pricing import Field, FieldKind, Schema
 from custom_components.powerplan.core.pricing.normalise import EnergyUnit, Magnitude
 from custom_components.powerplan.providers.prices.base import Interval, SourceParseError
 
-from .base import ParsedPrices
+from .base import FormatKind, ParsedPrices, listed, moment, price
 from .registry import register
 
 if TYPE_CHECKING:
@@ -37,6 +33,7 @@ class GenericList:
 
     key: ClassVar[str] = "generic_list"
     platform: ClassVar[str | None] = None
+    kind: ClassVar[FormatKind] = FormatKind.ATTRIBUTES
     schema: ClassVar[Schema] = (
         Field(key="attribute", kind=FieldKind.TEXT, default="prices", required=True),
         Field(key="start_key", kind=FieldKind.TEXT, default="start", required=True),
@@ -75,54 +72,38 @@ class GenericList:
                 f"{state.entity_id} has no attribute {self.attribute!r}; "
                 f"it has {sorted(state.attributes)}"
             )
-        if not isinstance(rows, list | tuple):
-            raise SourceParseError(
-                f"{state.entity_id}.{self.attribute} is a {type(rows).__name__}, not a list"
-            )
+        where = f"{state.entity_id}.{self.attribute}"
 
         return ParsedPrices(
-            intervals=tuple(self._interval(state, row) for row in rows),
+            intervals=tuple(
+                self._interval(row, where=f"{where}[{index}]")
+                for index, row in enumerate(listed(rows, where=where))
+            ),
             currency=self.currency,
             energy=EnergyUnit(self.energy_unit),
             magnitude=Magnitude(self.magnitude),
         )
 
-    def _interval(self, state: State, row: Any) -> Interval:
-        """Read one row of the list through the configured keys."""
+    def _interval(self, row: Any, *, where: str) -> Interval:
+        """Read one row of the list through the configured keys.
+
+        Unlike the integration-specific rows, a missing price here is a *missing*
+        price: the user named the key, so a row without it is a misconfiguration
+        to be reported, not an interval the source could not price.
+        """
         if not isinstance(row, dict):
-            raise SourceParseError(
-                f"{state.entity_id}.{self.attribute} holds a {type(row).__name__}, not a slot"
-            )
+            raise SourceParseError(f"{where} is a {type(row).__name__}, not a slot")
+        raw_value = row.get(self.value_key)
+        if raw_value is None:
+            raise SourceParseError(f"{where}[{self.value_key!r}] is missing")
         raw_end = row.get(self.end_key) if self.end_key else None
         return Interval(
-            start=self._moment(state, row.get(self.start_key), self.start_key),
-            end=self._moment(state, raw_end, self.end_key) if raw_end is not None else None,
-            value=self._value(state, row.get(self.value_key)),
+            start=moment(row.get(self.start_key), where=f"{where}[{self.start_key!r}]"),
+            end=(
+                moment(raw_end, where=f"{where}[{self.end_key!r}]") if raw_end is not None else None
+            ),
+            value=price(raw_value, where=f"{where}[{self.value_key!r}]"),
         )
-
-    def _moment(self, state: State, raw: Any, key: str) -> datetime:
-        """Parse a boundary, accepting a `datetime` or an ISO-8601 string."""
-        if isinstance(raw, datetime):
-            return raw
-        parsed = dt_util.parse_datetime(raw) if isinstance(raw, str) else None
-        if parsed is None:
-            raise SourceParseError(
-                f"{state.entity_id}.{self.attribute}[…][{key!r}] is {raw!r}, not a timestamp"
-            )
-        return parsed
-
-    def _value(self, state: State, raw: Any) -> Decimal:
-        """Convert a price to `Decimal` through `str`, never through binary float."""
-        if raw is None:
-            raise SourceParseError(
-                f"{state.entity_id}.{self.attribute}[…][{self.value_key!r}] is missing"
-            )
-        try:
-            return Decimal(str(raw))
-        except (InvalidOperation, ValueError) as err:
-            raise SourceParseError(
-                f"{state.entity_id}.{self.attribute}[…][{self.value_key!r}] is {raw!r}, not a price"
-            ) from err
 
 
 __all__ = ["GenericList"]

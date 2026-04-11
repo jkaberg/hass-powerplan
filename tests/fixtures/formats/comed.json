@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/comed_hourly_pricing/sensor.py - the `current_hour_average` sensor's state is the hour's average price in cents per kWh; the integration publishes no forecast at all, so this row is one slot and D1 §5.5's forecaster fills the rest.",
+  "entity_id": "sensor.comed_hourly_pricing_current_hour_average",
+  "state": "3.4",
+  "attributes": {
+    "friendly_name": "ComEd Hourly Pricing current hour average",
+    "unit_of_measurement": "¢/kWh",
+    "attribution": "Data provided by ComEd Hourly Pricing service"
+  }
+}

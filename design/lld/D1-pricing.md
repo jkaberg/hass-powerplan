@@ -36,20 +36,28 @@
 | key | platform | where prices live | resolution |
 |---|---|---|---|
 | `nordpool_hacs` | `nordpool` (custom) | attributes `raw_today`, `raw_tomorrow` (`[{start, end, value}]`) | 15/60 |
-| `nordpool_core` | `nordpool` (core) | no forecast attributes - use the `nordpool_action` source instead; adapter reads `current_price` only | - |
-| `energidataservice` | `energidataservice` | `raw_today`, `raw_tomorrow` (`[{hour, price}]`) | 60/15 |
-| `entsoe` | `entsoe` | `prices_today`, `prices_tomorrow` or `prices` (`[{time, price}]`) | 60/15 |
-| `tibber_action` | `tibber` | service `tibber.get_prices` → `{home: [{start_time, price, level}]}` | 60/15 |
-| `energyzero_action` / `easyenergy_action` | `energyzero`, `easyenergy` | services returning `{prices: {iso: price}}` | 60/15 |
-| `octopus_energy` | `octopus_energy` | event entity attribute `rates: [{start, end, value_inc_vat}]` (current + next day) | 30 |
-| `amber` | `amber_electric` | `sensor.*_forecast` attribute `forecasts: [{start_time, end_time, per_kwh}]` | 30 (5-min live) |
-| `pvpc` | `pvpc_hourly_pricing` | attributes `price_00h … price_23h`, `price_next_day_00h …` | 60 |
-| `comed` | `comed_hourly_pricing` | current 5-min and hour averages only → forecaster must fill | 60 |
-| `tge` | `tge` | attributes per hour | 60 |
+| `nordpool_core` | `nordpool` (core) | no forecast attributes - use the `nordpool_action` source instead; the adapter reads the current price, which is the sensor's **state**, as the one slot it prices | `slot_minutes` (15) |
+| `energidataservice` | `energidataservice` | `raw_today`, `raw_tomorrow` (`[{hour, price}]`); unit from `unit` + `use_cent` | 60/15 |
+| `entsoe` | `entsoe` | `prices_today`, `prices_tomorrow` or `prices` (`[{time, price}]`, `time` is `str(datetime)`); unit from `unit_of_measurement` | 60/15 |
+| `tibber_action` | `tibber` | action `tibber.get_prices` → `{prices: {home: [{start_time, price, level}]}}`; currency configured, home named when the account has two | 60/15 |
+| `energyzero_action` / `easyenergy_action` | `energyzero`, `easyenergy` | actions returning `{prices: [{timestamp, price}]}` - EnergyZero adds `start`/`end`, easyEnergy does not | 60/15 |
+| `octopus_energy` | `octopus_energy` | event entity attribute `rates: [{start, end, value_inc_vat}]`, pounds per kWh; one entity per day (`current_day_rates`, `next_day_rates`), so tomorrow is a second source | 30 |
+| `amber` | `amber_electric` | `sensor.*_forecast` attribute `forecasts: [{start_time, end_time, per_kwh}]`, dollars per kWh; the NEM's `:00:01` start is snapped to the minute | 30 (5-min live) |
+| `pvpc` | `pvpc_hourly_pricing` | attributes `price_00h … price_23h`, `price_next_day_00h …`, and `price_02h_d` on the 25-hour day | 60 |
+| `comed` | `comed_hourly_pricing` | current 5-min and hour averages only, in **cents**, as the sensor's state → forecaster must fill | 60 |
+| `tge` | `tge` | `prices_today`, `prices_tomorrow` (`[{time, price}]`) in zł per **MWh**; currency configured, because `zł/MWh` names no ISO code | 60 |
 | `hourly_attributes` | any | pattern `<prefix>{HH}h` today / tomorrow | 60 |
 | `generic_list` | any | user-given attribute name + keys for start/end/value + unit | any |
 
 Adapters return `RawSlot`s in the source's own unit and currency, normalisation is shared (§5.2).
+
+What the table can't say:
+
+- Two **kinds** of row, one registry. `FormatKind.ATTRIBUTES` is `parse(state) -> ParsedPrices`. `FormatKind.ACTION` is `publication()`, `native_unit()` and `async fetch(hass, day, *, tz) -> ParsedPrices`, wrapped by `providers/prices/action.py`'s `ActionSource` the same way `EntitySource` wraps the other kind. `for_platform` answers for both (D-0101). `energyzero_action` / `easyenergy_action` is one row and two keys.
+- A price that is **absent or `None`** is a hole for the forecaster, never a zero, in every integration row. `generic_list` is the opposite: the user named the key, so a row without it is a misconfiguration.
+- Rows that only publish **starts** (`energidataservice`, `entsoe`, `tge`, `pvpc`, `hourly_attributes`, `easyenergy_action`) can't express a hole, since §5.2 takes the duration from consecutive starts and an omitted price widens the slot before it. Assuming 60 minutes would be the guess INV-7 forbids (D-0103).
+- The two rows whose price is the sensor's **state** (`nordpool_core`, `comed`) price the slot the entity was last written in: `last_reported`, snapped back to a `slot_minutes` grid. Two slots in a row can carry the same price, and `last_changed` would then be stale (D-0102).
+- Rows keyed by **hour name** (`pvpc`, `hourly_attributes`) take the local date from `dt_util.now()`, HA's own zone, and build naive local times that §5.2 localises. `_d` is the fold-1 repeat on the 25-hour day (D-0104).
 
 An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, energy, magnitude)`, where `Interval(start, end | None, value)` is the triple before normalisation, and `providers/prices/base.normalise` is called once by `EntitySource` for every row (D-0088). The unit comes back *with* the intervals and not from config, since several rows carry it in an attribute the user can change - the HACS sensor's `price_type` is `kWh`, `MWh` or `Wh`, and a `Wh` sensor is refused instead of guessed. In `raw_today` / `raw_tomorrow` a `value` of `None` is an hour the sensor couldn't price (upstream `_calc_price` returns `None` for `None` or infinity), so it's a hole, never a zero price. `registry.py`'s `for_platform(platform)` is what the prices step pre-selects from.
 
@@ -84,7 +92,9 @@ custom_components/powerplan/core/pricing/
 custom_components/powerplan/providers/prices/
 ├── base.py          PriceSource protocol (async), fetch wrappers, error taxonomy
 ├── nordpool_action.py   core Nord Pool `get_prices_for_date`
-├── entity.py        EntitySource + formats/ (one adapter per table row above)
+├── entity.py        EntitySource + formats/ (one adapter per ATTRIBUTES row above)
+├── action.py        ActionSource + the one read-only response-action call site (ACTION rows - D-0101)
+├── markets.py       MarketClock per market and the Nord Pool area table: the only timezone names in the integration (D-0100)
 ├── manual.py        flat or daily prices typed by the user (gas, oil, district heat, "my fixed contract")
 └── formats/         nordpool_hacs.py, energidataservice.py, entsoe.py, tibber_action.py, energyzero_action.py,
                      octopus_energy.py, amber.py, pvpc.py, comed.py, tge.py, hourly_attributes.py, generic_list.py
@@ -132,7 +142,7 @@ class RawSlot:
 @dataclass(frozen=True)
 class Slot:
     start: datetime; end: datetime
-    total: Decimal                            # Σ components; MAY be negative (INV-51)
+    total: Decimal                            # Σ components, MAY be negative (INV-51)
     components: Mapping[str, Decimal]         # "spot", "vat", "grid_energy", "levy", "subsidy", "supplier", …
     confidence: Confidence
     @property
@@ -141,7 +151,7 @@ class Slot:
 @dataclass(frozen=True)
 class PriceCurve:
     carrier: Carrier; direction: Direction; currency: str
-    slots: tuple[Slot, ...]                   # sorted, contiguous where known, gaps allowed only in the past
+    slots: tuple[Slot, ...]                   # sorted, contiguous where known, gaps only in the past
     built_at: datetime; sources: tuple[str, ...]
 
 @dataclass(frozen=True)
@@ -157,11 +167,11 @@ class FieldKind(StrEnum): MONEY = "money"; NUMBER = "number"; BOOL = "bool"; TEX
 class Field:                                  # one renderable option of a registry entry (§6, D-0037)
     key: str; kind: FieldKind; default: Any = None; required: bool = False
     unit: str | None = None; options: tuple[str, ...] = (); advanced: bool = False
-type Schema = tuple[Field, ...]               # what D8 renders; D4's `Question` is the same idea for questionnaires
+type Schema = tuple[Field, ...]               # what D8 renders, D4's `Question` is the same idea for questionnaires
 
 class PriceModifier(Protocol):
     key: ClassVar[str]; schema: ClassVar[Schema]; component: ClassVar[str]
-    def apply(self, slot: Slot, ctx: PriceContext) -> Slot        # pure, must add/replace exactly its component
+    def apply(self, slot: Slot, ctx: PriceContext) -> Slot        # pure, adds/replaces exactly its component
 
 class PriceForecaster(Protocol):
     key: ClassVar[str]; schema: ClassVar[Schema]
@@ -169,20 +179,24 @@ class PriceForecaster(Protocol):
 
 @dataclass(frozen=True)
 class Publication:  local_time: time; tz: str; jitter_s: tuple[int, int] = (120, 600); retries: tuple[int, ...] = (600, 1200, 2400, 3600, 7200)
+# `tz` is the MARKET's zone, never the site's. It's derived from the source's market (the area,
+# for Nord Pool) in `providers/prices/markets.py`, the one module that writes an IANA zone name.
+# The site's zone comes from `hass.config.time_zone`. Every source with a Publication renders
+# `publication_tz` and `publication_time` under Advanced, defaulting to the derived pair (§6, D-0100).
 
 class PriceSource(Protocol):
-    key: ClassVar[str]; schema: ClassVar[Schema]; carrier: Carrier; direction: Direction   # WP1.2: carrier/direction are per instance, not ClassVar (D-0086)
+    key: ClassVar[str]; schema: ClassVar[Schema]; carrier: Carrier; direction: Direction   # carrier/direction per instance (D-0086)
     def publication(self) -> Publication | None                       # None = continuous (entity updates on its own)
     async def fetch(self, day: date) -> list[RawSlot]                 # raises SourceError subclasses
-    def native_unit(self) -> tuple[str, EnergyUnit, Magnitude]        # WP1.2: the normalise.py StrEnums, not Literals (D-0086) - ("NOK", MWH, MAJOR)
-    def entity_ids(self) -> frozenset[str]                            # WP1.2: entity-backed sources only; the runtime subscribes (INV-3)
+    def native_unit(self) -> tuple[str, EnergyUnit, Magnitude]        # normalise.py's StrEnums (D-0086), eg ("NOK", MWH, MAJOR)
+    def entity_ids(self) -> frozenset[str]                            # entity-backed sources, the runtime subscribes (INV-3)
 
-# WP1.2, providers/prices/base.py - the taxonomy §8's rows need, split by whether §5.1 should retry:
+# providers/prices/base.py, split by whether §5.1 should retry:
 class SourceError(Exception): retryable: ClassVar[bool] = True
 class SourceUnavailableError(SourceError): ...      # no integration, no entity, no network
 class SourceEmptyError(SourceError): ...            # reachable, nothing published for that day yet
 class SourceAuthError(SourceError): retryable = False
-class SourceParseError(SourceError): retryable = False   # the payload is no longer the shape the adapter knows
+class SourceParseError(SourceError): retryable = False   # the payload isn't the shape the adapter knows anymore
 class SourceDataError(SourceError): retryable = False    # currency, unit or day length refused (§5.2)
 
 class EventKind(StrEnum): DAY_TYPE = "day_type"; PRICE_OVERRIDE = "price_override"; PRICE_SPIKE = "price_spike"; REWARD = "reward"; LOAD_LIMIT = "load_limit"
@@ -285,6 +299,7 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 | *(Nord Pool)* Area | select NO1…NO5, SE1–4, FI, DK1–2, EE, LV, LT, NL, BE, DE-LU, FR, AT | from HA's location (lat/long → area map) |
 | *(Sensor)* Entity | entity selector filtered to platforms in the format table | the detected one |
 | *(Sensor)* Format | read-only: detected format name; Advanced: override, `generic_list` paths | detected |
+| Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"); Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
 | *(Fixed)* Price per kWh | number in site currency | - |
 | What is added on top? | multi-select with plain labels: **VAT** · **Grid energy charge (day/night or time-of-use)** · **Taxes / levies** · **State scheme (Norgespris)** · **State subsidy (strømstøtte)** · **Supplier markup** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** | pre-ticked from the D2 preset's `energy_components` and the country (NO: VAT + grid + levy + Norgespris; DK: VAT + grid + levy; ES/IT/FR/UK: VAT + grid; US: none) |
 | *(per ticked item)* sub-form | VAT %; grid periods editor pre-filled from preset or "day 06–22 / night" template; levy per kWh; Norgespris price + cap; subsidy threshold + share; markup; tiers; day-type entity + mapping | preset / country defaults with a "source: <DSO>" hint |
@@ -326,7 +341,7 @@ Entities (rendered by D8): `sensor.<site>_price` (state = current import total, 
 
 ## 9. Tests that must exist before merge
 
-1. Every format adapter parses a captured fixture (one per table row) into normalised `RawSlot`s; unit and currency handled; DST day fixtures for at least `nordpool_hacs` and `octopus_energy`. **WP1.2** covers the two rows it implements, from hand-written fixtures under `tests/fixtures/formats/` - the reference house runs the *core* Nord Pool integration, so a HACS dump cannot be captured from it and a DST day cannot be captured on demand; each file names its upstream documentation in a `source` key (D-0081). The remaining ten rows, and `octopus_energy`'s DST day, are WP4.4.
+1. Every format adapter parses a captured fixture (one per table row) into normalised `RawSlot`s; unit and currency handled; DST day fixtures for at least `nordpool_hacs` and `octopus_energy`. **WP1.2** covers the two rows it implements, from hand-written fixtures under `tests/fixtures/formats/` - the reference house runs the *core* Nord Pool integration, so a HACS dump cannot be captured from it and a DST day cannot be captured on demand; each file names its upstream documentation in a `source` key (D-0081). **WP4.4** covers the remaining rows the same way - one payload per row, `octopus_energy`'s 25-hour day and a `pvpc` one for its `price_02h_d` - and adds two tests the table itself is the input to: `test_registry_table.py` parses this §2 table out of the LLD and fails if a row has no registered adapter, no fixture, a different `platform`, or if an adapter is registered that §2 does not name.
 2. `never_on_the_hour` - 10 000 random schedules never fire within ±60 s of HH:00.
 3. A restart with a complete store performs zero fetches; a hole triggers exactly one.
 4. Composition: components sum to total; modifier order respected; each modifier changes only its component.

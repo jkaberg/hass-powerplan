@@ -291,7 +291,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.1 | Remaining strategies and combinators | todo |
 | 4.2 | Forecaster and remaining modifiers | done |
 | 4.3 | Tariffs and benchmark houses | todo |
-| 4.4 | Entity format table | todo |
+| 4.4 | Entity format table | done |
 | 5.1 | D10 core and providers | todo |
 | 5.2 | Baseline-aware reserve and warning | todo |
 | 5.3 | Zones | todo |

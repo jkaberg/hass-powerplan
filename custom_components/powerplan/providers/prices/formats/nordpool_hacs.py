@@ -17,22 +17,16 @@ downstream (INV-7).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, ClassVar, Final
-
-from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.core.pricing import Schema
 from custom_components.powerplan.core.pricing.normalise import EnergyUnit, Magnitude
-from custom_components.powerplan.providers.prices.base import Interval, SourceParseError
+from custom_components.powerplan.providers.prices.base import SourceParseError
 
-from .base import ParsedPrices
+from .base import FormatKind, ParsedPrices, attribute_intervals
 from .registry import register
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from homeassistant.core import State
 
 #: The two attributes that carry the forecast, in the order they are read.
@@ -53,6 +47,7 @@ class NordpoolHacs:
     key: ClassVar[str] = "nordpool_hacs"
     platform: ClassVar[str | None] = "nordpool"
     schema: ClassVar[Schema] = ()
+    kind: ClassVar[FormatKind] = FormatKind.ATTRIBUTES
 
     def parse(self, state: State) -> ParsedPrices:
         """Return every priced interval the sensor knows about."""
@@ -70,9 +65,15 @@ class NordpoolHacs:
                 f"{state.entity_id} prices per {raw_unit!r}; powerplan reads kWh and MWh"
             )
 
-        intervals: list[Interval] = []
-        for attribute in RAW_ATTRIBUTES:
-            intervals.extend(_intervals(state, state.attributes.get(attribute), attribute))
+        # An absent list is simply nothing known yet - tomorrow, before 13:00.
+        intervals = attribute_intervals(
+            state,
+            RAW_ATTRIBUTES,
+            start_key="start",
+            end_key="end",
+            value_key="value",
+            required=False,
+        )
 
         return ParsedPrices(
             intervals=tuple(intervals),
@@ -80,50 +81,6 @@ class NordpoolHacs:
             energy=energy,
             magnitude=Magnitude.MAJOR,
         )
-
-
-def _intervals(state: State, rows: Any, attribute: str) -> list[Interval]:
-    """Read one `raw_*` list; an absent or empty list is simply nothing known."""
-    if rows is None:
-        return []
-    if not isinstance(rows, list | tuple):
-        raise SourceParseError(f"{state.entity_id}.{attribute} is not a list of slots")
-
-    out: list[Interval] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            raise SourceParseError(f"{state.entity_id}.{attribute} holds {type(row).__name__}")
-        value = row.get("value")
-        if value is None:
-            # The sensor could not price that hour - tomorrow before publication,
-            # or an infinity it refused. A hole, for the forecaster to fill.
-            continue
-        out.append(
-            Interval(
-                start=_moment(state, row.get("start"), attribute),
-                end=_moment(state, row.get("end"), attribute),
-                value=_decimal(state, value, attribute),
-            )
-        )
-    return out
-
-
-def _moment(state: State, raw: Any, attribute: str) -> datetime:
-    """Parse one boundary; the sensor stores `datetime`s, a dump stores ISO text."""
-    if isinstance(raw, datetime):
-        return raw
-    parsed = dt_util.parse_datetime(raw) if isinstance(raw, str) else None
-    if parsed is None:
-        raise SourceParseError(f"{state.entity_id}.{attribute} has {raw!r} as a slot boundary")
-    return parsed
-
-
-def _decimal(state: State, raw: Any, attribute: str) -> Decimal:
-    """Convert one price to `Decimal` through `str`, never through binary float."""
-    try:
-        return Decimal(str(raw))
-    except (InvalidOperation, ValueError) as err:
-        raise SourceParseError(f"{state.entity_id}.{attribute} has {raw!r} as a price") from err
 
 
 __all__ = ["NordpoolHacs"]

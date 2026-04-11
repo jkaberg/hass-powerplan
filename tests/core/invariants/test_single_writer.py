@@ -2,12 +2,14 @@
 
 Only `writegate.py` performs **device writes**. `hass.services.async_call` is
 allowed there, in `notifications.py` for notify and persistent_notification, and
-in `providers/prices/nordpool_action.py` - where the core Nord Pool integration's
-`get_prices_for_date` is a read-only response action (`SupportsResponse.ONLY`)
-that reads prices and writes nothing. That third file is held to the stricter
-rule the second test below enforces: every call site in it passes
-`return_response=True`, so the exemption cannot quietly become a write
-(`design/DECISIONS.md` D-0080).
+in the two price providers that read a market through a *response action* -
+`providers/prices/nordpool_action.py` for the core Nord Pool integration's
+`get_prices_for_date`, and `providers/prices/action.py` for the format table's
+action-backed rows (Tibber, EnergyZero, easyEnergy). Every one of those actions is
+registered `SupportsResponse.ONLY`: it reads prices and writes nothing. Those two
+files are held to the stricter rule the second test below enforces: every call
+site in them passes `return_response=True`, so the exemption cannot quietly
+become a write (`design/DECISIONS.md` D-0080, D-0101).
 
 `hass.states.get` and `hass.states.async_all` are allowed in `runtime.py` and
 under `providers/`. Anywhere else bypasses the write gate's rate limits, dwell
@@ -29,15 +31,20 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION = REPO_ROOT / "custom_components" / "powerplan"
 
-#: The one price provider allowed to invoke a read-only response action (D-0080).
-READ_ONLY_ACTION_CALLER = "providers/prices/nordpool_action.py"
+#: The price providers allowed to invoke a read-only response action (D-0080):
+#: Nord Pool's own source, and `action.py`, the one call site the format table's
+#: action-backed rows reach (`tibber_action`, `energyzero_action` - D-0101).
+READ_ONLY_ACTION_CALLERS = (
+    "providers/prices/nordpool_action.py",
+    "providers/prices/action.py",
+)
 
 # (what we grep for, which relative paths or path prefixes may contain it)
 RULES: list[tuple[str, str, tuple[str, ...]]] = [
     (
         "service_call",
         r"hass\.services\.async_call",
-        ("writegate.py", "notifications.py", READ_ONLY_ACTION_CALLER),
+        ("writegate.py", "notifications.py", *READ_ONLY_ACTION_CALLERS),
     ),
     ("state_get", r"hass\.states\.get\b", ("runtime.py", "providers/")),
     ("state_all", r"hass\.states\.async_all\b", ("runtime.py", "providers/")),
@@ -99,28 +106,31 @@ def test_call_appears_only_where_it_is_allowed(pattern: str, allowed: tuple[str,
 
 
 @pytest.mark.inv("INV-3")
-def test_the_price_provider_only_calls_read_only_actions() -> None:
-    """The one action call outside the gate is read-only (INV-3, D-0080).
+@pytest.mark.parametrize("caller", READ_ONLY_ACTION_CALLERS)
+def test_the_price_provider_only_calls_read_only_actions(caller: str) -> None:
+    """Every action call outside the gate is read-only (INV-3, D-0080, D-0101).
 
-    `providers/prices/nordpool_action.py` is on the allowlist because the core
-    Nord Pool integration's `get_prices_for_date` is registered
-    `SupportsResponse.ONLY` - it reads prices and writes nothing. The exemption
-    holds only while that stays true, so every call site in the file must pass
-    `return_response=True`. A call without it is a call that could actuate
-    something, and it belongs behind the write gate (INV-20, INV-24).
+    `providers/prices/nordpool_action.py` and `providers/prices/action.py` are on
+    the allowlist because every action they call - Nord Pool's
+    `get_prices_for_date`, `tibber.get_prices`, EnergyZero's and easyEnergy's
+    price services - is registered `SupportsResponse.ONLY`: they read prices and
+    write nothing. The exemption holds only while that stays true, so every call
+    site in each file must pass `return_response=True`. A call without it is a
+    call that could actuate something, and it belongs behind the write gate
+    (INV-20, INV-24).
     """
-    module = INTEGRATION / READ_ONLY_ACTION_CALLER
-    assert module.is_file(), f"{READ_ONLY_ACTION_CALLER} is on the INV-3 allowlist but is missing"
+    module = INTEGRATION / caller
+    assert module.is_file(), f"{caller} is on the INV-3 allowlist but is missing"
 
     tree = ast.parse(module.read_text(encoding="utf-8"), filename=str(module))
     calls = list(_action_calls(tree))
 
     assert calls, (
-        f"{READ_ONLY_ACTION_CALLER} is exempted from the single-writer rule but calls "
+        f"{caller} is exempted from the single-writer rule but calls "
         "no action at all; take it off the allowlist"
     )
     offenders = [call.lineno for call in calls if not _passes_return_response(call)]
     assert not offenders, (
-        f"{READ_ONLY_ACTION_CALLER} lines {offenders} call an action without "
+        f"{caller} lines {offenders} call an action without "
         "return_response=True; only a read-only response action is exempt from INV-3"
     )

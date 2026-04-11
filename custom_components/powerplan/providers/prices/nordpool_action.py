@@ -24,7 +24,6 @@ their `<CUR>/kWh` state - and `{area: []}` when the upstream response was empty.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, time
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
@@ -49,9 +48,10 @@ from .base import (
     SourceUnavailableError,
     normalise,
 )
+from .markets import CET_DAY_AHEAD, NORDPOOL_MARKETS
 
 if TYPE_CHECKING:
-    from datetime import date, tzinfo
+    from datetime import date, datetime, time, tzinfo
 
     from homeassistant.core import HomeAssistant
 
@@ -63,22 +63,11 @@ _LOGGER = logging.getLogger(__name__)
 NORDPOOL_DOMAIN: Final = "nordpool"
 SERVICE_GET_PRICES_FOR_DATE: Final = "get_prices_for_date"
 
-#: Nord Pool's day-ahead result for tomorrow lands about 13:00 in market time
-#: (CET/CEST), so the timezone is the market's, not the site's (HLD §6.1).
-MARKET_TZ: Final = "Europe/Oslo"
-PUBLICATION_LOCAL_TIME: Final = time(13, 0)
-
-#: The areas D1 §6's prices step offers, verbatim. The authoritative list is
-#: `pynordpool.AREAS`, which the action itself validates against, so a code this
-#: tuple gets wrong fails the fetch rather than the flow (D-0086).
-AREAS: Final = (
-    "NO1", "NO2", "NO3", "NO4", "NO5",
-    "SE1", "SE2", "SE3", "SE4",
-    "FI",
-    "DK1", "DK2",
-    "EE", "LV", "LT",
-    "NL", "BE", "DE-LU", "FR", "AT",
-)  # fmt: skip
+#: The areas D1 §6's prices step offers, verbatim - and, per area, the clock its
+#: day-ahead result lands on. Nord Pool publishes about 13:00 in the *market's*
+#: zone (CET/CEST) whatever zone the house is in, so that zone is data in
+#: `markets.py` and never a literal here (`design/DECISIONS.md` D-0100).
+AREAS: Final = tuple(NORDPOOL_MARKETS)
 
 #: The auth failure the action's own `translation_key` reports (services.py).
 _AUTH_KEY: Final = "authentication_error"
@@ -140,6 +129,8 @@ class NordpoolActionSource:
         Field(key="config_entry", kind=FieldKind.TEXT, required=True),
         Field(key="area", kind=FieldKind.SELECT, options=AREAS, required=True),
         Field(key="currency", kind=FieldKind.TEXT, required=True),
+        Field(key="publication_tz", kind=FieldKind.TEXT, default="", advanced=True),
+        Field(key="publication_time", kind=FieldKind.TIME, default="", advanced=True),
     )
 
     def __init__(
@@ -152,6 +143,8 @@ class NordpoolActionSource:
         site_currency: str,
         tz: tzinfo,
         fx_rate: Decimal | None = None,
+        publication_tz: str = "",
+        publication_time: time | str | None = None,
     ) -> None:
         """Bind the source to one Nord Pool config entry and one area."""
         self._hass = hass
@@ -161,12 +154,19 @@ class NordpoolActionSource:
         self._site_currency = site_currency
         self._tz = tz
         self._fx_rate = fx_rate
+        self._publication_tz = publication_tz
+        self._publication_time = publication_time
         self.carrier = Carrier.ELECTRICITY
         self.direction = Direction.IMPORT
 
     def publication(self) -> Publication:
-        """Return Nord Pool's publication window: about 13:00 market time (INV-6)."""
-        return Publication(local_time=PUBLICATION_LOCAL_TIME, tz=MARKET_TZ)
+        """Return the area's publication window: about 13:00 market time (INV-6).
+
+        Derived from the area, never from the site's own zone, and overridable
+        under Advanced for a market that moves its auction (D1 §6, D-0100).
+        """
+        clock = NORDPOOL_MARKETS.get(self._area, CET_DAY_AHEAD)
+        return clock.publication(tz=self._publication_tz, local_time=self._publication_time)
 
     def native_unit(self) -> tuple[str, EnergyUnit, Magnitude]:
         """Return the action's own unit: the requested currency per MWh, major."""

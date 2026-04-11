@@ -396,3 +396,43 @@ A `mark_dirty` on a clean store arms one `async_call_later(save_period_s)`; it w
 
 The store, and later the runtime's triggers and lifecycle, are neither flows nor pure core. Putting them in `tests/flows/` would make the directory's name a lie. Affects D9 §3.
 **Rejected:** `tests/flows/` - no new directory, but it'd come to mean "anything that starts `hass`".
+
+### D-0100 · No timezone literal in the integration
+
+The site's zone is `hass.config.time_zone`. A market's clock (Nord Pool clears around 13:00 CET wherever the house is) is data: `providers/prices/markets.py` maps each bidding area to its clock and is the only module allowed an IANA zone name, which `test_no_timezone_literals.py` greps for. Every source with a publication time shows it under Advanced, defaulting to the area's. Affects D1 §2, §3, §4, §6.
+**Rejected:** `MARKET_TZ = "Europe/Oslo"` in `nordpool_action.py` - one line and right for every Nord Pool area, but it doesn't say whose zone it is, and the next reader who needs the site's zone finds it one import away.
+
+### D-0101 · Two format kinds in one registry; `action.py` owns the one action call
+
+The Tibber and EnergyZero integrations publish only a response action, no entity to parse. `formats/base.py` gets `FormatKind` (`ATTRIBUTES`, `ACTION`) and an `ActionFormat` protocol, so the prices step still detects and pre-selects them from the registry. `providers/prices/action.py` holds the single `async_call`, keeping INV-3's allowlist short and `normalise` called in one place. Affects D1 §2, §3.
+**Rejected:** plain `PriceSource`s outside the registry like `nordpool_action.py` - the flow would get a second, hand-written list of sources to switch on.
+
+### D-0102 · A state-priced row prices the slot of `last_reported`, snapped to a configured grid
+
+`nordpool_core` and `comed` publish only the current price as the state. `state_interval` makes one interval starting at `last_reported`, floored to `slot_minutes` (Advanced: 5/15/30/60, default 15 for Nord Pool, 60 for ComEd). A single reading says nothing about its own length, so configuration is the only honest source. `last_reported`, not `last_changed`, because two slots in a row can have the same price. Affects D1 §2.
+**Rejected:** leaving the end unset for `normalise` to imply - a single interval has no next start, so it falls back to a hidden one-hour guess, which INV-7 forbids.
+
+### D-0103 · A row that publishes only starts can't report a hole, and none is invented
+
+For start-only rows (`energidataservice`, `entsoe`, `tge`, `pvpc`, `hourly_attributes`, `easyenergy_action`), a missing price widens the slot before it, since D1 §5.2 takes a slot's length from consecutive starts. Rows that publish bounds report real holes. Either way no price is invented and nothing becomes a zero. Affects D1 §2.
+**Rejected:** inferring the slot length from the series' modal spacing - D1 §5.8 allows mixed 60- and 15-minute slots, and any single inferred resolution mislabels one of them.
+
+### D-0104 · Hour-key rows take the local date from `dt_util.now()`
+
+`pvpc` and `hourly_attributes` publish `<prefix>{HH}h` attributes with no date. The date is HA's local today (or tomorrow for the tomorrow prefix), and the intervals are naive local times that `normalise` localises (D1 §5.2). The 25-hour day's `_d` suffix gets `fold=1`. Affects D1 §2.
+**Rejected:** a `timezone` field in each row's schema - a zone name in saved config goes stale when HA's zone changes.
+
+### D-0105 · Amber's NEM second is snapped off the interval start
+
+The NEM labels intervals by their end and opens them a second late (`04:00:01`-`04:30:00`). Taken literally, every slot is 29:59 long and a full day has 47 one-second holes. `formats/amber.py` zeroes the seconds. Affects D1 §2.
+**Rejected:** computing the start from Amber's `duration` field - it's not documented to always be there, and snapping needs only the two timestamps every row has.
+
+### D-0106 · `manual` publishes one slot per local day
+
+`ManualSource` returns one slot spanning the whole local day (23, 24 or 25 h) at a flat price, unless `daily` overrides that date. Magnitude is configurable so a price can be typed in øre. D1 §2 says gas slots are daily, and `price_at`, `is_flat` and `spread` read a one-slot day correctly. Affects D1 §3.
+**Rejected:** 96 identical quarter-hour slots - asserts a resolution the source doesn't have, for 96× the storage.
+
+### D-0107 · The registry test reads D1 §2's table out of the LLD
+
+`test_registry_table.py` parses the format table from `design/lld/D1-pricing.md` and asserts, per row, a registered adapter with that key and platform and a fixture, and that nothing is registered that §2 doesn't list. The failure that actually happens is a row added to the design and never built. D1 §2's key and platform columns must stay backticked.
+**Rejected:** a literal roster in the test - a third copy of the table, and the one updated with the code, so the LLD is the one that drifts.

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 from zoneinfo import ZoneInfo
@@ -168,6 +168,25 @@ def normalise(
             )
         )
     return tuple(out)
+
+
+def local_day_bounds(day: date, tz: tzinfo) -> tuple[datetime, datetime]:
+    """Return the instants the local day `day` runs between (23, 24 or 25 h).
+
+    Every source is asked for a *local* day - that is what a market publishes and
+    what a household reads off a bill - and on a DST day the two instants are not
+    24 hours apart (D1 §5.8).
+    """
+    return (
+        datetime.combine(day, time.min, tzinfo=tz),
+        datetime.combine(day + timedelta(days=1), time.min, tzinfo=tz),
+    )
+
+
+def within_local_day(slots: Iterable[RawSlot], day: date, tz: tzinfo) -> list[RawSlot]:
+    """Return the slots that overlap the local day `day`."""
+    start, end = local_day_bounds(day, tz)
+    return [slot for slot in slots if slot.end > start and slot.start < end]
 
 
 def _implied_end(starts: Sequence[datetime], index: int) -> datetime:
@@ -352,5 +371,7 @@ __all__ = [
     "SourceParseError",
     "SourceUnavailableError",
     "fetch_missing",
+    "local_day_bounds",
     "normalise",
+    "within_local_day",
 ]

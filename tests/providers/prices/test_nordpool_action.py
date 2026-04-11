@@ -27,8 +27,8 @@ from custom_components.powerplan.providers.prices import (
     SourceUnavailableError,
     fetch_missing,
 )
+from custom_components.powerplan.providers.prices.markets import NORDPOOL_MARKETS
 from custom_components.powerplan.providers.prices.nordpool_action import (
-    MARKET_TZ,
     NORDPOOL_DOMAIN,
     SERVICE_GET_PRICES_FOR_DATE,
 )
@@ -189,11 +189,32 @@ async def test_tomorrow_is_asked_for_after_its_publication(
 
 
 def test_the_publication_is_thirteen_hundred_in_market_time(hass: HomeAssistant) -> None:
-    """Nord Pool publishes in CET/CEST, not in the site's zone (HLD §6.1)."""
+    """Nord Pool publishes in CET/CEST, not in the site's zone (HLD §6.1).
+
+    The zone is derived from the configured area, because it is a fact about the
+    market and not about the house (`design/DECISIONS.md` D-0100).
+    """
     publication = source(hass).publication()
 
     assert publication.local_time == time(13, 0)
-    assert publication.tz == MARKET_TZ
+    assert publication.tz == NORDPOOL_MARKETS[AREA].tz
+
+
+def test_a_user_can_correct_the_publication_clock(hass: HomeAssistant) -> None:
+    """A market that moves its auction is Advanced configuration (D1 §6, D-0100)."""
+    corrected = NordpoolActionSource(
+        hass,
+        config_entry_id=ENTRY_ID,
+        area=AREA,
+        currency="NOK",
+        site_currency="NOK",
+        tz=OSLO,
+        publication_tz="Europe/Riga",
+        publication_time="14:30",
+    ).publication()
+
+    assert corrected.tz == "Europe/Riga"
+    assert corrected.local_time == time(14, 30)
 
 
 # --------------------------------------------------------------------------- #

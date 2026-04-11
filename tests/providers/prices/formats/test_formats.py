@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import date as date_type
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -84,8 +85,12 @@ def slots(
 
 
 def test_the_registry_holds_the_two_rows_wp1_2_implements() -> None:
-    """Importing `formats` registers every adapter it ships (D1 §6)."""
-    assert formats.keys() == ("generic_list", "nordpool_hacs")
+    """Importing `formats` registers every adapter it ships (D1 §6).
+
+    The whole roster is asserted against D1 §2's own table in
+    `test_registry_table.py`; these two are the rows this module covers.
+    """
+    assert {"generic_list", "nordpool_hacs"} <= set(formats.keys())
 
 
 def test_a_format_is_built_from_the_options_the_flow_saved() -> None:
@@ -97,8 +102,13 @@ def test_a_format_is_built_from_the_options_the_flow_saved() -> None:
 
 
 def test_the_flow_detects_a_format_from_the_entity_platform() -> None:
-    """`for_platform` is what pre-selects the format in the prices step (D1 §6)."""
-    assert formats.for_platform("nordpool") == ("nordpool_hacs",)
+    """`for_platform` is what pre-selects the format in the prices step (D1 §6).
+
+    Two rows claim `nordpool` - the HACS sensor and the core integration - which
+    is the case D1 §2 wrote `for_platform` for: the flow gets both candidates and
+    asks only when it cannot tell them apart.
+    """
+    assert formats.for_platform("nordpool") == ("nordpool_core", "nordpool_hacs")
     assert formats.for_platform("nothing_we_know") == ()
 
 
@@ -381,17 +391,18 @@ def test_generic_list_fails_loudly_on_a_shape_it_cannot_read(
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "nordpool_hacs_no3_quarter",
-        "nordpool_hacs_dst_spring",
-        "nordpool_hacs_dst_autumn",
-        "generic_list",
-        "nordpool_action_no3",
-        "nordpool_action_no3_tomorrow",
-    ],
+FORMAT_FIXTURES = sorted(
+    path.stem
+    for path in (Path(__file__).resolve().parents[3] / "fixtures" / "formats").glob("*.json")
 )
+
+
+def test_there_are_fixtures_to_check() -> None:
+    """Guard the guard: a glob over nothing proves nothing."""
+    assert len(FORMAT_FIXTURES) >= 6, FORMAT_FIXTURES
+
+
+@pytest.mark.parametrize("name", FORMAT_FIXTURES)
 def test_a_hand_written_fixture_names_its_documentation(
     format_fixture: Callable[[str], dict[str, Any]], name: str
 ) -> None:

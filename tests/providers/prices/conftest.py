@@ -5,20 +5,30 @@
 `prices` section and belongs to D7 (`storage.py`); `fetch_missing` only
 ever asks it two questions, which is why it takes a `RawStore` protocol
 (`design/DECISIONS.md` D-0084).
+
+`put_state` and `normalise_row` are the two things every format test does: put a
+hand-written payload into the state machine, then parse and normalise it exactly
+the way `EntitySource.fetch` does, so a row's test asserts on `RawSlot`s and not
+on an adapter's private return value (D1 §9 item 1).
 """
 
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from custom_components.powerplan.providers.prices import normalise
+
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import date, tzinfo
 
+    from homeassistant.core import HomeAssistant, State
+
     from custom_components.powerplan.core.pricing import RawSlot
+    from custom_components.powerplan.providers.prices.formats import EntityFormat
 
 
 class InMemoryRawStore:
@@ -52,3 +62,42 @@ class InMemoryRawStore:
 def raw_store() -> InMemoryRawStore:
     """Return an empty raw-slot store."""
     return InMemoryRawStore()
+
+
+@pytest.fixture
+def put_state(hass: HomeAssistant) -> Callable[[dict[str, Any]], State]:
+    """Return a callable that puts a format fixture into the state machine."""
+
+    def put(fixture: dict[str, Any]) -> State:
+        hass.states.async_set(fixture["entity_id"], fixture["state"], fixture["attributes"])
+        state = hass.states.get(fixture["entity_id"])
+        assert state is not None
+        return state
+
+    return put
+
+
+@pytest.fixture
+def normalise_row() -> Callable[..., tuple[RawSlot, ...]]:
+    """Return a callable that parses and normalises one state, as `fetch` does."""
+
+    def run(
+        adapter: EntityFormat,
+        state: State,
+        *,
+        site_currency: str,
+        source_tz: tzinfo,
+    ) -> tuple[RawSlot, ...]:
+        parsed = adapter.parse(state)
+        return normalise(
+            parsed.intervals,
+            source=adapter.key,
+            currency=parsed.currency,
+            site_currency=site_currency,
+            energy=parsed.energy,
+            magnitude=parsed.magnitude,
+            source_tz=source_tz,
+            fetched_at=state.last_updated,
+        )
+
+    return run
