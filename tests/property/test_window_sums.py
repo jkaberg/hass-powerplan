@@ -14,7 +14,7 @@ from itertools import pairwise
 from zoneinfo import ZoneInfo
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from custom_components.powerplan.core.metering import (
@@ -53,6 +53,21 @@ SAMPLES_PER_DAY = int(24 * 3600 / STEP_S)
     window_min=st.sampled_from([15, 60]),
     delay_s=st.floats(min_value=0.0, max_value=25.0),
     jitter=st.lists(st.floats(min_value=0.0, max_value=240.0), min_size=1, max_size=5),
+)
+# The case this property caught on `main` (D-0028): a once-per-window register
+# whose receipt jitter alternates 0 s and 233.5 s. Consecutive intervals then
+# alternate 1 133.5 s / 666.5 s, and at five and seven kept intervals the cadence
+# median was one of the two extremes instead of their centre - 1 133.5 s, further
+# than §5.3's ±25 % from 900 s, so a latched meter read as `interpolated`, §5.5
+# declined to attribute its boundary report, and two windows were billed their
+# own first 233 s twice. The shrunk case's 721 random watts are incidental; a flat
+# 6 kW trace reproduces it at 0.70 % against a 0.1 % tolerance, so the replayed
+# example says what it is about.
+@example(
+    watts=[6000.0] * (SAMPLES_PER_DAY + 1),
+    window_min=15,
+    delay_s=0.0,
+    jitter=[0.0, 233.52991447690061],
 )
 def test_closed_windows_sum_to_the_register_delta(
     watts: list[float], window_min: int, delay_s: float, jitter: list[float]

@@ -107,6 +107,11 @@ Drops the closed windows before `upto_utc` from `pending_closed`. D3 §7 only cl
 
 ### D-0027 · Folded into D-0031
 
+### D-0028 · Register cadence is the median over an *even* number of intervals
+
+The oldest interval is dropped when the count is odd. A once-per-window register with receipt jitter `j` gives intervals alternating `window ± j`, and the middle of an odd sample is one of the extremes - at five and seven intervals a 233,5 s jitter read as a 1 133,5 s cadence, the mode flipped to `interpolated` and the window billed its first 233 s twice. With an even count the jitter cancels (D3 §5.3).
+**Rejected:** mean over the observed span - unbiased for any jitter, however two dropped reports in eight push it past the ±25 % test where a median absorbs both. Hysteresis on the mode would have hidden the bug, not fixed it.
+
 ### D-0030 · Curve statistics are methods on `PriceCurve`
 
 `price_at`, `slots_between`, `spread`, `mean`, `is_flat`, `coverage_h` and `resample` live on `PriceCurve` in `core/model.py`. `spread`, `mean` and `is_flat` take the local `tzinfo` (a day is a local day) and return `Decimal` (D1 §3).

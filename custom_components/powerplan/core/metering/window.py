@@ -570,13 +570,24 @@ class WindowMeter:
     def _learn_register_cadence(
         self, work: _Integration, register: Reading, prev_at: datetime | None
     ) -> None:
-        """Keep the last eight register intervals and their median (D3 §5.3)."""
+        """Keep the last eight register intervals and their median (D3 §5.3).
+
+        The median is taken over an **even** number of them, dropping the oldest
+        when the count is odd. Receipt jitter on a once-per-window register makes
+        consecutive intervals alternate `window + j` and `window − j`, and the
+        middle element of an odd-length sample of a two-valued alternating series
+        is one of the two extremes rather than their centre: a 233 s jitter on a
+        15-minute window reads as a 1 134 s cadence at five and seven intervals,
+        §5.3 then calls a latched meter `interpolated`, and §5.5 declines to
+        attribute its boundary report to the window it belongs to. An even count
+        averages the two middle elements, so the jitter cancels.
+        """
         if prev_at is not None:
             interval = (register.at - prev_at).total_seconds()
             if interval > 0.0:
                 work.cadence_samples = (*work.cadence_samples, interval)[-CADENCE_SAMPLES:]
         work.cadence = (
-            median(work.cadence_samples)
+            median(work.cadence_samples[len(work.cadence_samples) % 2 :])
             if len(work.cadence_samples) >= CADENCE_MIN_SAMPLES
             else None
         )

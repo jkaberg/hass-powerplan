@@ -8,8 +8,10 @@ analytic energy instead of a tolerance pulled out of the air.
 """
 
 import random
-from dataclasses import dataclass
+from bisect import bisect_right
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from custom_components.powerplan.core.metering import window_bounds
@@ -23,6 +25,21 @@ class Trace:
     """A piecewise-linear signed power trace in watts (import +, export −)."""
 
     points: tuple[tuple[datetime, float], ...]
+    # Two prefix arrays, built once per trace: the instants, and the cumulative
+    # trapezoid integral in watt-seconds up to each of them. They make `power_at`
+    # and `energy_kwh` O(log n) instead of O(n), and `energy_kwh` no longer calls
+    # `power_at` per segment - a 7 201-point per-second trace used to cost ~100 M
+    # interpolations for one register series, which was most of the D3 suite.
+    _times: tuple[datetime, ...] = field(init=False, repr=False, compare=False)
+    _cumulative_ws: tuple[float, ...] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Build the prefix arrays that `power_at` and `energy_kwh` bisect."""
+        cumulative = [0.0]
+        for (t0, p0), (t1, p1) in pairwise(self.points):
+            cumulative.append(cumulative[-1] + (p0 + p1) * 0.5 * (t1 - t0).total_seconds())
+        object.__setattr__(self, "_times", tuple(at for at, _ in self.points))
+        object.__setattr__(self, "_cumulative_ws", tuple(cumulative))
 
     @property
     def start(self) -> datetime:
@@ -37,7 +54,7 @@ class Trace:
     @property
     def times(self) -> tuple[datetime, ...]:
         """Return every instant the trace has a point at."""
-        return tuple(at for at, _ in self.points)
+        return self._times
 
     def power_at(self, t: datetime) -> float:
         """Power at `t`, linearly interpolated; clamped outside the trace."""
@@ -45,28 +62,35 @@ class Trace:
             return self.points[0][1]
         if t >= self.end:
             return self.points[-1][1]
-        for (t0, p0), (t1, p1) in zip(self.points, self.points[1:], strict=False):
-            if t0 <= t <= t1:
-                span = (t1 - t0).total_seconds()
-                if span <= 0:
-                    return p1
-                return p0 + (p1 - p0) * ((t - t0).total_seconds() / span)
-        raise AssertionError("unreachable: t is inside the trace")
+        (t0, p0), (t1, p1) = self._segment(t)
+        span = (t1 - t0).total_seconds()
+        if span <= 0:
+            return p1
+        return p0 + (p1 - p0) * ((t - t0).total_seconds() / span)
 
     def energy_kwh(self, t0: datetime, t1: datetime) -> float:
         """Exact energy between two instants, in kWh."""
         if t1 <= t0:
             return 0.0
-        total = 0.0
-        cursor = max(t0, self.start)
-        for (a, _), (b, _) in zip(self.points, self.points[1:], strict=False):
-            lo, hi = max(cursor, a), min(t1, b)
-            if hi > lo:
-                total += (self.power_at(lo) + self.power_at(hi)) * 0.5 * (hi - lo).total_seconds()
-                cursor = hi
+        lo, hi = max(t0, self.start), min(t1, self.end)
+        total = self._integral_ws(hi) - self._integral_ws(lo) if hi > lo else 0.0
         if t1 > self.end:
             total += self.points[-1][1] * (t1 - self.end).total_seconds()
         return total / 3.6e6
+
+    def _segment(self, t: datetime) -> tuple[tuple[datetime, float], tuple[datetime, float]]:
+        """Return the two points bracketing `t`, which lies inside the trace."""
+        i = min(bisect_right(self._times, t) - 1, len(self.points) - 2)
+        return self.points[i], self.points[i + 1]
+
+    def _integral_ws(self, t: datetime) -> float:
+        """Watt-seconds from the trace's start to `t`, which lies inside the trace."""
+        i = min(bisect_right(self._times, t) - 1, len(self.points) - 2)
+        (t0, p0), (t1, p1) = self.points[i], self.points[i + 1]
+        span = (t1 - t0).total_seconds()
+        held = (t - t0).total_seconds()
+        power = p0 if span <= 0 else p0 + (p1 - p0) * (held / span)
+        return self._cumulative_ws[i] + (p0 + power) * 0.5 * held
 
     def register_at(self, t: datetime, start_kwh: float = 0.0) -> float:
         """Return the cumulative import register at `t`."""
@@ -152,10 +176,5 @@ def newest(
     reports: Sequence[tuple[datetime, float]], now: datetime
 ) -> tuple[datetime, float] | None:
     """Return the most recent report at or before `now`."""
-    found: tuple[datetime, float] | None = None
-    for at, value in reports:
-        if at <= now:
-            found = (at, value)
-        else:
-            break
-    return found
+    i = bisect_right(reports, now, key=lambda row: row[0])
+    return reports[i - 1] if i else None
