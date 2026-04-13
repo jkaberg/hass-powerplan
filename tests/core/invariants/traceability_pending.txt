@@ -60,8 +60,11 @@ INV-61
 INV-62
 INV-63
 
-# INV-64 - no shed needs powerplan to come back to be safe (HLD §7.8) → WP2.1
-INV-64
+# INV-64 - no shed needs powerplan to come back to be safe (HLD §7.8). Covered
+# by WP2.1's executor: `async_unload_entry` releases every load and cancels the
+# read-backs, so what a shed leaves behind is a state the household can live in
+# without powerplan coming back (tests/runtime/test_writegate.py). The shed
+# *values* are the kinds' and profiles' half (WP0.5, WP2.2).
 
 # INV-68 - accounting is observation only (HLD §6.11, D11) → WP0.10
 INV-68

@@ -436,3 +436,48 @@ The NEM labels intervals by their end and opens them a second late (`04:00:01`-`
 
 `test_registry_table.py` parses the format table from `design/lld/D1-pricing.md` and asserts, per row, a registered adapter with that key and platform and a fixture, and that nothing is registered that §2 doesn't list. The failure that actually happens is a row added to the design and never built. D1 §2's key and platform columns must stay backticked.
 **Rejected:** a literal roster in the test - a third copy of the table, and the one updated with the code, so the LLD is the one that drifts.
+
+### D-0140 · The executor ships before the runtime
+
+`writegate.py` depends only on the pure gate and `hass`, and exposes what the runtime will call: `async_apply`, `async_release`, `async_release_all`, `cancel`, `track`/`untrack`, `budget`. Building it against the pure gate proves the split (PLAN §7 dec. 5) and settles `blocking=True`, the read-back timer and the `hass.states` rule in one file. D4 §5.10's four report-backs fix its shape.
+**Rejected:** waiting for the runtime - the API would be designed with the runtime in view, but D4 §5.10 already names it.
+
+### D-0141 · The read-back reads through an injected `StateReader`
+
+`WriteGate(hass, read_state=…)`: only `writegate.py` may write and only `runtime.py` and `providers/` may read `hass.states` (INV-3). The read-back is a read and the compare is the gate's, so the reader is injected, and provider scaling (D-0085) isn't duplicated. Affects D4 §5.10.
+**Rejected:** allowlisting `writegate.py` for `hass.states.get` - one line, but the second exemption is what makes a rule negotiable.
+
+### D-0142 · `DeviceCall`, and `WriteTarget.call_for()`
+
+D4 §4.5's `ServiceCall` ships as `DeviceCall(domain, service, entity_id, data)`, since `homeassistant.core.ServiceCall` owns the name. The executor needs one method of a profile, `call_for(write) → DeviceCall | None`; an unbound role answers `None`. Affects D4 §4.5, §5.10.
+**Rejected:** the LLD's name with an import alias - an alias in every profile, one careless import from a confusing type error.
+
+### D-0143 · A timeout escalates on the executor's own transient clock
+
+On `TimeoutError` the grace runs from the transient clock the executor last reported for that load, not only the one on the decision. `decide()` clears `transient_since` as soon as the entity reads available, so a device with healthy entities and hanging writes would never reach `unhealthy`. Only the executor sees a call that never returned. Affects D4 §5.10, §8.
+**Rejected:** escalating only on the decision's clock - a hung transport would never count a failure, raise a repair or notify.
+
+### D-0144 · A write that wasn't confirmed leaves no settle window
+
+Both failure paths clear `verify_due` and arm no read-back. D4 §8 retries a refused write as `urgent`, and row 5 would otherwise hold that retry inside the settle window of a write that never landed. The window exists to stop us reacting to our own write; a write that didn't happen has nothing to settle. Affects D4 §8.
+**Rejected:** arming the read-back after a timeout anyway - the next tick reads the entity regardless, and the settle window would hold the retry.
+
+### D-0145 · The executor takes a `Decision` and hands back a `GateState`
+
+`async_apply` takes `Actuation(load_id, name, target, cfg, decision)` and returns an `Outcome` whose `gate` the runtime folds into `LoadState.gate` (or receives through `on_state` for the async read-back). `Decision` is the one pure object with both the command and the gate state, and the executor's outcome is a state change.
+**Rejected:** taking the `ApplyResult` - it has no `GateState`, so the executor would need the whole `LoadState` to report one write.
+
+### D-0146 · The site's transport buckets live in the executor
+
+`WriteGate.budget` is the site's `TransportBudget`, read into each tick's `LoadCtx`. It's the one piece of gate state that's per site, not per load, and it has to count writes the engine doesn't drive, like releases at unload (INV-58). Affects D4 §5.10.
+**Rejected:** the engine's own state - it would need telling about every out-of-band write.
+
+### D-0147 · A release is a registered plan, so unload needs no engine
+
+`track(load_id, plan)` registers a callable that returns the release `Actuation` for that load from the pure `load.release(state, ctx)`. `async_release(load_id)` performs one, `async_release_all()` all of them. The lifecycle releases at setup, at the site switch and at unload, none of which the engine drives, and the decision still has to be the pure one. Affects D4 §5.10.
+**Rejected:** the runtime computing every release and calling `async_apply` - "release everything" becomes a loop written in two places, which is how a shed survives an unload (INV-26).
+
+### D-0148 · A command is atomic: an unaddressable role sends nothing
+
+If any write in a `Command` has no bound entity, nothing is sent and the load reports `failed`, naming the role. A transport that dies mid-command reports what went out in `Outcome.calls`. Stopping a charger is "switch off, then 0 A", and half of that is a state nobody designed. Affects D4 §8.
+**Rejected:** sending what can be addressed - a charger left enabled at 0 A, or disabled with 32 A armed, is a state the next tick reads as fact (INV-22).

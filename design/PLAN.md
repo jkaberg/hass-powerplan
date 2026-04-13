@@ -275,7 +275,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 1.5 | Peak warning and advice | todo |
 | 1.6 | Recorder baseline (optional) | todo |
 | 1.7 | HA-level end to end | todo |
-| 2.1 | WriteGate executor | todo |
+| 2.1 | WriteGate executor | done |
 | 2.2 | Profiles | todo |
 | 2.3 | `ev` complete | todo |
 | 2.4 | Load subentry flow and load entities | todo |

@@ -423,6 +423,31 @@ Decision matrix, in order (first hit wins):
 
 `urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
 
+**The executor, concretely.** `writegate.py` is one class,
+`WriteGate(hass, read_state=…, on_state=…)`, and what the runtime calls on it:
+
+| call | what it does |
+|---|---|
+| `async_apply(decisions)` | performs each `Actuation` - a pure `Decision` plus the load's `WriteTarget` and `GateConfig` - in the order it was decided |
+| `async_release(load_id)` · `async_release_all()` | performs the pure `release()` of one load, or of every tracked load (INV-26) |
+| `track(load_id, plan)` · `untrack(load_id)` | registers how to let go of a load, so unload needs no engine and a removed subentry leaves no timer |
+| `cancel()` | drops every pending read-back |
+| `budget` | the site's token buckets, read into the next tick's `LoadCtx` (INV-58) |
+
+Each call returns an `Outcome` carrying the `GateState` the runtime persists into
+`LoadState.gate` (`design/DECISIONS.md` D-0145). Five things the matrix left to the
+executor, all logged in `design/DECISIONS.md` D-0141…D-0148: the read-back reads
+through an injected `StateReader`, because reading `hass.states` is the runtime's
+(INV-3, D-0141); a profile's `write(role, value)` is spelled
+`WriteTarget.call_for(write) → DeviceCall`, renamed off `homeassistant.core`'s
+own `ServiceCall` (D-0142); a **timeout** escalates on the clock the executor
+itself remembers, because `decide()` clears a transient as soon as the entity
+reads available and a device whose writes hang would otherwise never reach
+`unhealthy` (D-0143); a write that could not be confirmed - refused or timed out -
+leaves **no settle window** behind, or row 5 would hold the `urgent` retry §8
+asks for (D-0144); and a command stays atomic, so a role with nothing bound sends
+nothing at all (D-0148).
+
 **Transport budgets** (INV-58): a site-level `TokenBucket` per transport: `zwave 6/min`, `zigbee 10/min`, `ble 4/min`, `cloud 2/min`, `modbus 20/min`, `local 30/min`, `mqtt 30/min`. Blunt sheds are exempt (a breaker beats a budget); everything else waits its turn, highest priority first.
 
 Defaults per kind (a load's own `command_min_interval` may raise, never lower):
@@ -584,6 +609,8 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 | Device unavailable briefly | transient (INV-23) | INFO |
 | Device unavailable > grace | failure; unhealthy at 2; held | notification category `device_unhealthy` |
 | Write refused (`ServiceValidationError`) | failure with the message; retry as `urgent` next tick | WARNING |
+| Write times out | transient inside `transient_grace_s`, failure past it, on the executor's own clock (D-0143); no settle window left behind | INFO, then WARNING |
+| Role with nothing bound | the command is not sent at all; failure naming the role | WARNING, repair "re-bind <role>" |
 | Write accepted, not applied (BLE) | read-back deviation; re-issued next tick | INFO, `deviations` |
 | Option names changed by firmware | `MODE` match fails → unhealthy with the options seen | repair |
 | Scaled number range changed | provision refused → repair | repair |
