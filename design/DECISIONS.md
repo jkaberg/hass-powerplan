@@ -468,6 +468,56 @@ The NEM labels intervals by their end and opens them a second late (`04:00:01`-`
 Each file says in its `assumed` what's missing. Each gap would be a field that changes what every existing preset means, so the model isn't widened here. Which half-hour matters is right in all three, and that's what steering uses; only the reported fee drifts (INV-68).
 **Rejected:** applying the summer version year-round - SRP's winter peak hours differ, so it would shed at the wrong times.
 
+### D-0120 · The site timezone is the environment's
+
+The site zone is `hass.config.time_zone`, stored with `timezone_source` at creation. A `timezone` step appears only when HA's setting is missing or unknown to tzdata. No flow module contains an IANA key, which `test_no_timezone_literals.py` greps for. A market's publication zone stays data on the price source. Affects D8 §4, §5.1.
+**Rejected:** asking on the name step with HA's zone as default - two sources of truth for one clock is how a window boundary and a `TimeFilter` end up an hour apart.
+
+### D-0121 · `FieldKind.ENTITY` is the only new member
+
+D-0087 owed it and D8 renders it as an `EntitySelector`. No `DEVICE`, `AREA`, `TIMEZONE` or `CONFIG_ENTRY`: the device pick, the timezone step and the meter's roles are hand-written steps with filters `Field` can't express. Affects D1 §4.
+**Rejected:** adding all four so the enum looks complete - members nothing produces can't be checked.
+
+### D-0122 · The entry's unique id is the import register's platform unique id
+
+`unique_id` is `meter:<platform>:<registry unique id>` of the import register (or the grid-power sensor without one), and `site:<flow id>` on the price-only path. INV-50 wants something the household can't rename; an entity id can be renamed, the platform's unique id (the meter serial) can't. Affects D8 §2.
+**Rejected:** the entity id - stable only as long as nobody renames it.
+
+### D-0123 · Money crosses `entry.data` as a decimal string, at any depth
+
+`MONEY` fields and any `Decimal` default are stored as `str(Decimal)`, and `jsonable` converts nested ones too. orjson refuses a `Decimal`, and a float turns Tensio's 0.3604 into something that isn't. Affects D8 §4.
+**Rejected:** floats - invisible until a month is summed into a bill and compared with an invoice, which is exactly what D11 does.
+
+### D-0124 · The fuse list runs to 400 A
+
+D3 §6's list stopped at 125 A while its own US default is 200 A. The select now offers 16-400 A, matching D3 §5.1's validation band.
+**Rejected:** a free-text box above 125 A - every value it could take is a standard rating anyway.
+
+### D-0125 · Norway defaults to the IT system, and the review states the kW
+
+`default_system("NO")` is `IT_230`. Every answer needs a default (HLD §7.9), and IT and TN differ by ~1.74× in watts per amp, too much to hide, so the review states the connection in kW and the field help says how to tell them apart. A wrong answer shows on the review, not as a ceiling 74 % off for a month.
+**Rejected:** `TN_400`, the newer stock - but older IT houses are where capacity tariffs hurt most, and the review catches either.
+
+### D-0126 · A modifier is pre-ticked only if every required option has a default
+
+The prices step pre-ticks a country's recommended modifiers except those with a required field and no default. For Norway that's VAT; the grid energy charge comes from the chosen tariff preset as a `tou_schedule` with `source: <preset id>`. Pre-ticking a levy or time-of-use table with no numbers would ship an unsourced price. Affects D8 §5.1.
+**Rejected:** tariff step before prices so the preset's components show pre-ticked - D8 §5.1 fixes the order and the review shows the merge either way.
+
+### D-0127 · The price-only path skips the tariff step and gets `NoPeak`
+
+With no meter there's no metric to bill, so on `price_only` the flow skips meter and tariff and stores the `no_peak` preset (HLD §4). Affects D8 §5.1.
+**Rejected:** asking for the tariff anyway - stores a ceiling nothing can defend; adding a meter later is a reconfigure.
+
+### D-0128 · The entry holds the preset's identity, not a copy of its model
+
+`entry.data["tariff"]` holds the preset id, file, name, version ids, the chosen version, the rendered description, target and risk. The copy INV-66 relies on is the site store's (D2 §8); the identity lets it be checked and `preset_outdated` raised. Affects D8 §4.
+**Rejected:** keeping a `grammar_copy` in the entry - two copies in two shapes, and only the store's is read.
+
+### D-0129 · Advanced is a collapsed `section`; back is `last_step=False` plus sticky answers
+
+Advanced fields sit in a collapsed `section("advanced")` marked `vol.Optional(default={})`, so defaults arrive unopened. `show_advanced_options` is deprecated in 2026.9 and logs a warning naming the integration. The eight notification categories that default to off go in the section too. HA has no generic back, so every step but the review passes `last_step=False` and re-renders with what was answered. Affects D8 §5.1, §5.4.
+**Rejected:** `show_advanced_options` until it's removed - deprecated and warns. All eleven notification selects abreast - the three that matter get lost.
+
 ### D-0140 · The executor ships before the runtime
 
 `writegate.py` depends only on the pure gate and `hass`, and exposes what the runtime will call: `async_apply`, `async_release`, `async_release_all`, `cancel`, `track`/`untrack`, `budget`. Building it against the pure gate proves the split (PLAN §7 dec. 5) and settles `blocking=True`, the read-back timer and the `hass.states` rule in one file. D4 §5.10's four report-backs fix its shape.

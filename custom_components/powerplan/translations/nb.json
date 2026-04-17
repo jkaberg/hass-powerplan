@@ -2,14 +2,538 @@
   "config": {
     "step": {
       "user": {
-        "title": "Legg til et anlegg",
-        "description": "Et anlegg er ett nettilknytningspunkt: måleren, prisene og effekttariffen. Laster legges til etterpå, én om gangen.",
+        "title": "Hva skal powerplan hjelpe med?",
+        "description": "Tre måter å kjøre på, og du kan ombestemme deg senere.\n\n**Pris og effekt** — flytt forbruk til billige timer *og* hold hver time under nettselskapets effekttrinn. Dette er det de fleste norske hus vil ha.\n\n**Bare pris** — følg prisen og se bort fra effekt. Velg dette hvis nettselskapet ikke har et effektledd, eller hvis du ikke har en måleravlesning powerplan kan bruke.\n\n**Bare sikring** — ingen priser, ingen nettleie: bare aldri slå ut hovedsikringen når flere store laster kjører samtidig.",
+        "menu_options": {
+          "full": "Pris og effekt",
+          "price_only": "Bare pris",
+          "fuse_only": "Bare sikring"
+        }
+      },
+      "name": {
+        "title": "Gi anlegget et navn",
+        "description": "Et anlegg er ett nettilknytningspunkt: måleren, prisene og effekttariffen.",
         "data": {
           "name": "Navn"
         },
         "data_description": {
           "name": "Hva dette nettilknytningspunktet skal hete. Navnet brukes på anleggsenheten og som prefiks på entitetene."
         }
+      },
+      "timezone": {
+        "title": "Hvilken tidssone ligger huset i?",
+        "description": "powerplan henter dette normalt fra Home Assistant-innstillingene dine, men der er ingen tidssone satt. Alt som har en tid i seg — vindusgrenser, dag og natt, frister, når morgendagens priser skal komme — avhenger av dette svaret.",
+        "data": {
+          "timezone": "Tidssone"
+        },
+        "data_description": {
+          "timezone": "IANA-sonen huset ligger i."
+        }
+      },
+      "electrical": {
+        "title": "Nettilknytningen din",
+        "description": "Fire spørsmål om den fysiske tilknytningen. Svarene bestemmer hva huset kan trekke og hvordan ampere blir watt; oppsummeringen viser resultatet i kW så du kan kontrollere det.",
+        "data": {
+          "country": "Land",
+          "system": "Fordelingssystem",
+          "phases": "Faser",
+          "main_fuse_a": "Hovedsikring"
+        },
+        "data_description": {
+          "country": "Hentet fra Home Assistant-innstillingene. Det bestemmer forvalgene nedenfor.",
+          "system": "Se i sikringsskapet: et IT-nett har tre ledere og ingen nøytralleder, et TN-nett har nøytralleder. Begge er vanlige i Norge.",
+          "phases": "Hvor mange faser huset er tilknyttet med.",
+          "main_fuse_a": "Merkestrømmen til hovedsikringen, i ampere. Den står på sikringen eller på nettavtalen."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "per_phase_limit_a": "Grense per fase"
+            },
+            "data_description": {
+              "per_phase_limit_a": "Avansert: en lavere grense per fase enn hovedsikringen, hvis nettselskapet har satt en. Forvalget er hovedsikringen."
+            }
+          }
+        }
+      },
+      "meter": {
+        "title": "Hvilken enhet er måleren din?",
+        "description": "Velg enheten som leser strømmåleren din — en AMS/HAN-leser, en P1-dongle, en Tibber Pulse — og powerplan fyller ut sensorene den finner på den. La den stå tom for å velge sensorene selv.",
+        "data": {
+          "device": "Målerenhet"
+        },
+        "data_description": {
+          "device": "Valgfritt. Brukes bare til å foreslå sensorene i neste steg."
+        }
+      },
+      "meter_roles": {
+        "title": "Hva hver målersensor er",
+        "description": "Kontroller det powerplan fant. Effekt fra nettet og importregisteret er de to som betyr noe: effekten er hvor fort huset trekker, registeret er det som avslutter hvert effektvindu eksakt. Alt annet er valgfritt.",
+        "data": {
+          "grid_power": "Effekt fra nettet",
+          "import_register": "Importregister",
+          "export_register": "Eksportregister",
+          "production_power": "Produksjonseffekt",
+          "meter_window": "Målerens egen timeverdi",
+          "phase_current_l1": "Strøm L1",
+          "phase_current_l2": "Strøm L2",
+          "phase_current_l3": "Strøm L3"
+        },
+        "data_description": {
+          "grid_power": "Målerens effektavlesning for hele huset. Import er positiv, eksport negativ.",
+          "import_register": "Målerens totale importerte energi. Dette er det som avslutter hvert vindu eksakt.",
+          "export_register": "Målerens totale eksporterte energi, hvis du har produksjon. Valgfritt.",
+          "production_power": "Hva panelene eller annen produksjon leverer akkurat nå. Valgfritt.",
+          "meter_window": "Noen målere publiserer forbruket for inneværende time selv. Valgfritt.",
+          "phase_current_l1": "Strøm per fase, i ampere. Valgfritt, og nyttig bare med alle tre.",
+          "phase_current_l2": "Strøm per fase, i ampere. Valgfritt.",
+          "phase_current_l3": "Strøm per fase, i ampere. Valgfritt."
+        }
+      },
+      "prices": {
+        "title": "Hvor kommer prisene dine fra?",
+        "description": "powerplan trenger morgendagens priser for å planlegge i natt. Velg det du allerede har.",
+        "data": {
+          "source": "Priskilde"
+        },
+        "data_description": {
+          "source": "Nord Pool leses gjennom den offisielle integrasjonen; en sensor er hva som helst som allerede publiserer en priskurve."
+        }
+      },
+      "prices_nordpool": {
+        "title": "Nord Pool",
+        "description": "powerplan spør Nord Pool-integrasjonen om prisene for hver dag; den kontakter aldri markedet selv. Morgendagens auksjonsresultat kommer vanligvis tidlig på ettermiddagen, markedstid.",
+        "data": {
+          "config_entry": "Nord Pool-integrasjon",
+          "area": "Prisområde",
+          "currency": "Valuta"
+        },
+        "data_description": {
+          "config_entry": "Hvilken Nord Pool-oppføring prisene skal leses gjennom.",
+          "area": "Prisområdet huset ligger i.",
+          "currency": "Valutaen det spørres om, normalt din egen."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "publication_tz": "Tidssone for publisering",
+              "publication_time": "Publiseringstidspunkt"
+            },
+            "data_description": {
+              "publication_tz": "Avansert: tidssonen markedet publiserer i. Utledet fra prisområdet; la stå tomt for å beholde det.",
+              "publication_time": "Avansert: det lokale klokkeslettet morgendagens priser vanligvis kommer. Utledet fra prisområdet; la stå tomt for å beholde det."
+            }
+          }
+        }
+      },
+      "prices_entity": {
+        "title": "Prissensoren din",
+        "description": "Velg sensoren som allerede bærer en priskurve. powerplan kjenner igjen de vanlige formatene og forteller hvilket den oppdaget.",
+        "data": {
+          "entity_id": "Prissensor",
+          "format": "Format"
+        },
+        "data_description": {
+          "entity_id": "Sensoren som har timene og prisene i attributtene sine.",
+          "format": "Oppdaget fra integrasjonen som eier sensoren. Endre det bare hvis prisene blir feil."
+        }
+      },
+      "prices_fixed": {
+        "title": "Fastprisen din",
+        "description": "Uten en kurve å følge kan powerplan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og forsvarer effektmålet ditt.",
+        "data": {
+          "price": "Pris per kWh"
+        },
+        "data_description": {
+          "price": "Hva du betaler for en kilowattime."
+        }
+      },
+      "modifiers": {
+        "title": "Hva legges på toppen?",
+        "description": "Spotprisen er ikke det du betaler. Kryss av det som gjelder deg; hver av dem stiller sitt eget korte spørsmål etterpå. Nettselskapets energiledd kommer fra nettleien du velger senere, med tallene og kilden deres, så du slipper å skrive det inn.",
+        "data": {
+          "modifiers": "Legges på toppen"
+        },
+        "data_description": {
+          "modifiers": "Alt powerplan kan legge til en råpris. Utelater du noe, er det bare ikke en del av prisen din."
+        }
+      },
+      "modifier_options": {
+        "title": "{modifier}",
+        "description": "Tallene for denne. Hvert felt har et forvalg; endre det du vet.",
+        "data": {
+          "rate": "Merverdiavgift",
+          "amount": "Beløp per kWh",
+          "periods": "Perioder",
+          "fallback": "Reserveverdi",
+          "price": "Pris per kWh",
+          "cap_kwh_per_month": "Tak per måned",
+          "threshold": "Terskel",
+          "share": "Andel",
+          "mult": "Faktor",
+          "offset": "Påslag per kWh",
+          "tiers": "Trinn",
+          "basis": "Regnes over",
+          "rates": "Dagtyper"
+        },
+        "data_description": {
+          "rate": "Som brøk: 0,25 er 25 %.",
+          "amount": "I din valuta, per kWh. Negative beløp er tillatt.",
+          "periods": "Dag- og nattperiodene og prisene deres. Nettleie-forvalget fyller dette ut for deg.",
+          "fallback": "Hva som brukes for en time ingen periode dekker.",
+          "price": "I din valuta, per kWh.",
+          "cap_kwh_per_month": "Hvor mange kWh i måneden fastprisen dekker; over det gjelder spot.",
+          "threshold": "Prisen per kWh der staten begynner å dekke en andel.",
+          "share": "Som brøk: 0,9 er 90 %.",
+          "mult": "Strømleverandørens faktor på spotprisen. 1 er ingen endring.",
+          "offset": "Legges til hver kWh, i din valuta.",
+          "tiers": "Forbrukstrinnene per måned og prisene deres.",
+          "basis": "Om trinnene teller forbruket i en måned eller et år.",
+          "rates": "De varslede dagtypene og hva hver av dem koster."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "applies_to": "Gjelder for",
+              "months": "Måneder",
+              "applies_above_mtd_kwh": "Bare over månedens forbruk",
+              "negative_rule": "Negative priser"
+            },
+            "data_description": {
+              "applies_to": "Hvilke priskomponenter avgiften beregnes av. Tom betyr alle.",
+              "months": "Månedsnumrene dette gjelder i. Tom betyr hele året.",
+              "applies_above_mtd_kwh": "Antall kWh denne kalendermåneden før avgiften begynner. Tom betyr alltid.",
+              "negative_rule": "Hva ordningen gjør når spotprisen er under null."
+            }
+          }
+        }
+      },
+      "export": {
+        "title": "Selger du strøm tilbake?",
+        "description": "Hvis du eksporterer, avgjør det du får betalt om lading av batteriet slår salg. En negativ eksportpris er mulig, og powerplan skjuler den ikke.",
+        "data": {
+          "mode": "Eksportpris",
+          "amount": "Beløp per kWh",
+          "share": "Andel av spot"
+        },
+        "data_description": {
+          "mode": "Hvordan leverandøren betaler for det du sender ut.",
+          "amount": "Fastprisen, eller det som trekkes fra spot.",
+          "share": "Som brøk: 0,9 er 90 % av spot."
+        }
+      },
+      "carriers": {
+        "title": "Andre energibærere?",
+        "description": "En varmepumpe konkurrerer med det andre som varmer huset. Kryss av det du kjøper i tillegg til strøm; la det stå tomt hvis strøm er alt du har.",
+        "data": {
+          "carriers": "Andre energibærere"
+        },
+        "data_description": {
+          "carriers": "Hver av dem spør om prisen sin etterpå."
+        }
+      },
+      "carrier_options": {
+        "title": "{carrier}",
+        "description": "Hva denne energibæreren koster.",
+        "data": {
+          "mode": "Priskilde",
+          "price": "Pris per kWh",
+          "entity_id": "Prissensor"
+        },
+        "data_description": {
+          "mode": "Et tall du skriver, eller en sensor som leses én gang om dagen.",
+          "price": "I din valuta, per kWh levert energi.",
+          "entity_id": "Sensoren som har dagens pris, hvis du valgte sensor."
+        }
+      },
+      "tariff": {
+        "title": "Hvem er nettselskapet ditt?",
+        "description": "Effektdelen av nettleien er det powerplan først og fremst er til for. Velg nettselskapet ditt, og neste steg viser med vanlige ord hva powerplan tror de fakturerer deg — kontroller det mot din egen faktura.",
+        "data": {
+          "country": "Land",
+          "preset": "Nettselskap"
+        },
+        "data_description": {
+          "country": "Hvilket lands tariffer som skal listes.",
+          "preset": "Velg ditt, eller Egendefinert for å beskrive tariffen selv. Er du usikker, er det generiske valget en trygg start, og du kan endre det senere."
+        }
+      },
+      "tariff_preset": {
+        "title": "Er dette regningen din?",
+        "description": "**{name}**\n\n{description}\n\nKjenner du ikke igjen dette, gå tilbake og velg et annet nettselskap, eller Egendefinert. Feil her betyr at powerplan forsvarer feil tall hele måneden.\n\nKilde: {source}"
+      },
+      "tariff_target": {
+        "title": "Hva skal powerplan forsvare?",
+        "description": "Målet er taket powerplan holder hver time under. Automatisk forsvarer trinnet du allerede er i denne måneden, som er det riktige svaret til du kjenner ditt eget mønster.",
+        "data": {
+          "target": "Mål",
+          "risk": "Hvor mye som skal satses",
+          "target_kw": "Mål"
+        },
+        "data_description": {
+          "target": "Automatisk, eller et bestemt trinn med månedsgebyret sitt.",
+          "risk": "Nettselskapet fakturerer gjennomsnittet av de tre høyeste timene dine, så timer under dagens topp er allerede betalt for. Å bruke dem koster ingenting.",
+          "target_kw": "Antall kW som skal forsvares, for en tariff uten trinn."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "eps_kwh": "Sikkerhetsmargin",
+              "cap_margin_kw": "Frikjøringsmargin"
+            },
+            "data_description": {
+              "eps_kwh": "Avansert: kWh av vinduet som holdes igjen for målerforsinkelse og reaksjonstid. kWh, ikke watt.",
+              "cap_margin_kw": "Avansert: hvor langt over målet frikjøringen kan strekke seg."
+            }
+          }
+        }
+      },
+      "tariff_bills": {
+        "title": "De siste tolv månedene dine",
+        "description": "Denne tariffen snitter over et rullende år, så powerplan trenger det du allerede har brukt. Fyll inn det du finner på fakturaene; hvert felt er valgfritt, og powerplan sier fra når den vet for lite.",
+        "data": {
+          "month_1": "Måned 1",
+          "month_2": "Måned 2",
+          "month_3": "Måned 3",
+          "month_4": "Måned 4",
+          "month_5": "Måned 5",
+          "month_6": "Måned 6",
+          "month_7": "Måned 7",
+          "month_8": "Måned 8",
+          "month_9": "Måned 9",
+          "month_10": "Måned 10",
+          "month_11": "Måned 11",
+          "month_12": "Måned 12"
+        },
+        "data_description": {
+          "month_1": "Den høyeste målte verdien den måneden, i kW.",
+          "month_2": "Den høyeste målte verdien den måneden, i kW.",
+          "month_3": "Den høyeste målte verdien den måneden, i kW.",
+          "month_4": "Den høyeste målte verdien den måneden, i kW.",
+          "month_5": "Den høyeste målte verdien den måneden, i kW.",
+          "month_6": "Den høyeste målte verdien den måneden, i kW.",
+          "month_7": "Den høyeste målte verdien den måneden, i kW.",
+          "month_8": "Den høyeste målte verdien den måneden, i kW.",
+          "month_9": "Den høyeste målte verdien den måneden, i kW.",
+          "month_10": "Den høyeste målte verdien den måneden, i kW.",
+          "month_11": "Den høyeste målte verdien den måneden, i kW.",
+          "month_12": "Den høyeste målte verdien den måneden, i kW."
+        }
+      },
+      "tariff_limits": {
+        "title": "Avtalt effekt",
+        "description": "Denne tariffen avtaler en effektgrense per periode. Verdiene kommer fra tariffen; endre dem til det din egen avtale sier.",
+        "data": {
+          "limit_1": "Grense 1",
+          "limit_2": "Grense 2",
+          "limit_3": "Grense 3",
+          "limit_4": "Grense 4"
+        },
+        "data_description": {
+          "limit_1": "Avtalt effekt for denne perioden.",
+          "limit_2": "Avtalt effekt for denne perioden.",
+          "limit_3": "Avtalt effekt for denne perioden.",
+          "limit_4": "Avtalt effekt for denne perioden."
+        }
+      },
+      "hard_limits": {
+        "title": "Den harde grensen",
+        "description": "Grensen powerplan aldri krysser, uansett hva prisen eller tariffen sier. Forvalget er det hovedsikringen kan levere.",
+        "data": {
+          "contracted_kw": "Hard grense"
+        },
+        "data_description": {
+          "contracted_kw": "Antall kW hele huset kan trekke samtidig."
+        }
+      },
+      "presence": {
+        "title": "Er noen hjemme?",
+        "description": "Komfort betyr mindre i et tomt hus. powerplan kan følge personene i Home Assistant, eller overlate tilstedeværelse til deg og automasjonene dine.",
+        "data": {
+          "mode": "Tilstedeværelse",
+          "persons": "Personer"
+        },
+        "data_description": {
+          "mode": "Automatisk følger personene nedenfor; manuell overlater det til et tjenestekall eller tilstedeværelsesentiteten.",
+          "persons": "Alle som, når de er borte, gjør at huset er borte."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "away_delay_min": "Borte etter"
+            },
+            "data_description": {
+              "away_delay_min": "Avansert: antall minutter før et tomt hus regnes som borte."
+            }
+          }
+        }
+      },
+      "notifications": {
+        "title": "Hva skal powerplan si fra om?",
+        "description": "Tre ting er verdt en avbrytelse; alt annet er en entitet du kan legge på et dashbord. Et vedvarende varsel virker alltid, også før du har satt opp en varslingstjeneste.",
+        "data": {
+          "peak_warning": "Effektvarsel",
+          "comfort_violation": "Komfort brutt",
+          "device_unhealthy": "Enhet svarer ikke",
+          "notify_service": "Varslingstjeneste",
+          "quiet_start": "Stille fra",
+          "quiet_end": "Stille til"
+        },
+        "data_description": {
+          "peak_warning": "Denne timen er på vei over effektmålet ditt.",
+          "comfort_violation": "Et rom eller en tank gikk under grensen du satte.",
+          "device_unhealthy": "En styrt enhet sluttet å svare.",
+          "notify_service": "Hvilken varslingstjeneste kategoriene satt til Varsling bruker.",
+          "quiet_start": "Bare det som haster slipper gjennom etter dette.",
+          "quiet_end": "Vanlige varsler starter igjen på dette tidspunktet."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
+              "peak_uncontrolled": "Effekttopp fra ustyrt last",
+              "deadline_at_risk": "Frist i fare",
+              "level_up": "Effekttrinn i ferd med å øke",
+              "price_source_dead": "Priskilden er stille",
+              "legionella_at_risk": "Legionellaprogram i fare",
+              "safe_mode": "Sikker modus",
+              "force_expired": "Tvang utløpt",
+              "prices_daily_summary": "Daglig prissammendrag"
+            },
+            "data_description": {
+              "peak_uncontrolled": "Effekttoppen kommer fra noe powerplan ikke styrer.",
+              "deadline_at_risk": "En lading eller et program blir ikke ferdig i tid.",
+              "level_up": "Måneden er i ferd med å gå opp i et dyrere trinn.",
+              "price_source_dead": "Ingen priser har kommet inn på et døgn.",
+              "legionella_at_risk": "Beskyttelsesprogrammet til en varmtvannsbereder blir ikke fullført.",
+              "safe_mode": "Motoren sluttet å beslutte og slapp alt fritt.",
+              "force_expired": "En manuell overstyring løp ut og vanlig styring tok over.",
+              "prices_daily_summary": "Morgendagens priser, én gang om dagen."
+            }
+          }
+        }
+      },
+      "review": {
+        "title": "Før powerplan starter",
+        "description": "Dette er hva powerplan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}. powerplan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. Den harde grensen din er {hard_limit_kw} kW.\n\n**Måler** — {meter}\n\n**Priser** — {prices}, i {currency}.\n\n**Nettleie** — {tariff}\n\n**Tilstedeværelse** — {presence}\n\n**Varsler** — {notifications}\n\n**Tider** — alt powerplan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. powerplan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
+        "data": {
+          "start_in_observe": "Start i observasjon"
+        },
+        "data_description": {
+          "start_in_observe": "Anbefales sterkt. powerplan beslutter og forklarer, men skriver ikke noe sted, så du kan se hva den ville gjort før den gjør det."
+        }
+      }
+    },
+    "error": {
+      "fuse_out_of_range": "En hovedsikring er mellom 6 A og 400 A. Sjekk merkestrømmen som står på sikringen.",
+      "phases_not_available": "Det antallet faser finnes ikke på dette fordelingssystemet.",
+      "power_unit_not_watts": "En effektsensor må rapportere watt eller kilowatt.",
+      "eps_looks_like_watts": "Dette ser ut som watt. Sikkerhetsmarginen er energi: 0,30 kWh er forvalget for et vindu på en time.",
+      "eps_not_positive": "Sikkerhetsmarginen må være større enn null."
+    },
+    "abort": {
+      "already_configured": "Denne måleren er allerede satt opp som et powerplan-anlegg."
+    }
+  },
+  "selector": {
+    "voltage_system": {
+      "options": {
+        "it_230": "230 V, tre ledere, ingen nøytralleder (IT — mange eldre norske hus)",
+        "tn_400": "400 V med nøytralleder (TN — det meste av Europa, nyere norske hus)",
+        "tt_400": "400 V med jordelektrode (TT)",
+        "split_240": "120/240 V splittfase (Nord-Amerika)",
+        "single_230": "230 V enfase (Storbritannia, Irland, Australia)",
+        "single_120": "120 V enfase"
+      }
+    },
+    "phases": {
+      "options": {
+        "1": "Én fase",
+        "3": "Tre faser"
+      }
+    },
+    "price_source": {
+      "options": {
+        "nordpool_action": "Nord Pool (innebygd)",
+        "entity": "En prissensor jeg allerede har",
+        "fixed": "En fastpris jeg skriver inn"
+      }
+    },
+    "modifier": {
+      "options": {
+        "vat": "Merverdiavgift",
+        "levy": "Avgifter",
+        "tou_schedule": "Energiledd (dag/natt)",
+        "fixed_price": "Statlig ordning med fastpris (Norgespris)",
+        "subsidy_threshold": "Strømstøtte over en terskel",
+        "spot_scale": "Påslag fra leverandøren",
+        "cumulative_tier": "Trinn etter månedsforbruk",
+        "day_type": "Dagtypetariff (kritiske toppdager)"
+      }
+    },
+    "export_mode": {
+      "options": {
+        "none": "Jeg eksporterer ikke",
+        "fixed": "En fastpris",
+        "spot_minus": "Spot minus et beløp",
+        "spot_times": "En andel av spot",
+        "from_source": "Fra priskilden"
+      }
+    },
+    "carrier": {
+      "options": {
+        "gas": "Gass",
+        "district_heat": "Fjernvarme",
+        "oil": "Olje",
+        "pellets": "Pellets"
+      }
+    },
+    "carrier_mode": {
+      "options": {
+        "fixed": "En fastpris",
+        "sensor": "Fra en sensor, daglig"
+      }
+    },
+    "risk": {
+      "options": {
+        "flat": "Aldri over målet",
+        "free_ride": "Bruk timene dagens topp allerede har betalt for",
+        "full": "Sats på periodesnittet"
+      }
+    },
+    "transport": {
+      "options": {
+        "off": "Av",
+        "persistent": "Et varsel i Home Assistant",
+        "notify": "Send det til telefonen min"
+      }
+    },
+    "presence_mode": {
+      "options": {
+        "auto": "Automatisk, fra personene mine",
+        "manual": "Jeg setter det selv"
+      }
+    },
+    "timezone_source": {
+      "options": {
+        "hass": "fra Home Assistant-innstillingene dine",
+        "user": "som du valgte her fordi Home Assistant ikke har noen satt"
+      }
+    },
+    "review": {
+      "options": {
+        "absent": "ikke satt opp"
       }
     }
   }

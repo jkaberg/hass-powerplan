@@ -45,8 +45,8 @@ CURRENCY: Final = "EUR"
 
 #: The Advanced override every source with a `Publication` renders (D-0100).
 PUBLICATION_FIELDS: Final = (
-    Field(key="publication_tz", kind=FieldKind.TEXT, default="", advanced=True),
-    Field(key="publication_time", kind=FieldKind.TIME, default="", advanced=True),
+    Field(key="publication_tz", kind=FieldKind.TEXT, default=None, advanced=True),
+    Field(key="publication_time", kind=FieldKind.TIME, default=None, advanced=True),
 )
 
 

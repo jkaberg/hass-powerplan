@@ -129,8 +129,8 @@ class NordpoolActionSource:
         Field(key="config_entry", kind=FieldKind.TEXT, required=True),
         Field(key="area", kind=FieldKind.SELECT, options=AREAS, required=True),
         Field(key="currency", kind=FieldKind.TEXT, required=True),
-        Field(key="publication_tz", kind=FieldKind.TEXT, default="", advanced=True),
-        Field(key="publication_time", kind=FieldKind.TIME, default="", advanced=True),
+        Field(key="publication_tz", kind=FieldKind.TEXT, default=None, advanced=True),
+        Field(key="publication_time", kind=FieldKind.TIME, default=None, advanced=True),
     )
 
     def __init__(

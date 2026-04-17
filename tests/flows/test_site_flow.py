@@ -1,0 +1,498 @@
+"""The site config flow, end to end (D8 §9 item 1, D8 §5.1).
+
+Everything here is driven through `hass.config_entries.flow`, never by injecting
+entry data (D9 §5.10): the steps, their order, their skips and the entry they
+produce are all under test at the boundary the household actually uses.
+
+The three onboarding paths of HLD §4 are three tests. The invariants marked are
+D8's own - INV-49 (validation lives in the schemas), INV-65 (advanced is never
+required), INV-66 (what the flow derives is materialised) and INV-67 (no flow
+ends on a bare "Success").
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from homeassistant.config_entries import SOURCE_USER
+from homeassistant.data_entry_flow import FlowResultType, section
+
+from custom_components.powerplan.const import (
+    CONF_ACTIVE,
+    CONF_ELECTRICAL,
+    CONF_METER,
+    CONF_PATH,
+    CONF_PRICES,
+    CONF_TARIFF,
+    CONF_TIMEZONE,
+    CONF_TIMEZONE_SOURCE,
+    DOMAIN,
+    SECTION_ADVANCED,
+    OnboardingPath,
+)
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+SITE_TZ = "Europe/Oslo"
+UNSET_TZ = "Mars/Olympus Mons"
+CURRENCY = "NOK"
+
+
+def _configure(hass: HomeAssistant, time_zone: str = SITE_TZ) -> None:
+    """Set the two things the flow derives from the environment."""
+    hass.config.time_zone = time_zone
+    hass.config.currency = CURRENCY
+    hass.config.country = "NO"
+
+
+async def _start(hass: HomeAssistant, path: str, **context: Any) -> dict[str, Any]:
+    """Open the flow, choose an onboarding path and answer the name step."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER, **context}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "user"
+    assert set(result["menu_options"]) == {"full", "price_only", "fuse_only"}
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": path}
+    )
+    assert result["step_id"] == "name"
+    return dict(
+        await hass.config_entries.flow.async_configure(result["flow_id"], {"name": "Hjemme"})
+    )
+
+
+async def _answer(hass: HomeAssistant, result: dict[str, Any], **user_input: Any) -> dict[str, Any]:
+    """Submit one step and return the next."""
+    return dict(await hass.config_entries.flow.async_configure(result["flow_id"], dict(user_input)))
+
+
+ELECTRICAL_NO = {
+    "country": "NO",
+    "system": "it_230",
+    "phases": "3",
+    "main_fuse_a": "63",
+}
+
+NOTIFICATIONS = {
+    "peak_warning": "persistent",
+    "comfort_violation": "persistent",
+    "device_unhealthy": "persistent",
+    "quiet_start": "22:00:00",
+    "quiet_end": "07:00:00",
+}
+
+
+async def _through_meter(
+    hass: HomeAssistant, result: dict[str, Any], device_id: str
+) -> dict[str, Any]:
+    """Answer the electrical step, the device pick and the seven roles."""
+    assert result["step_id"] == "electrical"
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+
+    assert result["step_id"] == "meter"
+    result = await _answer(hass, result, device=device_id)
+
+    assert result["step_id"] == "meter_roles"
+    roles = result["data_schema"]({})
+    # The captured AMS meter exposes power, a register and an export register;
+    # it has no current sensors at all, so those three roles stay empty.
+    assert roles["grid_power"] == "sensor.dataskap_strommaler_power"
+    assert roles["import_register"] == "sensor.dataskap_strommaler_energy"
+    assert roles["export_register"] == "sensor.dataskap_strommaler_produced_energy"
+    assert roles["meter_window"] == "sensor.akkumulert_stromforbruk_per_innevaerende_time"
+    assert "phase_current_l1" not in roles
+    return await _answer(hass, result, **roles)
+
+
+async def _through_prices(
+    hass: HomeAssistant, result: dict[str, Any], nordpool_entry: str
+) -> dict[str, Any]:
+    """Answer the price source, its options, the modifiers, export and carriers."""
+    assert result["step_id"] == "prices"
+    result = await _answer(hass, result, source="nordpool_action")
+
+    assert result["step_id"] == "prices_nordpool"
+    suggested = result["data_schema"]({})
+    assert suggested["config_entry"] == nordpool_entry
+    assert suggested["area"] == "NO3"
+    result = await _answer(hass, result, **suggested)
+
+    assert result["step_id"] == "modifiers"
+    # Norway's pre-tick: only a modifier whose required fields all have defaults
+    # may be pre-ticked, so VAT is on and the grid charge arrives with the preset.
+    assert result["data_schema"]({})["modifiers"] == ["vat"]
+    result = await _answer(hass, result, modifiers=["vat"])
+
+    assert result["step_id"] == "modifier_options"
+    assert result["description_placeholders"]["modifier"] == "vat"
+    result = await _answer(hass, result, rate=0.25)
+
+    assert result["step_id"] == "export"
+    result = await _answer(hass, result, mode="none")
+
+    assert result["step_id"] == "carriers"
+    return await _answer(hass, result, carriers=[])
+
+
+async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
+    """Answer country, preset, the rendered description and target/risk."""
+    assert result["step_id"] == "tariff"
+    assert result["data_schema"]({})["country"] == "NO"
+    result = await _answer(hass, result, country="NO", preset="no/tensio")
+
+    assert result["step_id"] == "tariff_preset"
+    described = result["description_placeholders"]["description"]
+    assert "Tensio bills the average of your three highest hours" in described
+    result = await _answer(hass, result)
+
+    assert result["step_id"] == "tariff_target"
+    # PLAN §7 dec. 18: Tensio is `per_day = max`, so the free ride is the default.
+    assert result["data_schema"]({})["risk"] == "free_ride"
+    return await _answer(hass, result, target="auto", risk="free_ride")
+
+
+async def _tail(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
+    """Answer hard limits, presence and notifications; stop on the review."""
+    assert result["step_id"] == "hard_limits"
+    result = await _answer(hass, result)
+
+    assert result["step_id"] == "presence"
+    result = await _answer(hass, result, mode="auto", persons=["person.joel", "person.kari"])
+
+    assert result["step_id"] == "notifications"
+    result = await _answer(hass, result, **NOTIFICATIONS)
+
+    assert result["step_id"] == "review"
+    return result
+
+
+@pytest.mark.inv("INV-66")
+@pytest.mark.inv("INV-67")
+async def test_the_full_path_creates_a_site_in_observe(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """Meter, prices and tariff, end to end, with every derivation materialised."""
+    _configure(hass)
+
+    result = await _start(hass, "full")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _through_tariff(hass, result)
+    result = await _tail(hass, result)
+
+    result = await _answer(hass, result, start_in_observe=True)
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Hjemme"
+    data = result["data"]
+
+    assert data[CONF_PATH] == OnboardingPath.FULL
+    assert data[CONF_ACTIVE] is False
+    assert data[CONF_TIMEZONE] == SITE_TZ
+
+    # INV-66: D3's numbers are computed once, at setup, and stored.
+    derived = data[CONF_ELECTRICAL]["derived"]
+    assert derived["fuse_w"] == pytest.approx(63.0 * 3**0.5 * 230.0)
+    assert derived["plausible_w"][1] == pytest.approx(1.2 * derived["fuse_w"])
+    assert data[CONF_ELECTRICAL]["per_phase_limit_a"] == 63.0
+
+    assert data[CONF_METER]["roles"]["import_register"] == "sensor.dataskap_strommaler_energy"
+
+    prices = data[CONF_PRICES]
+    assert prices["sources"][0]["key"] == "nordpool_action"
+    assert prices["sources"][0]["options"]["area"] == "NO3"
+    assert (
+        prices["modifiers"][0]["key"],
+        {"rate": prices["modifiers"][0]["options"]["rate"]},
+    ) == ("vat", {"rate": "0.25"})
+    # D2 §6: the preset's own energy components are handed to D1 as a modifier.
+    grid = next(mod for mod in prices["modifiers"] if mod["key"] == "tou_schedule")
+    assert grid["source"] == "no.tensio.household"
+
+    tariff = data[CONF_TARIFF]
+    assert tariff["preset_id"] == "no.tensio.household"
+    assert tariff["preset_file"] == "no/tensio"
+    assert tariff["version_ids"] == [
+        "no.tensio.household@2026-01-01",
+        "no.tensio.household@2027-01-01",
+    ]
+    assert tariff["risk"] == 0.5
+    assert tariff["risk_source"] == "per_day_max"
+
+
+@pytest.mark.inv("INV-50")
+async def test_the_unique_id_is_the_meters_own_register(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """The entry is identified by the import register's platform unique id."""
+    _configure(hass)
+
+    result = await _start(hass, "full")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _through_tariff(hass, result)
+    result = await _tail(hass, result)
+    await _answer(hass, result, start_in_observe=True)
+    await hass.async_block_till_done()
+
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.unique_id == "meter:ams_han:dataskap_strommaler_energy"
+
+
+async def test_the_price_only_path_skips_the_meter_and_the_tariff(
+    hass: HomeAssistant, nordpool_entry: str, persons: list[str]
+) -> None:
+    """Price only: no meter step, no tariff step, and the capacity axis off."""
+    _configure(hass)
+
+    result = await _start(hass, "price_only")
+    assert result["step_id"] == "electrical"
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+
+    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _tail(hass, result)
+    result = await _answer(hass, result, start_in_observe=True)
+    await hass.async_block_till_done()
+
+    data = result["data"]
+    assert data[CONF_PATH] == OnboardingPath.PRICE_ONLY
+    assert data[CONF_METER] is None
+    assert data[CONF_TARIFF]["preset_id"] == "no_peak"
+    assert data[CONF_PRICES]["sources"][0]["key"] == "nordpool_action"
+
+
+async def test_the_fuse_only_path_has_no_prices_and_no_tariff(
+    hass: HomeAssistant, ams_meter: str, persons: list[str]
+) -> None:
+    """Fuse only: dynamic load balancing, nothing priced."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _tail(hass, result)
+    result = await _answer(hass, result, start_in_observe=True)
+    await hass.async_block_till_done()
+
+    data = result["data"]
+    assert data[CONF_PATH] == OnboardingPath.FUSE_ONLY
+    assert data[CONF_PRICES] is None
+    assert data[CONF_TARIFF] is None
+    assert data[CONF_METER]["roles"]["grid_power"] == "sensor.dataskap_strommaler_power"
+
+
+@pytest.mark.inv("INV-66")
+async def test_the_timezone_comes_from_home_assistant(
+    hass: HomeAssistant, ams_meter: str, persons: list[str]
+) -> None:
+    """With a zone configured there is no timezone step; the zone is stored."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    assert result["step_id"] == "electrical"
+
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _tail(hass, result)
+    result = await _answer(hass, result, start_in_observe=True)
+
+    assert result["data"][CONF_TIMEZONE] == SITE_TZ
+    assert result["data"][CONF_TIMEZONE_SOURCE] == "hass"
+
+
+@pytest.mark.inv("INV-66")
+async def test_the_timezone_step_appears_when_home_assistant_has_none(
+    hass: HomeAssistant, ams_meter: str, persons: list[str]
+) -> None:
+    """An unusable `hass.config.time_zone` is the only reason to ask."""
+    _configure(hass, UNSET_TZ)
+
+    result = await _start(hass, "fuse_only")
+    assert result["step_id"] == "timezone"
+    result = await _answer(hass, result, timezone=SITE_TZ)
+
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _tail(hass, result)
+    result = await _answer(hass, result, start_in_observe=True)
+
+    assert result["data"][CONF_TIMEZONE] == SITE_TZ
+    assert result["data"][CONF_TIMEZONE_SOURCE] == "user"
+
+
+@pytest.mark.inv("INV-49")
+async def test_a_guard_band_in_watts_is_refused_inline(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """D2 §6: `eps_kwh > 2.0` is watts wearing a kWh label."""
+    _configure(hass)
+
+    result = await _start(hass, "full")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _through_prices(hass, result, nordpool_entry)
+
+    assert result["step_id"] == "tariff"
+    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _answer(hass, result)
+
+    assert result["step_id"] == "tariff_target"
+    result = await _answer(
+        hass, result, target="auto", risk="free_ride", advanced={"eps_kwh": 300.0}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "tariff_target"
+    assert result["errors"] == {"eps_kwh": "eps_looks_like_watts"}
+
+
+@pytest.mark.inv("INV-49")
+async def test_an_implausible_fuse_is_refused_inline(hass: HomeAssistant) -> None:
+    """D3 §6: a fuse below 6 A or above 400 A is not a grid connection."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    result = await _answer(hass, result, **ELECTRICAL_NO, advanced={"per_phase_limit_a": 900.0})
+
+    assert result["step_id"] == "electrical"
+    assert result["errors"] == {"per_phase_limit_a": "fuse_out_of_range"}
+
+
+async def test_a_step_reshown_keeps_what_was_answered(hass: HomeAssistant) -> None:
+    """Back navigation: every step but the review is `last_step=False`."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    assert result["step_id"] == "electrical"
+    assert result["last_step"] is False
+
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+    assert result["step_id"] == "meter"
+
+    reshown = dict(await hass.config_entries.flow.async_configure(result["flow_id"]))
+    assert reshown["step_id"] == "meter"
+    assert reshown["last_step"] is False
+
+
+@pytest.mark.inv("INV-65")
+async def test_advanced_is_never_required(
+    hass: HomeAssistant, ams_meter: str, persons: list[str]
+) -> None:
+    """Advanced is a collapsed section, pre-filled, and never required."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    assert result["step_id"] == "electrical"
+    rendered = result["data_schema"].schema
+    advanced = next(value for key, value in rendered.items() if str(key) == SECTION_ADVANCED)
+    assert isinstance(advanced, section)
+    assert advanced.options["collapsed"] is True
+    assert {str(key) for key in advanced.schema.schema} == {"per_phase_limit_a"}
+
+    # Answering the step without opening the section at all still works.
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+    result = await _through_meter_roles_only(hass, result, ams_meter)
+    result = await _tail(hass, result)
+    result = await _answer(hass, result, start_in_observe=True)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_ELECTRICAL]["per_phase_limit_a"] == 63.0
+
+
+async def _through_meter_roles_only(
+    hass: HomeAssistant, result: dict[str, Any], device_id: str
+) -> dict[str, Any]:
+    """Answer the device pick and accept every pre-filled role."""
+    assert result["step_id"] == "meter"
+    result = await _answer(hass, result, device=device_id)
+    assert result["step_id"] == "meter_roles"
+    return await _answer(hass, result, **result["data_schema"]({}))
+
+
+@pytest.mark.inv("INV-67")
+async def test_the_review_explains_what_was_derived(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """The review names the tariff, the timezone and the observe start."""
+    _configure(hass)
+
+    result = await _start(hass, "full")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _through_tariff(hass, result)
+    result = await _tail(hass, result)
+
+    placeholders = result["description_placeholders"]
+    assert "Tensio bills the average of your three highest hours" in placeholders["tariff"]
+    assert placeholders["timezone"] == SITE_TZ
+    assert "Home Assistant" in placeholders["timezone_source"]
+    assert "63" in placeholders["connection"]
+    assert "sensor.dataskap_strommaler_energy" in placeholders["meter"]
+    assert "NO3" in placeholders["prices"]
+    assert "person.joel" in placeholders["presence"]
+    assert result["last_step"] is True
+
+
+@pytest.mark.inv("INV-49")
+async def test_three_phases_on_a_single_phase_supply_is_refused_inline(
+    hass: HomeAssistant,
+) -> None:
+    """D3 §5.1: a phase count the supply system has no conversion for.
+
+    Not a split-phase service: that one delivers two legs whatever `phases` says,
+    so `ElectricalProfile.service_phases()` answers for it and the combination is
+    meaningful. A 230 V single-phase supply with three phases is the one the
+    domain type itself refuses.
+    """
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    result = await _answer(hass, result, **{**ELECTRICAL_NO, "system": "single_230", "phases": "3"})
+
+    assert result["step_id"] == "electrical"
+    assert result["errors"] == {"phases": "phases_not_available"}
+
+
+@pytest.mark.inv("INV-49")
+async def test_a_power_role_bound_to_degrees_is_refused_inline(
+    hass: HomeAssistant, ams_meter: str
+) -> None:
+    """D3 §6: a power entity whose unit is neither W nor kW is refused."""
+    _configure(hass)
+
+    result = await _start(hass, "fuse_only")
+    assert result["step_id"] == "electrical"
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+
+    assert result["step_id"] == "meter"
+    result = await _answer(hass, result, device=ams_meter)
+
+    assert result["step_id"] == "meter_roles"
+    roles = {**result["data_schema"]({}), "grid_power": "sensor.dataskap_strommaler_temperature"}
+    result = await _answer(hass, result, **roles)
+
+    assert result["step_id"] == "meter_roles"
+    assert result["errors"] == {"grid_power": "power_unit_not_watts"}
+
+
+@pytest.mark.inv("INV-49")
+async def test_a_guard_band_of_zero_is_refused_inline(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """D2 §6: the guard band is what covers meter cadence; zero covers nothing."""
+    _configure(hass)
+
+    result = await _start(hass, "full")
+    result = await _through_meter(hass, result, ams_meter)
+    result = await _through_prices(hass, result, nordpool_entry)
+
+    assert result["step_id"] == "tariff"
+    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _answer(hass, result)
+
+    assert result["step_id"] == "tariff_target"
+    result = await _answer(hass, result, target="auto", risk="free_ride", advanced={"eps_kwh": 0.0})
+
+    assert result["step_id"] == "tariff_target"
+    assert result["errors"] == {"eps_kwh": "eps_not_positive"}

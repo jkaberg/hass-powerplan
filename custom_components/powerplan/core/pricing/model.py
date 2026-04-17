@@ -57,6 +57,15 @@ class FieldKind(StrEnum):
     TIME = "time"
     SELECT = "select"
     LIST = "list"
+    ENTITY = "entity"
+    """One Home Assistant entity id (`design/DECISIONS.md` D-0087, D-0121).
+
+    The member D-0087 left owing: D8 renders it as an `EntitySelector`, so a
+    schema that names an entity no longer has to call it text. It is the only
+    kind WP1.3 added - a device, an area and a timezone are asked for by a step
+    the flow writes by hand, not by any registry's schema, so those kinds would
+    have had no schema to render.
+    """
 
 
 @dataclass(frozen=True, slots=True)

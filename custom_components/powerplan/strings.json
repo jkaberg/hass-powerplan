@@ -2,14 +2,538 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add a site",
-        "description": "A site is one grid connection: its meter, its prices and its capacity tariff. Loads are added afterwards, one at a time.",
+        "title": "How should powerplan help?",
+        "description": "Three ways to run, and you can change your mind later.\n\n**Price and capacity** — shift load to cheap hours *and* keep every hour under your grid company's capacity step. This is what most Norwegian houses want.\n\n**Price only** — follow the price and ignore capacity. Choose this if your grid company has no capacity component, or if you have no meter reading powerplan can use.\n\n**Fuse only** — no prices, no tariff: just never trip the main fuse while several big loads run at once.",
+        "menu_options": {
+          "full": "Price and capacity",
+          "price_only": "Price only",
+          "fuse_only": "Fuse only"
+        }
+      },
+      "name": {
+        "title": "Name this site",
+        "description": "A site is one grid connection: its meter, its prices and its capacity tariff.",
         "data": {
           "name": "Name"
         },
         "data_description": {
           "name": "What to call this grid connection. It names the site device and prefixes its entities."
         }
+      },
+      "timezone": {
+        "title": "Which timezone is the house in?",
+        "description": "powerplan normally takes this from your Home Assistant settings, but yours has no timezone set. Everything with a time in it — window boundaries, day and night, deadlines, when tomorrow's prices are due — depends on this answer.",
+        "data": {
+          "timezone": "Timezone"
+        },
+        "data_description": {
+          "timezone": "The IANA zone the house is in."
+        }
+      },
+      "electrical": {
+        "title": "Your grid connection",
+        "description": "Four questions about the physical connection. The answers fix what the house can draw and how amps become watts; the review step shows the result in kW so you can check it.",
+        "data": {
+          "country": "Country",
+          "system": "Supply system",
+          "phases": "Phases",
+          "main_fuse_a": "Main fuse"
+        },
+        "data_description": {
+          "country": "Taken from your Home Assistant settings. It sets the defaults below.",
+          "system": "Look in the fuse box: an IT system has three wires and no neutral, a TN system has a neutral. Both are common in Norway.",
+          "phases": "How many phases the house is connected with.",
+          "main_fuse_a": "The rating of the main fuse, in amps. It is printed on the fuse or on your grid agreement."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "per_phase_limit_a": "Per-phase limit"
+            },
+            "data_description": {
+              "per_phase_limit_a": "Advanced: a lower limit per phase than the main fuse, if your grid company set one. Defaults to the main fuse."
+            }
+          }
+        }
+      },
+      "meter": {
+        "title": "Which device is your meter?",
+        "description": "Pick the device that reads your grid meter — an AMS/HAN reader, a P1 dongle, a Tibber Pulse — and powerplan fills in the sensors it finds on it. Leave it empty to pick the sensors yourself.",
+        "data": {
+          "device": "Meter device"
+        },
+        "data_description": {
+          "device": "Optional. Only used to suggest the sensors on the next step."
+        }
+      },
+      "meter_roles": {
+        "title": "What each meter sensor is",
+        "description": "Check what powerplan found. Grid power and the import register are the two that matter: power is how fast the house is drawing, the register is what closes each capacity window exactly. Everything else is optional.",
+        "data": {
+          "grid_power": "Grid power",
+          "import_register": "Import register",
+          "export_register": "Export register",
+          "production_power": "Production power",
+          "meter_window": "The meter's own hour value",
+          "phase_current_l1": "Current L1",
+          "phase_current_l2": "Current L2",
+          "phase_current_l3": "Current L3"
+        },
+        "data_description": {
+          "grid_power": "The meter's power reading for the whole house. Import is positive, export negative.",
+          "import_register": "The meter's total imported energy. This is what closes each window exactly.",
+          "export_register": "The meter's total exported energy, if you have production. Optional.",
+          "production_power": "What your panels or other production are producing right now. Optional.",
+          "meter_window": "Some meters publish the running hour's consumption themselves. Optional.",
+          "phase_current_l1": "Per-phase current, in amps. Optional, and only useful with all three.",
+          "phase_current_l2": "Per-phase current, in amps. Optional.",
+          "phase_current_l3": "Per-phase current, in amps. Optional."
+        }
+      },
+      "prices": {
+        "title": "Where do your prices come from?",
+        "description": "powerplan needs tomorrow's prices to plan tonight. Pick whichever you already have.",
+        "data": {
+          "source": "Price source"
+        },
+        "data_description": {
+          "source": "Nord Pool is read through the official integration; a sensor is anything that already publishes a price curve."
+        }
+      },
+      "prices_nordpool": {
+        "title": "Nord Pool",
+        "description": "powerplan asks the Nord Pool integration for each day's prices; it never calls the market itself. Tomorrow's auction result usually lands early in the afternoon, market time.",
+        "data": {
+          "config_entry": "Nord Pool integration",
+          "area": "Price area",
+          "currency": "Currency"
+        },
+        "data_description": {
+          "config_entry": "Which Nord Pool entry to read prices through.",
+          "area": "The bidding area the house is in.",
+          "currency": "The currency to ask for, normally your own."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "publication_tz": "Publication time zone",
+              "publication_time": "Publication time"
+            },
+            "data_description": {
+              "publication_tz": "Advanced: the time zone the market publishes in. Derived from the price area; leave empty to keep that.",
+              "publication_time": "Advanced: the local time tomorrow's prices usually appear. Derived from the price area; leave empty to keep that."
+            }
+          }
+        }
+      },
+      "prices_entity": {
+        "title": "Your price sensor",
+        "description": "Pick the sensor that already carries a price curve. powerplan recognises the common formats and tells you which one it detected.",
+        "data": {
+          "entity_id": "Price sensor",
+          "format": "Format"
+        },
+        "data_description": {
+          "entity_id": "The sensor whose attributes hold the hours and their prices.",
+          "format": "Detected from the integration that owns the sensor. Change it only if the prices come out wrong."
+        }
+      },
+      "prices_fixed": {
+        "title": "Your fixed price",
+        "description": "With no curve to follow, powerplan cannot move load to a cheaper hour — but it still costs your energy and defends your capacity target.",
+        "data": {
+          "price": "Price per kWh"
+        },
+        "data_description": {
+          "price": "What you pay for a kilowatt-hour."
+        }
+      },
+      "modifiers": {
+        "title": "What is added on top?",
+        "description": "The spot price is not what you pay. Tick what applies to you; each one asks its own short question next. Your grid company's energy charge comes from the tariff you choose later, with its numbers and their source, so you do not have to type it.",
+        "data": {
+          "modifiers": "Added on top"
+        },
+        "data_description": {
+          "modifiers": "Everything powerplan can add to a raw price. Leave one out and it is simply not part of your price."
+        }
+      },
+      "modifier_options": {
+        "title": "{modifier}",
+        "description": "The numbers for this one. Every field has a default; change what you know.",
+        "data": {
+          "rate": "VAT rate",
+          "amount": "Amount per kWh",
+          "periods": "Periods",
+          "fallback": "Fallback",
+          "price": "Price per kWh",
+          "cap_kwh_per_month": "Cap per month",
+          "threshold": "Threshold",
+          "share": "Share",
+          "mult": "Multiplier",
+          "offset": "Markup per kWh",
+          "tiers": "Tiers",
+          "basis": "Counted over",
+          "rates": "Day types"
+        },
+        "data_description": {
+          "rate": "As a fraction: 0.25 is 25 %.",
+          "amount": "In your currency, per kWh. A negative amount is allowed.",
+          "periods": "The day and night periods and their prices. The tariff preset fills these in for you.",
+          "fallback": "What to use for an hour no period covers.",
+          "price": "In your currency, per kWh.",
+          "cap_kwh_per_month": "How many kWh a month the fixed price covers; spot applies above it.",
+          "threshold": "The price per kWh above which the state pays a share.",
+          "share": "As a fraction: 0.9 is 90 %.",
+          "mult": "Your supplier's factor on the spot price. 1 is no change.",
+          "offset": "Added to every kWh, in your currency.",
+          "tiers": "The monthly use bands and their prices.",
+          "basis": "Whether the tiers count a month's use or a year's.",
+          "rates": "The announced day types and what each one costs."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "applies_to": "Applies to",
+              "months": "Months",
+              "applies_above_mtd_kwh": "Only above this month's use",
+              "negative_rule": "Negative prices"
+            },
+            "data_description": {
+              "applies_to": "Which price components VAT is charged on. Leave empty for all of them.",
+              "months": "The month numbers this applies in. Leave empty for the whole year.",
+              "applies_above_mtd_kwh": "kWh this calendar month before the charge starts. Leave empty for always.",
+              "negative_rule": "What the scheme does when the spot price is below zero."
+            }
+          }
+        }
+      },
+      "export": {
+        "title": "Do you sell electricity back?",
+        "description": "If you export, what you are paid for it decides whether charging the battery beats selling. A negative export price is possible and powerplan does not hide it.",
+        "data": {
+          "mode": "Export price",
+          "amount": "Amount per kWh",
+          "share": "Share of spot"
+        },
+        "data_description": {
+          "mode": "How your supplier pays for what you send out.",
+          "amount": "The fixed price, or what is subtracted from spot.",
+          "share": "As a fraction: 0.9 is 90 % of spot."
+        }
+      },
+      "carriers": {
+        "title": "Any other energy carriers?",
+        "description": "A heat pump competes with whatever else heats the house. Tick anything you buy as well as electricity; leave it empty if electricity is all you have.",
+        "data": {
+          "carriers": "Other carriers"
+        },
+        "data_description": {
+          "carriers": "Each one asks for its price next."
+        }
+      },
+      "carrier_options": {
+        "title": "{carrier}",
+        "description": "What this carrier costs.",
+        "data": {
+          "mode": "Price source",
+          "price": "Price per kWh",
+          "entity_id": "Price sensor"
+        },
+        "data_description": {
+          "mode": "A number you type, or a sensor read once a day.",
+          "price": "In your currency, per kWh of delivered energy.",
+          "entity_id": "The sensor holding today's price, if you chose a sensor."
+        }
+      },
+      "tariff": {
+        "title": "Who is your grid company?",
+        "description": "The capacity part of your grid bill is what powerplan is mostly for. Pick your grid company and the next step shows, in plain words, what powerplan thinks they bill you — check it against your own invoice.",
+        "data": {
+          "country": "Country",
+          "preset": "Grid company"
+        },
+        "data_description": {
+          "country": "Which country's tariffs to list.",
+          "preset": "Pick yours, or Custom to describe the tariff yourself. If you are not sure, the generic choice is a safe start and you can change it later."
+        }
+      },
+      "tariff_preset": {
+        "title": "Is this your bill?",
+        "description": "**{name}**\n\n{description}\n\nIf you do not recognise this, go back and pick another grid company, or Custom. Getting it wrong here means powerplan defends the wrong number all month.\n\nSource: {source}"
+      },
+      "tariff_target": {
+        "title": "What should powerplan defend?",
+        "description": "The target is the ceiling powerplan keeps each hour under. Automatic defends the step you are already in this month, which is the right answer until you know your own pattern.",
+        "data": {
+          "target": "Target",
+          "risk": "How much to gamble",
+          "target_kw": "Target"
+        },
+        "data_description": {
+          "target": "Automatic, or a specific step with its monthly fee.",
+          "risk": "Your grid company bills the average of your three highest hours, so hours under today's peak are already paid for. Using them costs nothing.",
+          "target_kw": "The kW to defend, for a tariff with no steps."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "eps_kwh": "Guard band",
+              "cap_margin_kw": "Free-ride margin"
+            },
+            "data_description": {
+              "eps_kwh": "Advanced: kWh of the window held back for meter delay and reaction time. kWh, not watts.",
+              "cap_margin_kw": "Advanced: how far above the target the free ride may reach."
+            }
+          }
+        }
+      },
+      "tariff_bills": {
+        "title": "Your last twelve months",
+        "description": "This tariff averages over a rolling year, so powerplan needs what you have already used. Fill in what you can find on your invoices; every field is optional and powerplan says when it knows too little.",
+        "data": {
+          "month_1": "Month 1",
+          "month_2": "Month 2",
+          "month_3": "Month 3",
+          "month_4": "Month 4",
+          "month_5": "Month 5",
+          "month_6": "Month 6",
+          "month_7": "Month 7",
+          "month_8": "Month 8",
+          "month_9": "Month 9",
+          "month_10": "Month 10",
+          "month_11": "Month 11",
+          "month_12": "Month 12"
+        },
+        "data_description": {
+          "month_1": "The highest measured value that month, in kW.",
+          "month_2": "The highest measured value that month, in kW.",
+          "month_3": "The highest measured value that month, in kW.",
+          "month_4": "The highest measured value that month, in kW.",
+          "month_5": "The highest measured value that month, in kW.",
+          "month_6": "The highest measured value that month, in kW.",
+          "month_7": "The highest measured value that month, in kW.",
+          "month_8": "The highest measured value that month, in kW.",
+          "month_9": "The highest measured value that month, in kW.",
+          "month_10": "The highest measured value that month, in kW.",
+          "month_11": "The highest measured value that month, in kW.",
+          "month_12": "The highest measured value that month, in kW."
+        }
+      },
+      "tariff_limits": {
+        "title": "Your contracted power",
+        "description": "This tariff contracts a power limit per period. The values come from the tariff; change them to what your own contract says.",
+        "data": {
+          "limit_1": "Limit 1",
+          "limit_2": "Limit 2",
+          "limit_3": "Limit 3",
+          "limit_4": "Limit 4"
+        },
+        "data_description": {
+          "limit_1": "The contracted power for this period.",
+          "limit_2": "The contracted power for this period.",
+          "limit_3": "The contracted power for this period.",
+          "limit_4": "The contracted power for this period."
+        }
+      },
+      "hard_limits": {
+        "title": "The hard limit",
+        "description": "The line powerplan never crosses, whatever the price or the tariff says. It defaults to what your main fuse can deliver.",
+        "data": {
+          "contracted_kw": "Hard limit"
+        },
+        "data_description": {
+          "contracted_kw": "kW the whole house may draw at once."
+        }
+      },
+      "presence": {
+        "title": "Is anyone home?",
+        "description": "Comfort matters less in an empty house. powerplan can follow your Home Assistant people, or leave presence to you and your automations.",
+        "data": {
+          "mode": "Presence",
+          "persons": "People"
+        },
+        "data_description": {
+          "mode": "Automatic follows the people below; manual leaves it to a service call or the presence entity.",
+          "persons": "Everyone whose being away makes the house away."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "away_delay_min": "Away after"
+            },
+            "data_description": {
+              "away_delay_min": "Advanced: minutes before an empty house counts as away."
+            }
+          }
+        }
+      },
+      "notifications": {
+        "title": "What should powerplan tell you?",
+        "description": "Three things are worth an interruption; everything else is an entity you can put on a dashboard. A persistent notification always works, even before you have set up a notifier.",
+        "data": {
+          "peak_warning": "Peak warning",
+          "comfort_violation": "Comfort missed",
+          "device_unhealthy": "Device not responding",
+          "notify_service": "Notify service",
+          "quiet_start": "Quiet from",
+          "quiet_end": "Quiet until"
+        },
+        "data_description": {
+          "peak_warning": "This hour is heading over your capacity target.",
+          "comfort_violation": "A room or a tank went below the floor you set.",
+          "device_unhealthy": "A controlled device stopped answering.",
+          "notify_service": "Which notify service the categories set to Notify use.",
+          "quiet_start": "Nothing but the urgent gets through after this.",
+          "quiet_end": "Normal notifications resume at this time."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "peak_uncontrolled": "Peak from uncontrolled load",
+              "deadline_at_risk": "Deadline at risk",
+              "level_up": "Capacity step about to rise",
+              "price_source_dead": "Price source silent",
+              "legionella_at_risk": "Legionella cycle at risk",
+              "safe_mode": "Safe mode",
+              "force_expired": "Force expired",
+              "prices_daily_summary": "Daily price summary"
+            },
+            "data_description": {
+              "peak_uncontrolled": "The peak is coming from something powerplan does not steer.",
+              "deadline_at_risk": "A charge or a cycle will not finish in time.",
+              "level_up": "The month is about to move into a more expensive step.",
+              "price_source_dead": "No prices have arrived for a day.",
+              "legionella_at_risk": "A water heater's protection cycle cannot complete.",
+              "safe_mode": "The engine stopped deciding and released everything.",
+              "force_expired": "A manual override ran out and normal control resumed.",
+              "prices_daily_summary": "Tomorrow's prices, once a day."
+            }
+          }
+        }
+      },
+      "review": {
+        "title": "Before powerplan starts",
+        "description": "Here is what powerplan understood. Nothing has been saved yet.\n\n**Connection** — {connection}. powerplan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}\n\n**Prices** — {prices}, in {currency}.\n\n**Grid tariff** — {tariff}\n\n**Presence** — {presence}\n\n**Notifications** — {notifications}\n\n**Times** — everything powerplan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. powerplan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
+        "data": {
+          "start_in_observe": "Start in observe"
+        },
+        "data_description": {
+          "start_in_observe": "Strongly recommended. powerplan decides and explains but writes to nothing, so you can see what it would do before it does it."
+        }
+      }
+    },
+    "error": {
+      "fuse_out_of_range": "A main fuse is between 6 A and 400 A. Check the rating printed on the fuse.",
+      "phases_not_available": "That phase count does not exist on this supply system.",
+      "power_unit_not_watts": "A power sensor has to report watts or kilowatts.",
+      "eps_looks_like_watts": "This looks like watts. The guard band is energy: 0.30 kWh is the default for an hour-long window.",
+      "eps_not_positive": "The guard band has to be more than zero."
+    },
+    "abort": {
+      "already_configured": "This meter is already set up as a powerplan site."
+    }
+  },
+  "selector": {
+    "voltage_system": {
+      "options": {
+        "it_230": "230 V, three wires, no neutral (IT — many older Norwegian houses)",
+        "tn_400": "400 V with neutral (TN — most of Europe, newer Norwegian houses)",
+        "tt_400": "400 V with earth electrode (TT)",
+        "split_240": "120/240 V split phase (North America)",
+        "single_230": "230 V single phase (UK, Ireland, Australia)",
+        "single_120": "120 V single phase"
+      }
+    },
+    "phases": {
+      "options": {
+        "1": "One phase",
+        "3": "Three phases"
+      }
+    },
+    "price_source": {
+      "options": {
+        "nordpool_action": "Nord Pool (built in)",
+        "entity": "A price sensor I already have",
+        "fixed": "A fixed price I'll type in"
+      }
+    },
+    "modifier": {
+      "options": {
+        "vat": "VAT",
+        "levy": "Taxes and levies",
+        "tou_schedule": "Grid energy charge (day/night)",
+        "fixed_price": "State scheme with a fixed price (Norgespris)",
+        "subsidy_threshold": "State subsidy above a threshold (strømstøtte)",
+        "spot_scale": "Supplier markup",
+        "cumulative_tier": "Tiered by monthly use",
+        "day_type": "Day-type tariff (critical peak days)"
+      }
+    },
+    "export_mode": {
+      "options": {
+        "none": "I don't export",
+        "fixed": "A fixed price",
+        "spot_minus": "Spot minus an amount",
+        "spot_times": "A share of spot",
+        "from_source": "From the price source"
+      }
+    },
+    "carrier": {
+      "options": {
+        "gas": "Gas",
+        "district_heat": "District heat",
+        "oil": "Oil",
+        "pellets": "Pellets"
+      }
+    },
+    "carrier_mode": {
+      "options": {
+        "fixed": "A fixed price",
+        "sensor": "From a sensor, daily"
+      }
+    },
+    "risk": {
+      "options": {
+        "flat": "Never exceed the target",
+        "free_ride": "Use the hours today's peak already paid for",
+        "full": "Gamble on the period average"
+      }
+    },
+    "transport": {
+      "options": {
+        "off": "Off",
+        "persistent": "A notification in Home Assistant",
+        "notify": "Send it to my phone"
+      }
+    },
+    "presence_mode": {
+      "options": {
+        "auto": "Automatic, from my people",
+        "manual": "I'll set it myself"
+      }
+    },
+    "timezone_source": {
+      "options": {
+        "hass": "from your Home Assistant settings",
+        "user": "which you chose here because Home Assistant has none set"
+      }
+    },
+    "review": {
+      "options": {
+        "absent": "not configured"
       }
     }
   }

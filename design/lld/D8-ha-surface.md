@@ -14,7 +14,7 @@
 **In scope.**
 
 - Config flow for the site: onboarding paths, steps, selectors, validation, review.
-- Subentry flows for `load`, `group`, `zone`, `circuit`: dynamic questionnaire rendering, device pick → profile match → bindings, review with Advanced expander, a `reconfigure` step with *Re-derive* (subentry flows have only `user` and `reconfigure` - no options flow; PLAN §7 dec. 4).
+- Subentry flows for `load`, `group`, `zone`, `circuit`: dynamic questionnaire rendering, device pick → profile match → bindings, review with a collapsed Advanced section (D-0129), a `reconfigure` step with *Re-derive* (subentry flows have only `user` and `reconfigure` - no options flow; PLAN §7 dec. 4).
 - Entity platforms: full entity list per site and per load with unique ids, categories, default-enabled flags, attributes, recorder hygiene.
 - Services and their schemas.
 - HA events and payload schemas.
@@ -38,7 +38,7 @@
 
 **Selectors per step.** §6.
 
-**Unique ids.** `powerplan_{entry_id}_{key}` for site entities, `powerplan_{entry_id}_{subentry_id}_{key}` for load entities; never derived from names. Entity ids are suggested from the site/load name and `key`, translatable, and never changed by powerplan afterwards (INV-50).
+**Unique ids.** `powerplan_{entry_id}_{key}` for site entities, `powerplan_{entry_id}_{subentry_id}_{key}` for load entities; never derived from names. Entity ids are suggested from the site/load name and `key`, translatable, and never changed by powerplan afterwards (INV-50). The **config entry's own** unique id is `meter:{platform}:{the import register's registry unique id}` - the grid meter's serial, which the household cannot rename - falling back to grid power, and to `site:{flow_id}` on the price-only path, which binds no meter (D-0122).
 
 **Knobs as entities vs options.** Anything a household changes weekly or daily is an entity (mode, force, comfort, deadline, target SoC, min SoC, presence, run now); anything structural (bindings, type, physics, strategy parameters) is options. The review step says which is which.
 
@@ -50,7 +50,7 @@
 custom_components/powerplan/
 ├── manifest.json  hacs.json  strings.json  translations/{en,nb}.json  icons.json
 ├── config_flow.py         SiteConfigFlow, OptionsFlow, subentry flows (LoadSubentryFlow, GroupSubentryFlow, ZoneSubentryFlow, CircuitSubentryFlow)
-├── flow/                  steps.py (site steps), questionnaire.py (Question → selector/schema), review.py (explain rendering), device_pick.py (DeviceSelector + profile match)
+├── flow/                  steps.py (site steps), questionnaire.py (a registry `Field` and D4's `Question` → selector/schema), review.py (explain rendering), device_pick.py (DeviceSelector + role pre-fill + profile match)
 ├── entity.py              PowerplanEntity(CoordinatorEntity) base: device info, unique id, category, availability from Snapshot
 ├── sensor.py  binary_sensor.py  number.py  switch.py  select.py  button.py  time.py  event.py
 ├── services.py            registration + schemas
@@ -69,10 +69,17 @@ custom_components/powerplan/
 class OnboardingPath(StrEnum): FULL = "full"; PRICE_ONLY = "price_only"; FUSE_ONLY = "fuse_only"
 
 # Config entry data (site) - structural, from the flow
+# Money is a decimal STRING at any depth: orjson refuses a Decimal (D-0123).
 SiteData = {
-  "path": OnboardingPath, "name": str, "electrical": ElectricalProfile, "meter": MeterSourceCfg | None,
+  "path": OnboardingPath, "name": str,
+  "timezone": str, "timezone_source": "hass" | "user", "currency": str,   # derived (D-0120)
+  "electrical": ElectricalProfile + {"derived": {w_per_amp, fuse_w, plausible_w, …}},  # INV-66
+  "meter": {"source": "ha_sensors", "device_id": str | None, "roles": {role: entity_id}} | None,
   "prices": {"sources": [...], "modifiers": [...], "export": ..., "carriers": [...]} | None,
-  "tariff": {"preset_id": str, "grammar_copy": {...}, "versions": [...]} | None, "hard_limits": {...},
+  # The grammar copy lives in the site STORE (D2 §8); the entry holds the identity (D-0128).
+  "tariff": {"preset_id": str, "preset_file": str, "version_ids": [...], "chosen_version_id": str,
+             "description": str, "target": ..., "risk": float, "risk_source": str} | None,
+  "hard_limits": {...},
   "presence": {"mode": "auto" | "manual", "persons": [entity_id], "away_delay_min": 30},
   "notifications": {"category": {"transport": "off" | "persistent" | "notify", "service": str | None}}, "quiet_hours": [start, end],
   "forecasts": {...}, "advanced": {...}
@@ -95,17 +102,25 @@ class Notification:  category: str; key: str; title_key: str; body_key: str; par
 ```
 user            → menu: path (full / price_only / fuse_only) with one-line explanations
 name            → text (default "Home")
+timezone        → ONLY when hass.config.time_zone is missing or not a valid IANA key (D-0120)
 electrical      → D3 §6 (country, voltage system, phases, fuse) - plain labels; review line
-meter           → D3 §6 (skipped on price_only) - device pick pre-fills entities
+meter           → D3 §6 (skipped on price_only) - device pick …
+  meter_roles   → … pre-fills the seven roles from the entity registry; all optional
 prices          → D1 §6 (skipped on fuse_only) - source menu → per-source step → modifiers multi-select → per-modifier sub-steps → export → carriers
-tariff          → D2 §6 (skipped on fuse_only) - country → preset select → rendered description → target/risk → (rolling) bills → (contracted) limits
+tariff          → D2 §6 (skipped on fuse_only AND on price_only, which has no metric to bill → NoPeak; D-0127)
+                  country → preset select → rendered description → target/risk → (rolling) bills → (contracted) limits
 hard_limits     → contracted power (if not in preset), external DSO limit toggle (v1.x)
 presence        → auto (pick person entities) / manual
-notifications   → per category transport (defaults: persistent for peak & comfort & unhealthy, off for the rest); quiet hours
-review          → the assembled explanation (INV-67): connection, meter, prices, tariff, presence, notifications, what will happen first (observe mode for the first days is recommended and pre-ticked)
+notifications   → per category transport (defaults: persistent for peak & comfort & unhealthy, off for the rest); quiet hours.
+                  The eight categories that default to off sit in the step's collapsed `advanced` section (D-0129)
+review          → the assembled explanation (INV-67): connection, meter, prices, tariff, presence, notifications, timezone, what will happen first (observe mode for the first days is recommended and pre-ticked)
 create entry    → site starts in observe (switch active = off)
 ```
-Every step validates with the domain's schema (INV-49) and shows errors inline; "back" is supported on every step (`last_step=False`).
+Every step validates with the domain's schema (INV-49) and shows errors inline; "back" is supported on every step (`last_step=False`). HA has no generic back - `async_configure` re-runs the *current* step - so the rule is implemented as `last_step=False` on every step but `review`, plus a step that re-renders with what was already answered (D-0129).
+
+**Timezone (binding).** The site timezone is `hass.config.time_zone`, materialised into `entry.data` at creation together with `timezone_source`. No IANA key is a literal anywhere in `config_flow.py` or `flow/` - a market's publication zone is data on the price source. `tests/flows/test_no_timezone_literals.py` greps for one (D-0120).
+
+**Where the grid charge comes from.** A modifier is pre-ticked only when every required option of its schema has a default, so Norway pre-ticks `vat` alone. The chosen preset's `energy_components` are then materialised as modifiers carrying `source: <preset id>`, and the review names them (D-0126).
 
 ### 5.2 Load subentry flow
 
@@ -132,7 +147,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `time` | `TimeSelector` |
 | `weekly_time` | seven optional `TimeSelector`s in one step with "same every weekday" shortcut |
 | `entity` | `EntitySelector(domain/device_class filter from the Question)` |
-| advanced = True | rendered only in the review's Advanced section and in options |
+| advanced = True | rendered in a collapsed `section("advanced")` on the same step, pre-filled and never required (INV-65, D-0129). `show_advanced_options` is deprecated in HA 2026.9 and unused here |
 
 `help_key` → the `data_description` text under the field. All labels/options from translations; the flow never shows an internal key.
 

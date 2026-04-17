@@ -53,8 +53,8 @@ class TibberAction:
     schema: ClassVar[Schema] = (
         Field(key="currency", kind=FieldKind.TEXT, required=True),
         Field(key="home", kind=FieldKind.TEXT, default=""),
-        Field(key="publication_tz", kind=FieldKind.TEXT, default="", advanced=True),
-        Field(key="publication_time", kind=FieldKind.TIME, default="", advanced=True),
+        Field(key="publication_tz", kind=FieldKind.TEXT, default=None, advanced=True),
+        Field(key="publication_time", kind=FieldKind.TIME, default=None, advanced=True),
     )
 
     currency: str

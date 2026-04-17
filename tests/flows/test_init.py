@@ -21,25 +21,41 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
-async def test_user_flow_creates_the_site_entry(hass: HomeAssistant) -> None:
-    """The `user` step asks for a name and creates a loaded entry."""
+async def test_the_shortest_path_creates_a_loaded_site(hass: HomeAssistant) -> None:
+    """The site flow's shortest path ends in an entry that loads.
+
+    The steps themselves are `test_site_flow.py`'s subject; what is under test
+    here is the shell - that whatever the flow creates sets up, holds its
+    `runtime_data` and unloads again. Every step is answered with nothing but its
+    own defaults, which is what a household with no meter bound would do.
+    """
+    hass.config.time_zone = "Europe/Oslo"
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM
+    assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "user"
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_NAME: "Hjemme"}
-    )
+    user_input: dict[str, object] | None = {"next_step_id": "fuse_only"}
+    for _ in range(20):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
+        if result["type"] is FlowResultType.CREATE_ENTRY:
+            break
+        if result["step_id"] == "name":
+            user_input = {CONF_NAME: "Hjemme"}
+            continue
+        user_input = result["data_schema"]({})
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Hjemme"
-    assert result["data"] == {CONF_NAME: "Hjemme"}
+    assert result["data"][CONF_NAME] == "Hjemme"
 
     entry = hass.config_entries.async_entries(DOMAIN)[0]
     assert entry.state is ConfigEntryState.LOADED
     assert isinstance(entry.runtime_data, Runtime)
     assert entry.runtime_data.site_name == "Hjemme"
+    # No meter is bound on this path, so the entry falls back to a generated id.
+    assert entry.unique_id is not None
+    assert entry.unique_id.startswith("site:")
 
 
 async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
