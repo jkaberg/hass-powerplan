@@ -111,6 +111,7 @@ HLD §9 phase 4. **Gate (simulated):** golden tests per market; one benchmark ho
 | **4.1 Remaining strategies and combinators** | the strategy roster except battery and surplus | D5; D11 `shadow/schedule.py` | D5 §9 5, 9, 15 | 3.2 |
 | **4.2 Forecaster and remaining modifiers** | D1 complete | D1 | D1 §9 7-10, 13-15 | 0.4 |
 | **4.3 Tariffs and benchmark houses** | multi-market, measured: one house per market | D2 presets; D9 §5.9 | D2 §9 golden, 12; the market scenarios | 0.3, 0.7, 0.11 |
+| **4.3a Tariff presets** | the market presets with a golden each | D2 §6 | D2 §9 1, 12 | 0.3 |
 | **4.4 Entity format table** | price sensors from any market | D1 §2 | D1 §9 1 | 1.2 |
 
 ### Phase 5 - Forecasts, zones, battery, external limits, delegated
@@ -291,6 +292,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.1 | Remaining strategies and combinators | todo |
 | 4.2 | Forecaster and remaining modifiers | done |
 | 4.3 | Tariffs and benchmark houses | todo |
+| 4.3a | Tariff presets | done |
 | 4.4 | Entity format table | done |
 | 5.1 | D10 core and providers | todo |
 | 5.2 | Baseline-aware reserve and warning | todo |

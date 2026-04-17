@@ -1,0 +1,25 @@
+{
+  "id": "fi.energiavirasto-2026",
+  "name": "Finland – tehomaksu (Energiavirasto 2026)",
+  "country": "FI",
+  "currency": "EUR",
+  "tz": "Europe/Helsinki",
+  "source_url": "https://energiavirasto.fi/-/sahkon-siirtolaskutukseen-valmistellaan-muutoksia-tehomaksu-tasaamaan-kulutusta",
+  "verified": null,
+  "assumed": "The grammar is national and set by Energiavirasto's määräys, in force 2026-02-02: the tehomaksu applies to the part of the 60-minute average power that exceeds an eight-kilowatt threshold, taken over the month, which is `Linear(free_kw = 8)` on the month's highest hour (HLD §8's FI row). The 8 kW is the regulator's (an earlier draft circulated at 5 kW; 8 came into force). The unit price is NOT the regulator's — every DSO sets its own — so 2.50 EUR/kW/month here is a representative figure and the one D2 §9 8 uses. A site should replace it with the €/kW/month from its own DSO's price list; the shape, the threshold and therefore the steering are right either way. Under the same määräys a DSO must also offer households with a main fuse of at most 3 × 63 A a product *without* a tehomaksu, and the criteria must be in use by 2029-01-01: a household on that product should pick `custom` instead.",
+  "versions": [
+    {
+      "valid_from": "2026-02-02",
+      "verified": null,
+      "assumed": "See the file-level note: national grammar and threshold, representative unit price.",
+      "peak": {
+        "window_min": 60,
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "month",
+        "pricing": {"linear": {"price_per_kw": 2.50, "free_kw": 8.0}}
+      }
+    }
+  ]
+}

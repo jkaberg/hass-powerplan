@@ -1,0 +1,17 @@
+{
+  "id": "uk.nopeak",
+  "name": "Great Britain – no capacity component (half-hourly settlement)",
+  "country": "GB",
+  "currency": "GBP",
+  "tz": "Europe/London",
+  "verified": null,
+  "assumed": "That a domestic supply in Great Britain has no measured capacity component. The source is HLD §8's 2026-09-19 market survey — energy on N2EX half-hourly, Agile and DFS events, grid time-of-use \"none / Day-Night-Peak\", peak component `NoPeak`, hard limit the fuse — and not a published charging statement, because there is no figure to publish: a domestic tariff is a standing charge per day plus a unit rate per kWh, and the DNO's capacity costs sit inside the unit rate rather than being measured against the household's own peak. What would replace this note is a reference into the site DNO's use-of-system charging statement showing a domestic band with no capacity charge. If a supplier ever offers a domestic capacity charge it arrives here as a new version with its own `valid_from` (INV-52). Demand Flexibility Service rewards are price-axis events for D1, not a capacity metric, and are deliberately absent.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "verified": null,
+      "assumed": "See the file-level note: no household capacity component in Great Britain.",
+      "no_peak": true
+    }
+  ]
+}

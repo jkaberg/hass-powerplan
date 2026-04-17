@@ -20,6 +20,11 @@
       "description": "ISO 4217. Required when any version prices a peak; a preset without prices takes the site's currency.",
       "pattern": "^[A-Z]{3}$"
     },
+    "tz": {
+      "type": "string",
+      "description": "The IANA zone the tariff's own clock runs in — Europe/Stockholm for Ellevio's 22-06, Europe/Madrid for 2.0TD's P1. Every local-time rule in this file is read in this zone, never in a literal in Python and never in the site's own zone, which Home Assistant supplies and which may differ (a Spanish flat owned from Oslo).",
+      "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(/[A-Za-z0-9+_-]+)+$"
+    },
     "source_url": {"type": "string", "description": "Where the numbers were read."},
     "verified": {
       "type": ["string", "null"],

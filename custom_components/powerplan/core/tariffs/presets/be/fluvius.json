@@ -1,0 +1,28 @@
+{
+  "id": "be.fluvius.household",
+  "name": "Fluvius – capaciteitstarief (gezinnen en kleine ondernemingen)",
+  "country": "BE",
+  "operator": "Fluvius",
+  "currency": "EUR",
+  "tz": "Europe/Brussels",
+  "source_url": "https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief",
+  "verified": "2026-04-17",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "verified": "2026-04-17",
+      "source_url": "https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/capaciteitstarief",
+      "assumed": "Only that Fluvius is at the Flemish average. VREG publishes 53.39 EUR/kW/year (excl. btw) for 2026 as the average across the Flemish network operators and notes \"Dat bedrag kan verschillen per netbeheerder\". Fluvius is by far the largest of them, so the average is the best single figure, and a site should replace it with the €/kW/year on its own Fluvius bill. The minimum peak of 2.5 kW, the quarter-hour measurement and the twelve-month facturatiepiek are Fluvius's own and are not assumed.",
+      "peak": {
+        "window_min": 15,
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "rolling_months",
+        "rolling_months": 12,
+        "price_period_unit": "year",
+        "pricing": {"linear": {"price_per_kw": 53.39, "min_kw": 2.5}}
+      }
+    }
+  ]
+}

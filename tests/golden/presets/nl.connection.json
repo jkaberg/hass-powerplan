@@ -1,0 +1,37 @@
+{
+  "_": "Golden for the nl.connection preset — D2 §9 1 and 12, D9 §3. The Dutch constraint is the connection, and it does not move with the clock.",
+  "preset": "nl/connection",
+  "id": "nl.connection",
+  "tz": "Europe/Amsterdam",
+  "currency": "EUR",
+  "window_min": 15,
+  "period_key": "2026-01",
+  "at_local": "2026-01-07T12:00:00",
+  "sources": {
+    "no_peak": "HLD §8's NL row: grid TOU \"none (ACM 4x5 model 2028/29)\", peak component `ContractedPower(connection)`, hard limit the connection. A Dutch kleinverbruik bill has a fixed network fee set by the connection size and a unit rate; nothing measures the household's own peak, so there is no capacity metric and no ceiling.",
+    "limit": "goedkoopenergievergelijken.nl/energiebegrippen/aansluitwaarde/ and enexis.nl/aansluitingen/welke-aansluiting-heb-ik-nodig, read 2026-09-19: 1x25A is 5.75 kW, 3x25A is 3 x 230 V x 25 A = 17.25 kW, 3x35A is 24.15 kW, 3x50A is 34.5 kW, and kleinverbruik runs to 3x80A = 55.2 kW. The default here is 3x25A.",
+    "default_is_a_default": "ASSUMED as the flow's starting point, not as anyone's connection: 3x25A is the common three-phase household connection. The site picks its own from the list, which is what D2 §6's contracted-power row is for.",
+    "tolerance": "ASSUMED zero, deliberately: a hoofdzekering is a gG fuse whose conventional non-fusing current is 1.45 x In for up to an hour, so a tolerance could honestly be much wider — but a wider tolerance is a wider gate, and thirty minutes of D6 patience on a fuse is not something to lean on (INV-15). Zero means any excess is treated as trip risk at once, which is the safe direction. What would replace it is the fuse curve of the actual hoofdzekering.",
+    "no_time_filter": "One `PeriodLimit` with `when: null`, because a connection limit has no clock — unlike ES P1/P2. D2 §9 12's other half: the limit is the same at 03:00 and at 19:00.",
+    "windows_priced": "0: nothing is priced on a version with no peak."
+  },
+  "windows": [{"local": "2026-01-07T19:00:00", "kwh": 2.5}],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "limits": [
+    {"local": "2026-01-07T03:00:00", "limit_w": 17250.0, "why": "a connection limit does not move at night"},
+    {"local": "2026-01-07T19:00:00", "limit_w": 17250.0, "why": "nor in the evening peak"},
+    {"local": "2026-07-11T14:00:00", "limit_w": 17250.0, "why": "nor on a summer Saturday"}
+  ],
+  "tolerance_pct": 0.0,
+  "tolerance_s": 0,
+  "ceiling_is_infinite_at": ["2026-01-07T19:00:00"],
+  "describes": ["no capacity component", "limited to 17.25 kW", "trips the supply"]
+}

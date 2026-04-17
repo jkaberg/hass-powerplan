@@ -1,0 +1,27 @@
+{
+  "id": "dk.nopeak",
+  "name": "Denmark – no capacity component (time-of-use grid tariff)",
+  "country": "DK",
+  "currency": "DKK",
+  "tz": "Europe/Copenhagen",
+  "source_url": "https://elberegner.dk/guides/hvad-koster-transport-af-el/",
+  "verified": null,
+  "assumed": "The capacity answer is not assumed: HLD §8's DK row says Denmark has no household peak component, and the hard limit is the fuse, which is D3's. What is assumed is the time-of-use table this preset hands D1. The three periods and the seasons are published — lavlast 00:00-06:00, hoejlast 06:00-17:00 and 21:00-24:00, spidslast 17:00-21:00, winter October-March and summer April-September — and the winter figures are Radius's early-2026 ones including VAT (about 12, 37 and 110 oere/kWh). The summer table was not read inside this WP's lookup budget, so the winter figures are carried year-round: that overstates the summer spidslast differential, which makes a plan shift *more* than it needs to in summer and never less. Replace the whole `tou_schedule` with the site's own netselskab price list — Radius is one of fourteen and they differ by up to 25 oere/kWh.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "verified": null,
+      "assumed": "See the file-level note: the no-peak claim is HLD §8's, the time-of-use prices are Radius's winter figures carried year-round.",
+      "no_peak": true,
+      "energy_components": {
+        "tou_schedule": {
+          "periods": [
+            {"name": "spidslast", "price": 1.10, "hours": [[1020, 1260]]},
+            {"name": "hoejlast", "price": 0.37, "hours": [[360, 1020], [1260, 1440]]},
+            {"name": "lavlast", "price": 0.12}
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -4,6 +4,10 @@
   "id": "no.tensio.household",
   "tz": "Europe/Oslo",
   "month": "2026-09",
+  "window_min": 60,
+  "period_key": "2026-09",
+  "at_local": "2026-09-15T12:00:00",
+  "describes": ["three highest hours", "three different days", "up to 2 kW 137 NOK", "over 20 kW 1200 NOK"],
   "version_valid_from": "2026-01-01",
   "sources": {
     "steps": "D2 §6 preset excerpt, verified 2026-09-19 against tensio.no: up to 2 kW 137, 5 kW 244, 10 kW 416, 15 kW 613, 20 kW 812, over 20 kW 1200 NOK/month",
@@ -28,7 +32,9 @@
     "level_name": "2–5 kW",
     "fee": "244",
     "currency": "NOK",
-    "confidence": "exact"
+    "confidence": "exact",
+    "bill_fee": "244",
+    "windows_priced": 5
   },
   "then_add": [
     {"local": "2026-09-04T18:00:00", "kwh": 9.15},

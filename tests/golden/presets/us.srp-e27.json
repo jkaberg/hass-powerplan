@@ -1,0 +1,61 @@
+{
+  "_": "Golden for the us.srp-e27 preset — D2 §9 1 and 4, D9 §3. SRP is the 30-minute demand interval and the tiered $/kW; the eligibility window is what makes an 8 kW evening free.",
+  "preset": "us/srp-e27",
+  "id": "us.srp-e27",
+  "tz": "America/Phoenix",
+  "currency": "USD",
+  "window_min": 30,
+  "period_key": "2026-07",
+  "at_local": "2026-07-20T12:00:00",
+  "sources": {
+    "grammar": "HLD §8's US row: SRP `(30, ...)` — a 30-minute demand interval, the rest as APS. D2 §9 4 names SRP's on-peak window as the eligibility case.",
+    "interval_and_hours": "srpnet.com E-27 material as reported 2026-09-19: summer weekdays use a 2pm-8pm on-peak window and \"the demand charge is based on your highest average kW reading across a fixed 30-minute interval during on-peak hours in the billing month\".",
+    "tiers": "ASSUMED. $11.90/kW for the first 3 kW, $19.97/kW for the next 7 kW and $36.05/kW above 10 kW, per secondary reporting of the 2026 E-27 worksheet; SRP's own price sheet was not read inside this WP's lookup budget. The three-band shape is the load-bearing part and is why this preset is `Tiers` and not `Linear`.",
+    "season": "ASSUMED, and a grammar limit: SRP's winter season (November-April) has its own on-peak hours (05:00-09:00 and 17:00-21:00) and its own lower tiers, and `PeakTariff` carries one `eligible` and one `pricing` per version. This preset covers the summer season, May-October. A winter month therefore has no capacity component and the site steers on price alone (HLD §3). See the preset's `assumed`.",
+    "month": "Constructed, not measured: July 2026, two eligible half-hours and two that must be invisible.",
+    "metric_kw": "A 30-minute window's kW is twice its kWh: 1.55 kWh -> 3.10 kW and 3.10 kWh -> 6.20 kW. per_day = all with per_period = max takes the higher, 6.20 kW.",
+    "not_metric_kw": "8.00 kW — the 4.00 kWh half-hour at 21:00 on 2026-07-08, off-peak. The 7.00 kW half-hour on Saturday 2026-07-11 is invisible too.",
+    "fee": "Marginal integration over the bands (D2 §5.3): the first 3.00 kW at 11.90 = 35.70, the next 3.20 kW (3.00 to 6.20) at 19.97 = 63.904, and nothing in the third band. 35.70 + 63.904 = 99.604 USD for the month.",
+    "temporary_reduction": "SRP applied a temporary $0.0038/kWh reduction to the May-October 2026 billing cycles; it is an energy adjustment, not a demand one, so it does not appear here."
+  },
+  "windows": [
+    {"local": "2026-07-08T15:00:00", "kwh": 1.55},
+    {"local": "2026-07-08T21:00:00", "kwh": 4.0},
+    {"local": "2026-07-11T15:00:00", "kwh": 3.5},
+    {"local": "2026-07-15T17:30:00", "kwh": 3.1}
+  ],
+  "expected": {
+    "metric_kw": 6.2,
+    "not_metric_kw": 8.0,
+    "level_name": "6.20 kW",
+    "fee": 99.604,
+    "currency": "USD",
+    "confidence": "exact",
+    "bill_fee": 99.604,
+    "windows_priced": 4
+  },
+  "eligibility": [
+    {"local": "2026-07-08T14:00:00", "eligible": true, "why": "the on-peak window opens at 14:00"},
+    {"local": "2026-07-08T19:45:00", "eligible": true, "why": "and runs to 20:00"},
+    {"local": "2026-07-08T20:00:00", "eligible": false, "why": "the window is [14:00, 20:00)"},
+    {"local": "2026-07-08T13:59:00", "eligible": false, "why": "one minute early"},
+    {"local": "2026-07-11T15:00:00", "eligible": false, "why": "Saturday"},
+    {"local": "2026-12-08T15:00:00", "eligible": false, "why": "December is outside the summer season this version covers"}
+  ],
+  "no_day_entry_for": ["2026-07-11"],
+  "eligible_windows": {
+    "from_local": "2026-07-08T00:00:00",
+    "to_local": "2026-07-09T00:00:00",
+    "count": 12,
+    "first_start": "2026-07-08T14:00:00",
+    "last_end": "2026-07-08T20:00:00",
+    "why": "14:00-20:00 in half hours is twelve windows"
+  },
+  "describes": [
+    "single highest half-hour",
+    "marginal by band",
+    "11.90",
+    "19.97",
+    "between 14:00 and 20:00"
+  ]
+}

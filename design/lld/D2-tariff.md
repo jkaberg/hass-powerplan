@@ -321,7 +321,7 @@ Site flow, step **tariff** (skipped on the *fuse only* path):
 | Target | select: `automatic` (default) · each step with its fee · (Linear) number kW | `auto` |
 | Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0.5** when the preset has `per_day = max` (the free ride is costless by construction - INV-9, PLAN §7 dec. 18); 0 otherwise |
 | Enter last 12 monthly peaks (rolling presets only) | 12 numbers, optional | empty |
-| Contracted power (ContractedPower presets) | per period: number kW / kVA dropdown | ES: 4.6 / 4.6; FR: 6 kVA; IT: 3 kW |
+| Contracted power (ContractedPower presets) | per period: number kW / kVA dropdown | ES: 4.6 (P1) / 5.75 (P2); FR: 6 kVA; IT: 3 kW; NL: 3×25 A = 17.25 kW |
 
 Advanced: `eps_kwh` (default 0.30 per 60 min, scaled), `cap_margin_kw` (0.5), `coarse_factor`, `history_policy`, the whole grammar as a form when *Custom* is chosen (each field with the plain-language label from the schema).
 

@@ -1,0 +1,32 @@
+{
+  "id": "us.srp-e27",
+  "name": "SRP – E-27 demand price plan (summer)",
+  "country": "US",
+  "operator": "Salt River Project",
+  "currency": "USD",
+  "tz": "America/Phoenix",
+  "source_url": "https://www.srpnet.com/price-plans/residential-electric/solar/customer-generation",
+  "verified": null,
+  "assumed": "Two things, the second a grammar limit. (1) The three demand bands: $11.90/kW for the first 3 kW, $19.97/kW for the next 7 kW and $36.05/kW above 10 kW, per secondary reporting of SRP's 2026 E-27 worksheet; SRP's own price sheet was not read, so the household's bill replaces the figures. The 30-minute demand interval, the 2pm–8pm summer weekday on-peak window and \"the highest average kW reading across a fixed 30-minute interval during on-peak hours in the billing month\" are SRP's own and are not assumed — and the three-band shape is why this preset is `Tiers` and not `Linear`. (2) The season: this version covers **summer only** (May–October). SRP's winter season has different on-peak hours (05:00–09:00 and 17:00–21:00) and its own lower bands, and `PeakTariff` carries one `eligible` and one `pricing` per version, so both seasons cannot live in one file; a winter month therefore has no capacity component and the site steers on price alone (HLD §3). A seasonal `pricing`/`eligible` in the grammar would remove this note and is D2's call. SRP's temporary $0.0038/kWh reduction on the May–October 2026 cycles is an energy adjustment and is not a demand one, so it is absent here.",
+  "versions": [
+    {
+      "valid_from": "2026-05-01",
+      "verified": null,
+      "assumed": "See the file-level note: summer season only, and the bands are secondary.",
+      "peak": {
+        "window_min": 30,
+        "eligible": {
+          "months": [5, 6, 7, 8, 9, 10],
+          "weekdays": [0, 1, 2, 3, 4],
+          "hours": [[840, 1200]],
+          "holidays": "exclude"
+        },
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "month",
+        "pricing": {"tiers": [[3, 11.90], [10, 19.97], [null, 36.05]]}
+      }
+    }
+  ]
+}

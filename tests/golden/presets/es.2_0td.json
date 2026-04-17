@@ -1,0 +1,41 @@
+{
+  "_": "Golden for the es.2_0td preset — D2 §9 1 and 12, D9 §3. The claim is about a breaker, not a fee: item 1 of the precedence, INV-1.",
+  "preset": "es/2_0td",
+  "id": "es.2_0td",
+  "tz": "Europe/Madrid",
+  "currency": "EUR",
+  "window_min": 60,
+  "period_key": "2026-01",
+  "at_local": "2026-01-07T12:00:00",
+  "holidays": ["2026-01-01", "2026-01-06"],
+  "sources": {
+    "periods": "companiadeluz.es/info/tarifas/2-0 and ahorr.ai's P1/P2 glossary, read 2026-09-19: P1 (punta) is Monday to Friday on working days 08:00-24:00; P2 (valle) is 00:00-08:00 on those days plus all 24 hours of Saturdays, Sundays and national holidays. The BOE wording the pages quote: \"Se consideran como horas del periodo valle todas las horas de los sabados, domingos, el 6 de enero y los dias festivos de ambito nacional\" — which is exactly `holidays: exclude` on the P1 filter, so a holiday falls through to P2 (D2 §2).",
+    "limits": "ASSUMED as a default the flow offers, not as anyone's contract. 4.6 kW (230 V x 20 A) is D2 §6's ES default and stays the punta figure; 5.75 kW (230 V x 25 A) is the next normalised step and is the valle figure, because the documented 2.0TD saving strategy is a higher power in valle, when the washing machine, dishwasher and EV run, and a lower one in punta. Both are standard normalised potencias. A site enters its own pair in the flow.",
+    "tolerance": "D2 §4: the Spanish ICP trips at about 10 % over for 30 s, which is tolerance_pct 0.10 and tolerance_s 30.",
+    "no_peak": "HLD §8's ES row: peak component `NoPeak`, hard limit `ContractedPower({P1, P2}, trip)`. Spain bills potencia contratada per day, not a measured peak, so there is no capacity metric and no ceiling — the breaker is the whole constraint.",
+    "windows_priced": "0: nothing is priced on a version with no peak, though the windows are still recorded (INV-11)."
+  },
+  "windows": [{"local": "2026-01-07T19:00:00", "kwh": 3.9}],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "limits": [
+    {"local": "2026-01-07T07:59:00", "limit_w": 5750.0, "why": "a working weekday before 08:00 is still P2"},
+    {"local": "2026-01-07T08:00:00", "limit_w": 4600.0, "why": "P1 starts at 08:00 local — the flip D2 §9 12 asks for"},
+    {"local": "2026-01-07T23:59:00", "limit_w": 4600.0, "why": "P1 runs to midnight"},
+    {"local": "2026-01-10T12:00:00", "limit_w": 5750.0, "why": "Saturday is P2 all day"},
+    {"local": "2026-01-11T12:00:00", "limit_w": 5750.0, "why": "Sunday likewise"},
+    {"local": "2026-01-06T12:00:00", "limit_w": 5750.0, "why": "Reyes is a national holiday, so P2 (D2 §2, holidays: exclude on P1)"},
+    {"local": "2026-01-01T12:00:00", "limit_w": 5750.0, "why": "Ano Nuevo, likewise"}
+  ],
+  "tolerance_pct": 0.1,
+  "tolerance_s": 30,
+  "ceiling_is_infinite_at": ["2026-01-07T12:00:00", "2026-01-07T02:00:00"],
+  "describes": ["no capacity component", "limited to 4.6 kW, 5.75 kW", "trips the supply"]
+}

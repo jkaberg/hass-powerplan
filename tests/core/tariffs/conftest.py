@@ -6,9 +6,10 @@ Nothing here starts Home Assistant: `tests/core/` is the pure half of the suite
 * `closed()` builds a `ClosedWindow` exactly as D3's meter hands one over, from a
   local wall-clock instant - because a tariff is a local-time object keyed in UTC
   (D2 §2) and a test that writes UTC by hand hides every DST question.
-* `spec()` wraps one grammar root in a one-version `TariffSpec`. The presets for
-  SE/FI/BE/ES/US/AU are WP4.3, so the tests for their grammar (D2 §9 3, 4, 8, 9,
-  12) build it inline here rather than shipping files this WP does not own.
+* `spec()` wraps one grammar root in a one-version `TariffSpec`. WP0.3 built the
+  SE/FI/BE/ES/US/AU grammar inline through it, because those preset files did not
+  exist yet; WP4.3a shipped them, so D2 §9 3, 4, 6, 8, 9 and 12 now run twice -
+  inline for the arithmetic, and on the files through `market_golden()`.
 * `Holidays` is the site's calendar. D1's `HolidayCalendar` is a `Protocol` and so
   is D2's, so a set of dates satisfies both.
 """
@@ -200,6 +201,48 @@ def record_golden(ev: Evaluator, rows: Iterable[Mapping[str, Any]], tz: tzinfo =
 def golden(preset_id: str) -> dict[str, Any]:
     """Load the committed golden file for a preset (D9 §3)."""
     data: dict[str, Any] = json.loads((GOLDEN / f"{preset_id}.json").read_text(encoding="utf-8"))
+    return data
+
+
+PRESET_DIR = (
+    Path(__file__).resolve().parents[3]
+    / "custom_components"
+    / "powerplan"
+    / "core"
+    / "tariffs"
+    / "presets"
+)
+
+
+def preset_names() -> list[str]:
+    """Every shipped preset's load name (`no/tensio`, `custom`), sorted.
+
+    Discovered from disk rather than listed, so a file added without a golden
+    fails the suite instead of being ignored (D2 §9 1: a golden *per preset*).
+    """
+    return sorted(
+        path.relative_to(PRESET_DIR).with_suffix("").as_posix()
+        for path in PRESET_DIR.rglob("*.json")
+        if path.name != "schema.json"
+    )
+
+
+def preset_raw(name: str) -> dict[str, Any]:
+    """Return the preset file as it is on disk, for fields the grammar does not carry.
+
+    `tz` is the market's zone (D-0111): data in the file, read by D8's flow and by
+    the golden files, and deliberately not a field of `TariffSpec`.
+    """
+    data: dict[str, Any] = json.loads((PRESET_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    return data
+
+
+def market_golden(name: str) -> dict[str, Any] | None:
+    """Return the golden for a preset's `id`, or `None` when it has no capacity claim."""
+    path = GOLDEN / f"{preset_raw(name)['id']}.json"
+    if not path.is_file():
+        return None
+    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     return data
 
 

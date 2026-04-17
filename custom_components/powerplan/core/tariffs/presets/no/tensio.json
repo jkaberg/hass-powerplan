@@ -4,6 +4,7 @@
   "country": "NO",
   "operator": "Tensio",
   "currency": "NOK",
+  "tz": "Europe/Oslo",
   "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
   "verified": "2026-04-08",
   "versions": [

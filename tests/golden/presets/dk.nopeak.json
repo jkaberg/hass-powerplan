@@ -1,0 +1,32 @@
+{
+  "_": "Golden for the dk.nopeak preset — D2 §9 1, D9 §3. A market with no capacity component still needs a golden: the claim \"nothing here bills a peak\" is the one the household is trusting.",
+  "preset": "dk/nopeak",
+  "id": "dk.nopeak",
+  "tz": "Europe/Copenhagen",
+  "currency": "DKK",
+  "window_min": 60,
+  "period_key": "2026-01",
+  "at_local": "2026-01-20T12:00:00",
+  "sources": {
+    "no_peak": "HLD §8's DK row: peak component `NoPeak`, hard limit the fuse. Denmark prices the grid by time of use, not by measured peak, so there is no capacity metric to defend — the household steers on price alone (HLD §3).",
+    "tou": "elberegner.dk/guides/hvad-koster-transport-af-el/ and elberegner.dk/elforsyning-netselskab/radius-elnet/, read 2026-09-19: the Radius tarif C day is lavlast 00:00-06:00, hoejlast 06:00-17:00 and 21:00-24:00, spidslast 17:00-21:00; winter runs October-March and summer April-September.",
+    "tou_prices": "Same source, Radius early 2026 including VAT: lavlast about 12 oere/kWh, hoejlast about 37, spidslast about 110. The summer table was not read inside this WP's lookup budget and the preset carries the winter figures for the summer months too, marked assumed.",
+    "metric_kw": "0.0: `metric()` on a NoPeak site is zero by construction, and `level.metric_kw` is None rather than zero so nothing downstream mistakes it for a measurement.",
+    "windows_priced": "0: `bill()` prices nothing at all on a NoPeak version, even though the windows are recorded (the history is still the single source, INV-11)."
+  },
+  "windows": [
+    {"local": "2026-01-14T18:00:00", "kwh": 9.4},
+    {"local": "2026-01-14T19:00:00", "kwh": 8.1}
+  ],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "DKK",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "ceiling_is_infinite_at": ["2026-01-14T18:30:00", "2026-07-14T18:30:00"],
+  "describes": ["no capacity component", "only the energy price matters"]
+}

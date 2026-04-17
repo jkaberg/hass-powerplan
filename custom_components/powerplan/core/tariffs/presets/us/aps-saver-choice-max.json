@@ -1,0 +1,32 @@
+{
+  "id": "us.aps-saver-choice-max",
+  "name": "APS – Saver Choice Max / Time-of-Use 4pm–7pm with Demand (summer)",
+  "country": "US",
+  "operator": "Arizona Public Service",
+  "currency": "USD",
+  "tz": "America/Phoenix",
+  "source_url": "https://www.aps.com/demand",
+  "verified": null,
+  "assumed": "Two things, one of them a grammar limit worth reading. (1) The price: $19.585/kW is APS's summer R-3 demand rate as reported secondarily (Decision 79293, effective 2024-03-08); the APS rate-schedule PDF was not read, so the household's own plan sheet replaces it. The window — the highest hour between 4pm and 7pm on weekdays, a 60-minute demand interval, the single highest of the billing month — is APS's own, from aps.com/demand, and is not assumed. (2) The season: this version covers **summer only** (May–October). APS also charges a demand rate in winter, at a lower $/kW, and `PeakTariff` carries one `pricing` and one `eligible` per version, so one file cannot hold both — a version is dated, and a season recurs. Rather than apply the summer price year-round (which would defend the right hours at the wrong price) or invent a winter figure, the eligible months stop at October: a winter month has no capacity component and the site steers on price alone, which is the documented degradation (HLD §3) and not a wrong number. What would remove this note is a seasonal `pricing` in the grammar, which is D2's call and not this WP's. Arizona does not observe DST, so America/Phoenix needs no seam care.",
+  "versions": [
+    {
+      "valid_from": "2024-03-08",
+      "verified": null,
+      "assumed": "See the file-level note: summer season only, and the $/kW is secondary.",
+      "peak": {
+        "window_min": 60,
+        "eligible": {
+          "months": [5, 6, 7, 8, 9, 10],
+          "weekdays": [0, 1, 2, 3, 4],
+          "hours": [[960, 1140]],
+          "holidays": "exclude"
+        },
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "month",
+        "pricing": {"linear": {"price_per_kw": 19.585}}
+      }
+    }
+  ]
+}

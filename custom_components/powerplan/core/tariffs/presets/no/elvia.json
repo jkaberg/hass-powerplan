@@ -4,6 +4,7 @@
   "country": "NO",
   "operator": "Elvia",
   "currency": "NOK",
+  "tz": "Europe/Oslo",
   "source_url": "https://www.elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/",
   "verified": "2026-04-08",
   "versions": [

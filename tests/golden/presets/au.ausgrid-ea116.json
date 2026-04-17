@@ -1,0 +1,58 @@
+{
+  "_": "Golden for the au.ausgrid-ea116 preset — D2 §9 1 and 4, D9 §3. Australia's demand window runs every day, not only on weekdays, and only in two seasons.",
+  "preset": "au/ausgrid-ea116",
+  "id": "au.ausgrid-ea116",
+  "tz": "Australia/Sydney",
+  "currency": "AUD",
+  "window_min": 30,
+  "period_key": "2026-07",
+  "at_local": "2026-07-20T12:00:00",
+  "sources": {
+    "grammar": "HLD §8's AU row: `(30, peak_window, all, max, month, Linear)` — a 30-minute interval, only the peak window eligible, the single highest of the month.",
+    "window": "ausgrid.com.au/your-energy-use/smarter-energy-use/understanding-network-tariffs/demand-pricing, read 2026-09-19: the peak window is between \"3pm and 9pm\", \"every day\", in the \"June - August and November - March periods\", and the charge is \"calculated on the one day of the month during the peak window when the highest 30-minute period of consumption occurs\".",
+    "price": "44.4147 c/kVA/day peak demand for EA116 in 2026-27 (Ausgrid's 2026-27 indicative network prices, as reported 2026-09-19). Quoted per DAY, which the grammar has no unit for, so it is carried as a year: 0.444147 x 365 = 162.1137 AUD/kVA/year, and `price_period_unit: year` makes the month pay a twelfth, 13.509475. See the preset's `assumed` — a 31-day month really pays more than a 28-day one and this averages that away.",
+    "month": "Constructed, not measured: July 2026, which is inside the June-August season, and in AEST so no DST seam.",
+    "metric_kw": "A 30-minute window's kW is twice its kWh: 3.2 -> 6.40, 3.6 -> 7.20, 2.5 -> 5.00. The single highest eligible one is 7.20 kW, and it falls on a Sunday — the window runs every day, so the weekend counts.",
+    "not_metric_kw": "10.00 kW, the 5.0 kWh half-hour at 22:00 on 2026-07-08, which is after the window closes at 21:00.",
+    "fee": "7.20 kW x 162.1137 / 12 = 7.20 x 13.509475 = 97.26822 AUD for the month."
+  },
+  "windows": [
+    {"local": "2026-07-08T18:00:00", "kwh": 3.2},
+    {"local": "2026-07-08T22:00:00", "kwh": 5.0},
+    {"local": "2026-07-12T19:30:00", "kwh": 3.6},
+    {"local": "2026-07-20T15:00:00", "kwh": 2.5}
+  ],
+  "expected": {
+    "metric_kw": 7.2,
+    "not_metric_kw": 10.0,
+    "level_name": "7.20 kW",
+    "fee": 97.26822,
+    "currency": "AUD",
+    "confidence": "exact",
+    "bill_fee": 97.26822,
+    "windows_priced": 4
+  },
+  "eligibility": [
+    {"local": "2026-07-08T15:00:00", "eligible": true, "why": "the window opens at 15:00"},
+    {"local": "2026-07-08T20:30:00", "eligible": true, "why": "and runs to 21:00"},
+    {"local": "2026-07-08T21:00:00", "eligible": false, "why": "the window is [15:00, 21:00)"},
+    {"local": "2026-07-12T19:30:00", "eligible": true, "why": "every day, so a Sunday counts — unlike the US presets"},
+    {"local": "2026-12-08T18:00:00", "eligible": true, "why": "December is in the November-March season"},
+    {"local": "2026-09-08T18:00:00", "eligible": false, "why": "September is a shoulder month in neither season"},
+    {"local": "2026-04-08T18:00:00", "eligible": false, "why": "April likewise"}
+  ],
+  "no_day_entry_for": [],
+  "eligible_windows": {
+    "from_local": "2026-07-08T00:00:00",
+    "to_local": "2026-07-09T00:00:00",
+    "count": 12,
+    "first_start": "2026-07-08T15:00:00",
+    "last_end": "2026-07-08T21:00:00",
+    "why": "15:00-21:00 in half hours is twelve windows"
+  },
+  "describes": [
+    "single highest half-hour",
+    "162.1137 AUD per kW per year",
+    "between 15:00 and 21:00"
+  ]
+}

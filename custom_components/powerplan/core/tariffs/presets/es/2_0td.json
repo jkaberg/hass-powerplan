@@ -1,0 +1,30 @@
+{
+  "id": "es.2_0td",
+  "name": "España – tarifa 2.0TD (potencia contratada P1/P2)",
+  "country": "ES",
+  "currency": "EUR",
+  "tz": "Europe/Madrid",
+  "source_url": "https://companiadeluz.es/info/tarifas/2-0",
+  "verified": "2026-04-17",
+  "versions": [
+    {
+      "valid_from": "2021-06-01",
+      "verified": "2026-04-17",
+      "source_url": "https://companiadeluz.es/info/tarifas/2-0",
+      "assumed": "The two kW figures, and only those. The periods are 2.0TD's own and are verified: P1 (punta) Monday to Friday on working days 08:00–24:00, P2 (valle) the rest of those days plus all of Saturdays, Sundays, 6 January and the national holidays — which is why the P1 filter carries `holidays: exclude` and P2 carries no filter at all. The pair 4.6 kW in punta and 5.75 kW in valle is a *default the flow offers*, not anyone's contract: 4.6 kW (230 V × 20 A) is D2 §6's ES default and 5.75 kW (230 V × 25 A) is the next normalised step, in that order because the documented 2.0TD saving strategy is a higher power in valle — when the washing machine, dishwasher and EV run — and a lower one in punta. Every household enters its own two potencias, which are printed on its bill. The ICP tolerance of 10 % for 30 s is D2 §4's.",
+      "contracted": {
+        "limits": [
+          {
+            "when": {"weekdays": [0, 1, 2, 3, 4], "hours": [[480, 1440]], "holidays": "exclude"},
+            "limit_kw": 4.6
+          },
+          {"limit_kw": 5.75}
+        ],
+        "on_exceed": "trip",
+        "tolerance_pct": 0.1,
+        "tolerance_s": 30,
+        "unit": "kw"
+      }
+    }
+  ]
+}

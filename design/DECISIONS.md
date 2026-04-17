@@ -437,6 +437,37 @@ The NEM labels intervals by their end and opens them a second late (`04:00:01`-`
 `test_registry_table.py` parses the format table from `design/lld/D1-pricing.md` and asserts, per row, a registered adapter with that key and platform and a fixture, and that nothing is registered that §2 doesn't list. The failure that actually happens is a row added to the design and never built. D1 §2's key and platform columns must stay backticked.
 **Rejected:** a literal roster in the test - a third copy of the table, and the one updated with the code, so the LLD is the one that drifts.
 
+### D-0110 · The presets ship before the benchmark houses
+
+"Presets + benchmark houses" is split: the ten remaining preset files with a golden each first, the `ContractedPower` wiring and the six D9 §5.9 houses after. The presets depend on D2 alone. The houses need `nl_pv`, `fi_linear` and `es_contracted` to have a tariff to run on.
+**Rejected:** shipping them together - proving each preset against a simulated year is a stronger claim than a golden, but it sequences the data after the thing that consumes it.
+
+### D-0111 · A preset declares its market's zone as `tz`
+
+`schema.json` gets an optional preset-level IANA `tz`, validated on load, and every shipped preset with a country carries it. Ellevio's 22:00-06:00 or 2.0TD's P1 are the market's clock, not the site's; a Spanish flat managed from Oslo has a Norwegian HA and a Spanish tariff. Affects D2 §6.
+**Rejected:** deriving the zone from `country` - the US and Australia span several zones. Putting `tz` on each version - a DSO doesn't change continent between price lists.
+
+### D-0112 · The ES preset's two potencias differ
+
+`es/2_0td` ships 4.6 kW in P1 and 5.75 kW in P2, and D2 §6's default row says so (and gains NL's 17.25 kW). D2 §9 12 asserts `limit_now_w` flips at 08:00 on the shipped file; with the same number on both sides there's nothing to flip. A higher valle power is the usual 2.0TD setup.
+**Rejected:** keeping 4.6/4.6 and testing the flip on an inline spec - the test exists to catch transcription errors in the shipped file.
+
+### D-0113 · A shipped preset's numbers may be a default the flow offers
+
+`nl/connection`'s 17.25 kW, `es/2_0td`'s potencias and `fi/energiavirasto-2026`'s 2.50 EUR/kW are marked `assumed` as defaults the flow offers, separate from the published structure around them, which is verified. The household reads its own periods and a default power it's expected to change.
+**Rejected:** shipping them with no numbers - the schema requires them, and a preset that can't load can't show up in the select.
+
+### D-0114 · Three tariff-model gaps the presets found, and how each ships anyway
+
+| Gap | Where | Shipped as |
+|---|---|---|
+| Seasonal pricing and eligible hours (US summer/winter demand rates) | `us/aps-saver-choice-max`, `us/srp-e27` | `eligible.months` covers May-October; winter steers on price alone (HLD §3's degradation) |
+| No per-day `price_period_unit` (Ausgrid's c/kVA/day) | `au/ausgrid-ea116` | converted to a year; month length averages out, a few % off per month |
+| No kVA demand charge | `au/ausgrid-ea116` | read as kW, exact at pf 1.0 |
+
+Each file says in its `assumed` what's missing. Each gap would be a field that changes what every existing preset means, so the model isn't widened here. Which half-hour matters is right in all three, and that's what steering uses; only the reported fee drifts (INV-68).
+**Rejected:** applying the summer version year-round - SRP's winter peak hours differ, so it would shed at the wrong times.
+
 ### D-0140 · The executor ships before the runtime
 
 `writegate.py` depends only on the pure gate and `hass`, and exposes what the runtime will call: `async_apply`, `async_release`, `async_release_all`, `cancel`, `track`/`untrack`, `budget`. Building it against the pure gate proves the split (PLAN §7 dec. 5) and settles `blocking=True`, the read-back timer and the `hass.states` rule in one file. D4 §5.10's four report-backs fix its shape.

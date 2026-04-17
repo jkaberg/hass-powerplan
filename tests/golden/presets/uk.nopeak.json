@@ -1,0 +1,28 @@
+{
+  "_": "Golden for the uk.nopeak preset — D2 §9 1, D9 §3. The claim under test is that Great Britain bills households no capacity component at all.",
+  "preset": "uk/nopeak",
+  "id": "uk.nopeak",
+  "tz": "Europe/London",
+  "currency": "GBP",
+  "window_min": 30,
+  "period_key": "2026-01",
+  "at_local": "2026-01-20T12:00:00",
+  "sources": {
+    "no_peak": "HLD §8's UK/IE row: energy N2EX half-hourly, Agile and DFS events; grid TOU \"none / Day-Night-Peak\"; peak component `NoPeak` + reward events; hard limit the fuse. A domestic supply pays a standing charge per day and a unit rate per kWh — the DNO's capacity costs are inside the unit rate and are never measured against the household's own peak.",
+    "window_min": "30 minutes, because that is the settlement period every British half-hourly tariff and every DFS event is quoted in; it costs nothing on a NoPeak preset and is right the moment a capacity component ever appears.",
+    "metric_kw": "0.0 by construction on a NoPeak site; `level.metric_kw` is None.",
+    "dfs": "Demand Flexibility Service events are rewards on the price axis (D1), not a capacity metric, so they are deliberately absent here."
+  },
+  "windows": [{"local": "2026-01-14T17:30:00", "kwh": 4.2}],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "GBP",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "ceiling_is_infinite_at": ["2026-01-14T17:45:00", "2026-06-14T17:45:00"],
+  "describes": ["no capacity component", "only the energy price matters"]
+}

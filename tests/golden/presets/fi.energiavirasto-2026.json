@@ -1,0 +1,40 @@
+{
+  "_": "Golden for the fi.energiavirasto-2026 preset — D2 §9 1 and 8, D9 §3. Every number carries its source.",
+  "preset": "fi/energiavirasto-2026",
+  "id": "fi.energiavirasto-2026",
+  "tz": "Europe/Helsinki",
+  "currency": "EUR",
+  "window_min": 60,
+  "period_key": "2026-03",
+  "at_local": "2026-03-20T12:00:00",
+  "sources": {
+    "grammar": "Energiavirasto's määräys, in force 2026-02-02 (energiavirasto.fi, \"Sähkön siirtolaskutukseen valmistellaan muutoksia – tehomaksu tasaamaan kulutusta\", read 2026-09-19): the tehomaksu starts where the 60-minute average power exceeds an eight-kilowatt threshold. HLD §8's FI row: (60, all, per_day=all, max, month, Linear(free_kw=8)).",
+    "free_kw": "8 kW, set by the määräys. An earlier draft circulated at 5 kW; 8 is what came into force.",
+    "price": "ASSUMED. Energiavirasto sets the structure, not the price: each DSO picks its own unit price, so 2.50 EUR/kW/month is the figure D2 §9 8 and the WP0.3 inline test use, not a published one. Replaced by the site's own DSO price list.",
+    "month": "Constructed, not measured: four hours in March 2026, one per week, the highest 9.40 kW. March is wholly inside the version (valid_from 2026-02-02) and before the 2026-03-29 DST change.",
+    "metric_kw": "per_day = all with per_period = max is the single highest hour of the month: max(6.2, 9.4, 8.0, 7.1) = 9.40 kW.",
+    "fee": "billable = max(9.40 − 8.00, 0) = 1.40 kW; 1.40 × 2.50 = 3.50 EUR for the month.",
+    "deductible": "D2 §9 8's two cases on the file: a month topping out at 7.0 kW is below the deductible and pays nothing; one at 9.0 kW pays for exactly one kW, 2.50 EUR."
+  },
+  "windows": [
+    {"local": "2026-03-05T17:00:00", "kwh": 6.2},
+    {"local": "2026-03-12T18:00:00", "kwh": 9.4},
+    {"local": "2026-03-19T07:00:00", "kwh": 8.0},
+    {"local": "2026-03-26T18:00:00", "kwh": 7.1}
+  ],
+  "expected": {
+    "metric_kw": 9.4,
+    "level_name": "9.40 kW",
+    "fee": 3.5,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": 3.5,
+    "windows_priced": 4
+  },
+  "deductible": [
+    {"kwh": 7.0, "billable_kw": 0.0, "fee": 0.0, "why": "below the 8 kW deductible, so the tehomaksu is nothing at all"},
+    {"kwh": 8.0, "billable_kw": 0.0, "fee": 0.0, "why": "exactly at the threshold: the deductible is subtracted, not a trigger"},
+    {"kwh": 9.0, "billable_kw": 1.0, "fee": 2.5, "why": "one kW over, one kW billed"}
+  ],
+  "describes": ["single highest hour", "2.50 EUR per kW per month", "first 8 kW free"]
+}

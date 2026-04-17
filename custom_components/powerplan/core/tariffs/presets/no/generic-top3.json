@@ -3,6 +3,7 @@
   "name": "Norway – generic capacity steps (DSO not listed)",
   "country": "NO",
   "currency": "NOK",
+  "tz": "Europe/Oslo",
   "source_url": "https://lovdata.no/dokument/SF/forskrift/1999-03-11-302",
   "verified": null,
   "assumed": "The grammar is national and mandated — every Norwegian DSO has billed a monthly capacity fee in steps, set by the average of the three highest hours on three different days, since 2022-07-01 (forskrift om nettregulering, kap. 14; HLD §8). The step boundaries 2/5/10/15/20 kW are close to universal, but the fees are per DSO: the ones here are Tensio's 2026-01-01 household table used as a representative national one. A site whose DSO is listed should pick that preset instead; a site using this one gets the right behaviour and an approximate bill.",

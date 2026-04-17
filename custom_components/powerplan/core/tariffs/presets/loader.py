@@ -6,7 +6,7 @@ file is checked, so this is a real boundary: every field is validated against
 `schema.json` before anything is built, and the semantic rules the schema cannot
 express - versions strictly ascending, exactly one open-ended step, a period
 change that needs a `history_policy`, a version without a source that has to say
-it is assumed - are checked here as well.
+it is assumed, a `tz` that no system knows - are checked here as well.
 
 `schema.json` is interpreted by the small subset validator below rather than by
 `jsonschema`: `core/` carries no third-party dependency, and the keywords the
@@ -21,6 +21,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...model import Money
 from ..grammar import (
@@ -176,6 +177,13 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset") -> None:
     """
     schema = _schema()
     _check(raw, schema, "", schema, source)
+
+    zone = raw.get("tz")
+    if zone is not None:
+        try:
+            ZoneInfo(zone)
+        except ZoneInfoNotFoundError, ValueError:
+            _fail("tz", f"{zone!r} is not a zone this system knows", source)
 
     versions = raw["versions"]
     previous: date | None = None
