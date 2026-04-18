@@ -10,7 +10,9 @@ This module is the bottom of `core/loads/`: `Role`, `Reads`, `Action`, `Command`
 and `Hold` are declared here because the gate and the `Load` both need them and
 both sit above the kinds in the import graph (`design/DECISIONS.md` D-0061).
 `core/loads/base.py` re-exports them, so a reader of D4 §4.1 finds them where
-the LLD says they are.
+the LLD says they are. `Desired` is re-exported from `core/model.py` for the
+mirror-image reason: WP0.6 puts it on a `PlanSlot`, and `core/model.py` is below
+this module (`design/DECISIONS.md` D-0131).
 """
 
 from collections.abc import Mapping
@@ -20,7 +22,7 @@ from enum import StrEnum
 from typing import ClassVar, Literal, Protocol
 
 from ...metering import ElectricalProfile, Reading
-from ...model import Grant, Mode
+from ...model import Desired, Grant, Mode
 
 __all__ = [
     "Action",
@@ -104,17 +106,6 @@ class Action(StrEnum):
     DELEGATED = "delegated"
     FAILED = "failed"
     TRANSIENT = "transient"
-
-
-class Desired(StrEnum):
-    """What the plan wants of a load this slot (D5 §2, consumed by D4 §5.4–5.5).
-
-    `heat_capacitor` emits it per slot; a `MODE` load turns it into an option
-    and a `SETPOINT` load into a delta. D5 owns the producing side.
-    """
-
-    COMFORT = "comfort"
-    SHED = "shed"
 
 
 # --------------------------------------------------------------------------- #

@@ -518,6 +518,56 @@ With no meter there's no metric to bill, so on `price_only` the flow skips meter
 Advanced fields sit in a collapsed `section("advanced")` marked `vol.Optional(default={})`, so defaults arrive unopened. `show_advanced_options` is deprecated in 2026.9 and logs a warning naming the integration. The eight notification categories that default to off go in the section too. HA has no generic back, so every step but the review passes `last_step=False` and re-renders with what was answered. Affects D8 §5.1, §5.4.
 **Rejected:** `show_advanced_options` until it's removed - deprecated and warns. All eleven notification selects abreast - the three that matter get lost.
 
+### D-0130 · The `Plan`'s four questions are methods on the type
+
+`Plan` and friends live in `core/model.py` with `cap_w`, `desired_state_at`, `idle_seconds_from` and `next_active` as methods; `core/strategies/plan.py` re-exports them and adds `build_plan` and `inputs_digest`. D6 and D8 read a plan without importing D5, as with the curve statistics (D-0030). Affects D5 §3.
+**Rejected:** free functions in `plan.py` - every consumer would import D5 for arithmetic over fields it can already see.
+
+### D-0131 · `Desired` moves to `core/model.py`; `DesiredState = Desired | SetpointDelta`
+
+`PlanSlot.desired_state` is `Desired` (`comfort | shed`, for MODE) or a `SetpointDelta` in kelvin (for SETPOINT), so the enum moves below `core/loads/`, as D-0060 did for `Demand`'s types. `from .kinds.base import Desired` still works. Affects D5 §4.
+**Rejected:** a dataclass with an optional option and an optional delta - a shape neither LLD draws, and two fields to check where a union dispatches on `isinstance`.
+
+### D-0132 · `LoadView`, `Curves`, `Forecasts` and `CeilingSource` are declared in `context.py`
+
+D5 is the first consumer of each. `LoadView.of(load, demand, …)` builds the projection. `CeilingSource` is a two-method view of the tariff, so D5 reads the ceiling and eligible windows and nothing else, and the real evaluator satisfies it in tests. Affects D5 §4, D6 §4.
+**Rejected:** `core/model.py` - `LoadView` projects a `Load` and `Forecasts` is D10's surface, so the model would import domains it sits below.
+
+### D-0133 · `plan_all` lives in `base.py`
+
+The site walk sits next to the registry it dispatches through; `context.py` can't import `base.py` without a cycle. Re-exported from `core/strategies`. Affects D5 §3.
+**Rejected:** a new `site.py` - a module D5 §3 doesn't draw.
+
+### D-0134 · `Plan` keeps §4's fields where §3 spells them as methods
+
+`cost_estimate`, `confidence`, `coverage`, `covered`, `planned_kwh` and `required_kwh` are fields. D5 §3 and §4 disagreed; §4 is what §7 persists, and `build_plan` computes them once so no two strategies disagree about a plan's cost. Affects D5 §3.
+**Rejected:** methods derived from the slots on every call - a restored plan has slot prices as old as the plan.
+
+### D-0135 · `should_adopt` takes the curve and the zone; stale doubles once
+
+`should_adopt(old, new, policy, *, curve, tz, now, inputs_changed, stale)`. The threshold is a fraction of the local day's spread (INV-8), which needs the curve and the zone, and "doubled when stale" is applied once, not by both the policy and the caller. Affects D5 §3, §5.9.
+**Rejected:** a pre-computed threshold passed in - every caller would own INV-8's arithmetic.
+
+### D-0136 · The inputs hash covers demand and knobs, never prices
+
+`inputs_digest` covers strategy, mode, deadline, `max_w`, `min_w`, parameters and presence; the requirement is compared with §5.9's ±10 % rule. Prices in the hash would change it on every fetch, and a changed input adopts unconditionally, so float noise on a flat Norgespris night would re-plan every quarter hour (INV-32). A materially changed curve is what the hysteresis measures, in money. Affects D5 §5.9.
+**Rejected:** hashing prices rounded to the minor unit - one øre on one slot would still force an adoption, and the rounding is a hidden second threshold.
+
+### D-0137 · A block is filled by spreading, not front-loading
+
+With `min_block_min`, a block's share of the requirement is spread over its slots by capacity; only extension slots fill to capacity. Front-loading would cover a small requirement in the first slot and break the minimum run the rule exists for. In `spread` the share is not raised to `min_w`, which is why `fill` is the default for loads with a power floor. Affects D5 §5.3, §5.9.
+**Rejected:** filling from the block's start - cheapest inside a block, but it breaks the block length D5 §9 2 asserts.
+
+### D-0138 · Which demand gets `urgent`, and what an empty plan means
+
+`PlanMode.NONE` for an unknown requirement and for `always`; `URGENT` for `price_sensitive = False` outside `force` (min SoC, legionella, a comfort violation); `FORCE` under force. `NONE`, `URGENT` and an empty plan all mean `cap_w = None`: the allocator runs the load against the ceiling, where precedence lives (INV-1). Affects D5 §4, §8.
+**Rejected:** planning urgent demand at `max_w` from now - a plan asserting a grant is the allocator's job.
+
+### D-0139 · `ReplanTrigger`, and which triggers skip the rate limit
+
+The seven triggers are a `StrEnum`; `replan_due()` allows one replan per load per 60 s except for `force`, `service` and `startup`. A switch the household flicked shouldn't wait a minute. Affects D5 §5.9.
+**Rejected:** rate-limiting everything - a "charge now" that does nothing for a minute reads as broken.
+
 ### D-0140 · The executor ships before the runtime
 
 `writegate.py` depends only on the pure gate and `hass`, and exposes what the runtime will call: `async_apply`, `async_release`, `async_release_all`, `cancel`, `track`/`untrack`, `budget`. Building it against the pure gate proves the split (PLAN §7 dec. 5) and settles `blocking=True`, the read-back timer and the `hass.states` rule in one file. D4 §5.10's four report-backs fix its shape.

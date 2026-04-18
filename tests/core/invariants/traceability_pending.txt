@@ -18,13 +18,17 @@ INV-1
 # test_single_writer), INV-24 (blocking=True on the call itself) and INV-22's
 # scheduled read-back.
 
-# INV-34–42 - budget chain, ladder, trim, rotation, COP (HLD §6.6, D6) → WP0.7
+# INV-34–42 - budget chain, ladder, trim, rotation, COP (HLD §6.6, D6) → WP0.7.
+# INV-39's horizon half - the plan's own stop horizon, and the plan half of the
+# budget horizon - is covered by WP0.6 (tests/core/strategies/test_12_*), the
+# same split as INV-43's in WP0.2: D5 owns `idle_seconds_from` and
+# `next_active`, and WP0.7 adds the two gates that only the allocator may open
+# (D6 §9 11).
 INV-34
 INV-35
 INV-36
 INV-37
 INV-38
-INV-39
 INV-40
 INV-41
 INV-42

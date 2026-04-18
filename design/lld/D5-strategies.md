@@ -47,9 +47,9 @@
 ```
 custom_components/powerplan/core/strategies/
 ├── __init__.py
-├── plan.py             Plan, PlanSlot, cap_w(), desired_state_at(), idle_seconds_from(), cost()
-├── context.py          PlanContext, Headroom builder
-├── base.py             Strategy protocol, registry, StrategyParams schemas
+├── plan.py             re-exports Plan, PlanSlot, PlanMode, DesiredState from core/model.py; build_plan(), inputs_digest()
+├── context.py          PlanContext, SiteContext, SitePlan, Headroom builder, LoadView, Curves, Forecasts, CeilingSource
+├── base.py             Strategy protocol, registry, StrategyParams schemas, plan_all()
 ├── deadline_fill.py    plan_one() - greedy exact fill, block constraint variant, force mode
 ├── cheapest_hours.py
 ├── best_save.py
@@ -66,15 +66,20 @@ custom_components/powerplan/core/strategies/
 Public API:
 
 ```python
-def plan_all(loads: Sequence[LoadView], curves: Curves, ctx: SiteContext, now: datetime) -> SitePlan     # priority-decomposed
-class Plan:
+def plan_all(loads, curves, ctx: SiteContext, now, *, previous: Mapping[str, Plan] | None = None,
+             headroom: Headroom | None = None) -> SitePlan              # priority-decomposed; adopts per 5.9
+class Plan:                                                             # declared in core/model.py (D-0130)
     def cap_w(self, now: datetime) -> float | None            # None = no plan; 0 = stand still; w = cap
     def desired_state_at(self, now) -> DesiredState | None
     def idle_seconds_from(self, now, horizon_s: float = 3600) -> float   # for D6's EV stop guard
     def next_active(self, now) -> datetime | None
-    def cost(self) -> Money;  def coverage(self) -> float;  def confidence(self) -> Confidence
-def should_adopt(old: Plan | None, new: Plan, policy: HysteresisPolicy, inputs_changed: bool, stale: bool, now) -> bool
+    # cost_estimate, coverage, covered, confidence, planned_kwh are FIELDS (§4), not methods: they are
+    # what §7 persists and a restored plan carries (D-0134). build_plan() computes all of them.
+def should_adopt(old: Plan | None, new: Plan, policy: HysteresisPolicy, *, curve: PriceCurve, tz: tzinfo,
+                 now: datetime, inputs_changed: bool = False, stale: bool = False) -> bool   # D-0135
 ```
+
+`plan_all` is in `base.py` next to the registry it dispatches through - `context.py` can't call the registry without importing `base.py`, which imports it (D-0133). `headroom` overrides what `SiteContext` would build, for the backtest and the scenarios.
 
 ---
 
@@ -93,17 +98,21 @@ class PlanSlot:
 
 @dataclass(frozen=True)
 class Plan:
-    load_id: str; strategy: str; mode: Literal["price", "force", "urgent", "none"]
+    load_id: str; strategy: str; mode: PlanMode                 # price | force | urgent | none (StrEnum)
     slots: tuple[PlanSlot, ...]
-    required_kwh: float | None; planned_kwh: float; covered: bool
-    deadline: datetime | None; built_at: datetime; inputs_hash: str
+    required_kwh: float | None; planned_kwh: float; covered: bool; coverage: float
+    deadline: datetime | None; built_at: datetime; inputs_hash: str; reason: str
     cost_estimate: Money; confidence: Confidence
+# mode: `none` = no requirement, or `always`; `urgent` = a demand with price_sensitive = False that is not a
+# force; both answer cap_w = None and leave the load to the allocator (D-0138).
+# inputs_hash covers the demand and the knobs, never the prices - hashing prices would make every re-fetch a
+# changed input and re-decide a flat night every quarter hour (D-0136).
 
 @dataclass(frozen=True)
 class PlanContext:
     now: datetime; tz: tzinfo
     curve_in: PriceCurve; curve_out: PriceCurve | None
-    headroom_w: Mapping[datetime, float]         # per slot start, after higher-priority reservations and baseline
+    headroom: Headroom                           # per slot start, after higher-priority reservations and baseline
     tariff_eligible: Sequence[tuple[datetime, datetime, float]]   # (start, end, weight) from D2
     store: StoreModel | None; level_now: float | None
     target_profile: TargetProfile | None; presence: PresenceMode
@@ -111,6 +120,16 @@ class PlanContext:
     events: Sequence[Event]
     hysteresis: HysteresisPolicy
     load: LoadView                               # max_w, min_w, nameplate_w, min_block_min, kind, participates_in_events
+    horizon_h: float                             # 48 h; horizon_end() bounds it by the curve (§2 "Horizon")
+
+class LoadView:      # declared in context.py - D6 §4 names the same type and adds quantise() (D-0132)
+    load_id; priority; strategy; demand: Demand; mode: Mode; nameplate_w; kind; carrier
+    min_block_min; participates_in_events; params; store; target; level_now
+    # max_w and min_w are properties over `demand`, so they cannot drift from it
+class Curves:        import_: Mapping[Carrier, PriceCurve]; export: Mapping[Carrier, PriceCurve]
+class Forecasts(Protocol):   outdoor_c(t); surplus_w(t); baseline_w(t)        # D10's surface, as D5 uses it
+class CeilingSource(Protocol):  target_w_at(t, target); eligible_windows(start, end)   # D2, narrowed
+class SitePlan:      plans: Mapping[str, Plan]; headroom_left: Headroom; adopted: frozenset[str]; built_at
 
 class Strategy(Protocol):
     key: ClassVar[str]; schema: ClassVar[Schema]; supports: ClassVar[frozenset[str] | Literal["all"]]
@@ -130,11 +149,11 @@ plan_all(loads, curves, ctx, now):
         if load.mode in {off, delegated}: reserve nameplate in headroom for delegated; continue
         plan = strategy(load).plan(demand(load), ctx_for(load, headroom), params)
         plan = combinators(load)(plan)
-        for slot in plan.slots: headroom[slot] −= slot.kwh / slot_h     # reservation for lower priorities
+        for slot in plan.slots: headroom[slot] −= slot.envelope_w        # reservation for lower priorities
         adopt or keep old (5.9)
-    return SitePlan(plans, headroom_left)
+    return SitePlan(plans, headroom_left, adopted)
 ```
-No global solver. The EV, lowest priority, takes the residual (HLD non-goal).
+No global solver. The EV, lowest priority, takes the residual (HLD non-goal). Loads of equal priority are walked in `load_id` order, so two identical loops are always planned in the same order. What a slot reserves is its `envelope_w` - the same number the allocator will cap the grant at - which for a partly filled slot is less than the load's maximum: a loop taking 480 W of a 960 W element leaves the charger 4 520 W of a 5 kW target, not 4 040. `adopted` names the loads whose plan actually changed, which is the edge D7 fires `plan_adopted` on (§5.12).
 
 ### 5.2 `deadline_fill`: the exact greedy
 
@@ -152,7 +171,7 @@ Exactness: one load, linear cost, box constraints, one equality, so sort-and-fil
 
 ### 5.3 Block constraint (tanks, cycles, chargers that dislike fragmentation)
 
-Greedy over *blocks*: enumerate every contiguous run of ≥ `min_block_min` within the window; score = mean price; pick the cheapest block, extend it slot by slot while the next adjacent slot is cheaper than the best remaining block's mean, repeat until covered. Bounded suboptimality; test 2 checks it is within 5 % of brute force on small instances and never violates the block length. Cycles use `run_once` (§5.6) instead, which is exact for a single fixed-length block.
+Greedy over *blocks*: enumerate the shortest contiguous run from each start that reaches `min_block_min` within the window; score = duration-weighted mean price; pick the cheapest block (ties to the earliest), extend it slot by slot while the next adjacent slot is cheaper than the best remaining block's mean, repeat until covered. The requirement taken by a block is **spread** across its slots in proportion to their capacity, not front-loaded, so a block that needs half its capacity still runs for its whole length - front-loading would break the very run length the variant exists for (D-0137); extension slots are filled to capacity. Bounded suboptimality; test 2 checks it is within 5 % of brute force on small instances and never violates the block length. Cycles use `run_once` (§5.6) instead, which is exact for a single fixed-length block.
 
 ### 5.4 `cheapest_hours`
 
@@ -205,9 +224,11 @@ should_adopt(old, new):
     h = policy.threshold(day) × (2 if stale else 1)
     adopt if new.cost < old.cost − h
 commitment: a slot that has started, or is KNOWN and starts within `commit_min` (30) minutes, moves only if the improvement exceeds 2h (avoid churn at the boundary)
-replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, service `replan`
+replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, service `replan`, startup (D7 §5.2)
 ```
-Flat curve (`is_flat(day)`): `flat_policy = fill` (earliest slots first) or `spread` (evenly across the window) per load; under `fill` the plan is literally the time order - the Norgespris case.
+
+`h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
+Flat curve (`is_flat(day)`): `flat_policy = fill` (earliest slots first) or `spread` (evenly across the window) per load. Under `fill` the plan is literally the time order, the Norgespris case. `spread` levels the requirement across every usable slot and does **not** raise a slot to `min_w`, so a load with a power floor uses `fill`, the default (D-0137).
 
 ### 5.10 Stop horizons for D6
 
@@ -256,13 +277,14 @@ The adopted `Plan` per load (slots, inputs hash, built_at, mode), so a restart k
 
 | Failure | Behaviour | Surface |
 |---|---|---|
-| Requirement unknown (no SoC, no temperature) | `Plan.mode = none`, `cap_w = None` - the allocator controls freely | attribute `plan_reason = "requirement unknown"` |
+| Requirement unknown (no SoC, no temperature) | `Plan.mode = none`, `cap_w = None`, the allocator controls freely | attribute `plan_reason = "requirement unknown"` |
+| Demand not price-sensitive (min SoC, legionella, comfort violation) | `Plan.mode = urgent`, `cap_w = None`, the plan has no vote (D-0138) | attribute `plan_reason = demand.reason` |
 | Deadline unreachable (required > capacity to deadline) | plan fills everything to the deadline, `covered = False` | event `deadline_at_risk(load, shortfall_kwh)` |
 | Curve entirely synthesised | plan built, `confidence = SYNTHESISED`, hysteresis doubled | attribute |
-| Flat day | `flat_policy` applies; tie-break stable | attribute `flat = True` |
-| Headroom zero everywhere (tariff very tight) | lowest priorities uncovered; event | `deadline_at_risk` |
-| Replan storm (inputs flapping) | replans rate-limited to one per 60 s per load | DEBUG |
-| Cycle cannot fit | earliest feasible; warning | event |
+| Flat day | `flat_policy` applies, stable tie-break | attribute `flat = True` |
+| Headroom zero everywhere (a very tight tariff) | lowest priorities uncovered, event | `deadline_at_risk` |
+| Replan storm (inputs flapping) | rate-limited to one per 60 s per load | DEBUG |
+| Cycle can't fit | earliest feasible, warning | event |
 
 Every plan carries a `reason` per slot, and the review sensor shows "charging 23:15–05:30 (cheapest 6 h before 07:00), 28 kWh, ≈ 31 kr".
 

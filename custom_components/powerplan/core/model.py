@@ -5,7 +5,10 @@ Only the vocabulary HLD §2 and §5 name lives here - `Slot`, `PriceCurve`,
 `Quality` - plus the three D4 vocabularies a `Demand` is made of (`Mode`,
 `Urgency`, `ComfortState`), which live here because `Demand` does and
 `core/loads/` is below its own gate in the import graph (`design/DECISIONS.md`
-D-0060). Everything else belongs to the domain that owns it.
+D-0060), and `Desired`, which moved here in WP0.6 for the same reason: a
+`PlanSlot` carries one and `core/model.py` is below `core/loads/`
+(`design/DECISIONS.md` D-0131). Everything else belongs to the domain that owns
+it.
 
 Conventions (HLD §7.1–7.2): every `datetime` is tz-aware and keyed
 in UTC; power is signed (import +, export −) and in watts; energy is kWh;
@@ -95,6 +98,36 @@ class Urgency(IntEnum):
     LEGIONELLA = 3
     MIN_SOC = 4
     COMFORT_VIOLATION = 5
+
+
+class Desired(StrEnum):
+    """What the plan wants of a load this slot (D5 §2, consumed by D4 §5.4–5.5).
+
+    A `MODE` load turns it into an option and a `SETPOINT` load into a delta.
+    D5 produces it per slot; the allocator still owns the final word - a shed
+    overrides `comfort`, and a comfort violation overrides `shed` (INV-1).
+    """
+
+    COMFORT = "comfort"
+    SHED = "shed"
+
+
+class PlanMode(StrEnum):
+    """How a plan was built, and therefore what its cost means (D5 §4).
+
+    `force` is "the household asked": the price was not consulted, so the cost is
+    what this *will* cost rather than what it was optimised to, and a dashboard
+    that presented the two the same way would lie about the one number the
+    household judges the feature by (effektstyring `planner.plan`). `urgent` is
+    a demand with no vote - a min-SoC floor, a legionella cycle, a comfort
+    violation - and `none` is a requirement that could not be computed: both
+    answer `cap_w = None`, which leaves the load to the allocator (D5 §8).
+    """
+
+    PRICE = "price"
+    FORCE = "force"
+    URGENT = "urgent"
+    NONE = "none"
 
 
 class Quality(StrEnum):
@@ -353,29 +386,132 @@ class Demand:
 # --------------------------------------------------------------------------- #
 
 
+#: A setpoint delta in kelvin, relative to the configured comfort target - what
+#: a `SETPOINT` load feels of a plan (D4 §5.4). A thermostat cannot be capped,
+#: only re-targeted, so the delta is the lever and `envelope_w` the hint.
+type SetpointDelta = float
+
+#: What a plan may ask of a load beside its envelope (D5 §2, §4): an option for
+#: a `MODE` load, a delta for a `SETPOINT` one.
+type DesiredState = Desired | SetpointDelta
+
+
 @dataclass(frozen=True, slots=True)
 class PlanSlot:
-    """One slot of a strategy's envelope for one load (HLD §6.5).
+    """One slot of a strategy's envelope for one load (HLD §6.5, D5 §4).
 
     `envelope_w`: `None` = no plan, control freely · `0.0` = stand still ·
-    otherwise a cap in watts. `desired_state: SetpointDelta | Mode | None` is
-    deferred to WP0.6, with the strategies that emit it.
+    otherwise a cap in watts. The three are different answers and the
+    distinction MUST survive every layer (INV-30); a planned `0.0` is never a
+    shed (INV-25).
+
+    `kwh` is the energy this slot was planned to move and `price` the effective
+    price it was chosen at - kept per slot so the plan can be priced, published
+    and compared without the curve it came from. `committed` is set by the
+    builder: a slot that has started, or is `KNOWN` and starts inside the
+    commitment window, moves only for twice the hysteresis (D5 §5.9).
     """
 
     start: datetime
     end: datetime
     envelope_w: float | None
+    desired_state: DesiredState | None = None
+    kwh: float = 0.0
+    price: Decimal = Decimal(0)
+    reason: str = ""
+    committed: bool = False
+
+    @property
+    def hours(self) -> float:
+        """Return the slot's length in hours - from the slot, never a constant."""
+        return (self.end - self.start).total_seconds() / 3600.0
+
+    def contains(self, t: datetime) -> bool:
+        """Return whether `t` falls in `[start, end)`."""
+        return self.start <= t < self.end
 
 
 @dataclass(frozen=True, slots=True)
 class Plan:
-    """A strategy's time-indexed envelope for one load (HLD §2, §6.5)."""
+    """A strategy's time-indexed envelope for one load (HLD §2, §6.5, D5 §4).
 
+    The questions D6, D7 and D8 ask a plan are methods on the type rather than
+    functions in `core/strategies/` - the same choice, for the same reason, as
+    the curve statistics on `PriceCurve` (`design/DECISIONS.md` D-0030, D-0130):
+    the allocator asks a plan what it may grant without importing D5.
+    """
+
+    load_id: str
+    strategy: str
+    mode: PlanMode
     slots: tuple[PlanSlot, ...]
-    reason: str
+    built_at: datetime
     cost_estimate: Money
-    coverage: float
     confidence: Confidence
+    reason: str = ""
+    required_kwh: float | None = None
+    planned_kwh: float = 0.0
+    covered: bool = True
+    coverage: float = 1.0
+    deadline: datetime | None = None
+    inputs_hash: str = ""
+
+    def slot_at(self, now: datetime) -> PlanSlot | None:
+        """Return the slot containing `now`, or `None` outside the plan."""
+        for slot in self.slots:
+            if slot.start > now:
+                return None
+            if now < slot.end:
+                return slot
+        return None
+
+    def cap_w(self, now: datetime) -> float | None:
+        """Return what this load may draw now: `None` free · `0` idle · `w` cap.
+
+        `None` for a plan that has nothing to say - no requirement, an urgent
+        demand with no vote, a load with no price steering - and for a slot the
+        strategy left free. A plan that exists but does not run in this slot
+        answers `0.0`: it stands still, and standing still is not a shed
+        (INV-25, INV-30).
+        """
+        if self.mode is PlanMode.NONE or not self.slots:
+            return None
+        slot = self.slot_at(now)
+        return 0.0 if slot is None else slot.envelope_w
+
+    def desired_state_at(self, now: datetime) -> DesiredState | None:
+        """Return the option or delta the plan wants of the device now (D5 §2)."""
+        slot = self.slot_at(now)
+        return None if slot is None else slot.desired_state
+
+    def idle_seconds_from(self, now: datetime, horizon_s: float = 3600.0) -> float:
+        """Return how long the plan keeps this load at zero from `now` (D5 §5.10).
+
+        The horizon of a *plan* stop, and the answer to "is stopping the charger
+        worth it": ending a session costs about ten minutes, so a stop that will
+        be reversed in ninety seconds is a straight loss (INV-39). `horizon_s`
+        when the plan draws no more, or has nothing to say - then the caller
+        decides on other grounds.
+        """
+        for slot in self.slots:
+            if slot.end <= now or slot.envelope_w is None or slot.envelope_w <= 0.0:
+                continue
+            if slot.start <= now:
+                return 0.0
+            return min(horizon_s, max(0.0, (slot.start - now).total_seconds()))
+        return horizon_s
+
+    def next_active(self, now: datetime) -> datetime | None:
+        """Return when the plan next draws power, `now` if it already does.
+
+        D6 combines it with the window's remaining time for a *budget* stop's
+        horizon - undone by the window turning or by the plan (INV-39).
+        """
+        for slot in self.slots:
+            if slot.end <= now or slot.envelope_w is None or slot.envelope_w <= 0.0:
+                continue
+            return max(slot.start, now)
+        return None
 
 
 # --------------------------------------------------------------------------- #
