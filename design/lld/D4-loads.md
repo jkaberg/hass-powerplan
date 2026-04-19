@@ -257,6 +257,20 @@ class DeviceProfile(Protocol):
     def quirks(self) -> Quirks
 ```
 
+**What the first real profile needs.** `Role` is declared once, in `core/loads/kinds/base.py` (D-0061), and `providers/profiles/base.py` re-exports it: one list keeps the questionnaire, the profiles and the gate's `Command` spelling a role the same way. The rest:
+
+| shape | built | why |
+|---|---|---|
+| `DeviceView` | `DeviceView(name, entities, device_id, manufacturer, model)` over `EntityView(entity_id, state, attributes, platform, last_reported)`, with `from_hass` (the registries), `from_states` (the tick), `from_dump` (a capture) and `from_entities` (appliances on no device, §5.9) | D9 §9 7 needs the *production* loader to take a captured dump, or the fixtures only test the fixture format (D-0150) |
+| `RoleBinding` | `+ step, min_value, max_value, writable` | §5.9's scaling "read from the entity's own unit/step/range" has to survive to write time, and the entity isn't there to ask then; `writable` makes `sensor.*_cable_rating` unwritable by construction (D-0151) |
+| `MatchResult` | `+ profile, missing` | a registry that asks every profile has to say which one made each match, and §5.9's "required roles missing → the flow says which and why" needs the roles as data (D-0152) |
+| `Provision` | `role` → `entity_id`, with `role: Role \| None` | the thing that has to be right is sometimes not in the role vocabulary: `select.*_bluetooth_mode` has to stay `always_on` or the whole control path silently disappears (D-0153) |
+| `Quirks` | `+ min_interval_s, tolerance, statuses, forgets_limit_on_link_loss`, and `gate_config(kind)` | the profile owns a *row of the §5.10 table*, not one number of it, and the three numbers are floors the kind's own may only raise (D-0154, D-0155) |
+| `read(role, states)` | `BoundDevice.reads(view, now) → Reads` | the tick takes `Reads`, not one `Reading` at a time, and a role that can't answer is `available = False` rather than a pretend value (D-0156) |
+| `write(role, value)` | `BoundDevice.call_for(write) → DeviceCall \| None` | `WriteTarget` (D-0142, D-0148) |
+| `provisions(cfg)` | `provisions(view)` | a provision names an entity, so it's resolved against the device and not the subentry (D-0153) |
+| - | `BoundDevice` | `match()` is a property of the profile and `call_for()` of a *bound* device: the flow stores the bindings, and the executor holds the pair (D-0157) |
+
 ### 4.6 Questionnaire framework
 
 ```python
@@ -395,6 +409,35 @@ role heuristics: device_class (power/energy/temperature/current/battery), unit (
 ```
 The Heatit Z-TRM loops in the reference house are the fixture for the capability detection (all six optional roles present, ×10-scaled numbers, the four-option select). No product knowledge is encoded.
 
+**Matching without a platform.** A captured dump carries no platform at
+all: `tools/capture_fixture.py` reads `GET /api/states`, which does not say which
+integration owns an entity. So every profile needs a second, weaker signature over
+the entity shapes, and `easee_ble` has two confidences rather than one:
+
+| evidence | confidence | constant |
+|---|---|---|
+| `platform easee_ble` on any entity of the device | **0.95** | `PLATFORM_CONFIDENCE` |
+| a `sensor` offering all nine Easee statuses (`offline … de_authorizing`) | **0.80** | `SHAPE_CONFIDENCE` |
+| neither | **0** - not offered at all | - |
+
+0.80 sits below the platform's 0.95 because the evidence is circumstantial, and
+well above the generic profiles' 0.4–0.6 because it is *specific*: no other
+integration in the reference house declares that option list. The bindings are
+identical either way, which is what `tests/providers/profiles/test_d9_07_*`
+asserts by building the same device through `from_hass` and through `from_dump`.
+
+**Ambiguity binds nothing.** Two entities that both satisfy a role's criteria bind
+neither, logged, so the flow asks: the charger has three 0–40 A `number`s and the
+Z-TRM has two air-temperature sensors, one of which reads 0.0 °C. Role tokens are
+therefore a *subset* test over the entity's own words - `{dynamic, charger,
+current}` picks the limit out of `dynamic charger current`, `dynamic circuit
+current` and `max charger current`.
+
+**A required role that does not bind is named, not hidden.** `MatchResult.missing`
+carries the roles, the confidence is unchanged, and the flow says which one it
+could not find and why (INV-53). For `easee_ble` the required three are
+`CURRENT_SET`, `ENABLE` and `STATUS`.
+
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
 **The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the
@@ -473,6 +516,35 @@ Defaults per kind (a load's own `command_min_interval` may raise, never lower):
 - **Phases**: from the profile (`phase_mode`), else the questionnaire; `w_per_amp` from the site profile (D3 §5.1).
 - **Plug-in edge** → D7 event `ev_connected` → D5 replans immediately.
 - Multi-charger circuits, phase switching, V2H: v1.x.
+
+**The status vocabulary, spelled out.** A profile maps its device's own
+status strings onto `SessionState`; the table is data, so a second charger
+integration is a second table and not a conditional. `easee_ble`'s nine:
+
+| status | `SessionState` | connected? | note |
+|---|---|---|---|
+| `offline` | `LINK_DOWN` | no | no contact with the charger - never "unplugged" |
+| `error` | `LINK_DOWN` | no | where `types/ev.py`'s `OFFLINE_STATUSES` puts it: a charger powerplan cannot steer |
+| `disconnected` | `DISCONNECTED` | no | no car |
+| `awaiting_start` · `ready_to_charge` · `awaiting_authorization` | `CONNECTED` | yes | a car on the cable; `awaiting_start` is what a *disabled* charger with a car reports |
+| `charging` | `CHARGING` | yes | |
+| `completed` | `DONE` | yes | still on the cable, finished - the latch, not the status, stops the next tick wanting it back |
+| `de_authorizing` | `UNKNOWN` | no | **not** in D4's connected set; revoking an RFID authorisation, reported verbatim rather than guessed |
+| missing · `unavailable` · `unknown` | `LINK_DOWN` | no | blindness never opens a gate (INV-15, INV-17) |
+
+`de_authorizing` is an open point: the cable *is* in, so `CONNECTED` would be
+truer, but `types/ev.py`'s `CONNECTED_STATUSES` does not list it and a profile that
+disagreed with the type would produce a load that wants power and reports no car.
+Adding it to the core's set belongs to WP2.3 with the rest of `types/ev.py`.
+
+**Link loss is expressed as `Reads`, not as remembered state.** `Quirks.
+forgets_limit_on_link_loss` is what §5.11's "the last written limit is forgotten"
+means in a design where the gate decides against the entity (INV-22): while the
+status is link-down the bound `CURRENT_SET` and `POWER` come back
+`available = False` with no reading at all. Row 3 then cannot call the command
+"the same", row 4 makes it a transient, and the first tick after the reconnect
+re-arms from whatever the charger now says - which, after a lost write, is its own
+32 A maximum.
 
 ### 5.12 Water heater specifics (INV-54)
 

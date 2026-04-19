@@ -612,3 +612,48 @@ Both failure paths clear `verify_due` and arm no read-back. D4 §8 retries a ref
 
 If any write in a `Command` has no bound entity, nothing is sent and the load reports `failed`, naming the role. A transport that dies mid-command reports what went out in `Outcome.calls`. Stopping a charger is "switch off, then 0 A", and half of that is a state nobody designed. Affects D4 §8.
 **Rejected:** sending what can be addressed - a charger left enabled at 0 A, or disabled with 32 A armed, is a state the next tick reads as fact (INV-22).
+
+### D-0150 · `DeviceView` has three builders, and a capture is one of them
+
+`from_hass(hass, device_id)` reads the registries, `from_states(hass, entity_ids)` reads named entities for the tick, and `from_dump(document)` reads what `tools/capture_fixture.py` wrote. All are production code, so D9 §9 7's round trip proves the house's entities match, not that a test loader agrees with a profile. A capture carries no platform, so profiles also match on entity shapes (D4 §5.9).
+**Rejected:** a test-only dump loader - the flow needs the same view before anything is bound, and two loaders drift.
+
+### D-0151 · A `RoleBinding` carries the range it read, and whether it may be written
+
+`RoleBinding` gets `step`, `min_value`, `max_value` and `writable`. A write is unscaled, floored to `step` and clamped; an unwritable binding answers `call_for` with `None`. The range is read at match time and used on every tick, and the subentry has to store it (INV-66). Affects D4 §4.5.
+**Rejected:** leaving quantising to the control kind - the kind's step is physics (whole amps on the pilot signal), the entity's is the interface, and a refused write is measured against the entity's.
+
+### D-0152 · `MatchResult` says which profile made it and which required role is missing
+
+`MatchResult` gets `profile` and `missing: tuple[Role, ...]`, plus `claimed` (`confidence > 0`). `registry.match(view)` returns claimed matches ranked by confidence, then key. The flow renders the missing roles itself rather than parsing prose. Affects D4 §4.5, §5.9.
+**Rejected:** a mapping from profile key to match - a match travels alone into goldens and the review.
+
+### D-0153 · A `Provision` names an entity, because some have no role
+
+`Provision(entity_id, value, reason, role=None, scaled=False)`, and `provisions(view)`. `easee_ble` insists on `select.*_bluetooth_mode = always_on`, since on `button_press` the Bluetooth link only works briefly after someone presses the charger and the control path disappears silently. powerplan never steers it, so it gets no role. Affects D4 §2, §4.5.
+**Rejected:** a `TRANSPORT_MODE` role - a role is something powerplan reads or commands on purpose.
+
+### D-0154 · `Quirks` is a whole row of the §5.10 table, and its numbers are floors
+
+`Quirks` gets `min_interval_s`, `tolerance`, `statuses` and `forgets_limit_on_link_loss`. `gate_config(kind)` raises the kind's config to the profile's floors with `max`. `easee_ble`'s 30 s read-back is a fact about the radio; as a floor, `Modulate`'s 60 s settle still wins (D-0065). Affects D4 §4.5, §5.10.
+**Rejected:** the profile returning a whole `GateConfig` - it'd have to know which kind it serves.
+
+### D-0155 · Link loss is an unreadable role, not a forgotten memory
+
+While `easee_ble`'s status is `LINK_DOWN`, `CURRENT_SET` and `POWER` read `available = False` with no reading, even if the entities hold their last value. powerplan decides against the entity (INV-22), and during a link loss the charger may have fallen back to its own 32 A; the value is unvouched-for. The reconnect re-arms from scratch. Affects D4 §5.11.
+**Rejected:** clearing `GateState.last_value` from the profile - reaches into the pure gate and suppresses the deviation log a lost write shows up in.
+
+### D-0156 · A profile returns the whole `Reads` bundle
+
+`read(role, states) -> Reading` ships as `BoundDevice.reads(view, now) -> Reads`: one frozen bundle at one instant, including statuses, options and switch states, which aren't `Reading`s. It also lets the link-loss rule be a statement about the bundle. Affects D4 §4.5.
+**Rejected:** per-role reads assembled by the runtime - the link-loss rule would become a conditional on the profile key in `runtime.py`.
+
+### D-0157 · A profile matches; a bound device writes
+
+`DeviceProfile.match(view)` and `bind(bindings) -> BoundDevice`. The `BoundDevice` is the executor's `WriteTarget`, holding `call_for` and `reads`. A registered profile can't carry one device's entity ids, and bindings live in the subentry (INV-66). `easee_ble` adds `EaseeBleDevice` for the link-loss rule. Affects D4 §4.5.
+**Rejected:** a profile instance per load - `match()` would become a classmethod and the split would happen anyway, less visibly.
+
+### D-0158 · A whole-number device value is sent as an integer
+
+`number.set_value` and `climate.set_temperature` carry `int(value)` when the quantised result is integral: `{"value": 16}`, not `16.0`. Same call to HA, clearer logs and goldens; a 0.5 A step or a 0.1 °C setpoint still sends a float.
+**Rejected:** always a float - `15.0 A` in a log invites the question whether something rounded.

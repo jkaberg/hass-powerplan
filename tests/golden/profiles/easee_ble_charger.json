@@ -1,0 +1,206 @@
+{
+  "fixture": "easee_ble_charger",
+  "source": "tests/fixtures/captured/easee_ble_charger.json — the reference house's Easee charger over local easee_ble, captured with tools/capture_fixture.py: 24 entities, status `disconnected`, 10 A armed, charger switch off.",
+  "note": "D9 §9 7. A capture carries no platform (GET /api/states does not expose one), so the confidence is easee_ble's SHAPE_CONFIDENCE and not its PLATFORM_CONFIDENCE of 0.95 (D4 §5.9). Every unit, scale, step and range below was read off the entity's own attributes — nothing here is a product table, and a firmware that renames a unit or widens a range changes this file rather than the profile.",
+  "matches": [
+    {
+      "profile": "easee_ble",
+      "confidence": 0.8,
+      "suggested_type": "ev",
+      "reasons": [
+        "a status sensor offering all 9 Easee statuses"
+      ],
+      "missing": [],
+      "bindings": {
+        "blocked_by": {
+          "entity_id": "sensor.garasje_billader_charging_blocked_by",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": [
+            "ok",
+            "max_circuit_limit_too_low",
+            "max_dynamic_circuit_limit_too_low",
+            "max_dynamic_offline_limit_too_low",
+            "circuit_fuse_too_low",
+            "waiting_in_queue",
+            "waiting_in_fully_charged_queue",
+            "illegal_grid_type",
+            "no_current_request_received",
+            "not_connected_to_master",
+            "equalizer_current_too_low",
+            "phase_not_connected",
+            "limited_by_circuit_fuse",
+            "limited_by_circuit_max_limit",
+            "limited_by_circuit_dynamic_limit",
+            "limited_by_equalizer",
+            "limited_by_load_balancing",
+            "limited_by_offline_settings",
+            "secondary_unit_not_requesting_current",
+            "max_charger_limit_too_low",
+            "max_dynamic_charger_limit_too_low",
+            "charger_disabled",
+            "waiting_for_schedule_or_authorization",
+            "pending_authorization",
+            "charger_in_error_state",
+            "erratic_ev",
+            "limited_by_cable_rating",
+            "limited_by_schedule",
+            "limited_by_charger_max_limit",
+            "limited_by_charger_dynamic_limit",
+            "ev_not_charging",
+            "limited_by_local_adjustment",
+            "limited_by_ev",
+            "undefined"
+          ]
+        },
+        "cable_rating": {
+          "entity_id": "sensor.garasje_billader_cable_rating",
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "circuit_max": {
+          "entity_id": "sensor.garasje_billader_circuit_max_current",
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_l1": {
+          "entity_id": "sensor.garasje_billader_current_l1",
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_l2": {
+          "entity_id": "sensor.garasje_billader_current_l2",
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_l3": {
+          "entity_id": "sensor.garasje_billader_current_l3",
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_number": {
+          "entity_id": "number.garasje_billader_dynamic_charger_current",
+          "unit": "A",
+          "scale": 1.0,
+          "step": 1.0,
+          "min": 0.0,
+          "max": 40.0,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "enable_switch": {
+          "entity_id": "switch.garasje_billader_charger_enabled",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "energy": {
+          "entity_id": "sensor.garasje_billader_lifetime_energy",
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "max_current_number": {
+          "entity_id": "number.garasje_billader_max_charger_current",
+          "unit": "A",
+          "scale": 1.0,
+          "step": 1.0,
+          "min": 0.0,
+          "max": 40.0,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "power": {
+          "entity_id": "sensor.garasje_billader_power",
+          "unit": "kW",
+          "scale": 1000.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "session_energy": {
+          "entity_id": "sensor.garasje_billader_session_energy",
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "status": {
+          "entity_id": "sensor.garasje_billader_status",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": true,
+          "writable": false,
+          "options": [
+            "offline",
+            "disconnected",
+            "awaiting_start",
+            "charging",
+            "completed",
+            "error",
+            "ready_to_charge",
+            "awaiting_authorization",
+            "de_authorizing"
+          ]
+        }
+      }
+    }
+  ]
+}
