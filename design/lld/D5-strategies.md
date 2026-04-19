@@ -94,7 +94,7 @@ class PlanSlot:
     kwh: float                        # planned energy in this slot
     price: Decimal                    # effective price used when planning
     reason: str                       # "cheapest-12/24", "deadline 06:00", "surplus", "forced", "block", "reward"
-    committed: bool                   # started or KNOWN and within commitment window
+    committed: bool                   # started, or KNOWN and within the commitment window
 
 @dataclass(frozen=True)
 class Plan:
@@ -103,7 +103,7 @@ class Plan:
     required_kwh: float | None; planned_kwh: float; covered: bool; coverage: float
     deadline: datetime | None; built_at: datetime; inputs_hash: str; reason: str
     cost_estimate: Money; confidence: Confidence
-# mode: `none` = no requirement, or `always`; `urgent` = a demand with price_sensitive = False that is not a
+# mode: `none` = no requirement, or `always`; `urgent` = a demand with price_sensitive = False that isn't a
 # force; both answer cap_w = None and leave the load to the allocator (D-0138).
 # inputs_hash covers the demand and the knobs, never the prices - hashing prices would make every re-fetch a
 # changed input and re-decide a flat night every quarter hour (D-0136).
@@ -122,10 +122,12 @@ class PlanContext:
     load: LoadView                               # max_w, min_w, nameplate_w, min_block_min, kind, participates_in_events
     horizon_h: float                             # 48 h; horizon_end() bounds it by the curve (§2 "Horizon")
 
-class LoadView:      # declared in context.py - D6 §4 names the same type and adds quantise() (D-0132)
+class LoadView:      # declared in context.py; D6 §4 names the same type and adds quantise() (D-0132)
     load_id; priority; strategy; demand: Demand; mode: Mode; nameplate_w; kind; carrier
     min_block_min; participates_in_events; params; store; target; level_now
-    # max_w and min_w are properties over `demand`, so they cannot drift from it
+    thermostatic; sheddable; min_on_s; phase_names; phases; quantiser   # what D6 §5.2, §5.5 and §5.8 ask a load (D-0160)
+    def quantise(w, *, stop_ok, session_active) -> float                # D4's kind, or the demand's floor
+    # max_w and min_w are properties over `demand`, so they can't drift from it
 class Curves:        import_: Mapping[Carrier, PriceCurve]; export: Mapping[Carrier, PriceCurve]
 class Forecasts(Protocol):   outdoor_c(t); surplus_w(t); baseline_w(t)        # D10's surface, as D5 uses it
 class CeilingSource(Protocol):  target_w_at(t, target); eligible_windows(start, end)   # D2, narrowed

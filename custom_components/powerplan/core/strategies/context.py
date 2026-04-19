@@ -27,7 +27,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, tzinfo
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from ..loads import CalendarEvent, PresenceMode, TargetProfile
 from ..loads.stores.base import StoreModel
@@ -45,6 +45,7 @@ __all__ = [
     "Headroom",
     "LoadView",
     "PlanContext",
+    "Quantiser",
     "SiteContext",
     "SitePlan",
 ]
@@ -149,6 +150,21 @@ class Curves:
         return carrier in self.import_
 
 
+class Quantiser(Protocol):
+    """How a load turns a grant in watts into what it will actually draw (D4 §4.2).
+
+    D6 §5.3 quantises a modulating grant **down** through the device's own
+    `ControlKind`, so the allocator is charged what the device will really take -
+    the 6 A floor when a stop is vetoed, never the watts it asked for (INV-28,
+    INV-39). D7 builds one per load from `Load.kind`; `LoadView.quantise` falls
+    back to the demand's own floor when nothing was supplied.
+    """
+
+    def __call__(self, w: float, *, stop_ok: bool, session_active: bool) -> float:
+        """Return the watts the device will draw if granted `w`."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class LoadView:
     """One load as the planner sees it (D5 §4, D6 §4).
@@ -157,6 +173,13 @@ class LoadView:
     what it wants, and can reach neither its state nor its write gate. `demand`
     carries `max_w`, `min_w`, the requirement and the deadline, which is why they
     are properties here rather than copies that could drift from it.
+
+    The last six fields are D6's (`design/DECISIONS.md` D-0160): the allocator asks
+    what a load's draw does when it is granted (`thermostatic`), whether anything
+    short of a blunt stage 4 may take it (`sheddable`), how long a grant sticks
+    (`min_on_s`), which phases and how many it sits on (`phase_names`, `phases`),
+    and how it quantises (`quantiser`). Each is load-shaped data only the load
+    knows, and D5 ignores all of it.
     """
 
     load_id: str
@@ -173,6 +196,22 @@ class LoadView:
     store: StoreModel | None = None
     target: TargetProfile | None = None
     level_now: float | None = None
+    #: The device modulates under its own control loop, so it reserves what it
+    #: **measures** plus room to modulate up, not its rated power (D6 §5.2): an
+    #: inverter at 23 W does not reserve 3 kW. Materialised by the device type.
+    thermostatic: bool = False
+    #: Whether anything below a blunt stage 4 may take this load (D6 §5.5): a
+    #: heat pump is `False`, everything else `True`.
+    sheddable: bool = True
+    #: The kind's `min_on_s` - how long a grant holds before it may be taken
+    #: back, unless the stage is 3 or above (D6 §5.3 step 5).
+    min_on_s: float = 0.0
+    #: Which phases the load sits on; `None` is unknown and gets the tightest
+    #: phase's headroom (D3 §2, D6 §5.8).
+    phase_names: frozenset[str] | None = None
+    #: How many phases it is connected on, for `w_per_amp` (D3 §5.1).
+    phases: Literal[1, 2, 3] = 1
+    quantiser: Quantiser | None = None
 
     @property
     def max_w(self) -> float:
@@ -183,6 +222,26 @@ class LoadView:
     def min_w(self) -> float:
         """The least it can run at - the 6 A cliff for a charger (INV-28)."""
         return self.demand.min_w
+
+    def quantise(self, w: float, *, stop_ok: bool = False, session_active: bool = False) -> float:
+        """Return what this load will draw if granted `w` (D6 §5.3 step 5).
+
+        The device's own `ControlKind` when D7 supplied one; otherwise the floor
+        rule that matters to the allocator's arithmetic: below the floor a
+        modulating load either stops (authorised) or is held at the floor and
+        charged for it, and it never draws a value between zero and its floor
+        (INV-28, INV-39).
+        """
+        if self.quantiser is not None:
+            return self.quantiser(w, stop_ok=stop_ok, session_active=session_active)
+        floor = self.min_w
+        if floor < 0.0:
+            return w  # signed: a battery may be granted discharge
+        if floor == 0.0 or w >= floor:
+            return max(0.0, w)
+        if stop_ok or not session_active:
+            return 0.0
+        return floor
 
     @property
     def forced(self) -> bool:
@@ -202,14 +261,20 @@ class LoadView:
         *,
         mode: Mode = Mode.AUTO,
         level_now: float | None = None,
+        quantiser: Quantiser | None = None,
     ) -> LoadView:
         """Return the view of `load` D7 hands the planner (D7 §5.2).
 
         `mode` is the **effective** mode - `Load.mode_now()`, with the site
         switch folded in (PLAN §7 dec. 20), because a site that is observing
         still plans and publishes (INV-44).
+
+        `quantiser` is D6's (D-0160): D7 builds it from `load.kind` and the
+        load's `KindCtx`, which only the engine has. Without one the view
+        quantises on the demand's floor alone.
         """
         params = dict(load.config.strategy_params)
+        materialised = load.config.params
         return cls(
             load_id=load.config.load_id,
             priority=load.config.priority,
@@ -225,6 +290,12 @@ class LoadView:
             store=load.store,
             target=load.config.target,
             level_now=level_now,
+            thermostatic=bool(materialised.get("thermostatic", False)),
+            sheddable=bool(materialised.get("sheddable", True)),
+            min_on_s=load.kind.dwell_s()[0],
+            phase_names=load.config.phase_names,
+            phases=load.config.phases,
+            quantiser=quantiser,
         )
 
 

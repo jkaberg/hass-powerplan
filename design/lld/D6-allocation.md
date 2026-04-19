@@ -30,13 +30,14 @@
 
 ```python
 class Constraint(Protocol):
-    key: str; scope: Literal["site", "circuit", "phase", "group", "zone", "load"]
+    key: str; scope: Literal["site", "circuit", "phase", "group", "zone", "load", "switched"]
+    shed_reason: ShedReason                                              # what a load it zeroes is shed FOR (D-0165)
     def prepare(self, ctx: AllocCtx) -> None                             # read measurements, compute caps for this tick
     def cap_w(self, load: LoadView, granted_so_far: Mapping[str, float]) -> float | None   # max this load may get now (None = no opinion)
-    def post(self, grants: Mapping[str, float]) -> list[Violation]        # after allocation: what is still violated (for trim/ladder)
+    def post(self, grants: Mapping[str, float]) -> list[Violation]        # after allocation: what's still violated (for trim/ladder)
     def reserve_w(self) -> float                                          # power this constraint pins (delegated loads, running cycles)
 ```
-Order: **site hard limits → circuits → phases → groups → zones** - outermost physical limit first, preferences last. Zones additionally act *before* allocation as a demand transform (they decide which sources carry a zone's demand this tick, §5.7). Each constraint's `cap_w` is applied as `min(...)` while walking loads in priority order, so an inner limit can only tighten what an outer one allowed (INV-60).
+Order: **grid-switched loads → site hard limits → circuits → phases → groups → zones**, outermost physical limit first and preferences last. Zones also act *before* allocation as a demand transform, deciding which sources carry a zone's demand this tick (§5.7). Each constraint's `cap_w` is applied as `min(...)` while walking loads in priority order, so an inner limit can only tighten what an outer one allowed (INV-60). `GridSwitched` (scope `switched`, hard, first in the walk, `ShedReason.GRID_SWITCHED`) keeps a load the grid switches (D13 G14) at 0 outside its windows (D-0608).
 
 **Cycle reservation.** A running cycle contributes `reserve_w = nameplate` through a `CycleReservation` constraint (scope `load`), is excluded from the shed candidates below stage 4, and is granted its nameplate before the priority walk (like a comfort violator). A planned-but-not-started cycle is an ordinary plan cap.
 
@@ -76,11 +77,21 @@ Public API:
 
 ```python
 def budget(ceiling: Ceiling, meter: MeterSnapshot, hard_limit_w: float, pi: PiState, cfg: BudgetCfg, baseline: Baseline | None) -> Budget
-def allocate(loads: Sequence[LoadView], demands: Mapping[str, Demand], plans: Mapping[str, Plan], constraints: Sequence[Constraint],
-             budget: Budget, stage: int, blunt: bool, frozen: bool, now: datetime, cfg: AllocCfg, state: AllocState) -> tuple[Grants, AllocReport, AllocState]
-class Ladder: def update(self, projection_kwh, ceiling, p_total_w, hard_limits, used_kwh, target_kwh, reserve_kwh, now, cfg) -> LadderState
-def proportional_trim(loads, grants, report, deficit_w, protected, cfg) -> tuple[Grants, float]
+def allocate(ctx: AllocCtx, constraints: Sequence[Constraint], cfg: AllocCfg, state: AllocState) -> tuple[Grants, AllocReport, AllocState]
+class Ladder: def update(self, budget: Budget, *, p_total_w, hard: HardLimits, target_kwh, now, cfg) -> LadderState
+def proportional_trim(loads, grants, deficit_w, protected, cfg, *, views, blunt, stop_ok) -> tuple[Grants, float]
 ```
+
+**WP0.7 amendments to these signatures** (`design/DECISIONS.md` D-0162, D-0163).
+`allocate` takes one frozen `AllocCtx` - `now`, `meter`, `budget`, `electrical`,
+`loads`, `plans`, `views` (D3's per-load `ControlledView`), `previous` (last tick's
+grants), `stage`, `blunt`, `frozen`, `hard`, `marginal_cost` - because §5.2, §5.3 and
+§5.5 need the meter, the per-load measurements and the previous grants, and §2
+already requires an `AllocCtx` for `prepare()`; `demands` is gone, since a `Demand`
+rides on its own `LoadView`. `Ladder.update` reads the five numbers §3 listed
+separately off the `Budget` that carries them, plus `p_allow_w` for the clean-tick
+test. `proportional_trim` returns the grants instead of writing into a report,
+because `AllocReport` is frozen (§4).
 
 ---
 
@@ -93,12 +104,22 @@ class Budget:
     reserve_kwh: float; sigma_w: float; r_trim_kwh: float
     p_allow_w: float                # (ceiling − used − reserve)/t_rem, floored 0, capped by hard limit
     p_hard_w: float                 # min over site hard limits now (fuse, contracted, external)
-    p_free_w: float                 # p_allow − Σ reserved_w  (computed in allocate, echoed here)
+    p_free_w: float                 # p_allow − uncontrolled  (before any load asks; the report carries the residual)
     projected_kwh: float; projection_source: Literal["smooth", "baseline"]
     eligible: bool; free_ride: bool
 
 @dataclass(frozen=True)
 class Grant:  w: float; shed: bool; shed_reason: str | None; stop_ok: bool; stage: int; blunt: bool; capped_by: tuple[str, ...]
+
+@dataclass(frozen=True)
+class AllocCtx:                     # WP0.7: one tick's inputs, and what constraints prepare() on (D-0162)
+    now; meter: MeterSnapshot; budget: Budget; electrical: ElectricalProfile
+    loads: tuple[LoadView, ...]; plans: Mapping[str, Plan]; views: Mapping[str, ControlledView]
+    previous: Mapping[str, Grant]; stage: int; blunt: bool; frozen: bool
+    hard: HardLimits | None; marginal_cost: MarginalCost | None          # the v2 hook (§10)
+
+# LoadView (D5 §4) carries what only the load knows: thermostatic, sheddable, min_on_s,
+# phase_names, phases and quantise() - WP0.7, design/DECISIONS.md D-0160.
 
 @dataclass
 class AllocState:                   # persisted
@@ -151,6 +172,17 @@ reserved_w(load, grant):
 P_free = max(0, P_allow − Σ reserved_w)
 ```
 That's why `p_free_w` can't read 8–9 kW while the house is 1.4 kW over, as the old controller's did: the tank reserves its element, not its paced grant.
+
+**WP0.7** (`design/DECISIONS.md` D-0164, D-0169). What the *walk* judges a load against
+is `P_allow − uncontrolled_w − Σ reserved(the loads decided BEFORE it)`. That is the
+same number as "P_free plus its own reservation" whenever the asking load is the only
+one holding power (§9 21), and the right one when it is not: subtracting a
+lower-priority load's current hold would deny a 3 kW tank because a 4.6 kW charger the
+walk is about to trim is still running. `uncontrolled_w` is explicit because the
+reserve covers the *deviation* of uncontrolled load, never its level. A shed on/off
+load whose relay is still closed keeps its reservation until the write lands, so the
+published `p_free_w` never hands the same watts to two loads; the trim credits itself
+with the whole reservation, because the relay *will* open.
 
 ### 5.3 The allocator walk (INV-1, INV-25, INV-39, INV-42)
 
@@ -250,7 +282,18 @@ Cross-carrier (hybrid heat pump): `gas boiler η 0.95 at 0.12 €/kWh gas ≈ 0.
 
 `CircuitLimit`: `cap_w(load ∈ members) = fuse_w_circuit − (sub_meter_w if any else Σ reserved(other members)) − unmetered_w`. `post()` gives a `Violation(blunt=True)` when measured circuit power exceeds its fuse, and the ladder applies stage 4 to the circuit's members only. Circuits nest under the site: the site cap first, the circuit tightens it.
 
-`PhaseLimit`: for each phase `headroom_a = limit_a − I_phase` (D3); a load with known phases gets `cap_w = min over its phases (headroom_a) × w_per_amp(load)`; unknown phases → min over all phases. Violations are blunt (a phase fuse is a fuse).
+`PhaseLimit`: for each phase `headroom_a = limit_a − I_phase` (D3). A load with known phases gets `cap_w = min over its phases (headroom_a) × w_per_amp(load)`, unknown phases the min over all phases. Violations are blunt (a phase fuse is a fuse). Missing phase currents leave the constraint inactive instead of closed.
+
+**WP0.7** (`design/DECISIONS.md` D-0166, D-0167). A sub-meter and a phase current both
+already include the asking load, so each gives the load's own measured draw back
+before capping it - the §5.3 rule, one level in. Only a **circuit**, a **phase** and
+an `ExternalLimit` produce `Violation`s: a breached site limit is already a blunt
+ladder reason and stage 4 reaches every load through the ordinary walk, so a site
+violation would repeat it with no narrower scope, and a contracted trip needs the
+meter's tolerance over `tolerance_s / 2`, which is the ladder's judgement. A blunt
+violation re-decides its `members` at stage 4 with stage 4's own exemptions: a comfort
+violator stays, a heat pump stays, and a modulating load whose stop is vetoed is held
+at its floor.
 
 `ExternalLimit`: from D1 `load_limit` events (§14a: `max_w = 4200` for the named loads while the event is active) → `cap_w` for those loads, and a site-wide event caps `P_hard`.
 

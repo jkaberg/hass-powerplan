@@ -8,8 +8,9 @@
 # Seeded with the whole safety set at WP0.1. The WP that owns each group is the
 # one whose PLAN §3 row implements the domain the invariant belongs to.
 
-# INV-1 - precedence; core/allocation only (HLD §3) → WP0.7
-INV-1
+# INV-1 - precedence; core/allocation only (HLD §3). Covered by WP0.7
+# (tests/core/allocation/test_06_comfort_first.py): the ordered walk, comfort
+# violators first at any priority, and the one named exception bounded by item 1.
 
 # INV-20–29 - write gate, releases, comfort target, cliffs (HLD §6.4, D4).
 # Covered by WP0.5's pure gate decision, kinds and types (tests/core/loads/,
@@ -18,18 +19,14 @@ INV-1
 # test_single_writer), INV-24 (blocking=True on the call itself) and INV-22's
 # scheduled read-back.
 
-# INV-34–42 - budget chain, ladder, trim, rotation, COP (HLD §6.6, D6) → WP0.7.
-# INV-39's horizon half - the plan's own stop horizon, and the plan half of the
-# budget horizon - is covered by WP0.6 (tests/core/strategies/test_12_*), the
-# same split as INV-43's in WP0.2: D5 owns `idle_seconds_from` and
-# `next_active`, and WP0.7 adds the two gates that only the allocator may open
-# (D6 §9 11).
-INV-34
-INV-35
-INV-36
-INV-37
-INV-38
-INV-40
+# INV-34–42 - budget chain, ladder, trim, rotation, COP (HLD §6.6, D6).
+# INV-34–40 are covered by WP0.7 (tests/core/allocation/): ε in kWh, the reserve
+# and its two PI gates, the blunt-reason ladder, the proportional trim, the
+# smoothed projection against the instantaneous deficit, the two EV stop gates
+# and the filtered shed set. INV-39's horizon half - the plan's own stop horizon,
+# and the plan half of the budget horizon - was covered by WP0.6
+# (tests/core/strategies/test_12_*), the same split as INV-43's in WP0.2.
+# INV-41 (rotation) is WP3.2's and INV-42 (zones) is WP5.3's.
 INV-41
 INV-42
 
@@ -53,15 +50,18 @@ INV-54
 # INV-59 - a cycle is one contiguous block (HLD §6.5, D5) → WP3.6
 INV-59
 
-# INV-60 - hierarchical constraints, circuit before site (HLD §6.6, D6) → WP2.5
-INV-60
+# INV-60 - hierarchical constraints, circuit before site (HLD §6.6, D6). Covered
+# by WP0.7's `constraints/circuit.py` and `phase.py`
+# (tests/core/allocation/test_14_circuits.py, test_15_phases.py); WP2.5 wires the
+# circuit subentry and its sub-meter provider to the same constraint.
 
 # INV-61 - recorder hygiene on large attributes (HLD §6.7, D8) → WP1.4
 INV-61
 
 # INV-62–63 - a forecast is never an authority; bounded learning
-# (HLD §6.10, D10) → WP5.1
-INV-62
+# (HLD §6.10, D10) → WP5.1. INV-62's σ-floor half is covered by WP0.7
+# (tests/core/allocation/test_03_reserve.py): a baseline improves the projection
+# and never removes the floor under the reserve. WP5.2 adds the projection half.
 INV-63
 
 # INV-64 - no shed needs powerplan to come back to be safe (HLD §7.8). Covered
@@ -70,5 +70,8 @@ INV-63
 # without powerplan coming back (tests/runtime/test_writegate.py). The shed
 # *values* are the kinds' and profiles' half (WP0.5, WP2.2).
 
-# INV-68 - accounting is observation only (HLD §6.11, D11) → WP0.10
-INV-68
+# INV-68 - accounting is observation only (HLD §6.11, D11). Covered by WP0.7's
+# AST walk over `core/allocation`
+# (tests/core/allocation/test_20_unconstrained_ask.py), which holds before
+# `core/accounting/` exists; WP0.10 adds the same walk over `core/strategies`,
+# `core/loads` and `writegate.py` when it does.

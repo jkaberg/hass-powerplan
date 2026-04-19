@@ -262,7 +262,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.4 | D1 pricing | done |
 | 0.5 | D4 core | done |
 | 0.6 | D5 strategies | done |
-| 0.7 | D6 allocation | todo |
+| 0.7 | D6 allocation | done |
 | 0.8 | D7 engine (pure) | todo |
 | 0.9 | D9 harness and backtest | todo |
 | 0.9a | Simulators | done |

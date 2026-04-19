@@ -657,3 +657,53 @@ While `easee_ble`'s status is `LINK_DOWN`, `CURRENT_SET` and `POWER` read `avail
 
 `number.set_value` and `climate.set_temperature` carry `int(value)` when the quantised result is integral: `{"value": 16}`, not `16.0`. Same call to HA, clearer logs and goldens; a 0.5 A step or a 0.1 °C setpoint still sends a float.
 **Rejected:** always a float - `15.0 A` in a log invites the question whether something rounded.
+
+### D-0160 · `LoadView` gains the fields D6 needs and D5 ignores
+
+`LoadView` gets `thermostatic`, `sheddable`, `min_on_s`, `phase_names`, `phases`, `quantiser` and `quantise()`, filled from the materialised params (INV-66) and the kind's dwell. D6 needs each by name: a thermostatic inverter drawing 23 W doesn't reserve 3 kW, a heat pump isn't sheddable below stage 4, stickiness needs `min_on_s`, phases turn amps into watts. A vetoed stop is charged the floor's watts (D6 §9 23). Affects D5 §4, D6 §4.
+**Rejected:** a D6-local wrapper around `LoadView` - two projections per load per tick where the LLDs draw one.
+
+### D-0161 · `budget()` takes a `Baseline` before it uses one
+
+`Baseline` is a protocol in `core/allocation/budget.py` and `budget()` accepts it where D6 §3 puts it, reporting `projection_source = "smooth"` until D10's baseline arrives. The σ floor is implemented now: it stops a forecast shrinking the reserve to its minimum (INV-62). The engine calls this signature, so it's fixed early. Affects D6 §2, §5.1.
+**Rejected:** adding the parameter later - a signature change rippling through the engine and the benchmark runner.
+
+### D-0162 · `allocate(ctx, constraints, cfg, state)`: one frozen tick bundle
+
+D6 §3's eleven positional parameters become `AllocCtx` (`now`, `meter`, `budget`, `electrical`, `loads`, `plans`, `views`, `previous`, `stage`, `blunt`, `frozen`, `hard`, `marginal_cost`). §3's list missed the meter snapshot, the per-load controlled views and last tick's grants, and `Constraint.prepare` already needs an `AllocCtx`. `Demand` rides on its `LoadView`. Affects D6 §3.
+**Rejected:** fourteen arguments on every tick, with constraints reading a separately built context that could disagree.
+
+### D-0163 · `proportional_trim` returns the grants; the report is the caller's
+
+The trim returns `(grants, freed_w)` and the allocator derives `trimmed`; `Ladder.update` takes the `Budget` instead of five loose numbers. `AllocReport` is frozen, so nothing accumulates into it in place. Affects D6 §3.
+**Rejected:** a mutable report draft through the trim and the walk - two shapes of the report that can disagree (INV-40).
+
+### D-0164 · A load is judged against the allowance less what the loads decided before it hold
+
+The walk's availability is `P_allow − uncontrolled_w − Σ reserved(loads decided so far)`. Read literally, D6 §5.2 judged a high-priority load against the reservation of a lower-priority load the walk is about to trim: a 3 kW tank denied because a 4.6 kW charger still runs. Single-load cases come out the same. The uncontrolled term is explicit because the reserve covers its deviation, not its level. Affects D6 §5.2, §5.3.
+**Rejected:** §5.2 as written - priority would depend on what lower loads happen to hold.
+
+### D-0165 · A `Constraint` declares its own `shed_reason`
+
+The protocol carries `shed_reason: ClassVar[ShedReason]`; a load a constraint took to zero is shed for that reason. A mapping table in the walk would be a conditional per constraint kind, and new constraints add a line of their own instead. Affects D6 §2.
+**Rejected:** deriving it from `scope` - `site` covers both the fuse and a DSO event.
+
+### D-0166 · A breached circuit or phase re-decides its members; a breached site limit doesn't
+
+`post()` returns `Violation`s and the walk applies stage 4 to a blunt violation's members only, with stage 4's exemptions. The site limits return none: a site breach is already a blunt ladder reason reaching every load, and a contracted-power trip needs the ladder's tolerance judgement (D2 §5.8). Affects D6 §5.8.
+**Rejected:** every constraint reporting and the walk shedding the union - stage 4 twice, the second time without exemptions.
+
+### D-0167 · A sub-metered circuit and a phase give the asking load its own draw back
+
+`CircuitLimit.cap_w = fuse − (sub_meter − own draw) − unmetered`; `PhaseLimit.cap_w = headroom_a × w_per_amp + own draw`. Both readings include the asking load, so a charger at 16 A on a 32 A circuit would otherwise be offered only the remaining 16 A every tick and walk itself down. Affects D6 §5.8.
+**Rejected:** subtracting the sub-meter reading whole - a ratchet to nothing for a load already inside its fuse.
+
+### D-0168 · `measured_w(view)`: unmeasured is not zero
+
+`measured_w(view)` is D3's `controlled_power` precedence (commanded value while settling, INV-18) without its `0.0` fallback: `None` when nothing knows. An unmetered thermostatic load reserves its rated power; one measured at zero reserves the margin. The fallback is right for σ and wrong here.
+**Rejected:** checking `view.measured_w is None` at each call site - D3's rule restated three times, and the settling case is the one a restatement gets wrong.
+
+### D-0169 · A relay still closed keeps its reservation after it's shed
+
+A shed on/off load still drawing above `ON_W` reserves its nameplate, so `p_free_w` doesn't count its watts as free yet. The trim does count them as freed: the relay will open. Otherwise a lower load could be granted the same 3 kW in the same tick. Affects D6 §5.2.
+**Rejected:** a shed load reserving nothing at once - the same watts go to two loads.
