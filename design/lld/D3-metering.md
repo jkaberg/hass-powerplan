@@ -366,6 +366,17 @@ close: LoadSlot(kwh, source, confidence = "exact" if source ≠ ESTIMATED and ga
 
 The slot boundary is the **wall clock**, not a register report. A ±10 s boundary error at 11 kW is 30 Wh on a slot priced like its neighbour, so §5.4's seam discipline buys nothing here and isn't applied. Measured power is used even while a write is settling - the ledger wants what was drawn, not what was commanded, INV-18 is a budget rule and not a metering one. A load that switches source mid-slot closes the slot `estimated`. Slot length follows the curve's slot (15/30/60 min, D1). `lifetime_kwh` feeds `sensor.<load>_energy` (D8). It's powerplan's own monotone counter and not the device's register, so a device reset never shows as a drop.
 
+**WP0.10a** settled four things §5.12 left open (`design/DECISIONS.md` D-0171…D-0173):
+
+| | |
+|---|---|
+| Attribution | Energy since the previous sample is folded into the slot that was **open at that sample**, and only then is the boundary crossed. A sample cadence aligned to the slot grid is therefore exact, and Σ of the closed slots telescopes to the register delta at any cadence - which is what D3 §9 18 and the property assert. |
+| State | `LoadMeterState` is frozen with `pending_closed: tuple[LoadSlot,...]` and `schema` last, for the reason `WindowState` is (D-0021): one object in one store section, round-tripped atomically. §4's row still reads `list`. |
+| Seam | `sample()` returns nothing; `closed()` hands D11 the slots and `ack(upto_utc)` drops the ones it has recorded - the window meter's discipline, without a per-tick snapshot nothing reads (D-0172). |
+| Length change | A changed `slot_minutes` is adopted at the first boundary the old and the new length **share**: the next boundary when the slot shortens, the next boundary of the longer length when it lengthens. "The next boundary" read literally would open a lengthened slot at an instant already closed and bill its first quarter hour twice (D-0173). |
+| `slot_bounds` | `slot_bounds(now, slot_minutes)` floors the UTC instant, as D1's slots are aligned. Every IANA offset is a whole number of minutes, so a local day still holds 92, 96 or 100 quarter slots and the repeated autumn hour is two slots with distinct UTC starts. |
+| Source | `REGISTER` when an `ENERGY` reading is present, else `POWER` on the measured watts, else `ESTIMATED` at `nameplate × on-fraction` from `ControlledView.commanded_w`. The command in force at a sample is taken to have held over the interval that ended there, as the trapezoid does with power. |
+
 ---
 
 ## 6. Configuration schema

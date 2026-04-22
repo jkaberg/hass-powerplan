@@ -79,6 +79,10 @@ class Shadow(Protocol):                                  # one per store-model k
 
 `core/accounting` imports `core.model`, `core.pricing`, `core.tariffs`, `core.metering`, `core.loads` (store models, `Demand`) and nothing from `core.strategies` or `core.allocation`. Nothing under `core/strategies`, `core/allocation`, `core/loads` or `writegate.py` imports it (INV-68).
 
+**WP0.10a.** The module list stands; `tank.py`, `on_request.py`, `schedule.py` and `idle.py` (phase 5) are registry rows their device types bring, and `shadow_for(kind)` answers `None` until they do. Two placements §3 left open: `ClosedSlot` and `CloseCtx` live in `close.py` beside the function that consumes them (`shadow/base.py` names `ClosedSlot` under `TYPE_CHECKING` only, so the runtime graph stays acyclic), and the `Money` helpers `zero` / `plus` / `minus` live in `ledger.py`, which owns the arithmetic. `Accounting` is the pure object §3 draws; there is no separate free `close_slot` function, because `state()` and `restore()` are on the class.
+
+`CloseCtx` carries **`history: PeakHistory`** as well as the tariff evaluator: the counterfactual bill is `bill(period, history.counterfactual())`, and D2's protocol doesn't expose the evaluator's own history (INV-52, INV-69). It's billed **before** the actual (D-0179).
+
 ---
 
 ## 4. Types
@@ -166,6 +170,16 @@ class AccountingReport:  month_closed: MonthClosed | None; repriced: tuple[str, 
 
 `savings = cf_cost − cost` per load, `site.savings = Σ load energy savings + (cf_capacity_fee − capacity_fee)`, `kwh_shifted = ½ Σ_slots |kwh − cf_kwh|` (energy that ran at another time than it would have).
 
+What the code adds to these types:
+
+| Type | Built |
+|---|---|
+| `ShadowCtx` | gains **`level_now: float | None`** - the measured level. §5.3 needs it at three anchoring moments and §4 gave the shadow no way to see it. |
+| `LoadParams` | a frozen dataclass in `shadow/base.py`: `kind`, `nameplate_w`, `carrier`, `store`, `band_k`, `hysteresis_k`, `loss_coeff_w_per_k`, `cop`, `rated_w`, `charge_eff`, `max_w`. One field per number a shadow reads, all of them the load's **effective** values (INV-63, INV-69). |
+| `ShadowState` | frozen, `session_slots` a tuple: it crosses into D7's store per closed slot. |
+| `AccountingState` | gains **`calibration: dict[str, CalibrationRec]`** (the trailing seven local days and the lifetime observe-day count, outside the month records so a rollover does not reset them - D-0176), **`fee_at_month_start` / `cf_fee_at_month_start`** (§5.6 step 3 names them), **`window_delta_kwh`** (the running `Σ (cf_kwh − kwh)` of the open tariff window, which is all §5.4 needs to build the shadow window), **`opened`** (False until the first slot is priced, so a fresh store adopts that slot's month instead of rolling an empty one into history), and a **`removed`** tuple on the ledger (§5.7's fold, applied at the next rollover). `pending_reprice` and `deferred` hold `PricedSlot`s rather than bare slot keys - a late pricing has to use the price the slot closed with (INV-69), and a key cannot carry one. |
+| `LoadMonthRec` / `SiteMonthRec` | as §4 draws them, mutable, with `cost` / `cf_cost` first so `empty(currency)` can open one. A `Money` of a different currency is never added to one: `plus` raises rather than inventing a rate (§8). |
+
 ---
 
 ## 5. Algorithms
@@ -201,6 +215,13 @@ close_slot(slot, ctx):
 
 Under `NoPeak` step 5 records nothing and both capacity figures stay 0. Under a flat price (Norgespris) every load's energy savings are 0 by construction and the site figure is the capacity component alone, and the sensors say so instead of inventing a number.
 
+Four things about the order:
+
+- step 5's `Σ_slots∈window (cf_kwh − kwh)` is accumulated as it goes, in `window_delta_kwh`, and the shadow window is `window_closed.kwh + delta`: the actual side comes from D3's own closed window rather than from a re-sum of the slots, so the two books differ by the loads and by nothing else. The accumulator resets on each window close.
+- the **real** window is D7's to record (D2 §5.1). `close_slot` writes only the shadow book (INV-11).
+- the counterfactual bill is priced **before** the actual, because `Evaluator.bill` remembers its last bill and the site's own is the actual one (D-0179).
+- a load in a slot is stepped only if D3 closed a `LoadSlot` for it, which it does every slot for every load, idle or not - that is what advances a shadow's session state.
+
 ### 5.2 Pricing rules
 
 | rule | detail |
@@ -212,6 +233,8 @@ Under `NoPeak` step 5 records nothing and both capacity figures stay 0. Under a 
 | capacity | D2 `bill(period, history).capacity_fee` - the capacity component only, priced by the tariff version valid per window (INV-52). Month share as §2 |
 | confidence | slot `EXACT` iff load `source ≠ estimated` ∧ price `KNOWN` ∧ no degraded gap in the slot (D3); else `ESTIMATED`; the month reports `estimated_share = estimated_slots / slots` |
 | restating | only the synthesised-price re-price in §2; a `KNOWN`-priced slot is immutable; an EV session with unknown `required_kwh` is deferred, not restated |
+| no slot at all | **WP0.10a:** a slot start the curve does not cover is priced at 0 and marked `ESTIMATED`, and queued for the one re-price like a synthesised one. Zero is the only number that is not a guess at what the hour cost; `estimated_share` is what says an hour is missing rather than free (D-0175) |
+| re-pricing and confidence | **WP0.10a:** a re-price makes the slot exact only if the *measurement* was. An unmetered load's slot stays `ESTIMATED` however well its price is later known, so `PricedSlot` carries `load_exact` |
 
 ### 5.3 The shadow: one per store-model kind
 
@@ -222,13 +245,18 @@ Picked by the load's store model at `on_load_added` (the registry in `shadow/bas
 | `slab`, `room` | `SlabStore`, `RoomStore` | bang-bang thermostat on the **target profile** (D4 §5.8, actual presence) with the load's band | `on = level < target − band/2` (stays on until `> target + band/2`); `P = nameplate_w` when on; `level += (P·dt − UA·(level − T_out)·dt) / C`; `C` = kWh/K, `UA` = `loss_coeff_w_per_k` (learned effective, else derived); `kwh = P·dt·on_fraction` |
 | `heat_pump` | rated + COP curve | inverter modulates to hold the target: steady-state, no hysteresis | `heat_w = UA·(target − T_out)` clamped `[0, rated·COP]`; `kwh = heat_w / COP(T_out) · dt`; defrost not modelled |
 | `tank` | `TankStore` | thermostat at `charge_setpoint` with the tank's hysteresis; the household's draw-off (D4 §5.7 profile); on `vacation` the shadow keeps `charge_setpoint` (a plain tank does not know the household is away), so the real load's suspended ready-by deadlines (D4 §5.12) show as savings, correctly | `level −= (standby_loss_w·dt + draw_off_kwh) / C_tank`; `on = level < setpoint − hyst`; `kwh = nameplate·dt` when on. **Legionella:** while the real cycle runs (`legionella_active`), the shadow runs it too at the same time - the protection is required with or without powerplan, so it cancels |
-| `energy` (ev) | `EnergyStore` | charge at `max_w` from the plug-in slot until `required_kwh` is delivered | plug-in = `Demand.wants` rising edge with `required_kwh`; `pending = required_kwh / charge_eff`; each slot `kwh = min(pending, max_w·dt)`. `required_kwh` unknown (no SoC): the session's slots are **deferred** - listed in `deferred`, the load's figures carry `pending = True` - and at session end (wants falls) the shadow is stepped from plug-in at `max_w` for the session's actual kWh and each slot priced once (§2); a session still open after 7 days is closed with what is known. Force: the real load charges now and so does the shadow - no savings, correctly |
+| `energy` (ev) | `EnergyStore` | charge at `max_w` from the plug-in slot until `required_kwh` is delivered | plug-in = `Demand.wants` rising edge with `required_kwh`; `pending = required_kwh` (**WP0.10a**: *not* `/ charge_eff` - `EnergyStore.required_kwh` already returns energy at the wall, so dividing again charges the losses twice, and §9 5's own 19:44 only comes out without it; D-0174); each slot `kwh = min(pending, max_w·dt)`. `required_kwh` unknown (no SoC): the session's slots are **deferred** - listed in `deferred`, the load's figures carry `pending = True` - and at session end (wants falls) the shadow is stepped from plug-in at `max_w` for the session's actual kWh and each slot priced once (§2); a session still open after 7 days is closed with what is known. Force: the real load charges now and so does the shadow - no savings, correctly |
 | `cycle` | learned / default profile | start at the request slot (`run_now` press or ready-by set) | `kwh` = the profile's energy in the profile's shape from the request slot; a cancelled request cancels the shadow run |
 | `schedule` (generic_switch, `cheapest_hours`) | - | the same `hours_per_day` spread **evenly** over the local day | `kwh = nameplate · hours_per_day / 24 · dt` - the counterfactual pays the daily mean price; no "usual hours" question (§11) |
 | `battery` | `EnergyStore` | none: a battery without a controller idles | `kwh = 0`; savings = discharge revenue − charge cost = `−cost`, signed by INV-19 |
 | `none` | - | no baseline can be stated (hydronic loop with `nameplate_w = 0`, `delegated` types) | not stepped; `savings_confidence = NONE`; cost still shown |
 
-**Initialisation and anchoring.** `init` sets `level` to the measured level at load add (temperature, SoC, tank temperature; `None` → the target). The shadow is a counterfactual trajectory and is **not** tracked to the real level tick by tick - that would erase the savings. It is re-anchored to the measured level (a) at every month rollover, (b) at the end of every observe slot (in observe the real trajectory *is* the counterfactual), (c) when the level is `None` for > 24 h and returns. A shadow cannot run away: `level` is clamped to `[min_level, max_level]` of the store.
+**Initialisation and anchoring.** `init` sets `level` to the measured level at load add (temperature, SoC, tank temperature; `None` → the target). The shadow is a counterfactual trajectory and is **not** tracked to the real level tick by tick - that would erase the savings. It is re-anchored to the measured level (a) at every month rollover, (b) at the end of the **last observe slot of each local day** (in observe the real trajectory *is* the counterfactual), (c) when the level is `None` for > 24 h and returns. A shadow cannot run away: `level` is clamped to `[min_level, max_level]` of the store.
+
+Why the anchoring is daily and the heat pump ignores defrost:
+
+- A bang-bang shadow holds its level in a band *centred* on the target while a real device holds one *below* its setpoint, so an anchor every observe slot pulls the shadow down by that offset and it re-heats the offset every slot: against `tests/sim/slab.py` the calibration error reads **1.16** where a free-running day agrees to 0.004, and every thermal load would read `low` on every observe day. Daily anchoring keeps the intent and measures one honest day at a time, the grain §5.5 stores (D-0178).
+- `defrost not modelled` in the `heat_pump` row: on a day the coil stays clear the shadow is within 0.4 % of `tests/sim/heatpump.py`, and on a January day with 27 defrost cycles it reads about a quarter low. That's allowed because a coil ices in **both** worlds - the energy is missing from the counterfactual and from what the actual would have been - so it moves the absolute counterfactual and barely the savings. §9 4's tolerance is stated against a defrost-free day, and a second test states the size of the gap.
 
 **Outdoor temperature.** The bound outdoor sensor, else D10's weather at slot start, else the last known value. `None` for > 6 h marks the load's slots `ESTIMATED`.
 
@@ -248,6 +276,8 @@ model_confidence(load)       = NONE          if kind == NONE or no shadow
 site confidence              = the worst among the loads whose |savings| is at least 10 % of the site's; none when no load reaches that share
 ```
 The threshold 0.15 is chosen, not measured, and the `observe_calibration` scenario on the benchmark house and the house checks (D9 §5.12) recalibrate it. Calibration is published (`calibration_error` attribute) and never changes a parameter (§2).
+
+The site rule falls out of the order `none < uncalibrated < low < ok` (D-0176). The trailing window and the lifetime observe-day count live in `AccountingState.calibration`, not in the month record, since both span months. Against `tests/sim/slab.py`: five observe days with the load's own fitted coefficient read **0.004** and `ok`, the same days with the coefficient doubled read **> 0.15** and `low`, and the load's parameter isn't touched (INV-63).
 
 ### 5.6 Month rollover
 
@@ -308,14 +338,14 @@ Pure (`tests/core/accounting/`), builders from D9, simulators from `tests/sim/` 
 1. Slot pricing: `kwh × price` in `Decimal` with the curve's currency; a −0.05 €/kWh slot yields a negative cost, unclamped (INV-51); a 0.001 kWh rounding case does not accumulate float error over 2 976 slots.
 2. Export credited at the export curve at site level and nowhere per load; no export curve → 0.
 3. Month rollover at local midnight on the 1st across a DST change (`Europe/Oslo`, October → November): `last_reset` correct, previous month frozen, 13 months retained, a late rollover after a simulated 20-hour outage assigns every slot to its own month.
-4. Thermostat shadow vs the D9 slab simulator run *uncontrolled* on `reference_winter_day`'s weather: daily kWh within ±10 %; the same on the heat-pump row with the COP curve; a floor with target profile 22 °C day / 19 °C night draws less at night in the shadow (the profile is honoured, the plan is not).
+4. Thermostat shadow vs the D9 slab simulator run *uncontrolled* on `reference_winter_day`'s weather: daily kWh within ±10 %; the same on the heat-pump row with the COP curve, **on a day the coil stays clear** - the shadow does not model defrost (§5.3) and on a defrosting day it reads about a quarter low, which a second test states rather than hides (**WP0.10a**); a floor with target profile 22 °C day / 19 °C night draws less at night in the shadow (the profile is honoured, the plan is not). The loss coefficient is fitted from the day *before* the day under test, so the agreement is a prediction and not a tautology.
 5. Plug-in shadow: EV plugs in 17:00 wanting 30 kWh at 11 kW → shadow slots 17:00–19:44 at `max_w`, remainder in the last; `cf_cost` = those slots' prices; unknown `required_kwh` → the session's slots are deferred (`pending = True`, savings unstated) until session end, then priced once with the actual 28 kWh and no already-priced slot changes (INV-69); `force` at 17:00 → shadow == actual, savings 0.
 6. Tank shadow: the D4 draw-off profile reheats immediately at nameplate; a legionella cycle at 03:00 appears in both trajectories → net 0 for those slots; standby loss over an idle day within ±10 % of the tank simulator.
 7. On-request shadow: dishwasher requested 19:00, ready by 07:00; powerplan ran it 02:00–05:00; shadow runs 19:00–22:00; savings = the price difference of those slots × 0.9 kWh.
 8. Schedule shadow: pool pump 6 h/day → shadow kWh evenly spread; `cf_cost` = daily mean price × kWh.
 9. Battery shadow idles: a day of arbitrage yields `savings = −cost` (revenue positive when discharge at high price exceeds charge at low).
 10. Site identity: `site.savings == Σ load energy savings + (cf_fee − fee)` on a synthetic month; uncontrolled load cancels exactly; `NoPeak` → capacity 0; a flat curve → every load's energy savings 0.
-11. Capacity: NO preset, EV moved from 18:00 to 02:00 → counterfactual daily max 9 kW vs actual 5 kW → cf bill one step above the actual (numbers from the `no/tensio` golden file).
+11. Capacity: NO preset, EV moved from 18:00 to 02:00 → counterfactual daily max **8.5 kW vs actual 4.5 kW** → cf bill one step above the actual, 416 − 244 = 172 NOK (numbers from the `no/tensio` golden file). **WP0.10a:** the pair was 9 against 5; D2's step thresholds are inclusive upward (D2 §4 `StepTable`), so 5.00 kW is already the 5–10 kW step and both worlds would have landed in it. 4.5 kW of house plus the car's 4 kWh is the same statement one step lower, and it is the pair D2 §9 18 uses.
 12. Confidence propagation: an unmetered load, a synthesised price slot and a degraded slot each mark `ESTIMATED`; `estimated_share` right; a `KNOWN` slot is never restated by a later intraday correction; a synthesised slot is re-priced exactly once.
 13. Calibration: five observe days with the simulator → `calibration_error < 0.10` and `OK`; a slab with `loss_coeff` off by ×2 → `LOW`; fewer than 3 observe days → `UNCALIBRATED`; calibration changes no parameter.
 14. Modes: `delegated` and `off` slots count cost and exclude savings; `observe` slots re-anchor the shadow; site `active = off` makes every load's slots observe slots (effective mode, D4 §5.2); `none` kind states no savings.
@@ -324,6 +354,8 @@ Pure (`tests/core/accounting/`), builders from D9, simulators from `tests/sim/` 
 17. Golden: the reference house, one synthetic October (`reference_winter_day` × 31, NO preset, Nord Pool-shaped curve) → expected cost, cf cost and savings per load and for the site, hand-computed in the test file with the source of each number.
 
 Scenario (D9 §5.3): `savings_vs_twin` - the controlled month vs the same month with every load `always` on a `NoPeak` site; D11's reported `cf_cost` within ±10 % of the twin's actual cost. `observe_calibration` - every load in `observe` for 5 days → `|savings| ≤ 5 %` of cost per load.
+
+**WP0.10a** - what landed, and what did not. Items **1–5** and **10–17** are green, plus **16**'s import half (an AST walk over `core/strategies`, `core/allocation`, `core/loads` and `writegate.py`); items 6–9 are the tank, on-request, schedule and battery shadows and land with those device types (phase 5). **16**'s call-graph half - `close_slot` from `Engine.plan` and never from `Engine.tick` - needs WP0.8's engine. Both **scenarios** need D9 §5.2's runner and land with WP0.9 / WP0.11 (D-0170). Item **17** runs on a two-load synthetic October rather than `nordic_detached`, whose spec arrives with WP0.11; the golden's numbers are hand-computed from the NO3 shape and the Tensio table in the test file, and it becomes a row of the WP0.11 baseline.
 
 ---
 

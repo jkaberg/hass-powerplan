@@ -58,6 +58,7 @@ HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable sh
 | **0.9 D9 harness and backtest** | the scenario runner, the phase-0 scenarios, `tools/backtest.py --simulate` | D9 §3, §5.2, §5.3, §5.4 | D9 §9 3, 6; the scenarios green and deterministic; the backtest on recorder history | 0.8, 0.9a, 0.9b |
 | **0.9a Simulators** | every simulator the benchmark house needs, with its quirks | D9 §3 `sim/` | each simulator's tests | 0.1 |
 | **0.10 D3 `LoadMeter` and D11 accounting core** | `core/accounting/`; per-load kWh per slot; money in the backtest | D3 §5.12; D11 §3; D2 §9 18 | D3 §9 18-20; D11 §9 1-5, 10-17; `savings_vs_twin`, `observe_calibration` | 0.9 |
+| **0.10a Accounting modules and unit tests** | the modules and their unit tests ahead of the scenarios | D3 §5.12; D11 §3 | D11 §9 1-5, 10-17 | 0.9a |
 | **0.11 Reference benchmark** | `nordic_detached` × a synthetic year; `tools/benchmark.py`; tiers, tolerances and the first baseline | D9 §5.9, §5.11 | D9 §9 8, 9, 11 | 0.9 |
 
 ### Phase 1 - Site entry, observe only
@@ -267,6 +268,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.9 | D9 harness and backtest | todo |
 | 0.9a | Simulators | done |
 | 0.10 | D3 `LoadMeter` and D11 accounting core | todo |
+| 0.10a | Accounting modules and unit tests | done |
 | 0.11 | Reference benchmark | todo |
 | 1.1 | Runtime and storage | todo |
 | 1.1a | Storage | done |

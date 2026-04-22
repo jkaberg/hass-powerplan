@@ -708,6 +708,56 @@ The protocol carries `shed_reason: ClassVar[ShedReason]`; a load a constraint to
 A shed on/off load still drawing above `ON_W` reserves its nameplate, so `p_free_w` doesn't count its watts as free yet. The trim does count them as freed: the relay will open. Otherwise a lower load could be granted the same 3 kW in the same tick. Affects D6 §5.2.
 **Rejected:** a shed load reserving nothing at once - the same watts go to two loads.
 
+### D-0170 · Accounting's modules and unit tests land before its scenarios
+
+D3's `loads.py`, all of D11 §3 and their unit tests ship first. The `savings_vs_twin` and `observe_calibration` scenarios need D9's runner and follow with it. D11 is the number people will quote (PLAN §6 R10), so its arithmetic gets tested against the simulators as early as possible, and four other parts read its API.
+**Rejected:** waiting to ship it whole - `savings_vs_twin` is the evidence for the shadow model, but it's a runner-wiring job once `close_slot` exists.
+
+### D-0171 · `LoadMeterState` is frozen, with a tuple of closed slots
+
+Same reason as `WindowState` (D-0021): it crosses into D7's store, and one frozen object can't be saved with a new anchor beside an old pending list. Both share the `meter` section. Affects D3 §4, §5.12.
+**Rejected:** a mutable state as D3 §4 drew it - less `replace` noise, but a half-saved state becomes representable.
+
+### D-0172 · `sample()` returns nothing; `closed()` and `ack()` are the seam
+
+Nothing reads a load meter per tick: D11 asks once per closed price slot. So `sample()` returns `None`, and `closed()`/`ack(upto_utc)` hand over slots. A slot is kept until D11 has recorded it, as a window is kept until D2 has. Affects D3 §5.12.
+**Rejected:** returning closed slots from `sample()` - invites consuming without acknowledging.
+
+### D-0173 · A slot-length change is adopted at a boundary both lengths share
+
+The next boundary when the slot shortens, the next boundary of the longer length when it lengthens. Applied literally, 15 → 60 at 10:15 opens a slot at 10:00 and bills its first quarter hour twice. Affects D3 §5.12.
+**Rejected:** opening the longer slot at once - it'd be misaligned with every price slot after it.
+
+### D-0174 · The plug-in shadow takes `required_kwh` as it arrives
+
+D11 §5.3 divided `required_kwh` by `charge_eff`, but `EnergyStore.required_kwh` already returns kWh from the wall. Dividing again overstates the counterfactual by 11 % at 0.90 on the house's largest load; D11 §9 5's own numbers (30 kWh at 11 kW, 17:00-19:44) agree. Affects D11 §5.3.
+**Rejected:** reading `required_kwh` as energy into the battery - INV-69 means the same convention as the real load.
+
+### D-0175 · A slot the curve doesn't cover is priced at zero and marked
+
+`slot_price` returns zero with `ESTIMATED` for a slot the curve lacks, and it's queued for its one re-price. Zero is the one number that's certainly not a guess, and `estimated_share` shows the household an hour is missing. Affects D11 §5.2, §8.
+**Rejected:** carrying the nearest known price forward - invents a number and presents it as priced (INV-5).
+
+### D-0176 · Calibration lives outside the month; the site's confidence counts material loads
+
+`AccountingState.calibration[load_id]` holds the trailing seven days of observe slots and a lifetime `observe_days`, outside the month records so a rollover doesn't reset them. The site's confidence is the worst among loads with at least 10 % of the site's `|savings|`, `none` if no load reaches that. Affects D11 §4, §5.5.
+**Rejected:** a savings-weighted average - the average of `ok` and `low` isn't a state.
+
+### D-0177 · A bang-bang shadow is integrated in one-minute steps
+
+`ThermostatShadow` steps its store per minute inside the price slot. One step per slot can't produce an on-fraction: a 1.6 kW cable in a 0.55 kWh/K slab overshoots a 1 K band by 2 K in an hour. A 20-load month is still microseconds. Affects D11 §5.3.
+**Rejected:** an analytic duty cycle - drops the store, and a slab below its band draws far more than steady state.
+
+### D-0178 · The observe anchor lands once per local day, not per slot
+
+A bang-bang shadow sits centred on its target while a real thermostat sits about half a band below it. Re-anchored every slot, the shadow re-heats that offset each slot: calibration error 1.16 against `tests/sim/slab.py`, versus 0.004 anchored daily. The error gates `savings_confidence`, so per-slot anchoring would read `low` on every thermal load. Affects D11 §5.3, §5.5.
+**Rejected:** crediting the stored-energy change each anchor implies - a priced signed correction per slot, for the same error.
+
+### D-0179 · The counterfactual bill is priced before the actual
+
+`Evaluator.bill` always sets `last_bill`, which D7 persists as the site's bill, so `_close_window` bills the counterfactual first and the real history second. Affects D11 §5.1, §5.6, D2 §5.9.
+**Rejected:** restoring `last_bill` afterwards or a side-effect-free `bill` - reaches into D2, or changes its signature for one caller.
+
 ### D-0180 · A role may be bound to an attribute
 
 `RoleBinding.attribute`: a `climate` entity binds `SETPOINT` to `temperature` and `TEMP` to `current_temperature`. A climate entity's state is `heat` or `off`, so without this every thermostat's setpoint could be written and never read back (INV-22). Affects D4 §4.5, §5.9.

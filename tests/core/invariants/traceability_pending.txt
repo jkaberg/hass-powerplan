@@ -58,11 +58,11 @@ INV-59
 # INV-61 - recorder hygiene on large attributes (HLD §6.7, D8) → WP1.4
 INV-61
 
-# INV-62–63 - a forecast is never an authority; bounded learning
-# (HLD §6.10, D10) → WP5.1. INV-62's σ-floor half is covered by WP0.7
-# (tests/core/allocation/test_03_reserve.py): a baseline improves the projection
-# and never removes the floor under the reserve. WP5.2 adds the projection half.
-INV-63
+# INV-62–63 - a forecast is never an authority; bounded learning (HLD §6.10, D10).
+# INV-62's σ-floor half is covered by WP0.7 (tests/core/allocation/test_03_reserve.py);
+# WP5.2 adds the projection half. INV-63's D11 half is covered by WP0.10a (the shadow
+# reads the learned parameter and never fits one; calibration is published, not
+# applied - tests/core/accounting/); D10's fit-quality half extends the same id in WP5.1.
 
 # INV-64 - no shed needs powerplan to come back to be safe (HLD §7.8). Covered
 # by WP2.1's executor: `async_unload_entry` releases every load and cancels the
@@ -70,8 +70,8 @@ INV-63
 # without powerplan coming back (tests/runtime/test_writegate.py). The shed
 # *values* are the kinds' and profiles' half (WP0.5, WP2.2).
 
-# INV-68 - accounting is observation only (HLD §6.11, D11). Covered by WP0.7's
-# AST walk over `core/allocation`
-# (tests/core/allocation/test_20_unconstrained_ask.py), which holds before
-# `core/accounting/` exists; WP0.10 adds the same walk over `core/strategies`,
-# `core/loads` and `writegate.py` when it does.
+# INV-68 - accounting is observation only (HLD §6.11, D11). Covered by WP0.10a's
+# AST walk over `core/strategies`, `core/allocation`, `core/loads` and
+# `writegate.py` (tests/core/invariants/test_accounting_isolation.py). The
+# call-graph half - `close_slot` from `Engine.plan` and never from `Engine.tick` -
+# arrives with WP0.8, where there is an engine to assert it of.
