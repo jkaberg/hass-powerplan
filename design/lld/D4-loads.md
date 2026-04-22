@@ -438,6 +438,29 @@ carries the roles, the confidence is unchanged, and the flow says which one it
 could not find and why (INV-53). For `easee_ble` the required three are
 `CURRENT_SET`, `ENABLE` and `STATUS`.
 
+**What the generic profiles needed.** Three ship: `generic_climate`,
+`generic_switch`, `generic_number`. What the sketch above left open:
+
+| shape | resolved | why |
+|---|---|---|
+| `generic_climate: any climate entity → 0.6` | 0.6 + **0.05 per control capability** (mode select, eco setpoint, floor minimum), capped at **0.75** | a device offering six roles is better evidence than a bare climate entity, and the cap keeps accumulated *generic* evidence below `easee_ble`'s *specific* 0.80 (D-0185) |
+| `generic_number: A + a switch → 0.6`, `W → 0.5` | the same, plus **0.5 for a limit with no enable switch** (`ev`) | the charger's three 0–40 A numbers and four switches bind neither role, and a heater's power knob has no switch at all (D-0185) |
+| `generic_switch: switch + power sensor → 0.4` | 0.4, and **confidence 0 for a device that also has a `climate` entity or a `number` in A/W** | the Z-TRM and the ESPHome pump both have a switch: offered as plain switches they would be shed by pulling the relay, which takes the device's own regulation with it (INV-64) and actuates a heat pump's mains switch (INV-29) - so the more specific profile owns them (D-0187) |
+| `sensor device_class temperature named *floor* → TEMP_FLOOR` | that, **else the climate entity's `current_temperature` when `sensor_mode` says floor or both**; `air` is not floor evidence | the Z-TRM in F-mode publishes the slab *as* the climate entity's reading and has no floor-sensor entity; without the fallback the reference house's main load class has no floor temperature (D-0188) |
+| `select named *sensor_mode* → sensor placement` | `placement(view) → "floor" \| "air" \| "both"`, matched by **name** (`F-Mode, floor sensor mode` · `A2-mode, external room sensor mode` · `A2F-mode, external sensor with floor limitation`) | §6.1's Sensor row pre-fills from it; an external sensor *with* a floor limitation is both |
+| the `climate` entity's own numbers | `SETPOINT` → its `temperature` **attribute**, `TEMP` → `current_temperature`; range and step from `min_temp`, `max_temp`, `target_temp_step` | a climate entity's *state* is `heat`, so a role bound to the state could be written and never read back (INV-22, D-0180) |
+| which kind steers the load | `MatchResult.suggested_kind` (`mode` where the select offers an eco *and* a comfort option, else `setpoint`), and `MatchResult.capabilities` = `QCtx.capabilities` verbatim | §5.5's rule is a property of the device, and §6.1's questionnaire already asks `"mode_select" in ctx.capabilities` - the answer had no way to travel (D-0183) |
+| `provisions(view)` | `provisions(view, cfg=None)`: the view resolves the entity, the materialised subentry supplies the number - `floor_min_limit_c` (INV-64), `eco_setpoint_c`, `swing_k`, all in **degrees** | a hardware floor is the questionnaire's comfort floor and nothing on the device knows it (INV-27, INV-66; D-0186) |
+| provisioning "retried every 15 min … re-verified daily" (§2) | `PROVISION_RETRY_S = 900`, `PROVISION_REVERIFY_S = 86 400` next to `Provision`; each step is one `decide(release=True)` write, so row 3 makes it idempotent. The loop that spends the numbers is the runtime's | the cadence belongs with the thing it governs; the timer belongs where the other timers are |
+| the gate row a generic profile owns | **none**: `tolerance = min_interval_s = verify_after_s = 0`, so `gate_config(kind)` is the kind's §5.10 row exactly. The transport is configuration - `quirks_for(cfg.transport)` (D-0184) | a generic profile knows nothing a kind does not, and the radio is a fact about the house, not about the entities |
+| the read-back's units | the injected `StateReader` answers **in powerplan's units**, through the bindings and from the attribute where there is one (D-0182) | `verify()` compares with `GateState.last_value`, which is degrees; a raw reader would call every landed write a deviation, because 210 is not 21.0 |
+
+No product knowledge was needed for any of it. The captured Z-TRM is matched at
+0.75 with all ten of its roles bound, the ESPHome pump at 0.6 as a `heat_pump`, and
+both `generic_thermostat` helpers at 0.6 as `radiator`s - a tank and a panel heater
+are indistinguishable from their entities, so §6.3's Control question is what tells
+them apart. The goldens are `tests/golden/profiles/*.json`, one per capture.
+
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
 **The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the

@@ -38,7 +38,14 @@ from custom_components.powerplan.providers.profiles import (
     registry,
 )
 from custom_components.powerplan.providers.profiles.easee_ble import PLATFORM_CONFIDENCE
-from tests.providers.profiles.conftest import as_record, dump_view, entities_of, load_dump
+from tests.providers.profiles.conftest import (
+    CLIMATE,
+    THERMAL_DUMPS,
+    as_record,
+    dump_view,
+    entities_of,
+    load_dump,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -148,32 +155,30 @@ async def test_d9_07d_the_registries_build_the_same_view(hass: HomeAssistant) ->
     assert entities_of(from_registries) == entities_of(from_dump)
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "heatit_z_trm2fx_floor",
-        "esphome_air_to_air_heatpump",
-        "generic_thermostat_panel_heater",
-        "generic_thermostat_water_heater",
-        "ams_datek_eva_han",
-        "nordpool_core_no3",
-    ],
-)
+@pytest.mark.parametrize("name", [*THERMAL_DUMPS, "ams_datek_eva_han", "nordpool_core_no3"])
 def test_d9_07e_every_captured_dump_loads(name: str) -> None:
-    """The loader is not Easee-shaped: it takes whatever `capture_fixture.py` wrote.
-
-    A meter and a price sensor are in here on purpose - neither is a device a
-    profile drives, and both must load without a profile claiming them.
-    """
+    """The loader is not Easee-shaped: it takes whatever `capture_fixture.py` wrote."""
     document = load_dump(name)
     view = DeviceView.from_dump(document)
 
     assert len(view.entities) == document["entity_count"]
+
+
+@pytest.mark.parametrize("name", ["ams_datek_eva_han", "nordpool_core_no3"])
+def test_d9_07f_a_meter_and_a_price_sensor_are_claimed_by_nobody(name: str) -> None:
+    """Neither is a device any profile drives, and neither may be offered as one.
+
+    The HAN meter has three power sensors and a `select`, and the price sensor has
+    nothing but attributes. A profile that claimed either would put "0 % sure this
+    is a car charger" in front of the user (D4 §5.9).
+    """
+    view = DeviceView.from_dump(load_dump(name))
+
     assert registry.match(view) == ()
     assert registry.best(view) is None
 
 
-def test_d9_07f_the_scaling_is_derived_from_the_entity_and_never_hard_coded() -> None:
+def test_d9_07g_the_scaling_is_derived_from_the_entity_and_never_hard_coded() -> None:
     """The ×10 lesson, as arithmetic: `0.1 °C` over 50–400 means 22.0 °C is 220.
 
     111 refused writes nobody noticed, because a Z-Wave thermostat counts tenths of
@@ -201,7 +206,7 @@ def test_d9_07f_the_scaling_is_derived_from_the_entity_and_never_hard_coded() ->
     assert declared_scale(plain.unit, TEMPERATURE_C) == 1.0
 
 
-def test_d9_07g_a_unit_the_quantity_does_not_know_scales_to_nothing() -> None:
+def test_d9_07h_a_unit_the_quantity_does_not_know_scales_to_nothing() -> None:
     """A role stays unbound rather than being scaled by a guess (INV-53).
 
     The Z-TRM's meter-report interval is a `number` in seconds. Read as a
@@ -220,7 +225,7 @@ def test_d9_07g_a_unit_the_quantity_does_not_know_scales_to_nothing() -> None:
     assert declared_scale("%", PERCENT) == 1.0
 
 
-def test_d9_07h_two_candidate_entities_bind_neither() -> None:
+def test_d9_07i_two_candidate_entities_bind_neither() -> None:
     """Ambiguity is a fault, not a coin toss (D4 §5.9).
 
     The Z-TRM exposes two air-temperature sensors, one of which reads 0.0 °C. A
@@ -233,3 +238,74 @@ def test_d9_07h_two_candidate_entities_bind_neither() -> None:
     assert len(candidates) == 2
 
     assert view.find("sensor", "air", "temperature") is None
+
+
+# --------------------------------------------------------------------------- #
+# WP3.1 - the same round trip for every thermal capture
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("name", THERMAL_DUMPS)
+def test_d9_07j_every_thermal_capture_reproduces_its_golden_record(
+    name: str, golden: Callable[[str], dict[str, Any]]
+) -> None:
+    """One golden per captured thermal device, role by role (D4 §9 16, D9 §9 7).
+
+    The failure this guards is a detection that quietly *changes*: a firmware
+    renames a unit and the ×10 scaling becomes ×1, an eco number binds to the
+    hysteresis, a suggested type flips from `floor_heating` to `radiator`. A diff of
+    these files says which - inline assertions say only that something did.
+    """
+    record = golden(name)
+    matches = registry.match(dump_view(name))
+
+    assert record["fixture"] == name
+    assert name in record["source"]
+    assert [as_record(match) for match in matches] == record["matches"]
+
+
+async def test_d9_07k_the_registries_build_the_same_thermostat(hass: HomeAssistant) -> None:
+    """`from_hass` and `from_dump` detect the same thermostat (D9 §9 7, D4 §9 3).
+
+    And the platform changes **nothing** here, unlike `easee_ble`, where it is worth
+    0.15: a generic profile's evidence is the entity shapes, so a Z-TRM behind
+    zwave_js and the same Z-TRM behind an MQTT bridge are detected identically. That
+    is the whole argument for capability detection over a profile per brand
+    (HLD §6.4, D4 §11).
+    """
+    document = load_dump("heatit_z_trm2fx_floor")
+    entry = MockConfigEntry(domain="zwave_js", title="Z-Wave JS")
+    entry.add_to_hass(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("zwave_js", "3245146787-18")},
+        manufacturer="Heatit",
+        model="Z-TRM2fx",
+        name="Gulvvarme bad 1. etasje",
+    )
+    entities = er.async_get(hass)
+    for captured in document["entities"]:
+        entity_id = str(captured["entity_id"])
+        domain, object_id = entity_id.split(".", 1)
+        entities.async_get_or_create(
+            domain,
+            "zwave_js",
+            object_id,
+            device_id=device.id,
+            suggested_object_id=object_id,
+        )
+        hass.states.async_set(entity_id, captured["state"], captured["attributes"])
+    await hass.async_block_till_done()
+
+    view = DeviceView.from_hass(hass, device.id)
+    from_registries = registry.best(view)
+    from_dump = registry.best(dump_view("heatit_z_trm2fx_floor"))
+
+    assert view.platforms == frozenset({"zwave_js"})
+    assert view.model == "Z-TRM2fx"
+    assert from_registries is not None
+    assert from_dump is not None
+    assert from_registries.profile == from_dump.profile == "generic_climate"
+    assert from_registries.confidence == from_dump.confidence
+    assert entities_of(from_registries) == entities_of(from_dump)
+    assert entities_of(from_dump)["setpoint"] == CLIMATE

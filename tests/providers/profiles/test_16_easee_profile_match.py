@@ -15,7 +15,8 @@ range changes the binding, not the profile (D4 §2, "Provisioning").
 The four negative captures are the other half of the row: a Z-TRM floor
 thermostat, an ESPHome air-to-air pump and two `generic_thermostat` helpers are
 thermal hardware, and thermal hardware is never driven through a product profile
-(D4 §11) - `easee_ble` must not claim any of them.
+(D4 §11) - `easee_ble` must not claim any of them. They are claimed by
+`generic_climate` instead, which is the other half of the same statement.
 """
 
 from __future__ import annotations
@@ -193,12 +194,27 @@ def test_16j_the_phase_mode_comes_off_the_select(easee: DeviceView) -> None:
     )
 
 
-def test_16k_the_registry_ranks_the_charger_first_and_alone(easee: DeviceView) -> None:
-    """`match(view)` is ordered by confidence and drops what does not claim it."""
+def test_16k_the_registry_ranks_the_charger_first(easee: DeviceView) -> None:
+    """`match(view)` is ordered by confidence and drops what does not claim it.
+
+    WP3.1 registered the three generic profiles, so the charger is no longer
+    claimed *alone*: `generic_number` sees a `number` in amps and offers itself at
+    0.5, which is the right answer for a Zaptec and the wrong one here. What the
+    row asserts is therefore the **ranking** - the product profile first, because
+    specific evidence outranks generic evidence (D4 §5.9) - and that nothing
+    generic gets close to it. `generic_switch` declines outright: a device with a
+    modulating number is not a plain switch.
+    """
     matches = registry.match(easee)
 
-    assert [found.profile for found in matches] == ["easee_ble"]
-    assert registry.keys() == ("easee_ble",)
+    assert [found.profile for found in matches] == ["easee_ble", "generic_number"]
+    assert matches[0].confidence > matches[1].confidence
+    assert registry.keys() == (
+        "easee_ble",
+        "generic_climate",
+        "generic_number",
+        "generic_switch",
+    )
     assert registry.get("easee_ble") is easee_ble.PROFILE
 
 
@@ -221,7 +237,7 @@ def test_16l_easee_ble_claims_no_thermal_device(
 ) -> None:
     """Confidence 0, no bindings, no suggested type - and absent from the registry.
 
-    The Z-TRM is a *fixture for capability detection*, not a product
+    The Z-TRM is a fixture for capability detection, not a product
     profile (D4 §2, §11). If `easee_ble` claimed it, the flow would offer a
     charger's role vocabulary for a bathroom floor.
     """
@@ -232,7 +248,9 @@ def test_16l_easee_ble_claims_no_thermal_device(
     assert match.bindings == ()
     assert match.suggested_type is None
 
-    assert registry.match(view) == (), "a zero-confidence match is not offered at all"
+    claimed = [found.profile for found in registry.match(view)]
+    assert "easee_ble" not in claimed, "a zero-confidence match is not offered at all"
+    assert claimed == ["generic_climate"], "thermal hardware is generic_climate's (WP3.1)"
 
 
 def test_16m_a_charger_without_its_limit_number_names_what_is_missing() -> None:

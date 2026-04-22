@@ -707,3 +707,53 @@ The protocol carries `shed_reason: ClassVar[ShedReason]`; a load a constraint to
 
 A shed on/off load still drawing above `ON_W` reserves its nameplate, so `p_free_w` doesn't count its watts as free yet. The trim does count them as freed: the relay will open. Otherwise a lower load could be granted the same 3 kW in the same tick. Affects D6 §5.2.
 **Rejected:** a shed load reserving nothing at once - the same watts go to two loads.
+
+### D-0180 · A role may be bound to an attribute
+
+`RoleBinding.attribute`: a `climate` entity binds `SETPOINT` to `temperature` and `TEMP` to `current_temperature`. A climate entity's state is `heat` or `off`, so without this every thermostat's setpoint could be written and never read back (INV-22). Affects D4 §4.5, §5.9.
+**Rejected:** a climate-specific `BoundDevice` - the domain leaks back into the layers above.
+
+### D-0181 · `call_for_provision`: the cold path's own addressing
+
+`BoundDevice.call_for_provision(provision)` sends a provision on a role through that role's binding (scaled, quantised, clamped) and one on an entity nothing steers as it stands. Without it, nothing could set the Easee's Bluetooth mode. Affects D4 §4.5.
+**Rejected:** the runtime building the call - the ×10 scaling would live in two places.
+
+### D-0182 · The `StateReader` answers in powerplan's units
+
+The injected read-back reader (D-0141) returns a role's value through the load's bindings, from the attribute where one is named. `verify()` compares with `GateState.last_value`, which is in degrees; a `0.1 °C` entity counts tenths, and a raw reader would log a deviation on every landed write because 210 isn't 21.0.
+**Rejected:** comparing in device units - the pure gate would hold a number whose meaning depends on an entity it can't see, and D4 §5.10's tolerances are in powerplan's units.
+
+### D-0183 · A `MatchResult` carries the suggested kind and the capabilities
+
+`suggested_kind` (`mode` where the device has an operation-mode select, else `setpoint`) and `capabilities` (bound role names plus climate extras like `cool` and `sensor_mode`), passed to `QCtx.capabilities`. Which kind steers a thermal load is a property of the device (D4 §5.5), and the flow renders from the registry. Affects D4 §4.5, §5.9.
+**Rejected:** the flow deriving the kind from the bindings - puts §5.5's rule in the flow where a profile can't override it.
+
+### D-0184 · A generic profile adds no gate floors, and its transport is configuration
+
+The generic profiles' quirks are all zero, so `gate_config(kind)` is the kind's own row of D4 §5.10. The radio is the one thing they can't read off entities (the same Z-TRM is `zwave_js` in one house and MQTT in another), and the site's token bucket needs it, so `quirks_for(cfg.transport)` uses the transport the flow recorded. Affects D4 §5.9.
+**Rejected:** guessing from the entity platform - a capture has no platform, bridges are spelled differently, and a wrong guess silently changes a site-wide budget.
+
+### D-0185 · The generic confidence band, capped at 0.75
+
+`generic_climate` starts at 0.6 and adds 0.05 per control capability (mode select, eco setpoint, floor minimum), up to 0.75. `generic_number` is 0.6 with an enable switch, 0.5 without; `generic_switch` 0.4. The cap keeps generic evidence below any specific signature (`easee_ble` is 0.80). Affects D4 §5.9.
+**Rejected:** a flat 0.6 - a Heatit and a bare `generic_thermostat` would tie.
+
+### D-0186 · `provisions(view, cfg)`: the device resolves entities, the subentry supplies numbers
+
+`generic_climate` reads `floor_min_limit_c` (falling back to `floor_c`), `eco_setpoint_c` and `swing_k` from `LoadConfig.params`; no config, no provisions. A thermostat's hardware floor is the questionnaire's comfort floor (INV-64), which nothing on the device knows (INV-27). Affects D4 §4.5, §5.9.
+**Rejected:** keyword arguments for the three numbers - one keyword per device type.
+
+### D-0187 · A generic profile declines what a more specific one owns
+
+`generic_switch` returns 0 for a device that also has a `climate` entity or a `number` in A or W. The Z-TRM and the ESPHome heat pump both have a switch and a power sensor; steered as plain switches they'd lose their own regulation (INV-64), and a heat pump's mains switch is never actuated (INV-29). Affects D4 §5.9.
+**Rejected:** claiming at 0.4 and letting ranking sort it out - most people accept the first suggestion.
+
+### D-0188 · `TEMP` is the climate entity's; `TEMP_FLOOR` falls back to it in floor mode
+
+`TEMP` binds to `current_temperature`. `TEMP_FLOOR` binds to a `*floor*` temperature sensor if one exists, else, when `sensor_mode` says `floor` or `both`, to the same `current_temperature`. The Z-TRM in F-mode publishes the slab as its current temperature and has no floor-sensor entity. `air` is not floor evidence. Affects D4 §5.9.
+**Rejected:** leaving `TEMP_FLOOR` unbound for the type to fall back - the same fallback in air mode would call a room temperature a slab.
+
+### D-0189 · A quantised value is rounded to six decimals before it's sent
+
+A 0.1 step turns 21.0 into 21.000000000000004 through `quantise_down`. Six decimals is far below any device step, so it can't move a value to another step, and D-0158's integer path then works for 0.1 °C thermostats too.
+**Rejected:** quantising in integer step counts - the step is itself a float, so multiplying back reintroduces the dust.

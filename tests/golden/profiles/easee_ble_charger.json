@@ -1,7 +1,7 @@
 {
   "fixture": "easee_ble_charger",
   "source": "tests/fixtures/captured/easee_ble_charger.json — the reference house's Easee charger over local easee_ble, captured with tools/capture_fixture.py: 24 entities, status `disconnected`, 10 A armed, charger switch off.",
-  "note": "D9 §9 7. A capture carries no platform (GET /api/states does not expose one), so the confidence is easee_ble's SHAPE_CONFIDENCE and not its PLATFORM_CONFIDENCE of 0.95 (D4 §5.9). Every unit, scale, step and range below was read off the entity's own attributes — nothing here is a product table, and a firmware that renames a unit or widens a range changes this file rather than the profile.",
+  "note": "D9 §9 7. A capture carries no platform (GET /api/states does not expose one), so the confidence is easee_ble's SHAPE_CONFIDENCE and not its PLATFORM_CONFIDENCE of 0.95 (D4 §5.9). Every unit, scale, step and range below was read off the entity's own attributes — nothing here is a product table, and a firmware that renames a unit or widens a range changes this file rather than the profile. WP3.1 added the second match: `generic_number` sees a `number` in amps and offers itself at 0.5, below the product profile, with `current_number` missing because three 0–40 A numbers on one device bind none of them.",
   "matches": [
     {
       "profile": "easee_ble",
@@ -11,9 +11,12 @@
         "a status sensor offering all 9 Easee statuses"
       ],
       "missing": [],
+      "suggested_kind": null,
+      "capabilities": [],
       "bindings": {
         "blocked_by": {
           "entity_id": "sensor.garasje_billader_charging_blocked_by",
+          "attribute": null,
           "unit": null,
           "scale": 1.0,
           "step": null,
@@ -60,6 +63,7 @@
         },
         "cable_rating": {
           "entity_id": "sensor.garasje_billader_cable_rating",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": null,
@@ -71,6 +75,7 @@
         },
         "circuit_max": {
           "entity_id": "sensor.garasje_billader_circuit_max_current",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": null,
@@ -82,6 +87,7 @@
         },
         "current_l1": {
           "entity_id": "sensor.garasje_billader_current_l1",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": null,
@@ -93,6 +99,7 @@
         },
         "current_l2": {
           "entity_id": "sensor.garasje_billader_current_l2",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": null,
@@ -104,6 +111,7 @@
         },
         "current_l3": {
           "entity_id": "sensor.garasje_billader_current_l3",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": null,
@@ -115,6 +123,7 @@
         },
         "current_number": {
           "entity_id": "number.garasje_billader_dynamic_charger_current",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": 1.0,
@@ -126,6 +135,7 @@
         },
         "enable_switch": {
           "entity_id": "switch.garasje_billader_charger_enabled",
+          "attribute": null,
           "unit": null,
           "scale": 1.0,
           "step": null,
@@ -137,6 +147,7 @@
         },
         "energy": {
           "entity_id": "sensor.garasje_billader_lifetime_energy",
+          "attribute": null,
           "unit": "kWh",
           "scale": 1.0,
           "step": null,
@@ -148,6 +159,7 @@
         },
         "max_current_number": {
           "entity_id": "number.garasje_billader_max_charger_current",
+          "attribute": null,
           "unit": "A",
           "scale": 1.0,
           "step": 1.0,
@@ -159,6 +171,7 @@
         },
         "power": {
           "entity_id": "sensor.garasje_billader_power",
+          "attribute": null,
           "unit": "kW",
           "scale": 1000.0,
           "step": null,
@@ -170,6 +183,7 @@
         },
         "session_energy": {
           "entity_id": "sensor.garasje_billader_session_energy",
+          "attribute": null,
           "unit": "kWh",
           "scale": 1.0,
           "step": null,
@@ -181,6 +195,7 @@
         },
         "status": {
           "entity_id": "sensor.garasje_billader_status",
+          "attribute": null,
           "unit": null,
           "scale": 1.0,
           "step": null,
@@ -199,6 +214,36 @@
             "awaiting_authorization",
             "de_authorizing"
           ]
+        }
+      }
+    },
+    {
+      "profile": "generic_number",
+      "confidence": 0.5,
+      "suggested_type": "ev",
+      "reasons": [
+        "a power sensor (sensor.garasje_billader_power)",
+        "no entity found for current_number"
+      ],
+      "missing": [
+        "current_number"
+      ],
+      "suggested_kind": "modulate",
+      "capabilities": [
+        "power"
+      ],
+      "bindings": {
+        "power": {
+          "entity_id": "sensor.garasje_billader_power",
+          "attribute": null,
+          "unit": "kW",
+          "scale": 1000.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
         }
       }
     }

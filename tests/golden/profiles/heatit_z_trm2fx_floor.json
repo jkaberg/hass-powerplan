@@ -1,0 +1,164 @@
+{
+  "fixture": "heatit_z_trm2fx_floor",
+  "source": "tests/fixtures/captured/heatit_z_trm2fx_floor.json — the reference house's bathroom floor loop, a Heatit Z-TRM2fx over zwave_js, captured with tools/capture_fixture.py: 15 entities, `Heating mode`, F-mode (floor sensor), 23.6 °C floor, 599 W drawing.",
+  "note": "D4 §9 3 and §9 16, the thermostat row. Confidence 0.75 = CLIMATE_CONFIDENCE 0.6 + three CAPABILITY_BONUSes of 0.05 (the operation-mode select, the eco setpoint, the floor minimum), capped at MAX_CONFIDENCE and therefore still below easee_ble's specific 0.80. The three `0.1 °C` numbers carry scale 0.1 over 50–400 (hysteresis 3–30), read off `unit_of_measurement`, `min`, `max` and `step`: 21.0 °C is written as 210, which is the write that was refused 111 times on 2026-09-07. `setpoint` and `temp` bind to the climate entity's own attributes, and `temp_floor` to the same `current_temperature` because the `sensor_mode` select says F-mode — the thermostat regulates on the floor, and there is no separate floor sensor entity. `switch` is bound read-only: pulling a thermostat's relay takes its regulation away with it (INV-64). The two air-temperature sensors bind nothing — one of them reads 0.0 °C, and ambiguity binds neither (D4 §5.9).",
+  "matches": [
+    {
+      "profile": "generic_climate",
+      "confidence": 0.75,
+      "suggested_type": "floor_heating",
+      "reasons": [
+        "a climate entity (climate.bad_1_etasje_gulvvarme)",
+        "an operation-mode select offering 'Heating mode' and 'Energy saving heating mode'",
+        "an eco setpoint number of 0.1 °C",
+        "a floor minimum limit number of 0.1 °C",
+        "a hysteresis number of 0.1 °C",
+        "a sensor mode saying it regulates on floor"
+      ],
+      "missing": [],
+      "suggested_kind": "mode",
+      "capabilities": [
+        "cool",
+        "eco_setpoint",
+        "energy",
+        "floor_min_limit",
+        "hysteresis",
+        "mode_select",
+        "power",
+        "preset_mode",
+        "sensor_mode",
+        "setpoint",
+        "switch",
+        "temp",
+        "temp_floor"
+      ],
+      "bindings": {
+        "eco_setpoint": {
+          "entity_id": "number.bad_1_etasje_gulvvarme_energy_saving_mode_setpoint_eco",
+          "attribute": null,
+          "unit": "0.1 °C",
+          "scale": 0.1,
+          "step": 1.0,
+          "min": 50.0,
+          "max": 400.0,
+          "required": false,
+          "writable": true,
+          "options": []
+        },
+        "energy": {
+          "entity_id": "sensor.bad_1_etasje_gulvvarme_energy",
+          "attribute": null,
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "floor_min_limit": {
+          "entity_id": "number.bad_1_etasje_gulvvarme_floor_minimum_temperature_limit_flo",
+          "attribute": null,
+          "unit": "0.1 °C",
+          "scale": 0.1,
+          "step": 1.0,
+          "min": 50.0,
+          "max": 400.0,
+          "required": false,
+          "writable": true,
+          "options": []
+        },
+        "hysteresis": {
+          "entity_id": "number.bad_1_etasje_gulvvarme_temperature_control_hysteresis_diff_i",
+          "attribute": null,
+          "unit": "0.1 °C",
+          "scale": 0.1,
+          "step": 1.0,
+          "min": 3.0,
+          "max": 30.0,
+          "required": false,
+          "writable": true,
+          "options": []
+        },
+        "mode_select": {
+          "entity_id": "select.bad_1_etasje_gulvvarme_operation_mode",
+          "attribute": null,
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": true,
+          "options": [
+            "Off",
+            "Heating mode",
+            "Cooling mode (Not implemented)",
+            "Energy saving heating mode"
+          ]
+        },
+        "power": {
+          "entity_id": "sensor.bad_1_etasje_gulvvarme_electric_consumption_w",
+          "attribute": null,
+          "unit": "W",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "setpoint": {
+          "entity_id": "climate.bad_1_etasje_gulvvarme",
+          "attribute": "temperature",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": 5.0,
+          "max": 35.0,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "switch": {
+          "entity_id": "switch.bad_1_etasje_gulvvarme",
+          "attribute": null,
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "temp": {
+          "entity_id": "climate.bad_1_etasje_gulvvarme",
+          "attribute": "current_temperature",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "temp_floor": {
+          "entity_id": "climate.bad_1_etasje_gulvvarme",
+          "attribute": "current_temperature",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        }
+      }
+    }
+  ]
+}

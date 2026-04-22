@@ -5,7 +5,9 @@ on this role?" (`WriteTarget.call_for(write) → DeviceCall | None`,
 `design/DECISIONS.md` D-0142). This file answers it for `easee_ble` against the
 captured charger, and then puts the whole path together: a pure `Decision` from
 `core/loads/gate.py`, this profile as the `WriteTarget`, and a behavioural fake
-device behind Home Assistant's service bus.
+device behind Home Assistant's service bus. The gate, the service-call spy and the
+frozen clock come from the package `conftest.py`, where WP3.1's thermostat tests
+share them.
 
 Three things are asserted that nothing else can assert:
 
@@ -25,8 +27,7 @@ between calls, which is what lets the read-back mean anything at all.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -48,16 +49,12 @@ from custom_components.powerplan.providers.profiles import (
 )
 from custom_components.powerplan.writegate import Actuation, WriteGate
 from tests.core.loads.conftest import modulate_kind
-from tests.providers.profiles.conftest import ENABLE, LIMIT, dump_view
+from tests.providers.profiles.conftest import ENABLE, LIMIT, Sent, dump_view
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from datetime import datetime
 
-    from freezegun.api import FrozenDateTimeFactory
     from homeassistant.core import ServiceCall
-
-#: A September evening, deliberately not on an hour boundary (HLD §7.1).
-NOW = datetime(2026, 9, 13, 23, 41, 7, tzinfo=UTC)
 
 
 def target() -> BoundDevice:
@@ -236,80 +233,12 @@ class FakeEaseeCharger:
         return None if state is None else float(state.state)
 
 
-@dataclass
-class Sent:
-    """One `hass.services.async_call` as the registry received it (INV-24)."""
-
-    domain: str
-    service: str
-    data: dict[str, Any]
-    blocking: bool
-    target: dict[str, Any]
-
-
-@pytest.fixture
-def now(freezer: FrozenDateTimeFactory) -> datetime:
-    """Freeze the clock at a known instant."""
-    freezer.move_to(NOW)
-    return NOW
-
-
 @pytest.fixture
 def charger(hass: HomeAssistant, now: datetime) -> FakeEaseeCharger:
     """Return the registered charger, at 10 A and disabled, as captured."""
     fake = FakeEaseeCharger(hass)
     fake.register()
     return fake
-
-
-@pytest.fixture
-def calls(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> list[Sent]:
-    """Record every service call the registry sees, with its `blocking` flag."""
-    recorded: list[Sent] = []
-    services = type(hass.services)
-    original = services.async_call
-
-    async def spy(
-        self: Any,
-        domain: str,
-        service: str,
-        service_data: dict[str, Any] | None = None,
-        *,
-        blocking: bool = False,
-        context: Any = None,
-        target: dict[str, Any] | None = None,
-        return_response: bool = False,
-    ) -> Any:
-        recorded.append(
-            Sent(domain, service, dict(service_data or {}), blocking, dict(target or {}))
-        )
-        return await original(
-            self, domain, service, service_data, blocking, context, target, return_response
-        )
-
-    # `ServiceRegistry` has `__slots__`, so the spy goes on the class and
-    # `monkeypatch` takes it off again after the test.
-    monkeypatch.setattr(services, "async_call", spy)
-    return recorded
-
-
-@pytest.fixture
-def gate(hass: HomeAssistant) -> Generator[WriteGate]:
-    """Yield the executor, closed at teardown as `async_unload_entry` closes it."""
-    executor = WriteGate(hass, read_state=lambda entity_id: _read(hass, entity_id))
-    yield executor
-    executor.cancel()
-
-
-def _read(hass: HomeAssistant, entity_id: str) -> Value | None:
-    """Read one entity as the runtime does - the executor never reaches for state (INV-3)."""
-    state = hass.states.get(entity_id)
-    if state is None or state.state in ("unknown", "unavailable"):
-        return None
-    try:
-        return float(state.state)
-    except ValueError:
-        return state.state
 
 
 @pytest.mark.inv("INV-20")

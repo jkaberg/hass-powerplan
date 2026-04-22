@@ -1,0 +1,47 @@
+{
+  "fixture": "generic_thermostat_panel_heater",
+  "source": "tests/fixtures/captured/generic_thermostat_panel_heater.json — a HA `generic_thermostat` over the laundry room's panel heater, captured: one climate entity, 16–23 °C, step 0.1.",
+  "note": "D4 §9 3 and §9 16, the plain-climate row. Confidence 0.6, kind SETPOINT, no provisions: there is no eco setpoint, no floor minimum and no operation-mode select to shed with, so the lever is `climate.set_temperature` quantised by the entity's own `target_temp_step` of 0.1 °C.",
+  "matches": [
+    {
+      "profile": "generic_climate",
+      "confidence": 0.6,
+      "suggested_type": "radiator",
+      "reasons": [
+        "a climate entity (climate.vaskerom)"
+      ],
+      "missing": [],
+      "suggested_kind": "setpoint",
+      "capabilities": [
+        "setpoint",
+        "temp"
+      ],
+      "bindings": {
+        "setpoint": {
+          "entity_id": "climate.vaskerom",
+          "attribute": "temperature",
+          "unit": null,
+          "scale": 1.0,
+          "step": 0.1,
+          "min": 16.0,
+          "max": 23.0,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "temp": {
+          "entity_id": "climate.vaskerom",
+          "attribute": "current_temperature",
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        }
+      }
+    }
+  ]
+}

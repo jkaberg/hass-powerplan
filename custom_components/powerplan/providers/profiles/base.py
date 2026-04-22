@@ -20,7 +20,16 @@ Three things live here, and the split is the design:
   renames its unit or widens its range changes the binding, not the profile.
 * **`BoundDevice`** - one load's roles bound to entities, which is the executor's
   `WriteTarget`: `call_for(write) → DeviceCall | None`, one question, and `None`
-  when nothing is bound (`design/DECISIONS.md` D-0142, D-0148).
+  when nothing is bound (`design/DECISIONS.md` D-0142, D-0148). Its cold-path twin
+  `call_for_provision(provision)` is WP3.1's (D-0181): a provision on a role is
+  scaled through that role's binding, and a provision on an entity nothing steers
+  is sent as it stands.
+
+WP3.1 adds one more thing to the introspection: a role may be bound to an
+**attribute** rather than to a state. A `climate` entity's state is `heat`, while
+its target is `temperature` and what it measures is `current_temperature` - so
+without `RoleBinding.attribute` a thermostat's setpoint could be written and never
+read back, and INV-22 says the entity is the only witness (D-0180).
 
 A profile never decides anything. It reads, it addresses, and it declares its
 quirks; the precedence lives in `core/allocation/` and nowhere else (INV-1), and
@@ -69,12 +78,15 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from custom_components.powerplan.core.loads import ControlKind, Value, Write
+    from custom_components.powerplan.core.loads.base import LoadConfig
     from custom_components.powerplan.providers.meters.base import UnitTable
 
 _LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "PERCENT",
+    "PROVISION_RETRY_S",
+    "PROVISION_REVERIFY_S",
     "ROLE_UNITS",
     "TEMPERATURE_C",
     "BoundDevice",
@@ -90,6 +102,7 @@ __all__ = [
     "StatusVocabulary",
     "declared_scale",
     "no_match",
+    "numeric_binding",
     "quantise_down",
     "role_map",
 ]
@@ -109,6 +122,7 @@ PERCENT: Final[UnitTable] = {PERCENTAGE: 1.0}
 #: Which table each numeric role is read through (kWh, A, °C).
 ROLE_UNITS: Final[Mapping[Role, UnitTable]] = {
     Role.POWER: POWER_W,
+    Role.BATTERY_POWER_SET: POWER_W,
     Role.ENERGY: ENERGY_KWH,
     Role.SESSION_ENERGY: ENERGY_KWH,
     Role.CURRENT_SET: CURRENT_A,
@@ -139,6 +153,10 @@ _TRUE: Final = frozenset({STATE_ON, "true", "yes", "1", "heat", "open"})
 #: Z-Wave thermostats are full of them and it is where the ×10 scaling comes from.
 _PREFIXED_UNIT: Final = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(\S.*?)\s*$")
 
+#: Decimals kept when a quantised value is sent: enough for any step a device
+#: declares, few enough to drop the float dust a 0.1 °C step leaves behind (D-0189).
+_DUST: Final = 6
+
 #: Absorbs the float round trip so 32 A cannot become 31 A (README, `AMP_EPS`).
 #: A millionth of a step is far too small to lift a value past a whole unit that
 #: was not already there.
@@ -146,6 +164,14 @@ _STEP_EPS: Final = 1e-6
 
 #: Word characters, for the name tokens the role heuristics match on (D4 §5.9).
 _TOKENS: Final = re.compile(r"[a-z0-9]+")
+
+#: How often an unlanded `Provision` is retried, and how often a landed one is
+#: read back again (D4 §2, "Provisioning"). The numbers live next to `Provision`
+#: because they are properties of provisioning and not of any one profile; the
+#: loop that spends them is the runtime's. 111 refused writes nobody
+#: noticed is what a step that latches on failure costs.
+PROVISION_RETRY_S: Final = 900.0
+PROVISION_REVERIFY_S: Final = 86_400.0
 
 
 # --------------------------------------------------------------------------- #
@@ -265,6 +291,21 @@ class EntityView:
     def number(self) -> float | None:
         """The state as a number, or `None` when it is not one."""
         return _as_float(self.state) if self.available else None
+
+    def attribute(self, key: str) -> Any:
+        """Return one attribute verbatim, or `None` when the entity has none.
+
+        A `climate` entity keeps the two numbers that matter *in its attributes*:
+        `temperature` is the target and `current_temperature` is what it measures,
+        while its state is `heat` or `off`. A role bound to a climate entity is
+        therefore bound to an attribute, which is what `RoleBinding.attribute`
+        carries (WP3.1 amends D4 §5.9).
+        """
+        return self.attributes.get(key)
+
+    def attribute_number(self, key: str) -> float | None:
+        """Return one attribute as a number, or `None` when it is not one."""
+        return None if not self.available else _as_float(self.attributes.get(key))
 
     def tokens(self) -> frozenset[str]:
         """Lower-case words of the object id and the friendly name (D4 §5.9)."""
@@ -511,6 +552,14 @@ class RoleBinding:
     min_value: float | None = None
     max_value: float | None = None
     writable: bool = False
+    attribute: str | None = None
+    """Where the value lives when it is not the entity's state (WP3.1).
+
+    A `climate` entity's state is `heat`; its target is the `temperature`
+    attribute and what it measures is `current_temperature`. Without this a
+    thermostat's setpoint could be written but never read back, and INV-22 says
+    decisions are made against the entity's own reading.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,6 +570,13 @@ class MatchResult:
     registry that returns matches from several profiles has to say which made
     each one, and §5.9's "required roles missing → the flow says which and why"
     needs the roles as data rather than as prose.
+
+    `suggested_kind` and `capabilities` are WP3.1's. Which *kind* a thermal load
+    is steered by is a property of the device and not of the type - a floor loop
+    with an operation-mode select sheds by `MODE` and one without it by
+    `SETPOINT` (D4 §5.5) - and `capabilities` is `QCtx.capabilities` verbatim, so
+    the questionnaire that asks "mode or setpoint?" reads the answer off the
+    detection rather than off a brand (D4 §4.6, §6.1).
     """
 
     profile: str
@@ -529,6 +585,8 @@ class MatchResult:
     suggested_type: str | None = None
     bindings: tuple[RoleBinding, ...] = ()
     missing: tuple[Role, ...] = ()
+    suggested_kind: str | None = None
+    capabilities: frozenset[str] = frozenset()
 
     @property
     def claimed(self) -> bool:
@@ -556,6 +614,54 @@ def role_map(
 def no_match(profile: str, reason: str) -> MatchResult:
     """Return "this is not my device", with its one reason."""
     return MatchResult(profile=profile, confidence=0.0, reasons=(reason,))
+
+
+def numeric_binding(
+    entity: EntityView,
+    role: Role,
+    *,
+    profile: str,
+    writable: bool = False,
+    required: bool = False,
+    attribute: str | None = None,
+) -> RoleBinding | None:
+    """Bind `role` to `entity`, reading the scale off the entity itself (D4 §5.9).
+
+    The one arithmetic every profile needs and no profile may hard-code: the unit
+    the entity declares gives the factor, its `step` gives the quantisation and
+    its `min`/`max` give the clamp, so `0.1 °C` over 50–400 means 21.0 °C is
+    written as 210 and a firmware that widens the range changes the binding rather
+    than the profile (D4 §2, "Provisioning").
+
+    `None` - and a warning - when the declared unit is not one the role's quantity
+    knows. The Z-TRM's meter-report interval is a `number` in seconds: read as a
+    temperature it would be 60 °C, which is how a report interval ends up in a
+    setpoint. A role stays unbound rather than scaled by a guess (INV-53).
+    """
+    table = ROLE_UNITS.get(role)
+    scale = 1.0 if table is None else declared_scale(entity.unit, table)
+    if scale is None:
+        _LOGGER.warning(
+            "%s: %s declares unit %r, which powerplan cannot read as %s — leaving the role unbound",
+            profile,
+            entity.entity_id,
+            entity.unit,
+            role,
+        )
+        return None
+    return RoleBinding(
+        role=role,
+        entity_id=entity.entity_id,
+        unit=entity.unit,
+        scale=scale,
+        options=entity.options,
+        required=required,
+        step=entity.step,
+        min_value=entity.min_value,
+        max_value=entity.max_value,
+        writable=writable,
+        attribute=attribute,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -747,25 +853,37 @@ class BoundDevice:
             return None
         return self._call(binding, write.value)
 
+    def call_for_provision(self, provision: Provision) -> DeviceCall | None:
+        """Return the call that puts a `Provision` on its entity (D4 §2).
+
+        The cold path's half of `call_for`. Two cases and one of them is why
+        `Provision` carries an `entity_id` at all: a provision on a *role* is
+        scaled, quantised and clamped through that role's binding, and a provision
+        on an entity nothing steers - `select.*_bluetooth_mode`, which must stay
+        `always_on` or the whole control path disappears - is sent as it stands.
+
+        `scaled=True` says the value is already in the device's own units and the
+        binding's factor must not be applied twice.
+        """
+        binding = None if provision.role is None else self.bindings.get(provision.role)
+        if binding is not None and binding.entity_id == provision.entity_id:
+            if not binding.writable:
+                _LOGGER.warning(
+                    "%s: %s is bound read-only and cannot be provisioned",
+                    self.profile,
+                    binding.entity_id,
+                )
+                return None
+            return self._call(
+                replace(binding, scale=1.0) if provision.scaled else binding, provision.value
+            )
+        return _device_call(
+            provision.entity_id, provision.value, profile=self.profile, binding=binding
+        )
+
     def _call(self, binding: RoleBinding, value: Value) -> DeviceCall | None:
         """Build the service call for one binding, scaled, quantised and clamped."""
-        domain = binding.entity_id.split(".", 1)[0]
-        if domain in _SWITCHABLE:
-            service = "turn_on" if _truthy(value) else "turn_off"
-            return DeviceCall(domain, service, binding.entity_id, {})
-        setter = _SETTERS.get(domain)
-        if setter is None:
-            _LOGGER.warning(
-                "%s: %s cannot be written — powerplan knows no service for domain %s",
-                self.profile,
-                binding.entity_id,
-                domain,
-            )
-            return None
-        service, key = setter
-        if key == "option":
-            return DeviceCall(domain, service, binding.entity_id, {key: str(value)})
-        return DeviceCall(domain, service, binding.entity_id, {key: _device_number(binding, value)})
+        return _device_call(binding.entity_id, value, profile=self.profile, binding=binding)
 
     # ------------------------------------------------------------------- read #
 
@@ -786,15 +904,13 @@ class BoundDevice:
         if entity is None or not entity.available:
             return RoleRead(role=binding.role, options=binding.options, available=False)
         reading: Reading | None = None
-        if binding.unit is not None:
-            value = entity.number
+        if binding.unit is not None or binding.attribute is not None:
+            attribute = binding.attribute
+            source = entity.entity_id if attribute is None else f"{entity.entity_id}.{attribute}"
+            raw = entity.state if attribute is None else entity.attribute(attribute)
+            value = entity.number if attribute is None else entity.attribute_number(attribute)
             if value is None:
-                _LOGGER.debug(
-                    "%s: %s reads %r, which is not a number",
-                    self.profile,
-                    binding.entity_id,
-                    entity.state,
-                )
+                _LOGGER.debug("%s: %s reads %r, which is not a number", self.profile, source, raw)
                 return RoleRead(role=binding.role, options=binding.options, available=False)
             reading = Reading(
                 value=value * binding.scale,
@@ -809,6 +925,40 @@ class BoundDevice:
             options=entity.options or binding.options,
             available=True,
         )
+
+
+def _device_call(
+    entity_id: str, value: Value, *, profile: str, binding: RoleBinding | None
+) -> DeviceCall | None:
+    """Build the one service call that puts `value` on `entity_id`.
+
+    Shared by `call_for` and `call_for_provision`: the domain decides the service,
+    and the binding - when there is one - decides the arithmetic. A domain
+    powerplan has no setter for is a warning and no call at all, never a guess.
+    """
+    domain = entity_id.split(".", 1)[0]
+    if domain in _SWITCHABLE:
+        return DeviceCall(domain, "turn_on" if _truthy(value) else "turn_off", entity_id, {})
+    setter = _SETTERS.get(domain)
+    if setter is None:
+        _LOGGER.warning(
+            "%s: %s cannot be written — powerplan knows no service for domain %s",
+            profile,
+            entity_id,
+            domain,
+        )
+        return None
+    service, key = setter
+    if key == "option":
+        return DeviceCall(domain, service, entity_id, {key: str(value)})
+    number = _plain_number(value) if binding is None else _device_number(binding, value)
+    return DeviceCall(domain, service, entity_id, {key: number})
+
+
+def _plain_number(value: Value) -> float | int:
+    """Return `value` as the number to send, with no binding to scale it by."""
+    number = float(value if isinstance(value, int | float) else float(str(value)))
+    return int(number) if number.is_integer() else number
 
 
 def _truthy(value: Value) -> bool:
@@ -828,12 +978,17 @@ def _device_number(binding: RoleBinding, value: Value) -> float | int:
     granted; clamped because the range is the entity's own and a value outside it
     is refused, not applied. An integral result is sent as an integer, which is
     what a step-1 charge limit looks like in the log and on the bus.
+
+    The rounding after the quantisation is float dust and nothing else (WP3.1,
+    D-0189): a 0.1 °C step turns 21.0 into 21.000000000000004 on the way through,
+    and a thermostat's log line should say 21. Six decimals is far below any step a
+    device declares, so it can never move a value onto a different step.
     """
     number = float(value if isinstance(value, int | float) else float(str(value)))
     if binding.scale != 0.0:
         number /= binding.scale
     if binding.step is not None:
-        number = quantise_down(number, binding.step)
+        number = round(quantise_down(number, binding.step), _DUST)
     if binding.min_value is not None:
         number = max(binding.min_value, number)
     if binding.max_value is not None:
@@ -868,8 +1023,15 @@ class DeviceProfile(Protocol):
         """Return the `WriteTarget` for a load whose bindings the subentry holds."""
         ...
 
-    def provisions(self, view: DeviceView) -> tuple[Provision, ...]:
-        """Return the settings this device must hold whatever the plan says (D4 §2)."""
+    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+        """Return the settings this device must hold whatever the plan says (D4 §2).
+
+        The view resolves the *entities* and the config supplies the *numbers*: a
+        thermostat's hardware floor is the questionnaire's comfort floor (INV-64)
+        and nothing on the device knows it (INV-27). A profile whose provisions are
+        the same on every house - the Easee's Bluetooth mode - ignores `cfg`
+        (WP3.1 amends D4 §4.5's `provisions(view)` row).
+        """
         ...
 
     def quirks(self) -> Quirks:

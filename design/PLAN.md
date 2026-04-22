@@ -283,7 +283,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 2.5 | Circuits | todo |
 | 2.6 | Subentry hot paths | todo |
 | 2.7 | Accounting surface | todo |
-| 3.1 | Generic profiles with capability detection | todo |
+| 3.1 | Generic profiles with capability detection | done |
 | 3.2 | `floor_heating`, `heat_capacitor`, groups | todo |
 | 3.3 | `water_heater` and legionella | todo |
 | 3.4 | `heat_pump`, `radiator`, `best_save` | todo |

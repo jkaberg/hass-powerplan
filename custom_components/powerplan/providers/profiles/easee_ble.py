@@ -64,6 +64,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    from custom_components.powerplan.core.loads.base import LoadConfig
+
 _LOGGER = logging.getLogger(__name__)
 
 __all__ = [
@@ -299,8 +301,12 @@ class EaseeBle:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView) -> tuple[Provision, ...]:
+    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
         """Return what this charger must hold for the control path to exist at all.
+
+        `cfg` is unused: a charger's one provision is the same on every house, and
+        the numbers a thermostat needs from the questionnaire have no analogue here
+        (D4 §4.5).
 
         One step, and it is not a knob: `select.*_bluetooth_mode` on `button_press`
         leaves the link alive only for a moment after somebody presses the
