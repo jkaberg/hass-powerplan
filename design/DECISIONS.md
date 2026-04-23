@@ -807,3 +807,53 @@ The generic profiles' quirks are all zero, so `gate_config(kind)` is the kind's 
 
 A 0.1 step turns 21.0 into 21.000000000000004 through `quantise_down`. Six decimals is far below any device step, so it can't move a value to another step, and D-0158's integer path then works for 0.1 °C thermostats too.
 **Rejected:** quantising in integer step counts - the step is itself a float, so multiplying back reintroduces the dust.
+
+### D-0210 · D10's core is built before its providers
+
+`core/forecasts/` (model, baseline, reconstruction, the five fits, the registry) lands before the providers, the planning-loop refresh and the baseline-aware reserve. It's pure and can't open a gate, and it settles the baseline's shape before D6's `budget.py` is written against it.
+**Rejected:** one D10 WP in phase 5 - one PR per LLD reads better, but a working baseline is easier to design against than a sketch.
+
+### D-0211 · `predict` is pure; decay lands on update, and confidence is one number
+
+`update()` decays the weights to the window's end; `predict()`, `confidence()` and `n_eff()` never mutate and apply the decay for `t` to the confidence only. `predict`'s confidence is `min(bin, day-mean)`. Read literally, "decay lazily on read" would let a 48 h planning query age the state it plans from. Affects D10 §3, §5.1, §5.3.
+**Rejected:** decaying all 168 bins on every read - side effects on persisted state from a read.
+
+### D-0212 · `n_eff` is a property on `weight`, and the state is frozen
+
+`Bin` keeps `mean_w`, `m2`, `weight`, `beta_w_per_k`, adds `samples`, and `n_eff` returns `weight` (D10 §5.1 defines them as equal). `samples` matters: a variance from one sample is 0.0 and mustn't be published as certainty (INV-62). Frozen state, mutable wrapper, as with D3's `WindowMeter`. Affects D10 §4, §7.
+**Rejected:** storing both - a stale `n_eff` beside a fresh `weight` is one migration away.
+
+### D-0213 · `Fit.effective` is `float | None`
+
+When a fit fails and there's no configured value, `effective` is `None`. For a slab's loss coefficient there's usually no default, and D4 §5.7 skips an unknown loss term rather than guessing. Affects D10 §4.
+**Rejected:** returning the fitted value as fallback - applies the fit INV-63 just refused, silently.
+
+### D-0214 · The site's reconstruction is the worst of its loads
+
+`UncontrolledHistory.reconstruction` is the worst per-load mark (`none < partial < full`), and a load with neither power nor on/off history is `none`. A site with one metered EV and one unmetered tank shouldn't report `full`. `loads` carries the per-load marks. Affects D10 §2, §8.
+**Rejected:** `partial` for anything missing - hides which load a household could fix by binding one sensor.
+
+### D-0215 · The constants and key D10 §5.6 leaves unnamed
+
+Coast or idle episodes ≥ 2 h, heat-up ≥ 30 min; "on" above 10 % of rating without state history; nearest-rank p95; idle falling faster than 3 K/h is a draw; no area → per-unit bounds; `fit_all` keyed `"<load_id>.<fit_key>"`; the nameplate fit excludes `heat_pump` and `battery`. Fits publish their reasons, so a wrong constant shows up as a refused fit. Affects D10 §5.6.
+**Rejected:** configuration options - nothing a household could answer (HLD §7.9).
+
+### D-0216 · A well-insulated slab's coast fit lands under the floor, and the floor stays
+
+On a two-node floor only the screed's share of the loss (~27 % per m²) comes out of the screed, so a 0.7 W/m²K envelope fits ~0.19 W/K·m² and is refused by the [0.5, 50] bound; the store then skips the loss term and charges again next slot. The bound caught a model mismatch. If real houses land under it too, the fix is a two-node store model, not a wider bound. Affects D10 §5.6.
+**Rejected:** lowering the floor to 0.1 - it would apply the screed's share as the house's loss and under-charge every night fourfold.
+
+### D-0217 · `for_planner()` bridges D10's answers to D5's protocol
+
+`Forecasts.for_planner()` returns a `PlannerForecasts` satisfying D5's `Forecasts`: `outdoor_c(t)`, `surplus_w(t) = 0.0` until PV, `baseline_w(t)` with 0.0 when the baseline isn't offered. D5 takes bare floats; D10 answers with a confidence. 0.0 is right because the planner subtracts it (INV-62). Affects D10 §3, §9.
+**Rejected:** widening D5's protocol - D6, not D5, is where confidence changes a decision.
+
+### D-0218 · A series carries a float confidence, and `STALE` is never produced
+
+`SeriesPoint.confidence` is 0..1, mapped for publication (≥ 0.85 `KNOWN`, ≥ 0.6 `ESTIMATED`, else `SYNTHESISED`). D10 §5.4 ages confidence numerically and D10 §2's gate is 0.6, so the float is primary. Affects D10 §4.
+**Rejected:** `STALE` for an aged series - in D1 it means a source stopped answering; a forecast decays even when every fetch works.
+
+### D-0219 · The `ForecastSource` protocol lives in `core/`
+
+Declared in `core/forecasts/model.py`, with the entity readers in `providers/forecasts/base.py`. The registry is in `core/`, and a core registry typed by a providers protocol would invert INV-2's direction. It mentions no HA type. Affects D10 §3.
+**Rejected:** keeping it in `providers/` with a loosely typed registry - the flow renders from the registry, so a type error would move to the flow.

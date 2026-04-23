@@ -122,6 +122,7 @@ HLD §9 phase 5. **Gate (simulated):** on the benchmark year the reserve shrinks
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **5.1 D10 core and providers** | forecasts and fits | D10 §3 | D10 §9 1-9, 11, 12 | 1.1 |
+| **5.1a D10 core** | `core/forecasts/` ahead of its providers | D10 §3 | D10 §9 1-5, 7-9, 12 | 0.8 |
 | **5.2 Baseline-aware reserve and warning** | the reserve on the baseline | D6 `budget.py`; D7 §5.4 | D6 §9 3; D10 §9 10; D7 §9 12 | 5.1 |
 | **5.3 Zones** | hybrid heating | D6 `constraints/zone.py` | D6 §9 13; `hybrid_gas_switch` | 3.4 |
 | **5.4 `battery`, `arbitrage`, `peak_shave`** | the battery in simulation | D4; D5 `battery.py`; D6 | the battery tests; `battery_arbitrage` | 4.1 |
@@ -297,6 +298,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3a | Tariff presets | done |
 | 4.4 | Entity format table | done |
 | 5.1 | D10 core and providers | todo |
+| 5.1a | D10 core | done |
 | 5.2 | Baseline-aware reserve and warning | todo |
 | 5.3 | Zones | todo |
 | 5.4 | `battery`, `arbitrage`, `peak_shave` | todo |

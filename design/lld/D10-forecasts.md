@@ -41,19 +41,20 @@
 ```
 custom_components/powerplan/core/forecasts/
 ├── __init__.py
-├── model.py         Series, SeriesPoint, Forecasts, ForecastKind, Confidence
-├── baseline.py      HourOfWeekBaseline: update(), predict(), residual_sigma(), confidence(), weather term (v1.x)
-├── reconstruct.py   uncontrolled_history(): grid − controlled from recorder rows
+├── model.py         Series, SeriesPoint, Forecasts, PlannerForecasts, ForecastKind, ForecastSource, confidence_of()
+├── baseline.py      HourOfWeekBaseline: update(), predict(), residual_sigma(), confidence(), n_eff(), kwh_between(), weather term (v1.x)
+├── reconstruct.py   uncontrolled_history(): grid − controlled from recorder rows; Reconstruction, ControlledHistory
 ├── fit/
-│   ├── base.py      Fit, FitQuality, bounds, fallback rules
+│   ├── __init__.py  fit_all(): the FitKey → function table
+│   ├── base.py      Fit, FitQuality, FitKey, Gate, LoadHistory, EvSession, Episode, episodes(), resolve()
 │   ├── thermal.py   coast_rate(), heatup_rate() from on/off episodes
 │   ├── ev.py        charge_efficiency() from session energy vs SoC delta
 │   ├── nameplate.py p95 of measured power while on
 │   └── tank.py      standby_loss_w() from idle cooling episodes
-└── registry.py
+└── registry.py      forecast sources by key with their Schema (empty until providers/ register)
 
 custom_components/powerplan/providers/forecasts/
-├── base.py          ForecastSource protocol (async), entity readers
+├── base.py          the entity readers (the `ForecastSource` protocol itself is in `core/forecasts/model.py`, D-0219)
 ├── weather_entity.py  weather.get_forecasts (hourly) → outdoor °C series
 ├── recorder_baseline.py  reads recorder/LTS through the shared helper (D3 §5.11) and D4 load views
 └── pv_entities.py   v1.x: Forecast.Solar / Solcast / Open-Meteo Solar entities → production series
@@ -71,10 +72,17 @@ class Forecasts:
     def baseline_w(self, t) -> tuple[float, Confidence] | None
     def baseline_kwh(self, a, b) -> tuple[float, Confidence] | None
     def residual_sigma_w(self, t) -> float | None
-class HourOfWeekBaseline:
-    def update(self, window: ClosedWindow, uncontrolled_kwh: float, t_out: float | None) -> None
-    def predict(self, t: datetime, t_out: float | None) -> tuple[float, float, float]     # mean_w, sigma_w, confidence
-def fit_all(loads: Sequence[LoadHistory], now) -> Mapping[str, Fit]
+    def for_planner(self) -> PlannerForecasts          # D5's protocol: bare floats, 0.0 when not offered (D-0217)
+class HourOfWeekBaseline:                              # mutable around a frozen BaselineState, as D3's WindowMeter is
+    state: BaselineState                               # property; what D7 persists
+    def update(self, window: ClosedWindow, uncontrolled_kwh: float, t_out: float | None = None) -> None
+    def predict(self, t: datetime, t_out: float | None = None) -> tuple[float, float, float]   # mean_w, sigma_w, confidence
+    def confidence(self, t) -> float                   # min(bin, day) - D10 §2's two gates in one number (D-0211)
+    def n_eff(self, t) -> float                        # the bin's evidence, decayed to t
+    def residual_sigma(self, t) -> float | None        # None from a single sample (INV-62)
+    def kwh_between(self, a, b, t_out=None) -> tuple[float, float]
+    def bin_index(self, t) -> int
+def fit_all(loads: Sequence[LoadHistory], now) -> Mapping[str, Fit]     # keyed "<load_id>.<fit_key>" (D-0215)
 ```
 
 ---
@@ -89,18 +97,34 @@ class SeriesPoint:  start: datetime; end: datetime; value: float; confidence: fl
 @dataclass(frozen=True)
 class Series:       kind: ForecastKind; unit: str; points: tuple[SeriesPoint, ...]; source: str; issued_at: datetime
 
-@dataclass
-class Bin:          mean_w: float; m2: float; weight: float; n_eff: float; beta_w_per_k: float = 0.0     # Welford-style weighted moments
-@dataclass
-class BaselineState:  schema: int = 1; bins: list[Bin] (168); t_ref_c: float = 15.0; half_life_days: float = 28; last_update: datetime | None
-                      reconstruction: Literal["full", "partial", "none"]
+class Reconstruction(StrEnum): FULL = "full"; PARTIAL = "partial"; NONE = "none"    # closed vocabulary, so an enum
+
+@dataclass(frozen=True)
+class Bin:          mean_w: float = 0.0; m2: float = 0.0; weight: float = 0.0; samples: int = 0; beta_w_per_k: float = 0.0
+                    # n_eff is a property on weight, not a second field (D-0212)
+                    # samples is the undecayed count - a σ needs two, and D8 publishes it next to a learned number
+@dataclass(frozen=True)
+class BaselineState:  bins: tuple[Bin, ...] = () (168 once seeded); t_ref_c: float = 15.0; half_life_days: float = 28
+                      last_update: datetime | None; reconstruction: Reconstruction; schema: int = 1
 
 @dataclass(frozen=True)
 class FitQuality:   r2: float | None; n: int; span_days: float; ok: bool; reason: str
 @dataclass(frozen=True)
 class Fit:          key: str; load_id: str; value: float; unit: str; bounds: tuple[float, float]; quality: FitQuality
-                    configured: float | None; effective: float                     # effective = value if ok else configured (INV-63)
+                    configured: float | None; effective: float | None              # effective = value if ok else configured (INV-63)
                     fitted_at: datetime
+                    # effective is Optional because configured is: an unfitted slab loss coefficient is None,
+                    # and the store then skips the loss term instead of guessing one (D4 §5.7, D-0213)
+
+class FitKey(StrEnum):  LOSS_COEFF = "loss_coeff_w_per_k"; HEATUP_RATE = "heatup_k_per_h"
+                        CHARGE_EFFICIENCY = "charge_efficiency"; NAMEPLATE = "nameplate_w"; STANDBY_LOSS = "standby_loss_w"
+@dataclass(frozen=True)
+class Gate:         min_n: int; min_r2: float | None; min_span_days: float | None; unit: str = "episodes"
+@dataclass(frozen=True)
+class LoadHistory:  load_id: str; type_key: str; fits: tuple[FitKey, ...]; nameplate_w: float
+                    capacity_kwh_per_k: float | None; area_m2: float | None; configured: Mapping[FitKey, float | None]
+                    power_rows / on_rows / level_rows / indoor_rows / outdoor_rows: tuple[tuple[datetime, …], ...]
+                    sessions: tuple[EvSession, ...]      # the provider's boundary, every fit is a pure function of it
 ```
 
 ---
@@ -145,6 +169,17 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 | EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy | Σ(ΔSoC × capacity) / Σ energy | [0.75, 0.98] | n ≥ 3 |
 | `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured | n ≥ 100 samples |
 | tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity | [20, 200] | n ≥ 3 |
+
+**The per-m² bounds and a two-node floor.** A coast fit turns the *store's* fall
+into watts, and on a real floor the screed is one mass and the room another: only
+the screed's share of the house's loss comes out of the screed, and that share is
+`C_screed / (C_screed + C_room)` ≈ 27 % at 50 mm (D4 §5.7's 0.0275 kWh/K·m² against
+the room's 0.075). A 2000s-envelope slab (0.7 W/m²K) therefore fits ≈ 0.19 W/K·m²,
+under this table's 0.5 floor, and the fit is **not applied** - the load keeps
+`configured`, which for a slab is `None`, and the loss term is skipped (D4 §5.7).
+That is the conservative outcome and INV-63 working, not a bug; the bounds are left
+as they are until a house says otherwise (`design/DECISIONS.md` D-0216). Leaky
+envelopes and heavy screeds land inside the bounds and are applied.
 
 `effective = value if quality.ok else configured`. Every fit is published with its quality (`sensor.<load>_learned_<key>`, diagnostic, disabled by default). A fit that fails its gate is *kept as information* and never applied. D4 reads `effective` through the load's `Learned` state.
 
@@ -206,6 +241,13 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 10. INV-62 cross-test with D6: a perfect baseline never reduces the reserve below `σ_floor × k × t_rem`.
 11. Fits never run inside `engine.tick` (a test asserts the tick calls no fit function).
 12. 15-min windows aggregate into hour bins correctly across DST.
+13. Tank standby loss from three idle episodes recovers `tests/sim/tank.py`'s 60 W
+    within 10 %; two episodes are not applied; an episode falling faster than
+    3 K/h is a draw and is dropped (§5.6's fifth row had no item).
+14. The forecast-source registry: a registered source is found by key and by kind,
+    built from saved options, an unknown key raises, and `core/` ships no HA source.
+15. `Forecasts.for_planner()` satisfies D5's `strategies/context.Forecasts`
+    protocol, and an unoffered baseline subtracts nothing from `Headroom` (D-0217).
 
 ---
 
