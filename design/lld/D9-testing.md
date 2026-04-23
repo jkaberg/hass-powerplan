@@ -77,8 +77,14 @@ class Scenario:          name: str; house: str; days: int; curve: CurveSpec; wea
 
 @dataclass
 class BacktestMetrics:   windows: int; over_target: int; max_window_kwh: float; level_reached: str; fee: Money
-                         comfort_violation_min: float; kwh_shifted: float; cost_energy: Money; cost_counterfactual: Money   # produced by D11's Accounting over the replay
+                         metric_kw: float; target_kw: float; gate: bool         # WP0.9b: the metric and the bound behind level_reached
+                         confidence: str; coarse_windows: int; estimated_windows: int; days: int   # how much of the reconstruction to trust (§5.4)
+                         load_kwh: Mapping[str, float]; load_quality: Mapping[str, str]
+                         comfort_violation_min: float; kwh_shifted: float; cost_energy: Money; cost_counterfactual: Money; savings: Money   # produced by D11's Accounting over the replay
                          writes: Mapping[str, int]; sessions_dropped: int; reconstruction: str
+                         # A plain replay fills everything but the four controller fields
+                         # (comfort, kwh_shifted, writes, sessions_dropped) and the three money
+                         # ones, which stay None until WP0.10 and `--simulate` (D-0226).
 
 # tests/sim/base.py owns these four: they are the simulators' own vocabulary and
 # import nothing from custom_components, so a simulator does not move when the
@@ -179,6 +185,21 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 ### 5.4 Backtest
 
 `tools/backtest.py --months 12 --preset no.tensio.household --db /config/home-assistant_v2.db --loads loads.yaml` → replays history through `WindowMeter` (reconstruction), `Evaluator`, and - with `--simulate` - the full engine with simulated loads replacing the historical controlled loads (their historical demand becomes the simulated demand). Outputs `BacktestMetrics` and a per-window CSV; `--compare a.json b.json` diffs two runs. `cost_energy` and `cost_counterfactual` come from the same `Accounting` class the planning loop runs (D11), fed by the replayed slots - the backtest and the live sensor cannot disagree on method, only on inputs. Gate for phase 0 (HLD §9): every window under target for the NO preset on the reference history **in `--simulate` mode** - the historical controlled loads are replaced by simulators fed their historical demand, so the controller is what is judged; the plain replay (no `--simulate`) is the D2/D3 reconstruction check and lands trivially under target because the history already did. CI runs the simulator mode on synthetic houses; the recorder mode is an owner-run tool.
+
+The recorder and CSV halves (D-0220). The flags: `--recorder <copy.db>` (opened read-only, and a copy - never the live database) or `--csv <dir>`, `--tariff`, `--register`, `--power`, `--register-anchor`, `--loads`, `--from/--to`, `--tz`, `--window-min`, `--target`, `--out`. What a real recorder forces, in order of how much it changes the answer:
+
+| | |
+|---|---|
+| **Long-term statistics, not `states`** | Raw states are purged in days; `statistics` (hourly) spans years and `statistics_short_term` (5 min) about ten days. Hourly and 5-min **mean** rows are merged, the fine ones covering the recent tail; `sum` rows are read hourly only (mixing cadences in one register for a week's sake isn't worth it). `states` is read for one thing: a load whose only record is a switch. |
+| **The register's anchor is measured** | A row is filed under its period's start and carries the last value the sensor reported inside it - the period's **end** for a continuously updating sensor, its **start** for a latched AMS register reporting at HH:00:12 (D3 §5.5). Getting it wrong shifts every window an hour and moves peaks across local days. Both candidates are scored against the power history and the closer wins (D-0221). |
+| **Holes are holes** | `reconstruct_windows` interpolates across a gap, which smears a peak, so a window without a register row within `max(60 s, cadence/2)` of both boundaries is rebuilt from power (`estimated`) or dropped and counted in a note (D-0222, PLAN §6 R8). |
+| **Units, not flags** | `has_mean` is NULL and `has_sum` 0 on every power sensor in current HA, so the unit decides (D-0223). |
+| **The zone is never guessed** | `--tz` → the export's `meta.json` → a `.storage/core.config` next to the copy → the tariff file's `tz` → refuse. The report says which (D-0224). |
+| **Per load: four qualities** | `energy`, `power`, `on_fraction` (`nameplate × on` from states) or `missing`; `reconstruction` is `full`/`partial`/`none` over them (§2). A `climate` entity's state is its mode, not its element's duty, so it's never read as on/off (D-0227). |
+| **Coarse is D2's word** | An hourly register under a 15-min tariff is handed over as hourly windows, and D2 splits them and marks every part coarse (§5.1); `coarse_windows` and `estimated_windows` count tariff-length windows. |
+| **`over_target`** | Per tariff window, against `resolve_target_kw` on the period's billed metric - with `auto`, the step the period reached, so the count reads "windows that would have raised the step" (D-0225). `gate` is `over_target == 0`. |
+
+The CSV layout is one file per role (`grid_register.csv`, `grid_power.csv`, `loads/<id>.{energy,power,onoff}.csv`, optional `meta.json`), two columns each, every timestamp with a UTC offset (D-0228). The house check this produces is logged under `design/benchmarks/house/<date>-recorder-backtest.md` (§5.12).
 
 ### 5.5 Golden preset tests
 

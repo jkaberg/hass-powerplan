@@ -857,3 +857,53 @@ On a two-node floor only the screed's share of the loss (~27 % per m²) comes ou
 
 Declared in `core/forecasts/model.py`, with the entity readers in `providers/forecasts/base.py`. The registry is in `core/`, and a core registry typed by a providers protocol would invert INV-2's direction. It mentions no HA type. Affects D10 §3.
 **Rejected:** keeping it in `providers/` with a loosely typed registry - the flow renders from the registry, so a type error would move to the flow.
+
+### D-0220 · The backtest ships in two halves; `--simulate` waits for the engine
+
+`tools/backtest.py --recorder|--csv` reads history, reconstructs windows (D3 §5.11), bills them (D2) and reports `BacktestMetrics`. `--simulate` needs the engine. The replay puts reconstruction, money and the recorder's quirks under test early, and showed the recorder holds years of hourly register rows but no water-heater power (PLAN §6 R8). Affects D9 §5.4.
+**Rejected:** one tool in one go - the replay has no dependency on the engine.
+
+### D-0221 · What a statistics row's `sum` refers to is measured, not assumed
+
+`_anchor` scores both readings of an hourly `sum` (value at the period's start or its end) against the energy the power history shows, and takes the closer; `--register-anchor` overrides. HA files a row under its start with the last value inside it, which for a Norwegian AMS register (one report at HH:00:12, D3 §5.5) is the register at HH. Either fixed assumption shifts every window an hour and moves evening peaks across days. On the reference house: mean error 0.026 kWh per window for `start`, 0.807 for `end`.
+**Rejected:** HA's `end` convention - wrong for the one meter this exists for, invisibly in totals, decisively in peaks.
+
+### D-0222 · A window the register didn't measure is filled from power or dropped, never interpolated
+
+Unless register rows sit within `max(60 s, cadence / 2)` of both boundaries, the window is rebuilt from the power history (`estimated`) or dropped with a note. D3 §5.11's helper interpolates across holes, which smears a peak and still reports `exact`. The helper is right for a baseline; for a peak metric the caller decides differently.
+**Rejected:** interpolating and marking `estimated` - the dropped windows on the reference house are a recorder outage, not a quiet hour.
+
+### D-0223 · The reader dispatches on the unit, not `has_mean`/`has_sum`
+
+A `statistics_meta` row with Wh/kWh/MWh is a register, W/kW/MW is power. `has_mean` is NULL on current HA and moved to `mean_type`; the unit works across versions. Affects D9 §5.4.
+**Rejected:** `mean_type` with a fallback - two schema variants now, three at the next rename.
+
+### D-0224 · The backtest's zone has four sources and no default
+
+`--tz`, then the export's `meta.json`, then `.storage/core.config` beside the database, then the preset's `tz` (D-0111); otherwise refuse, naming `--tz`. The report says which was used. The recorder stores only UTC epochs, and a wrong zone gives a plausible table, not an error. Affects D9 §6.
+**Rejected:** the system zone - databases are routinely read on another machine.
+
+### D-0225 · "Over target" is counted per tariff window against the step the period reached
+
+`over_target` counts windows above `target_kw` from D2's `resolve_target_kw` (for `auto`, the upper bound of the step reached); `--target` asks about another bound. `gate` is zero over target per window per period. The top step's bound is infinite and reports `open`. Linear and tier markets fall back to the metric.
+**Rejected:** counting windows above the period's metric - on a top-3 mean most windows are above it by construction.
+
+### D-0226 · `BacktestMetrics` carries what a plain replay can fill, and says what it can't
+
+A replay has no controller, so D9 §4's comfort minutes, shifted kWh, writes and dropped sessions are left out rather than reported as zero. It adds `metric_kw`, `target_kw`, `gate`, `confidence`, coarse and estimated window counts, `days` and per-load kWh and quality, so a reader can judge each row. The money columns stay `None` until accounting fills them. Affects D9 §4, §5.4.
+**Rejected:** D9 §4 filled with zeros - `sessions_dropped = 0` on a replay isn't a measurement.
+
+### D-0227 · Per-load energy has four qualities, and a climate entity's mode isn't one
+
+A load reads `energy` (own register), `power` (mean power integrated), `on_fraction` (nameplate × on-time from raw states) or `missing`; `reconstruction` summarises them (D9 §2). A `climate` entity's state is its mode: the reference house's tank is a `generic_thermostat` that reads `heat` for months, and nameplate × that would fabricate 2 kW × 240 h. So it reads `missing`, which is true.
+**Rejected:** `hvac_action` from state attributes - purged with the states, so ten days of a year.
+
+### D-0228 · The CSV layout is one file per role, and a naive timestamp is refused
+
+`--csv <dir>` reads `grid_register.csv`, `grid_power.csv`, `loads/<id>.{energy,power,onoff}.csv` and an optional `meta.json` (`tz`, `window_min`). Two columns, a documented but unparsed header, and ISO-8601 with offset; a naive timestamp raises (same rule as D-0224). A file name is the one piece of metadata a hand export always has.
+**Rejected:** one wide CSV with a mapped header - the roles differ in kind, so it'd need a schema file, and partial exports become special cases.
+
+### D-0229 · The total row sums money and windows and reports the worst month for the rest
+
+`total` sums windows, `over_target`, coarse and estimated counts, days, fees and kWh; takes the max window; reports the highest month's metric, level and target; ANDs `gate`; and takes the worst confidence and reconstruction. Twelve months at 8.7 kW isn't 104 kW, and a mean would be a bill nobody was sent.
+**Rejected:** a blank metric in the total - the worst month is what the gate asks about.
