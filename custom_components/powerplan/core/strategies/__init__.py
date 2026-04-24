@@ -41,6 +41,8 @@ from .base import (
     register,
     supports,
 )
+from .best_save import BestSave
+from .cheapest_hours import CheapestHours
 from .context import (
     CeilingSource,
     Curves,
@@ -53,7 +55,10 @@ from .context import (
 )
 from .deadline_fill import DeadlineFill, FlatPolicy, plan_one
 from .deadlines import DeadlineNeed, first, needs
+from .heat_capacitor import HeatCapacitor
 from .plan import COVER_EPS_KWH, build_plan, inputs_digest
+from .run_once import RunOnce
+from .schedule import Schedule
 
 __all__ = [
     "COMMIT_MIN",
@@ -62,7 +67,9 @@ __all__ = [
     "MIN_REPLAN_INTERVAL_S",
     "REQUIREMENT_TOLERANCE",
     "Always",
+    "BestSave",
     "CeilingSource",
+    "CheapestHours",
     "Curves",
     "DeadlineFill",
     "DeadlineNeed",
@@ -70,12 +77,15 @@ __all__ = [
     "FlatPolicy",
     "Forecasts",
     "Headroom",
+    "HeatCapacitor",
     "LoadView",
     "Plan",
     "PlanContext",
     "PlanMode",
     "PlanSlot",
     "ReplanTrigger",
+    "RunOnce",
+    "Schedule",
     "SetpointDelta",
     "SiteContext",
     "SitePlan",

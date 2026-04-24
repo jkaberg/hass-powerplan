@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from ..model import (
     Confidence,
+    Desired,
     DesiredState,
     Money,
     Plan,
@@ -36,17 +37,63 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
+    from ..model import Slot
+
 __all__ = [
     "COMMIT_MIN",
     "COVER_EPS_KWH",
+    "TRUST",
     "DesiredState",
     "Plan",
     "PlanMode",
     "PlanSlot",
     "SetpointDelta",
     "build_plan",
+    "confidence_of",
+    "desired_for",
     "inputs_digest",
 ]
+
+#: Most to least trustworthy (INV-5); the least trusted slot decides the plan.
+TRUST: Final = (
+    Confidence.KNOWN,
+    Confidence.STALE,
+    Confidence.ESTIMATED,
+    Confidence.SYNTHESISED,
+)
+
+
+def confidence_of(slots: Sequence[Slot]) -> Confidence:
+    """Return the least trusted confidence among `slots` (D5 §8).
+
+    A plan built on synthesised prices says so, and the hysteresis is doubled for
+    it - the numbers are a shape, not a forecast (INV-5). An empty selection is
+    `KNOWN`: a plan that runs nowhere trusts nothing and needs no allowance.
+    """
+    if not slots:
+        return Confidence.KNOWN
+    return max((slot.confidence for slot in slots), key=TRUST.index)
+
+
+def desired_for(kind: str, delta_k: float) -> DesiredState | None:
+    """Return what a `±Δ` slot asks of a load of this control kind (D5 §2, §5.7).
+
+    A thermostat cannot be capped, only re-targeted: a `SETPOINT` load feels the
+    delta in kelvin and a `MODE` load feels the option it maps to - `comfort` for
+    a charge slot, `shed` for a coast slot, nothing in the middle. A `MODULATE` or
+    `SWITCH` load has no second lever and the envelope is the whole answer
+    (D4 §5.4, §5.5).
+    """
+    if kind == "setpoint":
+        return delta_k
+    if kind != "mode":
+        return None
+    if delta_k > 0.0:
+        return Desired.COMFORT
+    if delta_k < 0.0:
+        return Desired.SHED
+    return None
+
 
 #: How close to the requirement counts as covered, in kWh. A margin is energy,
 #: never power, and one milliwatt-hour is the float noise of summing

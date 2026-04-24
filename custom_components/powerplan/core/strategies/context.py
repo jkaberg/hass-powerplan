@@ -26,19 +26,21 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta, tzinfo
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from datetime import date, datetime, timedelta, tzinfo
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Final, Literal, Protocol
 
 from ..loads import CalendarEvent, PresenceMode, TargetProfile
 from ..loads.stores.base import StoreModel
 from ..model import Carrier, Demand, Mode, Plan, PriceCurve, Slot
-from ..pricing import Event, HysteresisPolicy
+from ..pricing import Event, EventKind, HolidayCalendar, HysteresisPolicy
 from ..tariffs import AUTO, Target
 
 if TYPE_CHECKING:
     from ..loads import Load
 
 __all__ = [
+    "NO_HOLIDAYS",
     "CeilingSource",
     "Curves",
     "Forecasts",
@@ -48,6 +50,7 @@ __all__ = [
     "Quantiser",
     "SiteContext",
     "SitePlan",
+    "with_rewards",
 ]
 
 
@@ -83,6 +86,29 @@ class Forecasts(Protocol):
     def baseline_w(self, t: datetime) -> float:
         """Return the uncontrolled load expected at `t`."""
         ...
+
+
+class _NoHolidays:
+    """The calendar a site without one has (D1 §2).
+
+    A `TimeFilter` is evaluated against a calendar even when its holiday mode is
+    `IGNORE`, so the planner always has one to hand. The real calendar is the
+    `holidays` package with the site's country and D7 passes it in; the
+    default here says "nothing is a holiday", which is what a filter that does
+    not ask about holidays means anyway.
+    """
+
+    def is_holiday(self, day: date) -> bool:
+        """Return `False`: without a calendar, no day is a holiday."""
+        return False
+
+    def name(self, day: date) -> str | None:
+        """Return `None`: without a calendar, no day has a name."""
+        return None
+
+
+#: The calendar used when the site has none (`design/DECISIONS.md` D-0190).
+NO_HOLIDAYS: Final[HolidayCalendar] = _NoHolidays()
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +158,53 @@ class Headroom:
         for start, watts in taken.items():
             room[start] = max(0.0, self.w_at(start) - watts)
         return replace(self, by_slot=room)
+
+
+def with_rewards(curve: PriceCurve, events: Sequence[Event], *, participates: bool) -> PriceCurve:
+    """Return `curve` with `reward` events folded into the price (D5 §2, §9 15).
+
+    A demand-response reward is an ordinary price signal: turning down during the
+    window earns `per_kwh`, so *consuming* during it costs that much more, and the
+    cheapest way to make every strategy exploit it is to raise the price it sees.
+    Nothing else in the planner needs to know events exist.
+
+    Only for a load with `participate_in_events` - a household enrols a charger in
+    a flexibility scheme, not its bathroom floor, and a load that is not enrolled
+    earns nothing by turning down, so its price must not move (INV-31: strategies
+    see the composed curve, and this is a composition of one more component).
+
+    A slot is priced by what holds at its **start**, the same way every other price
+    is keyed (`design/DECISIONS.md` D-0198).
+    """
+    if not participates:
+        return curve
+    rewards = tuple(event for event in events if event.kind is EventKind.REWARD)
+    if not rewards:
+        return curve
+    return replace(curve, slots=tuple(_rewarded(slot, rewards) for slot in curve.slots))
+
+
+def _rewarded(slot: Slot, rewards: Sequence[Event]) -> Slot:
+    """Return `slot` with every active reward added to its price (D1 §2)."""
+    active = [
+        amount
+        for event in rewards
+        if event.is_active_at(slot.start) and (amount := _per_kwh(event)) is not None
+    ]
+    extra = sum(active, Decimal(0))
+    if not extra:
+        return slot
+    return replace(
+        slot,
+        total=slot.total + extra,
+        components={**slot.components, "reward": extra},
+    )
+
+
+def _per_kwh(event: Event) -> Decimal | None:
+    """Return a reward event's `per_kwh` payload, or `None` when it carries none."""
+    value = event.payload.get("per_kwh")
+    return None if value is None else Decimal(str(value))
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +394,8 @@ class PlanContext:
     forecasts: Forecasts | None = None
     events: Sequence[Event] = ()
     horizon_h: float = 48.0
+    holidays: HolidayCalendar = NO_HOLIDAYS
+    previous: Plan | None = None
 
     @property
     def store(self) -> StoreModel | None:
@@ -364,6 +439,7 @@ class SiteContext:
     forecasts: Forecasts | None = None
     events: Sequence[Event] = ()
     horizon_h: float = 48.0
+    holidays: HolidayCalendar = NO_HOLIDAYS
     stale: bool = False
 
 

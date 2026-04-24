@@ -173,7 +173,7 @@ Exactness: one load, linear cost, box constraints, one equality, so sort-and-fil
 
 ### 5.3 Block constraint (tanks, cycles, chargers that dislike fragmentation)
 
-Greedy over *blocks*: enumerate the shortest contiguous run from each start that reaches `min_block_min` within the window; score = duration-weighted mean price; pick the cheapest block (ties to the earliest), extend it slot by slot while the next adjacent slot is cheaper than the best remaining block's mean, repeat until covered. The requirement taken by a block is **spread** across its slots in proportion to their capacity, not front-loaded, so a block that needs half its capacity still runs for its whole length - front-loading would break the very run length the variant exists for (D-0137); extension slots are filled to capacity. Bounded suboptimality; test 2 checks it is within 5 % of brute force on small instances and never violates the block length. Cycles use `run_once` (§5.6) instead, which is exact for a single fixed-length block.
+Greedy over *blocks* (D-0199): every contiguous run of usable slots reaching `min_block_min` inside the window is a candidate, scored by its **capacity-weighted** mean price (the cost per kWh of the energy the run can carry, prefix sums keep the enumeration O(n²)). Pick the cheapest, ties to the earliest. While the requirement isn't covered, extend the run slot by slot while the adjacent slot is cheaper than the best free block, else take that block too. Once covered, keep extending while a neighbour is cheaper than the chosen set's weighted mean, then drop any slot dearer than the mean, dearest first, as long as the cover holds and every remaining run is still at least the block long. The requirement is **spread** across the chosen set by capacity, not front-loaded, so a block that needs half its capacity still runs its whole length - front-loading would break the very run length the variant exists for (D-0137). With spreading a set costs `required × its weighted mean`, so for a single run the cheapest block is the optimum, with several runs it's a heuristic. Test 2 checks it's within 5 % of brute force on its seeded instances (the worst gap over 1 200 instances on four seeds is 9.6 % of the instance's price span) and that no run is ever shorter than the block. Cycles use `run_once` (§5.6), which is exact for a single fixed-length block.
 
 ### 5.4 `cheapest_hours`
 
@@ -183,11 +183,11 @@ Parameters: `hours_per_day` (or `slots`), `window` (`TimeFilter`, default the wh
 
 Parameters: `min_saving` (fraction of the slot price, default 0.10, or absolute), `max_off_min` (120), `min_on_min` (30), `recovery_min` (the on-time needed after an off period, default = off duration × 0.5).
 ```
-for each slot s (time order): find the next slot s' after s that is "on"; saving = price[s] − price[s']
+for each slot s (time order): s' = the cheapest slot in (s, s + max_off_min] (D-0192); saving = price[s] − price[s']
     off if saving ≥ min_saving × price[s] and the off-run so far < max_off_min and the previous on-run ≥ min_on_min
     enforce recovery: after an off-run of d minutes, the next recovery_min(d) minutes are on regardless of price
 ```
-Envelope = 0 in off slots, `None` (free) in on slots - best_save never *forces* consumption, it only postpones.
+Envelope = 0 in off slots, `None` (free) in on slots. best_save never *forces* consumption, it only postpones.
 
 ### 5.6 `run_once` (INV-59)
 
@@ -295,7 +295,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 ## 9. Tests that must exist before merge
 
 1. `plan_one` equals brute force on 1 000 random instances (property test; the one that stops someone "improving" the greedy).
-2. Block variant within 5 % of brute force on small instances; never violates `min_block_min`.
+2. Block variant within 5 % of brute force on the seeded small instances (the worst gap over 1 200 instances on four seeds is recorded in D-0199); never violates `min_block_min`.
 3. Flat curve: identical plans across 96 consecutive replans with float noise added to prices (INV-32).
 4. Force mode: time order from now, deadline ignored, stops when covered.
 5. `cheapest_hours` consecutive and non-consecutive; `max_price` exclusion.

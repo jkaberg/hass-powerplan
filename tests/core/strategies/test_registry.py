@@ -50,15 +50,42 @@ from tests.core.strategies.conftest import (
 )
 
 
-def test_the_two_strategies_of_wp0_6_are_registered_with_their_schemas() -> None:
-    """`keys()` is what the flow offers; each entry carries its own fields."""
-    assert keys() == ("always", "deadline_fill")
-    assert supports("ev") == ("always", "deadline_fill")
+def test_the_registered_roster_is_what_the_flow_offers() -> None:
+    """`keys()` is the roster; each entry carries its own fields (D5 §3, §6).
+
+    Deliberate: `battery` (`arbitrage`, `peak_shave`) is phase 5 and `surplus` is
+    v1.x, so neither is a row yet, and the combinators are not rows at all - they
+    are extras on any load (D5 §5.11, `base.py`'s roster comment).
+    """
+    assert keys() == (
+        "always",
+        "best_save",
+        "cheapest_hours",
+        "deadline_fill",
+        "heat_capacitor",
+        "run_once",
+        "schedule",
+    )
+    assert supports("ev") == ("always", "cheapest_hours", "deadline_fill")
 
     fields = {field.key for field in entry("deadline_fill").schema}
     assert {"min_block_min", "flat_policy", "prefer_late"} <= fields
     assert {field.key for field in COMMON_SCHEMA} <= fields
     assert all(field.advanced for field in entry("deadline_fill").schema)
+
+
+#: What every strategy's schema carries: D5 §6's two common knobs and the three
+#: combinators, which are extras on any load rather than strategies (§5.11).
+COMMON_DEFAULTS = {
+    "participate_in_events": False,
+    "horizon_h": 48,
+    "threshold_off_above": None,
+    "threshold_on_below": None,
+    "merge_with": None,
+    "merge_op": "or",
+    "opportunistic": False,
+    "opportunistic_below_price": 0,
+}
 
 
 def test_params_of_fills_in_every_default() -> None:
@@ -67,11 +94,16 @@ def test_params_of_fills_in_every_default() -> None:
         "min_block_min": 0,
         "flat_policy": "fill",
         "prefer_late": False,
-        "participate_in_events": False,
-        "horizon_h": 48,
+        **COMMON_DEFAULTS,
     }
     assert params_of("deadline_fill", {"min_block_min": 30})["min_block_min"] == 30
-    assert params_of("always", {}) == {"participate_in_events": False, "horizon_h": 48}
+    assert params_of("always", {}) == COMMON_DEFAULTS
+
+
+def test_every_strategy_takes_the_combinators() -> None:
+    """A combinator is an extra on any load, so it is in every schema (§5.11)."""
+    for key in keys():
+        assert set(COMMON_DEFAULTS) <= {field.key for field in entry(key).schema}, key
 
 
 def test_always_defers_to_the_allocator_in_every_slot() -> None:

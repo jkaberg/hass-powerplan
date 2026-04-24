@@ -172,83 +172,180 @@ def _fill_blocks(
 ) -> dict[int, float]:
     """Fill in contiguous blocks of at least `min_block_min` minutes (§5.3).
 
-    Enumerate the shortest run from each start that reaches the block length,
-    score it by mean price, take the cheapest, then extend it slot by slot while
-    the adjacent slot is cheaper than the best remaining block's mean. Bounded
-    suboptimality, and never a run shorter than the block: a tank element that
-    cycles every quarter hour wears out, and a charger that does dislikes it.
-
-    Within a block the requirement is **spread**, not front-loaded, so a block
-    that only needs half its capacity still runs for its whole length
-    (`design/DECISIONS.md` D-0135).
+    Every contiguous run that reaches the block length is a candidate block,
+    scored by the capacity-weighted mean price of the energy it can carry - so
+    for one run the cheapest block *is* the cheapest placement, since the
+    requirement is spread over it (D-0137). Take the cheapest; while the
+    requirement is not yet covered, extend it slot by slot while the adjacent
+    slot beats the best block still on the table, else take that block too;
+    once covered, keep extending while a neighbour is cheaper than the chosen
+    set's mean, then drop dear run ends the cover can spare. Never a run
+    shorter than the block: a tank element that cycles every quarter hour
+    wears out, and a charger that does dislikes it (§5.3, D-0199).
     """
-    blocks = _blocks(candidates, min_block_min)
     by_index = {row.index: row for row in candidates}
-    taken: dict[int, float] = {}
+    blocks = _blocks(by_index, min_block_min)
     used: set[int] = set()
-    remaining = required
 
-    while remaining > _EPS_KWH:
-        free = [block for block in blocks if not (set(block) & used)]
+    def capacity_of(indices: set[int]) -> float:
+        return sum(by_index[index].cap_kwh for index in indices)
+
+    def free_blocks() -> list[_Block]:
+        return [block for block in blocks if not (set(range(block.start, block.stop)) & used)]
+
+    while capacity_of(used) + _EPS_KWH < required:
+        free = free_blocks()
         if not free:
             break
-        block = min(free, key=lambda rows: (_mean_price(by_index, rows), rows[0]))
-        capacity = sum(by_index[index].cap_kwh for index in block)
-        share = min(1.0, remaining / capacity) if capacity > 0.0 else 0.0
-        for index in block:
-            row = by_index[index]
-            take = row.cap_kwh * share
-            if min_w > 0.0:
-                take = min(row.cap_kwh, max(take, min_w * row.hours / 1000.0))
-            taken[index] = take
-            remaining -= take
-        used.update(block)
+        block = min(free, key=lambda item: (item.mean, item.start, item.stop))
+        used.update(range(block.start, block.stop))
 
-        while remaining > _EPS_KWH:
-            rest = [rows for rows in blocks if not (set(rows) & used)]
-            bar = min((_mean_price(by_index, rows) for rows in rest), default=None)
+        # Not yet covered: extend the run while the adjacent slot beats the best
+        # block still on the table (§5.3).
+        while capacity_of(used) + _EPS_KWH < required:
+            rest = free_blocks()
+            bar = min((item.mean for item in rest), default=None)
             nxt = _cheapest_adjacent(by_index, used, bar)
             if nxt is None:
                 break
-            row = by_index[nxt]
-            take = min(row.cap_kwh, remaining)
-            if min_w > 0.0:
-                take = min(row.cap_kwh, max(take, min_w * row.hours / 1000.0))
-            taken[nxt] = take
-            remaining -= take
             used.add(nxt)
 
+    # Covered: keep extending while an adjacent slot is cheaper than the chosen
+    # set's capacity-weighted mean - spreading the same energy over it lowers the
+    # cost (§5.3, D-0199). Stops as soon as the cheapest neighbour would raise it.
+    while used:
+        mean = _weighted_mean_price(by_index, used)
+        nxt = _cheapest_adjacent(by_index, used, mean)
+        if nxt is None:
+            break
+        used.add(nxt)
+
+    _prune_ends(by_index, used, required, min_block_min=min_block_min)
+    return _spread_over(by_index, used, required, min_w=min_w)
+
+
+@dataclass(frozen=True, slots=True)
+class _Block:
+    """One candidate run `[start, stop)` of consecutive slot indices and its score."""
+
+    start: int
+    stop: int
+    mean: Decimal
+
+
+def _prune_ends(
+    by_index: Mapping[int, _Candidate], used: set[int], required: float, *, min_block_min: int
+) -> None:
+    """Drop slots dearer than the set's mean while the cover and the blocks hold.
+
+    The block phase may have taken a run for the sake of its cheap slots; once
+    the requirement is covered, any slot priced above the chosen set's weighted
+    mean only raises the spread cost. Dearest first, a slot is dropped when the
+    remaining capacity still covers the requirement and every run that remains -
+    the run it ended, or the two halves it split - is at least
+    `min_block_min` long (§5.3, D-0199).
+    """
+    while True:
+        mean = _weighted_mean_price(by_index, used)
+        candidates = sorted(
+            (index for index in used if by_index[index].price > mean),
+            key=lambda index: (-by_index[index].price, index),
+        )
+        dropped = False
+        for index in candidates:
+            trial = used - {index}
+            if sum(by_index[i].cap_kwh for i in trial) + _EPS_KWH < required:
+                continue
+            if any(_run_minutes(by_index, trial, i) < min_block_min for i in trial):
+                continue
+            used.discard(index)
+            dropped = True
+            break
+        if not dropped:
+            return
+
+
+def _run_minutes(by_index: Mapping[int, _Candidate], chosen: set[int], index: int) -> float:
+    """Return the length in minutes of the run in `chosen` that contains `index`."""
+    lo = index
+    while (lo - 1) in chosen:
+        lo -= 1
+    hi = index
+    while (hi + 1) in chosen:
+        hi += 1
+    return sum(by_index[i].hours * 60.0 for i in range(lo, hi + 1))
+
+
+def _weighted_mean_price(by_index: Mapping[int, _Candidate], indices: set[int]) -> Decimal:
+    """Return the capacity-weighted mean price of the chosen slots (§5.3)."""
+    capacity = sum(by_index[index].cap_kwh for index in indices)
+    if capacity <= 0.0:
+        return Decimal(0)
+    total = sum(
+        (by_index[index].price * Decimal(str(by_index[index].cap_kwh)) for index in indices),
+        Decimal(0),
+    )
+    return total / Decimal(str(capacity))
+
+
+def _spread_over(
+    by_index: Mapping[int, _Candidate], indices: set[int], required: float, *, min_w: float
+) -> dict[int, float]:
+    """Spread `required` across `indices` in proportion to capacity (D-0137).
+
+    A run that only needs half its capacity still runs for its whole length at a
+    lower power; the `min_w` floor lifts a slot the device could not run in.
+    """
+    capacity = sum(by_index[index].cap_kwh for index in indices)
+    if capacity <= 0.0:
+        return {}
+    share = min(1.0, required / capacity)
+    taken: dict[int, float] = {}
+    for index in sorted(indices):
+        row = by_index[index]
+        take = row.cap_kwh * share
+        if min_w > 0.0:
+            take = min(row.cap_kwh, max(take, min_w * row.hours / 1000.0))
+        taken[index] = take
     return taken
 
 
-def _blocks(candidates: Sequence[_Candidate], min_block_min: int) -> tuple[tuple[int, ...], ...]:
-    """Return the shortest contiguous run from each start that reaches the length."""
-    by_index = {row.index: row for row in candidates}
-    out: list[tuple[int, ...]] = []
-    for row in candidates:
-        run: list[int] = []
-        minutes = 0.0
-        cursor = row.index
-        while cursor in by_index:
-            run.append(cursor)
-            minutes += by_index[cursor].hours * 60.0
-            if minutes >= min_block_min:
-                out.append(tuple(run))
-                break
-            cursor += 1
+def _blocks(by_index: Mapping[int, _Candidate], min_block_min: int) -> tuple[_Block, ...]:
+    """Return every contiguous run of candidates that reaches the block length.
+
+    Runs are bounded by the gaps in the candidate indices (a slot the load cannot
+    use ends a run). Prefix sums keep the enumeration at O(n²) for n slots, with
+    the capacity-weighted mean of each run in O(1) (§5.3, D-0199).
+    """
+    if not by_index:
+        return ()
+    indices = sorted(by_index)
+    out: list[_Block] = []
+    segment_start = 0
+    for position in range(1, len(indices) + 1):
+        if position == len(indices) or indices[position] != indices[position - 1] + 1:
+            segment = indices[segment_start:position]
+            minutes = [0.0]
+            cap = [0.0]
+            weighted = [Decimal(0)]
+            for index in segment:
+                row = by_index[index]
+                minutes.append(minutes[-1] + row.hours * 60.0)
+                cap.append(cap[-1] + row.cap_kwh)
+                weighted.append(weighted[-1] + row.price * Decimal(str(row.cap_kwh)))
+            for i in range(len(segment)):
+                for j in range(i + 1, len(segment) + 1):
+                    if minutes[j] - minutes[i] < min_block_min:
+                        continue
+                    capacity = cap[j] - cap[i]
+                    mean = (
+                        (weighted[j] - weighted[i]) / Decimal(str(capacity))
+                        if capacity > 0.0
+                        else Decimal(0)
+                    )
+                    out.append(_Block(start=segment[i], stop=segment[j - 1] + 1, mean=mean))
+            segment_start = position
     return tuple(out)
-
-
-def _mean_price(by_index: Mapping[int, _Candidate], block: Sequence[int]) -> Decimal:
-    """Return the duration-weighted mean price of a block (§5.3)."""
-    hours = sum(by_index[index].hours for index in block)
-    if hours <= 0.0:
-        return Decimal(0)
-    total = sum(
-        (by_index[index].price * Decimal(str(by_index[index].hours)) for index in block),
-        Decimal(0),
-    )
-    return total / Decimal(str(hours))
 
 
 def _cheapest_adjacent(

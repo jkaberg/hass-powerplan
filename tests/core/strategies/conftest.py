@@ -17,7 +17,7 @@ step-up deadline is a fill (D5 §2).
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -116,11 +116,20 @@ def days_curve(
     flat: bool = False,
     first: date = ORDINARY,
     days: int = 2,
+    minutes: int = 15,
     confidence: Confidence = Confidence.KNOWN,
 ) -> PriceCurve:
-    """Return `days` consecutive local days - the horizon spans local midnight."""
+    """Return `days` consecutive local days - the horizon spans local midnight.
+
+    `minutes` is the slot length: 15 by default, 60 where a test needs to show
+    that the arithmetic reads the length off the slot (INV-7).
+    """
     builder = flat_norgespris_day if flat else volatile_no3_day
-    raw = tuple(row for offset in range(days) for row in builder(first + timedelta(days=offset)))
+    raw = tuple(
+        row
+        for offset in range(days)
+        for row in builder(first + timedelta(days=offset), minutes=minutes)
+    )
     return curve(raw, confidence=confidence)
 
 
@@ -313,6 +322,38 @@ def observed(load: Load, *, reads: Reads, now: datetime = NOW, **kwargs: Any) ->
     ctx = LoadCtx(now=now, reads=reads, electrical=REFERENCE_PROFILE, zone=OSLO, **kwargs)
     _, observation = load.observe(LoadState(), ctx)
     return observation.demand
+
+
+# --------------------------------------------------------------------------- #
+# Forecasts (D10's surface, as D5 uses it)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class Weather:
+    """A constant forecast - D10's three questions with one answer each (D5 §4).
+
+    Not a simulator: a forecast is data, not a device, and what is under test is
+    what the planner does with a number rather than how the number is produced
+    (D9 §2 keeps simulators for physical things). `outdoor_c = None` is the site
+    that has no weather at all, which is a different answer from "mild".
+    """
+
+    outdoor: float | None = None
+    surplus: float = 0.0
+    baseline: float = 0.0
+
+    def outdoor_c(self, t: datetime) -> float | None:
+        """Return the forecast outdoor temperature."""
+        return self.outdoor
+
+    def surplus_w(self, t: datetime) -> float:
+        """Return the PV surplus expected."""
+        return self.surplus
+
+    def baseline_w(self, t: datetime) -> float:
+        """Return the uncontrolled load expected."""
+        return self.baseline
 
 
 # --------------------------------------------------------------------------- #

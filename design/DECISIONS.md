@@ -808,6 +808,56 @@ The generic profiles' quirks are all zero, so `gate_config(kind)` is the kind's 
 A 0.1 step turns 21.0 into 21.000000000000004 through `quantise_down`. Six decimals is far below any device step, so it can't move a value to another step, and D-0158's integer path then works for 0.1 °C thermostats too.
 **Rejected:** quantising in integer step counts - the step is itself a float, so multiplying back reintroduces the dust.
 
+### D-0190 · `NO_HOLIDAYS` is D5's own empty calendar
+
+`core/strategies/context.py` defines a `HolidayCalendar` that names no day, used when the site has none. `schedule` and `heat_capacitor` ask about holidays, and a `None` check at every call site is the branch that gets forgotten. Affects D5 §4.
+**Rejected:** importing D1's - a dependency on D1's holiday module for a one-line null object.
+
+### D-0191 · A forced load gets a plan that says nothing
+
+`cheapest_hours`, like `deadline_fill` (D-0138), returns a free plan with `PlanMode.FORCE` under force. Force ignores price, and asserting a grant is the allocator's job (INV-1, INV-30). Affects D5 §5.4.
+**Rejected:** `max_w` in every slot - a cap equal to the maximum says nothing a free plan doesn't, and reads like a grant.
+
+### D-0192 · `best_save` compares against the cheapest slot in the postponement horizon
+
+D5 §5.5's "next slot that is on" is circular. The comparison is the cheapest slot in `(s, s + max_off_min]`: where the load would run if `s` were skipped. A negative slot is never postponed. Affects D5 §5.5.
+**Rejected:** iterating on/off to a fixed point - two passes per load per replan for a definition still arbitrary at the edge.
+
+### D-0193 · `run_once` reads the programme from its parameters
+
+`duration_min` and the ten-segment `profile` are strategy parameters (D4 §6.8's answers, later the learned profile), defaulting to a three-hour eco programme. A strategy owns no device state, and parameters are what `inputs_digest` covers. Affects D5 §5.6, §6.
+**Rejected:** reading the profile off the `LoadView` - a learned profile would change the plan without changing its inputs hash.
+
+### D-0194 · `schedule` takes configured windows first, the load's own profile second
+
+Windows are local weekly `(weekday, start_min, end_min)` triples (weekday −1 = every day, wrapping allowed); with none configured, the target profile's comfort hours are the schedule. Inside, the envelope is `max_w`; outside, 0, with `comfort`/`shed` for MODE and SETPOINT loads. Affects D5 §6.
+**Rejected:** windows only - a household with a weekly thermostat table would type it twice.
+
+### D-0195 · `heat_capacitor` scales the cold term against the slot's own target
+
+The outdoor-cold scaling of the banked delta (0.5-1.5 over 10 K) is measured from the slot's target, not a fixed reference. A 24 °C bathroom and an 18 °C bedroom lose heat differently at the same outdoor temperature. Affects D5 §5.7.
+**Rejected:** one site-wide reference - wrong for every room but one.
+
+### D-0196 · A tariff window is a peak only if some of the horizon isn't
+
+Tariff-window banking treats the heaviest-weighted eligible windows as the peak. Under the Norwegian model every hour is eligible at weight 1, so nothing is a peak and the strategy doesn't coast for two days; under Ellevio the half-weight night isn't what a store banks against. Affects D5 §5.7.
+**Rejected:** every eligible window as peak - on the reference tariff that's the whole day.
+
+### D-0197 · Combinators are extras on any plan, applied merge → threshold → opportunistic
+
+`threshold`, `merge` and `opportunistic` aren't registry rows; their knobs sit in `COMMON_SCHEMA` and `plan_all` applies them after the strategy, in that order, so the most specific statement ("this hour is paid for") has the last word. `merge` gets its partner through an injected closure. Affects D5 §3, §5.11, §6.
+**Rejected:** registering each as a wrapping strategy - the strategy select would ask the household about the planner's structure.
+
+### D-0198 · A reward event is one more price component, keyed by the slot's start
+
+A demand-response reward raises the effective price by `per_kwh` for participating loads, as a composed component (INV-31). Every strategy already avoids dear slots. Affects D5 §5.11, §9 15.
+**Rejected:** masking the window - a mask has no value, so the planner couldn't weigh it against price.
+
+### D-0199 · The block variant enumerates runs, scores by capacity-weighted price, extends and prunes
+
+Every contiguous candidate run of at least `min_block_min` is a block (prefix sums, O(n²)), scored by the capacity-weighted mean price of what it can carry. Take the cheapest; extend while an adjacent slot beats the best free block; once covered, extend while a neighbour is cheaper than the set's mean, then drop slots dearer than the mean when cover and block length still hold. The requirement is spread over the set (D-0137). Scoring by duration and stopping at cover missed brute force by up to 34 %. Measured: D5 §9 2's 300 seeded instances within 5 %; worst over 1 200 instances 9.6 % of the price span. Affects D5 §5.3, §9 2.
+**Rejected:** exact search (a Dinkelbach iteration over a run-selection DP) - optimal, but pages more algorithm for a worst miss of a tenth of the price span.
+
 ### D-0210 · D10's core is built before its providers
 
 `core/forecasts/` (model, baseline, reconstruction, the five fits, the registry) lands before the providers, the planning-loop refresh and the baseline-aware reserve. It's pure and can't open a gate, and it settles the baseline's shape before D6's `budget.py` is written against it.

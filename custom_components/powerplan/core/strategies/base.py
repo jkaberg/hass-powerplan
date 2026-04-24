@@ -23,7 +23,16 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal, Protocol
 from ..model import Carrier, Mode, PlanMode
 from ..pricing import Field, FieldKind, Schema
 from .adoption import inputs_changed, should_adopt
-from .context import Curves, Headroom, LoadView, PlanContext, SiteContext, SitePlan
+from .combinators import COMBINATOR_SCHEMA, combine
+from .context import (
+    Curves,
+    Headroom,
+    LoadView,
+    PlanContext,
+    SiteContext,
+    SitePlan,
+    with_rewards,
+)
 from .plan import build_plan
 
 if TYPE_CHECKING:
@@ -43,10 +52,14 @@ __all__ = [
     "supports",
 ]
 
-#: Every strategy takes these two, whatever else it takes (D5 §6).
+#: Every strategy takes these two, whatever else it takes (D5 §6) - plus the
+#: combinators, which are extras on **any** load rather than strategies of their
+#: own (§5.11), so every strategy's schema carries their knobs and the flow renders
+#: them from the same place (`design/DECISIONS.md` D-0197).
 COMMON_SCHEMA: Final[Schema] = (
     Field(key="participate_in_events", kind=FieldKind.BOOL, default=False, advanced=True),
     Field(key="horizon_h", kind=FieldKind.NUMBER, default=48, unit="h", advanced=True),
+    *COMBINATOR_SCHEMA,
 )
 
 
@@ -188,32 +201,38 @@ def plan_all(
             continue
 
         curve_in, curve_out = curves.pair(view.carrier)
-        plan = get(view.strategy).plan(
+        before = old.get(view.load_id)
+        pctx = PlanContext(
+            now=now,
+            tz=ctx.tz,
+            curve_in=with_rewards(curve_in, ctx.events, participates=view.participates_in_events),
+            curve_out=curve_out,
+            headroom=room,
+            hysteresis=ctx.hysteresis,
+            load=view,
+            tariff_eligible=eligible,
+            presence=ctx.presence,
+            calendar=ctx.calendar,
+            forecasts=ctx.forecasts,
+            events=ctx.events,
+            horizon_h=ctx.horizon_h,
+            holidays=ctx.holidays,
+            previous=before,
+        )
+        params = params_of(view.strategy, view.params)
+        plan = combine(
+            get(view.strategy).plan(view.demand, pctx, params),
             view.demand,
-            PlanContext(
-                now=now,
-                tz=ctx.tz,
-                curve_in=curve_in,
-                curve_out=curve_out,
-                headroom=room,
-                hysteresis=ctx.hysteresis,
-                load=view,
-                tariff_eligible=eligible,
-                presence=ctx.presence,
-                calendar=ctx.calendar,
-                forecasts=ctx.forecasts,
-                events=ctx.events,
-                horizon_h=ctx.horizon_h,
-            ),
-            params_of(view.strategy, view.params),
+            pctx,
+            params,
+            partner=_partner(view, pctx),
         )
 
-        before = old.get(view.load_id)
         take = before is None or should_adopt(
             before,
             plan,
             ctx.hysteresis,
-            curve=curve_in,
+            curve=pctx.curve_in,
             tz=ctx.tz,
             now=now,
             inputs_changed=inputs_changed(before, plan),
@@ -232,6 +251,20 @@ def plan_all(
         )
 
     return SitePlan(plans=kept, headroom_left=room, adopted=frozenset(adopted), built_at=now)
+
+
+def _partner(view: LoadView, pctx: PlanContext) -> Callable[[str], Plan]:
+    """Return the closure `merge` plans its partner strategy with (§5.11).
+
+    Injected rather than imported: `combinators.py` must not reach into the registry
+    that dispatches to it, and a closure bound here cannot capture the wrong loop
+    variable (`design/DECISIONS.md` D-0197).
+    """
+
+    def plan(key: str) -> Plan:
+        return get(key).plan(view.demand, pctx, params_of(key, view.params))
+
+    return plan
 
 
 def _window(curves: Curves, ctx: SiteContext, now: datetime) -> tuple[Slot, ...]:

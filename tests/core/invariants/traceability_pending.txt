@@ -47,8 +47,10 @@ INV-48
 # by the same store models.
 INV-54
 
-# INV-59 - a cycle is one contiguous block (HLD §6.5, D5) → WP3.6
-INV-59
+# INV-59 - a cycle is one contiguous block (HLD §6.5, D5). The planning half is
+# covered by `run_once` (tests/core/strategies/test_07_*): the block is one run
+# and a started one is kept. The enforcement half - no stage below 4 sheds it -
+# is D6's and arrives with WP0.7's ladder.
 
 # INV-60 - hierarchical constraints, circuit before site (HLD §6.6, D6). Covered
 # by WP0.7's `constraints/circuit.py` and `phase.py`
