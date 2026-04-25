@@ -56,7 +56,14 @@ class AnswerError(ValueError):
 
 
 class QuestionKind(StrEnum):
-    """What a question asks for, so D8 can pick a selector (D4 §4.6)."""
+    """What a question asks for, so D8 can pick a selector (D4 §4.6).
+
+    `CURVE` is the seventh, added with the heat pump (`design/DECISIONS.md`
+    D-0201): D4 §6.4 requires the COP curve to be **shown and editable**, and a
+    curve of `outdoor °C → COP` is neither a number nor a choice. It is
+    validated here like everything else at this boundary - a COP of zero is not
+    a slow heat pump, it is a typo.
+    """
 
     CHOICE = "choice"
     NUMBER = "number"
@@ -64,6 +71,7 @@ class QuestionKind(StrEnum):
     TIME = "time"
     ENTITY = "entity"
     WEEKLY_TIME = "weekly_time"
+    CURVE = "curve"
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +207,7 @@ class Questionnaire:
         return Answers(values=values)
 
 
-def _coerce(question: Question, value: Any) -> Any:
+def _coerce(question: Question, value: Any) -> Any:  # noqa: PLR0911 - one return per kind
     """Check one answer against its question, returning it in its own type."""
     if value is None:
         return None
@@ -227,8 +235,33 @@ def _coerce(question: Question, value: Any) -> Any:
             return bool(value)
         case QuestionKind.TIME:
             return _as_time(question.key, value)
+        case QuestionKind.CURVE:
+            return _as_curve(question.key, value)
         case _:
             return value
+
+
+def _as_curve(key: str, value: Any) -> Mapping[float, float]:
+    """Accept `{x: y}` of numbers - a COP curve against outdoor temperature.
+
+    Sorted on the way in, so the stored answer and the golden file read in the
+    order a human would draw them, and refused rather than repaired: a curve
+    with a zero in it describes no machine.
+    """
+    if not isinstance(value, Mapping) or not value:
+        raise AnswerError(key, "not_a_curve", f"{value!r} is not a curve of x → y points")
+    points: dict[float, float] = {}
+    for raw_x, raw_y in value.items():
+        try:
+            x, y = float(raw_x), float(raw_y)
+        except TypeError, ValueError:
+            raise AnswerError(
+                key, "not_a_curve", f"{raw_x!r}: {raw_y!r} is not a point on a curve"
+            ) from None
+        if y <= 0.0:
+            raise AnswerError(key, "not_a_curve", f"{y} is not a physical efficiency at {x}")
+        points[x] = y
+    return dict(sorted(points.items()))
 
 
 def _as_time(key: str, value: Any) -> time:

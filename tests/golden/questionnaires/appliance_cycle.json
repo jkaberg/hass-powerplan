@@ -1,0 +1,79 @@
+{
+  "about": "D4 §6.8: the reference house's dishwasher on its eco programme (0.9 kWh, 3 h), started through the integration's start service, ready by 07:00; the profile is the label's until the first run is measured.",
+  "answers": {
+    "appliance": "dishwasher_eco",
+    "duration_min": null,
+    "energy_kwh": null,
+    "force_max_h": 6.0,
+    "power_entity": null,
+    "power_w": null,
+    "ready_by": "07:00",
+    "start_control": "start_program"
+  },
+  "ctx": {
+    "area": "Kjøkken",
+    "capabilities": [
+      "power",
+      "start"
+    ]
+  },
+  "derived": {
+    "derivation_version": 1,
+    "explanation_key": "cycle_review",
+    "explanation_params": {
+      "appliance": "dishwasher_eco",
+      "duration_min": 180.0,
+      "energy_kwh": 0.9,
+      "ready_by": "07:00",
+      "start_control": "start_program"
+    },
+    "group": "appliances",
+    "params": {
+      "appliance": "dishwasher_eco",
+      "duration_s": 10800.0,
+      "energy_kwh": 0.9,
+      "force_max_h": 6.0,
+      "kind": "switch",
+      "nameplate_w": 2000.0,
+      "phases": 1,
+      "power_entity": null,
+      "programme": "eco",
+      "ready_by": "07:00",
+      "shape": [
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1
+      ],
+      "start_control": "start_program",
+      "start_role": "start",
+      "store": null,
+      "substitutable": false
+    },
+    "priority": 20,
+    "strategy": "run_once",
+    "strategy_params": {
+      "duration_min": 180.0,
+      "profile": [
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1,
+        0.1
+      ],
+      "ready_by": "07:00"
+    }
+  },
+  "type": "appliance_cycle"
+}

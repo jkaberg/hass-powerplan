@@ -1,0 +1,55 @@
+{
+  "type": "generic_switch",
+  "about": "D4 §6.7: a pool filter pump named after itself — 750 W, eight hours a day of `cheapest_hours`, and a bound power sensor that beats the nameplate the moment it reports.",
+  "ctx": {
+    "area": "Utendørs",
+    "device_name": "Basseng pumpe",
+    "capabilities": [
+      "switch",
+      "power"
+    ]
+  },
+  "answers": {
+    "appliance": "pool_pump",
+    "command_interval_s": 120.0,
+    "force_max_h": 6.0,
+    "hours_per_day": null,
+    "inverted": false,
+    "min_off_s": 900.0,
+    "min_on_s": 900.0,
+    "power_entity": "sensor.basseng_pumpe_power",
+    "power_w": null
+  },
+  "derived": {
+    "params": {
+      "appliance": "pool_pump",
+      "command_interval_s": 120.0,
+      "force_max_h": 6.0,
+      "hours_per_day": 8.0,
+      "inverted": false,
+      "kind": "switch",
+      "min_off_s": 900.0,
+      "min_on_s": 900.0,
+      "nameplate_w": 750.0,
+      "phases": 1,
+      "power_entity": "sensor.basseng_pumpe_power",
+      "store": null,
+      "substitutable": false
+    },
+    "strategy": "cheapest_hours",
+    "strategy_params": {
+      "hours_per_day": 8.0
+    },
+    "priority": 15,
+    "group": null,
+    "explanation_key": "generic_switch_review",
+    "explanation_params": {
+      "appliance": "pool_pump",
+      "nameplate_w": 750.0,
+      "strategy": "cheapest_hours",
+      "hours_per_day": 8.0,
+      "inverted": false
+    },
+    "derivation_version": 1
+  }
+}

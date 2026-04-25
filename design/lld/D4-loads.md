@@ -582,6 +582,8 @@ Comfort floor default 45 °C (below ~50 °C storage favours legionella growth - 
 
 ### 5.13 Appliance cycle specifics (INV-59 support)
 
+**In code (D4 types complete, D-0207, D-0208).** `CycleState.phase ∈ {idle, planned, started, running, finished, aborted}` with `requested_at`, `started_at`, `energy_kwh`, ten `segments` and the learned `profile`; a request is `ApplianceCycle.request(state, now)` (`button.run_now`, or the household loading the machine) and `force` is the same request with the price ignored. Running is read from `POWER ≥ 20 W` first and `PROGRAM_STATE` second; finished from the text, or from ≥ 5 min idle after at least half the programme; a learned profile is adopted only within 0.5–2× the default. Below stage 4 the relay's threshold is zero while a run is under way, so no stage 1–3 shed reaches it; a blunt stage 4 cuts it and the run aborts and restarts from zero (the simulator's behaviour, `tests/sim/cycle.py`). On a plug, the machine is started with the plug off and begins when power returns (the smart-plug pattern).
+
 `CycleState ∈ {idle, planned(start_at), started(at), running, finished, aborted}`. Start: `START` role (Home Connect `start_program`, a switch, or a `button`) at the planned slot when D6 grants ≥ nameplate; detect running from `PROGRAM_STATE`; on `finished` → learn the profile (§2). Non-interruptible: `apply()` ignores sheds below stage 4 while running; reservation = learned or default profile. "Delayed start" appliances: if the profile exposes a delay, write the delay instead of waiting - the appliance then owns the start.
 
 ### 5.14 Heat pump specifics (INV-29) - generic by design
@@ -670,9 +672,9 @@ and the only one a plan may stop outright. The golden answers are
 
 Type (oil-filled · panel · convector · towel rail) → nameplate default 1000/800/1200/500 W (measured wins) and `RoomStore` mass hint; room type → comfort default; control (plug → SWITCH, thermostat entity → SETPOINT); group `radiators`; strategy `best_save` (threshold 10 %, max off 2 h, min on 30 min).
 
-### 6.6 `battery` (design; build phase 5)
+### 6.6 `battery` (type built with the D4 types; strategies in phase 5)
 
-kWh, max charge/discharge kW, reserve % (20), allow grid charging (yes), chemistry LFP/NMC → usable 95/90 %; profile from the inverter integration; strategy `arbitrage` + `peak_shave`.
+kWh, max charge/discharge kW, reserve % (20), allow grid charging (yes), chemistry LFP/NMC → usable 95/90 %; profile from the inverter integration; strategy `arbitrage` + `peak_shave`. **In code (D-0209):** a signed `MODULATE` kind in watts over `BATTERY_POWER_SET`, step 100 W, no enable role, release value 0 W (INV-64); `EnergyStore(capacity, usable_fraction, reserve_soc, min_soc = reserve + 1, max_soc, charge/discharge efficiency 0.95)`; the demand is signed - `max_w` the inverter's charge limit (0 when grid charging is off), `min_w` minus the discharge limit above the reserve; priority 30, group `storage`. The strategies and the ladder's discharge placement are D5's and D6's.
 
 ### 6.7 `generic_switch`
 
@@ -680,12 +682,12 @@ What is it (pool pump · sauna · hot tub · ventilation · other) → nameplate
 
 ### 6.8 `appliance_cycle`
 
-| Type | default energy | default duration | source |
-|---|---|---|---|
-| dishwasher (eco) | 0.9 kWh | 3 h 00 | EU energy label eco programme typicals |
-| washing machine (40 °C) | 0.7 kWh | 2 h 00 | EU label |
-| tumble dryer, heat pump | 1.5 kWh | 2 h 30 | EU label |
-| tumble dryer, condenser | 3.0 kWh | 2 h 00 | EU label |
+| Type | default energy | default duration | peak draw (D-0207) | source |
+|---|---|---|---|---|
+| dishwasher (eco) | 0.9 kWh | 3 h 00 | 2 000 W | EU energy label eco programme typicals; connected load |
+| washing machine (40 °C) | 0.7 kWh | 2 h 00 | 2 000 W | EU label |
+| tumble dryer, heat pump | 1.5 kWh | 2 h 30 | 900 W | EU label |
+| tumble dryer, condenser | 3.0 kWh | 2 h 00 | 2 500 W | EU label |
 Ready-by (07:00), start control (detected: `start_program` service / switch / button / "the appliance has a delay timer"), power sensor optional (learning). Strategy `run_once`.
 
 ---

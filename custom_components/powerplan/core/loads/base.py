@@ -23,6 +23,7 @@ and re-exported here, where D4 §4.1 says they live (`design/DECISIONS.md` D-006
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
+from enum import StrEnum
 from typing import Any, Literal, Protocol
 
 from ..metering import ControlledView, ElectricalProfile
@@ -49,6 +50,9 @@ __all__ = [
     "ComfortState",
     "Command",
     "ControlKind",
+    "CyclePhase",
+    "CycleProfile",
+    "CycleState",
     "Desired",
     "GateConfig",
     "GateState",
@@ -73,8 +77,11 @@ __all__ = [
     "Urgency",
     "Value",
     "Write",
+    "as_on",
     "effective_mode",
     "expire_force",
+    "recall",
+    "remember",
     "transition",
 ]
 
@@ -109,11 +116,91 @@ class Learned:
     """A value measurement replaced, with when and from how many samples (D4 §2).
 
     Bounded learning is D10's (INV-63); this is where a learned value is kept.
+
+    It is also the types' **numeric memory between ticks**, which is the same
+    shape - a number and when it was taken (`design/DECISIONS.md` D-0200): the
+    sensorless tank's estimate (`tank_c`), the legionella hold accumulator
+    (`legionella_hold_s`) and the previous outlet/power sample the heat pump's
+    defrost detector compares against (`outlet_c`, `power_w`). Each owning type
+    documents its keys.
     """
 
     value: float
     at: datetime
     samples: int = 1
+
+
+class CyclePhase(StrEnum):
+    """Where an appliance cycle stands (D4 §5.13).
+
+    `planned` carries a start instant the plan chose, `started` is the write
+    having gone out before the appliance has confirmed anything, and `running`
+    is the appliance saying so itself. The three are deliberately distinct: a
+    start that was written and never took is what the 2 × duration abort timeout
+    catches, and INV-59 protects `started` and `running` alike.
+    """
+
+    IDLE = "idle"
+    PLANNED = "planned"
+    STARTED = "started"
+    RUNNING = "running"
+    FINISHED = "finished"
+    ABORTED = "aborted"
+
+
+@dataclass(frozen=True, slots=True)
+class CycleProfile:
+    """What one run of an appliance costs and how long it takes (D4 §2, §6.8).
+
+    `shape` is the ten-segment normalised power trace (each segment's share of
+    the run's energy, summing to 1) that D6 reserves against; it is empty until
+    a run has been measured. `learned` says whether this came off a real run or
+    out of §6.8's table, because a learned value is bounded against the default
+    and a default is never bounded against itself.
+    """
+
+    duration_s: float
+    energy_kwh: float
+    shape: tuple[float, ...] = ()
+    learned: bool = False
+    samples: int = 0
+
+    @property
+    def mean_w(self) -> float:
+        """Average draw over the whole run - the flat reservation, if nothing else."""
+        return 0.0 if self.duration_s <= 0.0 else self.energy_kwh * 3_600_000.0 / self.duration_s
+
+
+@dataclass(frozen=True, slots=True)
+class CycleState:
+    """One appliance cycle's progress, and what it learned (D4 §4.1, §5.13).
+
+    Persisted with the load: a cycle that survives a restart is the whole point
+    of INV-59, and a run whose start powerplan has forgotten would be started
+    twice. `segments` accumulates kWh into ten buckets as the run proceeds, so
+    the learned `shape` costs ten floats rather than one sample per tick.
+    """
+
+    phase: CyclePhase = CyclePhase.IDLE
+    requested_at: datetime | None = None
+    start_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    energy_kwh: float = 0.0
+    segments: tuple[float, ...] = ()
+    #: When the machine last drew nothing, for the appliances that report no
+    #: programme state at all: residual-heat drying looks exactly like finished.
+    idle_since: datetime | None = None
+    #: When the energy accumulator last took a sample, so the integral is over
+    #: real time and not over a tick count.
+    sampled_at: datetime | None = None
+    profile: CycleProfile | None = None
+    runs: int = 0
+
+    @property
+    def active(self) -> bool:
+        """Whether a run is under way - the half of INV-59 a load can answer."""
+        return self.phase in {CyclePhase.STARTED, CyclePhase.RUNNING}
 
 
 # --------------------------------------------------------------------------- #
@@ -190,8 +277,10 @@ class LoadConfig:
 class LoadState:
     """What one load remembers between ticks, and persists (D4 §4.1, §7).
 
-    `legionella_*` and `cycle` arrive with the types that own them (`water_heater`
-    in WP3.3, `appliance_cycle` in WP3.6); `schema` is what migrates them in.
+    One latch per type that has one: `session_done` is the EV's (D4 §5.11),
+    `legionella_*` the tank's (§5.12, INV-54), `cycle` the appliance's (§5.13,
+    INV-59) and `defrost_since` the heat pump's (§5.14, INV-29 - D4 §4.1
+    amended, `design/DECISIONS.md` D-0200). `schema` is what migrates them in.
     """
 
     schema: int = 1
@@ -201,6 +290,10 @@ class LoadState:
     shed_active: bool = False
     shed_since: datetime | None = None
     session_done: SessionDone | None = None
+    legionella_last_completed: datetime | None = None
+    legionella_in_progress_since: datetime | None = None
+    cycle: CycleState | None = None
+    defrost_since: datetime | None = None
     provisioned: Mapping[str, bool] = field(default_factory=dict)
     learned: Mapping[str, Learned] = field(default_factory=dict)
     last_target_restore_at: datetime | None = None
@@ -322,6 +415,47 @@ def expire_force(state: LoadState, now: datetime) -> LoadState:
     if (now - state.force_since).total_seconds() < state.force_max_h * 3600.0:
         return state
     return replace(state, mode=Mode.AUTO, force_since=None)
+
+
+def as_on(value: Any) -> bool:
+    """Whether a switch reads as on, whatever the entity spelled it.
+
+    A boundary coercion, not a decision: `switch.*` says `"on"`, a `number` says
+    `1.0` and a `binary_sensor` says `True`, and four types need the same answer
+    out of all three. Anything unrecognised is **off**, because a state nobody
+    can read must never be taken for a device that is running (INV-15).
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int | float):
+        return value != 0.0
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"on", "true", "yes", "1", "heat", "open"}
+
+
+def recall(state: LoadState, key: str) -> Learned | None:
+    """Return the numeric memory `key`, or `None` when nothing remembers it."""
+    return state.learned.get(key)
+
+
+def remember(state: LoadState, now: datetime, **values: float | None) -> LoadState:
+    """Fold numeric memory into `LoadState.learned` (`design/DECISIONS.md` D-0200).
+
+    A `None` **forgets** the key - which is what a sample whose sensor went away
+    has to do, because a remembered number with no clock behind it is exactly
+    the "decide against what we wrote" mistake INV-22 exists to stop.
+    """
+    learned = dict(state.learned)
+    for key, value in values.items():
+        if value is None:
+            learned.pop(key, None)
+        else:
+            previous = learned.get(key)
+            learned[key] = Learned(
+                value=value, at=now, samples=1 if previous is None else previous.samples + 1
+            )
+    return replace(state, learned=learned)
 
 
 @dataclass(frozen=True, slots=True)

@@ -858,6 +858,56 @@ A demand-response reward raises the effective price by `per_kwh` for participati
 Every contiguous candidate run of at least `min_block_min` is a block (prefix sums, O(n²)), scored by the capacity-weighted mean price of what it can carry. Take the cheapest; extend while an adjacent slot beats the best free block; once covered, extend while a neighbour is cheaper than the set's mean, then drop slots dearer than the mean when cover and block length still hold. The requirement is spread over the set (D-0137). Scoring by duration and stopping at cover missed brute force by up to 34 %. Measured: D5 §9 2's 300 seeded instances within 5 %; worst over 1 200 instances 9.6 % of the price span. Affects D5 §5.3, §9 2.
 **Rejected:** exact search (a Dinkelbach iteration over a run-selection DP) - optimal, but pages more algorithm for a worst miss of a tenth of the price span.
 
+### D-0200 · One latch per type on `LoadState`, and `Learned` is the types' numeric memory
+
+`LoadState` gets the legionella timestamps (tank), `cycle: CycleState` (appliance) and `defrost_since` (heat pump). A type's numbers between ticks (the sensorless tank estimate, the legionella hold, the defrost detector's samples) live in `LoadState.learned` as `Learned(value, at, samples)` under documented keys. A cycle surviving a restart is INV-59's point. Affects D4 §4.1, §7.
+**Rejected:** a free-form dict per type - untyped state is what migrations can't route.
+
+### D-0201 · `QuestionKind.CURVE` is the seventh question kind
+
+The heat pump's COP curve is shown and editable (D4 §6.4), so the questionnaire gets a `CURVE` kind: `(x, y)` points with bounds. Affects D4 §4.6, §6.4.
+**Rejected:** JSON in a `TEXT` field - unreadable and unvalidated.
+
+### D-0202 · `ModulateCfg.enable_role` may be `None`
+
+A battery inverter takes a signed setpoint and nothing else, so its stop is 0 W with no enable write (a command naming an unbound role would send nothing, D-0148). Affects D4 §4.2.
+**Rejected:** a separate kind for setpoint-only devices - duplicates the ramp, tolerance and suppression for one missing write.
+
+### D-0203 · The tank's ready temperature is its anchor, and the legionella cycle overshoots 65 °C
+
+The sensorless estimate re-anchors on `ready_temp_c`, the one number in D4 §6.3 that says how hot the tank gets. The legionella cycle drives a margin above 65 °C because a mechanical tank thermostat has a 5-8 K band and the hold is measured at the sensor. Affects D4 §5.7, §5.12, §6.3.
+**Rejected:** asking for the dial position - the household describes a tank, not a control loop (HLD §7.9).
+
+### D-0204 · A tank charge is planned in blocks of at most `TANK_BLOCK_MIN`
+
+The water heater gives `deadline_fill` a `min_block_min` so the element runs in blocks, not quarter-hour bursts that wear the contactor. Affects D4 §6.3.
+**Rejected:** placing the tank with `run_once` as one block - a tank is a store and may take its energy in two blocks around a draw-off.
+
+### D-0205 · The defrost latch expires, and an inverter may step up a fifth per tick
+
+`defrost_since` lives at most `DEFROST_MAX_S`; a stuck latch would suppress every shed forever. The heat pump reserves a fifth of its measured draw as margin (`RESERVE_MARGIN_FRACTION`), what an inverter ramps before the next tick sees it. Affects D4 §5.14, D6 §5.2.
+**Rejected:** reserving rated power - 1.5 kW held for a unit drawing 23 W.
+
+### D-0206 · The radiator table's areas and the bank-above-comfort limit
+
+D4 §6.5's heater sizes get the floor areas they're sold for (the `RoomStore` mass hint), and a radiator banks at most 2 K above comfort (INV-56 needs a number). Area is also an advanced question; the table is the default. Affects D4 §6.5.
+**Rejected:** asking the area up front - it's there under Advanced for anyone who knows it.
+
+### D-0207 · The cycle's programme table carries a peak draw, and running is read from power first
+
+D4 §6.8's rows get `peak_w` (the heater's connected load, the default nameplate). Running is `POWER ≥ 20 W` first and `PROGRAM_STATE` second; finished is the text, or a long idle after half the programme; a learned profile must fall within 0.5-2× the default. Residual-heat drying draws 5 W for an hour and looks finished. Affects D4 §5.13, §6.8.
+**Rejected:** learning from every run - one aborted-and-restarted run would double the reservation.
+
+### D-0208 · A cycle request is state; `force` is the same request with the price ignored
+
+`ApplianceCycle.request(state, now)` records `requested_at`; `button.run_now` and a loaded machine both call it. It survives a restart (INV-59). Affects D4 §5.13, D8 §5.5.
+**Rejected:** a `run_now` mode - it would expire with `force_max_h` and drop the wash.
+
+### D-0209 · The battery type: signed `MODULATE` in watts, the reserve as floor, 0 W as release
+
+A signed `MODULATE` over `BATTERY_POWER_SET` (step 100 W, no enable role, release 0 W, INV-64); an `EnergyStore` whose usable window comes from the chemistry (LFP 95 %, NMC 90 %) with the floor at `reserve_pct + 1`. With grid charging off, `max_w` is 0 until `surplus`. The flow doesn't offer the type until `peak_shave`/`arbitrage` exist. Affects D4 §6.6.
+**Rejected:** waiting for the battery strategies - the questionnaire and the store are what they need first.
+
 ### D-0210 · D10's core is built before its providers
 
 `core/forecasts/` (model, baseline, reconstruction, the five fits, the registry) lands before the providers, the planning-loop refresh and the baseline-aware reserve. It's pure and can't open a gate, and it settles the baseline's shape before D6's `budget.py` is written against it.

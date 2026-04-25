@@ -1,0 +1,108 @@
+{
+  "type": "heat_pump",
+  "about": "D4 §6.4: the reference house's air-to-air unit — 1.5 kW rated over the open-plan 60 m², built 2000–2010, band ±1 K, the A2A COP curve of §6.4 shown and editable, and the mains switch listed as never-actuated (INV-29).",
+  "ctx": {
+    "area": "Stue",
+    "capabilities": [
+      "setpoint",
+      "cool"
+    ],
+    "readable": {
+      "min_temp": 16.0,
+      "max_temp": 30.0
+    }
+  },
+  "answers": {
+    "area_m2": 60.0,
+    "band_k": 1.0,
+    "building": "2000_2010",
+    "comfort_c": 21.0,
+    "command_interval_s": 900.0,
+    "cop_curve": null,
+    "dwell_s": 1800.0,
+    "follow_presence": true,
+    "force_max_h": 6.0,
+    "hp_type": "a2a",
+    "never_switch": [
+      "switch.varmepumpe_mains"
+    ],
+    "outdoor_entity": null,
+    "outlet_entity": null,
+    "preheat": false,
+    "preheat_max_outdoor_c": 5.0,
+    "rated_kw": 1.5
+  },
+  "derived": {
+    "params": {
+      "area_m2": 60.0,
+      "band_k": 1.0,
+      "building": "2000_2010",
+      "can_cool": true,
+      "comfort_c": 21.0,
+      "command_interval_s": 900.0,
+      "cop_curve": {
+        "-15.0": 1.8,
+        "-10.0": 2.2,
+        "-5.0": 2.6,
+        "0.0": 3.0,
+        "7.0": 3.8,
+        "15.0": 4.5
+      },
+      "device_max_c": 30.0,
+      "device_min_c": 16.0,
+      "dwell_s": 1800.0,
+      "floor_c": 17.0,
+      "follow_presence": true,
+      "force_max_h": 6.0,
+      "heat_loss_w_per_k": 42.0,
+      "hp_type": "a2a",
+      "kind": "setpoint",
+      "max_c": 22.0,
+      "nameplate_w": 1500.0,
+      "never_switch": [
+        "switch.varmepumpe_mains"
+      ],
+      "outdoor_entity": null,
+      "outlet_entity": null,
+      "phases": 1,
+      "preheat": false,
+      "preheat_max_outdoor_c": 5.0,
+      "rated_kw": 1.5,
+      "shed_setpoint_c": 17.0,
+      "store": "room",
+      "substitutable": true,
+      "u_envelope_w_per_m2k": 0.7,
+      "vacation_c": 18.0,
+      "volume_m3": 150.0
+    },
+    "strategy": "heat_capacitor",
+    "strategy_params": {
+      "band_k": 1.0,
+      "preheat": false,
+      "preheat_max_outdoor_c": 5.0,
+      "cop_curve": {
+        "-15.0": 1.8,
+        "-10.0": 2.2,
+        "-5.0": 2.6,
+        "0.0": 3.0,
+        "7.0": 3.8,
+        "15.0": 4.5
+      }
+    },
+    "priority": 50,
+    "group": null,
+    "explanation_key": "heat_pump_review",
+    "explanation_params": {
+      "hp_type": "a2a",
+      "area_m2": 60.0,
+      "building": "2000_2010",
+      "rated_kw": 1.5,
+      "comfort_c": 21.0,
+      "band_k": 1.0,
+      "heat_loss_w_per_k": 42.0,
+      "cop_at_minus_seven": 2.44,
+      "preheat": false
+    },
+    "derivation_version": 1
+  }
+}

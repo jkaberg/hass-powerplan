@@ -1,0 +1,72 @@
+{
+  "type": "radiator",
+  "about": "D4 §6.5: an 800 W panel heater on a smart plug in a bedroom — room comfort 19/17 °C from §6.1's measured table, `best_save` at a 10 % threshold, two hours off at most, half an hour on at least.",
+  "ctx": {
+    "area": "Soverom",
+    "capabilities": [
+      "switch",
+      "power"
+    ]
+  },
+  "answers": {
+    "area_m2": null,
+    "comfort_c": null,
+    "command_interval_s": 300.0,
+    "control": "plug",
+    "follow_presence": true,
+    "force_max_h": 6.0,
+    "heater_type": "panel",
+    "min_c": null,
+    "min_off_s": 1800.0,
+    "min_on_s": 1800.0,
+    "power_entity": "sensor.panelovn_power",
+    "power_w": 800.0,
+    "room": "bedroom"
+  },
+  "derived": {
+    "params": {
+      "area_m2": 12.0,
+      "comfort_c": 19.0,
+      "command_interval_s": 300.0,
+      "control": "plug",
+      "floor_c": 17.0,
+      "follow_presence": true,
+      "force_max_h": 6.0,
+      "heat_loss_w_per_k": null,
+      "heater_type": "panel",
+      "kind": "switch",
+      "max_c": 21.0,
+      "min_off_s": 1800.0,
+      "min_on_s": 1800.0,
+      "nameplate_w": 800.0,
+      "phases": 1,
+      "power_entity": "sensor.panelovn_power",
+      "room": "bedroom",
+      "shed_setpoint_c": 17.0,
+      "store": "room",
+      "substitutable": true,
+      "vacation_c": 18.0,
+      "volume_m3": 30.0
+    },
+    "strategy": "best_save",
+    "strategy_params": {
+      "threshold_pct": 10.0,
+      "max_off_min": 120.0,
+      "min_on_min": 30.0
+    },
+    "priority": 30,
+    "group": "radiators",
+    "explanation_key": "radiator_review",
+    "explanation_params": {
+      "heater_type": "panel",
+      "room": "bedroom",
+      "control": "plug",
+      "nameplate_w": 800.0,
+      "comfort_c": 19.0,
+      "floor_c": 17.0,
+      "threshold_pct": 10.0,
+      "max_off_min": 120.0
+    },
+    "derivation_version": 1
+  }
+}

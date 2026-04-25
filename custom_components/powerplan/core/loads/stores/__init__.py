@@ -14,24 +14,36 @@ from .base import StoreCtx, StoreDirection, StoreModel, hours_until
 from .cop import DEFAULT_COP_CURVES, CopCurve
 from .energy import EnergyStore
 from .thermal import (
+    COLD_WATER_C,
     CP_SCREED,
+    DRAW_L_PER_PERSON_DAY,
+    DRAW_TEMP_C,
     RHO_SCREED,
     ROOM_MASS_KWH_PER_K_PER_M3,
     WATER_KJ_PER_LK,
+    DrawOffProfile,
     RoomStore,
+    SensorlessEstimate,
+    SensorlessModel,
     SlabStore,
     TankStore,
 )
 
 __all__ = [
+    "COLD_WATER_C",
     "CP_SCREED",
     "DEFAULT_COP_CURVES",
+    "DRAW_L_PER_PERSON_DAY",
+    "DRAW_TEMP_C",
     "RHO_SCREED",
     "ROOM_MASS_KWH_PER_K_PER_M3",
     "WATER_KJ_PER_LK",
     "CopCurve",
+    "DrawOffProfile",
     "EnergyStore",
     "RoomStore",
+    "SensorlessEstimate",
+    "SensorlessModel",
     "SlabStore",
     "StoreCtx",
     "StoreDirection",

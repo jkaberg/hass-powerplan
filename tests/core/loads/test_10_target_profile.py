@@ -4,15 +4,15 @@ INV-55: schedules and presence move **targets** only. Comfort floors, frost
 guards and hardware minimums are never a function of time or occupancy - they
 are the one number a cabin left on `vacation` for a fortnight still keeps.
 
-The water-heater half of §9 10 (a tank on `vacation` drops its ready-by
-deadlines but not its legionella one, INV-54) needs the `water_heater` type and
-lands with it in WP3.3; what this file pins is the generic rule the tank will
-lean on - under `vacation` a schedule step-up is not a deadline, and an arrival
-still is.
+The water-heater half of §9 10 is `test_10j`: a tank on `vacation` drops its
+ready-by deadlines but not its legionella one (INV-54). The generic rule it leans
+on is the rest of this file - under `vacation` a schedule step-up is not a
+deadline, and an arrival still is.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, time, timedelta
 
 import pytest
@@ -21,13 +21,16 @@ from custom_components.powerplan.core.loads import (
     CalendarEvent,
     ConstantSchedule,
     HaScheduleEntity,
+    LoadState,
     LocalWindow,
     PresenceMode,
+    Role,
     TargetProfile,
+    Urgency,
     WeeklyRow,
     WeeklyTable,
 )
-from tests.core.loads.conftest import OSLO, bathroom_target
+from tests.core.loads.conftest import OSLO, bathroom_target, load_ctx, load_from, reads
 
 MONDAY_06 = datetime(2026, 2, 2, 6, 30, tzinfo=OSLO)
 MONDAY_23 = datetime(2026, 2, 2, 23, 30, tzinfo=OSLO)
@@ -138,3 +141,49 @@ def test_10i_the_floor_is_not_a_function_of_time_or_occupancy() -> None:
         for at in hours:
             assert profile.target(at, presence) >= profile.floor
     assert profile.floor == pytest.approx(21.0)
+
+
+@pytest.mark.inv("INV-54")
+def test_10j_a_tank_on_vacation_drops_its_ready_by_deadlines_but_not_its_legionella_one() -> None:
+    """The water-heater half of §9 10 (INV-54, INV-55).
+
+    Nobody showers at the house on Thursday if the household is in Spain, so the
+    06:30 deadline is not a deadline that week - and the tank holds its comfort
+    floor and coasts (§5.12). The legionella cycle is the one thing a fortnight
+    away does not touch: its deadline is absolute under every presence mode,
+    because the bacteria do not take holidays either.
+    """
+    load = load_from("water_heater", {"ready_by": "06:30", "ready_by_2": "17:00"})
+    params = load.config.params
+    interval = timedelta(days=float(params["legionella_interval_days"]))
+    due = MONDAY_06 + interval - timedelta(hours=2)
+    state = LoadState(legionella_last_completed=MONDAY_06 - timedelta(hours=2))
+    ready_temp = float(params["ready_temp_c"])
+
+    def deadlines_under(presence: PresenceMode) -> tuple[tuple[datetime, float], ...]:
+        ctx = load_ctx(now=MONDAY_06, reads=reads(MONDAY_06), presence=presence, zone=OSLO)
+        return load.device_type.deadlines(load, state, ctx)
+
+    home = deadlines_under(PresenceMode.HOME)
+    assert [value for _, value in home] == [ready_temp, ready_temp], "06:30 today and 17:00 today"
+
+    away = deadlines_under(PresenceMode.AWAY)
+    assert away == home, "a day trip still ends in a shower (§5.12)"
+
+    vacation = deadlines_under(PresenceMode.VACATION)
+    assert vacation == (), "on vacation there is no shower to be ready for"
+
+    # Wind the clock to the day the cycle falls due: the deadline is still there.
+    state = replace(state, legionella_last_completed=due - interval)
+    ctx = load_ctx(
+        now=due - timedelta(hours=3),
+        reads=reads(due - timedelta(hours=3), numbers={Role.TEMP: 46.0}),
+        presence=PresenceMode.VACATION,
+        zone=OSLO,
+    )
+    state, observation = load.observe(state, ctx)
+    on_vacation = load.device_type.deadlines(load, state, ctx)
+
+    assert [when for when, _ in on_vacation] == [due], "the legionella deadline survives vacation"
+    assert observation.demand.urgency is Urgency.LEGIONELLA
+    assert observation.demand.deadline == due

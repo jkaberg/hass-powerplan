@@ -1,9 +1,10 @@
 """D4 §9 15 - questionnaire derivations, goldens and materialisation (INV-66, INV-67).
 
-Golden answers → golden `Derived`, for the two types WP0.5 builds. The goldens
+Golden answers → golden `Derived`, for **every registered type**. The goldens
 live in `tests/golden/questionnaires/` (D9 §3) and are the readable record of
-D4 §6.1 and §6.2: change a derivation table and the diff is the golden file,
-reviewed like a preset.
+D4 §6.1–6.8: change a derivation table and the diff is the golden file, reviewed
+like a preset. The parametrisation is the type registry itself, so a ninth type
+cannot be added without one.
 
 INV-66 is the one with teeth: derived values are **materialised** into the
 subentry, so a release that improves a default never silently changes a running
@@ -36,6 +37,9 @@ from custom_components.powerplan.core.loads.types import floor_heating
 
 GOLDEN = Path(__file__).resolve().parents[2] / "golden" / "questionnaires"
 
+#: Every type the registry offers - D4 §9 15 is "for every type" (D4 §6.1–6.8).
+TYPES = device_types.keys()
+
 
 def as_json(derived: Any) -> dict[str, Any]:
     """Return the golden shape: everything `Derived` carries, JSON-comparable."""
@@ -56,12 +60,14 @@ def ctx_from(golden: dict[str, Any]) -> QCtx:
     raw = golden.get("ctx", {})
     return QCtx(
         area=raw.get("area"),
+        device_name=raw.get("device_name"),
         phases=raw.get("phases"),
         capabilities=frozenset(raw.get("capabilities", ())),
+        readable=dict(raw.get("readable", {})),
     )
 
 
-@pytest.mark.parametrize("type_key", ["floor_heating", "ev"])
+@pytest.mark.parametrize("type_key", TYPES)
 def test_15_golden_answers_derive_the_golden_parameters(type_key: str) -> None:
     """Every number in D4 §6.1 and §6.2, pinned."""
     golden = json.loads((GOLDEN / f"{type_key}.json").read_text(encoding="utf-8"))
@@ -73,21 +79,23 @@ def test_15_golden_answers_derive_the_golden_parameters(type_key: str) -> None:
     assert as_json(derived) == golden["derived"]
 
 
-@pytest.mark.parametrize("type_key", ["floor_heating", "ev"])
+@pytest.mark.parametrize("type_key", TYPES)
 def test_15b_every_question_has_a_default_and_advanced_is_never_required(type_key: str) -> None:
     """INV-65: a load is fully configurable without opening Advanced.
 
     A question either resolves its own default from the context, is one of the
-    sliders D4 §6 pre-fills "from the above" (`derived_default`), or is an
-    optional entity binding. Nothing is required, and the empty questionnaire
-    derives a working load.
+    sliders D4 §6 pre-fills "from the above" (`derived_default`), or is optional
+    by nature - an entity binding, or a second ready-by time (D4 §6.3), where
+    "none" *is* the sane default. Nothing is required, and the empty
+    questionnaire derives a working load.
     """
+    optional_by_nature = {QuestionKind.ENTITY, QuestionKind.TIME}
     questionnaire = device_types.get(type_key).questionnaire
     for question in questionnaire.questions:
         assert (
-            question.default is not None
+            question.default_for(QCtx()) is not None
             or question.derived_default
-            or question.kind is QuestionKind.ENTITY
+            or question.kind in optional_by_nature
         ), question.key
     plain = questionnaire.validate({}, QCtx())
     derived = device_types.get(type_key).derive(plain, QCtx())

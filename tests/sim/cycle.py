@@ -62,6 +62,7 @@ DISHWASHER_ECO: tuple[tuple[str, float, float], ...] = (
     ("dry", DRY_W, DRY_MIN),
 )
 
+POWERED = "powered"
 IDLE = "idle"
 RUNNING = "running"
 FINISHED = "finished"
@@ -110,9 +111,16 @@ class CycleSim:
         """Run the programme, or abort it if power is taken away mid-cycle."""
         del env
         if command is not None:
+            was_powered = self.powered
             if command.on is not None:
                 self.powered = command.on
-            if command.start and self.state in (IDLE, FINISHED, ABORTED) and self.powered:
+            starts = bool(command.start)
+            # The smart-plug pattern: a loaded machine whose start was pressed
+            # with the plug off begins the moment power comes back. Quirk, not
+            # convenience - it is how a plug-controlled dishwasher is run.
+            if self.powered and not was_powered and self.requested:
+                starts = True
+            if starts and self.state in (IDLE, FINISHED, ABORTED) and self.powered:
                 if self.state == ABORTED:
                     self.restarts += 1
                 self.state = RUNNING
@@ -140,5 +148,6 @@ class CycleSim:
             values={
                 CYCLE_MINUTE: self.elapsed_s / 60.0,
                 ENERGY_KWH: self.energy_in_kwh,
+                POWERED: 1.0 if self.powered else 0.0,
             },
         )

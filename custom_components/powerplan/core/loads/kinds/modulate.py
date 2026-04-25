@@ -55,7 +55,10 @@ class ModulateCfg:
     tolerance: float = 0.5
     min_interval_s: float = 30.0
     role: Role = Role.CURRENT_SET
-    enable_role: Role = Role.ENABLE
+    #: `None` for a device that has no enable at all - a battery inverter takes
+    #: a signed setpoint and nothing else, and a command that names an unbound
+    #: role sends **nothing** (`design/DECISIONS.md` D-0148, D-0202).
+    enable_role: Role | None = Role.ENABLE
     release_value: float | None = None
 
 
@@ -130,8 +133,13 @@ class Modulate:
             return Hold(Action.SAME, q.reason)
 
         if q.stop:
+            stop_writes = (
+                (Write(cfg.role, 0.0),)
+                if cfg.enable_role is None
+                else (Write(cfg.enable_role, False), Write(cfg.role, 0.0))
+            )
             return Command(
-                writes=(Write(cfg.enable_role, False), Write(cfg.role, 0.0)),
+                writes=stop_writes,
                 reason=q.reason,
                 urgent=True,
                 blunt=grant.blunt,
@@ -142,7 +150,7 @@ class Modulate:
         value = float(q.value if q.value is not None else 0.0)
         held = None if ctx.held is None else float(ctx.held)
 
-        if not ctx.enabled:
+        if not ctx.enabled and cfg.enable_role is not None:
             # An active re-arm: switching the charger on is not the same as
             # telling it what it may draw, and without the limit the car waits
             # for its own retry timer.
@@ -222,8 +230,13 @@ class Modulate:
         """
         cfg = self.cfg
         value = self._limit(ctx) if cfg.release_value is None else cfg.release_value
+        writes = (
+            (Write(cfg.role, value),)
+            if cfg.enable_role is None
+            else (Write(cfg.role, value), Write(cfg.enable_role, True))
+        )
         return Command(
-            writes=(Write(cfg.role, value), Write(cfg.enable_role, True)),
+            writes=writes,
             reason=f"released at {value:.0f}",
             urgent=True,
             want_on=True,

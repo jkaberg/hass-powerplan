@@ -37,6 +37,7 @@ from custom_components.powerplan.core.loads import (
     LoadCtx,
     LoadState,
     Mode,
+    QCtx,
     Reads,
     Role,
     RoleRead,
@@ -45,6 +46,8 @@ from custom_components.powerplan.core.loads import (
     TransportBudget,
     Value,
     build_load,
+    device_types,
+    materialise,
 )
 from custom_components.powerplan.core.loads.kinds import (
     ModeCfg,
@@ -57,11 +60,19 @@ from custom_components.powerplan.core.loads.kinds import (
 from custom_components.powerplan.core.loads.stores import EnergyStore, SlabStore
 from custom_components.powerplan.core.metering import ElectricalProfile, Reading, VoltageSystem
 from custom_components.powerplan.core.model import Grant
+from tests.sim.base import SETPOINT_C as SIM_SETPOINT_C
+from tests.sim.base import TEMP_AIR as SIM_TEMP_AIR
+from tests.sim.base import TEMP_BOTTOM as SIM_TEMP_BOTTOM
+from tests.sim.base import TEMP_OUTLET as SIM_TEMP_OUTLET
+from tests.sim.base import Command as SimCommand
+from tests.sim.base import Env as SimEnv
+from tests.sim.base import Reads as SimReads
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from custom_components.powerplan.core.loads import Command
+    from tests.sim.tank import TankSim
 
 OSLO = ZoneInfo("Europe/Oslo")
 
@@ -455,3 +466,157 @@ def grant(w: float = 0.0, **kwargs: Any) -> Grant:
     }
     options.update(kwargs)
     return Grant(**options)
+
+
+# --------------------------------------------------------------------------- #
+# The physical things (D9 §3) - the simulators, adapted to `Reads`
+# --------------------------------------------------------------------------- #
+
+
+def sim_env(at: datetime, outdoor_c: float = -5.0, **kwargs: Any) -> SimEnv:
+    """Return ambient conditions for one simulator step."""
+    return SimEnv(now=at, outdoor_c=outdoor_c, **kwargs)
+
+
+def sim_command(command: Command | None) -> SimCommand | None:
+    """Translate one core `Command` into the simulators' own write shape (D9 §4).
+
+    The mapping is the four control kinds: a setpoint write is `setpoint_c`, a
+    switch or enable write is `on`, a mode write is `mode`, a limit is `limit_a`
+    and a START role is `start`. It lives in the test suite because
+    `tests/sim/` imports nothing from `custom_components` (D9 §3).
+    """
+    if command is None:
+        return None
+    fields: dict[str, Any] = {}
+    for write in command.writes:
+        match write.role:
+            case Role.SETPOINT | Role.ECO_SETPOINT:
+                fields["setpoint_c"] = float(write.value)
+            case Role.SWITCH | Role.ENABLE:
+                fields["on"] = bool(write.value)
+            case Role.MODE_SELECT:
+                fields["mode"] = str(write.value)
+            case Role.CURRENT_SET:
+                fields["limit_a"] = float(write.value)
+            case Role.START:
+                fields["start"] = bool(write.value)
+            case _:
+                pass
+    return SimCommand(**fields)
+
+
+def tank_reads(sim: TankSim, step: SimReads, at: datetime) -> Reads:
+    """Return what a provider reads off the tank simulator (D4 §4.5).
+
+    `Role.TEMP` is the **bottom** layer, because that is where a tank's
+    thermostat sensor sits and it is the conservative half of a stratified tank:
+    a controller that read the top would call a drawn tank full.
+    """
+    return reads(
+        at,
+        numbers={
+            Role.TEMP: step.values[SIM_TEMP_BOTTOM],
+            Role.SETPOINT: sim.setpoint_c,
+            Role.POWER: step.power_w,
+        },
+        texts={Role.SWITCH: "on" if sim.plug_on else "off"},
+    )
+
+
+def heatpump_reads(step: SimReads, at: datetime, outdoor_c: float = -5.0) -> Reads:
+    """Return what a provider reads off the heat-pump simulator (D4 §5.14)."""
+    return reads(
+        at,
+        numbers={
+            Role.TEMP: step.values[SIM_TEMP_AIR],
+            Role.OUTLET_TEMP: step.values[SIM_TEMP_OUTLET],
+            Role.SETPOINT: step.values[SIM_SETPOINT_C],
+            Role.POWER: step.power_w,
+            Role.OUTDOOR_TEMP: outdoor_c,
+        },
+    )
+
+
+def cycle_reads(step: SimReads, at: datetime) -> Reads:
+    """Return what a provider reads off the appliance simulator (D4 §5.13).
+
+    The simulator's `status` is the running segment's name while a programme is
+    under way (`prewash`, `main_heat`, …) and the state itself otherwise, which
+    is exactly what a real `PROGRAM_STATE` looks like: a vocabulary the type
+    must not have to know word by word.
+    """
+    on = bool(step.values.get("powered", 1.0)) if step.values else True
+    return reads(
+        at,
+        numbers={Role.POWER: step.power_w},
+        # The start service and the plug are bound and answer: a button's state
+        # is the last press, a plug's is on/off. Without them the gate would
+        # (rightly) refuse to write to an unbound role.
+        texts={
+            Role.PROGRAM_STATE: step.status or "",
+            Role.START: step.status or "idle",
+            Role.SWITCH: "on" if on else "off",
+        },
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Builders for the six types of WP3.3–3.6 and 5.4
+# --------------------------------------------------------------------------- #
+
+
+def materialised(type_key: str, raw: Mapping[str, Any] | None = None, **ctx: Any) -> dict[str, Any]:
+    """Return what the flow would store for `type_key` (INV-66).
+
+    Through the questionnaire and `materialise()`, not by hand: a builder that
+    wrote its own parameters would be testing the builder.
+    """
+    device_type = device_types.get(type_key)
+    qctx = QCtx(**ctx)
+    answers = device_type.questionnaire.validate(dict(raw or {}), qctx)
+    return materialise(type_key, answers, device_type.derive(answers, qctx))
+
+
+def profile_from(params: Mapping[str, Any]) -> TargetProfile | None:
+    """Return the target profile the derived parameters describe (D4 §4.4).
+
+    The flow builds this; here it is built from the same derived numbers,
+    so a type test needs no config flow.
+    """
+    comfort = params.get("comfort_c")
+    if comfort is None:
+        return None
+    return TargetProfile(
+        schedule=ConstantSchedule(float(comfort)),
+        comfort_default=float(comfort),
+        floor=float(params.get("floor_c", comfort)),
+        ceiling=None if params.get("max_c") is None else float(params["max_c"]),
+        vacation_level=params.get("vacation_c"),
+        follow_presence=bool(params.get("follow_presence", True)),
+    )
+
+
+def config_from(
+    type_key: str,
+    raw: Mapping[str, Any] | None = None,
+    *,
+    load_id: str | None = None,
+    target: TargetProfile | None = None,
+    transport: Transport = Transport.LOCAL,
+    qctx: Mapping[str, Any] | None = None,
+) -> LoadConfig:
+    """Build a `LoadConfig` the way D7 will: out of a materialised subentry."""
+    data = materialised(type_key, raw, **dict(qctx or {}))
+    return LoadConfig.from_materialised(
+        data,
+        load_id=load_id or type_key,
+        name=type_key.replace("_", " ").title(),
+        target=target if target is not None else profile_from(data["params"]),
+        transport=transport,
+    )
+
+
+def load_from(type_key: str, raw: Mapping[str, Any] | None = None, **kwargs: Any) -> Load:
+    """Build a load of `type_key` through the registry, as D7 will."""
+    return build_load(config_from(type_key, raw, **kwargs))

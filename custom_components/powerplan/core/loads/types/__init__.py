@@ -7,7 +7,30 @@ Importing this package registers every type that ships. WP0.5 ships two:
 3 and 5; the registry needs no change to take them.
 """
 
-from . import ev, floor_heating
+from . import (
+    appliance_cycle,
+    battery,
+    ev,
+    floor_heating,
+    generic_switch,
+    heat_pump,
+    radiator,
+    water_heater,
+)
 from .base import DeviceType, entries, get, keys, register
 
-__all__ = ["DeviceType", "entries", "ev", "floor_heating", "get", "keys", "register"]
+__all__ = [
+    "DeviceType",
+    "appliance_cycle",
+    "battery",
+    "entries",
+    "ev",
+    "floor_heating",
+    "generic_switch",
+    "get",
+    "heat_pump",
+    "keys",
+    "radiator",
+    "register",
+    "water_heater",
+]

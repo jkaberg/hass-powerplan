@@ -43,6 +43,7 @@ __all__ = [
     "FloorHeating",
     "HeatingType",
     "RoomDefaults",
+    "room_from_area",
 ]
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
@@ -121,7 +122,7 @@ _AREA_TOKENS: Mapping[str, str] = {
 }
 
 
-def _room_from_area(ctx: QCtx) -> str:
+def room_from_area(ctx: QCtx) -> str:
     """Prefill the room from the HA area where its name says so (HLD §7.9)."""
     area = (ctx.area or "").strip().lower()
     for token, room in _AREA_TOKENS.items():
@@ -136,7 +137,7 @@ QUESTIONNAIRE = Questionnaire(
             key="room",
             kind=QuestionKind.CHOICE,
             options=tuple(Option(value=name) for name in ROOM_DEFAULTS),
-            default=_room_from_area,
+            default=room_from_area,
             help_key="floor_heating_room",
         ),
         Question(
