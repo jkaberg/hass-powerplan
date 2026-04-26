@@ -47,15 +47,19 @@ from custom_components.powerplan.core.metering import (
     window_bounds,
 )
 from custom_components.powerplan.core.model import (
+    Carrier,
     ComfortState,
     Confidence,
     Demand,
+    Direction,
     Grant,
     Money,
     Plan,
     PlanMode,
     PlanSlot,
+    PriceCurve,
     Quality,
+    Slot,
     Urgency,
 )
 from custom_components.powerplan.core.strategies import LoadView
@@ -375,6 +379,45 @@ def controlled(
         commanded_w=commanded_w,
         settling=settling,
         phases=phases,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Prices - what a zone costs its sources with (D1 §4)
+# --------------------------------------------------------------------------- #
+
+
+def curve_of(
+    value: str,
+    *,
+    carrier: Carrier = Carrier.ELECTRICITY,
+    now: datetime = NOW,
+    hours: int = 6,
+) -> PriceCurve:
+    """Return a flat import curve at `value` major units per kWh (D1 §4).
+
+    Flat because a zone asks one question - what does a kilowatt-hour of this
+    carrier cost **now** - and a curve that varies would test D1, not D6.
+    """
+    total = Decimal(value)
+    start = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    slots = tuple(
+        Slot(
+            start=start + timedelta(hours=hour),
+            end=start + timedelta(hours=hour + 1),
+            total=total,
+            components={"spot": total},
+            confidence=Confidence.KNOWN,
+        )
+        for hour in range(hours)
+    )
+    return PriceCurve(
+        carrier=carrier,
+        direction=Direction.IMPORT,
+        currency="NOK",
+        slots=slots,
+        built_at=now,
+        sources=("test",),
     )
 
 

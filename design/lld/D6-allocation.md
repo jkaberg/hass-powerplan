@@ -255,6 +255,8 @@ settle rule: a load written within its settle window is skipped (the deficit may
 
 ### 5.6 Groups and rotation (INV-41)
 
+`constraints/group.py::GroupCap`: its memory (`starved_since`) is seeded from `AllocState` before `prepare` and rebuilt after the walk, a member held back past `starve_seconds` sorts first in the queue, and the group is a preference that produces no `Violation` (D-0240, D-0248).
+
 ```
 rotation_active(group) = stage ≥ from_stage (1) OR projected ≥ ceiling_fraction (0.85) × ceiling      # below that the group makes NO decisions
 eligible = members with level < target (the comfort TARGET, not the floor) and wants
@@ -265,6 +267,8 @@ non-admitted eligible members → shed set with reason "group_cap"; starvation c
 ```
 
 ### 5.7 Zones (INV-42)
+
+`constraints/zone.py::Zone`: sources ranked by €/kWh-heat from the carrier curves and the COP curve, the unchosen sources capped to 0 W with reason `zone_substituted`, dwell and confirmation as wall-clock instants on `ZoneChoice` seeded from `AllocState.zone_choice`. A comfort-urgent member is never substituted, and neither is a `never_substitute` member (D-0241…D-0244).
 
 A zone has `sources: [(load_id, carrier, efficiency_fn)]` and `demand` = the zone's comfort deficit (from its members' comfort states, floors and thermostats). Per tick:
 

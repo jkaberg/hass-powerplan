@@ -104,7 +104,13 @@ class PhaseReport:
 
 @dataclass(frozen=True, slots=True)
 class RotationReport:
-    """What a group's rotation decided (D6 §5.6). Filled by WP3.2."""
+    """What a group's rotation decided (D6 §5.6, INV-41).
+
+    `reason` is why it decided anything at all - `stage`, `projection`, or
+    `no scarcity`, in which case the group made no decision and `chosen` is empty.
+    `queue` is the ranking it admitted from: `(load, deficit against the comfort
+    target, nameplate)`, coldest first, with a starved member at the front.
+    """
 
     active: bool
     reason: str
@@ -116,12 +122,21 @@ class RotationReport:
 
 @dataclass(frozen=True, slots=True)
 class ZoneReport:
-    """Which source carries a zone's demand (D6 §5.7). Filled by WP5.3."""
+    """Which source carries a zone's demand, and what it cost (D6 §5.7, INV-42).
+
+    `cost_per_kwh_heat` is the whole decision in one row per source - price over
+    efficiency, in major units per kWh of **heat** - and `excluded` says why a
+    source was not even a candidate: `cop_below_floor`, `no_price`, `absent`. Both
+    are floats and strings because this is a diagnostic; the money that is summed
+    is D11's (`design/DECISIONS.md` D-0246).
+    """
 
     chosen: tuple[str, ...]
     reason: str
     substituted: tuple[str, ...] = ()
     cost_per_kwh_heat: Mapping[str, float] = field(default_factory=dict)
+    excluded: Mapping[str, str] = field(default_factory=dict)
+    demand_w: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

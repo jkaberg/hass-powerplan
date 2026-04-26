@@ -1,10 +1,10 @@
 """The ordered walk: who gets what, and why (D6 §5.3, INV-1).
 
     0 frozen        → hold every previous grant, no escalation (INV-15, INV-17)
-    1 zones         → which source carries a zone's demand
+    1 zones         → which source carries a zone's demand              (INV-42)
     2 P_free        = P_allow − uncontrolled − Σ reserved(decided so far)
     3 comfort       → every violator first, at any priority, bounded by item 1 only
-    4 cycles        → a running cycle keeps its nameplate
+    4 cycles        → a running cycle keeps its profile power            (INV-59)
     5 the walk      → descending priority, on the residual, quantised down
     6 stage actions → ≥ 2 stores to their floor, 4 (blunt) all off but comfort and pumps
     7 the shed set  → filtered to agree with the grants, a reason each   (INV-40)
@@ -16,11 +16,11 @@
 ceiling > comfort floors > plan > preference. A strategy paces and never overrides
 safety; a device profile never decides.
 
-Two invariants the arithmetic carries rather than checks. A load is judged against
-the allowance less what the loads **decided before it** reserve, so it is never asked
-to fit beside its own reservation (D6 §9 21) - and what a load reserves is its
-nameplate, its measured draw plus a margin, or its grant, by what it *is* (D6 §5.2).
-Both are the ancestor's lesson: `granted_w 348.3, measured_w 2940.0` with `p_free_w`
+Two invariants the arithmetic carries rather than checks. A load is judged against the
+allowance less what the loads **decided before it** reserve, so it is never asked to fit
+beside its own reservation (D6 §9 21) - and what a load reserves is its nameplate, its
+measured draw plus a margin, or its grant, by what it *is* (D6 §5.2). Both are the
+ancestor controller's lesson: `granted_w 348.3, measured_w 2940.0` with `p_free_w`
 reading 8–9 kW while the house was 1.4 kW over.
 """
 
@@ -36,13 +36,18 @@ from ..model import Grant
 from .budget import PiState
 from .constraints.base import AllocCtx, Constraint, Violation
 from .constraints.circuit import CircuitLimit
+from .constraints.cycle import CycleReservation
+from .constraints.group import GroupCap
 from .constraints.phase import PhaseLimit
+from .constraints.zone import Zone, ZoneChoice
 from .ladder import STAGE_BLUNT, LadderState
 from .report import (
     AllocReport,
     CircuitReport,
     PhaseReport,
+    RotationReport,
     ShedReason,
+    ZoneReport,
     reservation_table,
     unconstrained_ask_w,
 )
@@ -91,13 +96,16 @@ class AllocCfg:
 class AllocState:
     """What the allocator remembers between ticks, and D7 persists (D6 §4, §7).
 
-    `starved_since` and `zone_choice` are the hooks WP3.2 and WP5.3 fill; they are
-    declared here so the store schema and the walk do not change when they land.
+    `starved_since` is a group member's rotation clock (D6 §5.6) and `zone_choice`
+    a zone's source, its dwell and the candidate trying to replace it (§5.7). Both
+    are rebuilt from the constraints that are present, and left untouched on a tick
+    that has none - a tick without groups is not a tick in which nobody is starving
+    (`design/DECISIONS.md` D-0240).
     """
 
     sticky_until: Mapping[str, datetime] = field(default_factory=dict)
     starved_since: Mapping[str, datetime] = field(default_factory=dict)
-    zone_choice: Mapping[str, tuple[str, datetime]] = field(default_factory=dict)
+    zone_choice: Mapping[str, ZoneChoice] = field(default_factory=dict)
     ev_stop_latch: Mapping[str, datetime | None] = field(default_factory=dict)
     pi: PiState = field(default_factory=PiState)
     ladder: LadderState = field(default_factory=LadderState)
@@ -107,9 +115,7 @@ class AllocState:
         return {
             "sticky_until": {k: v.isoformat() for k, v in self.sticky_until.items()},
             "starved_since": {k: v.isoformat() for k, v in self.starved_since.items()},
-            "zone_choice": {
-                k: [source, at.isoformat()] for k, (source, at) in self.zone_choice.items()
-            },
+            "zone_choice": {k: choice.as_dict() for k, choice in self.zone_choice.items()},
             "ev_stop_latch": {
                 k: None if v is None else v.isoformat() for k, v in self.ev_stop_latch.items()
             },
@@ -128,8 +134,7 @@ class AllocState:
                 k: datetime.fromisoformat(v) for k, v in data.get("starved_since", {}).items()
             },
             zone_choice={
-                k: (source, datetime.fromisoformat(at))
-                for k, (source, at) in data.get("zone_choice", {}).items()
+                k: ZoneChoice.from_dict(choice) for k, choice in data.get("zone_choice", {}).items()
             },
             ev_stop_latch={
                 k: None if v is None else datetime.fromisoformat(v)
@@ -158,6 +163,12 @@ def allocate(
         return _frozen(ctx, state)
 
     for constraint in constraints:
+        # The two constraints with memory take last tick's from the state before
+        # they rank (D6 §7): rotation clocks, and a zone's source and dwell.
+        if isinstance(constraint, GroupCap):
+            constraint.seed(state.starved_since)
+        elif isinstance(constraint, Zone):
+            constraint.seed(state.zone_choice.get(constraint.key))
         constraint.prepare(ctx)
 
     order = sorted(ctx.loads, key=lambda load: (-load.priority, load.load_id))
@@ -165,6 +176,7 @@ def allocate(
     walk = _Walk(ctx=ctx, cfg=cfg, constraints=constraints, state=state, ceiling_w=ceiling_w)
 
     walk.serve_comfort(order)
+    walk.serve_cycles()
     walk.serve_rest(order)
     violations = walk.apply_violations()
     trimmed, freed = walk.trim()
@@ -235,6 +247,7 @@ class _Walk:
         self.taken: dict[str, float] = {}
         self.reserved_running: float = 0.0
         self.comfort: list[str] = []
+        self.cycles: list[str] = []
         self.denied: list[tuple[str, str]] = []
         self.stop_ok: dict[str, bool] = {}
         self.sticky: dict[str, datetime] = dict(self.state.sticky_until)
@@ -260,6 +273,30 @@ class _Walk:
             self._give(load, watts, capped_by=capped_by, reason="comfort")
             self.comfort.append(load.load_id)
         self.breach_w = max(0.0, self.reserved_running - self.ceiling_w)
+
+    def serve_cycles(self) -> None:
+        """Grant every running cycle its profile power, before the walk (INV-59).
+
+        An interrupted dishwasher is a restarted dishwasher: the energy is spent
+        twice and the load comes back out dirty. So a started programme is served
+        like a comfort violator - at any priority, bounded by the **hard** limits
+        only - and stage 4 is the one thing that takes it, because a fuse, a
+        contracted trip, a spent window and a DSO event are not preferences.
+        """
+        for constraint in self.constraints:
+            if not isinstance(constraint, CycleReservation) or not constraint.running:
+                continue
+            load = self.ctx.load(constraint.load_id)
+            if load is None or load.load_id in self.grants:
+                continue
+            self.cycles.append(load.load_id)
+            if self.ctx.stage >= STAGE_BLUNT and self.ctx.blunt:
+                self._deny(load, ShedReason.STAGE, "stage 4: fuse, trip, spent or external")
+                continue
+            cap, capped_by = self._cap(load, hard_only=True)
+            self._give(
+                load, min(constraint.power_w, cap), capped_by=capped_by, reason="running cycle"
+            )
 
     def serve_rest(self, order: Sequence[LoadView]) -> None:
         """Walk the remaining loads in descending priority (D6 §5.3 step 5)."""
@@ -299,7 +336,7 @@ class _Walk:
             self.ctx.loads,
             before,
             total - self.ctx.budget.p_allow_w,
-            frozenset(self.comfort),
+            frozenset(self.comfort) | frozenset(self.cycles),
             self.cfg.trim,
             views=self.ctx.views,
             blunt=self.ctx.blunt,
@@ -332,6 +369,8 @@ class _Walk:
             trimmed=trimmed,
             trim_freed_w=freed,
             reserved=reservation_table(self.ctx.loads, self.grants, self.ctx.views),
+            rotation=self._rotation(),
+            zones=self._zones(),
             circuits=self._circuits(),
             phases=self._phases(),
             breach_w=self.breach_w,
@@ -345,10 +384,12 @@ class _Walk:
         )
 
     def new_state(self) -> AllocState:
-        """Return the state for the next tick: the sticky clocks and the stop gates."""
+        """Return the state for the next tick: the clocks, the choices and the gates."""
         return replace(
             self.state,
             sticky_until=self.sticky,
+            starved_since=self._starvation(),
+            zone_choice=self._zone_choices(),
             ev_stop_latch={lid: self.ctx.now for lid, ok in self.stop_ok.items() if ok},
         )
 
@@ -380,6 +421,18 @@ class _Walk:
         if plan_cap is not None and plan_cap < cap:
             cap, capped_by = plan_cap, ("plan",)
         want = min(demand.max_w, cap)
+
+        if (
+            cap <= _EPS_W
+            and self._quantise(load, 0.0, stop_ok=stop_ok, session=self._session(load)) <= 0.0
+        ):
+            # A CONSTRAINT said zero - a group's cap, a zone's other source, a
+            # circuit with nothing left behind its fuse. That is a shed, with that
+            # constraint's own reason, and not a silent zero grant (INV-40). A
+            # modulating load whose stop is vetoed falls through and is held at its
+            # floor instead (INV-39, `design/DECISIONS.md` D-0247).
+            self._deny(load, self._binding_reason(capped_by, cap), "capped to 0 W")
+            return
 
         if not load.sheddable:
             self._serve_protected(load, want, capped_by)
@@ -599,6 +652,44 @@ class _Walk:
             return
         if self.ctx.previous_w(load.load_id) <= 0.0 or load.load_id not in self.sticky:
             self.sticky[load.load_id] = self.ctx.now + timedelta(seconds=load.min_on_s)
+
+    def _rotation(self) -> dict[str, RotationReport]:
+        """Return one row per group constraint (D6 §4, §5.6)."""
+        return {
+            constraint.key: constraint.report()
+            for constraint in self.constraints
+            if isinstance(constraint, GroupCap)
+        }
+
+    def _zones(self) -> dict[str, ZoneReport]:
+        """Return one row per zone constraint (D6 §4, §5.7)."""
+        return {
+            constraint.key: constraint.report()
+            for constraint in self.constraints
+            if isinstance(constraint, Zone)
+        }
+
+    def _starvation(self) -> Mapping[str, datetime]:
+        """Return the rotation clocks the groups present keep (D6 §5.6).
+
+        Rebuilt from those groups, so a member that has had its turn stops being
+        owed one; a tick with no group constraint leaves the clocks alone rather
+        than forgetting who was waiting (`design/DECISIONS.md` D-0240).
+        """
+        groups = [c for c in self.constraints if isinstance(c, GroupCap)]
+        if not groups:
+            return self.state.starved_since
+        clocks: dict[str, datetime] = {}
+        for group in groups:
+            clocks.update(group.starvation())
+        return clocks
+
+    def _zone_choices(self) -> Mapping[str, ZoneChoice]:
+        """Return each zone's source, dwell and candidate for the next tick (§5.7)."""
+        zones = [c for c in self.constraints if isinstance(c, Zone)]
+        if not zones:
+            return self.state.zone_choice
+        return {zone.key: choice for zone in zones if (choice := zone.choice()) is not None}
 
     def _circuits(self) -> dict[str, CircuitReport]:
         """Return one row per circuit constraint (D6 §4, §8)."""

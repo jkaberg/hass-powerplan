@@ -1007,3 +1007,48 @@ A load reads `energy` (own register), `power` (mean power integrated), `on_fract
 
 `total` sums windows, `over_target`, coarse and estimated counts, days, fees and kWh; takes the max window; reports the highest month's metric, level and target; ANDs `gate`; and takes the worst confidence and reconstruction. Twelve months at 8.7 kW isn't 104 kW, and a mean would be a bill nobody was sent.
 **Rejected:** a blank metric in the total - the worst month is what the gate asks about.
+
+### D-0240 · Rotation clocks and zone choices live on `AllocState`, rebuilt from the constraints present
+
+`starved_since` and `zone_choice` are rebuilt each tick from the group and zone constraints present and left alone on a tick without them. A tick without groups isn't one where nobody's starving. Affects D6 §4, §7.
+**Rejected:** clocks inside the constraints - constraints are rebuilt from config every tick (D-0162).
+
+### D-0241 · A zone's effect is a cap of zero with reason `zone_substituted`
+
+The sources a zone didn't choose are capped to 0 W and shed with their own reason; the chosen one is uncapped. A cap is the one way a constraint acts (D6 §5.3), and INV-40 wants a reason. Affects D6 §5.7.
+**Rejected:** re-ranking priority - can't express "off because the other is cheaper".
+
+### D-0242 · A non-electric zone source's nameplate is its electric draw
+
+A gas or district-heat source declares its pump or fan as its D6 nameplate; its fuel cost enters the zone's ranking through D1's carrier curves. Affects D6 §5.7, §6.
+**Rejected:** one nameplate for both - 14 kW of capacity reserved for a 90 W pump.
+
+### D-0243 · Zone hysteresis and dwell are wall-clock instants
+
+`ZoneChoice.since` and `candidate_since` are instants; a switch needs its margin to hold for `switch_confirm_s` and the incumbent to have served `min_dwell_min`. Same behaviour at any tick rate. Affects D6 §5.7, §7.
+**Rejected:** tick counts - a dwell that halves when the meter cadence doubles.
+
+### D-0244 · After a switch the new source's dwell starts now
+
+The incumbent's clock isn't carried over, so a pair can't flap around the threshold that caused the switch. A comfort-urgent member overrides the penalty and gets its own source back (INV-42). Affects D6 §5.7.
+**Rejected:** symmetric hysteresis alone - the pair flaps every confirmation window.
+
+### D-0245 · A running cycle reserves at least its nameplate
+
+`CycleReservation` holds the profile's power for a running cycle through stages 1-3, never less than a relay load's nameplate; at stage 4 it's released and the cycle may be cut. A dishwasher's mean is 300 W and its heater 1.8 kW, and a cut cycle restarts from zero (INV-59). Affects D6 §5.2, §5.3.
+**Rejected:** reserving the profile's mean - under-reserves the heater spike.
+
+### D-0246 · The zone report carries floats and strings, not money
+
+`ZoneReport` shows each source's price per kWh of heat and why one wasn't a candidate (`cop_below_floor`, `no_price`, `absent`). Summed money is D11's (INV-68). Affects D6 §5.9.
+**Rejected:** `Money` in the report - two ledgers.
+
+### D-0247 · A constraint's zero is a shed with its reason; a vetoed stop falls through to the floor
+
+A load capped to 0 W is denied with the constraint's `shed_reason`, never a silent zero grant (INV-40). A modulating load whose stop is vetoed isn't denied; it's held at its floor (INV-28, INV-39). Affects D6 §5.3.
+**Rejected:** a zero cap as a 0 W grant - the silent zero INV-25/40 forbid.
+
+### D-0248 · The allocator seeds group and zone constraints from `AllocState` before `prepare`
+
+`allocate()` calls `GroupCap.seed(...)` and `Zone.seed(...)` before `prepare(ctx)`, and rebuilds both on the way out (D-0240). Constraints are rebuilt every tick, so their memory has to come from the state or a starving loop is forgotten. Affects D6 §3, §7.
+**Rejected:** `prepare(ctx, state)` on every constraint - six of eight have no memory.

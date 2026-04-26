@@ -26,9 +26,8 @@
 # and the filtered shed set. INV-39's horizon half - the plan's own stop horizon,
 # and the plan half of the budget horizon - was covered by WP0.6
 # (tests/core/strategies/test_12_*), the same split as INV-43's in WP0.2.
-# INV-41 (rotation) is WP3.2's and INV-42 (zones) is WP5.3's.
-INV-41
-INV-42
+# INV-41 (rotation) and INV-42 (zones) are covered by D6's group and zone constraints
+# (tests/core/allocation/test_12_rotation.py, test_13_zones.py) - the D6 parts of WP3.2 / WP5.3.
 
 # INV-44–48 - publish, isolation, budget, knobs, startup (HLD §6.7, D7)
 # → WP0.8 (pure) and WP1.1 (runtime). INV-43's metering half - the window
