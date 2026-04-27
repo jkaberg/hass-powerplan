@@ -190,3 +190,26 @@ def test_10_an_unknown_requirement_leaves_the_load_free() -> None:
 
     assert plan.cap_w(NOW) is None
     assert plan.slots == ()
+
+
+@pytest.mark.inv("INV-31")
+def test_10_the_plan_is_cut_to_the_ceiling_the_ladder_defends() -> None:
+    """ε off the target, then the stage-2 fraction: what D6 will not object to (D-0257).
+
+    A 5 kW target with ε 0.3 kWh/h and the ladder's 0.95: (5000 − 300) × 0.95 =
+    4465 W. Cut to the bare 5 000 W, every planned full slot opened at 103 % of
+    the 4.7 kWh ceiling and stage 3 shed the bathrooms at the window boundary.
+    """
+    curve = volatile_curve()
+    slots = curve.slots_between(NOW, curve.slots[-1].end)
+    bare = Headroom.build(slots, tariff=evaluator(no_tariff()), target=Target(kind="kw", kw=5.0))
+    guarded = Headroom.build(
+        slots,
+        tariff=evaluator(no_tariff()),
+        target=Target(kind="kw", kw=5.0),
+        eps_w=300.0,
+        fraction=0.95,
+    )
+
+    assert bare.w_at(slots[0].start) == pytest.approx(5000.0)
+    assert guarded.w_at(slots[0].start) == pytest.approx((5000.0 - 300.0) * 0.95)

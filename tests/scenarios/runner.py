@@ -1,0 +1,750 @@
+"""The scenario runner: a house, a span of time, the real engine at 10 s (D9 §5.2).
+
+    for t in range(start, end, step=10 s):
+        env = weather(t), prices(t), events(t), faults(t)
+        reads = {load: sim[load].reads()}; meter = sim.meter.sample(Σ sim power + uncontrolled(t))
+        state, snapshot, effects = engine.tick(state, inputs)      # the same code HA runs
+        for cmd in effects.commands: sim[cmd.load].apply(cmd)      # quirks honoured by the sims
+        at HH:00/15/30/45 + 20 s, on plug-in and after a restart: engine.plan(state, inputs)
+        if fault == restart: state = roundtrip_through_store(state)
+
+The planning cadence is D7 §5.2's, not a timer from the first tick: the
+quarter-hour trigger runs after the slot boundary, so a plan whose last slot
+just ended is re-cut before the load has waited a tick longer than it must.
+This module is the adapter D-0041 promised: `tests/sim` owns `Env`, `Command`
+and `Reads`; the engine owns `Inputs` and `Effects`; the two meet here and
+nowhere else. Everything is deterministic under the house's seed - a flaky
+scenario is a bug, not a retry (D9 §8).
+"""
+
+from __future__ import annotations
+
+import json
+from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta, tzinfo
+from decimal import Decimal
+from itertools import pairwise
+from typing import TYPE_CHECKING, Any
+
+from custom_components.powerplan.core.engine import (
+    Effects,
+    Engine,
+    EngineState,
+    Inputs,
+    Knobs,
+    LoadReads,
+    _curves_stale,
+)
+from custom_components.powerplan.core.loads import Action, PresenceMode, Role
+from custom_components.powerplan.core.metering import (
+    MeterSample,
+    Reading,
+    WindowMeter,
+    WindowMeterConfig,
+)
+from custom_components.powerplan.core.model import Carrier, Confidence
+from custom_components.powerplan.core.pricing import build_curve
+from custom_components.powerplan.core.pricing.context import PriceContext
+from custom_components.powerplan.core.pricing.forecasters.base import chain
+from custom_components.powerplan.core.pricing.forecasters.carry_known import CarryKnown
+from custom_components.powerplan.core.pricing.forecasters.synthesised import Synthesised
+from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
+from custom_components.powerplan.core.pricing.model import RawSlot
+from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
+    TimeFilter,
+    TouPeriod,
+    TouSchedule,
+)
+from custom_components.powerplan.core.strategies import Curves
+from custom_components.powerplan.core.strategies.adoption import inputs_changed
+from custom_components.powerplan.core.tariffs import Target
+from tests.builders.houses import House
+from tests.core.loads.conftest import reads as core_reads
+from tests.core.loads.conftest import sim_command, tank_reads
+from tests.sim.base import LIMIT_A, REGISTER_IMPORT_KWH, SETPOINT_C, SOC, TEMP_AIR, TEMP_FLOOR
+from tests.sim.base import Reads as SimReads
+from tests.sim.household import AWAY, VACATION
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from custom_components.powerplan.core.loads import Load
+    from custom_components.powerplan.core.model import Snapshot
+    from tests.sim.base import Command as SimCommand
+
+TICK_S = 10.0
+#: The reference house's tank is ready by 06:30 (D9 §5.3, §5.9).
+READY_AT = time(6, 30)
+#: Local night for "the planner still prefers night" (D9 §5.3 `price_outage_48h`).
+NIGHT_FROM_H = 22
+NIGHT_TO_H = 6
+#: D7 §5.2: the planning cycle runs at the quarter-hour plus 20 s - after the
+#: register report, never at `:00` sharp (INV-43).
+PLAN_QUARTER_S = 900.0
+PLAN_AFTER_QUARTER_S = 20.0
+#: Ticks start 17 s past the minute: nothing ever lands on `HH:00:00` (INV-43).
+OFFSET_S = 17.0
+
+
+# --------------------------------------------------------------------------- #
+# The specification
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class Fault:
+    """One injected fault (D9 §4): `meter_stale(at, seconds)`, `ble_flap(at, seconds)`, `price_outage(day)`, `restart(at)`, `clock_jump(at, seconds)`."""
+
+    kind: str
+    at: datetime | None = None
+    seconds: float = 0.0
+    day: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Scenario:
+    """A house, a start, a number of days, faults, and what must hold (D9 §4)."""
+
+    name: str
+    house: Callable[[], House]
+    start: datetime
+    days: float
+    target_kw: float = 10.0
+    faults: tuple[Fault, ...] = ()
+    knobs: Callable[[datetime], Knobs] | None = None
+
+
+@dataclass
+class ScenarioResult:
+    """What a run measured; the expectations read these (D9 §4 `BacktestMetrics`)."""
+
+    name: str
+    ticks: int = 0
+    plans: int = 0
+    windows: int = 0
+    over_target: int = 0
+    max_window_kwh: float = 0.0
+    window_kwh: list[float] = field(default_factory=list)
+    window_starts: list[str] = field(default_factory=list)
+    comfort_violation_min: float = 0.0
+    bathroom_min_c: float = 99.0
+    ev_soc_at_departure: float | None = None
+    ev_soc_final: float | None = None
+    deadline_misses: int = 0
+    sessions_dropped: int = 0
+    tank_top_at_ready: float | None = None
+    tank_min_bottom_c: float = 99.0
+    writes: dict[str, int] = field(default_factory=dict)
+    max_writes_per_10min: dict[str, int] = field(default_factory=dict)
+    zero_amp_writes: int = 0
+    ev_stops: int = 0
+    plan_adoptions: int = 0
+    plan_changes: int = 0
+    plan_changes_by_load: dict[str, int] = field(default_factory=dict)
+    #: Committed slots a re-cut reneged on **with the same inputs** - churn, INV-32.
+    #: A re-cut the inputs forced (the requirement moved 10 %) is `plan_recuts`.
+    commitment_breaks: dict[str, int] = field(default_factory=dict)
+    plan_recuts: dict[str, int] = field(default_factory=dict)
+    plan_runs_max: dict[str, int] = field(default_factory=dict)
+    #: Adopted plans whose slots do not abut - a DST night must not open a hole.
+    plan_gaps: int = 0
+    frozen_ticks: int = 0
+    engine_failures: int = 0
+    synthesised_plans: int = 0
+    hysteresis_doubled: bool = False
+    outage_night_kwh: float = 0.0
+    outage_day_kwh: float = 0.0
+    reasons_sample: tuple[str, ...] = ()
+    digest: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the comparable metrics - the byte-identity check is on this."""
+        return {
+            "ticks": self.ticks,
+            "plans": self.plans,
+            "windows": self.windows,
+            "over_target": self.over_target,
+            "max_window_kwh": round(self.max_window_kwh, 6),
+            "window_kwh": [round(w, 6) for w in self.window_kwh],
+            "window_starts": list(self.window_starts),
+            "comfort_violation_min": round(self.comfort_violation_min, 3),
+            "bathroom_min_c": round(self.bathroom_min_c, 3),
+            "ev_soc_at_departure": None
+            if self.ev_soc_at_departure is None
+            else round(self.ev_soc_at_departure, 6),
+            "ev_soc_final": None if self.ev_soc_final is None else round(self.ev_soc_final, 6),
+            "deadline_misses": self.deadline_misses,
+            "sessions_dropped": self.sessions_dropped,
+            "tank_top_at_ready": None
+            if self.tank_top_at_ready is None
+            else round(self.tank_top_at_ready, 3),
+            "writes": dict(sorted(self.writes.items())),
+            "max_writes_per_10min": dict(sorted(self.max_writes_per_10min.items())),
+            "zero_amp_writes": self.zero_amp_writes,
+            "ev_stops": self.ev_stops,
+            "plan_adoptions": self.plan_adoptions,
+            "plan_changes": self.plan_changes,
+            "plan_changes_by_load": dict(sorted(self.plan_changes_by_load.items())),
+            "commitment_breaks": dict(sorted(self.commitment_breaks.items())),
+            "plan_recuts": dict(sorted(self.plan_recuts.items())),
+            "plan_runs_max": dict(sorted(self.plan_runs_max.items())),
+            "plan_gaps": self.plan_gaps,
+            "frozen_ticks": self.frozen_ticks,
+            "engine_failures": self.engine_failures,
+            "synthesised_plans": self.synthesised_plans,
+            "hysteresis_doubled": self.hysteresis_doubled,
+            "outage_night_kwh": round(self.outage_night_kwh, 3),
+            "outage_day_kwh": round(self.outage_day_kwh, 3),
+        }
+
+
+# --------------------------------------------------------------------------- #
+# Adapters: simulator reads → core reads, core commands → simulator commands
+# --------------------------------------------------------------------------- #
+
+
+def load_reads(load: Load, sim: Any, step: SimReads, at: datetime) -> LoadReads:
+    """Translate one simulator's step into what the load's provider would read (D4 §4.5)."""
+    kind = load.config.type_key
+    if kind == "ev":
+        if not step.available:
+            return LoadReads(
+                reads=core_reads(
+                    at,
+                    unavailable=(
+                        Role.CURRENT_SET,
+                        Role.CURRENT_MAX,
+                        Role.POWER,
+                        Role.SOC,
+                        Role.STATUS,
+                        Role.ENABLE,
+                    ),
+                )
+            )
+        ev = sim.ev
+        return LoadReads(
+            reads=core_reads(
+                at,
+                numbers={
+                    Role.CURRENT_SET: step.values.get(LIMIT_A, ev.limit_a),
+                    Role.CURRENT_MAX: ev.max_a,
+                    Role.POWER: step.power_w,
+                    Role.SOC: step.values.get(SOC, 100.0 * ev.soc),
+                },
+                texts={
+                    Role.STATUS: step.status or ev.status,
+                    Role.ENABLE: "off" if ev.paused else "on",
+                },
+                # The limit is what the last poll saw, stamped with the poll's
+                # time - `last_reported`, which is what the provider hands the gate.
+                stamps={Role.CURRENT_SET: step.stamps[LIMIT_A]} if LIMIT_A in step.stamps else None,
+            )
+        )
+    if kind == "floor_heating":
+        return LoadReads(
+            reads=core_reads(
+                at,
+                numbers={
+                    Role.SETPOINT: step.values[SETPOINT_C],
+                    Role.TEMP: step.values[TEMP_AIR],
+                    Role.TEMP_FLOOR: step.values[TEMP_FLOOR],
+                    Role.POWER: step.power_w,
+                },
+            )
+        )
+    if kind == "water_heater":
+        return LoadReads(reads=tank_reads(sim, step, at))
+    raise NotImplementedError(f"no read adapter for type {kind!r} yet (D9 §3 runner)")
+
+
+def _register_reading(
+    house_meter: Any, step: SimReads, at: datetime, memo: dict[str, Any]
+) -> Reading:
+    """Return the import register as the AMS reports it: a new `Reading` only when it latched."""
+    value = step.values.get(REGISTER_IMPORT_KWH, house_meter.reported_import_kwh)
+    if memo.get("register_value") != value:
+        memo["register_value"] = value
+        memo["register_at"] = at
+    return Reading(value=value, at=memo.get("register_at", at), source="sim")
+
+
+# --------------------------------------------------------------------------- #
+# Prices
+# --------------------------------------------------------------------------- #
+
+
+def _tou_from(options: Mapping[str, Any] | None) -> TouSchedule | None:
+    """Return the preset's grid energy schedule as D1's modifier (D1 §5.4, D-0126).
+
+    The flow adds this modifier for a NO site from the preset's `energy_components`
+    without anyone typing it; the runner does the same, so the curve the engine
+    plans on carries the day/night energiledd a Norwegian household pays - and the
+    synthesised floor knows that night is cheaper (D1 §5.5).
+    """
+    if not options:
+        return None
+    periods = tuple(
+        TouPeriod(
+            when=TimeFilter(hours=tuple(tuple(span) for span in raw["hours"]))
+            if raw.get("hours")
+            else None,
+            price=Decimal(str(raw["price"])),
+        )
+        for raw in options.get("periods", ())
+    )
+    return TouSchedule(periods=periods, fallback=Decimal(str(options.get("fallback", 0))))
+
+
+def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
+    """Compose the site's curve from the price generator through D1's pipeline (INV-5)."""
+    tz = house.cfg.tz
+    tou = _tou_from(house.tariff.spec.version_at(now).energy_components.get("tou_schedule"))
+    local = now.astimezone(tz)
+    raw: list[RawSlot] = []
+    for offset in range(-1, 3):
+        for slot in house.prices.slots(local.date() + timedelta(days=offset)):
+            if slot.nok_per_kwh is None:
+                continue
+            raw.append(
+                RawSlot(
+                    start=slot.start,
+                    end=slot.start + timedelta(seconds=slot.seconds),
+                    value=Decimal(str(round(slot.nok_per_kwh, 5))),
+                    currency="NOK",
+                    source="sim",
+                    fetched_at=now,
+                )
+            )
+    ctx = PriceContext(
+        now=now,
+        tz=tz,
+        currency="NOK",
+        mtd_kwh_at=lambda _t: 0.0,
+        ytd_kwh_at=lambda _t: 0.0,
+        day_type_at=lambda _d: None,
+        holidays=NO_HOLIDAYS,
+    )
+    curve = build_curve(
+        raw,
+        [] if tou is None else [tou],
+        chain(CarryKnown(), Synthesised(tou=tou)),
+        ctx,
+        timedelta(hours=horizon_h),
+        now,
+    )
+    return Curves(import_={Carrier.ELECTRICITY: curve})
+
+
+# --------------------------------------------------------------------------- #
+# The run
+# --------------------------------------------------------------------------- #
+
+
+def _presence(name: str) -> PresenceMode:
+    if name == AWAY:
+        return PresenceMode.AWAY
+    if name == VACATION:
+        return PresenceMode.VACATION
+    return PresenceMode.HOME
+
+
+def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
+    scenario: Scenario, observer: Callable[[datetime, Snapshot], None] | None = None
+) -> ScenarioResult:
+    """Run `scenario` from its start for its days and measure it."""
+    house = scenario.house()
+    cfg = house.cfg
+    tz = cfg.tz
+    engine = Engine(
+        cfg,
+        WindowMeter(
+            WindowMeterConfig(profile=cfg.electrical, window_min=cfg.window_min, tz=tz), None
+        ),
+        house.tariff,
+        house.loads,
+    )
+    state = EngineState()
+    result = ScenarioResult(name=scenario.name)
+    target = Target(kind="kw", kw=scenario.target_kw)
+    target_kwh = scenario.target_kw * cfg.window_min / 60.0
+
+    pending: dict[str, SimCommand | None] = {load.load_id: None for load in house.loads}
+    steps: dict[str, SimReads] = {}
+    memo: dict[str, Any] = {}
+    writes_10min: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    curves: Curves | None = None
+    plan_due: str | None = "startup"
+    next_quarter_plan = _quarter_plan_after(scenario.start)
+    last_plans: dict[str, Any] = {}
+    seen_days: set[date] = set()
+    plugged_days: set[date] = set()
+    unplugged_days: set[date] = set()
+    # The start day's 06:30 is not a result when the run begins after it.
+    ready_checked: set[date] = (
+        {scenario.start.astimezone(tz).date()}
+        if scenario.start.astimezone(tz).time() >= READY_AT
+        else set()
+    )
+    departure_checked: set[date] = set()
+    stale_until: datetime | None = None
+    flap_until: datetime | None = None
+    outage_days = {f.day for f in scenario.faults if f.kind == "price_outage" and f.day is not None}
+    restarts = sorted(f.at for f in scenario.faults if f.kind == "restart" and f.at is not None)
+    jumps = {
+        f.at: f.seconds for f in scenario.faults if f.kind == "clock_jump" and f.at is not None
+    }
+
+    ticks = int(scenario.days * 86400.0 / TICK_S)
+    now = scenario.start
+    prev_now = now
+    for _ in range(ticks):
+        # -- faults with a clock ------------------------------------------- #
+        for fault in scenario.faults:
+            if fault.at is None or not (prev_now < fault.at <= now):
+                continue
+            if fault.kind == "meter_stale":
+                stale_until = fault.at + timedelta(seconds=fault.seconds)
+                house.meter.inject_outage(fault.at, fault.seconds)
+            elif fault.kind == "ble_flap":
+                flap_until = fault.at + timedelta(seconds=fault.seconds)
+        if restarts and prev_now < restarts[0] <= now:
+            restarts.pop(0)
+            state = EngineState.from_sections(json.loads(json.dumps(state.to_sections())))
+            plan_due = "startup"
+        for jump_at, seconds in list(jumps.items()):
+            if prev_now < jump_at <= now:
+                now = now + timedelta(seconds=seconds)
+                del jumps[jump_at]
+
+        local = now.astimezone(tz)
+        day = local.date()
+        plan = house.household.day(day)
+        env = house.weather.env_at(now, house.household.occupants_at(now))
+
+        # -- the household: plug in, unplug, drive (D9 §5.9) --------------- #
+        if house.ev is not None:
+            if (
+                plan.departure is not None
+                and plan.departure >= scenario.start
+                and now >= plan.departure
+                and day not in unplugged_days
+            ):
+                unplugged_days.add(day)
+                if house.ev.plugged:
+                    result.ev_soc_at_departure = house.ev.soc
+                    if house.ev.soc + 1e-9 < 0.80:
+                        result.deadline_misses += 1
+                house.ev.unplug(plan.drive_kwh)
+                plan_due = "demand"
+            if (
+                plan.arrival is not None
+                and plan.arrival >= scenario.start
+                and now >= plan.arrival
+                and day not in plugged_days
+                and plan.plugs_in
+            ):
+                plugged_days.add(day)
+                house.ev.plug_in()
+                plan_due = "demand"
+        seen_days.add(day)
+
+        # -- the simulators step under last tick's commands ---------------- #
+        total_w = house.uncontrolled.at(now)
+        for load in house.loads:
+            sim = house.sims[load.load_id]
+            command = pending[load.load_id]
+            if load.config.type_key == "ev" and flap_until is not None and now < flap_until:
+                sim.link_up = False
+            step = sim.step(TICK_S, command, env)
+            pending[load.load_id] = None
+            steps[load.load_id] = step
+            total_w += step.power_w
+        meter_step = house.meter.step(TICK_S, total_w, env)
+
+        # -- inputs ------------------------------------------------------- #
+        grid_at = (
+            now - timedelta(seconds=(now - stale_until).total_seconds() + 1.0)
+            if stale_until is not None and now < stale_until
+            else now
+        )
+        if stale_until is not None and now < stale_until:
+            # The sensor stopped reporting: the last value keeps its old timestamp.
+            grid_at = memo.get("stale_from", now)
+            memo.setdefault("stale_from", now - timedelta(seconds=TICK_S))
+        else:
+            memo.pop("stale_from", None)
+        sample = MeterSample(
+            grid_w=Reading(value=meter_step.power_w, at=grid_at, source="sim"),
+            import_kwh=_register_reading(
+                house.meter, meter_step, now if grid_at == now else grid_at, memo
+            ),
+        )
+        knobs = (
+            scenario.knobs(now)
+            if scenario.knobs
+            else Knobs(target=target, presence=_presence(house.household.presence_at(now)))
+        )
+        if now >= next_quarter_plan:
+            plan_due = plan_due or "quarter"
+            next_quarter_plan = _quarter_plan_after(now)
+        if curves is None or plan_due is not None:
+            curves = (
+                _curves(house, now)
+                if day not in outage_days
+                else _curves_without_today(house, now, outage_days)
+            )
+        inputs = Inputs(
+            now=now,
+            site=cfg,
+            meter=sample,
+            loads={
+                load.load_id: load_reads(load, house.sims[load.load_id], steps[load.load_id], now)
+                for load in house.loads
+            },
+            knobs=knobs,
+            curves=curves,
+            outdoor_c=env.outdoor_c,
+            trigger="tick",
+        )
+
+        # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #
+        if plan_due is not None:
+            state, report, plan_effects = engine.plan(state, inputs)
+            plan_due = None
+            result.plans += 1
+            result.plan_adoptions += len(report.adopted)
+            new_plans = dict(state.plans.plans)
+            changed, broken, recut = _plan_changes(last_plans, new_plans, now)
+            for load_id in changed:
+                result.plan_changes += 1
+                result.plan_changes_by_load[load_id] = (
+                    result.plan_changes_by_load.get(load_id, 0) + 1
+                )
+            for load_id in broken:
+                result.commitment_breaks[load_id] = result.commitment_breaks.get(load_id, 0) + 1
+            for load_id in recut:
+                result.plan_recuts[load_id] = result.plan_recuts.get(load_id, 0) + 1
+            result.hysteresis_doubled = result.hysteresis_doubled or _curves_stale(
+                inputs.curves, now
+            )
+            for load_id in report.adopted:
+                adopted_plan = new_plans[load_id]
+                runs = _runs(adopted_plan, now)
+                result.plan_runs_max[load_id] = max(result.plan_runs_max.get(load_id, 0), runs)
+                if any(a.end != b.start for a, b in pairwise(adopted_plan.slots)):
+                    result.plan_gaps += 1
+                if adopted_plan.confidence is Confidence.SYNTHESISED:
+                    result.synthesised_plans += 1
+                if load_id == "ev" and day in outage_days:
+                    night, daytime = _night_and_day_kwh(adopted_plan, tz)
+                    result.outage_night_kwh += night
+                    result.outage_day_kwh += daytime
+            last_plans = new_plans
+            _apply_effects(house, plan_effects, pending, result, now, writes_10min)
+
+        # -- tick ---------------------------------------------------------- #
+        state, snapshot, effects = engine.tick(state, inputs)
+        result.ticks += 1
+        if observer is not None:
+            observer(now, snapshot)
+        _apply_effects(house, effects, pending, result, now, writes_10min)
+        _measure(
+            house, snapshot, steps, result, now, target_kwh, ready_checked, departure_checked, day
+        )
+        if state.runtime.failures:
+            result.engine_failures += 1
+        result.reasons_sample = snapshot.reasons
+
+        prev_now = now
+        now = now + timedelta(seconds=TICK_S)
+
+    if house.ev is not None:
+        result.ev_soc_final = house.ev.soc
+        result.sessions_dropped = house.ev.sessions_dropped
+    result.max_writes_per_10min = {
+        load_id: max(buckets.values(), default=0) for load_id, buckets in writes_10min.items()
+    }
+    result.digest = json.dumps(result.as_dict(), sort_keys=True)
+    return result
+
+
+def _quarter_plan_after(now: datetime) -> datetime:
+    """Return the next `HH:00/15/30/45 + 20 s` strictly after `now` (D7 §5.2)."""
+    quarter = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+    due = quarter + timedelta(seconds=PLAN_AFTER_QUARTER_S)
+    while due <= now:
+        due += timedelta(seconds=PLAN_QUARTER_S)
+    return due
+
+
+def _shape(envelope_w: float | None) -> str:
+    """Classify a slot: free, still, or charging - the decision, not the watt figure.
+
+    The cap a slot carries follows the headroom forecast and moves by a few watts
+    every cycle; INV-32 is about the *decision* flapping, which is what this reads.
+    """
+    if envelope_w is None:
+        return "free"
+    return "still" if envelope_w <= 0.0 else "on"
+
+
+def _plan_changes(
+    old: Mapping[str, Any], new: Mapping[str, Any], now: datetime
+) -> tuple[list[str], list[str], list[str]]:
+    """Return the loads whose future changed shape, whose commitment broke, and re-cut.
+
+    Only slots from `now` on are compared, at equal starts: the slots that have
+    passed are not a change, and a re-cut plan that says the same thing about
+    the same future is the same plan. A plan's *tail* moves with its inputs -
+    a tank that heated 0.73 kWh needs one slot fewer - and that is not churn;
+    a slot the old plan had **committed** (D5 §5.9, `COMMIT_MIN` ahead, known
+    prices) and the new plan reneges on is (INV-32).
+    """
+    changed: list[str] = []
+    broken: list[str] = []
+    recut: list[str] = []
+    for load_id, plan in new.items():
+        before = old.get(load_id)
+        if before is None:
+            continue
+        was = {slot.start: _shape(slot.envelope_w) for slot in before.slots if slot.start >= now}
+        will = {slot.start: _shape(slot.envelope_w) for slot in plan.slots if slot.start >= now}
+        committed = {slot.start for slot in before.slots if slot.committed and slot.start >= now}
+        common = set(was) & set(will)
+        flips = {start for start in common if was[start] != will[start]}
+        if flips:
+            changed.append(load_id)
+        if flips & committed:
+            # D5 §5.9: inputs that changed re-cut the plan, commitments included;
+            # the same inputs re-deciding a commitment is the churn INV-32 forbids.
+            (recut if inputs_changed(before, plan) else broken).append(load_id)
+    return changed, broken, recut
+
+
+def _night_and_day_kwh(plan: Any, tz: tzinfo) -> tuple[float, float]:
+    """Split a plan's energy into local night (22:00–06:00) and the rest of the day."""
+    night = 0.0
+    daytime = 0.0
+    for slot in plan.slots:
+        hour = slot.start.astimezone(tz).hour
+        if hour >= NIGHT_FROM_H or hour < NIGHT_TO_H:
+            night += slot.kwh
+        else:
+            daytime += slot.kwh
+    return night, daytime
+
+
+def _runs(plan: Any, now: datetime) -> int:
+    """Return how many separate runs of active slots the plan has from `now` on."""
+    runs = 0
+    active = False
+    for slot in plan.slots:
+        if slot.end <= now:
+            continue
+        on = _shape(slot.envelope_w) == "on"
+        if on and not active:
+            runs += 1
+        active = on
+    return runs
+
+
+def _curves_without_today(house: House, now: datetime, outage_days: set[date]) -> Curves:
+    """Compose the curve with the outage days' slots missing - D1 synthesises the floor."""
+    prices = house.prices
+    original = prices.regimes
+    try:
+        from tests.sim.prices import (  # noqa: PLC0415 - the fault's own vocabulary
+            OUTAGE,
+            PriceRegime,
+        )
+
+        # First match wins in `PriceSim.kind_on`: the outage goes in front of the
+        # scenario's own regime, or a flat year would swallow it.
+        prices.regimes = tuple(
+            PriceRegime(kind=OUTAGE, start=d, end=d + timedelta(days=1))
+            for d in sorted(outage_days)
+        ) + tuple(original)
+        return _curves(house, now)
+    finally:
+        prices.regimes = original
+
+
+def _apply_effects(  # noqa: PLR0917 - the loop's threaded bookkeeping
+    house: House,
+    effects: Effects,
+    pending: dict[str, SimCommand | None],
+    result: ScenarioResult,
+    now: datetime,
+    writes_10min: dict[str, dict[int, int]],
+) -> None:
+    """Hand each written decision to its simulator; count the writes (D9 §5.3)."""
+    for command in effects.commands:
+        decision = command.decision
+        if decision.action is not Action.WRITTEN or decision.command is None:
+            continue
+        sim_cmd = sim_command(decision.command)
+        pending[command.load_id] = sim_cmd
+        result.writes[command.load_id] = result.writes.get(command.load_id, 0) + 1
+        bucket = int(now.timestamp() // 600)
+        writes_10min[command.load_id][bucket] += 1
+        if (
+            sim_cmd is not None
+            and sim_cmd.limit_a is not None
+            and sim_cmd.limit_a <= 0.0
+            and sim_cmd.on is None
+        ):
+            result.zero_amp_writes += 1
+        if command.load_id == "ev" and sim_cmd is not None and sim_cmd.on is False:
+            result.ev_stops += 1
+
+
+def _measure(  # noqa: PLR0917 - the metrics of one tick
+    house: House,
+    snapshot: Snapshot,
+    steps: Mapping[str, SimReads],
+    result: ScenarioResult,
+    now: datetime,
+    target_kwh: float,
+    ready_checked: set[date],
+    departure_checked: set[date],
+    day: date,
+) -> None:
+    """Accumulate the per-tick metrics the expectations read."""
+    if snapshot.meter is not None:
+        if snapshot.meter.frozen_reason is not None:
+            result.frozen_ticks += 1
+        for window in snapshot.meter.closed:
+            result.windows += 1
+            result.window_kwh.append(window.kwh)
+            result.window_starts.append(window.start_utc.isoformat())
+            result.max_window_kwh = max(result.max_window_kwh, window.kwh)
+            if window.kwh > target_kwh + 1e-9:
+                result.over_target += 1
+    minutes = TICK_S / 60.0
+    violated = False
+    for load in house.loads:
+        sim = house.sims[load.load_id]
+        if load.config.type_key == "floor_heating":
+            floor_c = float(load.config.params.get("floor_c", 0.0))
+            # As the thermostat reports it (0.1 K steps): the number the household
+            # and the engine both see, not the model's internal float.
+            values = steps[load.load_id].values
+            temp = (
+                values[TEMP_AIR]
+                if load.config.params.get("sensor") == "air"
+                else values[TEMP_FLOOR]
+            )
+            if load.config.params.get("room") == "bathroom":
+                result.bathroom_min_c = min(result.bathroom_min_c, temp)
+            if temp < floor_c:
+                violated = True
+        elif load.config.type_key == "water_heater":
+            result.tank_min_bottom_c = min(result.tank_min_bottom_c, sim.bottom_c)
+            local = now.astimezone(house.cfg.tz)
+            if local.time() >= READY_AT and day not in ready_checked:
+                ready_checked.add(day)
+                result.tank_top_at_ready = sim.top_c
+    if violated:
+        result.comfort_violation_min += minutes

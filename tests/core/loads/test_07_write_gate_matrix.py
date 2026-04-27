@@ -520,6 +520,77 @@ def test_07i_a_lost_write_is_re_issued_because_the_entity_is_the_witness() -> No
     assert again.action is Action.WRITTEN
 
 
+@pytest.mark.inv("INV-22")
+def test_07i3_a_read_back_older_than_the_write_is_not_a_read_back() -> None:
+    """Row 3b past `verify_due`: one poll may predate the write, two cannot.
+
+    The BLE charger's limit entity is what the last poll saw. Thirty seconds after
+    a write the poll may not have run yet, and the entity still says 21 °C *with a
+    stamp older than our write*: re-issuing on that is a duplicate write, not a
+    decision against the read-back (D-0251). A stamp two polls old is a device
+    that has stopped reporting, and row 3 judges it again.
+    """
+    cfg = gate_config(min_interval_s=0.0, verify_after_s=30.0)
+    written = decide(
+        SETPOINT_22,
+        current=21.0,
+        mode=Mode.AUTO,
+        cfg=cfg,
+        state=gate_state(),
+        budget=budget(),
+        now=NOW,
+    )
+    after_verify = NOW + timedelta(seconds=40)
+    held = decide(
+        SETPOINT_22,
+        current=21.0,
+        mode=Mode.AUTO,
+        cfg=cfg,
+        state=written.gate,
+        budget=budget(),
+        now=after_verify,
+        current_at=NOW - timedelta(seconds=5),
+    )
+    assert held.action is Action.HELD_SETTLING
+    assert "predates" in held.reason
+
+    state, deviated = verify(
+        written.gate,
+        current=21.0,
+        tolerance=cfg.tolerance,
+        now=after_verify,
+        current_at=NOW - timedelta(seconds=5),
+    )
+    assert not deviated, "no read-back yet, so no deviation"
+    assert state.verify_due is not None, "the verify stays due"
+
+    fresh = decide(
+        SETPOINT_22,
+        current=21.0,
+        mode=Mode.AUTO,
+        cfg=cfg,
+        state=written.gate,
+        budget=budget(),
+        now=after_verify,
+        current_at=NOW + timedelta(seconds=35),
+    )
+    assert fresh.action is Action.WRITTEN, (
+        "a poll after the write that still says 21 is a lost write"
+    )
+
+    two_polls_late = decide(
+        SETPOINT_22,
+        current=21.0,
+        mode=Mode.AUTO,
+        cfg=cfg,
+        state=written.gate,
+        budget=budget(),
+        now=NOW + timedelta(seconds=61),
+        current_at=NOW - timedelta(seconds=5),
+    )
+    assert two_polls_late.action is Action.WRITTEN, "an entity silent for two polls is not lagging"
+
+
 def test_07i2_a_verify_that_matches_is_silent() -> None:
     """A read-back that agrees clears the settle window and counts nothing."""
     cfg = gate_config(verify_after_s=30.0)

@@ -190,6 +190,17 @@ class Reads:
             return None
         return (now - read.reading.at).total_seconds()
 
+    def taken_at(self, role: Role) -> datetime | None:
+        """Return when `role`'s number was taken - the poll, not the tick.
+
+        The gate compares it with its own write: a read-back older than the
+        write has not seen the write, whatever value it carries (D-0251).
+        """
+        read = self.roles.get(role)
+        if read is None or read.reading is None:
+            return None
+        return read.reading.at
+
 
 # --------------------------------------------------------------------------- #
 # What goes out

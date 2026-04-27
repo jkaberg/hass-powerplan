@@ -131,6 +131,8 @@ class Headroom:
         tariff: CeilingSource | None = None,
         target: Target = AUTO,
         forecasts: Forecasts | None = None,
+        eps_w: float = 0.0,
+        fraction: float = 1.0,
     ) -> Headroom:
         """Return the per-slot headroom for `slots` (D5 §5.1, INV-31).
 
@@ -138,12 +140,22 @@ class Headroom:
         windows; `eligible_windows` is what a strategy reads to know *why*
         (`PlanContext.tariff_eligible`), and both come from the same evaluator so
         the two can never disagree.
+
+        `eps_w` and `fraction` are the ceiling D6 actually defends: the target
+        less D3's ε, at the ladder's stage-2 threshold. A plan cut to the bare
+        target opened every planned full-power slot at 103 % of the ceiling and
+        the ladder shed the bathrooms at the window boundary
+        (`design/DECISIONS.md` D-0257).
         """
         room: dict[datetime, float] = {}
         for slot in slots:
             ceiling = math.inf if tariff is None else tariff.target_w_at(slot.start, target)
             baseline = 0.0 if forecasts is None else forecasts.baseline_w(slot.start)
-            room[slot.start] = ceiling if math.isinf(ceiling) else max(0.0, ceiling - baseline)
+            if math.isinf(ceiling):
+                room[slot.start] = ceiling
+                continue
+            guarded = max(0.0, ceiling - eps_w) * fraction
+            room[slot.start] = max(0.0, guarded - baseline)
         return cls(by_slot=room)
 
     def w_at(self, start: datetime) -> float:
@@ -363,7 +375,9 @@ class LoadView:
             store=load.store,
             target=load.config.target,
             level_now=level_now,
-            thermostatic=bool(materialised.get("thermostatic", False)),
+            thermostatic=bool(
+                materialised.get("thermostatic", materialised.get("kind") in ("setpoint", "mode"))
+            ),
             sheddable=bool(materialised.get("sheddable", True)),
             min_on_s=load.kind.dwell_s()[0],
             phase_names=load.config.phase_names,
@@ -441,6 +455,10 @@ class SiteContext:
     horizon_h: float = 48.0
     holidays: HolidayCalendar = NO_HOLIDAYS
     stale: bool = False
+    #: D3's ε for the window, in watts over the window, and the ladder's stage-2
+    #: threshold: together the ceiling the plans are cut to (D5 §5.1, D-0257).
+    eps_w: float = 0.0
+    plan_fraction: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)

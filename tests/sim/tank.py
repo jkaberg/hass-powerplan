@@ -31,7 +31,7 @@ AMBIENT_C = 20.0
 DEFAULT_SETPOINT_C = 75.0
 MAX_C = 80.0
 COMFORT_MIN_C = 45.0
-THERMOSTAT_HYSTERESIS_K = 5.0
+THERMOSTAT_HYSTERESIS_K = 2.0
 LEGIONELLA_C = 65.0
 LEGIONELLA_HOLD_S = 3600.0
 LEGIONELLA_BAND_K = 1.0
@@ -68,8 +68,10 @@ SOURCES: dict[str, str] = {
     "MAX_C": "D4 §6.3 advanced: max 80 °C",
     "COMFORT_MIN_C": "D4 §5.12: comfort floor 45 °C (below ~50 °C storage favours legionella)",
     "THERMOSTAT_HYSTERESIS_K": (
-        "assumed: 5 K differential on a tank thermostat (mechanical types are 5–8 K). "
-        "Replaced by the measured reheat band of the reference house's tank"
+        "assumed: 2 K differential on an electronically controlled tank — the reference "
+        "house's is a `water_heater` entity with a setpoint (D9 §5.9), not the mechanical "
+        "cylinder-on-a-plug whose 5–8 K differential is D4 §6.3's `mechanical_thermostat` "
+        "case. Replaced by the measured reheat band of the reference house's tank"
     ),
     "LEGIONELLA_C": "D4 §5.12 / §6.3: legionella cycle 65 °C",
     "LEGIONELLA_HOLD_S": "D4 §5.12: hold 60 min",

@@ -156,6 +156,7 @@ engine.tick(state, inputs):                               # the sacred order
   7 demands, comfort = [load.observe(reads)]              (D4) - per-load try/except (INV-45)
   8 grants, report, alloc_state = allocate(…, stage, blunt)   (D6) - stage actions and the trim run inside; frozen → previous grants
   9 commands = [load.apply(grant)] as Effects.commands    (D4) - computed here, executed by runtime
+    # the quantiser handed to D6 reads a temperature kind's `effective_w = None` as the element's nameplate when the grant covers it or comfort is violated, else 0 W (D-0250)
  10 warnings = peak_warning(...) (5.4) + deadline/comfort warnings
  11 snapshot, ha_events (edge-detected against state.runtime.last_edges), store_dirty
 ```

@@ -256,6 +256,19 @@ def config_for(
     )
 
 
+def _predates_write(
+    state: GateState, current_at: datetime | None, now: datetime, cfg: GateConfig
+) -> bool:
+    """Say whether the read-back was taken before our write, inside one more poll.
+
+    Bounded at twice `verify_after_s` past the write: an entity that has not
+    reported for two polls is not lagging, and row 3 gets to judge it (INV-22).
+    """
+    if current_at is None or state.last_write_at is None or current_at > state.last_write_at:
+        return False
+    return now < state.last_write_at + timedelta(seconds=2.0 * cfg.verify_after_s)
+
+
 def _is_upward(command: Command, current: Value | None) -> bool:
     """Say whether this command asks for *more* (row 5).
 
@@ -290,6 +303,7 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     now: datetime,
     available: bool = True,
     release: bool = False,
+    current_at: datetime | None = None,
 ) -> Decision:
     """Run the D4 §5.10 matrix and return what to do about `command`.
 
@@ -341,6 +355,22 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     if same(current, command.value, cfg.tolerance):
         return decided(Action.SAME, f"already at {command.value}")
 
+    # Row 3b - the same value is already on its way. A transport whose read-back
+    # lags (BLE polls every 30 s) still shows the old value after a write; sending
+    # it again every tick until the poll catches up is the square wave
+    # with extra steps. Until `verify_due` the value we sent is the value we hold,
+    # and past it a read-back *taken before the write* has not seen the write
+    # yet: one poll may predate it, two cannot (`design/DECISIONS.md` D-0251).
+    if state.last_value is not None and same(state.last_value, command.value, cfg.tolerance):
+        if state.settling(now):
+            return decided(
+                Action.HELD_SETTLING, f"{command.value} already sent, awaiting read-back"
+            )
+        if _predates_write(state, current_at, now, cfg):
+            return decided(
+                Action.HELD_SETTLING, f"{command.value} sent, read-back predates the write"
+            )
+
     # Row 4 - unavailable is transient first, a failure second.
     if not available:
         if state.transient_since is None:
@@ -362,7 +392,10 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
         # Row 5 - a deficit measured inside our own settle window is our own
         # write (the 30-second square wave). Only a blunt reason
         # overrides; the way *down* is never held here.
-        if state.settling(now) and _is_upward(command, current) and not command.blunt:
+        # Judged against the value we *sent*, not a read-back that may still lag
+        # (D-0251): the device holds what it was last told until it says otherwise.
+        reference = state.last_value if state.last_value is not None else current
+        if state.settling(now) and _is_upward(command, reference) and not command.blunt:
             return decided(Action.HELD_SETTLING, "inside the settle window")
 
         # Rows 6 and 7 are bought past by an urgent write - and by a blunt one,
@@ -414,7 +447,12 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
 
 
 def verify(
-    state: GateState, *, current: Value | None, tolerance: float, now: datetime
+    state: GateState,
+    *,
+    current: Value | None,
+    tolerance: float,
+    now: datetime,
+    current_at: datetime | None = None,
 ) -> tuple[GateState, bool]:
     """Read back the last write; return the new state and whether it deviated.
 
@@ -422,9 +460,16 @@ def verify(
     device: the service call returns, the charger never hears it, and the entity
     is the only witness. A deviation is **not** a failure - nothing refused us -
     and it needs no explicit retry, because the next tick compares the grant
-    with the same read-back and decides again (INV-22).
+    with the same read-back and decides again (INV-22). A read-back taken
+    before the write is no read-back at all: the verify stays due (D-0251).
     """
     if state.verify_due is None or now < state.verify_due:
+        return state, False
+    if (
+        current_at is not None
+        and state.last_write_at is not None
+        and current_at <= state.last_write_at
+    ):
         return state, False
     deviated = state.last_value is not None and not same(current, state.last_value, tolerance)
     return (

@@ -149,24 +149,25 @@ for t in range(start, end, step=10 s):
     env = weather(t), prices(t), events(t), faults(t)
     reads = {load: sim[load].reads()} ; meter = sim.meter.sample(Σ sim power + uncontrolled(t))
     inputs = Inputs(now=t, meter, loads=reads, knobs, curves(t), forecasts(t), events)
-    state, snapshot, effects = engine.tick(state, inputs)         # pure - the same code HA runs
+    state, snapshot, effects = engine.tick(state, inputs)         # pure, the same code HA runs
     for cmd in effects.commands: sim[cmd.load].apply(cmd)         # the simulator honours quirks: BLE drop, 6 A cliff, Z-Wave latency
-    every 15 min: state, _, effects = engine.plan(state, inputs)
+    on D7 §5.2's triggers (HH:00/15/30/45 + 20 s, startup, plug-in/unplug, after a restart): state, _, effects = engine.plan(state, inputs)   # never a timer from the first tick (D-0260)
+    curves(t) = build_curve(sim prices, [the grid's energy charge → tou_schedule], chain(CarryKnown, Synthesised(tou)))   # the NO site's own pipeline (D1 §5.4, D-0126): the grid's day/night charge on every slot, and the synthesised floor knows night
     if fault == restart: state = roundtrip_through_store(state)   # persistence realism
     assertions accumulate (expectations evaluated at the end and, for hard ones, every tick)
 ```
-Uncontrolled load traces come from the builders (evening oven, weekend noise, a 2 kW sauna at 19:00 on Saturdays) and from real anonymised profiles when available.
+Uncontrolled load traces come from the builders (evening oven, weekend noise, a 2 kW sauna at 19:00 on Saturdays) and from real anonymised profiles where there are some.
 
 ### 5.3 Scenario catalogue (v1 must pass)
 
 | scenario | asserts |
 |---|---|
-| `reference_winter_day` | 0 windows over target; EV reaches 80 % by 07:00; tank 75 °C by 06:30; bathrooms ≥ 23 °C; ≤ 1 cmd/dev/10 min Z-Wave |
-| `flat_price_night` (Norgespris) | plan identical across replans; EV charges contiguous; no start/stop churn |
-| `dst_autumn` / `dst_spring` | 25/23 windows; no duplicate/missing window; plans without gaps |
+| `reference_winter_day` | 0 windows over target; EV reaches 80 % by departure (07:30); tank at its 75 °C ready temperature by 06:30 within the thermostat's differential; bathrooms never below their floor (D4 §6.1: 21 °C); ≤ 1 cmd/dev/10 min Z-Wave; no unforced commitment break (INV-32) |
+| `flat_price_night` (Norgespris) | no unforced commitment break across replans (INV-32); the EV's plan is one contiguous run; at most two stops - the pause on arrival for the cheaper night (Tensio's energiledd still has `dag`/`natt` under Norgespris) and the stop when done; no start/stop churn |
+| `dst_autumn` / `dst_spring` | 25/23 windows in the DST day; no duplicate/missing window; plans without gaps; `dst_spring` falls in the household's Easter week (vacation), so the tank's ready-by is dropped by design (D4 §5.12) |
 | `restart_mid_window` | used_kwh continuous; no gate opens; loops restored not adopted |
 | `ble_flaps` | transient not failure; no 0 A writes; sessions dropped == 0 |
-| `price_outage_48h` | synthesised floor; planner still prefers night; hysteresis doubled |
+| `price_outage_48h` | plans adopted on the outage days are built on the synthesised floor; the EV's outage plans put more energy in 22:00–06:00 than in the day; the hysteresis is doubled (`stale`) |
 | `oven_sunday_roast` | outlier not integrated; reserve unchanged next window; peak warning fires ≥ 20 min before |
 | `legionella_expensive_week` | cycle completes by due date |
 | `away_vacation_arrival` | targets lowered; floors held; arrival preheat lands on time |

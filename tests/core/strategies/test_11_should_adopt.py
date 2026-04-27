@@ -175,6 +175,26 @@ def test_11_inputs_changed_is_the_question_not_the_prices() -> None:
     assert not inputs_changed(replace(old, required_kwh=None), replace(old, required_kwh=None))
 
 
+@pytest.mark.inv("INV-32")
+def test_11_a_plan_with_nothing_left_to_give_gives_way() -> None:
+    """An old plan whose active slots have all passed is not a plan to keep (D-0253).
+
+    The overnight tank: 0.4 kWh owed, the residual never moves 10 %, the flat
+    night is never cheaper - and the old plan's only block ended hours ago. The
+    new plan has a block ahead; it wins without any hysteresis.
+    """
+    curve = flat_curve()
+    spent = plan("10.00", slots=(slot(-45), slot(-30)))
+    ahead = plan("10.00", slots=(slot(5),))
+    also_spent = plan("10.00", slots=(slot(-15),))
+
+    assert should_adopt(spent, ahead, POLICY, curve=curve, tz=OSLO, now=NOW)
+    assert not should_adopt(spent, also_spent, POLICY, curve=curve, tz=OSLO, now=NOW)
+    assert not should_adopt(
+        ahead, plan("10.00", slots=(slot(20),)), POLICY, curve=curve, tz=OSLO, now=NOW
+    )
+
+
 def test_11_an_uncovered_plan_gives_way_to_a_covered_one() -> None:
     """Covering the requirement beats being cheap (§5.9, `deadline_at_risk`)."""
     curve = volatile_curve()

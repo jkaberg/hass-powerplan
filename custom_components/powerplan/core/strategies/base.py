@@ -16,11 +16,11 @@ it without importing this one (`design/DECISIONS.md` D-0133).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal, Protocol
 
-from ..model import Carrier, Mode, PlanMode
+from ..model import Carrier, Desired, Mode, PlanMode
 from ..pricing import Field, FieldKind, Schema
 from .adoption import inputs_changed, should_adopt
 from .combinators import COMBINATOR_SCHEMA, combine
@@ -162,6 +162,27 @@ def free_plan(ctx: PlanContext, *, strategy: str, mode: PlanMode, reason: str) -
     )
 
 
+def _with_desired(plan: Plan, view: LoadView) -> Plan:
+    """Tell a thermostatic load what an envelope means for its setpoint (D5 §5.12).
+
+    A SETPOINT or MODE load cannot be capped, only re-targeted (D4 §5.4–5.5): a
+    strategy that plans in watts alone - `deadline_fill` for a tank - would never
+    move its setpoint. Where the strategy said nothing, a positive envelope is
+    `comfort` (charge to the charge setpoint) and the rest is left to the type's
+    own target (`design/DECISIONS.md` D-0252). A strategy that did say something
+    (`schedule`, `heat_capacitor`'s deltas) is not second-guessed.
+    """
+    if not view.thermostatic or all(slot.desired_state is not None for slot in plan.slots):
+        return plan
+    slots = tuple(
+        replace(slot, desired_state=Desired.COMFORT)
+        if slot.desired_state is None and slot.envelope_w is not None and slot.envelope_w > 0.0
+        else slot
+        for slot in plan.slots
+    )
+    return replace(plan, slots=slots)
+
+
 def plan_all(
     loads: Sequence[LoadView],
     curves: Curves,
@@ -188,7 +209,14 @@ def plan_all(
     old = dict(previous or {})
     slots = _window(curves, ctx, now)
     room = (
-        Headroom.build(slots, tariff=ctx.tariff, target=ctx.target, forecasts=ctx.forecasts)
+        Headroom.build(
+            slots,
+            tariff=ctx.tariff,
+            target=ctx.target,
+            forecasts=ctx.forecasts,
+            eps_w=ctx.eps_w,
+            fraction=ctx.plan_fraction,
+        )
         if headroom is None
         else headroom
     )
@@ -227,6 +255,7 @@ def plan_all(
             params,
             partner=_partner(view, pctx),
         )
+        plan = _with_desired(plan, view)
 
         take = before is None or should_adopt(
             before,
@@ -242,15 +271,38 @@ def plan_all(
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)
-        room = room.reserve(
-            {
-                slot.start: slot.envelope_w
-                for slot in chosen.slots
-                if slot.envelope_w is not None and slot.envelope_w > 0.0
-            }
-        )
+        room = room.reserve(_reserved_by(chosen, view, slots))
 
     return SitePlan(plans=kept, headroom_left=room, adopted=frozenset(adopted), built_at=now)
+
+
+def _reserved_by(chosen: Plan, view: LoadView, slots: Sequence[Slot]) -> dict[datetime, float]:
+    """Return the watts per slot `chosen` takes from the loads below it (§5.1).
+
+    A planned load reserves its envelope. A load with **no vote** - a tank under
+    its floor, a car under its minimum SoC, a legionella cycle (`PlanMode.URGENT`) -
+    has no envelope, yet D6 serves it first and at full power until it is out
+    of trouble (INV-1). It reserves `max_w` for as long as that takes at `max_w`,
+    so the plans below it do not count on headroom it is about to use and re-cut
+    every time it crosses its floor (`design/DECISIONS.md` D-0255).
+    """
+    if chosen.mode is not PlanMode.URGENT:
+        return {
+            slot.start: slot.envelope_w
+            for slot in chosen.slots
+            if slot.envelope_w is not None and slot.envelope_w > 0.0
+        }
+    watts = view.demand.max_w
+    left = view.demand.required_kwh
+    out: dict[datetime, float] = {}
+    for slot in slots:
+        out[slot.start] = watts
+        if left is None:
+            break
+        left -= watts * (slot.end - slot.start).total_seconds() / 3600.0 / 1000.0
+        if left <= 0.0:
+            break
+    return out
 
 
 def _partner(view: LoadView, pctx: PlanContext) -> Callable[[str], Plan]:

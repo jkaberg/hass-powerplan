@@ -46,7 +46,7 @@ def test_09_release_undoes_the_shed_and_ignores_the_dwell(thermostat: FakeThermo
         load_ctx(reads=thermostat.reads_at()),
     )
     thermostat.step(60.0, shed.command)
-    assert thermostat.setpoint == pytest.approx(21.0)
+    assert thermostat.setpoint == pytest.approx(21.5), "the floor plus half the swing (D-0259)"
     assert state.shed_active
 
     soon = NOW + timedelta(seconds=60)  # min_on 900 s and the interval 600 s both unelapsed

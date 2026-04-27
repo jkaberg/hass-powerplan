@@ -386,9 +386,11 @@ class FloorHeating:
                 )
             )
         floor_c = float(params.get("floor_c", 19.0))
+        # A thermostat holds its setpoint ± half its swing, so the lowest setpoint
+        # that keeps the floor is half a swing above it (`design/DECISIONS.md` D-0259).
         return Setpoint(
             SetpointCfg(
-                shed_setpoint=float(params.get("shed_setpoint_c", floor_c)),
+                shed_setpoint=float(params.get("shed_setpoint_c", floor_c)) + _half_swing(params),
                 device_min=floor_c,
                 device_max=float(params.get("max_c", 27.0)),
                 min_on_s=float(params.get("min_on_s", 900.0)),
@@ -505,7 +507,7 @@ class FloorHeating:
             stop_ok=False if grant is None else grant.stop_ok,
             blunt=False if grant is None else grant.blunt,
             target=comfort.target,
-            floor=comfort.floor,
+            floor=comfort.floor + _half_swing(load.config.params),
             ceiling=comfort.ceiling,
             setpoint_delta=ctx.setpoint_delta,
             desired=ctx.desired,
@@ -514,6 +516,11 @@ class FloorHeating:
             last_restore_at=state.last_target_restore_at,
             on_at_w=load.config.nameplate_w,
         )
+
+
+def _half_swing(params: Mapping[str, Any]) -> float:
+    """Return half the thermostat's swing (§6.1 `swing_k`): what a setpoint dips by."""
+    return float(params.get("swing_k", 0.0)) / 2.0
 
 
 def _or(value: Any, fallback: float) -> float:

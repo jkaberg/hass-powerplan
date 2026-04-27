@@ -152,6 +152,7 @@ markers = [
     "perf: a timing budget, not correctness (D9 §5.1); excluded from the PR run",
     "backtest: needs recorder history or a CSV (D9 §5.4); excluded from the PR run",
     "bench: a reference-benchmark tier (D9 §5.11); excluded from the PR run",
+    "scenario: a whole-engine day on the simulated house (D9 §5.3); minutes, deterministic",
 ]
 
 # --------------------------------------------------------------------------- #

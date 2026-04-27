@@ -101,12 +101,18 @@ def reads(
     options: Mapping[Role, Sequence[str]] | None = None,
     unavailable: Sequence[Role] = (),
     age_s: float = 0.0,
+    stamps: Mapping[Role, datetime] | None = None,
 ) -> Reads:
-    """Build the `Reads` of one tick from plain values."""
+    """Build the `Reads` of one tick from plain values.
+
+    `stamps` dates one role's number individually - the poll that took it -
+    where `age_s` ages them all alike.
+    """
     roles: dict[Role, RoleRead] = {}
     stamp = at - timedelta(seconds=age_s)
     for role, value in (numbers or {}).items():
-        roles[role] = RoleRead(role=role, reading=Reading(value=value, at=stamp, source="fake"))
+        taken = (stamps or {}).get(role, stamp)
+        roles[role] = RoleRead(role=role, reading=Reading(value=value, at=taken, source="fake"))
     for role, text in (texts or {}).items():
         existing = roles.get(role)
         roles[role] = RoleRead(

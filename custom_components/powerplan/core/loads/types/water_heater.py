@@ -78,6 +78,7 @@ __all__ = [
     "LEGIONELLA_HOLD_S",
     "LEGIONELLA_LEAD_H",
     "LEGIONELLA_URGENT_H",
+    "READY_BAND_K",
     "TANK_C",
     "TANK_LITRES",
     "Legionella",
@@ -121,6 +122,12 @@ MIN_BLOCK_MIN: Final = 30.0
 
 #: The temperature difference that counts as "there" for a tank, kelvin.
 _EPS_K: Final = 0.1
+
+#: A tank within this of its target is *at* its target (§5.12). No tank thermostat
+#: resolves finer than a kelvin, and a 0.1 K sensor step is not a demand: told
+#: 75 °C at 74.4 °C the element never fires, and a controller that keeps asking
+#: re-cuts a 0.4 kWh plan every half hour (`design/DECISIONS.md` D-0256).
+READY_BAND_K: Final = 1.0
 
 #: How far ahead the tank looks for its next ready-by (§5.12: two a day).
 _DEADLINE_HORIZON: Final = timedelta(hours=36)
@@ -840,10 +847,14 @@ class WaterHeater:
         level = comfort.current
         forced = state.mode is Mode.FORCE
         store = load.store
+        wants = level is None or level < target - READY_BAND_K
         required = (
-            None if store is None else store.required_kwh(level, target, deadline, ctx.store_ctx())
+            None
+            if store is None
+            else 0.0
+            if not wants and level is not None
+            else store.required_kwh(level, target, deadline, ctx.store_ctx())
         )
-        wants = level is None or level < target - _EPS_K
 
         if comfort.violated:
             urgency = Urgency.COMFORT_VIOLATION

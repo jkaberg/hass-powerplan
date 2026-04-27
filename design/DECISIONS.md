@@ -1097,3 +1097,58 @@ Safe mode enters after `safe_mode_after_failures` engine exceptions (every load 
 
 A coming window's warning fires once and clears once below `clear_fraction`; the live warning for the current window fires one event and one notification on its edge. The accounting hook is a protocol called from `plan()` oldest-first and unreachable from `tick()` (INV-68). Affects D7 §5.2, §5.4, §9 16.
 **Rejected:** emitting every tick and de-duplicating in D8 - 360 events an hour for one fact.
+
+### D-0250 · A thermostat's watts in the walk follow the grant, not the kind
+
+Temperature kinds answer `effective_w = None`, which the engine's quantiser read as 0 W: every thermostat was charged nothing, and a tank under its floor "served" a 0 W grant with its resting setpoint. A non-held quantisation is now the element's nameplate when the grant covers it or a comfort violation overrides the ceiling, else 0 W. Affects D7 §5.1, D6 §5.3.
+**Rejected:** each temperature kind returning `effective_w` - it doesn't know where the grant sits in the walk.
+
+### D-0251 · Row 3b: a value already sent is held until read back, and a read-back older than the write isn't one
+
+(a) A command equal to `last_value` is `held_settling` until `verify_due`. (b) After that, a read-back whose `taken_at` predates the write holds one more verify window. (c) Row 5 compares an upward move with the value sent. (d) `verify()` stays due for a stale read-back. `Reads.taken_at(role)` is HA's `last_reported`. The Easee limit is a poll old, and every write was being re-sent 60 s later against its own stale read-back: 106 EV writes on `flat_price_night`, 79 after. Affects D4 §5.10, §9 7.
+**Rejected:** a two-poll `verify_after_s` - delays every real deviation on every device.
+
+### D-0252 · A thermostatic load with no desired state gets `COMFORT` in its active slots
+
+`plan_all` fills `Desired.COMFORT` into active slots of a thermostatic load when the strategy left it empty. D4 §5.4's tank charges on `desired is COMFORT`, so a `deadline_fill` tank never charged. Affects D5 §4, §5.1.
+**Rejected:** every energy strategy emitting it - one line in the walk covers them all.
+
+### D-0253 · An exhausted plan authorises no stop and gives way
+
+D6's EV stop gate also requires the plan to draw again later or the load to owe nothing; otherwise the car is held at its floor until the next cycle re-cuts. In D5's adoption, an old plan with nothing active ahead yields to a new one that has something. On `flat_price_night` the car stopped and resumed two minutes apart over 0.17 kWh, and the tank sat on a plan whose only block had passed. Affects D6 §5.3, D5 §5.9.
+**Rejected:** replanning the moment a plan runs out - the tick can't plan (D7), and a reversed stop is what INV-39 prevents.
+
+### D-0254 · `heat_capacitor` holds on a flat day
+
+On a flat local day every slot gets the median rank, so nothing banks or coasts; tariff peaks still coast and the slots before them still bank. Ranking equal prices by clock redrew the bank/coast line every cycle: 50 plan flips and 60 writes per loop on `flat_price_night`, nine after. Affects D5 §5.7.
+**Rejected:** float noise as tie-break - INV-32's forbidden case.
+
+### D-0255 · A load with no vote reserves its maximum in the planning headroom while it draws
+
+In `plan_all`, a `PlanMode.URGENT` load reserves `demand.max_w` slot by slot until `required_kwh` is covered; an unknown requirement reserves the current slot. The EV kept re-planning each time the tank crossed its floor and took 3 kW. Affects D5 §5.1.
+**Rejected:** reserving the whole horizon - a 40-minute recovery would starve the night plan for 48 hours.
+
+### D-0256 · A tank within `READY_BAND_K` (1 K) of its target owes nothing
+
+`wants` is `level < target − 1 K`, and `required_kwh` is 0 otherwise. At 74.4 °C against 75 no tank thermostat fires, and the loss-to-deadline term kept 0.4 kWh owed forever: re-cut plans every half hour and up to 114 setpoint writes a night. Affects D4 §5.12, §9 20.
+**Rejected:** pushing the setpoint above target to force a reheat - setpoints never walk (INV-29).
+
+### D-0257 · Plans are cut to the ceiling the ladder defends
+
+`Headroom.build` uses `(target_w − ε_w) × 0.95 − baseline`: the ε-reduced ceiling at the ladder's stage-2 threshold. Cut to the bare target, every full-power slot opened at 103 % and the ladder went straight to stage 3 and shed the bathrooms for the EV. Affects D5 §5.1.
+**Rejected:** letting the tick trim - stage 3 sheds comfort before it trims (D6 §5.4).
+
+### D-0258 · `heat_capacitor`'s rate-limited ramp continues from the delta in force
+
+The ramp starts from the previous plan's `desired_state_at(now)`, not zero. Starting at zero each cycle wrote a sawtooth of two setpoints per quarter hour on a Z-Wave thermostat allowed one per ten minutes. Affects D5 §5.7.
+**Rejected:** rate-limiting in the type - the plan owns the ramp (D4 §9 19).
+
+### D-0259 · The floor is physical: the lowest setpoint written is the floor plus half the swing
+
+`floor_heating` adds half of `swing_k` to the shed setpoint and the clamp. A bathroom with floor 21 °C and swing 1 K is never told less than 21.5 °C: a thermostat holds its setpoint ± half its swing, so a setpoint on the floor is a floor violated half the time. Affects D4 §5.4, §6.1, §9 20.
+**Rejected:** judging violations with the swing instead - INV-55 promises a temperature, not a dial position.
+
+### D-0260 · The runner plans on D7's triggers and reads INV-32 as unforced commitment breaks
+
+The scenario runner plans at quarter-hour + 20 s, at startup, after a restart and on plug edges. Its price pipeline is the NO site's own (the preset's components as a `tou_schedule`, D-0126). Its INV-32 metric counts a committed slot re-cut without an input change or a smaller requirement; forced re-cuts are `plan_recuts`. The catalogue is Python, the BLE simulator polls every 30 s on a seeded phase, and the tank's differential is 2 K. Affects D9 §5.2, §5.3.
+**Rejected:** a YAML catalogue - Python keeps the house builder typed.

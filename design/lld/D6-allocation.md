@@ -211,7 +211,7 @@ allocate():
       # a BUDGET stop is a blunt reason (`spent_window`, `fuse_breach`, `trip_risk`, `external_limit`) judged on the window horizon;
       # stage 3 never stops an EV - the trim walks it down to the floor and holds it there (INV-28, §8 "veto forever")
       min_stop_ok  = expected off-time ≥ EV_MIN_STOP_S (600): budget horizon = min(t_rem, plan.next_active)   # undone by the window turning OR the plan
-      plan_stop_ok = plan.idle_seconds_from(now) ≥ EV_MIN_STOP_S                                              # undone by the plan alone
+      plan_stop_ok = plan.idle_seconds_from(now) ≥ EV_MIN_STOP_S ∧ (plan.next_active(now) exists ∨ nothing owed)   # undone by the plan alone; a plan that never draws again while energy is owed ran out - the floor until the re-cut (D-0253)
  9 trim (5.5) against measured P_total if deficit > 0
 10 report + unconstrained_ask_w = Σ demands.max_w for loads that wanted power (unconstrained ask) - published in AllocReport; D11 records its own counterfactual per window
 ```

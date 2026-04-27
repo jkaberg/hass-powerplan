@@ -34,13 +34,14 @@ from custom_components.powerplan.core.allocation import (
     AllocState,
     allocate,
 )
-from custom_components.powerplan.core.model import Grant, Plan
+from custom_components.powerplan.core.model import Grant, Plan, Urgency
 from tests.core.allocation.conftest import (
     NOW,
     W_PER_AMP,
     alloc_ctx,
     budget_of,
     controlled,
+    demand,
     ev_view,
     meter,
     plan_of,
@@ -124,8 +125,12 @@ def test_11_a_budget_stop_goes_through_when_both_horizons_are_long_enough() -> N
 
 @pytest.mark.inv("INV-39")
 def test_11_a_plan_stop_is_judged_on_the_plan_alone_at_hh50_and_at_hh00() -> None:
-    """The HH:50 flap: the same answer either side of the window boundary."""
-    idle = plan_of("ev", *[(15 * i, 0.0) for i in range(12)], now=BLOCK_START)
+    """The HH:50 flap: the same answer either side of the window boundary.
+
+    Three idle hours, then the plan charges again: a pause between two blocks
+    is a decision, which is what makes it a *plan* stop (D-0253).
+    """
+    idle = plan_of("ev", *[(15 * i, 0.0) for i in range(12)], (180, 7360.0), now=BLOCK_START)
     at_50 = _tick(
         now=BLOCK_START + timedelta(minutes=5, seconds=13),
         p_allow_w=10_000.0,
@@ -153,6 +158,52 @@ def test_11_a_plan_stop_is_vetoed_when_the_plan_charges_again_in_five_minutes() 
 
     assert report.ev_stop_ok["ev"] is False
     assert grant.w == pytest.approx(FLOOR_W)
+
+
+@pytest.mark.inv("INV-39")
+def test_11_a_plan_that_never_draws_again_authorises_no_stop_while_energy_is_owed() -> None:
+    """A plan with no block ahead ran out; it did not decide to idle.
+
+    The 22:45 case: the plan cut at 22:32 put the last 0.85 kWh in one slot and
+    said still to the deadline, the window budget let the car have less, and at
+    22:45 the car still owed 0.17 kWh. Stopping it there and resuming two minutes
+    later on the re-cut plan is the start/stop churn `flat_price_night` forbids;
+    the floor until the next cycle is not (D-0253).
+    """
+    spent = plan_of("ev", (-30, 7360.0), (-15, 7360.0), *[(15 * i, 0.0) for i in range(8)])
+    grant, report = _tick(p_allow_w=10_000.0, stage=0, plan=spent)
+
+    assert spent.next_active(NOW) is None
+    assert report.ev_stop_ok["ev"] is False
+    assert grant.w == pytest.approx(FLOOR_W)
+    assert grant.shed is False
+    assert dict(report.denied)["ev"] == "planned idle"
+
+
+@pytest.mark.inv("INV-39")
+def test_11_a_plan_that_never_draws_again_stops_a_car_that_owes_nothing() -> None:
+    """Nothing owed and nothing planned: the plan stop stands (D-0253)."""
+    spent = plan_of("ev", (-15, 7360.0), *[(15 * i, 0.0) for i in range(8)])
+    ev = ev_view(
+        demand=demand(
+            min_w=FLOOR_W,
+            max_w=32.0 * W_PER_AMP,
+            required_kwh=0.0,
+            urgency=Urgency.DEADLINE,
+            reason="topping up",
+        )
+    )
+    ctx = alloc_ctx(
+        [ev],
+        budget=budget_of(10_000.0),
+        previous={"ev": RUNNING},
+        views={"ev": controlled("ev", measured_w=20.0 * W_PER_AMP)},
+        plans={"ev": spent},
+        stage=0,
+    )
+    _grants, report, _state = allocate(ctx, (), AllocCfg(), AllocState())
+
+    assert report.ev_stop_ok["ev"] is True
 
 
 @pytest.mark.inv("INV-39")

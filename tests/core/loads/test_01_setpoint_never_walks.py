@@ -60,7 +60,9 @@ def test_01b_a_restart_after_a_shed_restores_comfort_not_comfort_plus_a_band(
     state, result = load.apply(shed, state, ctx)
     assert result.action is Action.WRITTEN
     thermostat.step(60.0, result.command, at=NOW)
-    assert thermostat.setpoint == pytest.approx(21.0)
+    # The floor is 21 °C and the swing 1 K: the lowest setpoint that keeps the
+    # floor is 21.5 (D4 §5.4, `design/DECISIONS.md` D-0259).
+    assert thermostat.setpoint == pytest.approx(21.5)
     assert state.shed_active
 
     later = NOW + timedelta(minutes=20)
@@ -99,4 +101,4 @@ def test_01c_no_upward_move_within_one_dwell_of_a_restore(thermostat: FakeThermo
     )
     assert shed.action is Action.WRITTEN
     assert shed.command is not None
-    assert shed.command.value == pytest.approx(21.0)
+    assert shed.command.value == pytest.approx(21.5), "the floor plus half the swing (D-0259)"

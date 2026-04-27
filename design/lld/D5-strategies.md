@@ -146,12 +146,14 @@ class Strategy(Protocol):
 
 ```
 plan_all(loads, curves, ctx, now):
-    headroom[slot] = D2.target_w_at(slot.start, target) − baseline_w(slot)   # the flat target for that window (T_kw / weight; ∞ outside eligibility) - no slack or free ride for the future; baseline from D10 or the current uncontrolled EMA
+    headroom[slot] = (D2.target_w_at(slot.start, target) − ε_w) × ladder.mid − baseline_w(slot)   # the ceiling D6 defends: the flat target for that window (T_kw / weight; ∞ outside eligibility) less D3's ε, at the ladder's stage-2 threshold (D-0257) - no slack or free ride for the future; baseline from D10 or the current uncontrolled EMA
     for load in sorted(loads, key=priority, reverse=True):              # heat pumps → floors → radiators → tank → EV
         if load.mode in {off, delegated}: reserve nameplate in headroom for delegated; continue
         plan = strategy(load).plan(demand(load), ctx_for(load, headroom), params)
         plan = combinators(load)(plan)
+        plan = with_desired(plan)                                          # a thermostatic load's active slots want COMFORT when the strategy did not say (D-0252)
         for slot in plan.slots: headroom[slot] −= slot.envelope_w        # reservation for lower priorities
+        # a plan with no vote (URGENT) reserves demand.max_w until required_kwh is covered at that power (D-0255)
         adopt or keep old (5.9)
     return SitePlan(plans, headroom_left, adopted)
 ```
@@ -202,16 +204,16 @@ plan: one contiguous block, envelope_w = profile power, reason "block"; committe
 
 ### 5.7 `heat_capacitor`
 
-Parameters: `delta_k` (±1.0 default; bounded by store max/min - INV-56), `quantiles` (cheapest 25 % → +Δ, most expensive 25 % → −Δ), `max_rate_k_per_h` (1.0), `bank_scale_with_cold: bool` (Δ × clamp((T_ref − T_out)/10, 0.5, 1.5) - D10 weather), `preheat_max_outdoor_c` (heat pumps: 5 °C, from D4), `respect_tariff_windows: bool` (True: bank before an eligible/peak window, never inside one).
+Parameters: `delta_k` (±1.0 default, bounded by the store's max/min, INV-56), `quantiles` (cheapest 25 % → +Δ, dearest 25 % → −Δ), `max_rate_k_per_h` (1.0), `bank_scale_with_cold: bool` (Δ × clamp((T_ref − T_out)/10, 0.5, 1.5), D10 weather), `preheat_max_outdoor_c` (heat pumps: 5 °C, from D4), `respect_tariff_windows: bool` (True: bank before an eligible/peak window, never inside one).
 ```
 1 deadlines = profile.deadlines(...) → deadline_fill sub-plans (charge to the step-up target before each t)      # priority in overlaps
-2 percentile rank of each remaining slot's price over the horizon day
+2 percentile rank of each remaining slot's price over the horizon day; a flat day (is_flat) ranks nothing, every slot is HOLD (D-0254)
 3 desired_state / envelope:  cheap quantile → target + Δ (envelope max_w; MODE: comfort) · expensive → target − Δ (envelope 0 unless comfort floor; MODE: shed) · middle → target (envelope None)
-4 store bounds: never above store.max_level or below floor; never more than max_rate per hour of change
-5 tariff windows: a slot inside an eligible peak window is treated as "expensive" unless comfort requires otherwise; the slots before it get the bank
+4 store bounds: never above store.max_level or below floor; never more than max_rate per hour of change, counted from the delta the previous plan has in force at `now` (D-0258)
+5 tariff windows: a slot inside an eligible peak window counts as "expensive" unless comfort needs otherwise; the slots before it get the bank
 6 heat pumps: +Δ only if outdoor ≤ preheat_max_outdoor and room < target (INV-29)
 ```
-Cooling: signs flip (`store.direction`).
+Cooling: the signs flip (`store.direction`).
 
 ### 5.8 Battery (design; phase 5)
 
@@ -222,6 +224,7 @@ Cooling: signs flip (`store.direction`).
 ```
 should_adopt(old, new):
     if old is None or old.deadline passed or old.covered == False and new.covered: adopt
+    if old has no active slot ahead and new has one: adopt                      # a spent plan is not a plan to keep (D-0253)
     if inputs_changed (deadline, requirement ±10 %, mode, presence, curve materially changed): adopt
     h = policy.threshold(day) × (2 if stale else 1)
     adopt if new.cost < old.cost − h

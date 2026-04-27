@@ -1305,7 +1305,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--recorder", type=Path, help="a COPY of home-assistant_v2.db, opened read-only"
     )
     source.add_argument("--csv", type=Path, help="a directory in the layout above")
-    parser.add_argument("--preset", required=True, help="a shipped tariff preset, e.g. no/tensio")
+    source.add_argument(
+        "--simulate",
+        metavar="SCENARIO",
+        help=(
+            "run a catalogue scenario (tests/scenarios/catalogue.py) through the same engine "
+            "on the simulated house and report its metrics (D9 §5.2, §5.4)"
+        ),
+    )
+    parser.add_argument("--preset", help="a shipped tariff preset, e.g. no/tensio")
     parser.add_argument("--register", help="the grid import register entity (recorder mode)")
     parser.add_argument("--power", help="the grid power entity, for windows the register misses")
     parser.add_argument(
@@ -1332,6 +1340,10 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(name)s %(message)s",
     )
+    if args.simulate is not None:
+        return simulate(args.simulate, out=args.out)
+    if not args.preset:
+        raise SystemExit("--recorder and --csv need --preset <id> (the tariff)")
     try:
         spec = load_preset(args.preset)
     except PresetError as err:
@@ -1373,6 +1385,54 @@ def main(argv: list[str] | None = None) -> int:
     if args.out is not None:
         args.out.write_text(json.dumps(result.as_dict(), indent=2), encoding="utf-8")
         _LOGGER.info("wrote %s", args.out)
+    return 0
+
+
+def simulate(name: str, *, out: Path | None = None) -> int:
+    """Run one catalogue scenario on the simulated house and print its metrics (D9 §5.4).
+
+    The scenarios and their simulators live in the test tree (D9 §3), so this
+    imports them from the repository root; the engine they drive is the shipped
+    one. The house carries its own tariff, so `--preset` does not apply.
+    """
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from tests.scenarios import catalogue  # noqa: PLC0415 - the test tree is optional at import
+    from tests.scenarios.runner import run_scenario  # noqa: PLC0415
+
+    factory = getattr(catalogue, name, None)
+    if factory is None or not callable(factory):
+        names = ", ".join(scenario.__name__ for scenario in catalogue.PHASE0)
+        raise SystemExit(f"--simulate {name}: not a catalogue scenario; one of {names}")
+    result = run_scenario(factory())
+    metrics = result.as_dict()
+    print(f"scenario {name}")
+    for key in (
+        "ticks",
+        "plans",
+        "windows",
+        "over_target",
+        "max_window_kwh",
+        "comfort_violation_min",
+        "bathroom_min_c",
+        "ev_soc_at_departure",
+        "deadline_misses",
+        "tank_top_at_ready",
+        "ev_stops",
+        "commitment_breaks",
+        "plan_gaps",
+        "frozen_ticks",
+        "engine_failures",
+    ):
+        print(f"  {key:<24} {metrics.get(key)}")
+    for load_id, count in sorted(metrics["writes"].items()):
+        print(
+            f"  writes {load_id:<17} {count} (max {metrics['max_writes_per_10min'][load_id]}/10 min)"
+        )
+    if out is not None:
+        out.write_text(json.dumps(metrics, indent=2, default=str), encoding="utf-8")
+        _LOGGER.info("wrote %s", out)
     return 0
 
 

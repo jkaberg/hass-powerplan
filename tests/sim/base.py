@@ -171,6 +171,10 @@ class Reads:
     available: bool = True
     status: str | None = None
     values: Mapping[str, float] = field(default_factory=dict)
+    #: When a value was *taken*, for the ones a poll delivers late - what an HA
+    #: entity carries as `last_reported`. A value with no stamp is as old as the
+    #: step that produced it.
+    stamps: Mapping[str, datetime] = field(default_factory=dict)
 
 
 # `Reads.values` keys.  A device reports the subset it has a sensor for.

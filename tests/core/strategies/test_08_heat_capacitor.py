@@ -38,6 +38,7 @@ from custom_components.powerplan.core.loads import (
 from custom_components.powerplan.core.loads.stores import RoomStore, SlabStore
 from custom_components.powerplan.core.model import Desired, PlanMode, Urgency
 from custom_components.powerplan.core.strategies import plan_all
+from custom_components.powerplan.core.strategies.base import get, params_of
 from custom_components.powerplan.core.tariffs import TimeFilter
 from tests.builders.curves import ORDINARY, OSLO
 from tests.core.strategies.conftest import (
@@ -48,6 +49,7 @@ from tests.core.strategies.conftest import (
     demand,
     flat_headroom,
     floor_view,
+    plan_ctx,
     site_ctx,
     slab_store,
     volatile_curve,
@@ -219,6 +221,39 @@ def test_08_the_setpoint_never_moves_faster_than_the_rate_limit() -> None:
     assert len(set(steps)) > 2, "the plan does modulate"
     for (before, after), slot in zip(pairwise(steps), plan.slots[1:], strict=True):
         assert abs(after - before) <= 1.0 * slot.hours + 1e-9
+
+
+@pytest.mark.inv("INV-32")
+def test_08_a_re_cut_continues_the_ramp_from_the_delta_in_force() -> None:
+    """A quarter-hour later the new plan starts where the old one has the device (D-0258).
+
+    Restarting the ramp at zero on every cycle wrote −0.25 K at:00:27 over the
+    −0.5 K the previous plan had put in place at:00:17 - a sawtooth of two
+    setpoints per quarter hour on a Z-Wave thermostat allowed one per ten minutes.
+    """
+    curve = volatile_curve()
+    load = _with_params(capacitor_view(), {"delta_k": 3.0, "max_rate_k_per_h": 1.0})
+    weather = Weather(outdoor=-5.0)
+    first = planned(source=curve, view=load, forecasts=weather)
+    later = NOW + timedelta(minutes=15)
+    in_force = first.desired_state_at(later)
+    assert isinstance(in_force, float)
+    assert in_force != 0.0, "the old plan has the device off its target at 15 min"
+
+    ctx = plan_ctx(
+        curve,
+        now=later,
+        load=load,
+        previous=first,
+        forecasts=weather,
+        headroom=flat_headroom(curve, 10_000.0),
+    )
+    second = get("heat_capacitor").plan(load.demand, ctx, params_of("heat_capacitor", load.params))
+    first_delta = deltas(second)[0]
+
+    assert abs(first_delta - in_force) <= 1.0 * 0.25 + 1e-9, (
+        "one slot's worth of ramp, not a restart"
+    )
 
 
 # --------------------------------------------------------------------------- #

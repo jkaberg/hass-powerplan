@@ -1728,6 +1728,11 @@ class Engine:
         if inputs.curves is None:
             reasons.append("no price curve: the adopted plans stand (D1 §8)")
         else:
+            eps_base = (
+                site.budget.eps_base_kwh
+                if inputs.knobs.eps_base_kwh is None
+                else inputs.knobs.eps_base_kwh
+            )
             site_ctx = SiteContext(
                 tz=site.tz,
                 hysteresis=site.hysteresis,
@@ -1738,6 +1743,8 @@ class Engine:
                 events=inputs.events,
                 horizon_h=site.horizon_h,
                 stale=_curves_stale(inputs.curves, now),
+                eps_w=eps_for_window(eps_base, site.window_min) * 60.0 / site.window_min,
+                plan_fraction=site.ladder.thresholds[1],
             )
             site_plan = plan_all(views, inputs.curves, site_ctx, now, previous=state.plans.plans)
             adopted = tuple(sorted(site_plan.adopted))
@@ -2189,7 +2196,19 @@ def _quantiser(load: Load, state: LoadState, ctx: LoadCtx, mode: Mode) -> Any:
 
     def quantise(w: float, *, stop_ok: bool, session_active: bool) -> float:
         kind_ctx = replace(base, stop_ok=stop_ok, session_active=session_active)
-        return load.kind.quantise(w, kind_ctx).effective_w or 0.0
+        quantised = load.kind.quantise(w, kind_ctx)
+        if quantised.effective_w is not None:
+            return quantised.effective_w
+        if quantised.hold or quantised.value is None:
+            return 0.0
+        # A temperature was commanded, not watts (D4 §4.2): the element draws its
+        # nameplate while it heats, so that is what the allocator is charged when
+        # the grant covers it or a comfort violation overrides the ceiling; below
+        # the nameplate a thermostat cannot run at all (D-0250).
+        on_w = base.on_at_w if base.on_at_w is not None else load.config.nameplate_w
+        if kind_ctx.comfort_violated or w + _EPS_W >= on_w:
+            return on_w
+        return 0.0
 
     return quantise
 
@@ -2470,6 +2489,9 @@ def _failed_snapshot(
 
 #: A `Mapping[K, V]` annotation carries exactly two type arguments.
 _KEY_VALUE: Final = 2
+
+#: Below this many watts a grant is nothing (D6 §5.3).
+_EPS_W: Final = 1e-6
 
 
 def _encode(value: Any) -> Any:  # noqa: PLR0911 - one branch per JSON-able shape (D7 §7)

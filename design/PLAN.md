@@ -267,7 +267,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.6 | D5 strategies | done |
 | 0.7 | D6 allocation | done |
 | 0.8 | D7 engine (pure) | done |
-| 0.9 | D9 harness and backtest | todo |
+| 0.9 | D9 harness and backtest | done |
 | 0.9a | Simulators | done |
 | 0.9b | Backtest: recorder and CSV | done |
 | 0.10 | D3 `LoadMeter` and D11 accounting core | todo |

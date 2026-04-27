@@ -119,6 +119,13 @@ def should_adopt(
         return True
     if not old.covered and new.covered:
         return True
+    if old.next_active(now) is None and new.next_active(now) is not None:
+        # The old plan has nothing left to give and the new one has: keeping the
+        # old is keeping nothing. A tank that cooled 0.4 kWh overnight sat at its
+        # resting setpoint until the deadline on a plan whose slots had all
+        # passed, because the residual never moved 10 % and a flat night is never
+        # cheaper (`design/DECISIONS.md` D-0253).
+        return True
     if inputs_changed:
         return True
 

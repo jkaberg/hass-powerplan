@@ -12,8 +12,9 @@ Four quirks, all of them things the reference house did:
 * **`offline` is not `disconnected`** - it means "no contact with the charger",
   never "somebody unplugged the car" (D4 §5.11);
 * a command issued while offline is simply lost, with no error anywhere;
-* a limit read back is a poll interval old, so the controller that decides
-  against its own memory instead of against the read-back decides on fiction.
+* a limit read back is what the last poll saw, up to a poll interval old and
+  stamped with the poll's time, so the controller that decides against its own
+  memory instead of against the read-back decides on fiction.
 
 And one that costs a session: a link that stays down long enough lets the
 charger fall back to its own maximum current, and a reconnect while the last
@@ -26,6 +27,7 @@ still sees the car: it is `available` that goes false.  A provider must honour
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -35,7 +37,7 @@ from .ev import AMP_EPS, EvSim
 
 DROPS_PER_DAY = 4
 DROP_S = 600.0
-READBACK_S = 60.0
+READBACK_S = 30.0
 FALLBACK_AFTER_S = 300.0
 DROP_SESSION_ON_RECONNECT_P = 0.15
 OFFLINE = "offline"
@@ -50,8 +52,9 @@ SOURCES: dict[str, str] = {
         "ten minutes; assumed for the exact figure"
     ),
     "READBACK_S": (
-        "effektstyring README: '_verify_write reads every write back a poll interval later'; "
-        "assumed: 60 s for that interval"
+        "D4 §5.10 profile table: `easee_ble` polls every 30 s, and the effektstyring README's "
+        "'_verify_write reads every write back a poll interval later' is that poll. The poll "
+        "grid's phase is seeded; a poll at the instant of a write sees the charger before it"
     ),
     "FALLBACK_AFTER_S": (
         "assumed: after 5 min without contact the charger reverts its dynamic current to its own "
@@ -79,7 +82,8 @@ class BleChargerSim:
     fallbacks: int = 0
     _offline_s: float = field(default=0.0)
     _fallen_back: bool = field(default=False)
-    _readback: list[tuple[datetime, float]] = field(default_factory=list)
+    _last_step_at: datetime | None = field(default=None)
+    _polled: tuple[datetime, float] | None = field(default=None)
 
     # -- the link ----------------------------------------------------------- #
 
@@ -128,14 +132,19 @@ class BleChargerSim:
             self._fallen_back = False
 
         self.link_up = not offline
+        before_a = self.ev.limit_a
         reads = self.ev.step(dt_s, forwarded, env)
 
-        # The limit the controller can read is one poll interval old.
-        self._readback.append((env.now, self.ev.limit_a))
-        cutoff = env.now - timedelta(seconds=READBACK_S)
-        while len(self._readback) > 1 and self._readback[1][0] <= cutoff:
-            self._readback.pop(0)
-        reported_limit = self._readback[0][1]
+        # The limit the controller can read is what the last poll saw. A poll
+        # that falls inside this step saw the charger *before* this step's
+        # command landed; a step with no poll in it leaves the entity as it was.
+        poll_at = self._poll_in(env.now, dt_s)
+        if poll_at is not None:
+            self._polled = (poll_at, before_a)
+        self._last_step_at = env.now
+        if self._polled is None:
+            self._polled = (env.now - timedelta(seconds=dt_s), before_a)
+        polled_at, reported_limit = self._polled
 
         if offline:
             return Reads(
@@ -151,4 +160,17 @@ class BleChargerSim:
             available=True,
             status=reads.status,
             values={**reads.values, LIMIT_A: reported_limit},
+            stamps={LIMIT_A: polled_at},
         )
+
+    def _poll_in(self, now: datetime, dt_s: float) -> datetime | None:
+        """Return the last poll instant inside `(previous step, now]`, if any."""
+        previous = self._last_step_at
+        if previous is None:
+            previous = now - timedelta(seconds=dt_s)
+        phase_s = derive_rng(self.seed, "ble_poll").uniform(0.0, READBACK_S)
+        now_s = now.timestamp()
+        latest_s = math.floor((now_s - phase_s) / READBACK_S) * READBACK_S + phase_s
+        if latest_s <= previous.timestamp():
+            return None
+        return datetime.fromtimestamp(latest_s, tz=now.tzinfo)

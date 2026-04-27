@@ -600,6 +600,7 @@ class Load:
             budget=ctx.budget,
             now=ctx.now,
             available=ctx.reads.available(outcome.role),
+            current_at=ctx.reads.taken_at(outcome.role),
         )
         return self._settle(state, decision, ctx, quantised.effective_w, sheds=outcome.sheds)
 

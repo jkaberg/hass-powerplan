@@ -43,7 +43,7 @@ against, and a planned `0` is standing still, never a shed (INV-25, INV-30).
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
@@ -199,16 +199,26 @@ def _sub_plans(
 
 
 def _ranked(
-    window: Sequence[Slot], skip: Mapping[datetime, _Fill], tz: tzinfo
+    window: Sequence[Slot], skip: Mapping[datetime, _Fill], ctx: PlanContext
 ) -> dict[datetime, float]:
-    """Return each remaining slot's price percentile within its own local day (§5.7 step 2)."""
+    """Return each remaining slot's price percentile within its own local day (§5.7 step 2).
+
+    A flat day ranks nothing: every slot sits at the median and the store holds.
+    Ranking equal prices by the clock would bank in the first quarter of what is
+    left of the day and coast in the last, and re-draw that line every cycle as
+    the day shrinks - the flip-flop INV-32 forbids, for no saving at all
+    (`design/DECISIONS.md` D-0254).
+    """
     by_day: dict[date, list[Slot]] = {}
     for slot in window:
         if slot.start in skip:
             continue
-        by_day.setdefault(slot.start.astimezone(tz).date(), []).append(slot)
+        by_day.setdefault(slot.start.astimezone(ctx.tz).date(), []).append(slot)
     out: dict[datetime, float] = {}
-    for slots in by_day.values():
+    for day, slots in by_day.items():
+        if ctx.hysteresis.is_flat(ctx.curve_in, day, ctx.tz):
+            out.update(dict.fromkeys((slot.start for slot in slots), 0.5))
+            continue
         order = sorted(slots, key=lambda row: (row.total, row.start))
         for index, slot in enumerate(order):
             out[slot.start] = index / len(order)
@@ -398,7 +408,7 @@ def _shape(
     gate = params["preheat_max_outdoor_c"]
     outdoor = None if ctx.forecasts is None else ctx.forecasts.outdoor_c(ctx.now)
 
-    ranks = _ranked(window, fills, ctx.tz)
+    ranks = _ranked(window, fills, ctx)
     peaks = _peaks(ctx, window) if bool(params["respect_tariff_windows"]) else ()
     before = _bank_before(
         window,
@@ -407,7 +417,10 @@ def _shape(
     )
 
     rows: list[_Row] = []
-    previous = 0.0
+    # The ramp continues from the delta in force: a re-cut that restarted at zero
+    # wrote −0.25 K at:00:27 over the −0.5 K the previous plan had put in place
+    # at:00:17, every quarter hour (`design/DECISIONS.md` D-0258).
+    previous = _delta_in_force(ctx)
     level = ctx.level_now if ctx.level_now is not None else bounds.low
     budget = 0.0
     banking = False
@@ -494,6 +507,16 @@ def _delta_for(kind: _Kind, wish: float, *, target: float, bounds: _Bounds, cool
     if kind is _Kind.COAST:
         return min(wish, up) if cooling else -min(wish, down)
     return 0.0
+
+
+def _delta_in_force(ctx: PlanContext) -> float:
+    """Return the setpoint delta the previous plan has the device at right now."""
+    if ctx.previous is None:
+        return 0.0
+    carried = ctx.previous.desired_state_at(ctx.now)
+    if isinstance(carried, bool) or not isinstance(carried, (int, float)):
+        return 0.0
+    return float(carried)
 
 
 def _rate_limited(previous: float, wanted: float, *, rate: float, hours: float) -> float:

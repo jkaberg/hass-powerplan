@@ -629,8 +629,16 @@ class _Walk:
             if next_active is not None:
                 horizon_s = min(horizon_s, (next_active - self.ctx.now).total_seconds())
         budget_ok = horizon_s >= self.cfg.ev_min_stop_s
+        # A plan that never draws again while the load still owes energy has run
+        # out, not decided to idle: it was cut for a requirement that is still
+        # there, and the next cycle re-cuts it. A pause between two blocks is a
+        # decision; the floor until the re-cut is not a stop
+        # (`design/DECISIONS.md` D-0253).
+        owed = (load.demand.required_kwh or 0.0) > 0.0
         plan_ok = (
-            plan is not None and plan.idle_seconds_from(self.ctx.now) >= self.cfg.ev_min_stop_s
+            plan is not None
+            and plan.idle_seconds_from(self.ctx.now) >= self.cfg.ev_min_stop_s
+            and (plan.next_active(self.ctx.now) is not None or not owed)
         )
         return (self.ctx.blunt and budget_ok) or (plan_stop and plan_ok), plan_stop
 

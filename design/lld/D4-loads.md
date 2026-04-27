@@ -357,6 +357,7 @@ delta  ← plan.desired_state_at(now).setpoint_delta or 0   (D5 §5.7: +Δ in ch
 desired =
     heat pump:  clamp(target + delta + offset(stage), target − band_down, target + band_up) then device min/max (INV-29); offset: coast −1 K at stage ≥ 3; +Δ arrives already gated by D5 (outdoor ≤ preheat_max_outdoor ∧ room < target)
     tank:       charge_setpoint if plan says charge and grant ≥ nameplate and not shed, else shed_setpoint (comfort min); hysteresis: a started charge holds min_on_s unless stage ≥ 2
+    floor:      the lowest setpoint written - shed or plan delta - is floor + swing_k / 2: a thermostat holds setpoint ± half its swing, and the floor is a temperature, not a dial (D-0259)
     thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor) - a comfort violation is served at `target` whatever the plan says
 gate: tolerance 0.05 °C (heat pump 0.25), min_interval, dwell, urgent (stage ≥ 2 shed = urgent: past interval, never past tolerance)
 restore(): write profile.target (a correction, never adoption); no upward move within one dwell of a restore
@@ -480,14 +481,15 @@ Decision matrix, in order (first hit wins):
 | 1 | mode ∈ {observe} | `observe` - log the would-be write with old/new/why |
 | 2 | mode ∈ {delegated, off} | `delegated`/`same` - never write (off writes only through `release()`) |
 | 3 | `same(current, desired, tol)` | `same` - never send a value already held (INV-21), **even when `urgent`, even in mode `force`** |
+| 3b | desired equals the value last **sent** and either the verify is still due, or the read-back was taken before the write (within one more verify window) | `held_settling` - the value on its way is the value held; a read-back older than the write is no read-back (D-0251) |
 | 4 | target entity unavailable | if unavailable < `transient_grace_s`: `transient` (retry next tick, bypasses interval); else `failed` (+1 failure) |
-| 5 | settling (write younger than `verify_after_s`) and desired > current (upward) and not blunt | `held_settling` |
+| 5 | settling (write younger than `verify_after_s`) and desired > the value sent (current when nothing was sent) and not blunt | `held_settling` |
 | 6 | `now − last_write < max(kind.min_interval, cfg.command_min_interval)` and not urgent **and not blunt** | `held_interval` |
 | 7 | dwell (`min_on/min_off`) not elapsed and not urgent **and not blunt** | `held_dwell` |
 | 8 | transport budget exhausted and not blunt | `held_budget` |
 | 9 | else write with `blocking=True` (INV-24); schedule verify at `+verify_after_s`; mark settling; consume budget |
 
-`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
+`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). A read-back stamped before the write (`Reads.taken_at`, HA's `last_reported`) is not a read-back yet: the verify stays due and nothing is counted (D-0251). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
 
 **The executor, concretely.** `writegate.py` is one class,
 `WriteGate(hass, read_state=…, on_state=…)`, and what the runtime calls on it:
@@ -578,7 +580,7 @@ in progress: hold charge_setpoint = legionella_temp until temp ≥ legionella_te
 built-in program (questionnaire "yes"): skip; the review says so
 cannot complete within lead (element too small / shed too often) → warning event, never silently dropped
 ```
-Comfort floor default 45 °C (below ~50 °C storage favours legionella growth - hence the cycle); deadline temp default 75 °C at the morning deadline; second deadline optional. Presence: `vacation` suspends the ready-by deadlines (the tank holds its comfort floor and coasts); `away` keeps them (a day trip still ends in a shower); the legionella deadline is absolute under every presence mode (INV-54, INV-55).
+Comfort floor default 45 °C (below ~50 °C storage favours legionella growth - hence the cycle); deadline temp default 75 °C at the morning deadline; second deadline optional. A tank within `READY_BAND_K` (1 K) of its target is **at** its target: `wants = False` and `required_kwh = 0` - no tank thermostat resolves finer, and the loss-to-deadline term must not keep a satisfied tank owing (D-0256). Presence: `vacation` suspends the ready-by deadlines (the tank holds its comfort floor and coasts); `away` keeps them (a day trip still ends in a shower); the legionella deadline is absolute under every presence mode (INV-54, INV-55).
 
 ### 5.13 Appliance cycle specifics (INV-59 support)
 
@@ -743,6 +745,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 17. `delegated` never writes, reserves nameplate; `observe` releases on entry and logs the would-be write; site `active = off` makes every load's effective mode `observe` (§5.2).
 18. Heat pump: defrost detected → no shed; `never_switch` never actuated at any stage; band > 2 K rejected.
 19. Plan delta reaches the device: a `heat_capacitor` slot with `setpoint_delta = −1` lowers a SETPOINT thermostat to `target − 1` (clamped at the floor) and puts a MODE thermostat in `shed_option`; a comfort violation overrides both; a `+1` never exceeds `ceiling` (INV-30, INV-56).
+20. Physical floors and bands: a tank within `READY_BAND_K` of its target wants nothing and owes nothing, one tenth of a kelvin further down it wants; a floor loop's shed and its deepest plan delta both stop at `floor + swing_k / 2` (D-0256, D-0259).
 
 ---
 
