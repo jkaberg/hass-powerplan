@@ -87,6 +87,8 @@ class Engine:
 
 ### 4.1 Snapshot (the contract with D8, D9)
 
+**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes. The `Warning` type is spelled `SiteWarning`.
+
 ```python
 @dataclass(frozen=True)
 class Snapshot:
@@ -129,6 +131,8 @@ class Runtime:
 
 ### 5.1 Tick pipeline (INV-43 … INV-47)
 
+`Engine.tick(state, inputs)`: site switch → sample the meter → closed windows into the tariff → ceiling → budget → ladder → demands (isolated per load, INV-45, a failed load named in `reasons`) → allocate → apply → warnings → snapshot. A **frozen** tick keeps last tick's grants and **applies nothing** (D-0236). A tick on the boundary second says so in `reasons` (INV-43). Three engine exceptions in a row enter safe mode - every load released, the site observing, repair `engine_failing` - and `safe_mode` is never persisted (D-0237). Measured at 633 ticks/s on the two-load reference site at the 10 s step, pure.
+
 ```
 run_tick(trigger):
   if lock.locked(): return (skip; DEBUG)
@@ -158,6 +162,8 @@ engine.tick(state, inputs):                               # the sacred order
 Steps 1–11 are pure; the reads happened in `assemble()`, the writes happen in `execute()`. The ladder runs before the allocator because `allocate()` takes the stage as an input (D6 §3) and escalation is immediate (D6 §5.4). This is what makes the scenario runner (D9) able to drive a whole house through `engine.tick` with fake inputs.
 
 ### 5.2 Planning cycle
+
+`Engine.plan(state, inputs)` observes the loads, builds the `SiteContext`, calls `plan_all` with the previous plans, adopts through `should_adopt`, fires `plan_adopted` / `deadline_at_risk`, and closes the price slots that ended since `runtime.closed_to` through the `AccountingHook` (`close_slot(start, end, *, now)`), oldest first and never from `tick()` (INV-68). The runtime does every fetch before calling it (INV-46, D-0238).
 
 ```
 run_plan(trigger):  I/O first WITHOUT the lock, then the lock for the pure part only (≤ 500 ms), never inside a tick
@@ -189,6 +195,8 @@ triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the r
 There's no cron at `HH:00` running a full tick, the register report is the boundary (INV-43).
 
 ### 5.4 Peak warning
+
+**In code (D-0238).** The EMA variant: `expected = EMA_uncontrolled × window_h + Σ planned kWh (+ an urgent unplanned demand at max_w)`; warn once per coming window at ≥ `warn_fraction` (0.95) of the window's flat ceiling, clear below `clear_fraction` (0.85); the live warning for the current window is an edge event keyed on `PeakWarnState.live`. WP5.2 replaces the EMA term with D10's baseline.
 
 Computed in the tick from the planning cycle's artefacts, cheap:
 

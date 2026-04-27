@@ -1052,3 +1052,48 @@ A load capped to 0 W is denied with the constraint's `shed_reason`, never a sile
 
 `allocate()` calls `GroupCap.seed(...)` and `Zone.seed(...)` before `prepare(ctx)`, and rebuilds both on the way out (D-0240). Constraints are rebuilt every tick, so their memory has to come from the state or a starving loop is forgotten. Affects D6 §3, §7.
 **Rejected:** `prepare(ctx, state)` on every constraint - six of eight have no memory.
+
+### D-0230 · The domain objects are collaborators; `EngineState` carries their persistable projection
+
+`Engine(site, meter, tariff, loads, constraints, accounting)` holds D3's, D2's and D6's mutable objects; what persists between ticks is a frozen `EngineState`, and the collaborators are restored from it before each tick, so the same state and inputs give the same tick. Affects D7 §3, §4.2.
+**Rejected:** rewriting three finished domains frozen - no behavioural gain.
+
+### D-0231 · The store sections are spelled twice, and a test compares them
+
+`core/engine.py` defines `Section` with the same ten names as `storage.py`, and `test_sections_agree.py` asserts they match. `core/` can't import `storage.py` (INV-2). Affects D7 §2, §7.
+**Rejected:** defining it in `core/` and importing it in `storage.py` - the cleaner direction, left for when the runtime lands.
+
+### D-0232 · `SiteWarning`, not `Warning`
+
+D7 §4.1's `Warning` shadows a builtin in the type the whole surface imports. Affects D7 §4.1.
+**Rejected:** keeping the LLD's word.
+
+### D-0233 · A closed window's ceiling for the PI is the flat target
+
+The PI integrates a closed window's use against `target_w_at(window.start) × window_h`. D2 can still answer the flat target for a past window; the slack and free ride are properties of the moment. Affects D7 §5.1, D6 §5.1.
+**Rejected:** persisting each window's live ceiling - one more number per window for a term the outlier gate already damps.
+
+### D-0234 · `LoadView.level_now` is the engine's to fill
+
+A thermal load's level is the temperature its comfort is measured on, an EV's its SoC; only the engine sees the reads, so it fills `level_now` from the comfort state or the reads. Affects D5 §4.
+**Rejected:** each type exposing `level()` on the view - the reads and the view meet in the engine.
+
+### D-0235 · `Snapshot` lives in `core/model.py` with forward references
+
+HLD §5 places `Snapshot` in `core/model.py`; its section types are domain types, so they're annotated under `TYPE_CHECKING` to keep the import graph acyclic. `meter`, `budget` and `tariff` are optional: a failed tick republishes without them. Affects D7 §4.1.
+**Rejected:** defining it in `engine.py` - D8's imports shouldn't depend on the engine module.
+
+### D-0236 · A frozen tick applies nothing
+
+On a frozen tick (stale meter, seam), the allocator returns last tick's grants and the engine skips `apply`: no command, not even a re-assertion, and every load is `held`. Blindness never opens a gate (INV-15, INV-17), and a rewritten limit can't be told from a new decision. Affects D7 §5.1.
+**Rejected:** applying the held grants - the gate's interval would still let a write out during blindness.
+
+### D-0237 · `safe_mode` is runtime state that's never stored
+
+Safe mode enters after `safe_mode_after_failures` engine exceptions (every load released, site observing, repair `engine_failing`); it's written as `False`, so a restart clears it (D7 §2). Affects D7 §4.2, §7.
+**Rejected:** persisting it until the repair is acknowledged - a restart is the household's acknowledgement.
+
+### D-0238 · Peak warnings are edge events; the live warning has its own key
+
+A coming window's warning fires once and clears once below `clear_fraction`; the live warning for the current window fires one event and one notification on its edge. The accounting hook is a protocol called from `plan()` oldest-first and unreachable from `tick()` (INV-68). Affects D7 §5.2, §5.4, §9 16.
+**Rejected:** emitting every tick and de-duplicating in D8 - 360 events an hour for one fact.

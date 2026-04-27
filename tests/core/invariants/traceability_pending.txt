@@ -33,10 +33,10 @@
 # → WP0.8 (pure) and WP1.1 (runtime). INV-43's metering half - the window
 # closes on the register report, not on the clock - is covered by WP0.2; its
 # trigger half (no full tick fires at the boundary) is WP1.1's.
-INV-44
-INV-45
+# INV-44 (publish always), INV-45 (per-load isolation) and INV-47 (knobs read live)
+# are covered by the pure engine (tests/core/engine/test_engine.py). INV-46 -
+# planning I/O never holds the tick lock - is the runtime's (D7 §9 17, WP1.1).
 INV-46
-INV-47
 INV-48
 
 # INV-54 - legionella (HLD §6.4, D4 §5.12). Covered by the `water_heater` type

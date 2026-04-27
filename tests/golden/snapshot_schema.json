@@ -1,0 +1,842 @@
+{
+  "fields": {
+    "accounting": {
+      "closed_to": {
+        "one_of": [
+          "datetime",
+          "None"
+        ]
+      },
+      "confidence": "str",
+      "cost": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "month_key": {
+        "one_of": [
+          "str",
+          "None"
+        ]
+      },
+      "per_load": {
+        "mapping": "Any"
+      },
+      "savings": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "slots_closed": "int"
+    },
+    "alloc": {
+      "blunt": "bool",
+      "breach_w": "float",
+      "circuits": {
+        "mapping": {
+          "breach": "bool",
+          "limit_w": "float",
+          "measured_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "members": {
+            "sequence": "str"
+          },
+          "reserved_w": "float"
+        }
+      },
+      "comfort": {
+        "sequence": "str"
+      },
+      "deficit_w": "float",
+      "denied": {
+        "sequence": {
+          "sequence": "str"
+        }
+      },
+      "ev_stop_ok": {
+        "mapping": "bool"
+      },
+      "frozen": "bool",
+      "granted": {
+        "sequence": "str"
+      },
+      "headroom_w": "float",
+      "p_free_w": "float",
+      "phases": {
+        "one_of": [
+          {
+            "amps": {
+              "sequence": "float"
+            },
+            "headroom_a": {
+              "sequence": "float"
+            },
+            "limit_a": "float"
+          },
+          "None"
+        ]
+      },
+      "reserved": {
+        "sequence": {
+          "granted_w": "float",
+          "load": "str",
+          "measured_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "nameplate_w": "float",
+          "reserved_w": "float"
+        }
+      },
+      "rotation": {
+        "mapping": {
+          "active": "bool",
+          "cap_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "chosen": {
+            "sequence": "str"
+          },
+          "demand_w": "float",
+          "queue": {
+            "sequence": {
+              "sequence": "str"
+            }
+          },
+          "reason": "str"
+        }
+      },
+      "shed": {
+        "sequence": "str"
+      },
+      "shed_reason": {
+        "mapping": "str"
+      },
+      "trim_freed_w": "float",
+      "trimmed": {
+        "sequence": "str"
+      },
+      "unconstrained_ask_w": "float",
+      "violations": {
+        "sequence": "str"
+      },
+      "zones": {
+        "mapping": {
+          "chosen": {
+            "sequence": "str"
+          },
+          "cost_per_kwh_heat": {
+            "mapping": "float"
+          },
+          "demand_w": "float",
+          "excluded": {
+            "mapping": "str"
+          },
+          "reason": "str",
+          "substituted": {
+            "sequence": "str"
+          }
+        }
+      }
+    },
+    "at": "datetime",
+    "budget": {
+      "one_of": [
+        {
+          "ceiling_kwh": "float",
+          "e_budget_kwh": "float",
+          "eligible": "bool",
+          "eps_kwh": "float",
+          "free_ride": "bool",
+          "p_allow_w": "float",
+          "p_free_w": "float",
+          "p_hard_w": "float",
+          "projected_kwh": "float",
+          "projection_source": "Literal",
+          "r_trim_kwh": "float",
+          "reserve_kwh": "float",
+          "sigma_w": "float",
+          "t_rem_h": "float",
+          "used_kwh": "float"
+        },
+        "None"
+      ]
+    },
+    "duration_ms": "float",
+    "forecasts": {
+      "available": "bool",
+      "baseline_ready": "bool",
+      "baseline_w": {
+        "one_of": [
+          "float",
+          "None"
+        ]
+      },
+      "confidence": {
+        "one_of": [
+          "float",
+          "None"
+        ]
+      },
+      "outdoor_c": {
+        "one_of": [
+          "float",
+          "None"
+        ]
+      },
+      "surplus_w": {
+        "one_of": [
+          "float",
+          "None"
+        ]
+      }
+    },
+    "health": {
+      "boundary_tick": "bool",
+      "degraded_meter": "bool",
+      "engine": {
+        "enum": [
+          "ok",
+          "failing",
+          "safe_mode"
+        ]
+      },
+      "failed_loads": {
+        "mapping": "str"
+      },
+      "failures": "int",
+      "forecasts_available": "bool",
+      "frozen_reason": {
+        "one_of": [
+          "str",
+          "None"
+        ]
+      },
+      "over_budget": "bool",
+      "prices_stale": "bool",
+      "stale_meter": "bool",
+      "tick_ms": "float",
+      "unhealthy_loads": {
+        "sequence": "str"
+      }
+    },
+    "ladder": {
+      "blunt": "bool",
+      "clear_ticks": "int",
+      "fuse_hold_until": {
+        "one_of": [
+          "datetime",
+          "None"
+        ]
+      },
+      "reason": "str",
+      "since": {
+        "one_of": [
+          "datetime",
+          "None"
+        ]
+      },
+      "stage": "int"
+    },
+    "loads": {
+      "mapping": {
+        "action": {
+          "enum": [
+            "written",
+            "same",
+            "held_interval",
+            "held_dwell",
+            "held_settling",
+            "held_suppressed",
+            "held_budget",
+            "observe",
+            "delegated",
+            "failed",
+            "transient"
+          ]
+        },
+        "action_reason": "str",
+        "blunt": "bool",
+        "capped_by": {
+          "sequence": "str"
+        },
+        "comfort": {
+          "one_of": [
+            "ComfortState",
+            "None"
+          ]
+        },
+        "commanded_w": {
+          "one_of": [
+            "float",
+            "None"
+          ]
+        },
+        "configured_mode": {
+          "enum": [
+            "auto",
+            "force",
+            "observe",
+            "delegated",
+            "off"
+          ]
+        },
+        "demand": {
+          "comfort": {
+            "one_of": [
+              {
+                "ceiling": {
+                  "one_of": [
+                    "float",
+                    "None"
+                  ]
+                },
+                "current": {
+                  "one_of": [
+                    "float",
+                    "None"
+                  ]
+                },
+                "deficit": "float",
+                "direction": "HeatDirection",
+                "floor": "float",
+                "target": "float",
+                "violated": "bool"
+              },
+              "None"
+            ]
+          },
+          "deadline": {
+            "one_of": [
+              "datetime",
+              "None"
+            ]
+          },
+          "max_w": "float",
+          "min_w": "float",
+          "price_sensitive": "bool",
+          "reason": "str",
+          "required_kwh": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "urgency": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          "wants": "bool"
+        },
+        "error": {
+          "one_of": [
+            "str",
+            "None"
+          ]
+        },
+        "granted_w": "float",
+        "health": {
+          "failures": "int",
+          "last_error": {
+            "one_of": [
+              "str",
+              "None"
+            ]
+          },
+          "ok": "bool",
+          "stale_roles": {
+            "sequence": "str"
+          },
+          "transient_since": {
+            "one_of": [
+              "datetime",
+              "None"
+            ]
+          },
+          "unhealthy": "bool"
+        },
+        "held": "bool",
+        "latches": {
+          "force_max_h": "float",
+          "force_since": {
+            "one_of": [
+              "datetime",
+              "None"
+            ]
+          },
+          "provisioned": {
+            "mapping": "bool"
+          },
+          "session_done": "bool",
+          "session_done_reason": {
+            "one_of": [
+              "str",
+              "None"
+            ]
+          },
+          "shed_active": "bool",
+          "shed_since": {
+            "one_of": [
+              "datetime",
+              "None"
+            ]
+          }
+        },
+        "learned": {
+          "mapping": "float"
+        },
+        "load_id": "str",
+        "measured_w": {
+          "one_of": [
+            "float",
+            "None"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "auto",
+            "force",
+            "observe",
+            "delegated",
+            "off"
+          ]
+        },
+        "name": "str",
+        "priority": "int",
+        "reserved_w": "float",
+        "shed": "bool",
+        "shed_reason": {
+          "one_of": [
+            "str",
+            "None"
+          ]
+        },
+        "stage": "int",
+        "type_key": "str"
+      }
+    },
+    "meter": {
+      "one_of": [
+        {
+          "closed": {
+            "sequence": {
+              "anchor_kind": {
+                "enum": [
+                  "meter_window",
+                  "register_latched",
+                  "register_interpolated",
+                  "wall_clock"
+                ]
+              },
+              "avg_kw": "float",
+              "confidence": "Literal",
+              "degraded": "bool",
+              "kwh": "float",
+              "start_utc": "datetime",
+              "window_min": "int"
+            }
+          },
+          "consumption_quality": {
+            "enum": [
+              "ok",
+              "stale",
+              "implausible",
+              "unavailable",
+              "partial"
+            ]
+          },
+          "consumption_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "export_w": "float",
+          "frozen_reason": {
+            "one_of": [
+              "str",
+              "None"
+            ]
+          },
+          "grid_smooth_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "grid_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "health": {
+            "anchor_kind": {
+              "enum": [
+                "meter_window",
+                "register_latched",
+                "register_interpolated",
+                "wall_clock"
+              ]
+            },
+            "degraded": "bool",
+            "implausible_count": "int",
+            "integral_bias_w": {
+              "one_of": [
+                "float",
+                "None"
+              ]
+            },
+            "power_age_s": {
+              "one_of": [
+                "float",
+                "None"
+              ]
+            },
+            "production_known": "bool",
+            "register_age_s": {
+              "one_of": [
+                "float",
+                "None"
+              ]
+            },
+            "register_cadence_s": {
+              "one_of": [
+                "float",
+                "None"
+              ]
+            },
+            "stale": "bool",
+            "unmetered_controlled": {
+              "sequence": "str"
+            }
+          },
+          "import_w": "float",
+          "now": "datetime",
+          "phases": {
+            "one_of": [
+              {
+                "amps": {
+                  "sequence": "float"
+                },
+                "at": "datetime",
+                "limit_a": "float"
+              },
+              "None"
+            ]
+          },
+          "production_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "seam": "bool",
+          "sigma_samples": "int",
+          "sigma_uncontrolled_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "surplus_w": "float",
+          "t_elapsed_h": "float",
+          "t_rem_h": "float",
+          "uncontrolled_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "used_confidence": "Literal",
+          "used_kwh": "float",
+          "window_min": "int",
+          "window_start_utc": "datetime"
+        },
+        "None"
+      ]
+    },
+    "plans": {
+      "mapping": {
+        "built_at": "datetime",
+        "cap_now_w": {
+          "one_of": [
+            "float",
+            "None"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "known",
+            "stale",
+            "estimated",
+            "synthesised"
+          ]
+        },
+        "cost": "Money",
+        "coverage": "float",
+        "covered": "bool",
+        "deadline": {
+          "one_of": [
+            "datetime",
+            "None"
+          ]
+        },
+        "load_id": "str",
+        "mode": {
+          "enum": [
+            "price",
+            "force",
+            "urgent",
+            "none"
+          ]
+        },
+        "next_start": {
+          "one_of": [
+            "datetime",
+            "None"
+          ]
+        },
+        "planned_kwh": "float",
+        "reason": "str",
+        "required_kwh": {
+          "one_of": [
+            "float",
+            "None"
+          ]
+        },
+        "strategy": "str"
+      }
+    },
+    "prices": {
+      "built_at": {
+        "one_of": [
+          "datetime",
+          "None"
+        ]
+      },
+      "carriers": {
+        "mapping": {
+          "carrier": {
+            "enum": [
+              "electricity",
+              "gas",
+              "district_heat",
+              "oil",
+              "pellets"
+            ]
+          },
+          "confidence": {
+            "one_of": [
+              {
+                "enum": [
+                  "known",
+                  "stale",
+                  "estimated",
+                  "synthesised"
+                ]
+              },
+              "None"
+            ]
+          },
+          "coverage_h": "float",
+          "currency": "str",
+          "max_today": {
+            "one_of": [
+              "Decimal",
+              "None"
+            ]
+          },
+          "mean_today": {
+            "one_of": [
+              "Decimal",
+              "None"
+            ]
+          },
+          "min_today": {
+            "one_of": [
+              "Decimal",
+              "None"
+            ]
+          },
+          "next": {
+            "one_of": [
+              "Decimal",
+              "None"
+            ]
+          },
+          "now": {
+            "one_of": [
+              "Decimal",
+              "None"
+            ]
+          },
+          "spread_today": "Decimal"
+        }
+      },
+      "sources": {
+        "sequence": "str"
+      },
+      "stale": "bool",
+      "tomorrow_available": "bool"
+    },
+    "reasons": {
+      "sequence": "str"
+    },
+    "schema": "int",
+    "site": {
+      "active": "bool",
+      "name": "str",
+      "path": {
+        "enum": [
+          "full",
+          "price_only",
+          "fuse_only"
+        ]
+      },
+      "presence": {
+        "one_of": [
+          {
+            "enum": [
+              "home",
+              "away",
+              "vacation"
+            ]
+          },
+          "None"
+        ]
+      },
+      "risk": "float",
+      "safe_mode": "bool",
+      "site_id": "str",
+      "target_kw": {
+        "one_of": [
+          "float",
+          "None"
+        ]
+      },
+      "trigger": "str",
+      "window_min": "int"
+    },
+    "tariff": {
+      "one_of": [
+        {
+          "advice": {
+            "sequence": {
+              "key": "str",
+              "params": {
+                "mapping": "Any"
+              },
+              "severity": "Literal"
+            }
+          },
+          "ceiling_kwh": "float",
+          "ceiling_reason": "str",
+          "eligible": "bool",
+          "free_ride": "bool",
+          "hard_limit_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "level": {
+            "confidence": "Literal",
+            "fee": {
+              "one_of": [
+                {
+                  "amount": "Decimal",
+                  "currency": "str"
+                },
+                "None"
+              ]
+            },
+            "index": {
+              "one_of": [
+                "int",
+                "None"
+              ]
+            },
+            "kind": "Literal",
+            "metric_kw": {
+              "one_of": [
+                "float",
+                "None"
+              ]
+            },
+            "missing_months": "int",
+            "name": "str"
+          },
+          "metric_kw": "float",
+          "period_end": "datetime",
+          "period_key": "str",
+          "period_start": "datetime",
+          "projected_level": "Level",
+          "slack_kwh": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
+          "top": {
+            "sequence": {
+              "day": "date",
+              "estimated": "bool",
+              "kw": "float"
+            }
+          },
+          "version_id": "str",
+          "weight": "float"
+        },
+        "None"
+      ]
+    },
+    "tick_no": "int",
+    "warnings": {
+      "sequence": {
+        "advice": {
+          "sequence": "str"
+        },
+        "ceiling_kwh": "float",
+        "drivers": {
+          "sequence": {
+            "sequence": "str"
+          }
+        },
+        "expected_kwh": "float",
+        "key": "str",
+        "kind": "Literal",
+        "window_end": {
+          "one_of": [
+            "datetime",
+            "None"
+          ]
+        },
+        "window_start": {
+          "one_of": [
+            "datetime",
+            "None"
+          ]
+        }
+      }
+    }
+  },
+  "schema": 1
+}

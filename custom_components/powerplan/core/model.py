@@ -20,12 +20,32 @@ whose types belong to a domain not yet written are marked `deferred to WP…`
 below and added by that WP, not invented here.
 """
 
+from __future__ import annotations
+
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from enum import IntEnum, StrEnum
-from typing import Final, Literal
+from typing import TYPE_CHECKING, Final, Literal
+
+if TYPE_CHECKING:
+    # The Snapshot sections are domain types; importing them at runtime would
+    # make the root module depend on D3/D6 (a cycle). String annotations on a
+    # slotted dataclass are never evaluated, so these stay type-only (D-0235).
+    from .allocation import AllocReport, Budget, LadderState  # noqa: TC004
+    from .engine import (  # noqa: TC004
+        AccountingStatus,
+        ForecastStatus,
+        HealthStatus,
+        LoadStatus,
+        PlanStatus,
+        PriceStatus,
+        SiteStatus,
+        SiteWarning,
+        TariffStatus,
+    )
+    from .metering import MeterSnapshot  # noqa: TC004
 
 # --------------------------------------------------------------------------- #
 # Closed vocabularies
@@ -558,4 +578,17 @@ class Snapshot:
     at: datetime
     tick_no: int
     duration_ms: float
+    site: SiteStatus
+    meter: MeterSnapshot | None
+    budget: Budget | None
+    ladder: LadderState
+    tariff: TariffStatus | None
+    prices: PriceStatus
+    plans: Mapping[str, PlanStatus]
+    loads: Mapping[str, LoadStatus]
+    alloc: AllocReport
+    forecasts: ForecastStatus
+    accounting: AccountingStatus
+    warnings: tuple[SiteWarning, ...]
+    health: HealthStatus
     reasons: tuple[str, ...]
