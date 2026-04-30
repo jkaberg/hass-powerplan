@@ -20,9 +20,10 @@ scenario is a bug, not a retry (D9 §8).
 from __future__ import annotations
 
 import json
+import time as _time
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from itertools import pairwise
@@ -37,14 +38,14 @@ from custom_components.powerplan.core.engine import (
     LoadReads,
     _curves_stale,
 )
-from custom_components.powerplan.core.loads import Action, PresenceMode, Role
+from custom_components.powerplan.core.loads import Action, LoadState, PresenceMode, Role
 from custom_components.powerplan.core.metering import (
     MeterSample,
     Reading,
     WindowMeter,
     WindowMeterConfig,
 )
-from custom_components.powerplan.core.model import Carrier, Confidence
+from custom_components.powerplan.core.model import Carrier, Confidence, Mode
 from custom_components.powerplan.core.pricing import build_curve
 from custom_components.powerplan.core.pricing.context import PriceContext
 from custom_components.powerplan.core.pricing.forecasters.base import chain
@@ -61,18 +62,19 @@ from custom_components.powerplan.core.strategies import Curves
 from custom_components.powerplan.core.strategies.adoption import inputs_changed
 from custom_components.powerplan.core.tariffs import Target
 from tests.builders.houses import House
+from tests.core.loads.conftest import cycle_reads, heatpump_reads, sim_command, tank_reads
 from tests.core.loads.conftest import reads as core_reads
-from tests.core.loads.conftest import sim_command, tank_reads
 from tests.sim.base import LIMIT_A, REGISTER_IMPORT_KWH, SETPOINT_C, SOC, TEMP_AIR, TEMP_FLOOR
+from tests.sim.base import Command as SimCommand
 from tests.sim.base import Reads as SimReads
 from tests.sim.household import AWAY, VACATION
+from tests.sim.switch import SESSION_S
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from custom_components.powerplan.core.loads import Load
     from custom_components.powerplan.core.model import Snapshot
-    from tests.sim.base import Command as SimCommand
 
 TICK_S = 10.0
 #: The reference house's tank is ready by 06:30 (D9 §5.3, §5.9).
@@ -80,6 +82,15 @@ READY_AT = time(6, 30)
 #: Local night for "the planner still prefers night" (D9 §5.3 `price_outage_48h`).
 NIGHT_FROM_H = 22
 NIGHT_TO_H = 6
+#: The loads whose comfort is a room the household sits in (D9 §4
+#: `comfort_violation_min`): a floor, a panel heater, a heat pump. A tank's floor
+#: is a hygiene threshold the controller recovers at full power after every
+#: shower, and counting those minutes would measure the shower, not the control.
+ROOM_TYPES = frozenset({"floor_heating", "radiator", "heat_pump"})
+#: The household loads the dishwasher after dinner on weekdays and lights the
+#: sauna on Saturday evenings (D9 §5.9 house spec).
+DISHWASHER_AT = time(19, 30)
+SAUNA_AT = time(19, 0)
 #: D7 §5.2: the planning cycle runs at the quarter-hour plus 20 s - after the
 #: register report, never at `:00` sharp (INV-43).
 PLAN_QUARTER_S = 900.0
@@ -156,6 +167,16 @@ class ScenarioResult:
     hysteresis_doubled: bool = False
     outage_night_kwh: float = 0.0
     outage_day_kwh: float = 0.0
+    #: The same figures per local month (D9 §4 `BacktestMetrics` per month).
+    months: dict[str, dict[str, Any]] = field(default_factory=dict)
+    controlled_share: float = 1.0
+    #: `PerfMetrics` (D9 §4): never part of the digest - timings are not decisions.
+    tick_ms: list[float] = field(default_factory=list)
+    plan_ms: list[float] = field(default_factory=list)
+    wall_s: float = 0.0
+    #: The house as the run left it - the benchmark prices its months off the
+    #: tariff evaluator inside it. Never part of the digest.
+    house: House | None = field(default=None, repr=False, compare=False)
     reasons_sample: tuple[str, ...] = ()
     digest: str = ""
 
@@ -197,7 +218,34 @@ class ScenarioResult:
             "hysteresis_doubled": self.hysteresis_doubled,
             "outage_night_kwh": round(self.outage_night_kwh, 3),
             "outage_day_kwh": round(self.outage_day_kwh, 3),
+            "months": {key: dict(sorted(row.items())) for key, row in sorted(self.months.items())},
+            "controlled_share": round(self.controlled_share, 4),
         }
+
+    def perf(self) -> dict[str, Any]:
+        """Return `PerfMetrics` (D9 §4): ticks, p95 of a tick and a plan, wall time."""
+        return {
+            "ticks": self.ticks,
+            "tick_p95_ms": round(_p95(self.tick_ms), 3),
+            "plan_p95_ms": round(_p95(self.plan_ms), 3),
+            "ticks_per_s": round(self.ticks / self.wall_s) if self.wall_s > 0.0 else None,
+            "wall_s": round(self.wall_s, 1),
+        }
+
+    def month(self, key: str) -> dict[str, Any]:
+        """Return the month's row, created on first use."""
+        return self.months.setdefault(
+            key,
+            {
+                "windows": 0,
+                "over_target": 0,
+                "max_window_kwh": 0.0,
+                "comfort_violation_min": 0.0,
+                "deadline_misses": 0,
+                "writes": 0,
+                "kwh": 0.0,
+            },
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +253,9 @@ class ScenarioResult:
 # --------------------------------------------------------------------------- #
 
 
-def load_reads(load: Load, sim: Any, step: SimReads, at: datetime) -> LoadReads:
+def load_reads(  # noqa: PLR0911 - one branch per device type (D4's eight)
+    load: Load, sim: Any, step: SimReads, at: datetime, outdoor_c: float = -5.0
+) -> LoadReads:
     """Translate one simulator's step into what the load's provider would read (D4 §4.5)."""
     kind = load.config.type_key
     if kind == "ev":
@@ -256,6 +306,28 @@ def load_reads(load: Load, sim: Any, step: SimReads, at: datetime) -> LoadReads:
         )
     if kind == "water_heater":
         return LoadReads(reads=tank_reads(sim, step, at))
+    if kind == "heat_pump":
+        return LoadReads(reads=heatpump_reads(step, at, outdoor_c))
+    if kind == "appliance_cycle":
+        return LoadReads(reads=cycle_reads(step, at))
+    if kind == "radiator":
+        return LoadReads(
+            reads=core_reads(
+                at,
+                numbers={
+                    Role.TEMP: step.values[TEMP_AIR],
+                    Role.SETPOINT: step.values[SETPOINT_C],
+                    Role.POWER: step.power_w,
+                },
+                texts={Role.SWITCH: step.status or "off"},
+            )
+        )
+    if kind == "generic_switch":
+        return LoadReads(
+            reads=core_reads(
+                at, numbers={Role.POWER: step.power_w}, texts={Role.SWITCH: step.status or "off"}
+            )
+        )
     raise NotImplementedError(f"no read adapter for type {kind!r} yet (D9 §3 runner)")
 
 
@@ -371,7 +443,11 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     target_kwh = scenario.target_kw * cfg.window_min / 60.0
 
     pending: dict[str, SimCommand | None] = {load.load_id: None for load in house.loads}
+    passive_pending: dict[str, SimCommand | None] = {}
     steps: dict[str, SimReads] = {}
+    requested_days: set[date] = set()
+    sauna_on = False
+    started = _time.perf_counter()
     memo: dict[str, Any] = {}
     writes_10min: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     curves: Curves | None = None
@@ -420,6 +496,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
 
         local = now.astimezone(tz)
         day = local.date()
+        month = local.strftime("%Y-%m")
         plan = house.household.day(day)
         env = house.weather.env_at(now, house.household.occupants_at(now))
 
@@ -436,6 +513,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                     result.ev_soc_at_departure = house.ev.soc
                     if house.ev.soc + 1e-9 < 0.80:
                         result.deadline_misses += 1
+                        result.month(month)["deadline_misses"] += 1
                 house.ev.unplug(plan.drive_kwh)
                 plan_due = "demand"
             if (
@@ -448,6 +526,29 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 plugged_days.add(day)
                 house.ev.plug_in()
                 plan_due = "demand"
+        # The dishwasher is loaded after dinner on weekdays (D9 §5.9); a controlled
+        # one is asked through the type (`button.run_now`), a passive one is started.
+        dishwasher = house.sims.get("dishwasher") or house.passive.get("dishwasher")
+        if (
+            dishwasher is not None
+            and local.weekday() < WEEKEND_FROM
+            and local.time() >= DISHWASHER_AT
+            and day not in requested_days
+        ):
+            requested_days.add(day)
+            dishwasher.request()
+            if "dishwasher" in house.sims:
+                state = _request_run(state, house.load("dishwasher"), now)
+                plan_due = "demand"
+            else:
+                passive_pending["dishwasher"] = SimCommand(start=True)
+        # The sauna is lit on Saturday evenings and forced for the session.
+        sauna = house.sims.get("sauna") or house.passive.get("sauna")
+        if sauna is not None:
+            session = local.weekday() == SATURDAY and SAUNA_AT <= local.time() < _sauna_end()
+            if session != sauna_on:
+                sauna.plug_on = session
+                sauna_on = session
         seen_days.add(day)
 
         # -- the simulators step under last tick's commands ---------------- #
@@ -456,11 +557,14 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             sim = house.sims[load.load_id]
             command = pending[load.load_id]
             if load.config.type_key == "ev" and flap_until is not None and now < flap_until:
-                sim.link_up = False
+                sim.offline_until = flap_until
             step = sim.step(TICK_S, command, env)
             pending[load.load_id] = None
             steps[load.load_id] = step
             total_w += step.power_w
+        for load_id, passive in house.passive.items():
+            passive_step = passive.step(TICK_S, passive_pending.pop(load_id, None), env)
+            total_w += passive_step.power_w
         meter_step = house.meter.step(TICK_S, total_w, env)
 
         # -- inputs ------------------------------------------------------- #
@@ -484,7 +588,11 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
         knobs = (
             scenario.knobs(now)
             if scenario.knobs
-            else Knobs(target=target, presence=_presence(house.household.presence_at(now)))
+            else Knobs(
+                target=target,
+                presence=_presence(house.household.presence_at(now)),
+                modes={"sauna": Mode.FORCE} if sauna_on and "sauna" in house.sims else {},
+            )
         )
         if now >= next_quarter_plan:
             plan_due = plan_due or "quarter"
@@ -500,7 +608,9 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             site=cfg,
             meter=sample,
             loads={
-                load.load_id: load_reads(load, house.sims[load.load_id], steps[load.load_id], now)
+                load.load_id: load_reads(
+                    load, house.sims[load.load_id], steps[load.load_id], now, env.outdoor_c
+                )
                 for load in house.loads
             },
             knobs=knobs,
@@ -511,7 +621,9 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
 
         # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #
         if plan_due is not None:
+            plan_started = _time.perf_counter()
             state, report, plan_effects = engine.plan(state, inputs)
+            result.plan_ms.append((_time.perf_counter() - plan_started) * 1000.0)
             plan_due = None
             result.plans += 1
             result.plan_adoptions += len(report.adopted)
@@ -542,17 +654,20 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                     result.outage_night_kwh += night
                     result.outage_day_kwh += daytime
             last_plans = new_plans
-            _apply_effects(house, plan_effects, pending, result, now, writes_10min)
+            _apply_effects(house, plan_effects, pending, result, now, writes_10min, month)
 
         # -- tick ---------------------------------------------------------- #
+        tick_started = _time.perf_counter()
         state, snapshot, effects = engine.tick(state, inputs)
+        result.tick_ms.append((_time.perf_counter() - tick_started) * 1000.0)
         result.ticks += 1
         if observer is not None:
             observer(now, snapshot)
-        _apply_effects(house, effects, pending, result, now, writes_10min)
+        _apply_effects(house, effects, pending, result, now, writes_10min, month)
         _measure(
             house, snapshot, steps, result, now, target_kwh, ready_checked, departure_checked, day
         )
+        _measure_month(result, snapshot, month, target_kwh)
         if state.runtime.failures:
             result.engine_failures += 1
         result.reasons_sample = snapshot.reasons
@@ -563,11 +678,64 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     if house.ev is not None:
         result.ev_soc_final = house.ev.soc
         result.sessions_dropped = house.ev.sessions_dropped
+    result.wall_s = _time.perf_counter() - started
+    result.controlled_share = house.controlled_share
+    result.house = house
     result.max_writes_per_10min = {
         load_id: max(buckets.values(), default=0) for load_id, buckets in writes_10min.items()
     }
-    result.digest = json.dumps(result.as_dict(), sort_keys=True)
+    result.digest = json.dumps(result.as_dict(), sort_keys=True)  # timings excluded: `perf()`
     return result
+
+
+#: Python weekdays: Saturday is 5, the working week ends before it.
+SATURDAY = 5
+WEEKEND_FROM = 5
+
+
+def _sauna_end() -> time:
+    """Return when the Saturday session ends: `SAUNA_AT` plus the sim's session."""
+    end = datetime.combine(date(2000, 1, 1), SAUNA_AT) + timedelta(seconds=SESSION_S)
+    return end.time()
+
+
+def _request_run(state: EngineState, load: Load, now: datetime) -> EngineState:
+    """Ask a controlled appliance for a run, the way `button.run_now` does (D4 §5.13)."""
+    before = state.loads.get(load.load_id, LoadState())
+    after = load.device_type.request(before, now)
+    return replace(state, loads={**state.loads, load.load_id: after})
+
+
+def _p95(values: list[float]) -> float:
+    """Return the 95th percentile of `values`, 0 when there are none."""
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, round(0.95 * (len(ordered) - 1)))]
+
+
+def _measure_month(
+    result: ScenarioResult, snapshot: Snapshot, month: str, target_kwh: float
+) -> None:
+    """Accumulate the month's windows and comfort (D9 §4, per month)."""
+    row = result.month(month)
+    if snapshot.meter is not None:
+        for window in snapshot.meter.closed:
+            row["windows"] += 1
+            row["kwh"] += window.kwh
+            row["max_window_kwh"] = max(row["max_window_kwh"], window.kwh)
+            if window.kwh > target_kwh + 1e-9:
+                row["over_target"] += 1
+    if _room_violated(snapshot):
+        row["comfort_violation_min"] += TICK_S / 60.0
+
+
+def _room_violated(snapshot: Snapshot) -> bool:
+    """Whether any room load reports its comfort floor violated this tick (D9 §4)."""
+    return any(
+        status.type_key in ROOM_TYPES and status.comfort is not None and status.comfort.violated
+        for status in snapshot.loads.values()
+    )
 
 
 def _quarter_plan_after(now: datetime) -> datetime:
@@ -619,7 +787,11 @@ def _plan_changes(
         if flips & committed:
             # D5 §5.9: inputs that changed re-cut the plan, commitments included;
             # the same inputs re-deciding a commitment is the churn INV-32 forbids.
-            (recut if inputs_changed(before, plan) else broken).append(load_id)
+            # A plan that needs *less* and drops its last committed slot has not
+            # re-decided anything - the car is nearly full - so a break is a flip
+            # under the same inputs that keeps the energy and moves it.
+            shrank = plan.planned_kwh < before.planned_kwh - 1e-6
+            (recut if inputs_changed(before, plan) or shrank else broken).append(load_id)
     return changed, broken, recut
 
 
@@ -678,6 +850,7 @@ def _apply_effects(  # noqa: PLR0917 - the loop's threaded bookkeeping
     result: ScenarioResult,
     now: datetime,
     writes_10min: dict[str, dict[int, int]],
+    month: str = "",
 ) -> None:
     """Hand each written decision to its simulator; count the writes (D9 §5.3)."""
     for command in effects.commands:
@@ -687,6 +860,8 @@ def _apply_effects(  # noqa: PLR0917 - the loop's threaded bookkeeping
         sim_cmd = sim_command(decision.command)
         pending[command.load_id] = sim_cmd
         result.writes[command.load_id] = result.writes.get(command.load_id, 0) + 1
+        if month:
+            result.month(month)["writes"] += 1
         bucket = int(now.timestamp() // 600)
         writes_10min[command.load_id][bucket] += 1
         if (
@@ -723,11 +898,9 @@ def _measure(  # noqa: PLR0917 - the metrics of one tick
             if window.kwh > target_kwh + 1e-9:
                 result.over_target += 1
     minutes = TICK_S / 60.0
-    violated = False
     for load in house.loads:
         sim = house.sims[load.load_id]
         if load.config.type_key == "floor_heating":
-            floor_c = float(load.config.params.get("floor_c", 0.0))
             # As the thermostat reports it (0.1 K steps): the number the household
             # and the engine both see, not the model's internal float.
             values = steps[load.load_id].values
@@ -738,13 +911,11 @@ def _measure(  # noqa: PLR0917 - the metrics of one tick
             )
             if load.config.params.get("room") == "bathroom":
                 result.bathroom_min_c = min(result.bathroom_min_c, temp)
-            if temp < floor_c:
-                violated = True
         elif load.config.type_key == "water_heater":
             result.tank_min_bottom_c = min(result.tank_min_bottom_c, sim.bottom_c)
             local = now.astimezone(house.cfg.tz)
             if local.time() >= READY_AT and day not in ready_checked:
                 ready_checked.add(day)
                 result.tank_top_at_ready = sim.top_c
-    if violated:
+    if _room_violated(snapshot):
         result.comfort_violation_min += minutes

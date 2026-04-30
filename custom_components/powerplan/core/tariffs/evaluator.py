@@ -349,6 +349,12 @@ class Evaluator:
         )
         self._now = self.history.period_start
         self.last_bill: Bill | None = None
+        #: `_evaluate` memo: the tick asks the same period metric a dozen times
+        #: between two recorded windows (D-0261). Keyed on the history's revision
+        #: and period, so a recorded window or a rolled period empties it.
+        self._memo: dict[tuple[Any, ...], _Metric] = {}
+        self._previous: dict[tuple[Any, ...], tuple[float, ...]] = {}
+        self._memo_stamp: tuple[int, datetime, int] | None = None
 
     # ------------------------------------------------------------- versions
 
@@ -654,6 +660,36 @@ class Evaluator:
         extra_day: date | None = None,
         extra_kw: float = 0.0,
     ) -> _Metric:
+        """Return the period metric, memoised until the history changes (D-0261)."""
+        stamp = (self.history.revision, self.history.period_start, id(self.history))
+        if stamp != self._memo_stamp:
+            self._memo.clear()
+            self._previous.clear()
+            self._memo_stamp = stamp
+        key = (id(tariff), period_key, counterfactual, inflate, extra_day, extra_kw)
+        found = self._memo.get(key)
+        if found is None:
+            found = self._evaluate_uncached(
+                tariff,
+                period_key,
+                counterfactual=counterfactual,
+                inflate=inflate,
+                extra_day=extra_day,
+                extra_kw=extra_kw,
+            )
+            self._memo[key] = found
+        return found
+
+    def _evaluate_uncached(
+        self,
+        tariff: PeakTariff,
+        period_key: str,
+        *,
+        counterfactual: bool = False,
+        inflate: bool = True,
+        extra_day: date | None = None,
+        extra_kw: float = 0.0,
+    ) -> _Metric:
         """Return the period metric, the ratchet and everything that qualifies them."""
         kwargs: dict[str, Any] = {
             "counterfactual": counterfactual,
@@ -877,15 +913,29 @@ class Evaluator:
         )
 
     def _previous_metrics(self, tariff: PeakTariff, count: int) -> list[float]:
-        """Return the metrics of the last `count` closed periods, oldest first."""
+        """Return the metrics of the last `count` closed periods, oldest first.
+
+        Memoised beside `_evaluate` under the same stamp: closed months do not
+        move between two recorded windows (D-0261).
+        """
         key = self._period_key()
         if len(key) == YEAR_KEY_LEN:  # a yearly period: the ratchet and auto both use months
             return []
+        stamp = (self.history.revision, self.history.period_start, id(self.history))
+        if stamp != self._memo_stamp:
+            self._memo.clear()
+            self._previous.clear()
+            self._memo_stamp = stamp
+        memo_key = ("previous", id(tariff), count, key)
+        cached = self._previous.get(memo_key)
+        if cached is not None:
+            return list(cached)
         found: list[float] = []
         for index in range(count, 0, -1):
             value, _, _, known = self._month_metric(_months_before(key, index), tariff)
             if known:
                 found.append(value)
+        self._previous[memo_key] = tuple(found)
         return found
 
     def _today_kw(self, now: datetime, tariff: PeakTariff) -> float:

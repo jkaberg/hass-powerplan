@@ -272,7 +272,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.9b | Backtest: recorder and CSV | done |
 | 0.10 | D3 `LoadMeter` and D11 accounting core | todo |
 | 0.10a | Accounting modules and unit tests | done |
-| 0.11 | Reference benchmark | todo |
+| 0.11 | Reference benchmark | done |
 | 1.1 | Runtime and storage | todo |
 | 1.1a | Storage | done |
 | 1.2 | Providers, read side | done |

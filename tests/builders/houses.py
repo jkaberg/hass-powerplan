@@ -29,14 +29,18 @@ from custom_components.powerplan.core.tariffs import Evaluator
 from custom_components.powerplan.core.tariffs.presets import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
+from tests.sim.cycle import CycleSim
 from tests.sim.ev import EvSim
+from tests.sim.heatpump import HeatPumpSim
 from tests.sim.household import HouseholdSim
 from tests.sim.meter import MeterSim
 from tests.sim.prices import FLAT, SPOT_LIKE, PriceRegime, PriceSim
+from tests.sim.room import RoomSim
 from tests.sim.slab import SlabSim
+from tests.sim.switch import SwitchSim
 from tests.sim.tank import DrawProfile, TankSim
-from tests.sim.uncontrolled import UncontrolledSim
-from tests.sim.weather import WeatherSim
+from tests.sim.uncontrolled import DEFAULT_TARGET_ANNUAL_KWH, UncontrolledSim
+from tests.sim.weather import WeatherEvent, WeatherSim
 
 OSLO = ZoneInfo("Europe/Oslo")
 
@@ -55,6 +59,48 @@ FLOOR_LOOPS: tuple[tuple[str, str, float, float, float], ...] = (
 
 #: Weekday departure 07:30 (D9 §5.9), as the EV type's weekday table.
 DEPARTURES = {str(weekday): "07:30" for weekday in range(5)}
+
+#: The v1 reference house, frozen per version (D9 §5.9, §5.11).
+HOUSE_ID = "nordic_detached@1"
+
+#: Every load the house will ever have, in the order the walk sees them.
+ALL_LOADS: tuple[str, ...] = (
+    "ev",
+    "loop_bath_1",
+    "loop_bath_2",
+    "loop_hall",
+    "loop_kitchen",
+    "loop_living",
+    "tank",
+    "heat_pump",
+    "radiator_bed_1",
+    "radiator_bed_2",
+    "dishwasher",
+    "sauna",
+)
+
+#: Where each house-level number comes from (D9 §2: a value without a source is a bug).
+HOUSE_SOURCES: dict[str, str] = {
+    "site": "D9 §5.9: 230 V IT 3φ, 63 A main fuse, preset no/tensio with both versions (INV-52)",
+    "ev": (
+        "D9 §5.9: 3φ 32 A charger over BLE, 60 kWh battery, weekday departure 07:30; "
+        "sessions and trips from sim/household.py"
+    ),
+    "floor_loops": (
+        "D9 §5.9: five loops, cable in screed 50 mm, areas 4.5–30 m²; comfort/floor per D4 §6.1 "
+        "(bathrooms 24/21 measured in the reference house, other rooms 22/18 assumed)"
+    ),
+    "tank": "D9 §5.9: 300 L, 3 kW, thermostat 75 °C, ready by 06:30, 3 persons, legionella by powerplan",
+    "heat_pump": "D9 §5.9: air-to-air 1.5 kW rated, 60 m² living zone, building 2000–2010 (D4 §6.4)",
+    "radiators": "D9 §5.9: two bedroom panel heaters 800 W, plug-controlled, comfort 19 °C (D4 §6.5 bedroom)",
+    "dishwasher": "D9 §5.9: eco programme 0.9 kWh / 3 h, requested weekday evenings 19:30, ready by 07:00",
+    "sauna": "D9 §5.9: 6 kW, Saturdays 19:00 for 90 min, generic_switch with force (`assumed`)",
+    "uncontrolled": (
+        "sim/uncontrolled.py: SSB detached-house total minus the controlled loads, "
+        f"{DEFAULT_TARGET_ANNUAL_KWH:.0f} kWh a year"
+    ),
+    "household": "D9 §5.9: 2 adults + 1 child, vacation weeks at Christmas, winter break, Easter, summer",
+}
 
 
 @dataclass
@@ -76,6 +122,10 @@ class House:
     controlled_share: float = 1.0
     seed: int = 0
     notes: tuple[str, ...] = field(default_factory=tuple)
+    #: Simulators of loads the build does **not** control: they run on their own
+    #: thermostat or charger logic and are metered into `uncontrolled` (D9 §9 11).
+    passive: dict[str, Any] = field(default_factory=dict)
+    spec: str = HOUSE_ID
 
     def load(self, load_id: str) -> Load:
         """Return the load with `load_id`."""
@@ -253,5 +303,146 @@ def house(
             default_kind=SPOT_LIKE if price_kind == SPOT_LIKE else FLAT,
         ),
         meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
+        seed=seed,
+    )
+
+
+def _ev(seed: int, soc: float) -> tuple[Load, EvSim, BleChargerSim]:
+    """Return the charger load and its car behind the Bluetooth link (D9 §5.9)."""
+    from tests.core.loads.conftest import EV_PARAMS  # noqa: PLC0415 - builders import builders
+
+    params = dict(EV_PARAMS)
+    params["departures"] = dict(DEPARTURES)
+    params["capacity_kwh"] = 60.0
+    params["phases"] = 3
+    load = ev_load(
+        params=params,
+        phases=3,
+        nameplate_w=32.0 * 230.0 * 1.7320508075688772,
+        transport=Transport.BLE,
+        strategy="deadline_fill",
+    )
+    ev = EvSim(capacity_kwh=60.0, soc=soc)
+    return load, ev, BleChargerSim(ev=ev, seed=seed, tz=OSLO)
+
+
+def _tank(seed: int, top_c: float, bottom_c: float) -> tuple[Load, TankSim]:
+    """Return the water heater and its two-layer tank (D9 §5.9)."""
+    load = load_from(
+        "water_heater",
+        {
+            "litres": "300",
+            "element_kw": "3",
+            "persons": 3.0,
+            "ready_by": "06:30",
+            "ready_temp_c": 75.0,
+            "comfort_min_c": 45.0,
+            "control": "thermostat",
+            "legionella": "powerplan",
+        },
+        load_id="tank",
+        qctx={"capabilities": frozenset({"setpoint", "water_heater"})},
+    )
+    sim = TankSim(
+        litres=300.0,
+        element_w=3000.0,
+        setpoint_c=75.0,
+        draw=DrawProfile(persons=3, seed=seed, tz=OSLO),
+        top_c=top_c,
+        bottom_c=bottom_c,
+    )
+    return load, sim
+
+
+def nordic_detached(
+    *,
+    seed: int = 20260919,
+    start: date = date(2026, 7, 1),
+    price_regimes: tuple[PriceRegime, ...] | None = None,
+    weather_events: tuple[WeatherEvent, ...] = (),
+    controlled: frozenset[str] | None = None,
+    ev_soc: float = 0.55,
+    slab_start_c: float = 22.0,
+    cfg: SiteConfig | None = None,
+) -> House:
+    """Return the whole reference house (D9 §5.9): every load it will ever have.
+
+    `controlled` names the loads this build steers; the rest run on their own
+    logic behind the meter (D9 §9 11) and `controlled_share` says how many. The
+    default is every load, because the core has every type (D4 complete).
+    """
+    cfg = cfg or site_config()
+    steer = frozenset(ALL_LOADS) if controlled is None else controlled
+    loads: dict[str, Load] = {}
+    sims: dict[str, Any] = {}
+
+    ev_load_, ev, charger = _ev(seed, ev_soc)
+    loads["ev"] = ev_load_
+    sims["ev"] = charger
+
+    for load_id, room, area_m2, comfort_c, floor_c in FLOOR_LOOPS:
+        loads[load_id] = _floor(load_id, room, area_m2, comfort_c, floor_c)
+        sims[load_id] = _slab(area_m2, comfort_c, floor_c, start_c=slab_start_c)
+
+    tank_load, tank = _tank(seed, 60.0, 50.0)
+    loads["tank"] = tank_load
+    sims["tank"] = tank
+
+    loads["heat_pump"] = load_from(
+        "heat_pump",
+        {"hp_type": "a2a", "rated_kw": 1.5, "area_m2": 60.0, "building": "2000_2010"},
+        load_id="heat_pump",
+    )
+    sims["heat_pump"] = HeatPumpSim(area_m2=60.0, room_c=21.0, setpoint_c=21.0)
+
+    for load_id in ("radiator_bed_1", "radiator_bed_2"):
+        loads[load_id] = load_from(
+            "radiator",
+            {
+                "heater_type": "panel",
+                "room": "bedroom",
+                "control": "plug",
+                "power_w": 800.0,
+                "area_m2": 12.0,
+                "comfort_c": 19.0,
+            },
+            load_id=load_id,
+        )
+        sims[load_id] = RoomSim(
+            area_m2=12.0, nameplate_w=800.0, dial_c=19.0, room_c=19.0, plug_on=True
+        )
+
+    loads["dishwasher"] = load_from(
+        "appliance_cycle",
+        {"appliance": "dishwasher_eco", "start_control": "start_program"},
+        load_id="dishwasher",
+    )
+    sims["dishwasher"] = CycleSim()
+
+    loads["sauna"] = load_from(
+        "generic_switch", {"appliance": "sauna", "power_w": 6000.0}, load_id="sauna"
+    )
+    sims["sauna"] = SwitchSim()
+
+    regimes = price_regimes or (
+        PriceRegime(kind=FLAT, start=start, end=start.replace(year=start.year + 1)),
+    )
+    uncontrolled = UncontrolledSim(seed=seed, tz=OSLO)
+    uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
+    return House(
+        cfg=cfg,
+        tariff=tensio(),
+        loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
+        sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
+        passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},
+        ev=ev,
+        charger=charger,
+        tank=tank,
+        household=HouseholdSim(seed=seed, tz=OSLO),
+        uncontrolled=uncontrolled,
+        weather=WeatherSim(seed=seed, tz=OSLO, events=tuple(weather_events)),
+        prices=PriceSim(seed=seed, tz=OSLO, regimes=regimes, default_kind=SPOT_LIKE),
+        meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
+        controlled_share=len(steer & set(ALL_LOADS)) / len(ALL_LOADS),
         seed=seed,
     )

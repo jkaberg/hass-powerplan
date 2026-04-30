@@ -77,6 +77,11 @@ class BleChargerSim:
     seed: int = 0
     tz: ZoneInfo = field(default_factory=lambda: ZoneInfo("Europe/Oslo"))
     link_up: bool = True
+    #: An injected loss of contact (D9 §4 `ble_flap`): offline until this instant,
+    #: whatever the seeded schedule says. A flap is a loss of *contact*, not a
+    #: reconnect a tick - forcing `link_up` off from outside rolled the
+    #: reconnect dice every ten seconds and dropped a session a day.
+    offline_until: datetime | None = None
     commands_lost: int = 0
     reconnects: int = 0
     fallbacks: int = 0
@@ -94,7 +99,9 @@ class BleChargerSim:
         return tuple((s, s + DROP_S) for s in starts)
 
     def offline_at(self, t: datetime) -> bool:
-        """Report whether the link is down at `t` - a pure function of the seed."""
+        """Report whether the link is down at `t`: the seeded schedule, or an injected flap."""
+        if self.offline_until is not None and t < self.offline_until:
+            return True
         local = t.astimezone(self.tz)
         midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
         for day in (midnight - timedelta(days=1), midnight):

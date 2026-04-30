@@ -129,7 +129,11 @@ class Setpoint:
                     f"{since:.0f} s since a restore: no upward move within one dwell (INV-29)",
                 )
 
-        urgent = ctx.stage >= cfg.urgent_from_stage and not want_on
+        # A shed at the urgent stage, or a restore that serves a violated comfort
+        # floor: neither waits behind the interval or the dwell (D-0266).
+        urgent = (ctx.stage >= cfg.urgent_from_stage and not want_on) or (
+            want_on and ctx.comfort_violated
+        )
         return Command(
             writes=(Write(cfg.role, value),),
             reason=f"{q.reason} → {value:.2f}",

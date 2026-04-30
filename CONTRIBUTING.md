@@ -53,6 +53,10 @@ The integration tracks the quality scale in `quality_scale.yaml`: Silver at v1.0
 - Scenarios in `tests/scenarios/` are deterministic with seeded noise. A flaky scenario is a bug, not a retry.
 - Never weaken, skip, `xfail` or narrow a test to make a change pass. If a test is wrong, fix it in the same PR and say why.
 
+### The reference benchmark
+
+The benchmark in `tests/benchmark/` (D9 §5.9) is the gate: a fictional but realistic house, `nordic_detached`, and a synthetic year run through the whole engine, with committed baselines and tolerances. `smoke` runs on every PR, `month` before a `core/` PR merges, and `full` nightly. A metric outside its tolerance is either fixed, or explained by a baseline update plus a line in `design/benchmarks/CHANGELOG.md`. Never loosen a tolerance or edit the house spec to suit a change.
+
 ### Which tests to run
 
 Every test outside the simulations runs in under a minute, so run all of them whenever you run tests. Only the simulations are worth choosing (D9 §5.14).
@@ -62,6 +66,18 @@ Every test outside the simulations runs in under a minute, so run all of them wh
 | After an edit | The test file of the module you touched |
 | Before a commit | The fast suite, plus the simulations your diff reaches |
 | At the end of a WP | The PR command, once |
+
+| The diff touches | Also run before a commit |
+|---|---|
+| `core/metering/`, `core/pricing/`, `core/strategies/`, `core/model.py`, `core/engine.py` | `mypy core`, scenarios phase0 |
+| `core/tariffs/` | `mypy core`, scenarios phase1 |
+| `core/loads/` | `mypy core`, the scenario file for the device type (EV → phase2, tank and heat pump → phase3) |
+| `core/allocation/` | `mypy core`, scenarios phase0 and phase2 |
+| `core/accounting/` | `mypy core`, `tests/backtest` |
+| `core/forecasts/` | `mypy core` (no simulation reaches D10) |
+| `tests/sim/`, `tests/builders/houses.py`, the scenario runner | `tests/sim` and the scenario file that uses the changed part |
+
+At the end of a WP that touches `core/`, also run every scenario file, `tools/benchmark.py --tier smoke --compare`, and the month tier. After a change to `runtime.py`, `storage.py`, `writegate.py` or the flows, run the e2e day (`uv run pytest -m e2e -q`).
 
 ## Commands
 

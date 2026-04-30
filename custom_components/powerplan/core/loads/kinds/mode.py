@@ -108,7 +108,8 @@ class ModeKind:
         return Command(
             writes=(Write(self.cfg.role, q.value),),
             reason=f"{q.reason}: {q.value}",
-            urgent=ctx.stage >= self.cfg.urgent_from_stage and shedding,
+            urgent=(ctx.stage >= self.cfg.urgent_from_stage and shedding)
+            or (not shedding and ctx.comfort_violated),
             blunt=grant.blunt,
             sheds=grant.shed,
             want_on=not shedding,

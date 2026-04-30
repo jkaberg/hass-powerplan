@@ -1,0 +1,220 @@
+{
+  "build": "801993f",
+  "house": "nordic_detached",
+  "results": {
+    "smoke": {
+      "build": "801993f",
+      "controlled_share": 1.0,
+      "house": "nordic_detached",
+      "months": {
+        "2026-10": {
+          "comfort_violation_min": 1.0,
+          "deadline_misses": 2,
+          "fee": "416.00 NOK",
+          "kwh": 442.52,
+          "level": "5\u201310 kW",
+          "max_window_kwh": 8.475,
+          "metric_kw": 8.155,
+          "over_target": 0,
+          "windows": 167,
+          "writes": 1153
+        },
+        "2027-01": {
+          "comfort_violation_min": 9.5,
+          "deadline_misses": 1,
+          "fee": "441.00 NOK",
+          "kwh": 627.689,
+          "level": "5\u201310 kW",
+          "max_window_kwh": 9.243,
+          "metric_kw": 8.576,
+          "over_target": 0,
+          "windows": 167,
+          "writes": 1560
+        }
+      },
+      "perf": {
+        "plan_p95_ms": 91.251,
+        "tick_p95_ms": 3.591,
+        "ticks": 120960,
+        "ticks_per_s": 225,
+        "wall_s": 536.9
+      },
+      "seed": 20260919,
+      "set_at": "2026-09-20T18:06:34+00:00",
+      "since": "WP0.11",
+      "spans": [
+        {
+          "comfort_violation_min": 1.0,
+          "commitment_breaks": {},
+          "days": 7.0,
+          "deadline_misses": 2,
+          "engine_failures": 0,
+          "ev_stops": 23,
+          "frozen_ticks": 1568,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 7,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 1,
+            "radiator_bed_2": 1,
+            "sauna": 1,
+            "tank": 1
+          },
+          "name": "nordic_detached:smoke:2026-10-05",
+          "over_target": 0,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 167,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 137,
+            "heat_pump": 50,
+            "loop_bath_1": 152,
+            "loop_bath_2": 152,
+            "loop_hall": 168,
+            "loop_kitchen": 170,
+            "loop_living": 170,
+            "radiator_bed_1": 33,
+            "radiator_bed_2": 33,
+            "sauna": 60,
+            "tank": 27
+          },
+          "zero_amp_writes": 0
+        },
+        {
+          "comfort_violation_min": 9.5,
+          "commitment_breaks": {},
+          "days": 7.0,
+          "deadline_misses": 1,
+          "engine_failures": 0,
+          "ev_stops": 24,
+          "frozen_ticks": 1464,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 9,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 2,
+            "radiator_bed_2": 2,
+            "sauna": 1,
+            "tank": 2
+          },
+          "name": "nordic_detached:smoke:2027-01-11",
+          "over_target": 0,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 167,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 214,
+            "heat_pump": 93,
+            "loop_bath_1": 168,
+            "loop_bath_2": 168,
+            "loop_hall": 193,
+            "loop_kitchen": 193,
+            "loop_living": 193,
+            "radiator_bed_1": 130,
+            "radiator_bed_2": 110,
+            "sauna": 68,
+            "tank": 29
+          },
+          "zero_amp_writes": 0
+        }
+      ],
+      "tier": "smoke",
+      "total": {
+        "comfort_violation_min": 10.5,
+        "commitment_breaks": 0,
+        "deadline_misses": 3,
+        "engine_failures": 0,
+        "fee": "857.00 NOK",
+        "kwh": 1070.21,
+        "max_window_kwh": 9.243,
+        "over_target": 0,
+        "plan_gaps": 0,
+        "sessions_dropped": 10,
+        "windows": 334,
+        "writes": 2713,
+        "writes_by_load": {
+          "dishwasher": 2,
+          "ev": 351,
+          "heat_pump": 143,
+          "loop_bath_1": 320,
+          "loop_bath_2": 320,
+          "loop_hall": 361,
+          "loop_kitchen": 363,
+          "loop_living": 363,
+          "radiator_bed_1": 163,
+          "radiator_bed_2": 143,
+          "sauna": 128,
+          "tank": 56
+        },
+        "zero_amp_writes": 0
+      },
+      "year": "y2026_27@1"
+    }
+  },
+  "since": "WP0.11",
+  "tolerances": {
+    "perf.plan_p95_ms": {
+      "kind": "abs",
+      "value": 500.0
+    },
+    "perf.tick_p95_ms": {
+      "kind": "abs",
+      "value": 50.0
+    },
+    "total.comfort_violation_min": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.commitment_breaks": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.deadline_misses": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.engine_failures": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.fee": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.over_target": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.plan_gaps": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.sessions_dropped": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.writes": {
+      "kind": "pct",
+      "value": 10.0
+    },
+    "total.zero_amp_writes": {
+      "kind": "zero",
+      "value": null
+    }
+  },
+  "year": "y2026_27@1"
+}

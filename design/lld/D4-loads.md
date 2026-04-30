@@ -358,6 +358,7 @@ desired =
     heat pump:  clamp(target + delta + offset(stage), target − band_down, target + band_up) then device min/max (INV-29); offset: coast −1 K at stage ≥ 3; +Δ arrives already gated by D5 (outdoor ≤ preheat_max_outdoor ∧ room < target)
     tank:       charge_setpoint if plan says charge and grant ≥ nameplate and not shed, else shed_setpoint (comfort min); hysteresis: a started charge holds min_on_s unless stage ≥ 2
     floor:      the lowest setpoint written - shed or plan delta - is floor + swing_k / 2: a thermostat holds setpoint ± half its swing, and the floor is a temperature, not a dial (D-0259)
+    radiator:   the same half band above the floor - the comfort target it wants power towards on a plug, the shed setpoint and the clamp on a dial (D-0265)
     thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor) - a comfort violation is served at `target` whatever the plan says
 gate: tolerance 0.05 °C (heat pump 0.25), min_interval, dwell, urgent (stage ≥ 2 shed = urgent: past interval, never past tolerance)
 restore(): write profile.target (a correction, never adoption); no upward move within one dwell of a restore
@@ -489,7 +490,7 @@ Decision matrix, in order (first hit wins):
 | 8 | transport budget exhausted and not blunt | `held_budget` |
 | 9 | else write with `blocking=True` (INV-24); schedule verify at `+verify_after_s`; mark settling; consume budget |
 
-`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load) or a retry after failure - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). A read-back stamped before the write (`Reads.taken_at`, HA's `last_reported`) is not a read-back yet: the verify stays due and nothing is counted (D-0251). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
+`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load), a retry after failure, or a **restore that serves a violated comfort floor** (D-0266) - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). A read-back stamped before the write (`Reads.taken_at`, HA's `last_reported`) is not a read-back yet: the verify stays due and nothing is counted (D-0251). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
 
 **The executor, concretely.** `writegate.py` is one class,
 `WriteGate(hass, read_state=…, on_state=…)`, and what the runtime calls on it:
@@ -584,7 +585,7 @@ Comfort floor default 45 °C (below ~50 °C storage favours legionella growth - 
 
 ### 5.13 Appliance cycle specifics (INV-59 support)
 
-**In code (D4 types complete, D-0207, D-0208).** `CycleState.phase ∈ {idle, planned, started, running, finished, aborted}` with `requested_at`, `started_at`, `energy_kwh`, ten `segments` and the learned `profile`; a request is `ApplianceCycle.request(state, now)` (`button.run_now`, or the household loading the machine) and `force` is the same request with the price ignored. Running is read from `POWER ≥ 20 W` first and `PROGRAM_STATE` second; finished from the text, or from ≥ 5 min idle after at least half the programme; a learned profile is adopted only within 0.5–2× the default. Below stage 4 the relay's threshold is zero while a run is under way, so no stage 1–3 shed reaches it; a blunt stage 4 cuts it and the run aborts and restarts from zero (the simulator's behaviour, `tests/sim/cycle.py`). On a plug, the machine is started with the plug off and begins when power returns (the smart-plug pattern).
+**In code (D-0207, D-0208).** `CycleState.phase ∈ {idle, planned, started, running, finished, aborted}` with `requested_at`, `started_at`, `energy_kwh`, ten `segments` and the learned `profile`; a request is `ApplianceCycle.request(state, now)` (`button.run_now`, or the household loading the machine) and `force` is the same request with the price ignored. Running is read from `POWER ≥ 20 W` first and `PROGRAM_STATE` second; finished from the text, or from ≥ 5 min idle after at least half the programme; a learned profile is adopted only within 0.5–2× the default. Below stage 4 the relay's threshold is zero while a run is under way, so no stage 1–3 shed reaches it; a blunt stage 4 cuts it and the run aborts and restarts from zero (the simulator's behaviour, `tests/sim/cycle.py`). On a plug, the machine is started with the plug off and begins when power returns (the smart-plug pattern). On a `START` role the kind **presses**: one command when the plan says go and the programme is not running, never a `False` and never a repeat while it runs (D-0262).
 
 `CycleState ∈ {idle, planned(start_at), started(at), running, finished, aborted}`. Start: `START` role (Home Connect `start_program`, a switch, or a `button`) at the planned slot when D6 grants ≥ nameplate; detect running from `PROGRAM_STATE`; on `finished` → learn the profile (§2). Non-interruptible: `apply()` ignores sheds below stage 4 while running; reservation = learned or default profile. "Delayed start" appliances: if the profile exposes a delay, write the delay instead of waiting - the appliance then owns the start.
 
@@ -680,7 +681,7 @@ kWh, max charge/discharge kW, reserve % (20), allow grid charging (yes), chemist
 
 ### 6.7 `generic_switch`
 
-What is it (pool pump · sauna · hot tub · ventilation · other) → nameplate default and strategy (`cheapest_hours` with "hours per day" for pool/ventilation; `always` + `force` for sauna/hot tub); power W (measured wins); min on/off.
+What is it (pool pump · sauna · hot tub · ventilation · other) → nameplate default and strategy (`cheapest_hours` with "hours per day" for pool/ventilation; `always` + `force` for sauna/hot tub); power W (measured wins); min on/off. An appliance with no hours per day is **on call** (D-0263): it wants power when the household has it on, when a shed of ours left it wanting, or under `force` - the controller sheds and restores it and never lights it.
 
 ### 6.8 `appliance_cycle`
 
@@ -746,6 +747,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 18. Heat pump: defrost detected → no shed; `never_switch` never actuated at any stage; band > 2 K rejected.
 19. Plan delta reaches the device: a `heat_capacitor` slot with `setpoint_delta = −1` lowers a SETPOINT thermostat to `target − 1` (clamped at the floor) and puts a MODE thermostat in `shed_option`; a comfort violation overrides both; a `+1` never exceeds `ceiling` (INV-30, INV-56).
 20. Physical floors and bands: a tank within `READY_BAND_K` of its target wants nothing and owes nothing, one tenth of a kelvin further down it wants; a floor loop's shed and its deepest plan delta both stop at `floor + swing_k / 2` (D-0256, D-0259).
+21. On call and the press: a sauna with its relay off wants nothing, on it wants its nameplate, shed by us it keeps wanting until restored, and forced it wants regardless; a `START` role is pressed once when the plan says go and never written `False` nor pressed while the programme runs (D-0262, D-0263).
 
 ---
 

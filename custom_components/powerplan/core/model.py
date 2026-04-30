@@ -22,8 +22,9 @@ below and added by that WP, not invented here.
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from enum import IntEnum, StrEnum
@@ -276,19 +277,41 @@ class PriceCurve:
     slots: tuple[Slot, ...]
     built_at: datetime
     sources: tuple[str, ...]
+    #: Derived once from `slots`, never compared: every start for the bisections
+    #: below, and the running hours of `KNOWN` slots for `coverage_h`. A curve
+    #: is asked a few hundred times a tick; walking 400 slots each time was a
+    #: third of the tick (`design/DECISIONS.md` D-0261).
+    _starts: tuple[float, ...] = field(init=False, repr=False, compare=False, default=())
+    _known_h: tuple[float, ...] = field(init=False, repr=False, compare=False, default=())
+
+    def __post_init__(self) -> None:
+        """Index the sorted slots (D1 §4: `slots` is sorted, gaps only in the past).
+
+        The keys are POSIX seconds: an aware `datetime` compares through its
+        zone, and the bisections were a third of what the index had saved.
+        """
+        known: list[float] = []
+        total = 0.0
+        for slot in self.slots:
+            if slot.confidence is Confidence.KNOWN:
+                total += slot.minutes / 60.0
+            known.append(total)
+        object.__setattr__(self, "_starts", tuple(slot.start.timestamp() for slot in self.slots))
+        object.__setattr__(self, "_known_h", tuple(known))
 
     def price_at(self, t: datetime) -> Slot | None:
         """Return the slot containing `t`, or `None` outside the curve (D1 §5.8)."""
-        for slot in self.slots:
-            if slot.start > t:
-                return None
-            if t < slot.end:
-                return slot
-        return None
+        index = bisect_right(self._starts, t.timestamp()) - 1
+        if index < 0:
+            return None
+        slot = self.slots[index]
+        return slot if t < slot.end else None
 
     def slots_between(self, a: datetime, b: datetime) -> tuple[Slot, ...]:
         """Return the slots overlapping `[a, b)` at their native lengths (INV-7)."""
-        return tuple(slot for slot in self.slots if slot.end > a and slot.start < b)
+        low = max(0, bisect_right(self._starts, a.timestamp()) - 1)
+        high = bisect_left(self._starts, b.timestamp())
+        return tuple(slot for slot in self.slots[low:high] if slot.end > a)
 
     def spread(self, day: date, zone: tzinfo) -> Decimal:
         """Return max − min `total` over the local day, 0 with no slots (D1 §5.7)."""
@@ -313,17 +336,28 @@ class PriceCurve:
         """
         return self.spread(day, zone) < threshold
 
+    def has_known_after(self, t: datetime) -> bool:
+        """Return whether a `KNOWN` slot starts at or after `t` (D7 §4.1 `tomorrow_available`)."""
+        if not self.slots:
+            return False
+        index = bisect_left(self._starts, t.timestamp())
+        before = self._known_h[index - 1] if index > 0 else 0.0
+        return self._known_h[-1] - before > 0.0
+
     def coverage_h(self, from_: datetime) -> float:
         """Return the hours of `KNOWN` slots after `from_` (D1 §5.7).
 
         A planner must consult this and never plan past it: tomorrow's prices
         land around 13:00, so at 05:00 the horizon is ~19 h, not 48.
         """
-        hours = 0.0
-        for slot in self.slots:
-            if slot.end <= from_ or slot.confidence is not Confidence.KNOWN:
-                continue
-            hours += (slot.end - max(slot.start, from_)).total_seconds() / 3600.0
+        if not self.slots:
+            return 0.0
+        index = bisect_right(self._starts, from_.timestamp()) - 1
+        hours = self._known_h[-1] - (self._known_h[index] if index >= 0 else 0.0)
+        if index >= 0:
+            slot = self.slots[index]
+            if slot.confidence is Confidence.KNOWN and slot.end > from_:
+                hours += (slot.end - max(slot.start, from_)).total_seconds() / 3600.0
         return hours
 
     def resample(self, minutes: int) -> PriceCurve:
@@ -475,15 +509,35 @@ class Plan:
     coverage: float = 1.0
     deadline: datetime | None = None
     inputs_hash: str = ""
+    #: Derived once from `slots` (time order, D5 §4), never compared (D-0261):
+    #: every start, and the active slots' (`envelope_w > 0`) starts and ends for
+    #: the stop horizons D6 asks about every tick.
+    _starts: tuple[float, ...] = field(init=False, repr=False, compare=False, default=())
+    _active_starts: tuple[datetime, ...] = field(init=False, repr=False, compare=False, default=())
+    _active_ends: tuple[float, ...] = field(init=False, repr=False, compare=False, default=())
+
+    def __post_init__(self) -> None:
+        """Index the slots for the lookups every tick makes."""
+        active = [
+            slot for slot in self.slots if slot.envelope_w is not None and slot.envelope_w > 0.0
+        ]
+        object.__setattr__(self, "_starts", tuple(slot.start.timestamp() for slot in self.slots))
+        object.__setattr__(self, "_active_starts", tuple(slot.start for slot in active))
+        object.__setattr__(self, "_active_ends", tuple(slot.end.timestamp() for slot in active))
+
+    def slots_between(self, a: datetime, b: datetime) -> tuple[PlanSlot, ...]:
+        """Return the slots overlapping `[a, b)`."""
+        low = max(0, bisect_right(self._starts, a.timestamp()) - 1)
+        high = bisect_left(self._starts, b.timestamp())
+        return tuple(slot for slot in self.slots[low:high] if slot.end > a)
 
     def slot_at(self, now: datetime) -> PlanSlot | None:
         """Return the slot containing `now`, or `None` outside the plan."""
-        for slot in self.slots:
-            if slot.start > now:
-                return None
-            if now < slot.end:
-                return slot
-        return None
+        index = bisect_right(self._starts, now.timestamp()) - 1
+        if index < 0:
+            return None
+        slot = self.slots[index]
+        return slot if now < slot.end else None
 
     def cap_w(self, now: datetime) -> float | None:
         """Return what this load may draw now: `None` free · `0` idle · `w` cap.
@@ -513,13 +567,13 @@ class Plan:
         when the plan draws no more, or has nothing to say - then the caller
         decides on other grounds.
         """
-        for slot in self.slots:
-            if slot.end <= now or slot.envelope_w is None or slot.envelope_w <= 0.0:
-                continue
-            if slot.start <= now:
-                return 0.0
-            return min(horizon_s, max(0.0, (slot.start - now).total_seconds()))
-        return horizon_s
+        index = bisect_right(self._active_ends, now.timestamp())
+        if index >= len(self._active_starts):
+            return horizon_s
+        start = self._active_starts[index]
+        if start <= now:
+            return 0.0
+        return min(horizon_s, max(0.0, (start - now).total_seconds()))
 
     def next_active(self, now: datetime) -> datetime | None:
         """Return when the plan next draws power, `now` if it already does.
@@ -527,11 +581,10 @@ class Plan:
         D6 combines it with the window's remaining time for a *budget* stop's
         horizon - undone by the window turning or by the plan (INV-39).
         """
-        for slot in self.slots:
-            if slot.end <= now or slot.envelope_w is None or slot.envelope_w <= 0.0:
-                continue
-            return max(slot.start, now)
-        return None
+        index = bisect_right(self._active_ends, now.timestamp())
+        if index >= len(self._active_starts):
+            return None
+        return max(self._active_starts[index], now)
 
 
 # --------------------------------------------------------------------------- #

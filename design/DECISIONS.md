@@ -1152,3 +1152,33 @@ The ramp starts from the previous plan's `desired_state_at(now)`, not zero. Star
 
 The scenario runner plans at quarter-hour + 20 s, at startup, after a restart and on plug edges. Its price pipeline is the NO site's own (the preset's components as a `tou_schedule`, D-0126). Its INV-32 metric counts a committed slot re-cut without an input change or a smaller requirement; forced re-cuts are `plan_recuts`. The catalogue is Python, the BLE simulator polls every 30 s on a seeded phase, and the tank's differential is 2 K. Affects D9 §5.2, §5.3.
 **Rejected:** a YAML catalogue - Python keeps the house builder typed.
+
+### D-0261 · The curve and the plan are indexed; day figures and the period metric memoised
+
+`PriceCurve` and `Plan` build never-compared indices in `__post_init__` and bisect instead of walking. The engine memoises a curve's local-day figures, and the evaluator memoises behind a non-persisted `PeakHistory.revision`. D9 §5.9 wants ≥ 500 ticks/s; slot walks and re-derived day stats were two-thirds of every tick, and the runner went from 110 to 420 ticks/s. Nothing observable changes, and a test pins the indexed lookups to the linear ones. Affects D1 §4, D5 §4, D7 §4.1, D2 §5.
+**Rejected:** a coarser tick - D9 §5.9 forbids it. Caching in the runner - HA's tick pays the same cost.
+
+### D-0262 · A start role is pressed, never released
+
+The `switch` kind on a `START` role sends a command only when the grant says go and the programme isn't running. A `start_program` action or a button has no off and no state to read back, so the benchmark dishwasher was writing `START = False` every 60 s all day. Affects D4 §5.6, §5.13.
+**Rejected:** a read adapter that answers the press - a button's state is its last press time.
+
+### D-0263 · An appliance with no hours to fill is on call
+
+A `generic_switch` with `hours_per_day = None` (sauna, hot tub, other) wants power only when the household has the relay on, when our shed left it wanting, or under force. Otherwise the walk granted the sauna 6 kW on a Saturday afternoon nobody asked for. Affects D4 §6.7, §9 21.
+**Rejected:** on-call appliances only under force - pressing the sauna's own button should heat it.
+
+### D-0264 · The first benchmark baseline controls every load
+
+`nordic_detached@1` steers all twelve loads (`controlled_share = 1.0`); the builder still meters what it doesn't steer (D9 §9 11). Zero-class tolerances start as `not_worse`, and the money columns appear once accounting is wired in. A fully controlled baseline is the strictest gate for later work. Affects D9 §5.9, §5.11.
+**Rejected:** EV and floors only - later work would be rewarded for flipping a flag.
+
+### D-0265 · A panel heater's floor is physical too
+
+The `radiator` type lifts its comfort target, shed setpoint and clamp by half a band (`swing_k`, default 1 K), like floor loops (D-0259). Under `away` a plug that closes only below target let a bedroom fall to 16.9 °C against a 17 °C floor. Affects D4 §5.4, §6.5.
+**Rejected:** tolerating a tenth of a kelvin - the promise is a temperature.
+
+### D-0266 · A restore that serves a violated comfort floor is urgent
+
+`switch`, `setpoint` and `mode` mark a turn-on or turn-up urgent while `comfort_violated` is set, buying past the interval and dwell (rows 6-7), never past row 3. A bedroom heater sat 30 minutes behind its `min_off` dwell after falling through its floor. Affects D4 §5.6, §5.10.
+**Rejected:** a shorter relay dwell - the dwell protects the device, and a compressor's must stay.

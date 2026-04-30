@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from ...model import Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
+from ..gate import same
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.switch import Switch, SwitchCfg
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
@@ -284,8 +285,15 @@ class GenericSwitch:
         measured = ctx.reads.value(Role.POWER)
         nameplate_w = load.config.nameplate_w
         forced = state.mode is Mode.FORCE
+        # An appliance with no hours to fill - a sauna, a hot tub - is *on call*:
+        # the household switches it on and the controller only sheds and
+        # restores it; a pump or a fan with hours per day is the plan's to run
+        # (§6.7, D-0263). Without this the sauna lit itself on a Saturday afternoon.
+        on_call = load.config.params.get("hours_per_day") is None
+        relay_on = same(ctx.reads.current_of(Role.SWITCH), True, 0.0)
+        wants = forced or bool(relay_on) or state.shed_active if on_call else True
         return Demand(
-            wants=True,
+            wants=wants,
             required_kwh=None,
             deadline=None,
             min_w=0.0,
@@ -295,7 +303,8 @@ class GenericSwitch:
             price_sensitive=not forced,
             reason="forced"
             if forced
-            else f"{load.config.params.get('appliance', 'other')} on call",
+            else f"{load.config.params.get('appliance', 'other')} "
+            + ("on call" if not on_call or wants else "off, on call"),
         )
 
     def latch(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState:

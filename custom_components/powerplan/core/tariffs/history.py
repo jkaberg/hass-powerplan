@@ -220,6 +220,9 @@ class PeakHistory:
     counterfactual_days: dict[date, DayRec] = field(default_factory=dict)
     overrides: list[Override] = field(default_factory=list)
     seeded_from: dict[str, str] = field(default_factory=dict)
+    #: Bumped by every mutation, so an evaluator can memoise what it computed
+    #: from this history and know when that is stale (D-0261). Never persisted.
+    revision: int = field(default=0, compare=False, repr=False)
 
     # ----------------------------------------------------------------- record
 
@@ -243,6 +246,7 @@ class PeakHistory:
         the one hour the tariff measures, so the key already exists and its energy
         grows (D2 §5.1).
         """
+        self.revision += 1
         key = _key(start_utc)
         previous = self.windows.get(key)
         if accumulate and previous is not None:
@@ -276,6 +280,7 @@ class PeakHistory:
         replaced by its shadow. It never touches `windows` or `days`: the real
         history has to stay exactly what the meter said.
         """
+        self.revision += 1
         kw_raw = kwh / window_h
         kw_weighted = kw_raw * weight
         existing = self.counterfactual_days.get(local_day)
@@ -350,6 +355,7 @@ class PeakHistory:
 
     def apply_override(self, override: Override) -> None:
         """Add or replace a manual correction (the `set_peak` service, D2 §5.12)."""
+        self.revision += 1
         self.overrides = [
             item
             for item in self.overrides
@@ -380,10 +386,12 @@ class PeakHistory:
 
     def freeze_month(self, key: str, rec: MonthRec) -> None:
         """Store a month's metric so it survives the pruning of its days (D2 §5.9)."""
+        self.revision += 1
         self.months[key] = rec
 
     def prune(self, current: str) -> None:
         """Drop what no period can still need (D2 §7)."""
+        self.revision += 1
         for key in [k for k in self.windows if self.windows[k].day[:7] != current]:
             del self.windows[key]
         day_floor = _months_before(current, KEEP_DAYS_MONTHS - 1)

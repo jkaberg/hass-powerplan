@@ -76,6 +76,9 @@ SAVE_MIN_ON_MIN: Final = 30.0
 #: §6.5 gives no maximum; two kelvin is what a panel heater can put into a room
 #: before the household opens a window, and INV-56 needs *a* number.
 BANK_ABOVE_COMFORT_K: Final = 2.0
+#: A panel heater's band: its own dial and the room's lag between plug cycles.
+#: What the type steers against sits half of it above the floor (D-0265).
+PLUG_BAND_K: Final = 1.0
 
 #: How far ahead a radiator looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -323,7 +326,7 @@ class Radiator:
         floor_c = float(params.get("floor_c", 17.0))
         return Setpoint(
             SetpointCfg(
-                shed_setpoint=float(params.get("shed_setpoint_c", floor_c)),
+                shed_setpoint=float(params.get("shed_setpoint_c", floor_c)) + _half_band(params),
                 device_min=floor_c,
                 device_max=float(params.get("max_c", 24.0)),
                 min_on_s=min_on_s,
@@ -356,7 +359,12 @@ class Radiator:
         """Where the room stands against its configured target (INV-27, INV-55)."""
         profile = load.config.target
         assert profile is not None  # build() refuses a radiator without one
-        target = profile.target(ctx.now, ctx.presence)
+        # The target the heater is steered towards never sits closer to the floor
+        # than half a band: a plug that closes only below the floor lets the room
+        # fall through it (D-0265). The floor itself is untouched (INV-55).
+        target = max(
+            profile.target(ctx.now, ctx.presence), profile.floor + _half_band(load.config.params)
+        )
         level = self.level(load, ctx)
         return ComfortState(
             current=level,
@@ -428,7 +436,7 @@ class Radiator:
             stop_ok=False if grant is None else grant.stop_ok,
             blunt=False if grant is None else grant.blunt,
             target=comfort.target,
-            floor=comfort.floor,
+            floor=comfort.floor + _half_band(load.config.params),
             ceiling=comfort.ceiling,
             setpoint_delta=ctx.setpoint_delta,
             desired=ctx.desired,
@@ -442,6 +450,11 @@ class Radiator:
 def _or(value: Any, fallback: float) -> float:
     """Return the answered number, or the derived default when it was left blank."""
     return fallback if value is None else float(value)
+
+
+def _half_band(params: Mapping[str, Any]) -> float:
+    """Return half the heater's band (`swing_k`, else `PLUG_BAND_K`): what a room dips by."""
+    return float(params.get("swing_k", PLUG_BAND_K)) / 2.0
 
 
 def _reason(comfort: ComfortState, *, wants: bool, forced: bool) -> str:

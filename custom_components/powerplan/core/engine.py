@@ -1981,7 +1981,7 @@ def _planned_kwh(plan: Plan | None, start: datetime, end: datetime) -> float:
     if plan is None:
         return 0.0
     total = 0.0
-    for slot in plan.slots:
+    for slot in plan.slots_between(start, end):
         overlap = (min(slot.end, end) - max(slot.start, start)).total_seconds()
         if overlap <= 0.0 or slot.hours <= 0.0:
             continue
@@ -2257,6 +2257,45 @@ def _plan_statuses(plans: Mapping[str, Plan], now: datetime) -> dict[str, PlanSt
     }
 
 
+@dataclass(frozen=True, slots=True)
+class _DayStats:
+    """A curve's local-day figures, computed once per curve and day (D-0261)."""
+
+    min_total: Decimal | None
+    max_total: Decimal | None
+    mean: Decimal | None
+    spread: Decimal
+
+
+#: The day figures of the curves in force, keyed by what identifies a curve
+#: build; a new build evicts the old one's rows. The tick asked the same 96
+#: slots for their mean and spread 360 times an hour.
+_DAY_STATS: dict[tuple[Carrier, datetime, int, date], _DayStats] = {}
+
+
+def _day_stats(carrier: Carrier, curve: PriceCurve, day: date, tz: tzinfo) -> _DayStats:
+    """Return the curve's figures for the local `day`, memoised per build."""
+    key = (carrier, curve.built_at, len(curve.slots), day)
+    cached = _DAY_STATS.get(key)
+    if cached is not None:
+        return cached
+    if len(_DAY_STATS) > _DAY_STATS_KEEP:
+        _DAY_STATS.clear()
+    totals = [row.total for row in curve.slots_between(*_local_day(day, tz))]
+    stats = _DayStats(
+        min_total=min(totals) if totals else None,
+        max_total=max(totals) if totals else None,
+        mean=curve.mean(day, tz) if totals else None,
+        spread=curve.spread(day, tz),
+    )
+    _DAY_STATS[key] = stats
+    return stats
+
+
+#: Enough rows for a handful of carriers over the horizon's days.
+_DAY_STATS_KEEP: Final = 64
+
+
 def _price_status(inputs: Inputs, site: SiteConfig) -> PriceStatus:
     """Return the price section of the snapshot (D7 §4.1, D1 §4)."""
     if inputs.curves is None:
@@ -2270,16 +2309,16 @@ def _price_status(inputs: Inputs, site: SiteConfig) -> PriceStatus:
     for carrier, curve in inputs.curves.import_.items():
         slot = curve.price_at(now)
         following = curve.price_at(now + timedelta(minutes=slot.minutes)) if slot else None
-        totals = [row.total for row in curve.slots_between(*_local_day(day, site.tz))]
+        stats = _day_stats(carrier, curve, day, site.tz)
         carriers[carrier] = CarrierPrices(
             carrier=carrier,
             currency=curve.currency,
             now=None if slot is None else slot.total,
             next=None if following is None else following.total,
-            min_today=min(totals) if totals else None,
-            max_today=max(totals) if totals else None,
-            mean_today=curve.mean(day, site.tz) if totals else None,
-            spread_today=curve.spread(day, site.tz),
+            min_today=stats.min_total,
+            max_today=stats.max_total,
+            mean_today=stats.mean,
+            spread_today=stats.spread,
             confidence=None if slot is None else slot.confidence,
             coverage_h=curve.coverage_h(now),
         )
@@ -2304,9 +2343,7 @@ def _local_day(day: date, tz: tzinfo) -> tuple[datetime, datetime]:
 def _has_tomorrow(curve: PriceCurve, day: date, tz: tzinfo) -> bool:
     """Return whether the curve carries known prices past the next local midnight."""
     _, midnight = _local_day(day, tz)
-    return any(
-        slot.confidence is Confidence.KNOWN and slot.start >= midnight for slot in curve.slots
-    )
+    return curve.has_known_after(midnight)
 
 
 def _curves_stale(curves: Curves | None, now: datetime) -> bool:

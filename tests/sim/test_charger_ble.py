@@ -108,3 +108,21 @@ def test_the_link_comes_back_and_charging_resumes() -> None:
     assert sim.reconnects == 1
     assert reads.available is True
     assert reads.status == CHARGING
+
+
+def test_an_injected_flap_is_a_loss_of_contact_not_a_reconnect_a_tick() -> None:
+    """`ble_flap` (D9 §4): offline until the instant given, one reconnect at the end."""
+    sim = BleChargerSim(ev=EvSim(soc=0.5, limit_a=16.0), seed=21)
+    t = DAY + timedelta(hours=12)
+    while sim.offline_at(t) or sim.offline_at(t + timedelta(minutes=20)):
+        t += timedelta(seconds=STEP_S)
+    sim.offline_until = t + timedelta(minutes=10)
+    reads = sim.step(STEP_S, Command(limit_a=10.0), env(t))
+    assert reads.available is False
+    assert reads.status == OFFLINE
+    assert sim.commands_lost == 1
+    for _ in range(int(600 / STEP_S) + 2):
+        t += timedelta(seconds=STEP_S)
+        reads = sim.step(STEP_S, None, env(t))
+    assert reads.available is True
+    assert sim.reconnects == 1

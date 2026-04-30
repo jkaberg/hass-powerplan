@@ -206,3 +206,66 @@ def test_17_statistics_hold_on_both_dst_days() -> None:
     assert len(spring.resample(60).slots) == 23
     assert autumn.spread(DST_AUTUMN, OSLO) == Decimal("1.8125")
     assert spring.spread(DST_SPRING, OSLO) == Decimal("1.8125")
+
+
+def _linear_between(curve: PriceCurve, a: datetime, b: datetime) -> tuple[Slot, ...]:
+    """D1 §4's definition, spelled out: every slot overlapping `[a, b)`."""
+    return tuple(slot for slot in curve.slots if slot.end > a and slot.start < b)
+
+
+def _linear_at(curve: PriceCurve, t: datetime) -> Slot | None:
+    for slot in curve.slots:
+        if slot.start > t:
+            return None
+        if t < slot.end:
+            return slot
+    return None
+
+
+def _linear_coverage(curve: PriceCurve, from_: datetime) -> float:
+    hours = 0.0
+    for slot in curve.slots:
+        if slot.end <= from_ or slot.confidence is not Confidence.KNOWN:
+            continue
+        hours += (slot.end - max(slot.start, from_)).total_seconds() / 3600.0
+    return hours
+
+
+def test_the_indexed_lookups_agree_with_the_linear_definition() -> None:
+    """Bisection over a curve with a gap and mixed slot lengths (D-0261).
+
+    `price_at`, `slots_between` and `coverage_h` are asked hundreds of times a
+    tick; they are indexed, and the index must answer exactly what the walk did.
+    """
+    start = day_bounds(ORDINARY)[0]
+    slots: list[Slot] = []
+    cursor = start
+    for index in range(40):
+        minutes = 60 if index < 8 else 15
+        if index == 12:  # a gap in the past
+            cursor += timedelta(minutes=30)
+        slots.append(
+            Slot(
+                start=cursor,
+                end=cursor + timedelta(minutes=minutes),
+                total=Decimal("0.5") + Decimal(index) / 100,
+                components={},
+                confidence=Confidence.KNOWN if index < 30 else Confidence.ESTIMATED,
+            )
+        )
+        cursor += timedelta(minutes=minutes)
+    curve = PriceCurve(
+        carrier=Carrier.ELECTRICITY,
+        direction=Direction.IMPORT,
+        currency="NOK",
+        slots=tuple(slots),
+        built_at=start,
+        sources=("test",),
+    )
+    probes = [start + timedelta(minutes=m) for m in range(-30, 20 * 60, 7)]
+    for t in probes:
+        assert curve.price_at(t) == _linear_at(curve, t)
+        assert curve.coverage_h(t) == pytest.approx(_linear_coverage(curve, t))
+        for span in (timedelta(minutes=1), timedelta(minutes=45), timedelta(hours=5)):
+            assert curve.slots_between(t, t + span) == _linear_between(curve, t, t + span)
+    assert curve.slots_between(start, start) == ()

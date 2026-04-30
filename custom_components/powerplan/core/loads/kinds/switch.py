@@ -61,10 +61,21 @@ class Switch:
         if q.value is None:
             return Hold(Action.SAME, q.reason)
         on = (not bool(q.value)) if cfg.inverted else bool(q.value)
+        if cfg.role is Role.START:
+            # A start is a press, never a release: a button or a `start_program`
+            # service has no "off" to write and no state to read back, so the
+            # press goes out once - when the plan says go and the programme is
+            # not running yet - and nothing else (D4 §5.13, D-0262).
+            if not on:
+                return Hold(Action.SAME, "a start is pressed, never released")
+            if ctx.session_active:
+                return Hold(Action.SAME, "the programme is running")
         return Command(
             writes=(Write(cfg.role, q.value),),
             reason=q.reason,
-            urgent=ctx.stage >= cfg.urgent_from_stage and not on,
+            # A shed at the urgent stage, or a restore that serves a violated
+            # comfort floor: neither waits behind a politeness clock (D-0266).
+            urgent=(ctx.stage >= cfg.urgent_from_stage and not on) or (on and ctx.comfort_violated),
             blunt=grant.blunt,
             sheds=grant.shed,
             want_on=on,
