@@ -20,15 +20,18 @@ scenario is a bug, not a retry (D9 §8).
 from __future__ import annotations
 
 import json
+import math
 import time as _time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
+from custom_components.powerplan.core.accounting.close import AccountingConfig
+from custom_components.powerplan.core.accounting_hook import AccountingAdapter
 from custom_components.powerplan.core.engine import (
     Effects,
     Engine,
@@ -60,7 +63,7 @@ from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
 )
 from custom_components.powerplan.core.strategies import Curves
 from custom_components.powerplan.core.strategies.adoption import inputs_changed
-from custom_components.powerplan.core.tariffs import Target
+from custom_components.powerplan.core.tariffs import AUTO, Target
 from tests.builders.houses import House
 from tests.core.loads.conftest import cycle_reads, heatpump_reads, sim_command, tank_reads
 from tests.core.loads.conftest import reads as core_reads
@@ -71,8 +74,6 @@ from tests.sim.household import AWAY, VACATION
 from tests.sim.switch import SESSION_S
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from custom_components.powerplan.core.loads import Load
     from custom_components.powerplan.core.model import Snapshot
 
@@ -122,9 +123,12 @@ class Scenario:
     house: Callable[[], House]
     start: datetime
     days: float
-    target_kw: float = 10.0
+    #: The ceiling the site defends; `None` is a site with no capacity axis (`NoPeak`).
+    target_kw: float | None = 10.0
     faults: tuple[Fault, ...] = ()
     knobs: Callable[[datetime], Knobs] | None = None
+    #: Modes forced for the run: one `Mode` for every load, or per load id (D4 §5.2).
+    modes: Mode | Mapping[str, Mode] | None = None
 
 
 @dataclass
@@ -169,6 +173,14 @@ class ScenarioResult:
     outage_day_kwh: float = 0.0
     #: The same figures per local month (D9 §4 `BacktestMetrics` per month).
     months: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: D11's month-to-date figures at the end of the run (D9 §4: `cost_energy`,
+    #: `cost_counterfactual`, `savings`), per load, and per calendar month.
+    cost_energy: str | None = None
+    cost_counterfactual: str | None = None
+    savings: str | None = None
+    savings_confidence: str = "none"
+    accounting_per_load: dict[str, dict[str, Any]] = field(default_factory=dict)
+    accounting_months: dict[str, dict[str, Any]] = field(default_factory=dict)
     controlled_share: float = 1.0
     #: `PerfMetrics` (D9 §4): never part of the digest - timings are not decisions.
     tick_ms: list[float] = field(default_factory=list)
@@ -220,6 +232,18 @@ class ScenarioResult:
             "outage_day_kwh": round(self.outage_day_kwh, 3),
             "months": {key: dict(sorted(row.items())) for key, row in sorted(self.months.items())},
             "controlled_share": round(self.controlled_share, 4),
+            "cost_energy": self.cost_energy,
+            "cost_counterfactual": self.cost_counterfactual,
+            "savings": self.savings,
+            "savings_confidence": self.savings_confidence,
+            "accounting_per_load": {
+                key: dict(sorted(row.items()))
+                for key, row in sorted(self.accounting_per_load.items())
+            },
+            "accounting_months": {
+                key: dict(sorted(row.items()))
+                for key, row in sorted(self.accounting_months.items())
+            },
         }
 
     def perf(self) -> dict[str, Any]:
@@ -429,6 +453,13 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     house = scenario.house()
     cfg = house.cfg
     tz = cfg.tz
+    ledger = AccountingAdapter(
+        AccountingConfig(currency=cfg.currency, tz=tz),
+        house.loads,
+        house.tariff,
+        house.tariff.history,
+        now=scenario.start,
+    )
     engine = Engine(
         cfg,
         WindowMeter(
@@ -436,11 +467,19 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
         ),
         house.tariff,
         house.loads,
+        accounting=ledger,
     )
     state = EngineState()
     result = ScenarioResult(name=scenario.name)
-    target = Target(kind="kw", kw=scenario.target_kw)
-    target_kwh = scenario.target_kw * cfg.window_min / 60.0
+    target = AUTO if scenario.target_kw is None else Target(kind="kw", kw=scenario.target_kw)
+    target_kwh = (
+        math.inf if scenario.target_kw is None else scenario.target_kw * cfg.window_min / 60.0
+    )
+    forced_modes: dict[str, Mode] = (
+        dict.fromkeys(house.sims, scenario.modes)
+        if isinstance(scenario.modes, Mode)
+        else dict(scenario.modes or {})
+    )
 
     pending: dict[str, SimCommand | None] = {load.load_id: None for load in house.loads}
     passive_pending: dict[str, SimCommand | None] = {}
@@ -591,7 +630,10 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             else Knobs(
                 target=target,
                 presence=_presence(house.household.presence_at(now)),
-                modes={"sauna": Mode.FORCE} if sauna_on and "sauna" in house.sims else {},
+                modes={
+                    **({"sauna": Mode.FORCE} if sauna_on and "sauna" in house.sims else {}),
+                    **forced_modes,
+                },
             )
         )
         if now >= next_quarter_plan:
@@ -681,6 +723,17 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     result.wall_s = _time.perf_counter() - started
     result.controlled_share = house.controlled_share
     result.house = house
+    figures = ledger.accounting.status()
+    result.cost_energy = (
+        f"{figures.site.energy_cost.amount:.2f} {figures.site.energy_cost.currency}"
+    )
+    result.cost_counterfactual = (
+        f"{figures.site.cf_cost.amount:.2f} {figures.site.cf_cost.currency}"
+    )
+    result.savings = f"{figures.site.savings.amount:.2f} {figures.site.savings.currency}"
+    result.savings_confidence = figures.site.savings_confidence.value
+    result.accounting_per_load = dict(ledger.status().per_load)
+    result.accounting_months = ledger.month_figures()
     result.max_writes_per_10min = {
         load_id: max(buckets.values(), default=0) for load_id, buckets in writes_10min.items()
     }

@@ -49,6 +49,9 @@ class MonthRow:
     fee: str | None
     level: str | None
     metric_kw: float | None
+    cost_energy: str | None = None
+    cost_counterfactual: str | None = None
+    savings: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return the row as JSON-able data, rounded the way the baseline stores it."""
@@ -63,6 +66,9 @@ class MonthRow:
             "fee": self.fee,
             "level": self.level,
             "metric_kw": None if self.metric_kw is None else round(self.metric_kw, 3),
+            "cost_energy": self.cost_energy,
+            "cost_counterfactual": self.cost_counterfactual,
+            "savings": self.savings,
         }
 
 
@@ -123,6 +129,7 @@ def run_benchmark(
     started = _time.perf_counter()
     months: dict[str, dict[str, Any]] = {}
     bills: dict[str, tuple[str | None, str | None, float | None]] = {}
+    money: dict[str, dict[str, Any]] = {}
     spans: list[dict[str, Any]] = []
     tick_ms: list[float] = []
     plan_ms: list[float] = []
@@ -142,6 +149,7 @@ def run_benchmark(
         result = run_scenario(scenario)
         _fold_months(months, result)
         bills.update(_price_months(result, year))
+        money.update(result.accounting_months)
         spans.append(_span_summary(scenario, result))
         tick_ms.extend(result.tick_ms)
         plan_ms.extend(result.plan_ms)
@@ -159,6 +167,9 @@ def run_benchmark(
             fee=bills.get(key, (None, None, None))[0],
             level=bills.get(key, (None, None, None))[1],
             metric_kw=bills.get(key, (None, None, None))[2],
+            cost_energy=money.get(key, {}).get("energy_cost"),
+            cost_counterfactual=money.get(key, {}).get("cf_cost"),
+            savings=money.get(key, {}).get("savings"),
         )
         for key, row in months.items()
     }
@@ -244,6 +255,9 @@ def _total(rows: dict[str, MonthRow], spans: list[dict[str, Any]]) -> dict[str, 
         if row.fee is not None:
             amount, currency = row.fee.split(" ")
             fee += float(amount)
+    cost_energy = _sum_money(row.cost_energy for row in rows.values())
+    cf_cost = _sum_money(row.cost_counterfactual for row in rows.values())
+    savings = _sum_money(row.savings for row in rows.values())
     writes_by_load: dict[str, int] = {}
     for span in spans:
         for load_id, count in span["writes"].items():
@@ -263,7 +277,22 @@ def _total(rows: dict[str, MonthRow], spans: list[dict[str, Any]]) -> dict[str, 
         "writes": sum(writes_by_load.values()),
         "writes_by_load": dict(sorted(writes_by_load.items())),
         "fee": None if currency is None else f"{fee:.2f} {currency}",
+        "cost_energy": cost_energy,
+        "cost_counterfactual": cf_cost,
+        "savings": savings,
     }
+
+
+def _sum_money(values: Any) -> str | None:
+    """Sum `"<amount> <currency>"` strings; `None` when there were none."""
+    total = 0.0
+    currency = None
+    for value in values:
+        if value is None:
+            continue
+        amount, currency = value.split(" ")
+        total += float(amount)
+    return None if currency is None else f"{total:.2f} {currency}"
 
 
 def _p95(values: list[float]) -> float:

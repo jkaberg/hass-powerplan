@@ -114,6 +114,11 @@ class ShadowCtx:
     level_now: float | None = None
     draw_off_kwh: float = 0.0
     legionella_active: bool = False
+    #: What the real load drew in this slot (D3's `LoadSlot.kwh`), set by the
+    #: ledger before stepping: the plug-in shadow reads the requirement **at the
+    #: edge** as what is still asked at the slot's close plus what the slot already
+    #: delivered (D-0269).
+    measured_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +136,12 @@ class ShadowState:
     on: bool = False
     pending_kwh: float = 0.0
     session_slots: tuple[str, ...] = ()
+    #: The plug-in shadow's books (D-0269): what the car asked for at the last
+    #: rising edge, at the slot's start, and the real kWh drawn since. A later
+    #: edge re-latches only what the car has spent in between - a link that
+    #: dropped and came back is not a new session.
+    latched_kwh: float | None = None
+    real_kwh: float = 0.0
 
 
 class Shadow(Protocol):

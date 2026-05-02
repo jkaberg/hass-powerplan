@@ -1,4 +1,7 @@
-"""`nordic_detached@1` - the v1 reference house (D9 §5.9), one baseline.
+"""`nordic_detached@2` - the v1 reference house (D9 §5.9), one baseline.
+
+@2 (D-0268): the floor loops answer their loss coefficient and the car
+carries its own 80 % limit; the v1 spec is otherwise @1.
 
 The spec is `tests/builders/houses.py`'s `nordic_detached()` (every load the
 house will ever have, each number with its source in `HOUSE_SOURCES` and the

@@ -39,20 +39,15 @@ import logging
 import math
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields, is_dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
-from enum import Enum, StrEnum
-from types import UnionType
+from enum import StrEnum
 from typing import (
     Any,
     Final,
     Literal,
     Protocol,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
 )
 
 from .allocation import (
@@ -102,14 +97,19 @@ from .loads import (
 from .loads.gate import Decision, GateState, TransportBudget
 from .loads.targets import CalendarEvent, PresenceMode
 from .metering import (
+    ClosedWindow,
     ControlledView,
     ElectricalProfile,
+    LoadMeter,
+    LoadMeterConfig,
+    LoadMeterState,
     MeterSample,
     MeterSnapshot,
     WindowMeter,
     WindowState,
     window_bounds,
 )
+from .metering.loads import LoadSlot
 from .model import (
     Carrier,
     Confidence,
@@ -118,9 +118,12 @@ from .model import (
     Plan,
     PlanMode,
     PriceCurve,
+    Slot,
     Snapshot,
 )
 from .pricing import Event, HysteresisPolicy
+from .state_codec import decode as _decode
+from .state_codec import encode as _encode
 from .strategies import Curves, Forecasts, LoadView, SiteContext, plan_all
 from .tariffs import (
     AUTO,
@@ -669,6 +672,11 @@ class RuntimeState:
     load_failures: Mapping[str, int] = field(default_factory=dict)
     closed_to: datetime | None = None
     slots_closed: int = 0
+    #: Windows D3 closed that the planning loop has not yet handed to D11 (§5.2):
+    #: the counterfactual window is recorded when the price slot that ends it is.
+    windows_pending: tuple[ClosedWindow, ...] = ()
+    #: The end of the last closed window handed to the accounting (D7 §5.2).
+    windows_closed_to: datetime | None = None
     peak: PeakWarnState = field(default_factory=PeakWarnState)
     #: This window's uncontrolled statistics, for the PI's outlier gate (D6 §5.1).
     window_start: datetime | None = None
@@ -706,6 +714,9 @@ class EngineState:
     """
 
     meter: WindowState | None = None
+    #: D3 §5.12's per-load slot integrals, and the site's own under `SITE_IMPORT`
+    #: / `SITE_EXPORT`; stored in the `meter` section beside the window (D7 §4.2).
+    load_meters: Mapping[str, LoadMeterState] = field(default_factory=dict)
     tariff: TariffState | None = None
     prices: Mapping[str, Any] = field(default_factory=dict)
     plans: PlansState = field(default_factory=PlansState)
@@ -721,7 +732,10 @@ class EngineState:
     def to_sections(self) -> dict[str, Any]:
         """Return the JSON-able document `storage.py` writes, by section (D7 §7)."""
         return {
-            Section.METER.value: _encode(self.meter),
+            Section.METER.value: {
+                "window": _encode(self.meter),
+                "loads": _encode(self.load_meters),
+            },
             Section.TARIFF.value: _encode(self.tariff),
             Section.PRICES.value: dict(self.prices),
             Section.PLANS.value: _encode(self.plans),
@@ -745,8 +759,15 @@ class EngineState:
         def section(name: Section) -> Any:
             return data.get(name.value) or None
 
+        meter_section = section(Section.METER)
+        if isinstance(meter_section, Mapping) and "window" in meter_section:
+            window_raw: Any = meter_section.get("window") or None
+            loads_raw: Any = meter_section.get("loads") or {}
+        else:  # WP0.8 wrote the window state as the whole section
+            window_raw, loads_raw = meter_section, {}
         return cls(
-            meter=_decode(WindowState, section(Section.METER)),
+            meter=_decode(WindowState, window_raw),
+            load_meters=_decode(Mapping[str, LoadMeterState], loads_raw) or {},
             tariff=_decode(TariffState, section(Section.TARIFF)),
             prices=dict(data.get(Section.PRICES.value) or {}),
             plans=_decode(PlansState, section(Section.PLANS)) or PlansState(),
@@ -776,18 +797,58 @@ class AccountingClose:
     reason: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class SlotLoad:
+    """One load as the ledger needs it at a slot close (D11 §4, the dynamic half of `ShadowCtx`).
+
+    `slot` is D3's energy for the load over the slot, `None` when its meter had
+    not closed one (a load added mid-slot); the rest is what the shadow steps
+    against - the effective mode, the demand and the measured level.
+    """
+
+    load_id: str
+    mode: Mode
+    demand: Demand | None
+    level_now: float | None
+    slot: LoadSlot | None
+
+
+@dataclass(frozen=True, slots=True)
+class SlotClose:
+    """Everything D11 needs to close one price slot (D7 §5.2, D11 §5.1; D-0267).
+
+    The engine assembles it from D3's load meters, the site's own slot integral,
+    the curves in force and the loads' views; the adapter in
+    `core/accounting_hook.py` turns it into `ClosedSlot` and `CloseCtx`.
+    `presence` is the household's mode in force, which is what a shadow's target
+    profile is read under (D11 §5.3: the intent is honoured, the plan is not).
+    """
+
+    start: datetime
+    end: datetime
+    now: datetime
+    curves: Curves
+    site_import_kwh: float
+    site_export_kwh: float
+    site_confidence: str
+    outdoor_c: float | None
+    loads: Mapping[str, SlotLoad]
+    window_closed: ClosedWindow | None = None
+    presence: PresenceMode = PresenceMode.HOME
+
+
 class AccountingHook(Protocol):
     """The one call `plan()` makes into D11 (INV-68, D7 §9 16).
 
-    D11's `core/accounting/close.py::close_slot(ClosedSlot, CloseCtx)` (WP0.10a,
-    on another branch) is adapted to this by the runtime, which is what keeps
-    the engine from importing `core/accounting` at all: the tick must not be able
-    to reach the ledger even by accident, and a `Protocol` taken as a constructor
+    D11's `core/accounting/close.py::close_slot(ClosedSlot, CloseCtx)` is adapted
+    to this by `core/accounting/hook.py`, which is what keeps the engine
+    from importing `core/accounting` at all: the tick must not be able to reach
+    the ledger even by accident, and a `Protocol` taken as a constructor
     argument cannot be reached from `tick()`.
     """
 
-    def close_slot(self, start: datetime, end: datetime, *, now: datetime) -> AccountingClose:
-        """Close the price slot `[start, end)` and return what it changed."""
+    def close_slot(self, close: SlotClose) -> AccountingClose:
+        """Close the price slot `close` describes and return what it changed."""
         ...
 
 
@@ -910,6 +971,7 @@ class Engine:
         # -- 2. the meter -------------------------------------------------- #
         views = self._views(load_states, inputs, active, failed)
         meter = self._meter.sample(now, inputs.meter, tuple(views.values()))
+        load_meters = self._sample_load_meters(state, inputs, views, meter)
         frozen = frozen_for(meter)
         if frozen:
             reasons.append(
@@ -935,6 +997,10 @@ class Engine:
         if meter.closed:
             last = meter.closed[-1]
             self._meter.ack_closed(last.start_utc + timedelta(minutes=last.window_min))
+            runtime = replace(
+                runtime,
+                windows_pending=(*runtime.windows_pending, *meter.closed)[-_WINDOWS_KEPT:],
+            )
 
         # -- 4. the ceiling ------------------------------------------------ #
         eps_base = site.budget.eps_base_kwh if knobs.eps_base_kwh is None else knobs.eps_base_kwh
@@ -1114,6 +1180,7 @@ class Engine:
             meter=self._meter.state(),
             tariff=self._tariff.state(),
             loads=load_states,
+            load_meters=load_meters,
             alloc=alloc_state,
             grants=grants,
             events=EventsState(schema=state.events.schema, edges=edges),
@@ -1233,11 +1300,7 @@ class Engine:
             electrical=inputs.site.electrical,
             budget=inputs.transport if budget is None else budget,
             site_active=active,
-            presence=inputs.knobs.presence
-            if inputs.knobs.presence is not None
-            else LoadCtx(
-                now=inputs.now, reads=Reads(at=inputs.now), electrical=inputs.site.electrical
-            ).presence,
+            presence=_presence_now(inputs),
             setpoint_delta=setpoint_delta,
             desired=desired,
             calendar=row.calendar if row is not None else (),
@@ -1793,7 +1856,7 @@ class Engine:
             for view in views:
                 edges[f"uncovered:{view.load_id}"] = "1" if view.load_id in uncovered else "0"
 
-        runtime, closes = self._close_slots(state, inputs)
+        runtime, closes, load_meters = self._close_slots(state, inputs, views)
         accounting = dict(state.accounting)
         month_closed: str | None = None
         for close in closes:
@@ -1817,6 +1880,7 @@ class Engine:
         new_state = replace(
             state,
             loads=load_states,
+            load_meters=load_meters,
             plans=plans,
             accounting=accounting,
             events=EventsState(schema=state.events.schema, edges=edges),
@@ -1851,40 +1915,171 @@ class Engine:
         )
 
     def _close_slots(
-        self, state: EngineState, inputs: Inputs
-    ) -> tuple[RuntimeState, tuple[AccountingClose, ...]]:
+        self, state: EngineState, inputs: Inputs, views: Sequence[LoadView]
+    ) -> tuple[RuntimeState, tuple[AccountingClose, ...], Mapping[str, LoadMeterState]]:
         """Close every price slot that ended since the last cycle, oldest first.
 
         A cycle skipped for an hour closes the backlog on the next one, in order,
-        exactly once each (D7 §9 16). Without a hook - and until WP0.10a wires
-        D11's `close_slot` - the cursor still advances, so no slot is closed
-        twice when it lands.
+        exactly once each (D7 §9 16). Each close carries what D3's load meters
+        integrated for the slot and the site's own integral; the meters are
+        acknowledged up to the last slot closed (D3 §5.12). Without a hook the
+        cursor still advances and the meters are still acknowledged, so no slot
+        is closed twice when one lands.
         """
         runtime = state.runtime
         if inputs.curves is None:
-            return runtime, ()
+            return runtime, (), state.load_meters
         curve = inputs.curves.import_.get(Carrier.ELECTRICITY)
         if curve is None:
-            return runtime, ()
+            return runtime, (), state.load_meters
         cursor = runtime.closed_to
+        if cursor is None:
+            # A fresh site: nothing before the meters' first slot is a slot at all.
+            # The curve reaches back a day and a slot it covers but no meter saw
+            # would be priced at 0 kWh and could open the ledger in the wrong month.
+            cursor = _first_metered(state.load_meters)
+            if cursor is None:
+                return runtime, (), state.load_meters
         closed: list[AccountingClose] = []
         last: datetime | None = None
+        handed = runtime.windows_closed_to
+        by_id = {view.load_id: view for view in views}
         for slot in curve.slots:
-            if slot.end > inputs.now or (cursor is not None and slot.end <= cursor):
+            if slot.end > inputs.now or slot.end <= cursor:
                 continue
             last = slot.end
+            # The oldest closed window not yet handed over whose end this slot has
+            # reached. A window that closed on the integral after the quarter's
+            # plan rides on the next slot rather than being lost (D-0267).
+            window = _window_due(runtime.windows_pending, slot.end, handed)
+            if window is not None:
+                handed = _window_end(window)
             if self._accounting is not None:
-                closed.append(self._accounting.close_slot(slot.start, slot.end, now=inputs.now))
+                closed.append(
+                    self._accounting.close_slot(
+                        self._slot_close(state, inputs, slot, by_id, window)
+                    )
+                )
         if last is None:
-            return runtime, ()
+            return runtime, (), state.load_meters
+        acked = {
+            load_id: _acked(load_id, meter_state, last)
+            for load_id, meter_state in state.load_meters.items()
+        }
         return (
             replace(
                 runtime,
                 closed_to=last,
                 slots_closed=runtime.slots_closed + max(len(closed), 1 if last else 0),
+                windows_closed_to=handed,
+                windows_pending=tuple(
+                    window
+                    for window in runtime.windows_pending
+                    if handed is None or _window_end(window) > handed
+                ),
             ),
             tuple(closed),
+            acked,
         )
+
+    def _slot_close(
+        self,
+        state: EngineState,
+        inputs: Inputs,
+        slot: Slot,
+        views: Mapping[str, LoadView],
+        window: ClosedWindow | None,
+    ) -> SlotClose:
+        """Assemble one slot's close from the meters and the views (D7 §5.2)."""
+        assert inputs.curves is not None
+        site_import = _slot_of(state.load_meters.get(SITE_IMPORT), slot.start)
+        site_export = _slot_of(state.load_meters.get(SITE_EXPORT), slot.start)
+        estimated = any(
+            row is not None and row.confidence != "exact" for row in (site_import, site_export)
+        )
+        loads = {
+            load.load_id: SlotLoad(
+                load_id=load.load_id,
+                mode=views[load.load_id].mode
+                if load.load_id in views
+                else self.load_mode(load.load_id, state, inputs),
+                demand=views[load.load_id].demand if load.load_id in views else None,
+                level_now=views[load.load_id].level_now if load.load_id in views else None,
+                slot=_slot_of(state.load_meters.get(load.load_id), slot.start),
+            )
+            for load in self._loads
+        }
+        return SlotClose(
+            start=slot.start,
+            end=slot.end,
+            now=inputs.now,
+            curves=inputs.curves,
+            site_import_kwh=0.0 if site_import is None else site_import.kwh,
+            site_export_kwh=0.0 if site_export is None else site_export.kwh,
+            site_confidence="estimated" if estimated or site_import is None else "exact",
+            outdoor_c=inputs.outdoor_c,
+            loads=loads,
+            window_closed=window,
+            presence=_presence_now(inputs),
+        )
+
+    def load_mode(self, load_id: str, state: EngineState, inputs: Inputs) -> Mode:
+        """Return a load's effective mode now, for a close without a view."""
+        for load in self._loads:
+            if load.load_id == load_id:
+                return load.mode_now(
+                    state.loads.get(load_id, LoadState()),
+                    self._ctx(load, inputs, active=inputs.knobs.active),
+                )
+        return Mode.OFF
+
+    def _sample_load_meters(
+        self,
+        state: EngineState,
+        inputs: Inputs,
+        views: Mapping[str, ControlledView],
+        meter: MeterSnapshot,
+    ) -> dict[str, LoadMeterState]:
+        """Integrate every load's slot, and the site's own, one sample (D3 §5.12, D7 §5.1 step 2).
+
+        A frozen tick still integrates: the ledger wants the energy whatever the
+        window meter could see. The site's import and export ride on two meters
+        of their own, fed the grid reading, so D11 gets the slot's import from the
+        same integral the loads use (D-0267).
+        """
+        minutes = _slot_minutes(inputs)
+        out: dict[str, LoadMeterState] = {}
+        for load in self._loads:
+            view = views.get(load.load_id)
+            if view is None:
+                previous = state.load_meters.get(load.load_id)
+                if previous is not None:
+                    out[load.load_id] = previous
+                continue
+            row = LoadMeter(
+                LoadMeterConfig(load_id=load.load_id, nameplate_w=load.config.nameplate_w),
+                state.load_meters.get(load.load_id),
+            )
+            reads = inputs.loads.get(load.load_id)
+            energy = None if reads is None else reads.reads.get(Role.ENERGY)
+            row.sample(inputs.now, view, None if energy is None else energy.reading, minutes)
+            out[load.load_id] = row.state()
+        grid_w = meter.grid_w
+        for load_id, watts in (
+            (SITE_IMPORT, None if grid_w is None else max(grid_w, 0.0)),
+            (SITE_EXPORT, None if grid_w is None else max(-grid_w, 0.0)),
+        ):
+            row = LoadMeter(LoadMeterConfig(load_id=load_id), state.load_meters.get(load_id))
+            row.sample(
+                inputs.now,
+                ControlledView(
+                    load_id=load_id, measured_w=watts, commanded_w=None, settling=False, phases=None
+                ),
+                None,
+                minutes,
+            )
+            out[load_id] = row.state()
+        return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1960,6 +2155,38 @@ def _ema(runtime: RuntimeState, meter: MeterSnapshot, frozen: bool, cfg: EngineC
     return replace(
         runtime, peak=replace(peak, ema_w=peak.ema_w + alpha * (value - peak.ema_w), ema_at=at)
     )
+
+
+#: The site's own slot integrals live beside the loads' under these ids (D-0267).
+SITE_IMPORT: Final = "__site_import__"
+SITE_EXPORT: Final = "__site_export__"
+#: Closed windows kept for the planning loop to hand to D11 - two days of hours.
+_WINDOWS_KEPT: Final = 48
+#: The slot length D3's load meters use when no curve says otherwise (D1: quarter hours).
+_DEFAULT_SLOT_MINUTES: Final = 15
+
+
+def _slot_minutes(inputs: Inputs) -> int:
+    """Return the price slot length in force, from the curve at `now` (D3 §5.12)."""
+    if inputs.curves is None:
+        return _DEFAULT_SLOT_MINUTES
+    curve = inputs.curves.import_.get(Carrier.ELECTRICITY)
+    slot = None if curve is None else curve.price_at(inputs.now)
+    return _DEFAULT_SLOT_MINUTES if slot is None else slot.minutes
+
+
+def _slot_of(meter_state: LoadMeterState | None, start: datetime) -> LoadSlot | None:
+    """Return the closed slot starting at `start`, if the meter has one pending."""
+    if meter_state is None:
+        return None
+    return next((row for row in meter_state.pending_closed if row.start_utc == start), None)
+
+
+def _acked(load_id: str, meter_state: LoadMeterState, upto: datetime) -> LoadMeterState:
+    """Return the meter state with the slots D11 has recorded dropped (D3 §5.12)."""
+    row = LoadMeter(LoadMeterConfig(load_id=load_id), meter_state)
+    row.ack(upto)
+    return row.state()
 
 
 def _coming_windows(
@@ -2173,6 +2400,45 @@ def _command_of(
     )
 
 
+def _presence_now(inputs: Inputs) -> PresenceMode:
+    """Return the presence mode in force: the knob, else a load context's default."""
+    if inputs.knobs.presence is not None:
+        return inputs.knobs.presence
+    return LoadCtx(
+        now=inputs.now, reads=Reads(at=inputs.now), electrical=inputs.site.electrical
+    ).presence
+
+
+def _window_end(window: ClosedWindow) -> datetime:
+    """Return when a closed window ended."""
+    return window.start_utc + timedelta(minutes=window.window_min)
+
+
+def _window_due(
+    pending: Sequence[ClosedWindow], slot_end: datetime, handed: datetime | None
+) -> ClosedWindow | None:
+    """Return the oldest closed window a slot ending at `slot_end` should carry to D11.
+
+    One whose end the slot has reached and that has not been handed over yet; the
+    windows arrive in order, so the oldest is the first that qualifies.
+    """
+    due = [
+        window
+        for window in pending
+        if _window_end(window) <= slot_end and (handed is None or _window_end(window) > handed)
+    ]
+    return min(due, key=_window_end) if due else None
+
+
+def _first_metered(meters: Mapping[str, LoadMeterState]) -> datetime | None:
+    """Return the start of the earliest slot any load meter has integrated, if one has."""
+    starts = [
+        meter.pending_closed[0].start_utc if meter.pending_closed else meter.slot_start_utc
+        for meter in meters.values()
+    ]
+    return min(starts) if starts else None
+
+
 def _level_now(demand: Demand, reads: Reads) -> float | None:
     """Return the store's level: the comfort variable, or a state of charge.
 
@@ -2183,6 +2449,10 @@ def _level_now(demand: Demand, reads: Reads) -> float | None:
     if demand.comfort is not None and demand.comfort.current is not None:
         return demand.comfort.current
     return reads.value(Role.SOC)
+
+
+#: Below this many watts a grant is nothing (D6 §5.3).
+_EPS_W: Final = 1e-6
 
 
 def _quantiser(load: Load, state: LoadState, ctx: LoadCtx, mode: Mode) -> Any:
@@ -2371,12 +2641,23 @@ def _forecast_status(inputs: Inputs) -> ForecastStatus:
 
 
 def _accounting_status(state: EngineState) -> AccountingStatus:
-    """Return the ledger's section as of the last closed slot (D11, INV-68)."""
+    """Return the ledger's section as of the last closed slot (D11, INV-68).
+
+    The hook leaves its month-to-date figures under `status` in the opaque
+    `accounting` section (D-0267); the tick republishes them and never computes
+    any (INV-68).
+    """
+    status = state.accounting.get("status") or {}
+    cost = status.get("cost")
+    savings = status.get("savings")
     return AccountingStatus(
         slots_closed=state.runtime.slots_closed,
         closed_to=state.runtime.closed_to,
         month_key=state.accounting.get("month_key"),
-        per_load=dict(state.accounting.get("per_load", {})),
+        cost=None if cost is None else _decode(Money, cost),
+        savings=None if savings is None else _decode(Money, savings),
+        confidence=str(status.get("confidence", "none")),
+        per_load=dict(status.get("per_load", {})),
     )
 
 
@@ -2522,122 +2803,3 @@ def _failed_snapshot(
 # --------------------------------------------------------------------------- #
 # The state codec (D7 §7) - one document, sections of primitives
 # --------------------------------------------------------------------------- #
-
-
-#: A `Mapping[K, V]` annotation carries exactly two type arguments.
-_KEY_VALUE: Final = 2
-
-#: Below this many watts a grant is nothing (D6 §5.3).
-_EPS_W: Final = 1e-6
-
-
-def _encode(value: Any) -> Any:  # noqa: PLR0911 - one branch per JSON-able shape (D7 §7)
-    """Return `value` as JSON-able data (D7 §7).
-
-    Frozen dataclasses of primitives, ISO-8601 datetimes, `StrEnum`s, `Decimal`s
-    and tuples of those - which is what every domain promised its state would be
-    (D2 §7, D3 §4, D4 §7, D6 §7). A type that carries its own `as_dict` owns its
-    shape and is asked for it.
-    """
-    if value is None:
-        return None
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, Decimal):
-        return str(value)
-    if isinstance(value, datetime | date):
-        return value.isoformat()
-    as_dict = getattr(value, "as_dict", None)
-    if callable(as_dict) and is_dataclass(value):
-        return as_dict()
-    if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _encode(getattr(value, f.name)) for f in fields(value)}
-    if isinstance(value, Mapping):
-        return {_encode(key): _encode(item) for key, item in value.items()}
-    if isinstance(value, tuple | list | set | frozenset):
-        return [_encode(item) for item in value]
-    raise TypeError(f"{type(value).__name__} is not persistable state (D7 §7)")
-
-
-def _decode(kind: Any, raw: Any) -> Any:  # noqa: PLR0911, PLR0912 - one branch per JSON-able shape (D7 §7)
-    """Return the value `_encode` wrote, rebuilt as `kind` (D7 §7)."""
-    kind = _unalias(kind)
-    if raw is None or kind is Any:
-        return raw
-    origin = get_origin(kind)
-    if origin in (UnionType, Union):
-        return _decode_union(kind, raw)
-    if origin is Literal:
-        return raw
-    if origin is tuple:
-        args = get_args(kind)
-        if len(args) == _KEY_VALUE and args[1] is Ellipsis:
-            return tuple(_decode(args[0], item) for item in raw)
-        return tuple(_decode(arg, item) for arg, item in zip(args, raw, strict=True))
-    if origin in (list, set, frozenset):
-        (arg,) = get_args(kind) or (Any,)
-        return (origin or list)(_decode(arg, item) for item in raw)
-    if origin is not None and issubclass(_as_type(origin), Mapping):
-        key_kind, value_kind = get_args(kind) or (Any, Any)
-        return {_decode(key_kind, key): _decode(value_kind, item) for key, item in raw.items()}
-    if not isinstance(kind, type):
-        return raw
-    if issubclass(kind, Enum):
-        return kind(raw)
-    if issubclass(kind, datetime):
-        return datetime.fromisoformat(raw)
-    if issubclass(kind, date):
-        return date.fromisoformat(raw)
-    if issubclass(kind, Decimal):
-        return Decimal(raw)
-    if is_dataclass(kind):
-        from_dict = getattr(kind, "from_dict", None)
-        if callable(from_dict):
-            return from_dict(raw)
-        hints = get_type_hints(kind)
-        return kind(
-            **{
-                f.name: _decode(hints[f.name], raw[f.name])
-                for f in fields(kind)
-                if f.init and f.name in raw
-            }
-        )
-    if issubclass(kind, bool | int | float | str):
-        return kind(raw)
-    return raw
-
-
-def _decode_union(kind: Any, raw: Any) -> Any:
-    """Return `raw` decoded as the member of a union its JSON shape fits (D7 §7)."""
-    args = [arg for arg in get_args(kind) if arg is not type(None)]
-    if len(args) == 1:
-        return _decode(args[0], raw)
-    for arg in args:
-        candidate = _unalias(arg)
-        if not isinstance(candidate, type):
-            continue
-        if isinstance(raw, dict) and is_dataclass(candidate):
-            return _decode(candidate, raw)
-        if isinstance(raw, str) and issubclass(candidate, Enum):
-            try:
-                return candidate(raw)
-            except ValueError:
-                continue
-        if isinstance(raw, bool) and candidate is bool:
-            return raw
-        if isinstance(raw, int | float) and candidate in (int, float) and not isinstance(raw, bool):
-            return candidate(raw)
-    return raw
-
-
-def _unalias(kind: Any) -> Any:
-    """Return what a PEP 695 `type X = …` alias stands for."""
-    value = getattr(kind, "__value__", None)
-    return kind if value is None else _unalias(value)
-
-
-def _as_type(origin: Any) -> type:
-    """Return `origin` as a class, for the `issubclass` questions above."""
-    return origin if isinstance(origin, type) else type(origin)

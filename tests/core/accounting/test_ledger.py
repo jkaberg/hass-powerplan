@@ -194,7 +194,7 @@ def test_15b_the_state_round_trips_and_decimal_comes_back_exact() -> None:
         },
         fee_at_month_start=Money(Decimal("416"), NOK),
         cf_fee_at_month_start=Money(Decimal("613"), NOK),
-        window_delta_kwh=1.25,
+        slot_deltas={"2026-12-01T16:00:00+00:00": 1.25},
         last_slot_utc=datetime(2026, 12, 1, tzinfo=UTC),
         opened=True,
     )
@@ -383,7 +383,7 @@ def _decode(raw: dict[str, Any]) -> AccountingState:
         cf_fee_at_month_start=(
             _money(raw["cf_fee_at_month_start"]) if raw["cf_fee_at_month_start"] else None
         ),
-        window_delta_kwh=raw["window_delta_kwh"],
+        slot_deltas=dict(raw["slot_deltas"]),
         last_slot_utc=(
             datetime.fromisoformat(raw["last_slot_utc"]) if raw["last_slot_utc"] else None
         ),

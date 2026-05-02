@@ -358,8 +358,12 @@ def test_05c_an_unknown_requirement_defers_the_session_and_prices_it_once() -> N
 def test_05d_a_forced_charge_saves_nothing_and_says_so() -> None:
     """The household forced it, so the real load did what the shadow does."""
     under_test = _evening_site(Mode.FORCE)
+    # The demand at each close says what is still owed after the slot delivered
+    # its share (D-0269): 30 → 19 → 8 → 0.
+    owed = REQUIRED_KWH
     for index, kwh in enumerate((11.0, 11.0, 8.0)):
-        under_test.ctx_for("ev", demand=demand(wants=True, required_kwh=REQUIRED_KWH, max_w=MAX_W))
+        owed -= kwh
+        under_test.ctx_for("ev", demand=demand(wants=True, required_kwh=owed, max_w=MAX_W))
         under_test.close(
             closed_slot((PLUG_IN + timedelta(hours=index)).astimezone(UTC), loads={"ev": kwh})
         )

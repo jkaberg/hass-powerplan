@@ -18,7 +18,7 @@ from typing import Any, Literal
 BASELINES = Path(__file__).resolve().parent / "baselines"
 CHANGELOG = Path(__file__).resolve().parents[2] / "design" / "benchmarks" / "CHANGELOG.md"
 
-Kind = Literal["zero", "not_worse", "pct", "abs"]
+Kind = Literal["zero", "not_worse", "not_less", "pct", "abs"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +53,8 @@ DEFAULT_TOLERANCES: dict[str, Tolerance] = {
     "total.commitment_breaks": Tolerance("zero"),
     "total.plan_gaps": Tolerance("zero"),
     "total.fee": Tolerance("not_worse"),
+    "total.cost_energy": Tolerance("not_worse"),
+    "total.savings": Tolerance("not_less"),
     "total.writes": Tolerance("pct", 10.0),
     "perf.tick_p95_ms": Tolerance("abs", 50.0),
     "perf.plan_p95_ms": Tolerance("abs", 500.0),
@@ -160,8 +162,8 @@ def _holds(tolerance: Tolerance, was: float | None, now: float | None) -> bool:
         return tolerance.value is None or now <= tolerance.value
     if was is None:
         return True
-    if tolerance.kind == "not_worse":
-        return now <= was + 1e-9
+    if tolerance.kind in ("not_worse", "not_less"):
+        return now <= was + 1e-9 if tolerance.kind == "not_worse" else now >= was - 1e-9
     limit = was * (1.0 + (tolerance.value or 0.0) / 100.0)
     return now <= limit + 1e-9
 

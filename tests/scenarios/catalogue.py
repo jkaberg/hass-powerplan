@@ -1,17 +1,20 @@
 """The scenario catalogue, phase 0's rows (D9 §5.3).
 
 `reference_winter_day`, `flat_price_night`, `dst_autumn`, `dst_spring` and
-`price_outage_48h`. Each is a `Scenario` plus the expectations
-`tests/scenarios/test_phase0.py` asserts. The rows that need groups, presence,
-cycles or a second market arrive with the work packages that enable them.
+`price_outage_48h`, plus D11's two - `savings_vs_twin` (with its twin) and
+`observe_calibration`. Each is a `Scenario` plus the expectations
+`tests/scenarios/test_phase0.py` and `test_accounting.py` assert. The rows that
+need groups, presence, cycles or a second market arrive with the work packages
+that enable them.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from tests.builders.houses import house
+from custom_components.powerplan.core.model import Mode
+from tests.builders.houses import house, no_peak, tensio
 from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
 
@@ -97,4 +100,72 @@ def price_outage_48h() -> Scenario:
     )
 
 
+#: D11's month: `reference_winter_day`'s house from the first of its month, thirty
+#: days inside January so the ledger's month is the run (D9 §5.3, D11 §9 17).
+TWIN_START = WINTER_START.replace(day=1)
+TWIN_DAYS = 30.0
+#: Five local days of `observe` - D11 §5.5 asks for three before it trusts a shadow.
+OBSERVE_DAYS = 5.0
+OBSERVE_START = WINTER_START
+
+
+def _winter_house(**overrides: object):
+    return house(
+        day=TWIN_START.date(),
+        price_kind=SPOT_LIKE,
+        ev_soc=0.35,
+        slab_start_c=24.0,
+        tank_top_c=62.0,
+        tank_bottom_c=50.0,
+        **overrides,  # type: ignore[arg-type]
+    )
+
+
+def savings_vs_twin() -> Scenario:
+    """Return the controlled month: the winter house under Tensio, thirty days."""
+    return Scenario(
+        name="savings_vs_twin",
+        house=_winter_house,
+        start=TWIN_START,
+        days=TWIN_DAYS,
+    )
+
+
+def savings_twin() -> Scenario:
+    """Return the twin: the same month with every load `always` on a `NoPeak` site.
+
+    No plan, no ceiling, no stage - the loads run on their own targets and the
+    car charges at plug-in (HLD §10 decision 8). Its actual bill is what D11's
+    counterfactual claims to predict.
+    """
+    return Scenario(
+        name="savings_twin",
+        house=lambda: _winter_house(strategy="always", tariff=no_peak(tensio())),
+        start=TWIN_START,
+        days=TWIN_DAYS,
+        target_kw=None,
+    )
+
+
+def observe_calibration() -> Scenario:
+    """Return five days with every load in `observe`: the shadows against the house itself."""
+    return Scenario(
+        name="observe_calibration",
+        house=lambda: house(
+            day=OBSERVE_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.35,
+            slab_start_c=24.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=OBSERVE_START,
+        days=OBSERVE_DAYS,
+        modes=Mode.OBSERVE,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
+ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
+#: The twin's month, for pricing its windows under the tariff the controlled house pays.
+TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

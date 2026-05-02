@@ -376,6 +376,7 @@ The slot boundary is the **wall clock**, not a register report. A ±10 s boundar
 | Length change | A changed `slot_minutes` is adopted at the first boundary the old and the new length **share**: the next boundary when the slot shortens, the next boundary of the longer length when it lengthens. "The next boundary" read literally would open a lengthened slot at an instant already closed and bill its first quarter hour twice (D-0173). |
 | `slot_bounds` | `slot_bounds(now, slot_minutes)` floors the UTC instant, as D1's slots are aligned. Every IANA offset is a whole number of minutes, so a local day still holds 92, 96 or 100 quarter slots and the repeated autumn hour is two slots with distinct UTC starts. |
 | Source | `REGISTER` when an `ENERGY` reading is present, else `POWER` on the measured watts, else `ESTIMATED` at `nameplate × on-fraction` from `ControlledView.commanded_w`. The command in force at a sample is taken to have held over the interval that ended there, as the trapezoid does with power. |
+| Site meters (**WP0.10**, D-0267) | D11 §5.1 step 3 needs the site's import and export per price slot. Rather than a third integrator, D7 runs two more `LoadMeter`s under the reserved ids `__site_import__` and `__site_export__` over `max(grid_w, 0)` and `max(−grid_w, 0)` from the same meter sample the window meter sees, `POWER` source, so a slot's site kWh and its loads' kWh share one clock, one attribution rule and one confidence vocabulary. Their `lifetime_kwh` is not a sensor; the register is (§5.5). |
 
 ---
 

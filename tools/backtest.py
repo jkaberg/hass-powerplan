@@ -1424,6 +1424,10 @@ def simulate(name: str, *, out: Path | None = None) -> int:
         "plan_gaps",
         "frozen_ticks",
         "engine_failures",
+        "cost_energy",
+        "cost_counterfactual",
+        "savings",
+        "savings_confidence",
     ):
         print(f"  {key:<24} {metrics.get(key)}")
     for load_id, count in sorted(metrics["writes"].items()):

@@ -10,6 +10,7 @@ from tests.sim.base import LIMIT_A, SOC, W_PER_AMP_IT230_3P, Command, Env
 from tests.sim.ev import (
     AWAITING_START,
     CHARGING,
+    COMPLETED,
     DISCONNECTED,
     MIN_A,
     REARM_S,
@@ -120,3 +121,17 @@ def test_the_reported_limit_is_the_charger_s_own_clamp() -> None:
     sim = EvSim(soc=0.5, max_a=32.0)
     reads = sim.step(STEP_S, Command(limit_a=40.0), env(T0))
     assert reads.values[LIMIT_A] == pytest.approx(32.0)
+
+
+def test_the_cars_own_limit_ends_the_session_where_the_app_says() -> None:
+    """A car limited to 80 % in its app stops itself there and reports completed; one without keeps going."""
+    limited = EvSim(soc=0.795, limit_soc=0.80)
+    run(limited, 600.0, Command(limit_a=32.0))
+    assert limited.soc == pytest.approx(0.80, abs=0.002)
+    assert limited.status == COMPLETED
+    assert limited.actual_a == pytest.approx(0.0)
+
+    unlimited = EvSim(soc=0.795)
+    run(unlimited, 600.0, Command(limit_a=32.0))
+    assert unlimited.soc > 0.81
+    assert unlimited.status == CHARGING

@@ -1,14 +1,16 @@
 {
-  "build": "801993f",
+  "build": "ad8e77d",
   "house": "nordic_detached",
   "results": {
     "smoke": {
-      "build": "801993f",
+      "build": "ad8e77d",
       "controlled_share": 1.0,
       "house": "nordic_detached",
       "months": {
         "2026-10": {
           "comfort_violation_min": 1.0,
+          "cost_counterfactual": "1198.34 NOK",
+          "cost_energy": "355.11 NOK",
           "deadline_misses": 2,
           "fee": "416.00 NOK",
           "kwh": 442.52,
@@ -16,32 +18,36 @@
           "max_window_kwh": 8.475,
           "metric_kw": 8.155,
           "over_target": 0,
+          "savings": "427.29 NOK",
           "windows": 167,
           "writes": 1153
         },
         "2027-01": {
           "comfort_violation_min": 9.5,
+          "cost_counterfactual": "1223.86 NOK",
+          "cost_energy": "366.67 NOK",
           "deadline_misses": 1,
           "fee": "441.00 NOK",
-          "kwh": 627.689,
+          "kwh": 627.663,
           "level": "5\u201310 kW",
           "max_window_kwh": 9.243,
           "metric_kw": 8.576,
           "over_target": 0,
+          "savings": "416.21 NOK",
           "windows": 167,
           "writes": 1560
         }
       },
       "perf": {
-        "plan_p95_ms": 91.251,
-        "tick_p95_ms": 3.591,
+        "plan_p95_ms": 93.919,
+        "tick_p95_ms": 4.222,
         "ticks": 120960,
-        "ticks_per_s": 225,
-        "wall_s": 536.9
+        "ticks_per_s": 198,
+        "wall_s": 611.4
       },
       "seed": 20260919,
-      "set_at": "2026-09-20T18:06:34+00:00",
-      "since": "WP0.11",
+      "set_at": "2026-09-20T22:09:54+00:00",
+      "since": "WP0.10",
       "spans": [
         {
           "comfort_violation_min": 1.0,
@@ -136,13 +142,16 @@
       "total": {
         "comfort_violation_min": 10.5,
         "commitment_breaks": 0,
+        "cost_counterfactual": "2422.20 NOK",
+        "cost_energy": "721.78 NOK",
         "deadline_misses": 3,
         "engine_failures": 0,
         "fee": "857.00 NOK",
-        "kwh": 1070.21,
+        "kwh": 1070.183,
         "max_window_kwh": 9.243,
         "over_target": 0,
         "plan_gaps": 0,
+        "savings": "843.50 NOK",
         "sessions_dropped": 10,
         "windows": 334,
         "writes": 2713,
@@ -165,7 +174,7 @@
       "year": "y2026_27@1"
     }
   },
-  "since": "WP0.11",
+  "since": "WP0.10",
   "tolerances": {
     "perf.plan_p95_ms": {
       "kind": "abs",

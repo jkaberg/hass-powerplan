@@ -112,6 +112,8 @@ class Snapshot:
 
 `EngineState` = `{meter: WindowState (+ per-load LoadMeterState), tariff: TariffState, prices: PriceStoreState, plans: PlansState, loads: {id: LoadState}, alloc: AllocState, forecasts: BaselineState, accounting: AccountingState, runtime: RuntimeState}`, exactly the store sections. The engine never holds anything unpersisted across ticks except caches marked as such.
 
+`EngineState.load_meters: Mapping[str, LoadMeterState]` holds D3 §5.12's meters, one per load plus two for the site, `SITE_IMPORT` (`__site_import__`) and `SITE_EXPORT` (`__site_export__`), integrating `max(±grid_w, 0)`. The `meter` section is `{"window": WindowState, "loads": {id: LoadMeterState}}`. `RuntimeState.windows_pending` keeps the last 48 `ClosedWindow`s the tick recorded, so the planning loop can hand D11 the window a slot completed, and `closed_to` is §5.2's cursor. The section codec - `encode`/`decode` over the frozen dataclasses, `Decimal`, enums and tz-aware datetimes - is `core/state_codec.py`, since the accounting adapter needs the same codec for D11's state without importing the engine's internals. The `accounting` section is opaque to the engine: `{"state": AccountingState (encoded), "status": AccountingStatus data, "month_key"}`, written and read back by the adapter (D-0267).
+
 ### 4.3 Runtime
 
 ```python
@@ -149,6 +151,7 @@ run_tick(trigger):
 engine.tick(state, inputs):                               # the sacred order
   1 site enabled? (site switch, safe_mode) → if not: mark all loads "site_off"; still compute and publish
   2 meter = WindowMeter.sample(...); LoadMeter.sample per load   (D3)  → if stale or seam: frozen (load meters still integrate)
+      WP0.10: `LoadMeter(LoadMeterConfig(load_id, nameplate_w), previous).sample(now, view, energy=ENERGY reading, slot_minutes)` per load, slot length from the curve in force (15 min without one); the two site meters sample the grid reading the same way. A frozen tick still samples them (the ledger wants what was drawn).
   3 closed windows → tariff.record_window; period rollover       (D2) - the counterfactual window is recorded by D11 inside plan(), never here (INV-68)
   4 ceiling = tariff.ceiling_kwh(...)                     (D2)
   5 budget = budget(ceiling, meter, hard limits, pi, baseline)   (D6)
@@ -165,6 +168,8 @@ Steps 1–11 are pure; the reads happened in `assemble()`, the writes happen in 
 ### 5.2 Planning cycle
 
 `Engine.plan(state, inputs)` observes the loads, builds the `SiteContext`, calls `plan_all` with the previous plans, adopts through `should_adopt`, fires `plan_adopted` / `deadline_at_risk`, and closes the price slots that ended since `runtime.closed_to` through the `AccountingHook` (`close_slot(start, end, *, now)`), oldest first and never from `tick()` (INV-68). The runtime does every fetch before calling it (INV-46, D-0238).
+
+The hook is `close_slot(SlotClose) -> AccountingClose`. `SlotClose` is what the engine knows without importing D11: the slot's bounds, the curves in force, the site's import and export kWh for the slot (from the two site meters) with a confidence, the outdoor temperature, the presence mode in force, the `ClosedWindow` the slot completed if any (from `runtime.windows_pending`), and per load a `SlotLoad` - effective mode, `Demand`, `level_now` and the `LoadSlot` its meter closed. `core/accounting_hook.py::AccountingAdapter` turns it into D11's `ClosedSlot` + `CloseCtx` (the shadow's target is the load's **target profile** under that presence, never the setpoint the plan steers to, D11 §5.3) and answers with the opaque `accounting` section, the `AccountingStatus` the snapshot publishes and `month_closed`. Two rules from the runner: the first cycle of a fresh site starts the cursor at the earliest slot any load meter has integrated - the curve reaches a day back, and a slot no meter saw would be priced at 0 kWh and could open the ledger in the wrong month - and the meters are acknowledged up to the last slot closed whether or not a hook is attached, so no slot is closed twice when one lands. A closed tariff window is handed over on the first slot close whose end has reached the window's end and that hasn't carried it yet (`RuntimeState.windows_closed_to`). D3 closes a window on the register report or, failing that, on the integral after the grace, which can be *after* the quarter's plan, and D11 sums the window's counterfactual from its own slots so it doesn't matter which slot carries it (D-0267).
 
 ```
 run_plan(trigger):  I/O first WITHOUT the lock, then the lock for the pure part only (≤ 500 ms), never inside a tick
@@ -252,7 +257,7 @@ Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `pl
 
 ## 7. Persistence
 
-§2 covers the schema. Save policy (all through the 5 s throttle unless marked *at once*): `meter` while dirty, *at once* on an anchor change (carries the per-load slot integrals); `tariff` per window; `prices` per fetch; `plans` per adoption; `loads` per latch/gate change; `alloc` per change; `forecasts` per window/fit; `accounting` per closed slot; `runtime` per tick (failure counters, last edges). Lifecycle edges *at once*. Flush on stop. Store size stays under ~1 MB for a 20-load site with 15-min windows (the current period's windows dominate).
+§2 covers the schema. Save policy (all through the 5 s throttle unless marked *at once*): `meter` while dirty, *at once* on an anchor change (carries the per-load slot integrals - **WP0.10:** the section is `{"window", "loads"}`, §4.2); `tariff` per window; `prices` per fetch; `plans` per adoption; `loads` per latch/gate change; `alloc` per change; `forecasts` per window/fit; `accounting` per closed slot; `runtime` per tick (failure counters, last edges). Lifecycle edges *at once*. Flush on stop. Store size stays under ~1 MB for a 20-load site with 15-min windows (the current period's windows dominate).
 
 The file is one file: a save writes the whole document, and the dirty set only decides *whether* to write, never *what*. The API is `get(section)` / `set(section, data, at_once=False)` over an authoritative in-memory copy, plus `mark_dirty(section, at_once=False)` for a section whose owner changed its own state. `flush()` cancels the pending period and writes what's dirty. `close()` also drops the `homeassistant_stop` listener, which `SiteStore` registers itself in `load()` so durability doesn't depend on the lifecycle remembering it. `_dirty` is only cleared after `Store.async_save` returns, so a write that raises leaves the sections dirty and the next mark re-arms the period. HA's `Store` logs and swallows disk write failures itself, which is §8's "in-memory state continues".
 

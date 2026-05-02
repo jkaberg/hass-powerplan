@@ -63,29 +63,77 @@ class PlugInShadow:
     ) -> tuple[ShadowState, float]:
         """Charge at the full rate from the plug-in slot until the session is served."""
         demand = ctx.demand
+        real = state.real_kwh + ctx.measured_kwh
         if demand is None or not demand.wants:
-            return replace(state, on=False, pending_kwh=0.0, session_slots=()), 0.0
+            # The session ended inside this slot. The car charged until it did, and
+            # so does the shadow: what it still owed, bounded by the slot (D-0269).
+            tail = _slot_kwh(state.pending_kwh, slot, ctx) if state.on else 0.0
+            return (
+                replace(state, on=False, pending_kwh=0.0, session_slots=(), real_kwh=real),
+                tail,
+            )
 
         if demand.required_kwh is None:
             # No SoC: defer this slot rather than invent a requirement.
             return (
-                replace(state, on=True, session_slots=(*state.session_slots, _key(slot))),
+                replace(
+                    state,
+                    on=True,
+                    session_slots=(*state.session_slots, _key(slot)),
+                    real_kwh=real,
+                ),
                 0.0,
             )
 
         pending = state.pending_kwh
+        latched = state.latched_kwh
         if not state.on:
             # The plug-in edge: latch what the car asked for. `Demand.required_kwh`
             # is already energy **at the wall** - `EnergyStore.required_kwh` divides
             # by `charge_eff` on the way out (D4 §4.3) - so dividing again here would
-            # charge the losses twice (`design/DECISIONS.md` D-0174).
-            pending = demand.required_kwh
+            # charge the losses twice (`design/DECISIONS.md` D-0174). The demand is
+            # read at the slot's close, after whatever the slot already delivered,
+            # so what the car asked for *at the edge* is the two together (D-0269).
+            asked = demand.required_kwh + ctx.measured_kwh
+            # A second edge re-latches only what the car has spent since the last
+            # one: what it asks now, less what it asked then, plus what it really
+            # drew in between. A link that dropped and came back asks exactly what
+            # is left and re-latches nothing; a car back from a drive asks for the
+            # drive (D-0269).
+            pending = asked if latched is None else max(0.0, asked - latched + state.real_kwh)
+            latched = asked
+            real = ctx.measured_kwh
         if pending <= 0.0:
-            return replace(state, on=True, pending_kwh=0.0, session_slots=()), 0.0
+            return (
+                replace(
+                    state,
+                    on=True,
+                    pending_kwh=0.0,
+                    session_slots=(),
+                    latched_kwh=latched,
+                    real_kwh=real,
+                ),
+                0.0,
+            )
 
-        rate_w = ctx.params.max_w if ctx.params.max_w is not None else ctx.params.nameplate_w
-        kwh = min(pending, rate_w * slot.minutes / 60.0 / W_PER_KW)
-        return replace(state, on=True, pending_kwh=pending - kwh, session_slots=()), kwh
+        kwh = _slot_kwh(pending, slot, ctx)
+        return (
+            replace(
+                state,
+                on=True,
+                pending_kwh=pending - kwh,
+                session_slots=(),
+                latched_kwh=latched,
+                real_kwh=real,
+            ),
+            kwh,
+        )
+
+
+def _slot_kwh(pending: float, slot: ClosedSlot, ctx: ShadowCtx) -> float:
+    """Return what the charger's full rate delivers of `pending` inside `slot`."""
+    rate_w = ctx.params.max_w if ctx.params.max_w is not None else ctx.params.nameplate_w
+    return max(0.0, min(pending, rate_w * slot.minutes / 60.0 / W_PER_KW))
 
 
 def _key(slot: ClosedSlot) -> str:

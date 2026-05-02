@@ -15,7 +15,7 @@ line (D9 §5.11).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -25,7 +25,7 @@ from custom_components.powerplan.core.loads import Load, Transport
 from custom_components.powerplan.core.loads.targets import ConstantSchedule
 from custom_components.powerplan.core.metering import ElectricalProfile, VoltageSystem
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
-from custom_components.powerplan.core.tariffs import Evaluator
+from custom_components.powerplan.core.tariffs import Evaluator, NoPeak
 from custom_components.powerplan.core.tariffs.presets import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
@@ -61,7 +61,7 @@ FLOOR_LOOPS: tuple[tuple[str, str, float, float, float], ...] = (
 DEPARTURES = {str(weekday): "07:30" for weekday in range(5)}
 
 #: The v1 reference house, frozen per version (D9 §5.9, §5.11).
-HOUSE_ID = "nordic_detached@1"
+HOUSE_ID = "nordic_detached@2"
 
 #: Every load the house will ever have, in the order the walk sees them.
 ALL_LOADS: tuple[str, ...] = (
@@ -100,7 +100,26 @@ HOUSE_SOURCES: dict[str, str] = {
         f"{DEFAULT_TARGET_ANNUAL_KWH:.0f} kWh a year"
     ),
     "household": "D9 §5.9: 2 adults + 1 child, vacation weeks at Christmas, winter break, Easter, summer",
+    "ev_limit": (
+        "assumed: the car's own charge limit is set to the 80 % the household gave powerplan "
+        "(D4 §6.2 'charge to 80 %'); every current EV app has the setting — @2, D-0268"
+    ),
+    "floor_loss": (
+        "fitted: 0.745 W/m²K × the loop's area — `sim/slab.py` run uncontrolled over the winter "
+        "week 2027-01-11…18, mean cable power over mean (screed − outdoor), D11 §9 4's method "
+        "and the one-node value D10's fit converges to (WP5.1); answered as the floor type's "
+        "advanced `loss_coeff_w_per_k` (D4 §6.1). D4 §6.4's envelope table says 0.7 for a "
+        "2000–2010 house; the ground path and the room node add the rest — @2, D-0268"
+    ),
 }
+
+#: The charge limit set in the car's own app - the same 80 % the household gave
+#: powerplan (`HOUSE_SOURCES["ev_limit"]`).
+EV_LIMIT_SOC = 0.80
+#: The household's answer to the floor type's advanced loss question, W/K per m²
+#: of loop (`HOUSE_SOURCES["floor_loss"]`). Without it a slab's store skips its
+#: loss term (D4 §5.7) and D11's shadow has no physics to hold a target with.
+FLOOR_LOSS_W_PER_M2K = 0.745
 
 
 @dataclass
@@ -150,6 +169,28 @@ def tensio() -> Evaluator:
     return Evaluator(loader.load("no/tensio"), tz=OSLO, calendar=NO_HOLIDAYS)
 
 
+def no_peak(evaluator: Evaluator) -> Evaluator:
+    """Return `evaluator`'s preset with every version's capacity root replaced by `NoPeak`.
+
+    The energy components stay, so the site's curves - the `tou_schedule`
+    energiledd rides on every slot - are the same; only the capacity axis is
+    gone. This is the twin of D9 §5.3's `savings_vs_twin`: the same house with
+    no capacity control (HLD §10 decision 8).
+    """
+    spec = evaluator.spec
+    versions = tuple(replace(version, grammar=(NoPeak(),)) for version in spec.versions)
+    return Evaluator(
+        replace(spec, id=f"{spec.id}+no_peak", versions=versions),
+        tz=OSLO,
+        calendar=NO_HOLIDAYS,
+    )
+
+
+def with_strategy(load: Load, key: str) -> Load:
+    """Return `load` planned by `key` with the strategy's own defaults (D5 §6)."""
+    return replace(load, config=replace(load.config, strategy=key, strategy_params={}))
+
+
 def _floor(load_id: str, room: str, area_m2: float, comfort_c: float, floor_c: float) -> Load:
     """Build one floor loop through the registry with the reference house's answers."""
     from tests.core.loads.conftest import (  # noqa: PLC0415 - builders import builders
@@ -168,6 +209,7 @@ def _floor(load_id: str, room: str, area_m2: float, comfort_c: float, floor_c: f
             "area_m2": area_m2,
             "screed_mm": 50.0,
             "room": room,
+            "loss_coeff_w_per_k": round(FLOOR_LOSS_W_PER_M2K * area_m2, 2),
         }
     )
     return floor_load(
@@ -213,11 +255,15 @@ def house(
     tank_top_c: float = 55.0,
     tank_bottom_c: float = 45.0,
     cfg: SiteConfig | None = None,
+    strategy: str | None = None,
+    tariff: Evaluator | None = None,
 ) -> House:
     """Return the reference house, or a subset of it, ready for one run.
 
     `loops` defaults to the two bathrooms - the loads the phase-0 scenarios
     assert on; WP0.11's benchmark passes all five and every other type.
+    `strategy` re-plans every load by one key (`always` for the twin of
+    `savings_vs_twin`); `tariff` replaces the Tensio evaluator (`no_peak(tensio())`).
     """
     cfg = cfg or site_config()
     loads: list[Load] = []
@@ -241,7 +287,7 @@ def house(
                 strategy="deadline_fill",
             )
         )
-        ev = EvSim(capacity_kwh=60.0, soc=ev_soc)
+        ev = EvSim(capacity_kwh=60.0, soc=ev_soc, limit_soc=EV_LIMIT_SOC)
         charger = BleChargerSim(ev=ev, seed=seed, tz=OSLO)
         sims["ev"] = charger
 
@@ -285,9 +331,11 @@ def house(
             end=day.replace(year=day.year + 1),
         ),
     )
+    if strategy is not None:
+        loads = [with_strategy(load, strategy) for load in loads]
     return House(
         cfg=cfg,
-        tariff=tensio(),
+        tariff=tariff if tariff is not None else tensio(),
         loads=tuple(loads),
         sims=sims,
         ev=ev,
@@ -322,7 +370,7 @@ def _ev(seed: int, soc: float) -> tuple[Load, EvSim, BleChargerSim]:
         transport=Transport.BLE,
         strategy="deadline_fill",
     )
-    ev = EvSim(capacity_kwh=60.0, soc=soc)
+    ev = EvSim(capacity_kwh=60.0, soc=soc, limit_soc=EV_LIMIT_SOC)
     return load, ev, BleChargerSim(ev=ev, seed=seed, tz=OSLO)
 
 

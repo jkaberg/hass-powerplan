@@ -323,19 +323,21 @@ def test_plan_closes_price_slots_oldest_first_and_tick_never_calls_the_hook() ->
     cfg = site()
     hook = RecordingHook()
     engine = engine_for(reference_loads(), cfg=cfg, accounting=hook)
+    # Past the end of the quarter hour the first tick fell in: one slot has ended.
+    ticks = int(1800 / TICK_S)
     state, _snaps, _effects = run(
         engine,
         EngineState(),
         cfg,
         start=START,
-        ticks=30,
+        ticks=ticks,
         grid_w=1_500.0,
         loads=both,
         curves_=curves(START - timedelta(hours=2)),
     )
     assert hook.calls == [], "the tick never reaches the ledger"
 
-    at = START + timedelta(seconds=TICK_S * 30)
+    at = START + timedelta(seconds=TICK_S * ticks)
     state, _report, _effects = engine.plan(
         state,
         inputs_at(
@@ -347,6 +349,10 @@ def test_plan_closes_price_slots_oldest_first_and_tick_never_calls_the_hook() ->
     assert ends == sorted(ends), "oldest first"
     assert all(end <= at for end in ends)
     assert state.runtime.closed_to == ends[-1]
+    # The curve reaches two hours back; the meters do not. Nothing before the slot
+    # the first sample fell in is a slot the ledger can price (D-0267).
+    first_metered = START.replace(minute=(START.minute // 15) * 15, second=0, microsecond=0)
+    assert min(start for start, _end, _now in hook.calls) == first_metered
 
     # A second cycle closes nothing twice.
     before = len(hook.calls)

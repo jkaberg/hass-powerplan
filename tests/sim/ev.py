@@ -41,6 +41,7 @@ REARM_S = 602.0
 RESUME_S = 30.0
 RAMP_A_PER_S = 1.6
 AMP_EPS = 1e-6
+LIMIT_SOC = 1.0
 
 SOURCES: dict[str, str] = {
     "CAPACITY_KWH": "D9 §5.9 house spec: 60 kWh battery",
@@ -69,6 +70,11 @@ SOURCES: dict[str, str] = {
         "a captured step response; D4 §6.2's 'settle 60 s' is the controller's wait, not this"
     ),
     "AMP_EPS": "effektstyring README: AMP_EPS = 1e-6 A absorbs the float round trip",
+    "LIMIT_SOC": (
+        "the car's own charge limit, set in its app; 1.0 unless the house says otherwise. "
+        "The reference house sets the 80 % it also gave powerplan (D4 §6.2 'charge to 80 %'), "
+        "so a car nobody steers stops where the shadow does (D11 §5.3, `nordic_detached@2`)"
+    ),
     "W_PER_AMP_IT230_3P": "see sim/base.py — D3 §5.1, √3 × 230 for a 3φ load in a 230 V IT net",
 }
 
@@ -87,6 +93,8 @@ class EvSim:
     max_a: float = MAX_A
     w_per_amp: float = W_PER_AMP_IT230_3P
     soc: float = 0.4
+    #: The car's own charge limit (`SOURCES["LIMIT_SOC"]`): it stops itself here.
+    limit_soc: float = LIMIT_SOC
     plugged: bool = True
     limit_a: float = MAX_A
     actual_a: float = 0.0
@@ -151,7 +159,7 @@ class EvSim:
         """What the charger's status sensor would say."""
         if not self.plugged:
             return DISCONNECTED
-        if self.soc >= 1.0:
+        if self.soc >= self.limit_soc:
             return COMPLETED
         if self.actual_a > AMP_EPS:
             return CHARGING
@@ -171,7 +179,7 @@ class EvSim:
             or self.paused
             or self.rearm_in_s > 0.0
             or self.resume_in_s > 0.0
-            or self.soc >= 1.0
+            or self.soc >= self.limit_soc
             or self.limit_a < MIN_A - AMP_EPS
         )
         target_a = 0.0 if blocked else min(self.limit_a, self.max_a)

@@ -270,7 +270,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.9 | D9 harness and backtest | done |
 | 0.9a | Simulators | done |
 | 0.9b | Backtest: recorder and CSV | done |
-| 0.10 | D3 `LoadMeter` and D11 accounting core | todo |
+| 0.10 | D3 `LoadMeter` and D11 accounting core | done |
 | 0.10a | Accounting modules and unit tests | done |
 | 0.11 | Reference benchmark | done |
 | 1.1 | Runtime and storage | todo |

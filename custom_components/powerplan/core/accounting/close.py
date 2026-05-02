@@ -58,6 +58,7 @@ from .savings import (
 from .shadow.base import (
     COUNTED_MODES,
     LoadParams,
+    Shadow,
     ShadowCtx,
     ShadowState,
     StoreKind,
@@ -157,7 +158,10 @@ class AccountingState:
     deferred: dict[str, tuple[PricedSlot, ...]] = field(default_factory=dict)
     fee_at_month_start: Money | None = None
     cf_fee_at_month_start: Money | None = None
-    window_delta_kwh: float = 0.0
+    #: `Σ (cf_kwh − kwh)` of each priced slot, keyed by the slot's UTC start (ISO):
+    #: a window's counterfactual is the sum of the slots inside it, whichever
+    #: slot D7 happens to hand the window over with (D-0267). Pruned at each close.
+    slot_deltas: dict[str, float] = field(default_factory=dict)
     last_slot_utc: datetime | None = None
     opened: bool = False
     schema: int = 1
@@ -297,7 +301,7 @@ class Accounting:
             month_closed = self._rollover(slot, ctx)
 
         delta_kwh = self._price_loads(slot, ctx)
-        state.window_delta_kwh += delta_kwh
+        state.slot_deltas[slot.start_utc.isoformat()] = delta_kwh
         self._price_site(slot, ctx, delta_kwh)
         repriced = self._reprice(slot, ctx)
 
@@ -384,13 +388,15 @@ class Accounting:
         current = state.shadows.get(load_id)
         if current is None:
             current = shadow.init(shadow_ctx.level_now, slot.start_utc, shadow_ctx)
+        elif current.level is None:
+            current = _first_level(shadow, current, slot, shadow_ctx)
         elif shadow_ctx.level_now is not None and _blind_for_a_day(current, slot):
             current = replace(
                 shadow.reanchor(current, shadow_ctx.level_now), anchored_at=slot.start_utc
             )
 
         before = set(current.session_slots)
-        updated, cf_kwh = shadow.step(current, slot, shadow_ctx)
+        updated, cf_kwh = shadow.step(current, slot, replace(shadow_ctx, measured_kwh=measured.kwh))
         after = set(updated.session_slots)
 
         if after > before:
@@ -483,11 +489,23 @@ class Accounting:
         """Record the shadow window and re-price both capacity components."""
         state = self._state
         site = state.ledger.site
-        cf_kwh = max(0.0, window.kwh + state.window_delta_kwh)
+        end = window.start_utc + timedelta(minutes=window.window_min)
+        inside = {
+            key: delta
+            for key, delta in state.slot_deltas.items()
+            if window.start_utc <= datetime.fromisoformat(key) < end
+        }
+        cf_kwh = max(0.0, window.kwh + sum(inside.values()))
         ctx.tariff.record_counterfactual(
             replace(window, kwh=cf_kwh, avg_kw=cf_kwh / (window.window_min / 60.0))
         )
-        state.window_delta_kwh = 0.0
+        # The window's slots are spent; older strays (a window D7 never handed
+        # over) go with them so the map stays a window long.
+        state.slot_deltas = {
+            key: delta
+            for key, delta in state.slot_deltas.items()
+            if datetime.fromisoformat(key) >= end
+        }
         site.windows_cf += 1
 
         period = ctx.tariff.period(window.start_utc)
@@ -597,7 +615,6 @@ class Accounting:
         actual_bill = ctx.tariff.bill(period, ctx.history)
         state.fee_at_month_start = actual_bill.capacity_fee
         state.cf_fee_at_month_start = cf_bill.capacity_fee
-        state.window_delta_kwh = 0.0
 
         for load_id, shadow_state in list(state.shadows.items()):
             shadow = shadow_for(shadow_state.kind)
@@ -680,6 +697,23 @@ class Accounting:
             site=site,
             loads=loads,
         )
+
+
+def _first_level(
+    shadow: Shadow, state: ShadowState, slot: ClosedSlot, ctx: ShadowCtx
+) -> ShadowState:
+    """Give a shadow opened without a level the first one it sees (D11 §5.3).
+
+    D7 adds the loads at setup, before the first tick has read anything, so
+    `init` had neither a level nor a target. A thermostat shadow without a level
+    would draw nothing for ever; it takes the measured level when it arrives, or
+    the target until then, exactly as `init` would have.
+    """
+    if ctx.level_now is not None:
+        return replace(shadow.reanchor(state, ctx.level_now), anchored_at=slot.start_utc)
+    if ctx.target is not None:
+        return replace(state, level=ctx.target)
+    return state
 
 
 def _blind_for_a_day(state: ShadowState, slot: ClosedSlot) -> bool:

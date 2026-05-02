@@ -155,14 +155,15 @@ def main(argv: list[str] | None = None) -> int:
 def _months_table(result: object) -> str:
     months = getattr(result, "months", {})
     lines = [
-        "| month | windows | over target | max kWh | kWh | comfort viol. min | deadline misses | writes | fee | level |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| month | windows | over target | max kWh | kWh | comfort viol. min | deadline misses | writes | fee | level | energy cost | cf cost | savings |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for key, row in sorted(months.items()):
         lines.append(
             f"| {key} | {row.windows} | {row.over_target} | {row.max_window_kwh:.2f} | {row.kwh:.1f} | "
             f"{row.comfort_violation_min:.1f} | {row.deadline_misses} | {row.writes} | "
-            f"{row.fee or '—'} | {row.level or '—'} |"
+            f"{row.fee or '—'} | {row.level or '—'} | {row.cost_energy or '—'} | "
+            f"{row.cost_counterfactual or '—'} | {row.savings or '—'} |"
         )
     return "\n".join(lines)
 

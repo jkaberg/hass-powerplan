@@ -145,7 +145,7 @@ def test_every_committed_baseline_has_a_changelog_line() -> None:
         )
         for tier_result in document.get("results", {}).values():
             for key, tolerance in document["tolerances"].items():
-                assert tolerance["kind"] in ("zero", "not_worse", "pct", "abs"), key
+                assert tolerance["kind"] in ("zero", "not_worse", "not_less", "pct", "abs"), key
             assert tier_result["controlled_share"] <= 1.0
 
 

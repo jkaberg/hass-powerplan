@@ -21,6 +21,7 @@ from custom_components.powerplan.core.engine import (
     Knobs,
     LoadReads,
     SiteConfig,
+    SlotClose,
 )
 from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.core.metering import (
@@ -197,11 +198,13 @@ class RecordingHook:
     """An `AccountingHook` that only remembers what it was asked (D7 §9 16)."""
 
     calls: list[tuple[datetime, datetime, datetime]] = field(default_factory=list)
+    windows: list[Any] = field(default_factory=list)
 
-    def close_slot(self, start: datetime, end: datetime, *, now: datetime) -> AccountingClose:
+    def close_slot(self, close: SlotClose) -> AccountingClose:
         """Record the call and answer with an empty close."""
-        self.calls.append((start, end, now))
-        return AccountingClose(slot_start=start, slot_end=end)
+        self.calls.append((close.start, close.end, close.now))
+        self.windows.append(close.window_closed)
+        return AccountingClose(slot_start=close.start, slot_end=close.end)
 
 
 def run(

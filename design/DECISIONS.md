@@ -1182,3 +1182,18 @@ The `radiator` type lifts its comfort target, shed setpoint and clamp by half a 
 
 `switch`, `setpoint` and `mode` mark a turn-on or turn-up urgent while `comfort_violated` is set, buying past the interval and dwell (rows 6-7), never past row 3. A bedroom heater sat 30 minutes behind its `min_off` dwell after falling through its floor. Affects D4 §5.6, §5.10.
 **Rejected:** a shorter relay dwell - the dwell protects the device, and a compressor's must stay.
+
+### D-0267 · One bridge module between D7 and D11
+
+`core/accounting_hook.py::AccountingAdapter` alone knows both D7's `SlotClose` and D11's `ClosedSlot`/`CloseCtx`; INV-68's AST check forbids the engine importing accounting. The engine meters site import and export under reserved ids, keeps the last 48 closed windows, starts a fresh ledger at the earliest integrated slot (otherwise 1 January opened in December), and hands a window over on the first slot close past its end. D11 sums a window's counterfactual from its own slots, so a late register report doesn't lose it. The section codec moves to `core/state_codec.py`. Affects D7 §4.2, §5.1, §5.2, §7; D3 §5.12; D11 §5.1.
+**Rejected:** the engine building `ClosedSlot` from D11's types - "only the types" is the exception every later import would cite.
+
+### D-0268 · `nordic_detached@2`: the loops answer their loss, the car carries its own limit
+
+The benchmark's floor loops answer `loss_coeff_w_per_k` with a fit against their own slab (0.745 W/m²K × area, the one-node value D10 converges to), and `EvSim` gains the car's own app limit (80 %). Without a loss term the slab shadow drew nothing, and a car with no limit charges to 100 % uncontrolled while the shadow stops at the target. D4 §6.4's 0.7 left the shadow 10 % under the floor's real draw. Radiators keep no loss coefficient until D10 fits one. Baseline reset with a changelog line (D9 §5.11). Affects D9 §5.9, §5.11.
+**Rejected:** asserting only on the EV - a slab shadow that can't calibrate on the reference house won't anywhere. A D4 derivation for the coefficient - D4 §5.7 leaves it to D10's fit.
+
+### D-0269 · What the shadow holds and what the car asked for
+
+(1) The shadow's target is the load's target profile under the current presence, not `Demand.comfort.target`: under `heat_capacitor` that's the plan's eco setpoint, and the counterfactual reproduced the plan. (2) The plug-in shadow latches `required_kwh + measured_kwh` at the edge, charges what it still owed in the slot `wants` falls, and a later edge re-latches only what the car spent since; the charger's link drops made every return look like a plug-in, and the EV counterfactual read 225 kWh against 64 real. (3) A shadow with no level takes the first it sees. Affects D11 §5.3.
+**Rejected:** reading the demand a cycle earlier - the planning loop only sees it at closes.
