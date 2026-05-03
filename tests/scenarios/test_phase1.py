@@ -1,0 +1,179 @@
+"""D9 §5.3 - D7's two rows: `restart_mid_window` and `engine_exception_x3`.
+
+The winter evening on the phase-0 house, once with Home Assistant restarting
+in the middle of a tariff window and once with the engine's own step raising
+three ticks in a row. The restart run is judged against the same evening
+without the restart: a restart may not change what the meter counted, may not
+open a gate, and may not teach the controller a setpoint (INV-14, INV-27).
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import TYPE_CHECKING
+
+import pytest
+
+from custom_components.powerplan.core.engine import EngineHealth
+from tests.scenarios import catalogue
+from tests.scenarios.runner import TICK_S, run_scenario
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from custom_components.powerplan.core.model import Snapshot
+    from tests.scenarios.runner import ScenarioResult
+
+pytestmark = pytest.mark.scenario
+
+#: The bathrooms' configured comfort and floor (D4 §6.1, `tests/builders/houses.py`).
+BATHROOM_COMFORT_C = 24.0
+BATHROOM_FLOOR_C = 21.0
+#: The tank's `comfort_min_c` (D9 §5.9, `tests/builders/houses.py`).
+TANK_COMFORT_MIN_C = 45.0
+#: How long after a restart no write may appear that the control run did not have.
+QUIET_AFTER_RESTART = timedelta(minutes=5)
+
+
+class _Trail:
+    """Snapshots around an instant, kept by the runner's observer hook."""
+
+    def __init__(self, around: datetime, span: timedelta = timedelta(minutes=2)) -> None:
+        self.around = around
+        self.span = span
+        self.before: list[tuple[datetime, Snapshot]] = []
+        self.after: list[tuple[datetime, Snapshot]] = []
+        self.all: list[tuple[datetime, Snapshot]] = []
+
+    def __call__(self, now: datetime, snapshot: Snapshot) -> None:
+        self.all.append((now, snapshot))
+        if self.around - self.span <= now < self.around:
+            self.before.append((now, snapshot))
+        elif self.around <= now <= self.around + self.span:
+            self.after.append((now, snapshot))
+
+
+@pytest.fixture(scope="module")
+def restarted() -> tuple[ScenarioResult, _Trail]:
+    """Run the restart evening once for the module, keeping the snapshots around it."""
+    trail = _Trail(catalogue.RESTART_AT)
+    return run_scenario(catalogue.restart_mid_window(), trail), trail
+
+
+@pytest.fixture(scope="module")
+def control() -> ScenarioResult:
+    """Run the same evening without the restart."""
+    return run_scenario(catalogue.restart_mid_window_control())
+
+
+@pytest.fixture(scope="module")
+def failing() -> tuple[ScenarioResult, _Trail]:
+    """Run the evening with three engine failures, keeping every snapshot."""
+    trail = _Trail(catalogue.EXCEPTION_AT, span=timedelta(hours=12))
+    return run_scenario(catalogue.engine_exception_x3(), trail), trail
+
+
+# --------------------------------------------------------------------------- #
+# restart_mid_window
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.inv("INV-14")
+def test_used_kwh_is_continuous_across_the_restart(
+    restarted: tuple[ScenarioResult, _Trail], control: ScenarioResult
+) -> None:
+    """Every closed window counts the same energy with and without the restart."""
+    result, _trail = restarted
+    assert result.window_starts == control.window_starts
+    for start, with_restart, without in zip(
+        result.window_starts, result.window_kwh, control.window_kwh, strict=True
+    ):
+        assert with_restart == pytest.approx(without, abs=0.02), start
+    assert result.windows >= 6
+
+
+@pytest.mark.inv("INV-14")
+def test_the_restart_opens_no_gate(
+    restarted: tuple[ScenarioResult, _Trail], control: ScenarioResult
+) -> None:
+    """No write appears in the minutes after the restart that the control run did not have."""
+    result, _trail = restarted
+    window_end = catalogue.RESTART_AT + QUIET_AFTER_RESTART
+
+    def burst(run: ScenarioResult) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for at, load_id in run.write_log:
+            if catalogue.RESTART_AT <= at <= window_end:
+                counts[load_id] = counts.get(load_id, 0) + 1
+        return counts
+
+    with_restart = burst(result)
+    without = burst(control)
+    for load_id, count in with_restart.items():
+        assert count <= without.get(load_id, 0), (load_id, with_restart, without)
+
+
+@pytest.mark.inv("INV-27")
+def test_the_loops_are_restored_not_adopted(restarted: tuple[ScenarioResult, _Trail]) -> None:
+    """After the restart the loops' comfort target is the configured one, whatever the device says."""
+    _result, trail = restarted
+    assert trail.before, "snapshots before the restart"
+    assert trail.after, "snapshots after the restart"
+    last_before = trail.before[-1][1]
+    first_after = trail.after[0][1]
+    for load_id in ("loop_bath_1", "loop_bath_2"):
+        before = last_before.loads[load_id].comfort
+        after = first_after.loads[load_id].comfort
+        assert before is not None
+        assert after is not None
+        assert after.target == before.target
+        assert after.floor == before.floor
+        assert after.target >= BATHROOM_COMFORT_C - 2.0, "never the device's eco setpoint"
+    # The tick after the restart is a real tick: the meter is not frozen by it.
+    assert first_after.health.frozen_reason is None
+
+
+# --------------------------------------------------------------------------- #
+# engine_exception_x3
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.inv("INV-44")
+@pytest.mark.inv("INV-26")
+def test_three_engine_failures_enter_safe_mode_and_release_every_load(
+    failing: tuple[ScenarioResult, _Trail],
+) -> None:
+    """Safe mode after the third failure: every load released, observing, still publishing."""
+    result, trail = failing
+    assert result.engine_failures >= catalogue.ENGINE_FAILURES
+    entered = [at for at, snapshot in trail.all if snapshot.health.engine is EngineHealth.SAFE_MODE]
+    assert entered, "safe mode was entered"
+    expected = catalogue.EXCEPTION_AT + timedelta(seconds=TICK_S * (catalogue.ENGINE_FAILURES - 1))
+    assert abs((entered[0] - expected).total_seconds()) <= 2 * TICK_S
+    # It is not left by itself: every snapshot after it says so, and the site is off.
+    after = [snapshot for at, snapshot in trail.all if at >= entered[0]]
+    assert all(snapshot.health.engine is EngineHealth.SAFE_MODE for snapshot in after)
+    assert all(not snapshot.site.active for snapshot in after)
+    assert len(after) > 100, "the publish continued (INV-44)"
+
+    # Every load released: the charger at its own maximum; the loops out of any shed
+    # and inside their band - a coast setpoint a plan left is not a shed (D4 §5.4),
+    # and the restore on the next start corrects it (INV-27); the tank on its own.
+    house = result.house
+    assert house is not None
+    assert house.ev is not None
+    assert house.ev.limit_a == pytest.approx(32.0)
+    last = after[-1]
+    for load_id in ("loop_bath_1", "loop_bath_2"):
+        assert not last.loads[load_id].shed
+        assert house.sims[load_id].mode == "heat"
+        assert BATHROOM_FLOOR_C <= house.sims[load_id].setpoint_c <= BATHROOM_COMFORT_C
+    # The tank released is the tank at the household's comfort minimum (D4 §6.3, INV-27):
+    # the 75 °C ready temperature is the plan's, and a plan is what safe mode has none of.
+    assert not last.loads["tank"].shed
+    assert house.tank is not None
+    assert house.tank.setpoint_c == pytest.approx(TANK_COMFORT_MIN_C)
+
+    # And nothing is written afterwards: a released site observes (D7 §8).
+    late = [at for at, _load in result.write_log if at > entered[0] + timedelta(minutes=2)]
+    assert late == []

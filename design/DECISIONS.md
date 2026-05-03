@@ -1197,3 +1197,18 @@ The benchmark's floor loops answer `loss_coeff_w_per_k` with a fit against their
 
 (1) The shadow's target is the load's target profile under the current presence, not `Demand.comfort.target`: under `heat_capacitor` that's the plan's eco setpoint, and the counterfactual reproduced the plan. (2) The plug-in shadow latches `required_kwh + measured_kwh` at the edge, charges what it still owed in the slot `wants` falls, and a later edge re-latches only what the car spent since; the charger's link drops made every return look like a plug-in, and the EV counterfactual read 225 kWh against 64 real. (3) A shadow with no level takes the first it sees. Affects D11 §5.3.
 **Rejected:** reading the demand a cycle earlier - the planning loop only sees it at closes.
+
+### D-0270 · The modifier registry decodes what the entry stores
+
+`registry.build(key, options)` decodes stored options against the schema (decimal strings to `Decimal`, lists to tuples), and modifiers with record lists (`tou_schedule`, `day_type`, `cumulative_tier`) declare `from_options`. A preset's `tou_schedule` arrived as dicts and every Tensio site's first planning cycle failed on `period.when`. Affects D1 §6.
+**Rejected:** decoding in `runtime.py` - one branch per record-bearing modifier.
+
+### D-0271 · Six things the runtime settles
+
+`runtime.py` holds `build_site(hass, entry)` and `Runtime` (D7 §4.3, §5.3, §5.5, §5.6). (1) Grid power, production and load entities share one 10 s debounce. (2) The window fallback checks the register reported since the boundary (`last_register_at`), since "rolled" is always true by :05. (3) Loads and their devices ride on `SiteBuild`. (4) The first price fetch starts after the first tick, outside the lock (INV-46). (5) Every subscription is released by one unload hook and by `stop()`, which unload and `homeassistant_stop` both call. (6) A stale `engine_failing` repair is deleted at `start()`. Affects D7 §4.3, §5.3, §5.5, §5.6, §8, §9.
+**Rejected:** subscriptions only through `entry.async_on_unload` - kept, plus `stop()`, so shutdown is clean too.
+
+### D-0272 · Safe mode releases sheds; a plan's coast setpoint isn't one
+
+Safe mode is D4's `release()` per load: sheds undone, site observing. A setpoint a plan moved within the comfort band stays; the next start's `restore()` corrects it (INV-27). Re-targeting to comfort would be a restore, a write decided by an engine that has just proven it can't be trusted. Affects D7 §8, D9 §5.3.
+**Rejected:** restoring comfort in safe mode - the failing engine would be writing setpoints.

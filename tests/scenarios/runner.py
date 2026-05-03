@@ -29,6 +29,7 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
+from unittest.mock import patch
 
 from custom_components.powerplan.core.accounting.close import AccountingConfig
 from custom_components.powerplan.core.accounting_hook import AccountingAdapter
@@ -49,7 +50,7 @@ from custom_components.powerplan.core.metering import (
     WindowMeterConfig,
 )
 from custom_components.powerplan.core.model import Carrier, Confidence, Mode
-from custom_components.powerplan.core.pricing import build_curve
+from custom_components.powerplan.core.pricing import build_curve, modifiers
 from custom_components.powerplan.core.pricing.context import PriceContext
 from custom_components.powerplan.core.pricing.forecasters.base import chain
 from custom_components.powerplan.core.pricing.forecasters.carry_known import CarryKnown
@@ -57,8 +58,6 @@ from custom_components.powerplan.core.pricing.forecasters.synthesised import Syn
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
 from custom_components.powerplan.core.pricing.model import RawSlot
 from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
-    TimeFilter,
-    TouPeriod,
     TouSchedule,
 )
 from custom_components.powerplan.core.strategies import Curves
@@ -107,12 +106,14 @@ OFFSET_S = 17.0
 
 @dataclass(frozen=True, slots=True)
 class Fault:
-    """One injected fault (D9 §4): `meter_stale(at, seconds)`, `ble_flap(at, seconds)`, `price_outage(day)`, `restart(at)`, `clock_jump(at, seconds)`."""
+    """One injected fault (D9 §4): `meter_stale(at, seconds)`, `ble_flap(at, seconds)`, `price_outage(day)`, `restart(at)`, `clock_jump(at, seconds)`, `engine_exception(at, count)`."""
 
     kind: str
     at: datetime | None = None
     seconds: float = 0.0
     day: date | None = None
+    #: `engine_exception`: how many consecutive ticks the engine's own step raises.
+    count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +153,8 @@ class ScenarioResult:
     tank_top_at_ready: float | None = None
     tank_min_bottom_c: float = 99.0
     writes: dict[str, int] = field(default_factory=dict)
+    #: Every write, in order: `(instant, load_id)`. Never part of the digest.
+    write_log: list[tuple[datetime, str]] = field(default_factory=list)
     max_writes_per_10min: dict[str, int] = field(default_factory=dict)
     zero_amp_writes: int = 0
     ev_stops: int = 0
@@ -375,22 +378,16 @@ def _tou_from(options: Mapping[str, Any] | None) -> TouSchedule | None:
     """Return the preset's grid energy schedule as D1's modifier (D1 §5.4, D-0126).
 
     The flow adds this modifier for a NO site from the preset's `energy_components`
-    without anyone typing it; the runner does the same, so the curve the engine
-    plans on carries the day/night energiledd a Norwegian household pays - and the
-    synthesised floor knows that night is cheaper (D1 §5.5).
+    without anyone typing it; the runner does the same through the registry's own
+    decoder (D-0270), so the curve the engine plans on carries the day/night
+    energiledd a Norwegian household pays - and the synthesised floor knows that
+    night is cheaper (D1 §5.5).
     """
     if not options:
         return None
-    periods = tuple(
-        TouPeriod(
-            when=TimeFilter(hours=tuple(tuple(span) for span in raw["hours"]))
-            if raw.get("hours")
-            else None,
-            price=Decimal(str(raw["price"])),
-        )
-        for raw in options.get("periods", ())
-    )
-    return TouSchedule(periods=periods, fallback=Decimal(str(options.get("fallback", 0))))
+    built = modifiers.build("tou_schedule", options)
+    assert isinstance(built, TouSchedule)
+    return built
 
 
 def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
@@ -507,6 +504,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     flap_until: datetime | None = None
     outage_days = {f.day for f in scenario.faults if f.kind == "price_outage" and f.day is not None}
     restarts = sorted(f.at for f in scenario.faults if f.kind == "restart" and f.at is not None)
+    failing_ticks = 0
     jumps = {
         f.at: f.seconds for f in scenario.faults if f.kind == "clock_jump" and f.at is not None
     }
@@ -524,6 +522,8 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 house.meter.inject_outage(fault.at, fault.seconds)
             elif fault.kind == "ble_flap":
                 flap_until = fault.at + timedelta(seconds=fault.seconds)
+            elif fault.kind == "engine_exception":
+                failing_ticks = fault.count
         if restarts and prev_now < restarts[0] <= now:
             restarts.pop(0)
             state = EngineState.from_sections(json.loads(json.dumps(state.to_sections())))
@@ -700,7 +700,14 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
 
         # -- tick ---------------------------------------------------------- #
         tick_started = _time.perf_counter()
-        state, snapshot, effects = engine.tick(state, inputs)
+        if failing_ticks > 0:
+            # D7 §8: the engine's own step raises; the tick counts the failure,
+            # republishes, and enters safe mode at three (D9 §5.3 `engine_exception_x3`).
+            failing_ticks -= 1
+            with patch.object(Engine, "_run", side_effect=RuntimeError("injected engine failure")):
+                state, snapshot, effects = engine.tick(state, inputs)
+        else:
+            state, snapshot, effects = engine.tick(state, inputs)
         result.tick_ms.append((_time.perf_counter() - tick_started) * 1000.0)
         result.ticks += 1
         if observer is not None:
@@ -913,6 +920,7 @@ def _apply_effects(  # noqa: PLR0917 - the loop's threaded bookkeeping
         sim_cmd = sim_command(decision.command)
         pending[command.load_id] = sim_cmd
         result.writes[command.load_id] = result.writes.get(command.load_id, 0) + 1
+        result.write_log.append((now, command.load_id))
         if month:
             result.month(month)["writes"] += 1
         bucket = int(now.timestamp() // 600)

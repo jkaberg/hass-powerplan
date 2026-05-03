@@ -35,9 +35,8 @@
 # trigger half (no full tick fires at the boundary) is WP1.1's.
 # INV-44 (publish always), INV-45 (per-load isolation) and INV-47 (knobs read live)
 # are covered by the pure engine (tests/core/engine/test_engine.py). INV-46 -
-# planning I/O never holds the tick lock - is the runtime's (D7 §9 17, WP1.1).
-INV-46
-INV-48
+# planning I/O never holds the tick lock - and INV-48 - the startup order - are
+# covered by the runtime (tests/runtime/test_runtime.py, WP1.1).
 
 # INV-54 - legionella (HLD §6.4, D4 §5.12). Covered by the `water_heater` type
 # (tests/core/loads/test_11_*, test_10j, test_14_*). INV-55 (target profiles),

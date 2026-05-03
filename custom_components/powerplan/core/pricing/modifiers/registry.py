@@ -9,9 +9,10 @@ as three more modules registered the same way.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
-from ..model import Schema
+from ..model import Field, FieldKind, Schema
 from .base import PriceModifier
 
 
@@ -50,8 +51,37 @@ def entry(key: str) -> ModifierEntry:
 
 
 def build(key: str, options: Mapping[str, Any]) -> PriceModifier:
-    """Build the modifier `key` from the options the config flow saved."""
-    return _REGISTRY[key].factory(**options)
+    """Build the modifier `key` from the options the config flow saved.
+
+    `entry.data` holds JSON: a `MONEY` field is a decimal string and a `LIST`
+    field a list - of scalars, or of records for a schedule, a tier table, a
+    day-type rate. The scalars are decoded here from the schema; a modifier
+    whose records need typing declares `from_options` and gets the decoded
+    mapping (`design/DECISIONS.md` D-0270). Typed options - a test passing
+    `Decimal`s and `TouPeriod`s - pass through unchanged.
+    """
+    entry_ = _REGISTRY[key]
+    decoded = {
+        field.key: _decode(field, options[field.key])
+        for field in entry_.schema
+        if field.key in options
+    }
+    from_options = getattr(entry_.factory, "from_options", None)
+    if from_options is not None:
+        built: PriceModifier = from_options(decoded)
+        return built
+    return entry_.factory(**decoded)
+
+
+def _decode(field: Field, value: Any) -> Any:
+    """Return one stored option as the modifier's dataclass expects it."""
+    if value is None:
+        return None
+    if field.kind is FieldKind.MONEY and not isinstance(value, Decimal):
+        return Decimal(str(value))
+    if field.kind is FieldKind.LIST and isinstance(value, list | tuple):
+        return tuple(value)
+    return value
 
 
 def chain_from(config: Sequence[tuple[str, Mapping[str, Any]]]) -> tuple[PriceModifier, ...]:

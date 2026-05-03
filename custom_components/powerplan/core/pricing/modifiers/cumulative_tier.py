@@ -9,16 +9,19 @@ fall and the planner can move load across it (D1 §2).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..model import Field, FieldKind, Schema
 from .base import with_component
 from .registry import register
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from ..context import PriceContext
     from ..model import Slot
 
@@ -73,6 +76,22 @@ class CumulativeTier:
 
     tiers: tuple[Tier, ...] = ()
     basis: TierBasis = TierBasis.MONTH
+
+    @classmethod
+    def from_options(cls, options: Mapping[str, Any]) -> CumulativeTier:
+        """Build the modifier from stored options: tiers as records (D-0270)."""
+        return cls(
+            tiers=tuple(
+                tier
+                if isinstance(tier, Tier)
+                else Tier(
+                    upto_kwh=None if tier.get("upto_kwh") is None else float(tier["upto_kwh"]),
+                    price=Decimal(str(tier["price"])),
+                )
+                for tier in options.get("tiers") or ()
+            ),
+            basis=TierBasis(options.get("basis", TierBasis.MONTH.value)),
+        )
 
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
         """Return `slot` with the tier component written (INV-4)."""

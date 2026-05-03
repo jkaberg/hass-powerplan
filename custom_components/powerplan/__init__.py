@@ -1,22 +1,20 @@
-"""The powerplan integration - loadable shell.
+"""The powerplan integration: one config entry per site (HLD §4, §5; D7 §5.5).
 
-HLD §4 and §5: one config entry per site, `entry.runtime_data` typed as
-`PowerplanConfigEntry`, services registered once in `async_setup`
-(PLAN §7 dec. 8). The real lifecycle - restore stores, release every load,
-restore setpoints, provision profiles, first tick, forward platforms
-(INV-48) - is built in WP1.1; this module exists so the integration is
-loadable in Home Assistant from day one (PLAN §8, "vertical slice first").
+`entry.runtime_data` is the site's `Runtime` (D7 §4.3): the engine, its store,
+its coordinator, its write gate and every subscription. Services are registered
+once in `async_setup` and never per entry (PLAN §7 dec. 8); they arrive with D8
+§5.7 in WP1.4.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
+from .runtime import Runtime, build_site
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -28,20 +26,15 @@ _LOGGER = logging.getLogger(__name__)
 # A site is only ever set up from a config entry; powerplan has no YAML surface.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-
-@dataclass
-class Runtime:
-    """Per-site runtime state held on the config entry (D7 §4.3).
-
-    A placeholder: the coordinator, the engine lock, the subscriptions and the
-    stores are added in WP1.1. It is deliberately not frozen - the real
-    `Runtime` is mutable, unlike everything that crosses a layer in `core/`.
-    """
-
-    site_name: str
-
-
 type PowerplanConfigEntry = ConfigEntry[Runtime]
+
+__all__ = [
+    "PowerplanConfigEntry",
+    "Runtime",
+    "async_setup",
+    "async_setup_entry",
+    "async_unload_entry",
+]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -55,17 +48,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:
-    """Set up one site."""
-    entry.runtime_data = Runtime(site_name=entry.title)
-    _LOGGER.debug("Site %s set up (entry %s)", entry.title, entry.entry_id)
+    """Set up one site: D7 §5.5's order, from the store to the triggers (INV-48)."""
+    runtime = Runtime(hass, entry, build_site(hass, entry))
+    entry.runtime_data = runtime
+    await runtime.start()
+    _LOGGER.debug("Site %s set up (entry %s): %s", entry.title, entry.entry_id, runtime.startup)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:
-    """Unload one site.
-
-    From WP1.1 on this stops the engine, releases every load (INV-26) and
-    flushes the store. There is nothing to release yet.
-    """
+    """Unload one site: stop, release every load (INV-26), flush the store."""
+    await entry.runtime_data.stop("unload")
     _LOGGER.debug("Site %s unloaded (entry %s)", entry.title, entry.entry_id)
     return True

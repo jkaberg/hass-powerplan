@@ -127,6 +127,8 @@ class Runtime:
     async def execute(effects: Effects)
 ```
 
+**In code (D-0271).** `runtime.py::Runtime(hass, entry, build)` over a `SiteBuild` that `build_site(hass, entry)` assembles from `entry.data` (INV-66): `SiteConfig`, the tariff `Evaluator` (the chosen preset, or a `NoPeak` spec on the price-only path), the holiday calendar, the `HaSensorsMeter` (or none), the price sources, the modifier chain and the forecaster (`CarryKnown` → `Synthesised` seeded with the chain's `TouSchedule`), the export modifier, the carriers, the presence answers and the ceiling knobs. Loads and their `LoadDevice`s are on the build too - the runtime releases, restores, reads and writes them - and are filled by the load subentry flow and the hot paths; until then the tuple is empty and the tests inject them. The runtime owns the `SiteStore`, the push `DataUpdateCoordinator[Snapshot]`, the `WriteGate` (its `StateReader` is `hass.states.get`, the one place outside `providers/` that reads it - INV-3), one `asyncio.Lock`, the raw price store (`RawSlotStore`, D1 §5.1's `RawStore`, persisted as the `prices` section) and a `startup` trail that names the lifecycle steps in the order they ran (§9 7). `Inputs.trigger` carries the trigger's name into the snapshot.
+
 ---
 
 ## 5. Algorithms
@@ -198,6 +200,8 @@ triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the r
 | `desired_state_reconcile` / `powerplan.replan` | event / service | tick / plan |
 | HA start | `EVENT_HOMEASSISTANT_STARTED` | lifecycle §5.5 |
 
+Grid power and production power share one 10 s debounce with the loads' entities: a charger's power sensor changes every second, and each burst is one tick after the quiet period, never one per change. The register report is an immediate tick (INV-13), and one landing while the lock is held is remembered and run as a trailing tick, never dropped (§9 4). The heartbeat is `async_track_time_interval(30 s)`, and a wall-clock trigger due within 5 s of a window boundary runs 5 s after it instead (INV-43). The window fallback fires at boundary + 5 min and checks whether the register **reported** since the boundary (`WindowState.last_register_at`), not whether the window rolled - D3 closes a window on the integral after its grace, so "rolled" is always true, and only a missing report earns the tick. The quarter-hour plan runs at `HH:00/15/30/45 + 20 s`. Presence `person` entities are a tick and a plan. Price sources with a publication get one timer per source at `next_fetch_at` (re-armed for the next day after each fire), retries at `next_retry_at` per failed source, and every site gets the `HH:07/22/37/52` hole check. An entity-backed source is re-read on its entity's change. Every subscription is kept on the runtime and released by one `entry.async_on_unload` hook and by `stop()`, whichever comes first (D-0271). A production reading 30 % or more off its forecast for 15 min replans once per episode, in the runtime after the tick (D-0655).
+
 There's no cron at `HH:00` running a full tick, the register report is the boundary (INV-43).
 
 ### 5.4 Peak warning
@@ -235,9 +239,13 @@ options / subentry updates: §2
 async_migrate_entry: config-entry version migrations (entry data), separate from store migrations
 ```
 
+**In code (D-0271).** `async_setup_entry` is `Runtime(hass, entry, build_site(hass, entry))` then `start()`: 1 the store is loaded and `EngineState.from_sections` restores it (an empty store is a fresh state); 2 the engine is built over the restored `WindowState` and the D11 adapter over the `accounting` section, and every load's release plan is tracked on the gate; a stale `engine_failing` repair is deleted, because a restart clears safe mode (§2); 3–9 run at once when Home Assistant is running and on `EVENT_HOMEASSISTANT_STARTED` otherwise: `release_all` (the gate's pure `release()` per load), `restore_all` (D4 `restore()`, a correction), provisions (D4's, per device - none until WP2.2's profiles are bound), the first tick (`trigger = "startup"`), the platforms (`PLATFORMS` is empty until WP1.4), the triggers, and the first price fetch as a task that plans when it lands - so the planning cycle starts after the first tick and its I/O never holds the lock (INV-46). `stop(reason)` releases the subscriptions, `release_all`, cancels the gate's read-backs, flushes and closes the store; `async_unload_entry` and `homeassistant_stop` both call it, once.
+
 ### 5.6 Effects execution and the single writer (INV-3)
 
 `execute(effects)`: commands go to each load's `WriteGate` in priority order (transport budgets apply), HA events are fired with `hass.bus.async_fire("powerplan_<kind>", payload)`, notifications go to D8's policy, repairs via `ir.async_create_issue`, and dirty store sections are saved per the throttle. `execute` is the only place `hass.services.async_call` is reachable, through `writegate.py`.
+
+**In code (D-0271).** Each `LoadCommand` becomes an `Actuation(load_id, name, device, load.gate, decision)`; the gate's `Outcome.gate` is adopted into `LoadState.gate` and the `loads` section set, so what the device actually accepted is what the next tick decides against (D4 §9 8). Events carry `site` and `entry_id` beside the engine's payload. A repair's registry id is `{entry_id}_{issue_id}`, created or deleted by `RepairIssue.active`; `strings.json` carries `issues.engine_failing` and `issues.load_error`. Notifications are logged at INFO until `notifications.py` lands. `_persist` writes every dirtied section plus `runtime`, `at_once` for `store_now`; the `prices` section is the raw store's alone, written after a fetch that changed it, and `EngineState.prices` is kept equal to it so the sections round-trip.
 
 ### 5.7 Recorder hygiene (INV-61)
 
@@ -279,6 +287,8 @@ The file is one file: a save writes the whole document, and the dirty set only d
 | Two sites on one meter | refused at setup | flow error |
 | Safe mode | all released, observe, publishing continues | repair + notification |
 
+**WP1.1 (D-0272).** "All released" is D4's release: every shed is undone and the site observes. A setpoint a plan had moved *inside* the comfort band - a `heat_capacitor` coast at 23 °C against a 24 °C comfort - is not a shed and stays where it is; the next start's restore corrects it (INV-27), and `engine_exception_x3` asserts the band rather than the number.
+
 Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, breaches and safe mode at WARNING, exceptions at ERROR with the input hash (the assembled `Inputs` can be dumped for a bug report via `dump_state`).
 
 ---
@@ -300,6 +310,8 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 13. Tick budget: a 20-load synthetic site ticks in < 50 ms (perf test, D9).
 14. Clock jump handling.
 15. Snapshot schema golden: field set stable (D8 depends on it).
+
+**WP1.1** - 4 (the boundary guard, the fallback's two cases, the trailing tick), 6, 7, 8, 14 and 17 (INV-46: the fetch runs before the lock) are `tests/runtime/test_runtime.py`; 10 and 11 are WP1.1a's; the two scenario rows are `tests/scenarios/test_phase1.py`. 9 (subentry hot paths) is WP2.6's, 12 WP1.5's, 13 the perf tier's.
 16. Accounting close runs in `plan()` once per closed price slot and never in `tick()` (INV-68); a planning cycle skipped for an hour closes the four-slot backlog on the next one, oldest first; `month_closed` is emitted exactly once per rollover; a frozen tick (stale meter) still lets the load meters integrate.
 17. Planning I/O never holds the tick lock: a 3 s executor job inside `run_plan` does not skip a heartbeat tick; the lock is held for < 500 ms per cycle (INV-46).
 

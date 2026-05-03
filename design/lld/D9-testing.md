@@ -72,7 +72,7 @@ tools/
 ```python
 @dataclass
 class Scenario:          name: str; house: str; days: int; curve: CurveSpec; weather: WeatherSpec; events: list[EventSpec]
-                         faults: list[FaultSpec]   # meter_stale(t, dur), ble_flap(t, dur), price_outage(day), restart(t), clock_jump(t, s)
+                         faults: list[FaultSpec]   # meter_stale(t, dur), ble_flap(t, dur), price_outage(day), restart(t), clock_jump(t, s), engine_exception(t, n) - WP1.1: n consecutive ticks in which the engine's own step raises
                          expect: list[Expectation] # windows_over_target == 0; comfort_violations == 0; legionella_completed ≥ 1; writes_per_device_per_10min ≤ 1; …
 
 @dataclass
@@ -165,7 +165,7 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 | `reference_winter_day` | 0 windows over target; EV reaches 80 % by departure (07:30); tank at its 75 °C ready temperature by 06:30 within the thermostat's differential; bathrooms never below their floor (D4 §6.1: 21 °C); ≤ 1 cmd/dev/10 min Z-Wave; no unforced commitment break (INV-32) |
 | `flat_price_night` (Norgespris) | no unforced commitment break across replans (INV-32); the EV's plan is one contiguous run; at most two stops - the pause on arrival for the cheaper night (Tensio's energiledd still has `dag`/`natt` under Norgespris) and the stop when done; no start/stop churn |
 | `dst_autumn` / `dst_spring` | 25/23 windows in the DST day; no duplicate/missing window; plans without gaps; `dst_spring` falls in the household's Easter week (vacation), so the tank's ready-by is dropped by design (D4 §5.12) |
-| `restart_mid_window` | used_kwh continuous; no gate opens; loops restored not adopted |
+| `restart_mid_window` | used_kwh continuous; no gate opens; loops restored not adopted. **As asserted (`tests/scenarios/test_phase1.py`):** the winter evening with the state round-tripped through the store sections at 18:57 local, judged against the same evening without the restart - every closed window's kWh equal to 20 Wh, no load with more writes in the five minutes after the restart than the control run, the loops' comfort target and floor unchanged across the restart and never the device's eco setpoint, and the first tick after it not frozen |
 | `ble_flaps` | transient not failure; no 0 A writes; sessions dropped == 0 |
 | `price_outage_48h` | plans adopted on the outage days are built on the synthesised floor; the EV's outage plans put more energy in 22:00–06:00 than in the day; the hysteresis is doubled (`stale`) |
 | `oven_sunday_roast` | outlier not integrated; reserve unchanged next window; peak warning fires ≥ 20 min before |
@@ -179,7 +179,7 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 | `au_solar_soak` (v1.x) | surplus consumed before grid |
 | `circuit_garage_32a` | EV + sauna never exceed 32 A; circuit breach sheds EV only |
 | `hybrid_gas_switch` | gas chosen at COP < ratio; hysteresis prevents flapping |
-| `engine_exception_x3` | safe mode; all released |
+| `engine_exception_x3` | safe mode; all released. **As asserted:** the runner patches the engine's step to raise for three ticks (`Fault(kind="engine_exception", at, count=3)`); safe mode is entered on the third, every later snapshot keeps it with the site off and the publish continuing; the charger is back at its own maximum, the loops out of any shed and inside their band (a plan's coast setpoint is not a shed - D7 §8, D-0272), the tank at its comfort minimum, and nothing is written afterwards |
 | `savings_vs_twin` | `reference_winter_day` × 30 controlled vs. the same 30 days with every load `always` on a `NoPeak` site; D11's reported counterfactual cost within ±10 % of the twin's actual cost; site savings sign correct; capacity savings = the twin's fee − the controlled fee exactly (D11 §9) |
 | `observe_calibration` | every load in `observe` for 5 days; per load `\|savings\| ≤ 5 %` of cost and `calibration_error < 0.10`; no parameter changed by calibration (INV-63, D11 §5.5) |
 

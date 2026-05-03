@@ -66,7 +66,20 @@ async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
-    assert entry.runtime_data == Runtime(site_name="Home")
+    assert isinstance(entry.runtime_data, Runtime)
+    assert entry.runtime_data.site_name == "Home"
+    # D7 §5.5's order, from the store to the first tick and the triggers (INV-48).
+    assert entry.runtime_data.startup == [
+        "store",
+        "build",
+        "release",
+        "restore",
+        "provision",
+        "first_tick",
+        "platforms",
+        "triggers",
+        "seed",
+    ]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()

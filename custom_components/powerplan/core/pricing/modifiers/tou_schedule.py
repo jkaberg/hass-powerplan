@@ -9,9 +9,10 @@ not have to know which domain owns the filter.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ...tariffs.grammar import HolidayMode, TimeFilter
 from ..model import Field, FieldKind, Schema
@@ -56,6 +57,19 @@ class TouSchedule:
     periods: tuple[TouPeriod, ...] = ()
     fallback: Decimal = Decimal(0)
 
+    @classmethod
+    def from_options(cls, options: Mapping[str, Any]) -> TouSchedule:
+        """Build the schedule from stored options (D1 §6, D-0270).
+
+        A period is a `TouPeriod`, or a record: a preset's `{"hours": [[360,
+        1320]], "price": 0.3604}` (D2 §6, `energy_components`), or a stored
+        `{"when": {...}, "price": "…"}` with the `TimeFilter`'s own fields.
+        """
+        return cls(
+            periods=tuple(_period_of(raw) for raw in options.get("periods") or ()),
+            fallback=Decimal(str(options.get("fallback") or 0)),
+        )
+
     def price_at(self, when: datetime, ctx: PriceContext) -> Decimal:
         """Return the charge in force at `when` (D1 §5.4)."""
         for period in self.periods:
@@ -66,3 +80,31 @@ class TouSchedule:
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
         """Return `slot` with the grid energy component written (INV-4)."""
         return with_component(slot, self.component, self.price_at(slot.start, ctx))
+
+
+def _period_of(raw: TouPeriod | Mapping[str, Any]) -> TouPeriod:
+    """Return one period, typed."""
+    if isinstance(raw, TouPeriod):
+        return raw
+    return TouPeriod(when=_filter_of(raw), price=Decimal(str(raw["price"])))
+
+
+def _filter_of(raw: Mapping[str, Any]) -> TimeFilter | None:
+    """Return the period's time filter: the stored `when`, or a preset's flat fields."""
+    when = raw.get("when")
+    if isinstance(when, TimeFilter):
+        return when
+    source: Mapping[str, Any] = when if isinstance(when, Mapping) else raw
+    if not any(source.get(key) for key in ("hours", "weekdays", "months")) and not source.get(
+        "holidays"
+    ):
+        return None
+    hours = source.get("hours")
+    return TimeFilter(
+        months=None if source.get("months") is None else tuple(int(m) for m in source["months"]),
+        weekdays=(
+            None if source.get("weekdays") is None else tuple(int(d) for d in source["weekdays"])
+        ),
+        hours=None if hours is None else tuple((int(a), int(b)) for a, b in hours),
+        holidays=HolidayMode(source.get("holidays", HolidayMode.IGNORE.value)),
+    )

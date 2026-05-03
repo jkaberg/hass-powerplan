@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..model import Field, FieldKind, Schema
 from .base import SPOT, with_component
@@ -69,6 +69,30 @@ class DayType:
 
     rates: Mapping[str, DayTypeRate] = field(default_factory=dict)
     fallback: str | None = None
+
+    @classmethod
+    def from_options(cls, options: Mapping[str, Any]) -> DayType:
+        """Build the modifier from stored options: rates by type name (D-0270)."""
+        raw_rates = options.get("rates") or {}
+        rows = (
+            raw_rates.items()
+            if isinstance(raw_rates, Mapping)
+            else ((str(row["type"]), row) for row in raw_rates)
+        )
+        return cls(
+            rates={
+                name: rate
+                if isinstance(rate, DayTypeRate)
+                else DayTypeRate(
+                    price=None if rate.get("price") is None else Decimal(str(rate["price"])),
+                    multiplier=(
+                        None if rate.get("multiplier") is None else Decimal(str(rate["multiplier"]))
+                    ),
+                )
+                for name, rate in rows
+            },
+            fallback=options.get("fallback"),
+        )
 
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
         """Return `slot` with the day-type component written (INV-4)."""

@@ -536,5 +536,15 @@
         "absent": "not configured"
       }
     }
+  },
+  "issues": {
+    "engine_failing": {
+      "title": "powerplan is in safe mode",
+      "description": "The engine failed {failures} times in a row ({error}). Every load has been released and the site is observing only. A restart clears safe mode; if it returns, please report the log."
+    },
+    "load_error": {
+      "title": "A load failed and is held",
+      "description": "The load {load} raised an error during a tick ({error}) and is held in its current state while the other loads continue. Check the device and its bound entities."
+    }
   }
 }

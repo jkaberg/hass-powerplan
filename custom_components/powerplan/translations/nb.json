@@ -536,5 +536,15 @@
         "absent": "ikke satt opp"
       }
     }
+  },
+  "issues": {
+    "engine_failing": {
+      "title": "powerplan er i sikker modus",
+      "description": "Motoren feilet {failures} ganger på rad ({error}). Alle laster er sluppet og anlegget bare observerer. En omstart opphever sikker modus; kommer den tilbake, meld inn loggen."
+    },
+    "load_error": {
+      "title": "En last feilet og holdes",
+      "description": "Lasten {load} ga en feil under en tikk ({error}) og holdes i nåværende tilstand mens de andre lastene fortsetter. Sjekk enheten og de tilknyttede entitetene."
+    }
   }
 }

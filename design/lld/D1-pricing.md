@@ -231,6 +231,8 @@ sources with publication None (entity): re-read on the entity's state change (D7
 ```
 A restart costs zero fetches when the store is complete. A source is `dead` after 24 h without a successful fetch (repair, D8).
 
+`runtime.py` keeps the persisted store - `RawSlotStore`, the `prices` section, every source's slots 15 days deep, `has_day` only true when a source's slots chain from local midnight to local midnight - and runs this schedule on HA's timers: one `next_fetch_at` timer per source with a publication (re-armed for the next local day after each fire), `next_retry_at` per failed source with the attempt count reset on success, the `HH:07/22/37/52` hole check, and a state change subscription for a source without a publication. Every fetch that adds slots rebuilds the curves and runs a planning cycle. The first fetch is a task started after the first tick, so no fetch ever holds the tick lock (INV-46). A source 24 h without a delivery is logged as dead and gets a repair (D-0271).
+
 ### 5.2 Normalisation
 
 `value_major_per_kwh = value × unit_factor × currency_factor`: `mwh → /1000`, `minor → /100`. If the source's currency isn't the site's the slot is refused, unless the source has a fixed `fx_rate` (Advanced) - converting prices silently is worse than refusing. Naive local timestamps are localised with the *source's* declared timezone, then converted to UTC. Slot duration comes from consecutive starts, a day must sum to 23/24/25 h, and a day with a gap is stored and the gap reported (Nord Pool has published partial days).
@@ -290,6 +292,8 @@ A local day has 23, 24 or 25 hours, so 92/96/100 quarter slots. Slot arithmetic 
 ---
 
 ## 6. Configuration schema
+
+**WP1.1 (D-0270).** `modifiers.build(key, options)` decodes what `entry.data` holds: a `MONEY` field's decimal string becomes a `Decimal`, a `LIST` field a tuple, and a modifier whose list holds records - `tou_schedule`'s periods, `day_type`'s rates, `cumulative_tier`'s tiers - declares `from_options` and types them itself (a preset's `{"hours": [[360, 1320]], "price": 0.3604}` and a stored `{"when": {…}, "price": "…"}` both become a `TouPeriod`). Typed options pass through unchanged, so a test may still build a modifier directly.
 
 Site flow, step **prices** (skipped on the *fuse only* path):
 

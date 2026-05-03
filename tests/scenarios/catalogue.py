@@ -165,7 +165,50 @@ def observe_calibration() -> Scenario:
     )
 
 
+#: D7's two rows (D9 §5.3): a restart in the middle of a window, and three engine
+#: failures in a row - both on the winter house, both inside its first evening.
+RESTART_AT = WINTER_START + timedelta(hours=2, minutes=40)
+EXCEPTION_AT = WINTER_START + timedelta(hours=2)
+ENGINE_FAILURES = 3
+
+
+def _winter_evening(name: str, faults: tuple[Fault, ...], days: float = 0.5) -> Scenario:
+    return Scenario(
+        name=name,
+        house=lambda: house(
+            day=WINTER_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.35,
+            slab_start_c=24.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=WINTER_START,
+        days=days,
+        faults=faults,
+    )
+
+
+def restart_mid_window() -> Scenario:
+    """Return the winter evening with Home Assistant restarting at 18:57 local (D7 §9 14, D9 §5.3)."""
+    return _winter_evening("restart_mid_window", (Fault(kind="restart", at=RESTART_AT),))
+
+
+def restart_mid_window_control() -> Scenario:
+    """Return the same evening without the restart: what the restart may not change."""
+    return _winter_evening("restart_mid_window_control", ())
+
+
+def engine_exception_x3() -> Scenario:
+    """Return the winter evening with the engine raising three ticks in a row (D7 §9 6)."""
+    return _winter_evening(
+        "engine_exception_x3",
+        (Fault(kind="engine_exception", at=EXCEPTION_AT, count=ENGINE_FAILURES),),
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
+PHASE1 = (restart_mid_window, engine_exception_x3)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)
