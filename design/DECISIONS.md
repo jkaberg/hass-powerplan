@@ -1212,3 +1212,18 @@ The benchmark's floor loops answer `loss_coeff_w_per_k` with a fit against their
 
 Safe mode is D4's `release()` per load: sheds undone, site observing. A setpoint a plan moved within the comfort band stays; the next start's `restore()` corrects it (INV-27). Re-targeting to comfort would be a restore, a write decided by an engine that has just proven it can't be trusted. Affects D7 §8, D9 §5.3.
 **Rejected:** restoring comfort in safe mode - the failing engine would be writing setpoints.
+
+### D-0273 · Event payloads follow D8's table, and one that doesn't is dropped
+
+`events.py` has one voluptuous schema per `EventKind` (listed fields required, extras allowed) and the runtime validates before firing. The engine's payloads were brought in line with D8 §5.6 (`stage_changed`, `breach`, per-load `comfort_violation`, `device_unhealthy` with recovery, new `level_changed`, `month_closed` enriched from the ledger). A drifting schema becomes a logged exception in tests rather than a missing key in someone's automation. Affects D8 §5.6.
+**Rejected:** documenting the payloads as they were - D8 §5.6 is what automations are written against.
+
+### D-0274 · Notification texts live in code, not in `strings.json`
+
+`notifications.py::TEXTS` holds each category's title and body in `en` and `nb`, filled by `render(category, params, language)`. hassfest validates `strings.json` against HA's own list of sections and fails on a custom `notifications` one, and hassfest is a gate (D8 §9 13). Affects D8 §5.8, §5.11.
+**Rejected:** hiding them under `exceptions.*` or `issues.*` - misuses sections whose meaning HA checks.
+
+### D-0275 · The site surface: restored knobs, one repairs catalogue, no empty rows
+
+(1) `switch.<site>_active`, the three selects and `number.<site>_margin_kwh` are `RestoreEntity`s that push their state into the runtime on add; the runtime keeps knobs in memory only (INV-47). (2) `repairs.py` is one catalogue with severity and fixability per id, used for both engine and runtime conditions, with a fix flow for `engine_failing`. (3) The notification policy's `last_sent` lives in `EventsState.last_sent`, the `events` section D8 §7 names. (4) A row with no action behind it yet isn't shown. (5) `select.<site>_target` offers `auto`, the tariff's steps, or the configured kW for a stepless tariff. Affects D8 §5.5, §5.7, §5.9; D7 §5.6, §7.
+**Rejected:** knobs in the store's `runtime` section - that shape is the engine's. Disabled placeholder buttons - disabled-by-default is for noise, not for absence.

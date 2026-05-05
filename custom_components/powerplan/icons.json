@@ -1,0 +1,58 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "peak_warning": {"default": "mdi:chart-bell-curve-cumulative"},
+      "prices_tomorrow": {"default": "mdi:calendar-check", "state": {"off": "mdi:calendar-question"}},
+      "meter_stale": {"default": "mdi:gauge-empty"},
+      "meter_degraded": {"default": "mdi:gauge-low"},
+      "meter_seam": {"default": "mdi:timer-sand"}
+    },
+    "sensor": {
+      "window_used": {"default": "mdi:gauge"},
+      "window_projected": {"default": "mdi:chart-line"},
+      "ceiling": {"default": "mdi:arrow-collapse-up"},
+      "allowance": {"default": "mdi:flash-outline"},
+      "stage": {"default": "mdi:stairs"},
+      "level": {"default": "mdi:stairs-up"},
+      "projected_level": {"default": "mdi:stairs-up"},
+      "advice": {"default": "mdi:lightbulb-on-outline"},
+      "next_peak_warning": {"default": "mdi:bell-alert-outline"},
+      "price": {"default": "mdi:cash"},
+      "price_forecast": {"default": "mdi:chart-timeline-variant"},
+      "price_export": {"default": "mdi:cash-refund"},
+      "price_carrier": {"default": "mdi:fire"},
+      "plan": {"default": "mdi:calendar-clock"},
+      "production": {"default": "mdi:solar-power"},
+      "surplus": {"default": "mdi:solar-power-variant"},
+      "meter_health": {"default": "mdi:heart-pulse"},
+      "price_source_health": {"default": "mdi:cloud-check-outline"},
+      "baseline_confidence": {"default": "mdi:chart-bell-curve"},
+      "tick_ms": {"default": "mdi:timer-outline"},
+      "reasons": {"default": "mdi:text-box-outline"}
+    },
+    "select": {
+      "presence": {"default": "mdi:home-account"},
+      "target": {"default": "mdi:target"},
+      "risk": {"default": "mdi:dice-multiple"}
+    },
+    "number": {
+      "margin_kwh": {"default": "mdi:arrow-collapse-down"}
+    },
+    "switch": {
+      "active": {"default": "mdi:power"}
+    },
+    "button": {
+      "replan": {"default": "mdi:calendar-refresh"}
+    }
+  },
+  "services": {
+    "replan": {"service": "mdi:calendar-refresh"},
+    "release": {"service": "mdi:lock-open-variant-outline"},
+    "boost": {"service": "mdi:rocket-launch-outline"},
+    "run_now": {"service": "mdi:play-circle-outline"},
+    "set_presence": {"service": "mdi:home-account"},
+    "reset_window_anchor": {"service": "mdi:anchor"},
+    "set_peak": {"service": "mdi:chart-bar"},
+    "dump_state": {"service": "mdi:bug-outline"}
+  }
+}

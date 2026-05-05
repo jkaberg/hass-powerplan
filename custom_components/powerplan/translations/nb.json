@@ -446,6 +446,214 @@
       "already_configured": "Denne måleren er allerede satt opp som et powerplan-anlegg."
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "peak_warning": {
+        "name": "Effektvarsel"
+      },
+      "prices_tomorrow": {
+        "name": "Morgendagens priser klare"
+      },
+      "meter_stale": {
+        "name": "Måler utdatert"
+      },
+      "meter_degraded": {
+        "name": "Måler svekket"
+      },
+      "meter_seam": {
+        "name": "Timeskifte"
+      }
+    },
+    "sensor": {
+      "window_used": {
+        "name": "Brukt i timen"
+      },
+      "window_projected": {
+        "name": "Forventet i timen"
+      },
+      "ceiling": {
+        "name": "Tak"
+      },
+      "allowance": {
+        "name": "Tillatt effekt"
+      },
+      "stage": {
+        "name": "Trinn"
+      },
+      "level": {
+        "name": "Kapasitetstrinn"
+      },
+      "projected_level": {
+        "name": "Forventet kapasitetstrinn"
+      },
+      "advice": {
+        "name": "Råd"
+      },
+      "next_peak_warning": {
+        "name": "Neste effektvarsel"
+      },
+      "price": {
+        "name": "Pris"
+      },
+      "price_forecast": {
+        "name": "Prisprognose"
+      },
+      "price_export": {
+        "name": "Salgspris"
+      },
+      "price_carrier": {
+        "name": "Pris {carrier}"
+      },
+      "plan": {
+        "name": "Plan"
+      },
+      "production": {
+        "name": "Produksjon"
+      },
+      "surplus": {
+        "name": "Overskudd"
+      },
+      "meter_health": {
+        "name": "Målerhelse",
+        "state": {
+          "ok": "OK",
+          "stale": "Utdatert",
+          "degraded": "Svekket"
+        }
+      },
+      "price_source_health": {
+        "name": "Priskildehelse",
+        "state": {
+          "ok": "OK",
+          "stale": "Utdatert",
+          "dead": "Død"
+        }
+      },
+      "baseline_confidence": {
+        "name": "Grunnlastsikkerhet"
+      },
+      "tick_ms": {
+        "name": "Tikketid"
+      },
+      "reasons": {
+        "name": "Begrunnelser"
+      }
+    },
+    "select": {
+      "presence": {
+        "name": "Tilstedeværelse",
+        "state": {
+          "auto": "Automatisk",
+          "home": "Hjemme",
+          "away": "Borte",
+          "vacation": "Ferie"
+        }
+      },
+      "target": {
+        "name": "Kapasitetsmål",
+        "state": {
+          "auto": "Automatisk",
+          "kw": "Konfigurert kW"
+        }
+      },
+      "risk": {
+        "name": "Risiko",
+        "state": {
+          "flat": "Aldri over målet",
+          "free_ride": "Bruk dagens betalte timer",
+          "full": "Sats på periodesnittet"
+        }
+      }
+    },
+    "number": {
+      "margin_kwh": {
+        "name": "Margin"
+      }
+    },
+    "switch": {
+      "active": {
+        "name": "Aktiv"
+      }
+    },
+    "button": {
+      "replan": {
+        "name": "Planlegg på nytt"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_site": {
+      "message": "Ingen lastet powerplan-anlegg passer til {site}."
+    },
+    "unknown_load": {
+      "message": "Ingen last med id {load} på dette anlegget."
+    },
+    "set_peak_needs_a_day_or_a_month": {
+      "message": "set_peak trenger en dato eller en måned."
+    }
+  },
+  "issues": {
+    "engine_failing": {
+      "title": "powerplan er i sikker modus",
+      "description": "Motoren feilet {failures} ganger på rad ({error}). Alle laster er sluppet og anlegget bare observerer. En omstart opphever sikker modus; kommer den tilbake, meld inn loggen."
+    },
+    "load_error": {
+      "title": "En last feilet og holdes",
+      "description": "Lasten {load} ga en feil under en tikk ({error}) og holdes i nåværende tilstand mens de andre lastene fortsetter. Sjekk enheten og de tilknyttede entitetene."
+    },
+    "meter_stale": {
+      "title": "Strømmåleren sluttet å rapportere",
+      "description": "{site}: effektavlesningen har vært utdatert i mer enn ti minutter. Tikken er frosset til den er tilbake; sjekk målerintegrasjonen."
+    },
+    "register_missing": {
+      "title": "Ingen målerstand på et døgn",
+      "description": "{site}: importregisteret har ikke rapportert på 24 timer. Timene lukkes på integralet i stedet; sjekk målerintegrasjonen."
+    },
+    "scaling_mismatch": {
+      "title": "Effekt og målerstand er uenige",
+      "description": "{site}: effektintegralet har avveket mer enn 5 % fra målerstanden i seks timer. En av sensorene kan være feil skalert."
+    },
+    "price_source_dead": {
+      "title": "En priskilde er død",
+      "description": "{site}: {source} har ikke levert på 24 timer. Prisene syntetiseres til den er tilbake."
+    },
+    "preset_outdated": {
+      "title": "Tariffmalen er endret",
+      "description": "{site}: den leverte malen {preset} har andre versjoner enn dem anlegget ble satt opp med. Anlegget beholder sin versjon; sett opp tariffen på nytt for å ta i bruk den nye."
+    },
+    "bound_helper_missing": {
+      "title": "En tilknyttet hjelper er borte",
+      "description": "{site}: en tidsplan, person eller kalender anlegget var knyttet til finnes ikke lenger."
+    },
+    "role_missing": {
+      "title": "En påkrevd entitet er borte",
+      "description": "{site}: en entitet en last var knyttet til finnes ikke lenger."
+    },
+    "provision_refused": {
+      "title": "En enhet avviser oppsettet",
+      "description": "{site}: en enhet avviser stadig innstillingene powerplan trenger."
+    },
+    "legionella_at_risk": {
+      "title": "Legionellasyklusen er i fare",
+      "description": "{site}: varmtvannsberederen rekker ikke legionellasyklusen i tide."
+    },
+    "delegated_idle": {
+      "title": "En delegert lasts styring er taus",
+      "description": "{site}: en last overlatt til en annen styring har ikke rørt seg på 24 timer."
+    },
+    "savings_low_confidence": {
+      "title": "Besparelsen er usikker",
+      "description": "{site}: en lasts kontrafaktiske forbruk har bommet på kalibreringen i en uke; besparelsen vises med lav sikkerhet."
+    },
+    "notify_service_missing": {
+      "title": "Varslingstjeneste mangler",
+      "description": "{site}: varslingstjenesten {service} finnes ikke. Varsler faller tilbake til vedvarende varsler."
+    },
+    "store_reset": {
+      "title": "Lageret ble nullstilt",
+      "description": "{site}: anleggets lagerfil kunne ikke leses og ble flyttet til {path}. Anlegget startet med et tomt lager; timens energi bygges opp igjen fra målerstanden."
+    }
+  },
   "selector": {
     "voltage_system": {
       "options": {
@@ -537,14 +745,126 @@
       }
     }
   },
-  "issues": {
-    "engine_failing": {
-      "title": "powerplan er i sikker modus",
-      "description": "Motoren feilet {failures} ganger på rad ({error}). Alle laster er sluppet og anlegget bare observerer. En omstart opphever sikker modus; kommer den tilbake, meld inn loggen."
+  "services": {
+    "replan": {
+      "name": "Planlegg på nytt",
+      "description": "Hent det som mangler og kjør en planleggingsrunde nå.",
+      "fields": {
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget som skal planlegges; alle når feltet er tomt."
+        }
+      }
     },
-    "load_error": {
-      "title": "En last feilet og holdes",
-      "description": "Lasten {load} ga en feil under en tikk ({error}) og holdes i nåværende tilstand mens de andre lastene fortsetter. Sjekk enheten og de tilknyttede entitetene."
+    "release": {
+      "name": "Slipp",
+      "description": "Opphev en utkobling på én last og la modusen stå.",
+      "fields": {
+        "load": {
+          "name": "Last",
+          "description": "Lastens id."
+        },
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget lasten hører til."
+        }
+      }
+    },
+    "boost": {
+      "name": "Boost",
+      "description": "Sett en last i tvunget modus en stund.",
+      "fields": {
+        "load": {
+          "name": "Last",
+          "description": "Lastens id."
+        },
+        "hours": {
+          "name": "Timer",
+          "description": "Hvor lenge; lastens maksimum når feltet er tomt."
+        },
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget lasten hører til."
+        }
+      }
+    },
+    "run_now": {
+      "name": "Kjør nå",
+      "description": "Start et apparats program nå, om kapasiteten tillater det.",
+      "fields": {
+        "load": {
+          "name": "Last",
+          "description": "Lastens id."
+        },
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget lasten hører til."
+        }
+      }
+    },
+    "set_presence": {
+      "name": "Sett tilstedeværelse",
+      "description": "Overstyr hvem som er hjemme, eventuelt til et tidspunkt.",
+      "fields": {
+        "mode": {
+          "name": "Modus",
+          "description": "Automatisk, hjemme, borte eller ferie."
+        },
+        "until": {
+          "name": "Til",
+          "description": "Når automatikken tar over igjen."
+        },
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget; alle når feltet er tomt."
+        }
+      }
+    },
+    "reset_window_anchor": {
+      "name": "Nullstill timeanker",
+      "description": "Forankre tariffvinduet på nåværende målerstand (nødløsning).",
+      "fields": {
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget; alle når feltet er tomt."
+        }
+      }
+    },
+    "set_peak": {
+      "name": "Sett topp",
+      "description": "Overstyr én dags eller én måneds topp i tariffhistorikken.",
+      "fields": {
+        "date": {
+          "name": "Dato",
+          "description": "Dagen toppen gjelder."
+        },
+        "month": {
+          "name": "Måned",
+          "description": "Måneden (ÅÅÅÅ-MM) toppen gjelder."
+        },
+        "kw": {
+          "name": "kW",
+          "description": "Toppen i kW."
+        },
+        "note": {
+          "name": "Notat",
+          "description": "Hvorfor."
+        },
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget; alle når feltet er tomt."
+        }
+      }
+    },
+    "dump_state": {
+      "name": "Dump tilstand",
+      "description": "Returner siste øyeblikksbilde og de sammensatte inndataene til en feilrapport.",
+      "fields": {
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget; alle når feltet er tomt."
+        }
+      }
     }
   }
 }

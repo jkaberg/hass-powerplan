@@ -225,6 +225,8 @@ Monetary sensors use `state_class: total` (not `total_increasing`: negative pric
 
 Availability: an entity is `available` when the coordinator has a Snapshot; load entities additionally when the load is not `unhealthy(stale roles)`.
 
+**In code (D-0275).** `entity.py::PowerplanEntity` is the base: the site device, `has_entity_name` with the key as translation key, `powerplan_{entry_id}_{key}` as unique id, availability from the coordinator's snapshot, and a content-digest gate on `_handle_coordinator_update` for the rows marked recorder-excluded (`price_forecast.slots`, `plan.by_load`, `reasons.trail`, `advice.items` - all in `_unrecorded_attributes`, none with a `state_class`; §9 6). The site rows ship in `sensor.py` (table-driven `SiteSensorDescription`s), `binary_sensor.py`, `switch.py`, `select.py`, `number.py`, `button.py` and `event.py`. `switch.<site>_active`, the three selects and `number.<site>_margin_kwh` are `RestoreEntity`s: the last state is pushed back into the runtime when the entity is added, which is how a knob survives a restart (the runtime reads knobs live - INV-47 - and holds nothing across restarts but the store). `select.<site>_target`'s options are the tariff's own steps (`step:<i>`) plus `auto`, or `kw` for a tariff without steps. `sensor.<site>_price_<carrier>` exists per configured carrier and `_price_export` when an export price is configured; `_production` and `_surplus` are enabled by default only when a production sensor is bound. `button.<site>_rebuild_peak_history` and `_rebuild_baseline` land with the seeds they press; `sensor.<site>_cost` and `_savings` with WP2.7. Load entities are WP2.4's.
+
 ### 5.6 Events (bus) - payload schemas
 
 | event | payload (beyond `schema, site_id, at`) |
@@ -248,6 +250,8 @@ Availability: an entity is `available` when the coordinator has a Snapshot; load
 
 All are edge-triggered in D7; a `cleared: true` variant is emitted when the condition ends where meaningful.
 
+**In code (D-0273).** `events.py` holds one voluptuous schema per kind (every listed field required, extra fields allowed), `build(kind, data, site_id, at)` adds the envelope (`schema: 1`, `site_id`, `at`, `kind`) and validates, and the runtime's `fire_event` fires `powerplan_<kind>` on the bus with `site` (the title) beside it and hands the payload to `event.<site>`; a payload that fails its schema is logged and dropped, never fired half-built. The engine's payloads were aligned with this table: `stage_changed` carries `old`/`new` and the budget's `projected_kwh`/`ceiling_kwh`; `breach` `kind`/`excess_w`/`scope`/`table` (rows as mappings); `comfort_violation` is one event per load with `current`, `floor`, `served`, `over_allowance`; `device_unhealthy` carries `failures`, `last_error` and fires `recovered: true` on the way back; `deadline_at_risk` `shortfall_kwh` and `reason`; `plan_adopted` `mode` and `next_start`; `safe_mode` `entered`/`reason`; `peak_warning` `cleared` beside the engine's `active`; `level_changed` fires on the actual level's edge and on the projected one's (`projected: bool`); `month_closed` is enriched by the runtime from the D11 ledger (`cost`, `savings`, `energy_savings`, `capacity_savings`, `confidence`, `by_load`). `prices_received` and `presence_changed` are the runtime's. `period_closed`, `legionella`, `cycle` and `force` have their schemas and wait for the code that emits them.
+
 ### 5.7 Services
 
 | service | fields | effect |
@@ -264,7 +268,11 @@ All are edge-triggered in D7; a `cleared: true` variant is emitted when the cond
 | `powerplan.dump_state` | `site` | write the Snapshot + Inputs to the log / return as response |
 Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config_entry_id` or device selector. All registered once per domain with `supports_response` where useful.
 
+**In code (D-0275).** `services.py::async_setup_services(hass)` registers `replan`, `release`, `boost`, `run_now`, `set_presence`, `reset_window_anchor`, `set_peak` and `dump_state` (response only) once, from `async_setup`; `services.yaml` carries the selectors. A call names a site by `site` (the entry id or title; every loaded site when omitted) and a load by `load` (its id); an unknown one is a `ServiceValidationError` with a translation key (`exceptions.unknown_site`, `unknown_load`). `set_peak` takes `date` or `month` (exclusive) and writes a D2 `Override`; `reset_window_anchor` reads the register through the meter provider and calls the engine's `reset_window_anchor` under the lock; `dump_state` answers with the last snapshot, the assembled inputs and the store sections. `rebuild_peak_history` and `rebuild_baseline` register with their seeds.
+
 ### 5.8 Notification policy
+
+**In code (D-0274).** `notifications.py::NotificationPolicy.handle(note, now)` does the below; the engine's `engine` and `level_step` categories map onto `safe_mode` and `level_up`; `comfort_violation`, `device_unhealthy` and `safe_mode` are never quiet; a `notify` transport whose service is missing falls back to a persistent notification and raises `notify_service_missing`; `last_sent` is persisted in the `events` section's `last_sent` (§7) and cleared by a `cleared`/`active: false` notification, which also dismisses the persistent one. The titles and bodies live in `notifications.py` in `en` and `nb`, not in `strings.json`: hassfest's strings schema has no `notifications` section and would fail CI on one (D-0274).
 
 `NotificationPolicy.handle(n: Notification)`: category config → transport (`off` drop; `persistent` → `persistent_notification.async_create` with a stable `notification_id = key` so updates replace; `notify` → `hass.services.async_call("notify", service, {title, message, data: {tag: key}})`); dedupe per §2; quiet hours; translated title/body with `params`. Categories: `peak_warning`, `peak_uncontrolled`, `comfort_violation`, `deadline_at_risk`, `level_up`, `device_unhealthy`, `price_source_dead`, `legionella_at_risk`, `safe_mode`, `force_expired`, `prices_daily_summary` (off by default).
 
@@ -285,14 +293,20 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 | `store_reset` | warning | no | corrupt store recovered |
 | `delegated_idle` | info | no | delegated load's controller silent 24 h |
 | `savings_low_confidence` | info | no | a load's counterfactual calibration error > threshold for 7 days (D11 §5.5) |
+| `notify_service_missing` (**WP1.4**) | warning | no | the configured `notify` service does not exist (§8) |
+| `load_error` (**WP1.4**) | warning | no | a load raised in a tick and is held (D7 §8) |
+
+**In code (D-0275).** `repairs.py` holds the catalogue (`Issue(severity, fixable, persistent)`), `async_report(hass, entry_id, issue_id, active=…)` creating or clearing the registry issue under `{entry_id}_{issue_id}` with the site's title as a placeholder, and `RepairsWatch.evaluate(now, snapshot)`, run by the runtime after every tick, which raises and clears `meter_stale` (power reading older than ten minutes), `register_missing`, `scaling_mismatch` (integral bias over 5 % of the smoothed power for six windows), `price_source_dead`, `store_reset` and `preset_outdated` on their edges. `engine_failing` and `load_error` come from the engine's `Effects.repairs`. The one fix flow so far is `engine_failing`'s: confirming acknowledges safe mode (`Runtime.async_acknowledge_safe_mode`) and the issue goes; a restart clears it too. `bound_helper_missing`'s and `role_missing`'s re-bind flows are WP2.4's; `preset_outdated` is raised as a warning without a flow until the store carries the grammar copy (D-0128). Every id has `issues.<id>` in the three translation files.
 
 ### 5.10 Diagnostics
 
 Config-entry diagnostics: entry data (bindings kept, names kept, `notify` service name redacted), all subentries, the last Snapshot, store sections (raw price values kept, personal calendars redacted to counts), fetch logs, versions. Device diagnostics: that load's status, state, gate state, last 50 apply results. Redaction list: `person` names, calendar summaries, notify targets, lat/long.
 
+**In code.** `diagnostics.py` redacts `persons`, `service`/`notify_service`, `latitude`, `longitude` and `calendars` with `async_redact_data`, serialises the snapshot and the store through `jsonable` (dataclasses to mappings, `Decimal`s and datetimes to strings, enums to values) and adds the runtime's knobs, its startup trail, the last 50 fetch outcomes, the notification policy's memory and the versions. The site device's diagnostics are the entry's; a load device's are its own.
+
 ### 5.11 Translations
 
-`strings.json` with `config.step.*`, `config_subentries.load.step.*`, `options.*`, `entity.<platform>.<key>.name` + `state`/`state_attributes`, `selector.<type>_<question>.options.*`, `services.*`, `issues.*`, `notifications.*` (custom section rendered by the policy), `exceptions.*`. `translations/en.json` and `translations/nb.json` shipped; all user-facing text goes through them (INV-50). Entity names use `_attr_has_entity_name = True` with translation keys; icons via `icons.json`.
+`strings.json` with `config.step.*`, `config_subentries.load.step.*`, `options.*`, `entity.<platform>.<key>.name` + `state`/`state_attributes`, `selector.<type>_<question>.options.*`, `services.*`, `issues.*`, `exceptions.*`. `translations/en.json` and `translations/nb.json` shipped; all user-facing text goes through them (INV-50) - except the notification texts, which `notifications.py` carries in both languages because hassfest's schema has no section for them (**WP1.4**, D-0274). Entity names use `_attr_has_entity_name = True` with translation keys; icons via `icons.json` (**WP1.4**: every site entity and every service has one).
 
 ### 5.12 Manifest and packaging
 
@@ -341,6 +355,8 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 11. Diagnostics: redaction list applied; output JSON-serialisable.
 12. Translations: every key used in code exists in `en` and `nb` (a test scans for `translation_key`/`_key` usages).
 13. hassfest and HACS validation pass in CI.
+
+**WP1.4** - 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11 and 12 are `tests/surface/`; 13 is the two CI jobs in `.github/workflows/ci.yml`; 14 is WP2.7's; 2, 3 and the load half of 4 are WP2.4's.
 14. Accounting sensors: `energy` is `total_increasing` with `device_class: energy` and never decreases across a device register reset; `cost` and `savings` are `device_class: monetary`, `state_class: total`, unit = currency code, `last_reset` = local month start (DST-correct); a negative savings state is published unclamped; long-term statistics `sum` across a rollover equals the two months' sum; the sensors change only on a slot close (one recorder row per 15 min, not per tick).
 
 ---

@@ -54,8 +54,9 @@
 # (tests/core/allocation/test_14_circuits.py, test_15_phases.py); WP2.5 wires the
 # circuit subentry and its sub-meter provider to the same constraint.
 
-# INV-61 - recorder hygiene on large attributes (HLD §6.7, D8) → WP1.4
-INV-61
+# INV-61 - recorder hygiene on large attributes (HLD §6.7, D8). Covered by WP1.4's
+# site entities (tests/surface/test_entities.py): the content-digest gate and the
+# unrecorded attributes of the price forecast, the plan, the advice and the trail.
 
 # INV-62–63 - a forecast is never an authority; bounded learning (HLD §6.10, D10).
 # INV-62's σ-floor half is covered by WP0.7 (tests/core/allocation/test_03_reserve.py);

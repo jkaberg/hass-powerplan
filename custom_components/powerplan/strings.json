@@ -446,6 +446,214 @@
       "already_configured": "This meter is already set up as a powerplan site."
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "peak_warning": {
+        "name": "Peak warning"
+      },
+      "prices_tomorrow": {
+        "name": "Tomorrow's prices available"
+      },
+      "meter_stale": {
+        "name": "Meter stale"
+      },
+      "meter_degraded": {
+        "name": "Meter degraded"
+      },
+      "meter_seam": {
+        "name": "Window seam"
+      }
+    },
+    "sensor": {
+      "window_used": {
+        "name": "Window used"
+      },
+      "window_projected": {
+        "name": "Window projected"
+      },
+      "ceiling": {
+        "name": "Ceiling"
+      },
+      "allowance": {
+        "name": "Allowance"
+      },
+      "stage": {
+        "name": "Stage"
+      },
+      "level": {
+        "name": "Capacity step"
+      },
+      "projected_level": {
+        "name": "Projected capacity step"
+      },
+      "advice": {
+        "name": "Advice"
+      },
+      "next_peak_warning": {
+        "name": "Next peak warning"
+      },
+      "price": {
+        "name": "Price"
+      },
+      "price_forecast": {
+        "name": "Price forecast"
+      },
+      "price_export": {
+        "name": "Export price"
+      },
+      "price_carrier": {
+        "name": "Price {carrier}"
+      },
+      "plan": {
+        "name": "Plan"
+      },
+      "production": {
+        "name": "Production"
+      },
+      "surplus": {
+        "name": "Surplus"
+      },
+      "meter_health": {
+        "name": "Meter health",
+        "state": {
+          "ok": "OK",
+          "stale": "Stale",
+          "degraded": "Degraded"
+        }
+      },
+      "price_source_health": {
+        "name": "Price source health",
+        "state": {
+          "ok": "OK",
+          "stale": "Stale",
+          "dead": "Dead"
+        }
+      },
+      "baseline_confidence": {
+        "name": "Baseline confidence"
+      },
+      "tick_ms": {
+        "name": "Tick duration"
+      },
+      "reasons": {
+        "name": "Reasons"
+      }
+    },
+    "select": {
+      "presence": {
+        "name": "Presence",
+        "state": {
+          "auto": "Automatic",
+          "home": "Home",
+          "away": "Away",
+          "vacation": "Vacation"
+        }
+      },
+      "target": {
+        "name": "Capacity target",
+        "state": {
+          "auto": "Automatic",
+          "kw": "Configured kW"
+        }
+      },
+      "risk": {
+        "name": "Risk",
+        "state": {
+          "flat": "Never exceed the target",
+          "free_ride": "Use today's paid hours",
+          "full": "Gamble on the period average"
+        }
+      }
+    },
+    "number": {
+      "margin_kwh": {
+        "name": "Margin"
+      }
+    },
+    "switch": {
+      "active": {
+        "name": "Active"
+      }
+    },
+    "button": {
+      "replan": {
+        "name": "Replan"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_site": {
+      "message": "No loaded powerplan site matches {site}."
+    },
+    "unknown_load": {
+      "message": "No load with id {load} on this site."
+    },
+    "set_peak_needs_a_day_or_a_month": {
+      "message": "set_peak needs a date or a month."
+    }
+  },
+  "issues": {
+    "engine_failing": {
+      "title": "powerplan is in safe mode",
+      "description": "The engine failed {failures} times in a row ({error}). Every load has been released and the site is observing only. A restart clears safe mode; if it returns, please report the log."
+    },
+    "load_error": {
+      "title": "A load failed and is held",
+      "description": "The load {load} raised an error during a tick ({error}) and is held in its current state while the other loads continue. Check the device and its bound entities."
+    },
+    "meter_stale": {
+      "title": "The grid meter stopped reporting",
+      "description": "{site}: the grid power reading has been stale for more than ten minutes. The tick is frozen until it returns; check the meter integration."
+    },
+    "register_missing": {
+      "title": "No register report for a day",
+      "description": "{site}: the import register has not reported for 24 hours. Windows close on the integral instead; check the meter integration."
+    },
+    "scaling_mismatch": {
+      "title": "Power and register disagree",
+      "description": "{site}: the power integral has been more than 5 % off the register for six windows. One of the two sensors may be scaled wrongly."
+    },
+    "price_source_dead": {
+      "title": "A price source is dead",
+      "description": "{site}: {source} has not delivered for 24 hours. Prices are synthesised until it returns."
+    },
+    "preset_outdated": {
+      "title": "The tariff preset has changed",
+      "description": "{site}: the shipped preset {preset} carries other versions than the ones this site was set up with. The site keeps the version it has; reconfigure the tariff to adopt the new one."
+    },
+    "bound_helper_missing": {
+      "title": "A bound helper is gone",
+      "description": "{site}: a schedule, person or calendar this site was bound to no longer exists."
+    },
+    "role_missing": {
+      "title": "A required entity is gone",
+      "description": "{site}: an entity a load was bound to no longer exists."
+    },
+    "provision_refused": {
+      "title": "A device refuses its provisioning",
+      "description": "{site}: a device keeps refusing the settings powerplan needs."
+    },
+    "legionella_at_risk": {
+      "title": "Legionella cycle at risk",
+      "description": "{site}: the water heater cannot complete its legionella cycle in time."
+    },
+    "delegated_idle": {
+      "title": "A delegated load's controller is silent",
+      "description": "{site}: a load left to another controller has not moved for 24 hours."
+    },
+    "savings_low_confidence": {
+      "title": "Savings figure is uncertain",
+      "description": "{site}: a load's counterfactual has missed its calibration for a week; its savings are shown with low confidence."
+    },
+    "notify_service_missing": {
+      "title": "Notification service missing",
+      "description": "{site}: the notify service {service} does not exist. Notifications fall back to persistent notifications."
+    },
+    "store_reset": {
+      "title": "The store was reset",
+      "description": "{site}: the site's store file could not be read and was moved to {path}. The site started from an empty store; the current window's energy is rebuilt from the register."
+    }
+  },
   "selector": {
     "voltage_system": {
       "options": {
@@ -537,14 +745,126 @@
       }
     }
   },
-  "issues": {
-    "engine_failing": {
-      "title": "powerplan is in safe mode",
-      "description": "The engine failed {failures} times in a row ({error}). Every load has been released and the site is observing only. A restart clears safe mode; if it returns, please report the log."
+  "services": {
+    "replan": {
+      "name": "Replan",
+      "description": "Fetch what is missing and run a planning cycle now.",
+      "fields": {
+        "site": {
+          "name": "Site",
+          "description": "The site to replan; every site when omitted."
+        }
+      }
     },
-    "load_error": {
-      "title": "A load failed and is held",
-      "description": "The load {load} raised an error during a tick ({error}) and is held in its current state while the other loads continue. Check the device and its bound entities."
+    "release": {
+      "name": "Release",
+      "description": "Undo a shed on one load and leave its mode as it is.",
+      "fields": {
+        "load": {
+          "name": "Load",
+          "description": "The load's id."
+        },
+        "site": {
+          "name": "Site",
+          "description": "The site the load belongs to."
+        }
+      }
+    },
+    "boost": {
+      "name": "Boost",
+      "description": "Put a load in force mode for a while.",
+      "fields": {
+        "load": {
+          "name": "Load",
+          "description": "The load's id."
+        },
+        "hours": {
+          "name": "Hours",
+          "description": "How long; the load's force maximum when omitted."
+        },
+        "site": {
+          "name": "Site",
+          "description": "The site the load belongs to."
+        }
+      }
+    },
+    "run_now": {
+      "name": "Run now",
+      "description": "Start an appliance's cycle now, capacity permitting.",
+      "fields": {
+        "load": {
+          "name": "Load",
+          "description": "The load's id."
+        },
+        "site": {
+          "name": "Site",
+          "description": "The site the load belongs to."
+        }
+      }
+    },
+    "set_presence": {
+      "name": "Set presence",
+      "description": "Override who is home, optionally until a time.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Automatic, home, away or vacation."
+        },
+        "until": {
+          "name": "Until",
+          "description": "When to return to automatic."
+        },
+        "site": {
+          "name": "Site",
+          "description": "The site; every site when omitted."
+        }
+      }
+    },
+    "reset_window_anchor": {
+      "name": "Reset window anchor",
+      "description": "Re-anchor the tariff window on the current register reading (emergency).",
+      "fields": {
+        "site": {
+          "name": "Site",
+          "description": "The site; every site when omitted."
+        }
+      }
+    },
+    "set_peak": {
+      "name": "Set peak",
+      "description": "Override one day's or one month's peak in the tariff history.",
+      "fields": {
+        "date": {
+          "name": "Date",
+          "description": "The day whose peak to set."
+        },
+        "month": {
+          "name": "Month",
+          "description": "The month (YYYY-MM) whose peak to set."
+        },
+        "kw": {
+          "name": "kW",
+          "description": "The peak in kW."
+        },
+        "note": {
+          "name": "Note",
+          "description": "Why."
+        },
+        "site": {
+          "name": "Site",
+          "description": "The site; every site when omitted."
+        }
+      }
+    },
+    "dump_state": {
+      "name": "Dump state",
+      "description": "Return the last snapshot and the assembled inputs for a bug report.",
+      "fields": {
+        "site": {
+          "name": "Site",
+          "description": "The site; every site when omitted."
+        }
+      }
     }
   }
 }

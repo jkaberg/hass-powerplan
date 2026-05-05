@@ -1,0 +1,117 @@
+replan:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+release:
+  fields:
+    load:
+      required: true
+      selector:
+        text:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+boost:
+  fields:
+    load:
+      required: true
+      selector:
+        text:
+    hours:
+      required: false
+      selector:
+        number:
+          min: 0.25
+          max: 24
+          step: 0.25
+          unit_of_measurement: h
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+run_now:
+  fields:
+    load:
+      required: true
+      selector:
+        text:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+set_presence:
+  fields:
+    mode:
+      required: true
+      selector:
+        select:
+          options:
+            - auto
+            - home
+            - away
+            - vacation
+          translation_key: presence_mode
+    until:
+      required: false
+      selector:
+        datetime:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+reset_window_anchor:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+set_peak:
+  fields:
+    date:
+      required: false
+      selector:
+        date:
+    month:
+      required: false
+      selector:
+        text:
+    kw:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 200
+          step: 0.01
+          unit_of_measurement: kW
+    note:
+      required: false
+      selector:
+        text:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
+dump_state:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan

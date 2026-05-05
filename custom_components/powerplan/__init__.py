@@ -15,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
 from .runtime import Runtime, build_site
+from .services import async_setup_services
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -42,8 +43,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     Site-wide services (`powerplan.replan`, `powerplan.release`, …) are
     registered here and never per entry (HA rule `action-setup`,
-    PLAN §7 dec. 8). None exist yet; they arrive with D8 §5.7 in WP1.4.
+    PLAN §7 dec. 8; D8 §5.7).
     """
+    async_setup_services(hass)
     return True
 
 

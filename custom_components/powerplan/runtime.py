@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -23,9 +24,10 @@ from decimal import Decimal
 from random import Random
 from typing import TYPE_CHECKING, Any, Protocol
 
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP
+import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import CoreState, callback
-from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_point_in_utc_time,
@@ -41,9 +43,11 @@ from .const import (
     CONF_CURRENCY,
     CONF_ELECTRICAL,
     CONF_METER,
+    CONF_NOTIFICATIONS,
     CONF_PATH,
     CONF_PRESENCE,
     CONF_PRICES,
+    CONF_QUIET_HOURS,
     CONF_TARIFF,
     CONF_TIMEZONE,
     DOMAIN,
@@ -62,6 +66,8 @@ from .core.engine import (
     Effects,
     Engine,
     EngineState,
+    EventKind,
+    HaEvent,
     Inputs,
     Knobs,
     LoadReads,
@@ -79,7 +85,7 @@ from .core.metering import (
     WindowMeterConfig,
     window_bounds,
 )
-from .core.model import Carrier, Direction
+from .core.model import Carrier, Direction, Mode
 from .core.pricing import (
     CoverageError,
     PriceContext,
@@ -99,7 +105,13 @@ from .core.pricing.modifiers.base import PriceModifier
 from .core.pricing.modifiers.tou_schedule import TouSchedule
 from .core.strategies.context import Curves
 from .core.tariffs import AUTO, Evaluator, NoPeak, Target, TariffSpec, TariffVersion
+from .core.tariffs.grammar import StepTable
+from .core.tariffs.history import Override
 from .core.tariffs.presets import loader
+from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
+from .events import build as build_event
+from .events import event_name
+from .notifications import NotificationPolicy, QuietHours
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
 from .providers.prices import (
     EntitySource,
@@ -109,6 +121,7 @@ from .providers.prices import (
     fetch_missing,
     formats,
 )
+from .repairs import RepairsWatch, async_clear, async_report
 from .storage import Section, SiteStore
 from .writegate import Actuation, WriteGate
 
@@ -158,8 +171,20 @@ RAW_KEEP_DAYS = 15
 SOURCE_DEAD_H = 24.0
 MINUTES_PER_HOUR = 60
 
-#: The platforms the site device forwards to (D8 §3). WP1.4 fills this tuple.
-PLATFORMS: tuple[str, ...] = ()
+#: The platforms the site device forwards to (D8 §3, §5.5).
+PLATFORMS: tuple[Platform, ...] = (
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+    Platform.EVENT,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SENSOR,
+    Platform.SWITCH,
+)
+#: The risk select's labels (D2 §6, `flow/steps.py`).
+RISK_LABELS: dict[str, float] = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE, "full": RISK_FULL}
+#: How many fetches the diagnostics remember.
+FETCH_LOG_KEEP = 200
 
 # --------------------------------------------------------------------------- #
 # What a load looks like to the runtime
@@ -331,6 +356,14 @@ class SiteBuild:
     active: bool
     loads: tuple[Load, ...] = ()
     devices: Mapping[str, LoadDevice] = field(default_factory=dict)
+    #: The tariff step select's options (D8 §5.5): `auto`, each step, or the configured kW.
+    target_options: tuple[str, ...] = ("auto",)
+    #: The configured kW target, when the tariff has no steps.
+    target_kw: float | None = None
+    preset_file: str | None = None
+    preset_outdated: bool = False
+    notifications: Mapping[str, Any] = field(default_factory=dict)
+    quiet_hours: QuietHours | None = None
 
 
 def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
@@ -348,7 +381,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     holidays = _holidays(country)
 
     tariff_data = data.get(CONF_TARIFF) or {}
-    spec = _spec(tariff_data, currency)
+    spec, outdated = _spec(tariff_data, currency)
     target, risk, eps = _target_of(tariff_data)
     tariff = Evaluator(
         spec,
@@ -443,7 +476,23 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         risk=risk,
         eps_kwh=eps,
         active=bool(data.get(CONF_ACTIVE, False)),
+        target_options=_target_options(peak, tariff_data),
+        target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
+        preset_file=tariff_data.get("preset_file"),
+        preset_outdated=outdated,
+        notifications=dict(data.get(CONF_NOTIFICATIONS) or {}),
+        quiet_hours=QuietHours.from_data(data.get(CONF_QUIET_HOURS)),
     )
+
+
+def _target_options(peak: Any, tariff: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the target select's options: automatic, then the tariff's steps or the kW."""
+    options = ["auto"]
+    if peak is not None and isinstance(peak.pricing, StepTable):
+        options.extend(f"step:{index}" for index in range(len(peak.pricing.steps)))
+    elif tariff.get("target_kw") is not None:
+        options.append("kw")
+    return tuple(options)
 
 
 def _source_entities(source: PriceSource) -> list[str]:
@@ -470,8 +519,12 @@ def _holidays(country: str) -> HolidayCalendar:
         return NoHolidays()
 
 
-def _spec(tariff: Mapping[str, Any], currency: str) -> TariffSpec:
-    """Load the chosen preset, or the `NoPeak` site a price-only house is."""
+def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
+    """Load the chosen preset, or the `NoPeak` site a price-only house is.
+
+    Returns the spec and whether the shipped preset's versions differ from the
+    ones the site was set up with (`preset_outdated`, D8 §5.9).
+    """
     preset_file = tariff.get("preset_file")
     if not preset_file:
         return TariffSpec(
@@ -483,17 +536,18 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> TariffSpec:
                 ),
             ),
             currency=currency,
-        )
+        ), False
     spec = loader.load(str(preset_file))
     shipped = [version.version_id for version in spec.versions]
-    if shipped != list(tariff.get("version_ids") or shipped):
+    outdated = shipped != list(tariff.get("version_ids") or shipped)
+    if outdated:
         _LOGGER.warning(
             "preset %s ships versions %s, the site was set up with %s (preset_outdated)",
             preset_file,
             shipped,
             tariff.get("version_ids"),
         )
-    return spec
+    return spec, outdated
 
 
 def _target_of(tariff: Mapping[str, Any]) -> tuple[Target, float | None, float | None]:
@@ -576,10 +630,35 @@ class Runtime:
         self.curves: Curves | None = None
         self.raw = RawSlotStore()
         self.engine: Engine | None = None
+        self.adapter: AccountingAdapter | None = None
         self.active = build.active
         self.manual_presence = PresenceMode.HOME
+        self.presence_setting = "auto" if build.presence.mode == "auto" else "home"
+        self.target = build.target
+        self.risk = build.risk
+        self.eps_kwh = build.eps_kwh
+        self.load_modes: dict[str, Mode] = {}
+        self.force_max_h: dict[str, float] = {}
         self.ticks = 0
         self.plans = 0
+        self.started_at: datetime | None = None
+        self.dead_sources: set[str] = set()
+        self.fetch_log: deque[dict[str, Any]] = deque(maxlen=FETCH_LOG_KEEP)
+        self.last_presence: PresenceMode | None = None
+        self.last_event: tuple[str, dict[str, Any]] | None = None
+        self.notifications = NotificationPolicy(
+            hass,
+            entry.entry_id,
+            config=build.notifications,
+            quiet=build.quiet_hours,
+            language=hass.config.language,
+            on_change=self._on_notifications_changed,
+            on_missing_service=self._on_notify_service_missing,
+        )
+        self.repairs = RepairsWatch(self)
+        self._event_listeners: list[Callable[[str, Mapping[str, Any]], None]] = []
+        self._presence_until: CALLBACK_TYPE | None = None
+        self._platforms_forwarded = False
         self._rng = Random(entry.entry_id)
         self._unsubs: list[CALLBACK_TYPE] = []
         self._power_timer: CALLBACK_TYPE | None = None
@@ -598,6 +677,7 @@ class Runtime:
         document = await self.store.load()
         self.state = EngineState.from_sections(document) if document else EngineState()
         self.raw = RawSlotStore(self.store.get(Section.PRICES))
+        self.notifications.last_sent = dict(self.state.events.last_sent)
         self._log_step("store")
 
         now = dt_util.utcnow()
@@ -610,6 +690,7 @@ class Runtime:
             now=now,
             state=self.store.get(Section.ACCOUNTING) or None,
         )
+        self.adapter = adapter
         self.engine = Engine(
             build.cfg,
             WindowMeter(
@@ -627,7 +708,8 @@ class Runtime:
         self._log_step("build")
 
         # A restart clears safe mode (D7 §2): the repair that announced it goes too.
-        ir.async_delete_issue(self.hass, DOMAIN, f"{self.entry.entry_id}_engine_failing")
+        async_clear(self.hass, self.entry.entry_id, "engine_failing")
+        self.started_at = now
         if self.hass.state is CoreState.running:
             await self._start_after_ha()
         else:
@@ -648,8 +730,9 @@ class Runtime:
         self._log_step("provision")
         await self.run_tick("startup")
         self._log_step("first_tick")
-        if PLATFORMS:
+        if self.entry.state in (ConfigEntryState.SETUP_IN_PROGRESS, ConfigEntryState.LOADED):
             await self.hass.config_entries.async_forward_entry_setups(self.entry, PLATFORMS)
+            self._platforms_forwarded = True
         self._log_step("platforms")
         self._subscribe()
         self._log_step("triggers")
@@ -668,7 +751,8 @@ class Runtime:
         self.gate.cancel()
         await self.store.flush()
         await self.store.close()
-        if PLATFORMS:
+        if reason == "unload" and self._platforms_forwarded:
+            self._platforms_forwarded = False
             await self.hass.config_entries.async_unload_platforms(self.entry, PLATFORMS)
 
     async def _on_ha_stop(self, _event: Event) -> None:
@@ -695,6 +779,9 @@ class Runtime:
         if self._guard_timer is not None:
             self._guard_timer()
             self._guard_timer = None
+        if self._presence_until is not None:
+            self._presence_until()
+            self._presence_until = None
 
     def _log_step(self, step: str) -> None:
         self.startup.append(step)
@@ -817,12 +904,12 @@ class Runtime:
     # ------------------------------------------------------------ inputs #
 
     def presence_now(self, now: datetime) -> PresenceMode:
-        """Who is home: the `person` entities, or the manual knob (D8 §5.1)."""
+        """Who is home: the `person` entities under `auto`, else the manual setting (D8 §5.1)."""
         cfg = self.build.presence
-        if cfg.mode != "auto" or not cfg.persons:
+        if self.presence_setting != "auto":
+            return PresenceMode(self.presence_setting)
+        if not cfg.persons:
             return self.manual_presence
-        if self.manual_presence is PresenceMode.VACATION:
-            return PresenceMode.VACATION
         states = [self.hass.states.get(entity_id) for entity_id in cfg.persons]
         known = [state for state in states if state is not None]
         if not known or any(state.state == "home" for state in known):
@@ -844,10 +931,12 @@ class Runtime:
             loads=loads,
             knobs=Knobs(
                 active=self.active,
-                target=build.target,
-                risk=build.risk,
-                eps_base_kwh=build.eps_kwh,
+                target=self.target,
+                risk=self.risk,
+                eps_base_kwh=self.eps_kwh,
                 presence=self.presence_now(now),
+                modes=dict(self.load_modes),
+                force_max_h=dict(self.force_max_h),
             ),
             curves=self.curves,
             transport=self.gate.budget,
@@ -881,6 +970,21 @@ class Runtime:
         await self.execute(effects)
         self._persist(effects)
         self.coordinator.async_set_updated_data(snapshot)
+        self.repairs.evaluate(now, snapshot)
+        presence = inputs.knobs.presence
+        if presence is not None and presence is not self.last_presence:
+            if self.last_presence is not None:
+                self.fire_event(
+                    EventKind.PRESENCE_CHANGED,
+                    {
+                        "old": self.last_presence.value,
+                        "new": presence.value,
+                        "source": self.presence_setting
+                        if self.presence_setting != "auto"
+                        else "auto",
+                    },
+                )
+            self.last_presence = presence
 
     async def run_plan(self, trigger: str) -> None:
         """One planning cycle under the lock; the fetch before it never holds it (INV-46)."""
@@ -903,8 +1007,11 @@ class Runtime:
             )
 
     async def _fetch_then_plan(self, trigger: str) -> None:
-        await self.fetch(trigger)
+        changed = await self.fetch(trigger)
         await self.run_plan(trigger)
+        if changed:
+            # New prices: the plan is on them, and the published price should be too.
+            await self.run_tick("prices")
 
     # ----------------------------------------------------------- effects #
 
@@ -928,37 +1035,83 @@ class Runtime:
             if actuations:
                 self._adopt_outcomes(await self.gate.async_apply(actuations))
         for event in effects.ha_events:
-            self.hass.bus.async_fire(
-                f"{DOMAIN}_{event.kind.value}",
-                {"site": self.site_name, "entry_id": self.entry.entry_id, **dict(event.data)},
-            )
+            self.fire_event(event.kind, self._enriched(event))
         for issue in effects.repairs:
-            issue_id = f"{self.entry.entry_id}_{issue.issue_id}"
-            if issue.active:
-                ir.async_create_issue(
-                    self.hass,
-                    DOMAIN,
-                    issue_id,
-                    is_fixable=False,
-                    severity=ir.IssueSeverity.ERROR if issue.severe else ir.IssueSeverity.WARNING,
-                    translation_key=issue.translation_key,
-                    translation_placeholders={
-                        key: str(value) for key, value in issue.params.items()
-                    },
-                )
-                self._issues.add(issue_id)
-            elif issue_id in self._issues:
-                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
-                self._issues.discard(issue_id)
-        for note in effects.notifications:
-            # D8 §5.8's policy lands with `notifications.py`; the record is kept.
-            _LOGGER.info(
-                "site %s: notification %s/%s %s",
-                self.site_name,
-                note.category,
-                note.key,
-                note.params,
+            async_report(
+                self.hass,
+                self.entry.entry_id,
+                issue.issue_id,
+                active=issue.active,
+                placeholders=issue.params,
+                entry_title=self.site_name,
             )
+            if issue.active:
+                self._issues.add(issue.issue_id)
+            else:
+                self._issues.discard(issue.issue_id)
+        for note in effects.notifications:
+            await self.notifications.handle(note)
+
+    def _enriched(self, event: HaEvent) -> dict[str, Any]:
+        """Return an engine event's data with what only the runtime knows (D8 §5.6)."""
+        data = dict(event.data)
+        if event.kind is EventKind.MONTH_CLOSED:
+            adapter = self.adapter
+            month = str(data.get("month") or data.get("period") or "")
+            figures = adapter.month_figures().get(month, {}) if adapter is not None else {}
+            data.setdefault("month", month)
+            data.setdefault("cost", figures.get("cost"))
+            data.setdefault("savings", figures.get("savings"))
+            data.setdefault("energy_savings", figures.get("energy_savings"))
+            data.setdefault("capacity_savings", figures.get("capacity_savings"))
+            data.setdefault("confidence", adapter.status().confidence if adapter else "none")
+            data.setdefault("by_load", _by_load(adapter))
+        return data
+
+    def fire_event(self, kind: EventKind, data: Mapping[str, Any]) -> None:
+        """Validate one event against D8 §5.6, fire it on the bus and hand it to the entity."""
+        try:
+            payload = build_event(kind, data, site_id=self.entry.entry_id, at=dt_util.utcnow())
+        except vol.Invalid:
+            _LOGGER.exception(
+                "site %s: event %s does not match its schema: %s", self.site_name, kind, data
+            )
+            return
+        payload["site"] = self.site_name
+        self.hass.bus.async_fire(event_name(kind), payload)
+        self.last_event = (kind.value, payload)
+        for listener in list(self._event_listeners):
+            listener(kind.value, payload)
+
+    def add_event_listener(
+        self, listener: Callable[[str, Mapping[str, Any]], None]
+    ) -> CALLBACK_TYPE:
+        """Subscribe to the site's events (the event entity); returns the unsubscribe."""
+        self._event_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            if listener in self._event_listeners:
+                self._event_listeners.remove(listener)
+
+        return unsubscribe
+
+    def _on_notifications_changed(self) -> None:
+        """Persist the policy's `last_sent` in the `events` section (D8 §7)."""
+        self.state = replace(
+            self.state,
+            events=replace(self.state.events, last_sent=dict(self.notifications.last_sent)),
+        )
+        self.store.set(Section.EVENTS, self.state.to_sections()[Section.EVENTS.value])
+
+    def _on_notify_service_missing(self, service: str) -> None:
+        async_report(
+            self.hass,
+            self.entry.entry_id,
+            "notify_service_missing",
+            active=True,
+            placeholders={"service": service},
+            entry_title=self.site_name,
+        )
 
     def _persist(self, effects: Effects) -> None:
         """Save the sections a tick or a plan dirtied; the runtime's own every time (D7 §7)."""
@@ -980,6 +1133,18 @@ class Runtime:
         if not sources:
             return False
         report = await fetch_missing(sources, self.raw, now, tz=build.cfg.tz)
+        for outcome in report.outcomes:
+            self.fetch_log.append(
+                {
+                    "at": now.isoformat(),
+                    "trigger": trigger,
+                    "source": outcome.source,
+                    "day": outcome.day.isoformat(),
+                    "ok": outcome.ok,
+                    "slots": outcome.slots,
+                    "error": outcome.error,
+                }
+            )
         for outcome in report.failures:
             attempt = self._fetch_attempts.get(outcome.source, 0)
             self._fetch_attempts[outcome.source] = attempt + 1
@@ -1002,11 +1167,50 @@ class Runtime:
             self.store.set(Section.PRICES, self.raw.to_data())
         if changed or self.curves is None:
             self.curves = self._build_curves(now)
+        if changed:
+            self._prices_received(report, now)
+        dead: set[str] = set()
         for source in sources:
             last = self.raw.last_fetched(source.key)
             if last is not None and now - last > timedelta(hours=SOURCE_DEAD_H):
                 _LOGGER.warning("site %s: price source %s is dead", self.site_name, source.key)
+                dead.add(source.key)
+        self.dead_sources = dead
         return changed
+
+    def _prices_received(self, report: Any, now: datetime) -> None:
+        """`powerplan_prices_received` per source and day that delivered (D8 §5.6)."""
+        curve = None if self.curves is None else self.curves.import_.get(Carrier.ELECTRICITY)
+        for outcome in report.outcomes:
+            if not outcome.ok or not outcome.slots:
+                continue
+            day_slots = (
+                []
+                if curve is None
+                else [
+                    slot
+                    for slot in curve.slots
+                    if slot.start.astimezone(self.build.cfg.tz).date() == outcome.day
+                ]
+            )
+            totals = [slot.total for slot in day_slots]
+            cheapest = sorted(day_slots, key=lambda slot: slot.total)[:4]
+            self.fire_event(
+                EventKind.PRICES_RECEIVED,
+                {
+                    "carrier": Carrier.ELECTRICITY.value,
+                    "day": outcome.day.isoformat(),
+                    "source": outcome.source,
+                    "coverage_h": round(
+                        sum((s.end - s.start).total_seconds() for s in day_slots) / 3600.0, 2
+                    ),
+                    "min": None if not totals else str(min(totals)),
+                    "max": None if not totals else str(max(totals)),
+                    "avg": None if not totals else str(sum(totals) / len(totals)),
+                    "cheapest_slots": [slot.start.isoformat() for slot in cheapest],
+                },
+            )
+        del now
 
     def _schedule_retry(self, source_key: str, now: datetime, attempt: int) -> None:
         source = next(
@@ -1257,9 +1461,180 @@ class Runtime:
 
     async def async_set_presence(self, mode: PresenceMode) -> None:
         """Set the manual presence knob; `vacation` is only ever set here (D4 §2)."""
-        self.manual_presence = mode
+        await self.async_set_presence_setting(mode.value)
+
+    async def async_set_presence_setting(self, setting: str, until: datetime | None = None) -> None:
+        """`select.<site>_presence` / `powerplan.set_presence`: auto, or a mode, optionally until a time."""
+        if setting not in ("auto", "home", "away", "vacation"):
+            msg = f"unknown presence setting {setting!r}"
+            raise ValueError(msg)
+        self.presence_setting = setting
+        if setting != "auto":
+            self.manual_presence = PresenceMode(setting)
+        if self._presence_until is not None:
+            self._presence_until()
+            self._presence_until = None
+        if until is not None and setting != "auto":
+
+            async def revert(_at: datetime) -> None:
+                self._presence_until = None
+                await self.async_set_presence_setting("auto")
+
+            self._presence_until = async_track_point_in_utc_time(
+                self.hass, revert, dt_util.as_utc(until)
+            )
         await self._tick_and_plan("presence")
+
+    @property
+    def target_choice(self) -> str:
+        """The target select's option in force."""
+        if self.target.kind == "step" and self.target.step_index is not None:
+            return f"step:{self.target.step_index}"
+        return "kw" if self.target.kind == "kw" else "auto"
+
+    async def async_set_target_choice(self, option: str) -> None:
+        """`select.<site>_target`: automatic, a step, or the configured kW."""
+        if option == "auto":
+            self.target = AUTO
+        elif option.startswith("step:"):
+            self.target = Target(kind="step", step_index=int(option.split(":", 1)[1]))
+        elif option == "kw" and self.build.target_kw is not None:
+            self.target = Target(kind="kw", kw=self.build.target_kw)
+        else:
+            msg = f"unknown target {option!r}"
+            raise ValueError(msg)
+        await self._tick_and_plan("knob")
+
+    @property
+    def risk_choice(self) -> str:
+        """The risk select's option in force."""
+        risk = RISK_FLAT if self.risk is None else self.risk
+        for label, value in RISK_LABELS.items():
+            if value == risk:
+                return label
+        return "flat"
+
+    async def async_set_risk_choice(self, option: str) -> None:
+        """`select.<site>_risk`."""
+        self.risk = RISK_LABELS[option]
+        await self._tick_and_plan("knob")
+
+    async def async_set_eps(self, eps_kwh: float | None) -> None:
+        """`number.<site>_margin_kwh`: ε in kWh (D2 §6)."""
+        self.eps_kwh = eps_kwh
+        await self._tick_and_plan("knob")
+
+    async def async_set_load_mode(
+        self, load_id: str, mode: Mode, *, force_max_h: float | None = None
+    ) -> None:
+        """`select.<load>_mode` and `powerplan.boost`: read live on the next tick (D4 §5.2)."""
+        self._load(load_id)
+        self.load_modes[load_id] = mode
+        if force_max_h is not None:
+            self.force_max_h[load_id] = force_max_h
+        await self._tick_and_plan("knob")
+
+    async def async_release_load(self, load_id: str) -> None:
+        """`powerplan.release`: undo the shed, leave the mode as it is (INV-26)."""
+        self._load(load_id)
+        outcome = await self.gate.async_release(load_id)
+        if outcome is not None:
+            self._adopt_outcomes((outcome,))
+        await self.run_tick("service")
+
+    async def async_boost(self, load_id: str, hours: float | None) -> None:
+        """`powerplan.boost`: mode `force` with an expiry (INV-57)."""
+        default_h = self._load_state(load_id).force_max_h
+        await self.async_set_load_mode(
+            load_id, Mode.FORCE, force_max_h=default_h if hours is None else hours
+        )
+
+    async def async_run_now(self, load_id: str) -> None:
+        """`powerplan.run_now` / `button.<load>_run_now`: ask the appliance for a run (D4 §5.13)."""
+        load = self._load(load_id)
+        request = getattr(load.device_type, "request", None)
+        if request is None:
+            msg = f"{load_id} takes no run request"
+            raise ValueError(msg)
+        self._set_load_state(load_id, request(self._load_state(load_id), dt_util.utcnow()))
+        await self._tick_and_plan("service")
+
+    async def async_reset_window_anchor(self) -> None:
+        """`powerplan.reset_window_anchor`: D3 `reanchor` on the current register (emergency)."""
+        if self.engine is None or self.build.meter is None:
+            return
+        now = dt_util.utcnow()
+        sample = await self.build.meter.sample(now)
+        if sample.import_kwh is None:
+            return
+        async with self.lock:
+            self.state = self.engine.reset_window_anchor(
+                self.state, sample.import_kwh.value, now, "service reset_window_anchor"
+            )
+            self.store.set(
+                Section.METER, self.state.to_sections()[Section.METER.value], at_once=True
+            )
+        await self.run_tick("service")
+
+    async def async_set_peak(self, scope: str, key: str, kw: float, note: str) -> None:
+        """`powerplan.set_peak`: a D2 override of one day's or one month's peak."""
+        self.build.tariff.history.apply_override(
+            Override(scope=scope, key=key, kw=kw, note=note, at=dt_util.utcnow())  # type: ignore[arg-type]
+        )
+        self.store.mark_dirty(Section.TARIFF)
+        await self._tick_and_plan("service")
+
+    async def async_acknowledge_safe_mode(self) -> None:
+        """Leave safe mode and resume: the `engine_failing` repair's fix (D7 §8)."""
+        self.state = replace(
+            self.state, runtime=replace(self.state.runtime, safe_mode=False, failures=0)
+        )
+        async_clear(self.hass, self.entry.entry_id, "engine_failing")
+        self._issues.discard("engine_failing")
+        self.fire_event(EventKind.SAFE_MODE, {"entered": False, "reason": "acknowledged"})
+        await self._tick_and_plan("service")
+
+    async def async_dump_state(self) -> dict[str, Any]:
+        """`powerplan.dump_state`: the last snapshot and the assembled inputs, JSON-able."""
+        from .diagnostics import jsonable  # noqa: PLC0415 - a debug path, imported on use
+
+        inputs = await self._inputs(dt_util.utcnow(), "dump")
+        _LOGGER.info("site %s: dump_state requested", self.site_name)
+        return {
+            "snapshot": jsonable(self.snapshot),
+            "inputs": jsonable(inputs),
+            "state": jsonable(self.state.to_sections()),
+        }
 
     async def async_replan(self) -> None:
         """`powerplan.replan` (D8 §5.7)."""
         await self._fetch_then_plan("service")
+
+    @property
+    def has_register(self) -> bool:
+        """Whether an import register is bound (the register-missing repair applies)."""
+        return ROLE_IMPORT_REGISTER in self.build.meter_entities
+
+    @property
+    def has_production(self) -> bool:
+        """Whether a production sensor is bound (the production sensors are on by default)."""
+        return ROLE_PRODUCTION_POWER in self.build.meter_entities
+
+
+def _by_load(adapter: AccountingAdapter | None) -> list[dict[str, Any]]:
+    """Return the closed month's per-load rows for `powerplan_month_closed` (D11 §5.6)."""
+    if adapter is None:
+        return []
+    history = adapter.accounting.state().ledger.history
+    if not history:
+        return []
+    closed = history[-1]
+    return [
+        {
+            "load": load_id,
+            "kwh": round(rec.kwh, 3),
+            "cost": f"{rec.cost.amount:.2f} {rec.cost.currency}",
+            "savings": f"{rec.savings.amount:.2f} {rec.savings.currency}",
+        }
+        for load_id, rec in sorted(closed.loads.items())
+    ]

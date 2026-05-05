@@ -235,6 +235,13 @@ class EventKind(StrEnum):
     DEVICE_UNHEALTHY = "device_unhealthy"
     MONTH_CLOSED = "month_closed"
     SAFE_MODE = "safe_mode"
+    PRICES_RECEIVED = "prices_received"
+    LEVEL_CHANGED = "level_changed"
+    PERIOD_CLOSED = "period_closed"
+    LEGIONELLA = "legionella"
+    CYCLE = "cycle"
+    FORCE = "force"
+    PRESENCE_CHANGED = "presence_changed"
 
 
 # --------------------------------------------------------------------------- #
@@ -653,6 +660,9 @@ class EventsState:
 
     schema: int = 1
     edges: Mapping[str, str] = field(default_factory=dict)
+    #: D8's notification policy: when each key was last sent, ISO instants (D8 §7).
+    #: The engine carries it and never reads it.
+    last_sent: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1119,7 +1129,8 @@ class Engine:
             over_budget=over_budget,
             boundary_tick=boundary,
         )
-        events.extend(_domain_events(edges, ladder_state, report, observations, failed))
+        events.extend(_domain_events(edges, ladder_state, report, observations, failed, budget))
+        events.extend(_level_events(edges, self._tariff, budget))
         for load_id, error in failed.items():
             reasons.append(f"{load_id}: failed and held — {error} (INV-45)")
             repairs.append(
@@ -1183,7 +1194,7 @@ class Engine:
             load_meters=load_meters,
             alloc=alloc_state,
             grants=grants,
-            events=EventsState(schema=state.events.schema, edges=edges),
+            events=replace(state.events, edges=edges),
             runtime=runtime,
             last_snapshot=snapshot,
         )
@@ -1237,7 +1248,16 @@ class Engine:
                     severe=True,
                 )
             )
-            events.append(HaEvent(EventKind.SAFE_MODE, {"failures": failures, "error": str(err)}))
+            events.append(
+                HaEvent(
+                    EventKind.SAFE_MODE,
+                    {
+                        "entered": True,
+                        "reason": f"{type(err).__name__}: {err}",
+                        "failures": failures,
+                    },
+                )
+            )
             notes.append(
                 Notification(
                     category="engine",
@@ -1614,9 +1634,12 @@ class Engine:
                         EventKind.PEAK_WARNING,
                         {
                             "active": False,
+                            "cleared": True,
                             "window_start": start.isoformat(),
                             "expected_kwh": expected,
                             "ceiling_kwh": limit,
+                            "drivers": [],
+                            "advice": [],
                         },
                     )
                 )
@@ -1654,8 +1677,13 @@ class Engine:
                     EventKind.PEAK_WARNING,
                     {
                         "active": False,
+                        "cleared": True,
                         "key": runtime.peak.live,
                         "window_start": meter.window_start_utc.isoformat(),
+                        "expected_kwh": meter.used_kwh,
+                        "ceiling_kwh": budget.ceiling_kwh if budget is not None else 0.0,
+                        "drivers": [],
+                        "advice": [],
                     },
                 )
             )
@@ -1824,9 +1852,11 @@ class Engine:
                         {
                             "load": load_id,
                             "strategy": plan.strategy,
+                            "mode": plan.mode.value,
                             "planned_kwh": plan.planned_kwh,
                             "cost": str(plan.cost_estimate.amount),
                             "currency": plan.cost_estimate.currency,
+                            "next_start": _iso(plan.next_active(now)),
                             "covered": plan.covered,
                             "reason": plan.reason,
                         },
@@ -1842,6 +1872,8 @@ class Engine:
                             "load": load_id,
                             "coverage": site_plan.plans[load_id].coverage,
                             "deadline": _iso(site_plan.plans[load_id].deadline),
+                            "shortfall_kwh": _shortfall_kwh(site_plan.plans[load_id]),
+                            "reason": site_plan.plans[load_id].reason,
                         },
                     )
                 )
@@ -1863,7 +1895,12 @@ class Engine:
             accounting = dict(close.state) if close.state else accounting
             month_closed = close.month_closed or month_closed
             if close.month_closed is not None:
-                events.append(HaEvent(EventKind.MONTH_CLOSED, {"period": close.month_closed}))
+                events.append(
+                    HaEvent(
+                        EventKind.MONTH_CLOSED,
+                        {"month": close.month_closed, "period": close.month_closed},
+                    )
+                )
         if closes:
             dirty.add(Section.ACCOUNTING)
             reasons.append(
@@ -1883,7 +1920,7 @@ class Engine:
             load_meters=load_meters,
             plans=plans,
             accounting=accounting,
-            events=EventsState(schema=state.events.schema, edges=edges),
+            events=replace(state.events, edges=edges),
             runtime=runtime,
         )
         report = PlanReport(
@@ -2022,6 +2059,13 @@ class Engine:
             window_closed=window,
             presence=_presence_now(inputs),
         )
+
+    def reset_window_anchor(
+        self, state: EngineState, register_kwh: float, now: datetime, reason: str
+    ) -> EngineState:
+        """Re-anchor the window on the current register (D3 `reanchor`, D8 §5.7)."""
+        self._meter.reanchor(register_kwh, now, reason)
+        return replace(state, meter=self._meter.state())
 
     def load_mode(self, load_id: str, state: EngineState, inputs: Inputs) -> Mode:
         """Return a load's effective mode now, for a close without a view."""
@@ -2257,6 +2301,7 @@ def _warning_data(warning: SiteWarning, *, active: bool) -> dict[str, Any]:
     """Return one warning as an event payload (D8 §5.6)."""
     return {
         "active": active,
+        "cleared": not active,
         "kind": warning.kind,
         "window_start": _iso(warning.window_start),
         "window_end": _iso(warning.window_end),
@@ -2292,22 +2337,33 @@ def _level_notification(
     ]
 
 
-def _domain_events(
+def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     edges: dict[str, str],
     ladder: LadderState,
     report: AllocReport,
     observations: Mapping[str, Any],
     failed: Mapping[str, str],
+    budget: Budget | None = None,
 ) -> list[HaEvent]:
-    """Return the edge-triggered events of this tick (D7 §5.1 step 11)."""
+    """Return the edge-triggered events of this tick (D7 §5.1 step 11, D8 §5.6)."""
     events: list[HaEvent] = []
     stage_key = f"{ladder.stage}:{reason_key(ladder.reason)}"
-    if edges.get("stage") != stage_key:
+    previous = edges.get("stage")
+    if previous != stage_key:
         edges["stage"] = stage_key
+        old = int(previous.split(":", 1)[0]) if previous and previous[0].isdigit() else 0
         events.append(
             HaEvent(
                 EventKind.STAGE_CHANGED,
-                {"stage": ladder.stage, "reason": ladder.reason, "blunt": ladder.blunt},
+                {
+                    "old": old,
+                    "new": ladder.stage,
+                    "stage": ladder.stage,
+                    "reason": ladder.reason,
+                    "blunt": ladder.blunt,
+                    "projected_kwh": None if budget is None else budget.projected_kwh,
+                    "ceiling_kwh": None if budget is None else budget.ceiling_kwh,
+                },
             )
         )
     breach = "1" if report.over_allowance else "0"
@@ -2318,10 +2374,18 @@ def _domain_events(
                 HaEvent(
                     EventKind.BREACH,
                     {
+                        "kind": "window",
+                        "excess_w": report.breach_w,
+                        "scope": "site",
                         "breach_w": report.breach_w,
                         "deficit_w": report.deficit_w,
-                        "reserved": [
-                            [row.load, row.granted_w, row.measured_w, row.reserved_w]
+                        "table": [
+                            {
+                                "load": row.load,
+                                "granted": row.granted_w,
+                                "measured": row.measured_w,
+                                "reserved": row.reserved_w,
+                            }
                             for row in report.reserved
                         ],
                     },
@@ -2330,30 +2394,86 @@ def _domain_events(
     comfort = ",".join(sorted(report.comfort))
     if edges.get("comfort") != comfort:
         edges["comfort"] = comfort
-        if report.comfort:
+        granted = set(report.granted)
+        for load_id in sorted(report.comfort):
+            observation = observations.get(load_id)
+            state = None if observation is None else observation.demand.comfort
             events.append(
                 HaEvent(
                     EventKind.COMFORT_VIOLATION,
-                    {"loads": list(report.comfort), "breach_w": report.breach_w},
+                    {
+                        "load": load_id,
+                        "current": None if state is None else state.current,
+                        "floor": None if state is None else state.floor,
+                        "served": load_id in granted,
+                        "over_allowance": report.over_allowance,
+                    },
                 )
             )
     for load_id, observation in sorted(observations.items()):
         unhealthy = "1" if observation.health.unhealthy else "0"
-        if edges.get(f"unhealthy:{load_id}") == unhealthy:
+        was = edges.get(f"unhealthy:{load_id}")
+        if was == unhealthy:
             continue
         edges[f"unhealthy:{load_id}"] = unhealthy
-        if observation.health.unhealthy:
+        if observation.health.unhealthy or was == "1":
             events.append(
                 HaEvent(
                     EventKind.DEVICE_UNHEALTHY,
-                    {"load": load_id, "error": observation.health.last_error},
+                    {
+                        "load": load_id,
+                        "failures": observation.health.failures,
+                        "last_error": observation.health.last_error,
+                        "recovered": not observation.health.unhealthy,
+                    },
                 )
             )
     for load_id, error in sorted(failed.items()):
         if edges.get(f"unhealthy:{load_id}") == "1":
             continue
         edges[f"unhealthy:{load_id}"] = "1"
-        events.append(HaEvent(EventKind.DEVICE_UNHEALTHY, {"load": load_id, "error": error}))
+        events.append(
+            HaEvent(
+                EventKind.DEVICE_UNHEALTHY,
+                {"load": load_id, "failures": 1, "last_error": error, "recovered": False},
+            )
+        )
+    return events
+
+
+def _shortfall_kwh(plan: Plan) -> float:
+    """Return what a plan leaves unserved: the requirement times the uncovered share."""
+    required = plan.required_kwh or 0.0
+    return round(max(0.0, required * (1.0 - min(1.0, max(0.0, plan.coverage)))), 3)
+
+
+def _level_events(edges: dict[str, str], tariff: TariffModel, budget: Budget) -> list[HaEvent]:
+    """Return `level_changed` on the actual level's edge and on the projected one's (D8 §5.6)."""
+    events: list[HaEvent] = []
+    level = tariff.level()
+    projected = tariff.projected_level(budget.projected_kwh)
+    for edge, current, flag in (
+        ("level_actual", level, False),
+        ("level_projected", projected, True),
+    ):
+        was = edges.get(edge)
+        if was == current.name:
+            continue
+        edges[edge] = current.name
+        if was is None:
+            continue
+        events.append(
+            HaEvent(
+                EventKind.LEVEL_CHANGED,
+                {
+                    "old": was,
+                    "new": current.name,
+                    "metric_kw": current.metric_kw,
+                    "fee": None if current.fee is None else str(current.fee.amount),
+                    "projected": flag,
+                },
+            )
+        )
     return events
 
 
