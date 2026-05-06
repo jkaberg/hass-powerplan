@@ -220,6 +220,8 @@ live: if projected_kwh > ceiling and uncontrolled share > 0.6: Warning(kind="pea
 edge-triggered per window; cleared when expected < 0.85 × ceiling; at most one notification per window
 ```
 
+**As wired (D-0276).** A warning is a `SiteWarning` in the snapshot (`binary_sensor.<site>_peak_warning`, `sensor.<site>_next_peak_warning`), a `powerplan_peak_warning` event with `cleared: false` and a `Notification(category="peak_warning", key=<window key>)`; D8's policy makes the notification one persistent notification per window key (interval 1 h) or a `notify` call. The clear is the same three: the event with `cleared: true`, and a notification with `cleared: true` that resets the policy's key and dismisses the persistent one. Under the EMA variant the lead is what the time constant gives: on `oven_sunday_roast` (2.5 kW into a 3 kW ceiling from 15:25) the 16:00 window's warning is first published at 15:39, 21 minutes ahead - D9 §5.3's ≥ 20 min holds by a minute, and WP5.2's baseline term is what turns it into hours.
+
 ### 5.5 Lifecycle (INV-48)
 
 ```

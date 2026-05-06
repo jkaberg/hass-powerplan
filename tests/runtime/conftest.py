@@ -171,16 +171,23 @@ SITE_ENTRY_ID = "01JSITE0RUNTIME0TEST"
 
 
 def site_data(
-    hass: HomeAssistant, *, meter: bool = True, tariff: str | None = "no/tensio"
+    hass: HomeAssistant,
+    *,
+    meter: bool = True,
+    tariff: str | None = "no/tensio",
+    target_kw: float | None = None,
 ) -> dict[str, Any]:
-    """Return `entry.data` as the site flow materialises it (D8 §4), for one test site."""
+    """Return `entry.data` as the site flow materialises it (D8 §4), for one test site.
+
+    `target_kw` makes the ceiling a number of kW rather than the automatic step.
+    """
     tariff_data: dict[str, Any] = (
         {
             "preset_id": "no/tensio",
             "preset_file": tariff,
             "version_ids": [version.version_id for version in loader.load(tariff).versions],
-            "target": "auto",
-            "target_kw": None,
+            "target": "auto" if target_kw is None else "kw",
+            "target_kw": target_kw,
             "risk": 0.0,
             "eps_kwh": 0.3,
             "cap_margin_kw": 0.5,

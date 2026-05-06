@@ -278,7 +278,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 1.2 | Providers, read side | done |
 | 1.3 | Site config flow | done |
 | 1.4 | Site entities, events, repairs, diagnostics, translations | done |
-| 1.5 | Peak warning and advice | todo |
+| 1.5 | Peak warning and advice | done |
 | 1.6 | Recorder baseline (optional) | todo |
 | 1.7 | HA-level end to end | todo |
 | 2.1 | WriteGate executor | done |

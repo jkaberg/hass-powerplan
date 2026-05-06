@@ -1643,6 +1643,16 @@ class Engine:
                         },
                     )
                 )
+                # The clear reaches the notification policy too: the key resets and
+                # the persistent notification goes (D8 §2, D-0276).
+                notes.append(
+                    Notification(
+                        category="peak_warning",
+                        key=f"peak:{start.isoformat()}",
+                        params={"cleared": True, "window_start": start.isoformat()},
+                        severity="info",
+                    )
+                )
             elif start in warned:
                 warnings.append(
                     SiteWarning(
@@ -1655,6 +1665,11 @@ class Engine:
                         drivers=tuple(sorted(drivers, key=lambda row: -row[1])[:3]),
                     )
                 )
+
+        retired, cleared_events, cleared_notes = _retire_warned(warned, meter, budget, cfg)
+        warned -= retired
+        events.extend(cleared_events)
+        notes.extend(cleared_notes)
 
         live = _live_warning(budget, ceiling, meter)
         if live is not None:
@@ -1685,6 +1700,14 @@ class Engine:
                         "drivers": [],
                         "advice": [],
                     },
+                )
+            )
+            notes.append(
+                Notification(
+                    category="peak_warning",
+                    key=runtime.peak.live,
+                    params={"cleared": True},
+                    severity="info",
                 )
             )
 
@@ -2231,6 +2254,54 @@ def _acked(load_id: str, meter_state: LoadMeterState, upto: datetime) -> LoadMet
     row = LoadMeter(LoadMeterConfig(load_id=load_id), meter_state)
     row.ack(upto)
     return row.state()
+
+
+def _retire_warned(
+    warned: set[datetime], meter: MeterSnapshot, budget: Budget | None, cfg: EngineCfg
+) -> tuple[set[datetime], list[HaEvent], list[Notification]]:
+    """Clear the warned windows that are no longer coming (D7 §5.4, D8 §2, D-0276).
+
+    A warned window that is now the current one, or already over, is cleared
+    explicitly - the projection says the hour is fine, or the hour has passed -
+    never dropped in silence, so the notification it raised goes with it. The
+    current window stays warned while the live projection is still hot.
+    """
+    retired: set[datetime] = set()
+    events: list[HaEvent] = []
+    notes: list[Notification] = []
+    for start in sorted(w for w in warned if w <= meter.window_start_utc):
+        current = start == meter.window_start_utc
+        if (
+            current
+            and budget is not None
+            and budget.projected_kwh >= cfg.clear_fraction * budget.ceiling_kwh
+        ):
+            continue
+        retired.add(start)
+        expected_now = budget.projected_kwh if current and budget is not None else meter.used_kwh
+        events.append(
+            HaEvent(
+                EventKind.PEAK_WARNING,
+                {
+                    "active": False,
+                    "cleared": True,
+                    "window_start": start.isoformat(),
+                    "expected_kwh": expected_now,
+                    "ceiling_kwh": budget.ceiling_kwh if budget is not None else 0.0,
+                    "drivers": [],
+                    "advice": [],
+                },
+            )
+        )
+        notes.append(
+            Notification(
+                category="peak_warning",
+                key=f"peak:{start.isoformat()}",
+                params={"cleared": True, "window_start": start.isoformat()},
+                severity="info",
+            )
+        )
+    return retired, events, notes
 
 
 def _coming_windows(

@@ -9,7 +9,7 @@ open a gate, and may not teach the controller a setpoint (INV-14, INV-27).
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -19,8 +19,6 @@ from tests.scenarios import catalogue
 from tests.scenarios.runner import TICK_S, run_scenario
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from custom_components.powerplan.core.model import Snapshot
     from tests.scenarios.runner import ScenarioResult
 
@@ -177,3 +175,62 @@ def test_three_engine_failures_enter_safe_mode_and_release_every_load(
     # And nothing is written afterwards: a released site observes (D7 §8).
     late = [at for at, _load in result.write_log if at > entered[0] + timedelta(minutes=2)]
     assert late == []
+
+
+# --------------------------------------------------------------------------- #
+# oven_sunday_roast
+# --------------------------------------------------------------------------- #
+
+#: D9 §5.3: the warning must precede the roast's window by at least this much.
+ROAST_LEAD = timedelta(minutes=20)
+
+
+@pytest.fixture(scope="module")
+def roast() -> tuple[ScenarioResult, _Trail]:
+    """Run the Sunday afternoon once, keeping every snapshot."""
+    trail = _Trail(catalogue.ROAST_START, span=timedelta(hours=12))
+    return run_scenario(catalogue.oven_sunday_roast(), trail), trail
+
+
+def _roast_window_start(result: ScenarioResult) -> datetime:
+    """Return the start of the window the oven pushed highest - the day's peak."""
+    starts = [datetime.fromisoformat(start) for start in result.window_starts]
+    return max(zip(starts, result.window_kwh, strict=True), key=lambda row: row[1])[0]
+
+
+@pytest.mark.inv("INV-35")
+def test_the_roast_is_an_outlier_the_reserve_does_not_integrate(
+    roast: tuple[ScenarioResult, _Trail],
+) -> None:
+    """The oven's window breaches; the PI trim stays put and the reserve is back the next window."""
+    result, trail = roast
+    peak_start = _roast_window_start(result)
+    assert result.over_target >= 1, "the roast alone is over a 3 kW ceiling"
+    budgets = [
+        (snapshot.meter.window_start_utc, snapshot.budget)
+        for _at, snapshot in trail.all
+        if snapshot.meter is not None and snapshot.budget is not None
+    ]
+    before = next(b for start, b in budgets if start == peak_start - timedelta(hours=1))
+    after = next(b for start, b in budgets if start == peak_start + timedelta(hours=1))
+    assert after.r_trim_kwh == pytest.approx(before.r_trim_kwh), "outlier not integrated (INV-35)"
+    assert after.reserve_kwh == pytest.approx(before.reserve_kwh, rel=0.01), "reserve unchanged"
+
+
+def test_the_peak_warning_fires_twenty_minutes_before_the_roasts_window(
+    roast: tuple[ScenarioResult, _Trail],
+) -> None:
+    """The EMA of what the meter sees announces the window ≥ 20 min ahead (D7 §5.4)."""
+    result, trail = roast
+    peak_start = _roast_window_start(result)
+    first_seen = next(
+        (
+            at
+            for at, snapshot in trail.all
+            for warning in snapshot.warnings
+            if warning.kind == "peak" and warning.window_start == peak_start
+        ),
+        None,
+    )
+    assert first_seen is not None, "no peak warning named the roast's window"
+    assert peak_start - first_seen >= ROAST_LEAD, (first_seen, peak_start)

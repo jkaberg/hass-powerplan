@@ -1227,3 +1227,8 @@ Safe mode is D4's `release()` per load: sheds undone, site observing. A setpoint
 
 (1) `switch.<site>_active`, the three selects and `number.<site>_margin_kwh` are `RestoreEntity`s that push their state into the runtime on add; the runtime keeps knobs in memory only (INV-47). (2) `repairs.py` is one catalogue with severity and fixability per id, used for both engine and runtime conditions, with a fix flow for `engine_failing`. (3) The notification policy's `last_sent` lives in `EventsState.last_sent`, the `events` section D8 §7 names. (4) A row with no action behind it yet isn't shown. (5) `select.<site>_target` offers `auto`, the tariff's steps, or the configured kW for a stepless tariff. Affects D8 §5.5, §5.7, §5.9; D7 §5.6, §7.
 **Rejected:** knobs in the store's `runtime` section - that shape is the engine's. Disabled placeholder buttons - disabled-by-default is for noise, not for absence.
+
+### D-0276 · The roast is judged at 3 kW, and a cleared warning is a notification too
+
+`oven_sunday_roast` runs with `target_kw = 3.0`: the roast alone (2.5 kW on 0.63 kW base) crosses it whatever the controller does, which makes the row checkable (the PI doesn't move across the breaching window, INV-35; the reserve is back next window; the warning lands 21 minutes ahead). At 10 kW nothing would warn. The EMA's 900 s time constant sets the lead: about 14 minutes after the oven goes in. A cleared warning now also emits `Notification(cleared=True)`, so the policy dismisses the persistent notification. Affects D7 §5.4, D9 §5.3.
+**Rejected:** skipping the row until the baseline-aware reserve - the EMA ships until then, and its lead is the number to beat.

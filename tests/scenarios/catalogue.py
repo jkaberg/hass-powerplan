@@ -207,8 +207,35 @@ def engine_exception_x3() -> Scenario:
     )
 
 
+#: The Sunday roast (D9 §5.3, D7 §5.4): the third Sunday of the winter month, from
+#: lunch; `sim/uncontrolled.py` puts 2.5 kW in the oven for two hours from 15:25.
+ROAST_START = datetime(2027, 1, 17, 12, 17, 17, tzinfo=OSLO)
+ROAST_DAYS = 0.3
+#: A ceiling the roast alone exceeds: 0.63 kW of base plus 2.5 kW of oven is over
+#: 3 kW, so the warning must come from what the meter sees, twenty minutes ahead.
+ROAST_TARGET_KW = 3.0
+
+
+def oven_sunday_roast() -> Scenario:
+    """Return the Sunday afternoon whose roast is an uncontrolled outlier (D9 §5.3)."""
+    return Scenario(
+        name="oven_sunday_roast",
+        house=lambda: house(
+            day=ROAST_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.5,
+            slab_start_c=24.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=ROAST_START,
+        days=ROAST_DAYS,
+        target_kw=ROAST_TARGET_KW,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
-PHASE1 = (restart_mid_window, engine_exception_x3)
+PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)
