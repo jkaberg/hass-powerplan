@@ -1232,3 +1232,8 @@ Safe mode is D4's `release()` per load: sheds undone, site observing. A setpoint
 
 `oven_sunday_roast` runs with `target_kw = 3.0`: the roast alone (2.5 kW on 0.63 kW base) crosses it whatever the controller does, which makes the row checkable (the PI doesn't move across the breaching window, INV-35; the reserve is back next window; the warning lands 21 minutes ahead). At 10 kW nothing would warn. The EMA's 900 s time constant sets the lead: about 14 minutes after the oven goes in. A cleared warning now also emits `Notification(cleared=True)`, so the policy dismisses the persistent notification. Affects D7 §5.4, D9 §5.3.
 **Rejected:** skipping the row until the baseline-aware reserve - the EMA ships until then, and its lead is the number to beat.
+
+### D-0277 · A register report that never comes costs one window, not the rest of the day
+
+When a pending window closes on the integral and had its own anchor, the next window's anchor is `anchor + integral` (`WALL_CLOCK`); a report arriving while the pending window has no anchor closes it on the integral and re-syncs the current one. The meter simulator's repeated frame (2 % of hours, as the real AMS does) otherwise left every later window closed on the integral: the re-syncing report was consumed by a pending close that couldn't use it. Affects D3 §5.5, §8, §9.
+**Rejected:** closing the pending window from the next report - same arithmetic on the wrong window, and two repeats in a row still leave it unanchored. Treating a repeated value as a report - a stale frame and a quiet hour look the same.

@@ -315,6 +315,8 @@ A late tick (a heartbeat running after the boundary while the previous window's 
 
 **The wait, and "re-sync when the next report lands".** The window rolls at the boundary (the trapezoid segment split, `e_integral`, `e_used` and `degraded_gap_s` reset, `ema_w` carried) and the departing window becomes a `PendingClose` (§4) with `deadline = boundary + register_grace_s`. `state.closing is not None` **is** the "anchor belongs to the previous window" signal step 7 reads for the seam. A latched reading arriving while the current window has **no observed anchor** is that window's boundary value, anchor ← the reading, unless a reading already landed inside this window (the register reports more than once per window, so this one is a current value) or it arrives later than **half the window** - past that it can't be told from the previous boundary's value republished by an entity coming back from `unavailable` (effektstyring's `near_boundary`). Before any cadence is known the bound is `register_grace_s`. When neither holds the anchor is **derived** as `register − used`, which keeps `used` continuous and closes the window `estimated` (D-0025).
 
+**A report that never comes (D-0277).** The reference house's AMS now and then republishes the previous hour's value (a stale HAN frame, 2 % of hours in `tests/sim/meter.py`). To the meter that's *no* report for that boundary, so the waiting window closes on the integral at the deadline, and the next window has no observed start. Two rules keep the loss to that one window: (1) when the pending window closes on the integral and had an anchor of its own, the new window's anchor is **derived** as `anchor + integral` (`WALL_CLOCK`), so the next report closes it against the register - `estimated`, but the pair sums to the register delta exactly; (2) a report landing while the pending window has **no** anchor at all can never close it, so that window closes on the integral at once and the report re-syncs the window it belongs to, instead of being swallowed by the pending close. Without this one repeated frame turns every later window into a `wall_clock` estimate.
+
 ### 5.6 Degraded (INV-14 corollary)
 
 `degraded = degraded_gap_s > degrade_gap_s`. Only *unobserved time inside this window* counts, crossing a boundary never sets it (the pyscript bug that logged twenty warnings a day). D6 reads `degraded` to bump the reserve, D7 to suppress the PI trim's `binding` flag.
@@ -432,17 +434,18 @@ Store section `meter` inside the site's store (D7 owns the file):
 
 | Failure | Detection | Behaviour | Surface |
 |---|---|---|---|
-| Power sensor unavailable / stale | age > threshold | tick frozen (INV-17); integral paused; used from register when it reports | binary `stale`, repair issue after 10 min |
+| Power sensor unavailable / stale | age > threshold | tick frozen (INV-17), integral paused, used from register when it reports | binary `stale`, repair after 10 min |
 | Register never reports | cadence unknown after 2 windows | `wall_clock` anchor, `estimated` confidence, reserve bump via `degraded` | health attribute, repair after 24 h |
 | Register late at boundary | > `register_grace_s` | close with integral, re-sync on arrival (§5.5) | `degraded` for that window |
+| Register report never comes (repeated frame) | the next report lands | close the waiting window on the integral, derive the next window's start, re-sync on that report (§5.5, D-0277) | `degraded` for the one window, `estimated` for the next |
 | Register reset / new meter | drop > 1 kWh | re-anchor, WARNING | repair if repeated |
 | Power and register disagree | `integral_bias_w` > 5 % over 6 windows | nothing automatic (register wins) | repair: "check scaling" |
-| Unit change (W → kW after an integration update) | **WP1.2:** no detection needed - the provider scales from the unit the entity declares on every read (D-0085) | correct samples continue | - |
-| Unit is neither W nor kW (energy: neither kWh nor Wh) | the scaling table has no factor for it | sample dropped, `Quality.UNAVAILABLE`, tick freezes (INV-17) | WARNING once per entity; repair with the unit seen |
+| Unit change (W → kW after an integration update) | none needed, the provider scales from the unit the entity declares on every read (D-0085) | samples stay correct | - |
+| Unit is neither W nor kW (energy: neither kWh nor Wh) | the scaling table has no factor | sample dropped, `Quality.UNAVAILABLE`, tick freezes (INV-17) | WARNING once per entity, repair with the unit seen |
 | Implausible spikes | outside ±1.2 fuse | dropped, counted | health |
-| Export with no production sensor | grid_w < 0 | consumption `partial`, surplus from export only | review-step note, attribute |
-| Clock skew between meter and HA | `at` from HA receipt time only | never trust device timestamps for windows | - |
-| Window length change | `pending_window_min` | finish current window at old length, re-anchor | INFO |
+| Export without a production sensor | grid_w < 0 | consumption `partial`, surplus from export only | review note, attribute |
+| Clock skew between meter and HA | `at` is HA's receipt time only | never trust device timestamps for windows | - |
+| Window length change | `pending_window_min` | finish the current window at the old length, re-anchor | INFO |
 | Two config entries binding the same meter | entity id collision on setup | refuse the second site | flow error |
 
 Logging: boundary events at INFO with anchor kind and closed kWh, degraded/stale transitions at WARNING once per transition, per-sample only at DEBUG.
@@ -453,26 +456,26 @@ Logging: boundary events at INFO with anchor kind and closed kWh, degraded/stale
 
 Pure (`tests/core/metering/`):
 
-1. `window_bounds` over four time zones for every day of a year - contiguous, non-overlapping, DST days 23/25 h.
-2. Latched register: report at boundary + 12 s closes the window exactly; report late by 200 s → estimated close, re-sync after.
+1. `window_bounds` over four time zones for every day of a year: contiguous, non-overlapping, DST days 23/25 h.
+2. Latched register: a report at boundary + 12 s closes the window exactly. A report 200 s late → estimated close, re-sync after. A report that never comes → that window estimated on the integral, the next estimated against the register (the pair sums to the register delta), every window after exact (D-0277).
 3. Interpolated register (10 s cadence): closed kWh equals the analytic value within 1 Wh.
-4. Meter-window anchor overrides the register when fresh; falls back when stale.
-5. Mid-window restart: `used_kwh` survives (INV-14) - the dangerous one.
-6. Seam: no sample within (−5 s, +15 s) of a boundary, or with a stale anchor, yields `frozen_reason=None`.
-7. Crossing a boundary never sets `degraded`; 61 s of silence inside a window does.
+4. The meter-window anchor overrides the register when fresh, falls back when stale.
+5. Restart mid-window: `used_kwh` survives (INV-14). The dangerous one.
+6. Seam: no sample within (−5 s, +15 s) of a boundary, or with a stale anchor, gives `frozen_reason=None`.
+7. Crossing a boundary never sets `degraded`, 61 s of silence inside a window does.
 8. σ is computed on uncontrolled power: a 3 kW controlled step changes σ by < 5 %.
-9. Settling: with a load `settling=True, commanded=1 kW, measured=3 kW`, uncontrolled uses 1 kW.
-10. Register reset re-anchors; a register jump does not.
-11. Plausibility bounds derive from the profile; export beyond −1.2 fuse is implausible.
-12. `w_per_amp` table (§5.1) - all rows; fuse_w for the reference house ≈ 25 097 W (63 A × √3 × 230 V, asserted ± 1 W).
+9. Settling: a load with `settling=True, commanded=1 kW, measured=3 kW` counts 1 kW.
+10. A register reset re-anchors, a register jump doesn't.
+11. Plausibility bounds come from the profile, export beyond −1.2 fuse is implausible.
+12. The `w_per_amp` table (§5.1), all rows, and fuse_w for the reference house ≈ 25 097 W (63 A × √3 × 230 V, ± 1 W).
 13. Surplus = export + battery charge, smoothed.
-14. Per-phase headroom in amps; `unknown` phase → min headroom.
-15. Cadence detection picks latched for 3600 ± 20 s, interpolated for 10 s, warns for 3600 s with 15-min windows.
-16. `reconstruct_windows` on synthetic rows reproduces known windows; marks coarse ones.
-17. Window length change takes effect at the next boundary, not mid-window.
-18. `LoadMeter` REGISTER: Σ slot kWh over a day equals the load's register delta within 0.1 %; a register drop of 20 kWh (session counter reset) re-anchors and never yields a negative slot; `lifetime_kwh` is monotone across it.
-19. `LoadMeter` POWER: a 10 s trace integrates within 1 % of the analytic value; a 121 s gap marks the slot `estimated`; a load with neither role yields `nameplate × on-fraction` with `source = estimated`; measured power is used while `settling = True` (contrast test 9).
-20. `LoadMeter` slots follow the curve's slot length (15/30/60) and switch at the next boundary; a DST day yields 92/100 quarter slots; a restart mid-slot continues the slot (state round-trip).
+14. Per-phase headroom in amps, an `unknown` phase gets the minimum.
+15. Cadence detection picks latched for 3600 ± 20 s, interpolated for 10 s, and warns for 3600 s with 15-min windows.
+16. `reconstruct_windows` on synthetic rows gives back known windows and marks the coarse ones.
+17. A window length change takes effect at the next boundary, not mid-window.
+18. `LoadMeter` REGISTER: Σ slot kWh over a day equals the load's register delta within 0.1 %. A 20 kWh register drop (session counter reset) re-anchors and never gives a negative slot, and `lifetime_kwh` stays monotone across it.
+19. `LoadMeter` POWER: a 10 s trace integrates within 1 % of the analytic value, a 121 s gap marks the slot `estimated`, a load with neither role gives `nameplate × on-fraction` with `source = estimated`, and measured power is used while `settling = True` (contrast with 9).
+20. `LoadMeter` slots follow the curve's slot length (15/30/60) and switch at the next boundary, a DST day gives 92/100 quarter slots, and a restart mid-slot continues the slot (state round-trip).
 
 Provider (`tests/providers/meters/`): `ha_sensors` maps W and kW; unavailable → `Quality.UNAVAILABLE`; missing optional roles → `None`; circuit sum with settling. **WP1.2** ships all but the circuit sum, which arrives with `providers/meters/circuit.py` in WP2.5, and adds two the WP row named: the register read off the captured AMS dump, and per-phase currents in amps.
 

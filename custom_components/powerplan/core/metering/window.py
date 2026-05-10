@@ -553,8 +553,22 @@ class WindowMeter:
                     window.anchor_kind,
                     window.confidence,
                 )
-            elif now > work.closing.deadline_utc:
+            elif now > work.closing.deadline_utc or (
+                is_new and register is not None and work.closing.anchor_kwh is None
+            ):
+                # Past the grace - or a report has landed that can never close this
+                # window, because nothing anchored its start (its own report never
+                # came, D3 §5.5). Close on the integral now, so that step b below
+                # re-syncs the window this report belongs to instead of losing it.
                 closed.append(self._close_on_integral(work.closing))
+                if work.closing.anchor_kwh is not None and work.anchor_kwh is None:
+                    # The register at this window's start is unknown but bounded:
+                    # what the departed window began at plus what it integrated. A
+                    # derived anchor keeps the pair honest against the register
+                    # when the next report lands - one window is estimated by the
+                    # integral, not two (D3 §5.5, "re-sync when the next report lands").
+                    work.anchor_kwh = work.closing.anchor_kwh + work.closing.integral_kwh
+                    work.anchor_kind = AnchorKind.WALL_CLOCK
                 work.closing = None
 
         # b. a register reading inside the current window

@@ -122,6 +122,48 @@ def test_02c_a_report_200_s_late_closes_on_the_integral_then_re_syncs() -> None:
     )
 
 
+@pytest.mark.inv("INV-13")
+@pytest.mark.inv("INV-14")
+def test_02d_a_report_that_never_comes_costs_one_window_not_the_rest_of_the_day() -> None:
+    """A repeated frame: the window closes estimated, and the very next report re-syncs.
+
+    The AMS now and then republishes the previous hour's value (a stale HAN
+    frame): to the meter that is *no* report for that boundary. The window
+    waiting for it closes on the integral; the report that lands at the next
+    boundary must then anchor the window it belongs to, and every window after
+    it is `exact` again (D3 §5.5 "re-sync when the next report lands").
+    """
+    trace, reports, _ = _ams_run(hours=5.6)
+    # The third boundary's report never arrives: the reading stays the second's.
+    missed = tuple(row for index, row in enumerate(reports) if index != 2)
+    run = drive(WindowMeter(config(), None), trace, missed)
+
+    second = run.closed[1]
+    assert second.anchor_kind is AnchorKind.WALL_CLOCK
+    assert second.confidence == "estimated"
+    assert second.degraded is True
+
+    # The window after it began at a value nobody reported: it closes on the
+    # next report against a derived start, so it is estimated - but the pair
+    # sums to the register delta exactly, and nothing after it is estimated.
+    third = run.closed[2]
+    assert third.start_utc == FIRST_BOUNDARY + timedelta(hours=2)
+    assert third.anchor_kind is AnchorKind.REGISTER_LATCHED
+    assert third.confidence == "estimated"
+    assert third.degraded is False
+    assert second.kwh + third.kwh == pytest.approx(reports[3][1] - reports[1][1], abs=1e-9)
+
+    for index in (3, 4):
+        start = FIRST_BOUNDARY + timedelta(hours=index)
+        window = run.closed[index]
+        assert window.start_utc == start
+        assert window.anchor_kind is AnchorKind.REGISTER_LATCHED, (index, window)
+        assert window.confidence == "exact", (index, window)
+        assert window.kwh == pytest.approx(
+            trace.energy_kwh(start, start + timedelta(hours=1)), abs=0.001
+        )
+
+
 def test_03_interpolated_register_is_exact_within_1_wh() -> None:
     """A 7 s cadence: the boundary anchor is interpolated (D3 §5.5)."""
     trace = histories.noisy(
