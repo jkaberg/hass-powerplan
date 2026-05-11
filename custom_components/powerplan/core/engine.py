@@ -2373,7 +2373,8 @@ def _warning_data(warning: SiteWarning, *, active: bool) -> dict[str, Any]:
     return {
         "active": active,
         "cleared": not active,
-        "kind": warning.kind,
+        # `warning`, not `kind`: `kind` is the bus envelope's (D8 §2).
+        "warning": warning.kind,
         "window_start": _iso(warning.window_start),
         "window_end": _iso(warning.window_end),
         "expected_kwh": warning.expected_kwh,
@@ -2445,7 +2446,7 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
                 HaEvent(
                     EventKind.BREACH,
                     {
-                        "kind": "window",
+                        "breach": "window",
                         "excess_w": report.breach_w,
                         "scope": "site",
                         "breach_w": report.breach_w,

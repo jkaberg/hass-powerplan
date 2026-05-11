@@ -66,7 +66,7 @@ from custom_components.powerplan.core.tariffs import AUTO, Target
 from tests.builders.houses import House
 from tests.core.loads.conftest import cycle_reads, heatpump_reads, sim_command, tank_reads
 from tests.core.loads.conftest import reads as core_reads
-from tests.sim.base import LIMIT_A, REGISTER_IMPORT_KWH, SETPOINT_C, SOC, TEMP_AIR, TEMP_FLOOR
+from tests.sim.base import LIMIT_A, REGISTER_IMPORT_KWH, SETPOINT_C, SOC, TEMP_AIR, TEMP_FLOOR, Env
 from tests.sim.base import Command as SimCommand
 from tests.sim.base import Reads as SimReads
 from tests.sim.household import AWAY, VACATION
@@ -370,6 +370,154 @@ def _register_reading(
 
 
 # --------------------------------------------------------------------------- #
+# The house at 10 s: household, simulators, meter - shared with tests/e2e
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(slots=True)
+class HouseholdChange:
+    """What the household did in one step, for the caller that owns the engine (D9 §5.9)."""
+
+    #: A demand the planner must see: the car left or arrived, a machine was loaded.
+    plan_due: bool = False
+    #: The car left while plugged in, at this state of charge (a deadline result).
+    departed_soc: float | None = None
+    #: A controlled dishwasher was loaded: the caller asks the type for a run.
+    dishwasher_run: bool = False
+
+
+@dataclass
+class HouseDriver:
+    """D9 §5.9's household, simulators and meter, stepped at `TICK_S`.
+
+    Shared by the pure runner below and by `tests/e2e/fake_house.py`, so the
+    Home Assistant day and the pure day are the same house doing the same
+    things at the same instants (D9 §5.10): the household plugs in, unplugs,
+    loads the dishwasher and lights the sauna here; every simulator steps here
+    in one fixed order (the sum's order is the meter's rounding); and the AMS
+    register is stamped here the way `last_reported` stamps it in HA - a new
+    instant only when the value moved.
+    """
+
+    house: House
+    start: datetime
+    passive_pending: dict[str, SimCommand | None] = field(default_factory=dict)
+    steps: dict[str, SimReads] = field(default_factory=dict)
+    passive_steps: dict[str, SimReads] = field(default_factory=dict)
+    memo: dict[str, Any] = field(default_factory=dict)
+    sauna_on: bool = False
+    requested_days: set[date] = field(default_factory=set)
+    plugged_days: set[date] = field(default_factory=set)
+    unplugged_days: set[date] = field(default_factory=set)
+    seen_days: set[date] = field(default_factory=set)
+
+    def env_at(self, now: datetime) -> Env:
+        """Return the ambient conditions at `now`, with the household's occupancy."""
+        house = self.house
+        return house.weather.env_at(now, house.household.occupants_at(now))
+
+    def household(self, now: datetime) -> HouseholdChange:
+        """Plug in, unplug, load the dishwasher, light the sauna (D9 §5.9)."""
+        house = self.house
+        local = now.astimezone(house.cfg.tz)
+        day = local.date()
+        plan = house.household.day(day)
+        change = HouseholdChange()
+        if house.ev is not None:
+            if (
+                plan.departure is not None
+                and plan.departure >= self.start
+                and now >= plan.departure
+                and day not in self.unplugged_days
+            ):
+                self.unplugged_days.add(day)
+                if house.ev.plugged:
+                    change.departed_soc = house.ev.soc
+                house.ev.unplug(plan.drive_kwh)
+                change.plan_due = True
+            if (
+                plan.arrival is not None
+                and plan.arrival >= self.start
+                and now >= plan.arrival
+                and day not in self.plugged_days
+                and plan.plugs_in
+            ):
+                self.plugged_days.add(day)
+                house.ev.plug_in()
+                change.plan_due = True
+        # The dishwasher is loaded after dinner on weekdays (D9 §5.9); a controlled
+        # one is asked through the type (`button.run_now`), a passive one is started.
+        dishwasher = house.sims.get("dishwasher") or house.passive.get("dishwasher")
+        if (
+            dishwasher is not None
+            and local.weekday() < WEEKEND_FROM
+            and local.time() >= DISHWASHER_AT
+            and day not in self.requested_days
+        ):
+            self.requested_days.add(day)
+            dishwasher.request()
+            if "dishwasher" in house.sims:
+                change.dishwasher_run = True
+                change.plan_due = True
+            else:
+                self.passive_pending["dishwasher"] = SimCommand(start=True)
+        # The sauna is lit on Saturday evenings and forced for the session.
+        sauna = house.sims.get("sauna") or house.passive.get("sauna")
+        if sauna is not None:
+            session = local.weekday() == SATURDAY and SAUNA_AT <= local.time() < _sauna_end()
+            if session != self.sauna_on:
+                sauna.plug_on = session
+                self.sauna_on = session
+        self.seen_days.add(day)
+        return change
+
+    def step(
+        self,
+        now: datetime,
+        env: Env,
+        pending: dict[str, SimCommand | None],
+        *,
+        flap_until: datetime | None = None,
+    ) -> SimReads:
+        """Step every simulator under last tick's commands; return what the meter saw."""
+        house = self.house
+        total_w = house.uncontrolled.at(now)
+        for load in house.loads:
+            sim = house.sims[load.load_id]
+            command = pending[load.load_id]
+            if load.config.type_key == "ev" and flap_until is not None and now < flap_until:
+                sim.offline_until = flap_until
+            step = sim.step(TICK_S, command, env)
+            pending[load.load_id] = None
+            self.steps[load.load_id] = step
+            total_w += step.power_w
+        for load_id, passive in house.passive.items():
+            passive_step = passive.step(TICK_S, self.passive_pending.pop(load_id, None), env)
+            self.passive_steps[load_id] = passive_step
+            total_w += passive_step.power_w
+        return house.meter.step(TICK_S, total_w, env)
+
+    def sample(
+        self, now: datetime, meter_step: SimReads, stale_until: datetime | None = None
+    ) -> MeterSample:
+        """Return what the AMS meter's two entities read at `now` (D3 §4)."""
+        memo = self.memo
+        if stale_until is not None and now < stale_until:
+            # The sensor stopped reporting: the last value keeps its old timestamp.
+            grid_at = memo.get("stale_from", now)
+            memo.setdefault("stale_from", now - timedelta(seconds=TICK_S))
+        else:
+            memo.pop("stale_from", None)
+            grid_at = now
+        return MeterSample(
+            grid_w=Reading(value=meter_step.power_w, at=grid_at, source="sim"),
+            import_kwh=_register_reading(
+                self.house.meter, meter_step, now if grid_at == now else grid_at, memo
+            ),
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Prices
 # --------------------------------------------------------------------------- #
 
@@ -479,20 +627,13 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     )
 
     pending: dict[str, SimCommand | None] = {load.load_id: None for load in house.loads}
-    passive_pending: dict[str, SimCommand | None] = {}
-    steps: dict[str, SimReads] = {}
-    requested_days: set[date] = set()
-    sauna_on = False
+    driver = HouseDriver(house, scenario.start)
     started = _time.perf_counter()
-    memo: dict[str, Any] = {}
     writes_10min: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     curves: Curves | None = None
     plan_due: str | None = "startup"
     next_quarter_plan = _quarter_plan_after(scenario.start)
     last_plans: dict[str, Any] = {}
-    seen_days: set[date] = set()
-    plugged_days: set[date] = set()
-    unplugged_days: set[date] = set()
     # The start day's 06:30 is not a result when the run begins after it.
     ready_checked: set[date] = (
         {scenario.start.astimezone(tz).date()}
@@ -536,94 +677,26 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
         local = now.astimezone(tz)
         day = local.date()
         month = local.strftime("%Y-%m")
-        plan = house.household.day(day)
-        env = house.weather.env_at(now, house.household.occupants_at(now))
+        env = driver.env_at(now)
 
         # -- the household: plug in, unplug, drive (D9 §5.9) --------------- #
-        if house.ev is not None:
-            if (
-                plan.departure is not None
-                and plan.departure >= scenario.start
-                and now >= plan.departure
-                and day not in unplugged_days
-            ):
-                unplugged_days.add(day)
-                if house.ev.plugged:
-                    result.ev_soc_at_departure = house.ev.soc
-                    if house.ev.soc + 1e-9 < 0.80:
-                        result.deadline_misses += 1
-                        result.month(month)["deadline_misses"] += 1
-                house.ev.unplug(plan.drive_kwh)
-                plan_due = "demand"
-            if (
-                plan.arrival is not None
-                and plan.arrival >= scenario.start
-                and now >= plan.arrival
-                and day not in plugged_days
-                and plan.plugs_in
-            ):
-                plugged_days.add(day)
-                house.ev.plug_in()
-                plan_due = "demand"
-        # The dishwasher is loaded after dinner on weekdays (D9 §5.9); a controlled
-        # one is asked through the type (`button.run_now`), a passive one is started.
-        dishwasher = house.sims.get("dishwasher") or house.passive.get("dishwasher")
-        if (
-            dishwasher is not None
-            and local.weekday() < WEEKEND_FROM
-            and local.time() >= DISHWASHER_AT
-            and day not in requested_days
-        ):
-            requested_days.add(day)
-            dishwasher.request()
-            if "dishwasher" in house.sims:
-                state = _request_run(state, house.load("dishwasher"), now)
-                plan_due = "demand"
-            else:
-                passive_pending["dishwasher"] = SimCommand(start=True)
-        # The sauna is lit on Saturday evenings and forced for the session.
-        sauna = house.sims.get("sauna") or house.passive.get("sauna")
-        if sauna is not None:
-            session = local.weekday() == SATURDAY and SAUNA_AT <= local.time() < _sauna_end()
-            if session != sauna_on:
-                sauna.plug_on = session
-                sauna_on = session
-        seen_days.add(day)
+        change = driver.household(now)
+        if change.departed_soc is not None:
+            result.ev_soc_at_departure = change.departed_soc
+            if change.departed_soc + 1e-9 < 0.80:
+                result.deadline_misses += 1
+                result.month(month)["deadline_misses"] += 1
+        if change.dishwasher_run:
+            state = _request_run(state, house.load("dishwasher"), now)
+        if change.plan_due:
+            plan_due = "demand"
 
         # -- the simulators step under last tick's commands ---------------- #
-        total_w = house.uncontrolled.at(now)
-        for load in house.loads:
-            sim = house.sims[load.load_id]
-            command = pending[load.load_id]
-            if load.config.type_key == "ev" and flap_until is not None and now < flap_until:
-                sim.offline_until = flap_until
-            step = sim.step(TICK_S, command, env)
-            pending[load.load_id] = None
-            steps[load.load_id] = step
-            total_w += step.power_w
-        for load_id, passive in house.passive.items():
-            passive_step = passive.step(TICK_S, passive_pending.pop(load_id, None), env)
-            total_w += passive_step.power_w
-        meter_step = house.meter.step(TICK_S, total_w, env)
+        meter_step = driver.step(now, env, pending, flap_until=flap_until)
+        steps = driver.steps
 
         # -- inputs ------------------------------------------------------- #
-        grid_at = (
-            now - timedelta(seconds=(now - stale_until).total_seconds() + 1.0)
-            if stale_until is not None and now < stale_until
-            else now
-        )
-        if stale_until is not None and now < stale_until:
-            # The sensor stopped reporting: the last value keeps its old timestamp.
-            grid_at = memo.get("stale_from", now)
-            memo.setdefault("stale_from", now - timedelta(seconds=TICK_S))
-        else:
-            memo.pop("stale_from", None)
-        sample = MeterSample(
-            grid_w=Reading(value=meter_step.power_w, at=grid_at, source="sim"),
-            import_kwh=_register_reading(
-                house.meter, meter_step, now if grid_at == now else grid_at, memo
-            ),
-        )
+        sample = driver.sample(now, meter_step, stale_until)
         knobs = (
             scenario.knobs(now)
             if scenario.knobs
@@ -631,7 +704,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 target=target,
                 presence=_presence(house.household.presence_at(now)),
                 modes={
-                    **({"sauna": Mode.FORCE} if sauna_on and "sauna" in house.sims else {}),
+                    **({"sauna": Mode.FORCE} if driver.sauna_on and "sauna" in house.sims else {}),
                     **forced_modes,
                 },
             )

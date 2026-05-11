@@ -226,7 +226,7 @@ edge-triggered per window; cleared when expected < 0.85 × ceiling; at most one 
 
 ```
 async_setup_entry:
-  1 load SiteStore; migrate sections
+  1 load SiteStore; migrate sections; restore the tariff evaluator from `tariff` (history, target, risk - D2 §7, D-0280) before anything holds a reference to its history
   2 build domain objects from entry + subentries (site profile, meter source, price sources, tariff evaluator, loads, groups, zones, circuits, forecasts)
   3 release_all("startup") - a load never inherits the mode it was left in (INV-26)
   4 restore comfort targets (D4 restore(), a correction never an adoption)

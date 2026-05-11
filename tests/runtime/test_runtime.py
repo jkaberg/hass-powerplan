@@ -31,6 +31,7 @@ from tests.runtime.conftest import (
     FakeFloor,
     FakeMeter,
     advance,
+    restart_entry,
     site_entry,
 )
 
@@ -371,6 +372,36 @@ async def test_08_unload_releases_every_load_and_flushes_the_store(
     sections = hass_storage[STORE_KEY]["data"]
     assert "runtime" in sections
     assert "loads" in sections
+
+
+@pytest.mark.inv("INV-14")
+async def test_08b_a_restart_keeps_the_months_peaks(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """The tariff's history comes back with the store: a restart does not start the month over.
+
+    The `e2e` day found the evaluator built fresh from the preset on every
+    start while its section was written on every tick (D2 §7) - twelve of the
+    day's twenty-four windows were missing from the capacity bill after a
+    reload (D-0280).
+    """
+    entry = site_entry(hass)
+    runtime = await _setup(hass, entry)
+    await advance(hass, freezer, 75.0)
+    meter.report_register(delta_kwh=3.0)
+    await hass.async_block_till_done()
+    month = BOUNDARY.strftime("%Y-%m")
+    before = runtime.build.tariff.history.windows_in(month)
+    assert len(before) == 1, "the register report closed the first window"
+
+    await restart_entry(hass, entry, hass_storage)
+    again: Runtime = entry.runtime_data
+    assert again is not runtime
+    after = again.build.tariff.history.windows_in(month)
+    assert after == before
 
 
 # --------------------------------------------------------------------------- #

@@ -82,6 +82,43 @@ def test_a_chain_is_built_from_configuration_in_order() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("key", "stored", "expected"),
+    [
+        ("vat", {"rate": "0.25"}, {"rate": Decimal("0.25")}),
+        (
+            "spot_scale",
+            {"mult": "1.1", "offset": "0.05"},
+            {"mult": Decimal("1.1"), "offset": Decimal("0.05")},
+        ),
+        (
+            "fixed_price",
+            {"price": "0.40", "cap_kwh_per_month": "5000"},
+            {"price": Decimal("0.40"), "cap_kwh_per_month": 5000.0},
+        ),
+        (
+            "levy",
+            {"amount": "0.0163", "applies_above_mtd_kwh": 200},
+            {"applies_above_mtd_kwh": 200.0},
+        ),
+        ("subsidy_threshold", {"threshold": "0.9125", "share": "0.9"}, {"share": Decimal("0.9")}),
+    ],
+)
+def test_the_registry_decodes_what_the_flow_stored(
+    key: str, stored: dict[str, object], expected: dict[str, object]
+) -> None:
+    """A `NUMBER` saved as a string becomes the dataclass's own type (D-0270).
+
+    The `e2e` day found `Vat(rate="0.25")` multiplying a string: the flow writes
+    every scalar as text and only `MONEY` was decoded. The type comes from the
+    dataclass, not from the kind: a share is a `Decimal`, a kWh cap a `float`.
+    """
+    built = modifiers.build(key, stored)
+    for name, value in expected.items():
+        assert getattr(built, name) == value, (name, getattr(built, name))
+        assert type(getattr(built, name)) is type(value), (name, type(getattr(built, name)))
+
+
 def _options(key: str) -> dict[str, object]:
     """Return the minimum options each modifier needs to be built."""
     required: dict[str, dict[str, object]] = {

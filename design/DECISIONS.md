@@ -1237,3 +1237,18 @@ Safe mode is D4's `release()` per load: sheds undone, site observing. A setpoint
 
 When a pending window closes on the integral and had its own anchor, the next window's anchor is `anchor + integral` (`WALL_CLOCK`); a report arriving while the pending window has no anchor closes it on the integral and re-syncs the current one. The meter simulator's repeated frame (2 % of hours, as the real AMS does) otherwise left every later window closed on the integral: the re-syncing report was consumed by a pending close that couldn't use it. Affects D3 §5.5, §8, §9.
 **Rejected:** closing the pending window from the next report - same arithmetic on the wrong window, and two repeats in a row still leave it unanchored. Treating a repeated value as a report - a stale frame and a quiet hour look the same.
+
+### D-0278 · The `e2e` day: one stepping, the gate's two definitions, a pytest marker
+
+(1) The household, simulators and meter step in one `HouseDriver`, shared by `run_scenario` and `tests/e2e/fake_house.py`, so both days are the same house at the same instants. (2) `fake_house` publishes after firing due timers, so a tick reads the sample pushed ten seconds earlier, as in a real house. (3) D9 §5.10's numbers: projection error over each window's last quarter at p95, and warning lead measured to the instant the window's energy crosses the ceiling, for windows that raise the metric. A car plugged in at 16:25 makes a 16:00 peak no warning could precede. (4) The site binds power and both registers, not the AMS hour accumulator, which has no `last_reset`. (5) `e2e` is `pytest -m e2e` on a weekly workflow. (6) The mid-day restart writes the store to disk as HA would. (7) The site starts in observe at `step:2`. (8) A bus payload never carries envelope keys: `events.build` refuses them, so the peak warning's kind is `warning`. Measured: 11 339 ticks, 24 windows, 2 over, projection p95 0.292 kWh, 35.5 min lead to the crossing. Affects D8 §5.6; D9 §5.2, §5.10, §6, §9 10.
+**Rejected:** lead to the window start for every window - unattainable for the plug-in window, and a waived gate is no gate. A `benchmark.py` tier - the tool has no `hass`.
+
+### D-0279 · A stored `NUMBER` option decodes to the modifier's own field type
+
+`modifiers.build` decodes `NUMBER` options as it already did `MONEY`: to whatever the modifier's dataclass annotates (`Decimal`, `float` or `int`). A flow-made site stored `vat.rate = "0.25"` and the first price fetch raised `TypeError`; no test had built a modifier from stored data. Affects D1 §6.
+**Rejected:** `Decimal` everywhere - some fields are compared with D3's floats. Storing numbers as numbers - `Decimal` defaults would become binary floats (D-0123).
+
+### D-0280 · The runtime restores the tariff evaluator at start
+
+`Runtime.start` calls `Evaluator.restore(state.tariff)` after reading the store and before the accounting adapter or the engine take the history. The section was written every tick and never read back, so a reload mid-month billed the month from that moment (12 of 24 windows on the `e2e` day). The pure runner kept the evaluator object across its restart, which is why no scenario saw it. Affects D7 §5.5.
+**Rejected:** restoring on the engine's first tick - the adapter has already taken the old history object.

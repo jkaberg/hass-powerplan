@@ -8,7 +8,7 @@ as three more modules registered the same way.
 """
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -61,8 +61,9 @@ def build(key: str, options: Mapping[str, Any]) -> PriceModifier:
     `Decimal`s and `TouPeriod`s - pass through unchanged.
     """
     entry_ = _REGISTRY[key]
+    annotations = _annotations(entry_.factory)
     decoded = {
-        field.key: _decode(field, options[field.key])
+        field.key: _decode(field, options[field.key], annotations.get(field.key, ""))
         for field in entry_.schema
         if field.key in options
     }
@@ -73,14 +74,40 @@ def build(key: str, options: Mapping[str, Any]) -> PriceModifier:
     return entry_.factory(**decoded)
 
 
-def _decode(field: Field, value: Any) -> Any:
-    """Return one stored option as the modifier's dataclass expects it."""
+def _annotations(factory: Any) -> dict[str, str]:
+    """Return a dataclass factory's field annotations as strings (`"Decimal"`, `"float | None"`)."""
+    if not is_dataclass(factory):
+        return {}
+    return {row.name: str(row.type) for row in fields(factory)}
+
+
+def _decode(field: Field, value: Any, annotation: str = "") -> Any:
+    """Return one stored option as the modifier's dataclass expects it.
+
+    The flow writes every scalar it asked for as a string (`questionnaire.py`),
+    so a `NUMBER` arrives as `"0.25"` and is converted to what the dataclass
+    declares for it - `Decimal` for a rate or a share, `float` for a kWh cap -
+    the way `MONEY` has always become a `Decimal` (D-0270).
+    """
     if value is None:
         return None
     if field.kind is FieldKind.MONEY and not isinstance(value, Decimal):
         return Decimal(str(value))
+    if field.kind is FieldKind.NUMBER and isinstance(value, str | int | float):
+        return _number(value, annotation)
     if field.kind is FieldKind.LIST and isinstance(value, list | tuple):
         return tuple(value)
+    return value
+
+
+def _number(value: str | int | float, annotation: str) -> Any:
+    """Return a stored number in the type the dataclass declares for it."""
+    if "Decimal" in annotation:
+        return Decimal(str(value))
+    if "float" in annotation:
+        return float(value)
+    if "int" in annotation:
+        return int(value)
     return value
 
 

@@ -57,7 +57,15 @@ def test_08b_the_builder_adds_the_envelope_and_refuses_a_short_payload() -> None
     with pytest.raises(vol.Invalid):
         events.build(
             EventKind.BREACH,
-            {"kind": "meteor", "excess_w": 1.0, "scope": "site", "table": []},
+            {"breach": "meteor", "excess_w": 1.0, "scope": "site", "table": []},
+            site_id="e1",
+            at=AT,
+        )
+    # A payload never carries an envelope key: `kind` is the event's, not the breach's.
+    with pytest.raises(vol.Invalid):
+        events.build(
+            EventKind.BREACH,
+            {"kind": "window", "excess_w": 1.0, "scope": "site", "table": []},
             site_id="e1",
             at=AT,
         )

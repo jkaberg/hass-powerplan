@@ -293,7 +293,7 @@ A local day has 23, 24 or 25 hours, so 92/96/100 quarter slots. Slot arithmetic 
 
 ## 6. Configuration schema
 
-**WP1.1 (D-0270).** `modifiers.build(key, options)` decodes what `entry.data` holds: a `MONEY` field's decimal string becomes a `Decimal`, a `LIST` field a tuple, and a modifier whose list holds records - `tou_schedule`'s periods, `day_type`'s rates, `cumulative_tier`'s tiers - declares `from_options` and types them itself (a preset's `{"hours": [[360, 1320]], "price": 0.3604}` and a stored `{"when": {…}, "price": "…"}` both become a `TouPeriod`). Typed options pass through unchanged, so a test may still build a modifier directly.
+`modifiers.build(key, options)` decodes what `entry.data` holds. A `MONEY` field's decimal string becomes a `Decimal`, a `LIST` field a tuple, and a modifier whose list holds records (`tou_schedule`'s periods, `day_type`'s rates, `cumulative_tier`'s tiers) declares `from_options` and types them itself - a preset's `{"hours": [[360, 1320]], "price": 0.3604}` and a stored `{"when": {…}, "price": "…"}` both become a `TouPeriod` (D-0270). A `NUMBER` field is stored as text too (the flow writes every scalar through `jsonable`) and decoded to the type the modifier's dataclass declares - `Decimal` for `vat.rate`, `spot_scale.mult`, a `share`, `float` for `fixed_price.cap_kwh_per_month` and `levy.applies_above_mtd_kwh` - read off the dataclass's own annotations, so a new modifier needs no registry change. Without it `Vat(rate="0.25")` multiplies a string on a flow-made site (D-0279).
 
 Site flow, step **prices** (skipped on the *fuse only* path):
 

@@ -59,7 +59,7 @@ SCHEMAS: dict[EventKind, vol.Schema] = {
         extra=vol.ALLOW_EXTRA,
     ),
     EventKind.BREACH: _schema(
-        kind=vol.In(("fuse", "trip", "window", "circuit")),
+        breach=vol.In(("fuse", "trip", "window", "circuit")),
         excess_w=_number,
         scope=str,
         table=list,
@@ -138,6 +138,11 @@ def event_name(kind: EventKind | str) -> str:
     return f"{DOMAIN}_{value}"
 
 
+#: The envelope's own keys (§2): a payload never carries one of them - the
+#: warning's kind is `warning`, the breach's is `breach` (D-0278).
+ENVELOPE = frozenset({"schema", "site_id", "at", "kind"})
+
+
 def build(
     kind: EventKind, data: Mapping[str, Any], *, site_id: str, at: datetime
 ) -> dict[str, Any]:
@@ -146,11 +151,15 @@ def build(
     Raises `vol.Invalid` when the engine's data does not carry what the row
     promises - a bug to fix at the source, never a payload to fire anyway.
     """
+    shadowed = ENVELOPE & set(data)
+    if shadowed:
+        msg = f"{kind.value} payload carries envelope field(s) {sorted(shadowed)}"
+        raise vol.Invalid(msg)
     body = SCHEMAS[kind](dict(data))
     return {
+        **body,
         "schema": SCHEMA_VERSION,
         "site_id": site_id,
         "at": at.isoformat(),
         "kind": kind.value,
-        **body,
     }

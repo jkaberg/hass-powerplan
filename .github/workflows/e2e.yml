@@ -1,0 +1,43 @@
+name: e2e day
+
+# D9 §5.10, §5.11: the HA-level day against `fake_house` - the integration set
+# up through its real config flow, one simulated day in 10 s steps, compared
+# with the pure runner's same day. Weekly, before a release, and on demand.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  e2e:
+    name: e2e day (pytest -m e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+
+      - name: Sync the environment
+        run: uv sync
+
+      - name: The e2e day
+        run: |
+          uv run pytest -m e2e -q -p no:cacheprovider \
+            --log-cli-level=INFO --junitxml=e2e.xml
+
+      - name: Keep the day's numbers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-day
+          path: e2e.xml

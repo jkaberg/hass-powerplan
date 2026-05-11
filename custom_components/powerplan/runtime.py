@@ -678,10 +678,16 @@ class Runtime:
         self.state = EngineState.from_sections(document) if document else EngineState()
         self.raw = RawSlotStore(self.store.get(Section.PRICES))
         self.notifications.last_sent = dict(self.state.events.last_sent)
+        build = self.build
+        if self.state.tariff is not None:
+            # The month's peaks, the target and the risk come back with the state
+            # (D2 §7), before the ledger takes its reference to the history and
+            # before the engine prices a window: a restart must not start the
+            # month over (INV-14's tariff half, D-0280).
+            build.tariff.restore(self.state.tariff)
         self._log_step("store")
 
         now = dt_util.utcnow()
-        build = self.build
         adapter = AccountingAdapter(
             AccountingConfig(currency=build.cfg.currency, tz=build.cfg.tz),
             build.loads,

@@ -72,6 +72,31 @@ STORE_KEY = f"{DOMAIN}.{ENTRY_ID}"
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "store"
 
 
+def _write_document(path: Path, document: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
+async def restart_entry(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_storage: dict[str, Any]
+) -> None:
+    """Unload the entry and set it up again from what its store wrote.
+
+    `Store.async_save` is intercepted by the harness's `hass_storage` and kept
+    in memory, while `SiteStore` reads its own file (D-0091): the document Home
+    Assistant would have on disk is put there between the two.
+    """
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    key = f"{DOMAIN}.{entry.entry_id}"
+    assert key in hass_storage, "unload flushed nothing"
+    await hass.async_add_executor_job(
+        _write_document, Path(hass.config.path(".storage", key)), hass_storage[key]
+    )
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
 async def advance(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float) -> None:
     """Move the clock `seconds` forward and run whatever fell due."""
     freezer.tick(timedelta(seconds=seconds))
