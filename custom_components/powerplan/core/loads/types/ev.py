@@ -23,6 +23,7 @@ The 6 A cliff, the ramp and the write suppression are the `MODULATE` kind's
 one stop this type takes on itself is parking a session the *car* ended.
 """
 
+import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta, tzinfo
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -41,12 +42,16 @@ if TYPE_CHECKING:
     from ..stores.base import StoreModel
 
 __all__ = [
+    "BLOCKED_AFTER_S",
+    "BLOCKED_W",
     "CONNECTED_STATUSES",
     "DERIVATION_VERSION",
     "EV_DONE_SOC_HYST",
     "OFFLINE_STATUSES",
     "Ev",
 ]
+
+_LOGGER = logging.getLogger(__name__)
 
 #: Bumped whenever a default below changes (INV-66).
 DERIVATION_VERSION: Final = 1
@@ -56,11 +61,13 @@ EV_DONE_SOC_HYST: Final = 3.0
 
 #: A car is on the cable in all of these. `completed` is deliberately here - the
 #: car is plugged in, it has simply finished - and the latch, not the status set,
-#: is what stops the next tick wanting it back.
+#: is what stops the next tick wanting it back. `de_authorizing` too: the charger
+#: is revoking an RFID authorisation *with the cable in* (D-0281).
 CONNECTED_STATUSES: frozenset[str] = frozenset(
     {
         "awaiting_start",
         "awaiting_authorization",
+        "de_authorizing",
         "charging",
         "ready_to_charge",
         "completed",
@@ -68,6 +75,12 @@ CONNECTED_STATUSES: frozenset[str] = frozenset(
         "car_connected",
     }
 )
+
+#: Granted and enabled, and still drawing nothing after this long: the charger is
+#: blocked by something powerplan does not control, and says so once (§5.11).
+BLOCKED_AFTER_S: Final = 180.0
+#: Below this the charger is not charging, whatever the standby electronics draw.
+BLOCKED_W: Final = 100.0
 
 #: No contact with the charger. Not "unplugged" (README).
 OFFLINE_STATUSES: frozenset[str] = frozenset({"offline", "unavailable", "unknown", "error"})
@@ -357,7 +370,11 @@ class Ev:
                 limits.append(value)
         return min(limits)
 
-    def latch(  # noqa: PLR0911 - two ways in and four ways out, each its own line
+    def latch(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState:
+        """Return the type's own conclusions about what the charger said (§5.11)."""
+        return self._note_blocked(load, self._latch_session(load, state, ctx), ctx)
+
+    def _latch_session(  # noqa: PLR0911 - two ways in and four ways out, each its own line
         self, load: Load, state: LoadState, ctx: LoadCtx
     ) -> LoadState:
         """Set and clear the session-done latch (§5.11).
@@ -403,6 +420,44 @@ class Ev:
             )
         return state
 
+    def _note_blocked(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState:
+        """Notice a charger that is granted, enabled and drawing nothing (§5.11).
+
+        "Granted" is what the entities show: an armed limit at or above the
+        minimum and the enable on. After `BLOCKED_AFTER_S` of that with no power
+        the charger is blocked by something powerplan does not steer - an RFID
+        it waits for, a queue, a fuse - and the reason its `blocked_by` sensor
+        gives is logged once per reason, never once per tick.
+        """
+        params = load.config.params
+        held = ctx.reads.value(Role.CURRENT_SET)
+        enabled = _as_on(ctx.reads.current_of(Role.ENABLE))
+        power = ctx.reads.value(Role.POWER)
+        granted = (
+            self.connected(ctx) is True
+            and enabled
+            and held is not None
+            and held >= float(params.get("min_a", EV_MIN_A))
+        )
+        idle = power is not None and power < BLOCKED_W
+        if not (granted and idle):
+            if state.blocked_since is None and state.blocked_reason is None:
+                return state
+            return replace(state, blocked_since=None, blocked_reason=None)
+        since = state.blocked_since or ctx.now
+        if (ctx.now - since).total_seconds() < BLOCKED_AFTER_S:
+            return state if state.blocked_since is not None else replace(state, blocked_since=since)
+        reason = ctx.reads.text(Role.BLOCKED_BY) or "no reason reported"
+        if reason != state.blocked_reason:
+            _LOGGER.warning(
+                "%s: granted %.0f A and enabled, drawing nothing for %.0f s — charging blocked by %s",
+                load.load_id,
+                held or 0.0,
+                (ctx.now - since).total_seconds(),
+                reason,
+            )
+        return replace(state, blocked_since=since, blocked_reason=reason)
+
     def demand(self, load: Load, state: LoadState, ctx: LoadCtx) -> Demand:
         """Return what the car wants, and how badly (§5.11)."""
         params = load.config.params
@@ -442,6 +497,8 @@ class Ev:
         else:
             urgency = Urgency.NORMAL
             reason = f"charging to {target:.0f} %"
+        if state.blocked_reason is not None:
+            reason = f"{reason}; blocked by {state.blocked_reason}"
 
         required = (
             None
@@ -461,23 +518,32 @@ class Ev:
         )
 
     def next_departure(self, load: Load, ctx: LoadCtx) -> datetime | None:
-        """Return the next departure from the weekday table, in local time (§6.2)."""
+        """Return the next departure: the weekday table or the bound calendar, whichever is first (§5.11, §6.2).
+
+        A calendar event is a departure the household wrote down for one day; the
+        table is every week's. The earlier of the two is the deadline, so a
+        05:30 trip in the calendar beats the table's 07:00 and a calendar with
+        nothing in it changes nothing (D-0281).
+        """
+        candidates = [
+            event.start.astimezone(ctx.now.tzinfo)
+            for event in ctx.calendar
+            if event.start > ctx.now
+        ]
         table = load.config.params.get("departures") or {}
-        if not table:
-            return None
         zone: tzinfo | None = ctx.zone if ctx.zone is not None else ctx.now.tzinfo
-        if zone is None:
-            return None
-        local = ctx.now.astimezone(zone)
-        for ahead in range(8):
-            day = local + timedelta(days=ahead)
-            raw = table.get(str(day.weekday()))
-            if raw is None:
-                continue
-            at = _at_time(day, raw)
-            if at > local:
-                return at.astimezone(ctx.now.tzinfo)
-        return None
+        if table and zone is not None:
+            local = ctx.now.astimezone(zone)
+            for ahead in range(8):
+                day = local + timedelta(days=ahead)
+                raw = table.get(str(day.weekday()))
+                if raw is None:
+                    continue
+                at = _at_time(day, raw)
+                if at > local:
+                    candidates.append(at.astimezone(ctx.now.tzinfo))
+                    break
+        return min(candidates) if candidates else None
 
     def kind_ctx(
         self, load: Load, state: LoadState, ctx: LoadCtx, *, grant: Grant | None, mode: Mode

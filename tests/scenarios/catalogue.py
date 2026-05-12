@@ -234,8 +234,24 @@ def oven_sunday_roast() -> Scenario:
     )
 
 
+#: D4's row (D9 §5.3 `ble_flaps`): the charger's Bluetooth link drops twice in
+#: the evening, fifteen minutes each time, on top of the simulator's own drops.
+FLAP_AT = WINTER_START + timedelta(hours=2, minutes=3)
+FLAP_S = 900.0
+FLAPS = (
+    Fault(kind="ble_flap", at=FLAP_AT, seconds=FLAP_S),
+    Fault(kind="ble_flap", at=FLAP_AT + timedelta(hours=1, minutes=10), seconds=FLAP_S),
+)
+
+
+def ble_flaps() -> Scenario:
+    """Return the winter evening with two injected Bluetooth flaps (D4 §5.11, D9 §5.3)."""
+    return _winter_evening("ble_flaps", FLAPS)
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
+PHASE2 = (ble_flaps,)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

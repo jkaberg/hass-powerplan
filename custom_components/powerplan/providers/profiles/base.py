@@ -57,6 +57,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     UnitOfTemperature,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
@@ -75,8 +76,6 @@ from custom_components.powerplan.writegate import DeviceCall
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from homeassistant.core import HomeAssistant
-
     from custom_components.powerplan.core.loads import ControlKind, Value, Write
     from custom_components.powerplan.core.loads.base import LoadConfig
     from custom_components.powerplan.providers.meters.base import UnitTable
@@ -93,6 +92,7 @@ __all__ = [
     "DeviceProfile",
     "DeviceView",
     "EntityView",
+    "LiveDevice",
     "MatchResult",
     "Provision",
     "Quirks",
@@ -999,6 +999,40 @@ def _device_number(binding: RoleBinding, value: Value) -> float | int:
 # --------------------------------------------------------------------------- #
 # The protocol
 # --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True, slots=True)
+class LiveDevice:
+    """A bound device read off Home Assistant on every tick - D7's `LoadDevice`.
+
+    `BoundDevice` knows the roles and how to write them; it reads from a
+    `DeviceView`, which is a snapshot. The runtime needs the current one each
+    tick, so this pairs the bound device with its `device_id` and takes the
+    view fresh from the registries and the state machine (INV-3: this module is
+    a provider). Nothing else changes hands: `call_for` and `entity_ids` are the
+    bound device's.
+    """
+
+    hass: HomeAssistant
+    device_id: str
+    bound: BoundDevice
+
+    @property
+    def entity_ids(self) -> tuple[str, ...]:
+        """Every entity the load reads or writes."""
+        return self.bound.entity_ids
+
+    def reads(self, now: datetime) -> Reads:
+        """Return what the device's entities say right now."""
+        return self.bound.reads(DeviceView.from_hass(self.hass, self.device_id), now)
+
+    def call_for(self, write: Write) -> DeviceCall | None:
+        """Return the service call for `write`, or `None` when its role is unbound."""
+        return self.bound.call_for(write)
+
+    def call_for_provision(self, provision: Provision) -> DeviceCall | None:
+        """Return the service call that puts a provision on its entity."""
+        return self.bound.call_for_provision(provision)
 
 
 class DeviceProfile(Protocol):

@@ -541,6 +541,8 @@ Defaults per kind (a load's own `command_min_interval` may raise, never lower):
 - **Blocked**: granted > 0 and drawing nothing for 3 min → log `charging_blocked_by` (edge-triggered on the reason).
 - **Phases**: from the profile (`phase_mode`), else the questionnaire; `w_per_amp` from the site profile (D3 §5.1).
 - **Plug-in edge** → D7 event `ev_connected` → D5 replans immediately.
+
+**The `ev` type in code (D-0281).** *Deadline*: the earlier of the weekday table's next departure and the bound calendar's next event (`LoadReads.calendar`, one `CalendarEvent` the runtime reads off the `calendar` entity's `start_time`/`end_time`/`message`); a calendar with nothing in it changes nothing; the one-off `time.<load>_deadline` knob arrives with the load entities. *Blocked*: "granted" is what the entities show - the armed limit at or above `min_a` with the enable on - and after `BLOCKED_AFTER_S` (180 s) under `BLOCKED_W` (100 W) the `blocked_by` text is logged at WARNING once per reason (`LoadState.blocked_since`/`blocked_reason`), and the demand's reason names it. *Plug-in edge*: `Load.observe` hands the engine `Observation.connected`/`soc` from the type, and the engine fires `ev_connected` on **both** edges (`connected: bool`, `soc`), never on the first observation; the runtime plans on it (`run_plan("demand")`, D7 §5.2). *Force with expiry* and the min-SoC urgency are the type's own. `providers/profiles/base.py::LiveDevice` is D7's `LoadDevice` over a `BoundDevice`: the view is taken fresh from the registries every tick.
 - Multi-charger circuits, phase switching, V2H: v1.x.
 
 **The status vocabulary, spelled out.** A profile maps its device's own
@@ -555,13 +557,12 @@ integration is a second table and not a conditional. `easee_ble`'s nine:
 | `awaiting_start` · `ready_to_charge` · `awaiting_authorization` | `CONNECTED` | yes | a car on the cable; `awaiting_start` is what a *disabled* charger with a car reports |
 | `charging` | `CHARGING` | yes | |
 | `completed` | `DONE` | yes | still on the cable, finished - the latch, not the status, stops the next tick wanting it back |
-| `de_authorizing` | `UNKNOWN` | no | **not** in D4's connected set; revoking an RFID authorisation, reported verbatim rather than guessed |
+| `de_authorizing` | `CONNECTED` | yes | revoking an RFID authorisation with the cable in - a car on the cable (D-0281) |
 | missing · `unavailable` · `unknown` | `LINK_DOWN` | no | blindness never opens a gate (INV-15, INV-17) |
 
-`de_authorizing` is an open point: the cable *is* in, so `CONNECTED` would be
-truer, but `types/ev.py`'s `CONNECTED_STATUSES` does not list it and a profile that
-disagreed with the type would produce a load that wants power and reports no car.
-Adding it to the core's set belongs to WP2.3 with the rest of `types/ev.py`.
+`de_authorizing` was the open point: the cable *is* in, so the core's
+`CONNECTED_STATUSES` holds it and the profile says `CONNECTED` with it: the type
+and the profile never disagree about a word (D-0281).
 
 **Link loss is expressed as `Reads`, not as remembered state.** `Quirks.
 forgets_limit_on_link_loss` is what §5.11's "the last written limit is forgotten"

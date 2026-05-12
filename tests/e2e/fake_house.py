@@ -125,6 +125,15 @@ EASEE_STATUSES = (
     "awaiting_authorization",
     "de_authorizing",
 )
+EASEE_BLOCKED_BY = (
+    "ok",
+    "waiting_in_queue",
+    "no_current_request_received",
+    "charger_disabled",
+    "limited_by_charger_dynamic_limit",
+    "ev_not_charging",
+    "limited_by_ev",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,12 +164,18 @@ def _rows(kind: str, load_id: str) -> tuple[Row, ...]:  # noqa: PLR0911 - one sh
             Row(f"sensor.{load_id}_status", "enum", options=EASEE_STATUSES),
             Row(f"sensor.{load_id}_power", "power", "kW", "measurement"),
             Row(f"number.{load_id}_dynamic_charger_current", "current", "A"),
+            Row(f"number.{load_id}_max_charger_current", "current", "A"),
             Row(f"switch.{load_id}_charger_enabled"),
+            Row(f"sensor.{load_id}_charging_blocked_by", "enum", options=EASEE_BLOCKED_BY),
+            Row(f"sensor.{load_id}_cable_rating", "current", "A", "measurement"),
+            Row(f"sensor.{load_id}_circuit_max_current", "current", "A", "measurement"),
             Row(f"sensor.{load_id}_current_l1", "current", "A", "measurement"),
             Row(f"sensor.{load_id}_current_l2", "current", "A", "measurement"),
             Row(f"sensor.{load_id}_current_l3", "current", "A", "measurement"),
             Row(f"sensor.{load_id}_session_energy", "energy", "kWh", "total_increasing"),
             Row(f"sensor.{load_id}_lifetime_energy", "energy", "kWh", "total_increasing"),
+            Row(f"select.{load_id}_bluetooth_mode", options=("button_press", "always_on")),
+            Row(f"select.{load_id}_phase_mode", options=("1_phase", "auto", "3_phase")),
         )
     if kind == "water_heater":
         return (
@@ -228,6 +243,9 @@ class FakeLoad:
         self.entity_ids = tuple(row.entity_id for row in self.rows)
         self._published: dict[str, tuple[str, dict[str, Any]]] = {}
         self.pressed_at: datetime | None = None
+        self.device_id: str | None = None
+        #: The charger's own settings a service call may change (`select.*`).
+        self.settings: dict[str, str] = {"bluetooth_mode": "always_on", "phase_mode": "3_phase"}
 
     def install(self) -> None:
         """Register the device and its entities the way the integration would."""
@@ -242,6 +260,7 @@ class FakeLoad:
             model=self.model,
             name=self.load_id,
         )
+        self.device_id = device.id
         registry = er.async_get(self.hass)
         for row in self.rows:
             domain, object_id = row.entity_id.split(".", 1)
@@ -338,6 +357,9 @@ class FakeLoad:
         if not step.available:
             # The Bluetooth link is down: every entity of the charger is unavailable.
             return {entity_id: ("unavailable", {}) for entity_id in self.entity_ids}
+        blocked = (
+            "ok" if step.power_w > 0.0 else ("charger_disabled" if ev.paused else "ev_not_charging")
+        )
         return {
             f"sensor.{lid}_status": (str(step.status), {}),
             f"sensor.{lid}_power": (f"{step.power_w / 1000.0:.3f}", {}),
@@ -345,7 +367,16 @@ class FakeLoad:
                 f"{step.values.get(LIMIT_A, ev.limit_a):.0f}",
                 {"min": 0.0, "max": 32.0, "step": 1.0, "mode": "box"},
             ),
+            f"number.{lid}_max_charger_current": (
+                f"{ev.max_a:.0f}",
+                {"min": 0.0, "max": 32.0, "step": 1.0, "mode": "box"},
+            ),
             f"switch.{lid}_charger_enabled": ("off" if ev.paused else "on", {}),
+            f"sensor.{lid}_charging_blocked_by": (blocked, {}),
+            f"sensor.{lid}_cable_rating": (f"{ev.max_a:.0f}", {}),
+            f"sensor.{lid}_circuit_max_current": (f"{ev.max_a:.0f}", {}),
+            f"select.{lid}_bluetooth_mode": (self.settings["bluetooth_mode"], {}),
+            f"select.{lid}_phase_mode": (self.settings["phase_mode"], {}),
             f"sensor.{lid}_current_l1": (f"{step.amps[0]:.3f}", {}),
             f"sensor.{lid}_current_l2": (f"{step.amps[1]:.3f}", {}),
             f"sensor.{lid}_current_l3": (f"{step.amps[2]:.3f}", {}),
@@ -479,6 +510,9 @@ class FakeLoad:
             return SimCommand(start=True)
         if domain == "select":
             option = str(data["option"])
+            if self.kind == "ev":
+                self.settings[suffix.lstrip("_")] = option  # a charger setting, not a command
+                return None
             mode = "off" if option == "Off" else ("eco" if option.startswith("Energy") else "heat")
             return SimCommand(mode=mode)
         return None

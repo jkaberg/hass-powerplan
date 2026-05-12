@@ -108,6 +108,7 @@ def test_08b_the_builder_adds_the_envelope_and_refuses_a_short_payload() -> None
             },
         ),
         (EventKind.PRESENCE_CHANGED, {"old": "home", "new": "away", "source": "auto"}),
+        (EventKind.EV_CONNECTED, {"load": "ev", "connected": True, "soc": 41.0}),
         (
             EventKind.LEVEL_CHANGED,
             {"old": "2–5 kW", "new": "5–10 kW", "metric_kw": 6.1, "fee": "441", "projected": True},

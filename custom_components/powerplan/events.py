@@ -64,6 +64,7 @@ SCHEMAS: dict[EventKind, vol.Schema] = {
         scope=str,
         table=list,
     ),
+    EventKind.EV_CONNECTED: _schema(load=str, connected=bool, soc=_maybe_number),
     EventKind.COMFORT_VIOLATION: _schema(
         load=str,
         current=_maybe_number,

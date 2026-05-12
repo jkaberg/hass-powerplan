@@ -242,6 +242,7 @@ class EventKind(StrEnum):
     CYCLE = "cycle"
     FORCE = "force"
     PRESENCE_CHANGED = "presence_changed"
+    EV_CONNECTED = "ev_connected"
 
 
 # --------------------------------------------------------------------------- #
@@ -2409,6 +2410,37 @@ def _level_notification(
     ]
 
 
+def _plug_edges(edges: dict[str, str], observations: Mapping[str, Any]) -> list[HaEvent]:
+    """Return `ev_connected` for every car plugged in or unplugged this tick (D4 §5.11).
+
+    A demand change the planner must see now (D7 §5.2): one event per edge in
+    either direction, none for what the first observation happened to find.
+    """
+    events: list[HaEvent] = []
+    for load_id, observation in observations.items():
+        connected = getattr(observation, "connected", None)
+        if connected is None:
+            continue
+        key = f"connected:{load_id}"
+        current = "1" if connected else "0"
+        previous = edges.get(key)
+        if previous == current:
+            continue
+        edges[key] = current
+        if previous is not None:
+            events.append(
+                HaEvent(
+                    EventKind.EV_CONNECTED,
+                    {
+                        "load": load_id,
+                        "connected": bool(connected),
+                        "soc": getattr(observation, "soc", None),
+                    },
+                )
+            )
+    return events
+
+
 def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     edges: dict[str, str],
     ladder: LadderState,
@@ -2418,7 +2450,7 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     budget: Budget | None = None,
 ) -> list[HaEvent]:
     """Return the edge-triggered events of this tick (D7 §5.1 step 11, D8 §5.6)."""
-    events: list[HaEvent] = []
+    events: list[HaEvent] = _plug_edges(edges, observations)
     stage_key = f"{ladder.stage}:{reason_key(ladder.reason)}"
     previous = edges.get("stage")
     if previous != stage_key:

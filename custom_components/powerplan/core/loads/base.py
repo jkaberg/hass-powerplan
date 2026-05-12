@@ -298,6 +298,10 @@ class LoadState:
     learned: Mapping[str, Learned] = field(default_factory=dict)
     last_target_restore_at: datetime | None = None
     commanded_w: float | None = None
+    #: A charger granted and enabled that draws nothing (`ev`, D4 §5.11): since
+    #: when, and the reason its `blocked_by` sensor gave once it counted.
+    blocked_since: datetime | None = None
+    blocked_reason: str | None = None
     gate: GateState = field(default_factory=GateState)
 
     def __post_init__(self) -> None:
@@ -356,6 +360,9 @@ class Observation:
     demand: Demand
     measured_w: float | None
     health: Health
+    #: What only a type with a plug knows (`ev`): a car on the cable, and its charge.
+    connected: bool | None = None
+    soc: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -561,10 +568,14 @@ class Load:
         state = expire_force(state, ctx.now)
         state = self.device_type.latch(self, state, ctx)
         demand = self.device_type.demand(self, state, ctx)
+        connected = getattr(self.device_type, "connected", None)
+        soc = getattr(self.device_type, "soc", None)
         return state, Observation(
             demand=demand,
             measured_w=ctx.reads.value(Role.POWER),
             health=self.health(state, ctx),
+            connected=connected(ctx) if callable(connected) else None,
+            soc=soc(ctx) if callable(soc) else None,
         )
 
     def apply(self, grant: Grant, state: LoadState, ctx: LoadCtx) -> tuple[LoadState, ApplyResult]:

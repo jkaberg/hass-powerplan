@@ -105,8 +105,9 @@ def test_05b_the_mapping_agrees_with_the_core_status_sets() -> None:
 
     A profile that called a status connected while the type did not would produce
     a load that wants power and reports no car, which is unreadable from the
-    outside. `de_authorizing` is the one option the core's set does not claim, so
-    the profile does not claim it either.
+    outside. `de_authorizing` - the charger revoking an RFID authorisation with
+    the cable in - was the one open word; WP2.3 put it in the core's connected
+    set and the profile follows (D4 §5.11, D-0281).
     """
     vocabulary = easee_ble.STATUSES
 
@@ -119,8 +120,8 @@ def test_05b_the_mapping_agrees_with_the_core_status_sets() -> None:
         else:
             assert status not in CONNECTED_STATUSES, status
 
-    assert vocabulary.state("de_authorizing") is SessionState.UNKNOWN
-    assert "de_authorizing" not in CONNECTED_STATUSES
+    assert vocabulary.state("de_authorizing") is SessionState.CONNECTED
+    assert "de_authorizing" in CONNECTED_STATUSES
 
 
 # --------------------------------------------------------------------------- #

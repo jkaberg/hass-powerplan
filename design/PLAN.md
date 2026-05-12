@@ -283,7 +283,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 1.7 | HA-level end to end | done |
 | 2.1 | WriteGate executor | done |
 | 2.2 | Profiles | done |
-| 2.3 | `ev` complete | todo |
+| 2.3 | `ev` complete | done |
 | 2.4 | Load subentry flow and load entities | todo |
 | 2.5 | Circuits | todo |
 | 2.6 | Subentry hot paths | todo |

@@ -97,9 +97,9 @@ SHAPE_CONFIDENCE: Final = 0.8
 #: `error` joins `offline` in link-down because that is where `types/ev.py` puts
 #: it (`OFFLINE_STATUSES`): a charger in an error state is one powerplan cannot
 #: steer, and pretending otherwise would have the allocator reserve a load nobody
-#: is driving. `de_authorizing` is the one status D4 §5.11's connected set does
-#: not claim - the charger is revoking an RFID authorisation - so it is reported
-#: as `UNKNOWN` rather than guessed into a meaning the core would disagree with.
+#: is driving. `de_authorizing` is the charger revoking an RFID authorisation
+#: with the cable in: a car on the cable, so connected, as `types/ev.py`'s set
+#: says since WP2.3 (D-0281).
 STATUSES: Final = StatusVocabulary(
     states={
         "offline": SessionState.LINK_DOWN,
@@ -110,7 +110,7 @@ STATUSES: Final = StatusVocabulary(
         "error": SessionState.LINK_DOWN,
         "ready_to_charge": SessionState.CONNECTED,
         "awaiting_authorization": SessionState.CONNECTED,
-        "de_authorizing": SessionState.UNKNOWN,
+        "de_authorizing": SessionState.CONNECTED,
     }
 )
 

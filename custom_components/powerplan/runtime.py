@@ -76,7 +76,7 @@ from .core.engine import (
 )
 from .core.loads import Load, LoadCtx
 from .core.loads.gate import Action, Decision
-from .core.loads.targets import PresenceMode
+from .core.loads.targets import CalendarEvent, PresenceMode
 from .core.metering import (
     ElectricalProfile,
     MeterSample,
@@ -927,7 +927,10 @@ class Runtime:
         build = self.build
         meter = await build.meter.sample(now) if build.meter is not None else MeterSample()
         loads = {
-            load.load_id: LoadReads(reads=build.devices[load.load_id].reads(now))
+            load.load_id: LoadReads(
+                reads=build.devices[load.load_id].reads(now),
+                calendar=self._calendar_events(load, now),
+            )
             for load in build.loads
         }
         return Inputs(
@@ -947,6 +950,27 @@ class Runtime:
             curves=self.curves,
             transport=self.gate.budget,
             trigger=trigger,
+        )
+
+    def _calendar_events(self, load: Load, now: datetime) -> tuple[CalendarEvent, ...]:
+        """Return the bound calendar's current or next event, as D4 §4.4 hands it over.
+
+        A Home Assistant `calendar` entity exposes one event - the one in
+        progress or the next - as `start_time`, `end_time` and `message`; an
+        event already over is not a departure.
+        """
+        entity_id = load.config.params.get("calendar_entity")
+        if not entity_id:
+            return ()
+        state = self.hass.states.get(str(entity_id))
+        if state is None:
+            return ()
+        start = _calendar_moment(state.attributes.get("start_time"), self.build.cfg.tz)
+        end = _calendar_moment(state.attributes.get("end_time"), self.build.cfg.tz)
+        if start is None or end is None or end <= now:
+            return ()
+        return (
+            CalendarEvent(start=start, end=end, summary=str(state.attributes.get("message") or "")),
         )
 
     # -------------------------------------------------------------- ticks #
@@ -977,6 +1001,9 @@ class Runtime:
         self._persist(effects)
         self.coordinator.async_set_updated_data(snapshot)
         self.repairs.evaluate(now, snapshot)
+        if any(event.kind is EventKind.EV_CONNECTED for event in effects.ha_events):
+            # A demand change (D7 §5.2): the plan runs after this tick, off the lock.
+            self.hass.async_create_task(self.run_plan("demand"))
         presence = inputs.knobs.presence
         if presence is not None and presence is not self.last_presence:
             if self.last_presence is not None:
@@ -1357,6 +1384,11 @@ class Runtime:
         load_entities = [
             entity_id for device in build.devices.values() for entity_id in device.entity_ids
         ]
+        load_entities.extend(
+            str(load.config.params["calendar_entity"])
+            for load in build.loads
+            if load.config.params.get("calendar_entity")
+        )
         if load_entities:
             self._track(async_track_state_change_event(hass, load_entities, self._on_load_changed))
         del tz
@@ -1625,6 +1657,18 @@ class Runtime:
     def has_production(self) -> bool:
         """Whether a production sensor is bound (the production sensors are on by default)."""
         return ROLE_PRODUCTION_POWER in self.build.meter_entities
+
+
+def _calendar_moment(raw: Any, tz: tzinfo) -> datetime | None:
+    """Parse a calendar entity's `start_time`/`end_time` (local wall time, or ISO with an offset)."""
+    if not isinstance(raw, str):
+        return None
+    parsed = dt_util.parse_datetime(raw)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tz)
+    return dt_util.as_utc(parsed)
 
 
 def _by_load(adapter: AccountingAdapter | None) -> list[dict[str, Any]]:

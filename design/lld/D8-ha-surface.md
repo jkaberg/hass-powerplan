@@ -246,6 +246,7 @@ Availability: an entity is `available` when the coordinator has a Snapshot; load
 | `powerplan_cycle` | `load, state: planned/started/finished/aborted, start_at` |
 | `powerplan_force` | `load, state: on/expired/ignored, reason` |
 | `powerplan_presence_changed` | `old, new, source` |
+| `powerplan_ev_connected` | `load, connected: bool, soc` - both edges of the cable (D4 §5.11) |
 | `powerplan_safe_mode` | `entered: bool, reason` |
 
 All are edge-triggered in D7; a `cleared: true` variant is emitted when the condition ends where meaningful.

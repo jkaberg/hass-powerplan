@@ -1252,3 +1252,8 @@ When a pending window closes on the integral and had its own anchor, the next wi
 
 `Runtime.start` calls `Evaluator.restore(state.tariff)` after reading the store and before the accounting adapter or the engine take the history. The section was written every tick and never read back, so a reload mid-month billed the month from that moment (12 of 24 windows on the `e2e` day). The pure runner kept the evaluator object across its restart, which is why no scenario saw it. Affects D7 §5.5.
 **Rejected:** restoring on the engine's first tick - the adapter has already taken the old history object.
+
+### D-0281 · The `ev` type: connected words, the calendar deadline, the blocked notice, the plug-in edge
+
+(1) `de_authorizing` is connected; the cable is in. (2) The deadline is the earlier of the weekday table and the bound calendar's next event; an empty calendar is silent. (3) A charger that shows granted (limit ≥ `min_a`, enable on) but draws under 100 W for 180 s is blocked: one WARNING per reason naming `blocked_by`. (4) The engine fires `ev_connected` on both edges, never on the first observation, and the runtime plans on it; a plan for a car that has left keeps a reservation for up to a quarter hour. (5) `LiveDevice` is D7's `LoadDevice` over a `BoundDevice` with a fresh view each tick. Affects D4 §5.11; D7 §5.2; D8 §5.6.
+**Rejected:** the calendar replacing the table - a household that keeps both wrote both. The blocked notice in the profile - the three-minute rule is the type's, and generic profiles have no `blocked_by`.

@@ -185,6 +185,8 @@ run_plan(trigger):  I/O first WITHOUT the lock, then the lock for the pure part 
 triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the register report, never :00 sharp), demand change (plug-in, knob, presence, force edge), forecast update, replan action, startup (after the first tick)
 ```
 
+**Plug-in.** The tick fires `ev_connected` on a car's connected edge in either direction (D4 §5.11). The runtime sees it among the tick's `ha_events` and creates a `run_plan("demand")` task, so the plan runs after the tick and never under its lock. The pure runner's household plans at the same tick on its own, so the event moves no scenario digest (D-0281).
+
 ### 5.3 Triggers (HA side, INV-43)
 
 | trigger | mechanism | action |
