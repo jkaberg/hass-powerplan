@@ -52,6 +52,7 @@ from .const import (
     ROLE_GRID_POWER,
     ROLE_IMPORT_REGISTER,
     SECTION_ADVANCED,
+    SUBENTRY_LOAD,
     TIMEZONE_FROM_HASS,
     TIMEZONE_FROM_USER,
     OnboardingPath,
@@ -59,6 +60,7 @@ from .const import (
 from .core.pricing import modifiers
 from .core.tariffs.presets import loader
 from .flow import device_pick, review, steps
+from .flow.load import LoadSubentryFlow
 from .flow.questionnaire import store_value, value_of
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
@@ -707,10 +709,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
         Loads, groups, zones and circuits are config subentries with only a
         `user` and a `reconfigure` step (D8 §5.2–5.3, PLAN §7 dec. 4). The load
-        flow lands in WP2.4, circuits in WP2.5, groups and zones in WP3.2 and
-        WP5.3; until then a site has no subentry types.
+        flow is WP2.4's; circuits arrive in WP2.5, groups and zones in WP3.2 and
+        WP5.3.
         """
-        return {}
+        return {SUBENTRY_LOAD: LoadSubentryFlow}
 
 
 __all__ = ["PowerplanConfigFlow"]

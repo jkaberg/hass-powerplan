@@ -15,6 +15,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .entity import PowerplanEntity
+from .load_entities import load_selects
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -34,7 +35,14 @@ async def async_setup_entry(
 ) -> None:
     """Create the three selects."""
     runtime = entry.runtime_data
-    async_add_entities([PresenceSelect(runtime), TargetSelect(runtime), RiskSelect(runtime)])
+    async_add_entities(
+        [
+            PresenceSelect(runtime),
+            TargetSelect(runtime),
+            RiskSelect(runtime),
+            *load_selects(runtime),
+        ]
+    )
 
 
 class _RestoringSelect(PowerplanEntity, SelectEntity, RestoreEntity):

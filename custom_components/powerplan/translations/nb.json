@@ -462,6 +462,9 @@
       },
       "meter_seam": {
         "name": "Timeskifte"
+      },
+      "shed": {
+        "name": "Kuttet"
       }
     },
     "sensor": {
@@ -537,6 +540,37 @@
       },
       "reasons": {
         "name": "Begrunnelser"
+      },
+      "granted": {
+        "name": "Tildelt"
+      },
+      "measured": {
+        "name": "Målt"
+      },
+      "reserved": {
+        "name": "Reservert"
+      },
+      "plan_next": {
+        "name": "Neste i planen"
+      },
+      "comfort_state": {
+        "name": "Komfort",
+        "state": {
+          "at_target": "På mål",
+          "below_target": "Under mål",
+          "violated": "Under gulvet"
+        }
+      },
+      "health": {
+        "name": "Helse",
+        "state": {
+          "ok": "OK",
+          "transient": "Forbigående",
+          "unhealthy": "Usunn"
+        }
+      },
+      "session": {
+        "name": "Økt"
       }
     },
     "select": {
@@ -563,21 +597,66 @@
           "free_ride": "Bruk dagens betalte timer",
           "full": "Sats på periodesnittet"
         }
+      },
+      "mode": {
+        "name": "Modus",
+        "state": {
+          "auto": "Automatisk",
+          "force": "Tvang",
+          "observe": "Observer",
+          "delegated": "Delegert",
+          "off": "Av"
+        }
       }
     },
     "number": {
       "margin_kwh": {
         "name": "Margin"
+      },
+      "force_max_hours": {
+        "name": "Tvang varer maks"
+      },
+      "comfort_c": {
+        "name": "Komfort"
+      },
+      "comfort_min_c": {
+        "name": "Aldri under"
+      },
+      "comfort_max_c": {
+        "name": "Aldri over"
+      },
+      "target_soc": {
+        "name": "Lad til"
+      },
+      "min_soc_now": {
+        "name": "Aldri under"
+      },
+      "hours_per_day": {
+        "name": "Timer per dag"
       }
     },
     "switch": {
       "active": {
         "name": "Aktiv"
+      },
+      "force": {
+        "name": "Tvang"
       }
     },
     "button": {
       "replan": {
         "name": "Planlegg på nytt"
+      },
+      "run_now": {
+        "name": "Kjør nå"
+      }
+    },
+    "time": {
+      "ready_by": {
+        "name": "Klar til"
+      },
+      "deadline": {
+        "name": "Frist i dag"
       }
     }
   },
@@ -743,6 +822,195 @@
       "options": {
         "absent": "ikke satt opp"
       }
+    },
+    "appliance_cycle_appliance": {
+      "options": {
+        "dishwasher_eco": "Oppvaskmaskin (eco)",
+        "washing_machine_40": "Vaskemaskin (40 °C)",
+        "dryer_heat_pump": "Tørketrommel (varmepumpe)",
+        "dryer_condenser": "Tørketrommel (kondens)"
+      }
+    },
+    "appliance_cycle_start_control": {
+      "options": {
+        "switch": "En plugg",
+        "start_program": "En startknapp",
+        "delay_timer": "En starttidsforvalg"
+      }
+    },
+    "battery_chemistry": {
+      "options": {
+        "lfp": "LFP",
+        "nmc": "NMC"
+      }
+    },
+    "ev_max_a": {
+      "options": {
+        "10": "10 A",
+        "13": "13 A",
+        "16": "16 A",
+        "20": "20 A",
+        "25": "25 A",
+        "32": "32 A",
+        "40": "40 A",
+        "48": "48 A",
+        "63": "63 A"
+      }
+    },
+    "ev_phases": {
+      "options": {
+        "1": "Enfase",
+        "3": "Trefase"
+      }
+    },
+    "floor_heating_room": {
+      "options": {
+        "bathroom": "Bad",
+        "living": "Stue",
+        "kitchen": "Kjøkken",
+        "hall": "Gang",
+        "bedroom": "Soverom",
+        "other": "Annet"
+      }
+    },
+    "floor_heating_covering": {
+      "options": {
+        "tile": "Flis",
+        "wood": "Tre",
+        "laminate": "Laminat",
+        "vinyl": "Vinyl",
+        "carpet": "Teppe"
+      }
+    },
+    "floor_heating_heating_type": {
+      "options": {
+        "cable_in_screed": "Kabel i støp",
+        "foil_or_mat": "Folie eller matte",
+        "water_borne": "Vannbåren",
+        "dont_know": "Vet ikke"
+      }
+    },
+    "floor_heating_sensor": {
+      "options": {
+        "floor": "Gulv",
+        "air": "Luft",
+        "both": "Begge"
+      }
+    },
+    "generic_switch_appliance": {
+      "options": {
+        "pool_pump": "Bassengpumpe",
+        "sauna": "Badstue",
+        "hot_tub": "Boblebad",
+        "ventilation": "Ventilasjon",
+        "other": "Annet"
+      }
+    },
+    "heat_pump_hp_type": {
+      "options": {
+        "a2a": "Luft-til-luft",
+        "a2w": "Luft-til-vann",
+        "gshp": "Bergvarme"
+      }
+    },
+    "heat_pump_building": {
+      "options": {
+        "before_1980": "Før 1980",
+        "1980_2000": "1980–2000",
+        "2000_2010": "2000–2010",
+        "after_2010": "Etter 2010"
+      }
+    },
+    "radiator_heater_type": {
+      "options": {
+        "oil_filled": "Oljefylt",
+        "panel": "Panelovn",
+        "convector": "Konvektor",
+        "towel_rail": "Håndkletørker"
+      }
+    },
+    "radiator_room": {
+      "options": {
+        "bathroom": "Bad",
+        "living": "Stue",
+        "kitchen": "Kjøkken",
+        "hall": "Gang",
+        "bedroom": "Soverom",
+        "other": "Annet"
+      }
+    },
+    "radiator_control": {
+      "options": {
+        "plug": "Plugg",
+        "thermostat": "Termostat"
+      }
+    },
+    "water_heater_litres": {
+      "options": {
+        "100": "100 L",
+        "120": "120 L",
+        "150": "150 L",
+        "200": "200 L",
+        "300": "300 L",
+        "400": "400 L"
+      }
+    },
+    "water_heater_element_kw": {
+      "options": {
+        "1.5": "1.5 kW",
+        "2": "2 kW",
+        "3": "3 kW",
+        "4.5": "4.5 kW",
+        "6": "6 kW",
+        "9": "9 kW"
+      }
+    },
+    "water_heater_control": {
+      "options": {
+        "thermostat": "Termostat",
+        "relay": "Relé"
+      }
+    },
+    "water_heater_legionella": {
+      "options": {
+        "built_in": "Tanken selv",
+        "powerplan": "powerplan",
+        "dont_know": "Vet ikke"
+      }
+    },
+    "load_type": {
+      "options": {
+        "appliance_cycle": "Apparat",
+        "battery": "Batteri",
+        "ev": "Billader",
+        "floor_heating": "Gulvvarme",
+        "generic_switch": "Bryterstyrt last",
+        "heat_pump": "Varmepumpe",
+        "radiator": "Ovn",
+        "water_heater": "Varmtvannsbereder"
+      }
+    },
+    "load_profile": {
+      "options": {
+        "easee_ble": "Easee (Bluetooth)",
+        "generic_climate": "Termostat",
+        "generic_number": "Tallgrense",
+        "generic_switch": "Bryter"
+      }
+    },
+    "strategy": {
+      "options": {
+        "always": "Alltid på",
+        "arbitrage": "Kjøp billig, selg dyrt",
+        "best_save": "Spar der det svir minst",
+        "cheapest_hours": "Billigste timer",
+        "deadline_fill": "Billigste timer før fristen",
+        "heat_capacitor": "Lagre varme i billige timer",
+        "observe": "Bare observer",
+        "opportunistic": "Bare når det er billig",
+        "peak_shave": "Kapp toppene",
+        "run_once": "Én kjøring før klartid"
+      }
     }
   },
   "services": {
@@ -864,6 +1132,669 @@
           "name": "Anlegg",
           "description": "Anlegget; alle når feltet er tomt."
         }
+      }
+    }
+  },
+  "config_subentries": {
+    "load": {
+      "entry_type": "Last",
+      "initiate_flow": {
+        "user": "Legg til last",
+        "reconfigure": "Endre last"
+      },
+      "step": {
+        "user": {
+          "title": "Legg til en last",
+          "description": "Velg enheten powerplan skal styre. Alle integrasjoner går: powerplan ser på enhetens entiteter og sier hva den tror den er.",
+          "data": {
+            "device": "Enhet"
+          },
+          "data_description": {
+            "device": "Laderen, termostaten, pluggen eller varmepumpen."
+          }
+        },
+        "match": {
+          "title": "Det powerplan ser",
+          "description": "**{device}** ser ut som en **{profile}** ({confidence} sikker: {reasons}). Endre typen eller profilen om det er feil, og sjekk hvilken entitet som spiller hvilken rolle. En påkrevd rolle uten entitet kan ikke fortsette.",
+          "data": {
+            "type": "Type",
+            "profile": "Profil",
+            "role_power": "Power",
+            "role_energy": "Energy",
+            "role_temp": "Temp",
+            "role_temp_floor": "Temp floor",
+            "role_setpoint": "Setpoint",
+            "role_mode_select": "Mode select",
+            "role_eco_setpoint": "Eco setpoint",
+            "role_floor_min_limit": "Floor min limit",
+            "role_hysteresis": "Hysteresis",
+            "role_switch": "Switch",
+            "role_current_number": "Current number",
+            "role_max_current_number": "Max current number",
+            "role_enable_switch": "Enable switch",
+            "role_status": "Status",
+            "role_blocked_by": "Blocked by",
+            "role_cable_rating": "Cable rating",
+            "role_circuit_max": "Circuit max",
+            "role_session_energy": "Session energy",
+            "role_current_l1": "Current l1",
+            "role_current_l2": "Current l2",
+            "role_current_l3": "Current l3",
+            "role_soc": "Soc",
+            "role_connected": "Connected",
+            "role_outdoor_temp": "Outdoor temp",
+            "role_outlet_temp": "Outlet temp",
+            "role_start": "Start",
+            "role_program_state": "Program state",
+            "role_door": "Door",
+            "role_battery_power_set": "Battery power set",
+            "role_battery_mode": "Battery mode",
+            "role_sg_a": "Sg a",
+            "role_sg_b": "Sg b"
+          },
+          "data_description": {
+            "type": "Hva slags last dette er; spørsmålene som følger avhenger av det.",
+            "profile": "Hvordan powerplan snakker med enheten.",
+            "role_power": "Entiteten for denne rollen.",
+            "role_energy": "Entiteten for denne rollen.",
+            "role_temp": "Entiteten for denne rollen.",
+            "role_temp_floor": "Entiteten for denne rollen.",
+            "role_setpoint": "Entiteten for denne rollen.",
+            "role_mode_select": "Entiteten for denne rollen.",
+            "role_eco_setpoint": "Entiteten for denne rollen.",
+            "role_floor_min_limit": "Entiteten for denne rollen.",
+            "role_hysteresis": "Entiteten for denne rollen.",
+            "role_switch": "Entiteten for denne rollen.",
+            "role_current_number": "Entiteten for denne rollen.",
+            "role_max_current_number": "Entiteten for denne rollen.",
+            "role_enable_switch": "Entiteten for denne rollen.",
+            "role_status": "Entiteten for denne rollen.",
+            "role_blocked_by": "Entiteten for denne rollen.",
+            "role_cable_rating": "Entiteten for denne rollen.",
+            "role_circuit_max": "Entiteten for denne rollen.",
+            "role_session_energy": "Entiteten for denne rollen.",
+            "role_current_l1": "Entiteten for denne rollen.",
+            "role_current_l2": "Entiteten for denne rollen.",
+            "role_current_l3": "Entiteten for denne rollen.",
+            "role_soc": "Entiteten for denne rollen.",
+            "role_connected": "Entiteten for denne rollen.",
+            "role_outdoor_temp": "Entiteten for denne rollen.",
+            "role_outlet_temp": "Entiteten for denne rollen.",
+            "role_start": "Entiteten for denne rollen.",
+            "role_program_state": "Entiteten for denne rollen.",
+            "role_door": "Entiteten for denne rollen.",
+            "role_battery_power_set": "Entiteten for denne rollen.",
+            "role_battery_mode": "Entiteten for denne rollen.",
+            "role_sg_a": "Entiteten for denne rollen.",
+            "role_sg_b": "Entiteten for denne rollen."
+          }
+        },
+        "questions": {
+          "title": "Noen spørsmål",
+          "description": "Spørsmål i klartekst om enheten. powerplan utleder alle parametre fra dem; den avanserte delen er allerede fylt ut.",
+          "data": {
+            "allow_grid_charge": "Lad fra nettet",
+            "appliance": "Apparat",
+            "area_m2": "Areal",
+            "building": "Byggeår",
+            "capacity_kwh": "Batterikapasitet",
+            "chemistry": "Kjemi",
+            "comfort_c": "Komforttemperatur",
+            "control": "Styring",
+            "covering": "Gulvbelegg",
+            "departures_0": "Mandag",
+            "departures_1": "Tirsdag",
+            "departures_2": "Onsdag",
+            "departures_3": "Torsdag",
+            "departures_4": "Fredag",
+            "departures_5": "Lørdag",
+            "departures_6": "Søndag",
+            "element_kw": "Element",
+            "heater_type": "Ovnstype",
+            "heating_type": "Varmetype",
+            "hours_per_day": "Timer per dag",
+            "hp_type": "Varmepumpetype",
+            "legionella": "Legionellasyklus",
+            "litres": "Tankstørrelse",
+            "max_a": "Ladermaks",
+            "max_c": "Aldri over",
+            "max_charge_kw": "Maks lading",
+            "max_discharge_kw": "Maks utlading",
+            "mechanical_thermostat": "Mekanisk termostat",
+            "min_c": "Aldri under",
+            "min_soc_now": "Aldri under",
+            "persons": "Personer",
+            "phases": "Faser",
+            "power_entity": "Effektsensor",
+            "power_w": "Effekt",
+            "rated_kw": "Merkeeffekt",
+            "ready_by": "Klar til",
+            "ready_by_2": "Andre klartid",
+            "reserve_pct": "Reserve",
+            "room": "Rom",
+            "sensor": "Føler",
+            "soc_entity": "Ladenivåsensor",
+            "start_control": "Startstyring",
+            "target_soc": "Lad til",
+            "temp_entity": "Temperaturføler"
+          },
+          "data_description": {
+            "allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
+            "appliance": "Hva slags apparat dette er.",
+            "area_m2": "Det oppvarmede arealet, i kvadratmeter.",
+            "building": "Når huset ble bygget. Det setter varmetapet.",
+            "capacity_kwh": "Bilens batteri, i kWh. Det står i spesifikasjonen; planleggeren dimensjonerer hver økt etter det.",
+            "chemistry": "Cellekjemien.",
+            "comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
+            "control": "Om powerplan styrer en plugg eller en termostat.",
+            "covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
+            "departures_0": "Avreise på mandager.",
+            "departures_1": "Avreise på tirsdager.",
+            "departures_2": "Avreise på onsdager.",
+            "departures_3": "Avreise på torsdager.",
+            "departures_4": "Avreise på fredager.",
+            "departures_5": "Avreise på lørdager.",
+            "departures_6": "Avreise på søndager.",
+            "element_kw": "Varmeelementets effekt, i kW.",
+            "heater_type": "Hva slags ovn dette er.",
+            "heating_type": "Hva som ligger under gulvet.",
+            "hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
+            "hp_type": "Luft-til-luft, luft-til-vann eller bergvarme.",
+            "legionella": "Hvem som kjører den ukentlige legionellasyklusen.",
+            "litres": "Tankens volum, i liter.",
+            "max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
+            "max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+            "max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
+            "max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
+            "mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
+            "min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+            "min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
+            "persons": "Hvor mange som bruker varmtvannet.",
+            "phases": "Hvor mange faser laderen bruker.",
+            "power_entity": "En sensor som måler apparatets effekt, om det finnes en.",
+            "power_w": "Apparatets effekt, i watt.",
+            "rated_kw": "Varmepumpens elektriske merkeeffekt, i kW.",
+            "ready_by": "Når varmtvannet eller programmet må være klart.",
+            "ready_by_2": "Et andre tidspunkt vannet må være klart, om noe.",
+            "reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
+            "room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
+            "sensor": "Hvilken føler termostaten regulerer på.",
+            "soc_entity": "Bilens egen ladenivåsensor, om Home Assistant har en. Uten den planlegges det etter tid.",
+            "start_control": "Hvordan apparatet startes.",
+            "target_soc": "Ladenivået hver økt sikter mot. 80 % er det de fleste biler anbefaler daglig.",
+            "temp_entity": "En føler på tanken, om det finnes en."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Allerede fylt ut. Åpne den bare om du vet du vil ha noe annet.",
+              "data": {
+                "band_k": "Bånd",
+                "calendar_entity": "Avreisekalender",
+                "charge_eff": "Ladevirkningsgrad",
+                "comfort_min_c": "Komfortminimum",
+                "command_interval_s": "Kommandointervall",
+                "cop_curve": "COP-kurve",
+                "duration_min": "Varighet",
+                "dwell_s": "Hviletid",
+                "energy_kwh": "Energi per program",
+                "follow_presence": "Følg tilstedeværelse",
+                "force_max_h": "Tvang varer maks",
+                "inverted": "Invertert bryter",
+                "legionella_hold_min": "Legionellahold",
+                "legionella_interval_days": "Legionellaintervall",
+                "legionella_temp_c": "Legionellatemperatur",
+                "loss_coeff_w_per_k": "Varmetap",
+                "max_c": "Aldri over",
+                "max_soc": "Maks lading",
+                "min_a": "Minste strøm",
+                "min_off_s": "Minste av-tid",
+                "min_on_s": "Minste på-tid",
+                "never_switch": "Aldri skift når",
+                "outdoor_entity": "Uteføler",
+                "outlet_entity": "Utløpsføler",
+                "power_w": "Effekt",
+                "preheat": "Forvarm",
+                "preheat_max_outdoor_c": "Forvarm opp til",
+                "ready_temp_c": "Klartemperatur",
+                "screed_depth_mm": "Støpedybde",
+                "settle_s": "Settletid",
+                "standby_loss_w": "Tomgangstap",
+                "step_up_a": "Rampesteg",
+                "suppress_delta_a": "Skriveterskel",
+                "suppress_stale_s": "Skriv på nytt etter",
+                "swing_k": "Termostatsving"
+              },
+              "data_description": {
+                "band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
+                "calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
+                "charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
+                "comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
+                "cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
+                "duration_min": "Avansert: minutter ett program går.",
+                "dwell_s": "Avansert: sekunder et settpunkt holdes før neste endring.",
+                "energy_kwh": "Avansert: kWh ett program bruker.",
+                "follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "inverted": "Avansert: på betyr av for denne bryteren.",
+                "legionella_hold_min": "Avansert: minutter temperaturen holdes.",
+                "legionella_interval_days": "Avansert: dager mellom sykluser.",
+                "legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
+                "loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "max_soc": "Avansert: ladenivået batteriet lades til maks.",
+                "min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
+                "min_off_s": "Avansert: sekunder en bryter er av minst.",
+                "min_on_s": "Avansert: sekunder en bryter er på minst.",
+                "never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "outdoor_entity": "Avansert: en utetemperatursensor.",
+                "outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
+                "power_w": "Apparatets effekt, i watt.",
+                "preheat": "Avansert: lagre varme før en dyr time.",
+                "preheat_max_outdoor_c": "Avansert: ingen forvarming over denne utetemperaturen.",
+                "ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
+                "screed_depth_mm": "Avansert: millimeter støp over kabelen.",
+                "settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
+                "standby_loss_w": "Avansert: watt tanken taper i ro.",
+                "step_up_a": "Avansert: hvor mange ampere grensen økes per skriving på vei opp.",
+                "suppress_delta_a": "Avansert: en endring mindre enn dette skrives ikke.",
+                "suppress_stale_s": "Avansert: sekunder før samme verdi skrives igjen.",
+                "swing_k": "Avansert: termostatens egen hysterese."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Før denne lasten legges til",
+          "description": "Slik forsto powerplan det:\n\n{explanation}\n\nDen planlegger med **{strategy}**. De utledede tallene ligger under Avansert, alle kan endres.",
+          "data": {
+            "name": "Navn",
+            "strategy": "Strategi",
+            "priority": "Prioritet"
+          },
+          "data_description": {
+            "name": "Hva lasten skal hete. Det navngir enheten og setter prefiks på entitetene.",
+            "strategy": "Hvordan denne lasten planlegges.",
+            "priority": "Høyere kuttes senere; den utledede verdien er vanligvis riktig."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Utledede parametre",
+              "description": "Det svarene ga. En endring her beholdes ved re-utledning og merkes.",
+              "data": {
+                "param_allow_grid_charge": "Lad fra nettet",
+                "param_appliance": "Apparat",
+                "param_area_m2": "Areal",
+                "param_band_k": "Bånd",
+                "param_building": "Byggeår",
+                "param_calendar_entity": "Avreisekalender",
+                "param_capacity_kwh": "Batterikapasitet",
+                "param_charge_eff": "Ladevirkningsgrad",
+                "param_chemistry": "Kjemi",
+                "param_comfort_c": "Komforttemperatur",
+                "param_comfort_min_c": "Komfortminimum",
+                "param_command_interval_s": "Kommandointervall",
+                "param_control": "Styring",
+                "param_cop": "COP",
+                "param_cop_curve": "COP-kurve",
+                "param_covering": "Gulvbelegg",
+                "param_departures": "Vanlig avreise",
+                "param_duration_min": "Varighet",
+                "param_dwell_s": "Hviletid",
+                "param_element_kw": "Element",
+                "param_energy_kwh": "Energi per program",
+                "param_floor_c": "Gulvtemperatur",
+                "param_follow_presence": "Følg tilstedeværelse",
+                "param_force_max_h": "Tvang varer maks",
+                "param_heater_type": "Ovnstype",
+                "param_heating_type": "Varmetype",
+                "param_hours_per_day": "Timer per dag",
+                "param_hp_type": "Varmepumpetype",
+                "param_inverted": "Invertert bryter",
+                "param_kwh_per_k": "Varmekapasitet",
+                "param_legionella": "Legionellasyklus",
+                "param_legionella_hold_min": "Legionellahold",
+                "param_legionella_interval_days": "Legionellaintervall",
+                "param_legionella_temp_c": "Legionellatemperatur",
+                "param_litres": "Tankstørrelse",
+                "param_loss_coeff_w_per_k": "Varmetap",
+                "param_max_a": "Ladermaks",
+                "param_max_c": "Aldri over",
+                "param_max_charge_kw": "Maks lading",
+                "param_max_discharge_kw": "Maks utlading",
+                "param_max_soc": "Maks lading",
+                "param_max_w": "Maks effekt",
+                "param_mechanical_thermostat": "Mekanisk termostat",
+                "param_min_a": "Minste strøm",
+                "param_min_c": "Aldri under",
+                "param_min_off_s": "Minste av-tid",
+                "param_min_on_s": "Minste på-tid",
+                "param_min_soc_now": "Aldri under",
+                "param_nameplate_w": "Merkeeffekt",
+                "param_never_switch": "Aldri skift når",
+                "param_outdoor_entity": "Uteføler",
+                "param_outlet_entity": "Utløpsføler",
+                "param_persons": "Personer",
+                "param_phases": "Faser",
+                "param_power_entity": "Effektsensor",
+                "param_power_w": "Effekt",
+                "param_preheat": "Forvarm",
+                "param_preheat_max_outdoor_c": "Forvarm opp til",
+                "param_priority": "Prioritet",
+                "param_rated_kw": "Merkeeffekt",
+                "param_ready_by": "Klar til",
+                "param_ready_by_2": "Andre klartid",
+                "param_ready_temp_c": "Klartemperatur",
+                "param_reserve_pct": "Reserve",
+                "param_room": "Rom",
+                "param_screed_depth_mm": "Støpedybde",
+                "param_sensor": "Føler",
+                "param_settle_s": "Settletid",
+                "param_soc_entity": "Ladenivåsensor",
+                "param_standby_loss_w": "Tomgangstap",
+                "param_start_control": "Startstyring",
+                "param_step_up_a": "Rampesteg",
+                "param_substitutable": "Kan byttes ut",
+                "param_suppress_delta_a": "Skriveterskel",
+                "param_suppress_stale_s": "Skriv på nytt etter",
+                "param_swing_k": "Termostatsving",
+                "param_target_soc": "Lad til",
+                "param_tau_h": "Tidskonstant",
+                "param_temp_entity": "Temperaturføler",
+                "param_ua_w_per_k": "Varmetap",
+                "param_vacation_c": "Ferietemperatur"
+              },
+              "data_description": {
+                "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
+                "param_appliance": "Hva slags apparat dette er.",
+                "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
+                "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
+                "param_building": "Når huset ble bygget. Det setter varmetapet.",
+                "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
+                "param_capacity_kwh": "Bilens batteri, i kWh. Det står i spesifikasjonen; planleggeren dimensjonerer hver økt etter det.",
+                "param_charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
+                "param_chemistry": "Cellekjemien.",
+                "param_comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
+                "param_comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "param_command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
+                "param_control": "Om powerplan styrer en plugg eller en termostat.",
+                "param_cop": "Utledet.",
+                "param_cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
+                "param_covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
+                "param_departures": "Når bilen vanligvis drar, per ukedag. Tomt betyr ingen frist den dagen.",
+                "param_duration_min": "Avansert: minutter ett program går.",
+                "param_dwell_s": "Avansert: sekunder et settpunkt holdes før neste endring.",
+                "param_element_kw": "Varmeelementets effekt, i kW.",
+                "param_energy_kwh": "Avansert: kWh ett program bruker.",
+                "param_floor_c": "Utledet.",
+                "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "param_force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "param_heater_type": "Hva slags ovn dette er.",
+                "param_heating_type": "Hva som ligger under gulvet.",
+                "param_hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
+                "param_hp_type": "Luft-til-luft, luft-til-vann eller bergvarme.",
+                "param_inverted": "Avansert: på betyr av for denne bryteren.",
+                "param_kwh_per_k": "Utledet.",
+                "param_legionella": "Hvem som kjører den ukentlige legionellasyklusen.",
+                "param_legionella_hold_min": "Avansert: minutter temperaturen holdes.",
+                "param_legionella_interval_days": "Avansert: dager mellom sykluser.",
+                "param_legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
+                "param_litres": "Tankens volum, i liter.",
+                "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
+                "param_max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
+                "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
+                "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
+                "param_max_w": "Utledet.",
+                "param_mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
+                "param_min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
+                "param_min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+                "param_min_off_s": "Avansert: sekunder en bryter er av minst.",
+                "param_min_on_s": "Avansert: sekunder en bryter er på minst.",
+                "param_min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
+                "param_nameplate_w": "Utledet.",
+                "param_never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "param_outdoor_entity": "Avansert: en utetemperatursensor.",
+                "param_outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
+                "param_persons": "Hvor mange som bruker varmtvannet.",
+                "param_phases": "Hvor mange faser laderen bruker.",
+                "param_power_entity": "En sensor som måler apparatets effekt, om det finnes en.",
+                "param_power_w": "Apparatets effekt, i watt.",
+                "param_preheat": "Avansert: lagre varme før en dyr time.",
+                "param_preheat_max_outdoor_c": "Avansert: ingen forvarming over denne utetemperaturen.",
+                "param_priority": "Utledet.",
+                "param_rated_kw": "Varmepumpens elektriske merkeeffekt, i kW.",
+                "param_ready_by": "Når varmtvannet eller programmet må være klart.",
+                "param_ready_by_2": "Et andre tidspunkt vannet må være klart, om noe.",
+                "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
+                "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
+                "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
+                "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
+                "param_sensor": "Hvilken føler termostaten regulerer på.",
+                "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
+                "param_soc_entity": "Bilens egen ladenivåsensor, om Home Assistant har en. Uten den planlegges det etter tid.",
+                "param_standby_loss_w": "Avansert: watt tanken taper i ro.",
+                "param_start_control": "Hvordan apparatet startes.",
+                "param_step_up_a": "Avansert: hvor mange ampere grensen økes per skriving på vei opp.",
+                "param_substitutable": "Utledet.",
+                "param_suppress_delta_a": "Avansert: en endring mindre enn dette skrives ikke.",
+                "param_suppress_stale_s": "Avansert: sekunder før samme verdi skrives igjen.",
+                "param_swing_k": "Avansert: termostatens egen hysterese.",
+                "param_target_soc": "Ladenivået hver økt sikter mot. 80 % er det de fleste biler anbefaler daglig.",
+                "param_tau_h": "Utledet.",
+                "param_temp_entity": "En føler på tanken, om det finnes en.",
+                "param_ua_w_per_k": "Utledet.",
+                "param_vacation_c": "Utledet."
+              }
+            }
+          }
+        },
+        "reconfigure_review": {
+          "title": "Utled på nytt fra svarene",
+          "description": "Å utlede på nytt fra svarene dine i dag ville endre:\n\n{diff}\n\nManuelle endringer så langt: {manual}.\n\n{explanation}",
+          "data": {
+            "name": "Navn",
+            "strategy": "Strategi",
+            "priority": "Prioritet",
+            "rederive": "Bruk de re-utledede verdiene"
+          },
+          "data_description": {
+            "name": "Hva lasten skal hete.",
+            "strategy": "Hvordan denne lasten planlegges.",
+            "priority": "Høyere kuttes senere.",
+            "rederive": "Av beholder de lagrede parametrene og endringene dine; på tar verdiene over."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Utledede parametre",
+              "description": "Endre her for å overstyre en utledet verdi.",
+              "data": {
+                "param_allow_grid_charge": "Lad fra nettet",
+                "param_appliance": "Apparat",
+                "param_area_m2": "Areal",
+                "param_band_k": "Bånd",
+                "param_building": "Byggeår",
+                "param_calendar_entity": "Avreisekalender",
+                "param_capacity_kwh": "Batterikapasitet",
+                "param_charge_eff": "Ladevirkningsgrad",
+                "param_chemistry": "Kjemi",
+                "param_comfort_c": "Komforttemperatur",
+                "param_comfort_min_c": "Komfortminimum",
+                "param_command_interval_s": "Kommandointervall",
+                "param_control": "Styring",
+                "param_cop": "COP",
+                "param_cop_curve": "COP-kurve",
+                "param_covering": "Gulvbelegg",
+                "param_departures": "Vanlig avreise",
+                "param_duration_min": "Varighet",
+                "param_dwell_s": "Hviletid",
+                "param_element_kw": "Element",
+                "param_energy_kwh": "Energi per program",
+                "param_floor_c": "Gulvtemperatur",
+                "param_follow_presence": "Følg tilstedeværelse",
+                "param_force_max_h": "Tvang varer maks",
+                "param_heater_type": "Ovnstype",
+                "param_heating_type": "Varmetype",
+                "param_hours_per_day": "Timer per dag",
+                "param_hp_type": "Varmepumpetype",
+                "param_inverted": "Invertert bryter",
+                "param_kwh_per_k": "Varmekapasitet",
+                "param_legionella": "Legionellasyklus",
+                "param_legionella_hold_min": "Legionellahold",
+                "param_legionella_interval_days": "Legionellaintervall",
+                "param_legionella_temp_c": "Legionellatemperatur",
+                "param_litres": "Tankstørrelse",
+                "param_loss_coeff_w_per_k": "Varmetap",
+                "param_max_a": "Ladermaks",
+                "param_max_c": "Aldri over",
+                "param_max_charge_kw": "Maks lading",
+                "param_max_discharge_kw": "Maks utlading",
+                "param_max_soc": "Maks lading",
+                "param_max_w": "Maks effekt",
+                "param_mechanical_thermostat": "Mekanisk termostat",
+                "param_min_a": "Minste strøm",
+                "param_min_c": "Aldri under",
+                "param_min_off_s": "Minste av-tid",
+                "param_min_on_s": "Minste på-tid",
+                "param_min_soc_now": "Aldri under",
+                "param_nameplate_w": "Merkeeffekt",
+                "param_never_switch": "Aldri skift når",
+                "param_outdoor_entity": "Uteføler",
+                "param_outlet_entity": "Utløpsføler",
+                "param_persons": "Personer",
+                "param_phases": "Faser",
+                "param_power_entity": "Effektsensor",
+                "param_power_w": "Effekt",
+                "param_preheat": "Forvarm",
+                "param_preheat_max_outdoor_c": "Forvarm opp til",
+                "param_priority": "Prioritet",
+                "param_rated_kw": "Merkeeffekt",
+                "param_ready_by": "Klar til",
+                "param_ready_by_2": "Andre klartid",
+                "param_ready_temp_c": "Klartemperatur",
+                "param_reserve_pct": "Reserve",
+                "param_room": "Rom",
+                "param_screed_depth_mm": "Støpedybde",
+                "param_sensor": "Føler",
+                "param_settle_s": "Settletid",
+                "param_soc_entity": "Ladenivåsensor",
+                "param_standby_loss_w": "Tomgangstap",
+                "param_start_control": "Startstyring",
+                "param_step_up_a": "Rampesteg",
+                "param_substitutable": "Kan byttes ut",
+                "param_suppress_delta_a": "Skriveterskel",
+                "param_suppress_stale_s": "Skriv på nytt etter",
+                "param_swing_k": "Termostatsving",
+                "param_target_soc": "Lad til",
+                "param_tau_h": "Tidskonstant",
+                "param_temp_entity": "Temperaturføler",
+                "param_ua_w_per_k": "Varmetap",
+                "param_vacation_c": "Ferietemperatur"
+              },
+              "data_description": {
+                "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
+                "param_appliance": "Hva slags apparat dette er.",
+                "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
+                "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
+                "param_building": "Når huset ble bygget. Det setter varmetapet.",
+                "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
+                "param_capacity_kwh": "Bilens batteri, i kWh. Det står i spesifikasjonen; planleggeren dimensjonerer hver økt etter det.",
+                "param_charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
+                "param_chemistry": "Cellekjemien.",
+                "param_comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
+                "param_comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "param_command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
+                "param_control": "Om powerplan styrer en plugg eller en termostat.",
+                "param_cop": "Utledet.",
+                "param_cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
+                "param_covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
+                "param_departures": "Når bilen vanligvis drar, per ukedag. Tomt betyr ingen frist den dagen.",
+                "param_duration_min": "Avansert: minutter ett program går.",
+                "param_dwell_s": "Avansert: sekunder et settpunkt holdes før neste endring.",
+                "param_element_kw": "Varmeelementets effekt, i kW.",
+                "param_energy_kwh": "Avansert: kWh ett program bruker.",
+                "param_floor_c": "Utledet.",
+                "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "param_force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "param_heater_type": "Hva slags ovn dette er.",
+                "param_heating_type": "Hva som ligger under gulvet.",
+                "param_hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
+                "param_hp_type": "Luft-til-luft, luft-til-vann eller bergvarme.",
+                "param_inverted": "Avansert: på betyr av for denne bryteren.",
+                "param_kwh_per_k": "Utledet.",
+                "param_legionella": "Hvem som kjører den ukentlige legionellasyklusen.",
+                "param_legionella_hold_min": "Avansert: minutter temperaturen holdes.",
+                "param_legionella_interval_days": "Avansert: dager mellom sykluser.",
+                "param_legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
+                "param_litres": "Tankens volum, i liter.",
+                "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
+                "param_max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
+                "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
+                "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
+                "param_max_w": "Utledet.",
+                "param_mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
+                "param_min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
+                "param_min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+                "param_min_off_s": "Avansert: sekunder en bryter er av minst.",
+                "param_min_on_s": "Avansert: sekunder en bryter er på minst.",
+                "param_min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
+                "param_nameplate_w": "Utledet.",
+                "param_never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "param_outdoor_entity": "Avansert: en utetemperatursensor.",
+                "param_outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
+                "param_persons": "Hvor mange som bruker varmtvannet.",
+                "param_phases": "Hvor mange faser laderen bruker.",
+                "param_power_entity": "En sensor som måler apparatets effekt, om det finnes en.",
+                "param_power_w": "Apparatets effekt, i watt.",
+                "param_preheat": "Avansert: lagre varme før en dyr time.",
+                "param_preheat_max_outdoor_c": "Avansert: ingen forvarming over denne utetemperaturen.",
+                "param_priority": "Utledet.",
+                "param_rated_kw": "Varmepumpens elektriske merkeeffekt, i kW.",
+                "param_ready_by": "Når varmtvannet eller programmet må være klart.",
+                "param_ready_by_2": "Et andre tidspunkt vannet må være klart, om noe.",
+                "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
+                "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
+                "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
+                "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
+                "param_sensor": "Hvilken føler termostaten regulerer på.",
+                "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
+                "param_soc_entity": "Bilens egen ladenivåsensor, om Home Assistant har en. Uten den planlegges det etter tid.",
+                "param_standby_loss_w": "Avansert: watt tanken taper i ro.",
+                "param_start_control": "Hvordan apparatet startes.",
+                "param_step_up_a": "Avansert: hvor mange ampere grensen økes per skriving på vei opp.",
+                "param_substitutable": "Utledet.",
+                "param_suppress_delta_a": "Avansert: en endring mindre enn dette skrives ikke.",
+                "param_suppress_stale_s": "Avansert: sekunder før samme verdi skrives igjen.",
+                "param_swing_k": "Avansert: termostatens egen hysterese.",
+                "param_target_soc": "Ladenivået hver økt sikter mot. 80 % er det de fleste biler anbefaler daglig.",
+                "param_tau_h": "Utledet.",
+                "param_temp_entity": "En føler på tanken, om det finnes en.",
+                "param_ua_w_per_k": "Utledet.",
+                "param_vacation_c": "Utledet."
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "no_profile": "powerplan kan ikke se hva denne enheten er. Velg entitetene for hånd fra en enhet den kjenner igjen, eller legg til en profil.",
+        "already_configured": "Denne enheten er allerede en last.",
+        "role_missing": "Ingen entitet for: {roles}. Hver påkrevd rolle trenger én.",
+        "unknown": "Ikke et spørsmål for denne typen.",
+        "not_a_number": "Ikke et tall.",
+        "too_small": "Under den minste verdien som gir mening for denne enheten.",
+        "too_large": "Over den største verdien som gir mening for denne enheten.",
+        "not_an_option": "Ikke et av valgene.",
+        "not_a_time": "Ikke et klokkeslett.",
+        "not_a_curve": "Ikke en kurve: bruk `-10:2.1, 7:3.8`."
+      },
+      "abort": {
+        "already_configured": "Denne enheten er allerede en last.",
+        "reconfigure_successful": "Lasten ble oppdatert."
       }
     }
   }

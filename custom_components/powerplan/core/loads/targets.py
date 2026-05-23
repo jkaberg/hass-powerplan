@@ -20,12 +20,12 @@ without Home Assistant.
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, tzinfo
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ..model import HeatDirection
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
 __all__ = [
     "CalendarEvent",
@@ -37,6 +37,7 @@ __all__ = [
     "TargetProfile",
     "WeeklyRow",
     "WeeklyTable",
+    "profile_from_params",
 ]
 
 #: How far ahead `deadlines()` looks for the next schedule change, in steps of a
@@ -198,6 +199,27 @@ class CalendarEvent:
     start: datetime
     end: datetime
     summary: str = ""
+
+
+def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
+    """Return the target profile a type's derived parameters describe (D4 §4.4).
+
+    `comfort_c` makes a thermal load; `floor_c` (the questionnaire's `min_c`,
+    derived) is the floor it never goes under, `max_c` the ceiling, and
+    `follow_presence` whether away and vacation move it. No `comfort_c`, no
+    profile - a charger or a plug has none (D-0282).
+    """
+    comfort = params.get("comfort_c")
+    if comfort is None:
+        return None
+    return TargetProfile(
+        schedule=ConstantSchedule(float(comfort)),
+        comfort_default=float(comfort),
+        floor=float(params.get("floor_c", comfort)),
+        ceiling=None if params.get("max_c") is None else float(params["max_c"]),
+        vacation_level=None if params.get("vacation_c") is None else float(params["vacation_c"]),
+        follow_presence=bool(params.get("follow_presence", True)),
+    )
 
 
 @dataclass(frozen=True, slots=True)

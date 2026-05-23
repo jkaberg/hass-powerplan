@@ -95,7 +95,7 @@ from .loads import (
     transition,
 )
 from .loads.gate import Decision, GateState, TransportBudget
-from .loads.targets import CalendarEvent, PresenceMode
+from .loads.targets import CalendarEvent, PresenceMode, profile_from_params
 from .metering import (
     ClosedWindow,
     ControlledView,
@@ -298,6 +298,10 @@ class SiteConfig:
 # --------------------------------------------------------------------------- #
 
 
+#: The knob keys that rebuild a thermal load's target profile (D4 §4.4).
+_TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_presence")
+
+
 @dataclass(frozen=True, slots=True)
 class Knobs:
     """Every knob the tick reads, read live (INV-47).
@@ -314,6 +318,11 @@ class Knobs:
     presence: PresenceMode | None = None
     modes: Mapping[str, Mode] = field(default_factory=dict)
     force_max_h: Mapping[str, float] = field(default_factory=dict)
+    #: Per-load parameters a knob moved live - a comfort target, a target SoC, a
+    #: one-off deadline (D8 §5.5): merged over the subentry's parameters
+    #: for this tick, and the target profile rebuilt when a comfort key is among
+    #: them. Never persisted here; the entity restores it (INV-47, D-0282).
+    load_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -908,9 +917,10 @@ class Engine:
         self.site = site
         self._meter = meter
         self._tariff = tariff
-        self._loads: tuple[Load, ...] = tuple(
+        self._configured: tuple[Load, ...] = tuple(
             sorted(loads, key=lambda load: (-load.config.priority, load.load_id))
         )
+        self._loads: tuple[Load, ...] = self._configured
         self._constraints: tuple[Constraint, ...] = (
             (SiteFuse(site.electrical.fuse_w()), PhaseLimit(site.electrical))
             if constraints is None
@@ -923,6 +933,30 @@ class Engine:
         """The site's loads, in the order the walk and the budget spend them."""
         return self._loads
 
+    def _apply_load_knobs(self, knobs: Knobs) -> None:
+        """Put this tick's per-load knob parameters over the configured loads (D8 §5.5).
+
+        A pure function of the constructor's loads and the knobs - the same
+        inputs give the same loads - kept on the engine so every step of the
+        tick reads one tuple. A comfort key rebuilds the target profile from the
+        merged parameters, the way the flow built it (`profile_from_params`).
+        """
+        if not knobs.load_params:
+            self._loads = self._configured
+            return
+        out: list[Load] = []
+        for load in self._configured:
+            overrides = knobs.load_params.get(load.load_id)
+            if not overrides:
+                out.append(load)
+                continue
+            params = {**load.config.params, **overrides}
+            target = load.config.target
+            if any(key in overrides for key in _TARGET_KEYS):
+                target = profile_from_params(params) or target
+            out.append(replace(load, config=replace(load.config, params=params, target=target)))
+        self._loads = tuple(out)
+
     # ----------------------------------------------------------------- the tick #
 
     def tick(self, state: EngineState, inputs: Inputs) -> tuple[EngineState, Snapshot, Effects]:
@@ -933,6 +967,7 @@ class Engine:
         counter moves, the previous snapshot is republished, and three in a row
         put the site in safe mode with every load released (INV-64).
         """
+        self._apply_load_knobs(inputs.knobs)
         started = time.perf_counter()
         try:
             return self._run(state, inputs, started)
@@ -1823,6 +1858,7 @@ class Engine:
         D5 §5.9, and closes the accounting slots that ended since the last cycle -
         oldest first, exactly once each, and **never** in the tick (INV-68).
         """
+        self._apply_load_knobs(inputs.knobs)
         started = time.perf_counter()
         now = inputs.now
         site = inputs.site

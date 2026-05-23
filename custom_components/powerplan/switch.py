@@ -15,6 +15,7 @@ from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .entity import PowerplanEntity
+from .load_entities import load_switches
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -29,7 +30,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the master switch."""
-    async_add_entities([ActiveSwitch(entry.runtime_data)])
+    async_add_entities([ActiveSwitch(entry.runtime_data), *load_switches(entry.runtime_data)])
 
 
 class ActiveSwitch(PowerplanEntity, SwitchEntity, RestoreEntity):

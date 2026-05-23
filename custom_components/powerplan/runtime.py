@@ -51,6 +51,11 @@ from .const import (
     CONF_TARIFF,
     CONF_TIMEZONE,
     DOMAIN,
+    LOAD_BINDINGS,
+    LOAD_DEVICE_ID,
+    LOAD_PARAMS,
+    LOAD_PROFILE,
+    LOAD_TYPE,
     ROLE_EXPORT_REGISTER,
     ROLE_GRID_POWER,
     ROLE_IMPORT_REGISTER,
@@ -59,6 +64,7 @@ from .const import (
     ROLE_PHASE_L2,
     ROLE_PHASE_L3,
     ROLE_PRODUCTION_POWER,
+    SUBENTRY_LOAD,
 )
 from .core.accounting.close import AccountingConfig
 from .core.accounting_hook import AccountingAdapter
@@ -74,9 +80,10 @@ from .core.engine import (
     SiteConfig,
     SitePath,
 )
-from .core.loads import Load, LoadCtx
+from .core.loads import Load, LoadConfig, LoadCtx, Transport
 from .core.loads.gate import Action, Decision
-from .core.loads.targets import CalendarEvent, PresenceMode
+from .core.loads.targets import CalendarEvent, PresenceMode, profile_from_params
+from .core.loads.types import base as device_types
 from .core.metering import (
     ElectricalProfile,
     MeterSample,
@@ -111,6 +118,7 @@ from .core.tariffs.presets import loader
 from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
 from .events import build as build_event
 from .events import event_name
+from .flow.load import binding_from_data
 from .notifications import NotificationPolicy, QuietHours
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
 from .providers.prices import (
@@ -121,6 +129,8 @@ from .providers.prices import (
     fetch_missing,
     formats,
 )
+from .providers.profiles import registry as profiles
+from .providers.profiles.base import LiveDevice
 from .repairs import RepairsWatch, async_clear, async_report
 from .storage import Section, SiteStore
 from .writegate import Actuation, WriteGate
@@ -180,6 +190,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TIME,
 )
 #: The risk select's labels (D2 §6, `flow/steps.py`).
 RISK_LABELS: dict[str, float] = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE, "full": RISK_FULL}
@@ -460,6 +471,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         persons=persons,
         away_delay=timedelta(minutes=int(presence_data.get("away_delay_min", 30))),
     )
+    loads, devices = build_loads(hass, entry, electrical)
     return SiteBuild(
         cfg=cfg,
         tariff=tariff,
@@ -476,6 +488,8 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         risk=risk,
         eps_kwh=eps,
         active=bool(data.get(CONF_ACTIVE, False)),
+        loads=loads,
+        devices=devices,
         target_options=_target_options(peak, tariff_data),
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
@@ -483,6 +497,78 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         notifications=dict(data.get(CONF_NOTIFICATIONS) or {}),
         quiet_hours=QuietHours.from_data(data.get(CONF_QUIET_HOURS)),
     )
+
+
+def build_loads(
+    hass: HomeAssistant, entry: ConfigEntry, electrical: ElectricalProfile
+) -> tuple[tuple[Load, ...], dict[str, LoadDevice]]:
+    """Build every load subentry's `Load` and its bound device (D8 §4, D7 §5.5 step 2).
+
+    The numbers come from the subentry - the derived parameters the flow
+    materialised, never today's derivation table (INV-66). A subentry whose
+    profile or type is not registered is logged and skipped: the site runs
+    without it rather than not at all (INV-53).
+    """
+    loads: list[Load] = []
+    devices: dict[str, LoadDevice] = {}
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_LOAD:
+            continue
+        data = subentry.data
+        try:
+            load = load_from_subentry(subentry.subentry_id, subentry.title, data, electrical)
+            device = device_from_subentry(hass, data)
+        except KeyError, ValueError:
+            _LOGGER.exception(
+                "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
+            )
+            continue
+        loads.append(load)
+        devices[load.load_id] = device
+    return tuple(loads), devices
+
+
+def load_from_subentry(
+    subentry_id: str, title: str, data: Mapping[str, Any], electrical: ElectricalProfile
+) -> Load:
+    """Return the pure `Load` a load subentry describes (INV-66)."""
+    params = dict(data.get(LOAD_PARAMS) or {})
+    device_type = device_types.get(str(data[LOAD_TYPE]))
+    profile_key = str(data.get(LOAD_PROFILE) or "")
+    transport = (
+        profiles.get(profile_key).quirks().transport
+        if profile_key in profiles.entries()
+        else Transport.LOCAL
+    )
+    phases = int(params.get("phases", 1))
+    cfg = LoadConfig.from_materialised(
+        data,
+        load_id=subentry_id,
+        name=title,
+        target=profile_from_params(params),
+        transport=transport,
+        phases=1 if phases == 1 else 3,
+    )
+    if "nameplate_w" not in params and cfg.nameplate_w == 0.0:
+        # A type whose questionnaire gives no nameplate: the derived power, else the site cannot size it.
+        power_w = params.get("power_w") or params.get("max_w")
+        if power_w:
+            cfg = replace(cfg, nameplate_w=float(power_w))
+    if cfg.type_key == "ev" and "max_a" in params:
+        # The charger's watts follow the site's own volts (D3 §5.1), not the derivation's 230/400 V guess.
+        cfg = replace(cfg, nameplate_w=float(params["max_a"]) * electrical.w_per_amp(cfg.phases))
+    return device_type.build(cfg)
+
+
+def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDevice:
+    """Return the bound device a load subentry describes, read live from Home Assistant."""
+    profile = profiles.get(str(data[LOAD_PROFILE]))
+    bindings = tuple(binding_from_data(row) for row in data.get(LOAD_BINDINGS) or ())
+    device_id = data.get(LOAD_DEVICE_ID)
+    if not device_id:
+        msg = "the load has no device id"
+        raise ValueError(msg)
+    return LiveDevice(hass, str(device_id), profile.bind(bindings))
 
 
 def _target_options(peak: Any, tariff: Mapping[str, Any]) -> tuple[str, ...]:
@@ -639,6 +725,9 @@ class Runtime:
         self.eps_kwh = build.eps_kwh
         self.load_modes: dict[str, Mode] = {}
         self.force_max_h: dict[str, float] = {}
+        #: Per-load parameters the load entities moved (D8 §5.5): a comfort target,
+        #: a target SoC, a one-off deadline. Read live on the next tick (INV-47).
+        self.load_params: dict[str, dict[str, Any]] = {}
         self.ticks = 0
         self.plans = 0
         self.started_at: datetime | None = None
@@ -946,6 +1035,7 @@ class Runtime:
                 presence=self.presence_now(now),
                 modes=dict(self.load_modes),
                 force_max_h=dict(self.force_max_h),
+                load_params={key: dict(value) for key, value in self.load_params.items()},
             ),
             curves=self.curves,
             transport=self.gate.budget,
@@ -1571,6 +1661,28 @@ class Runtime:
         if force_max_h is not None:
             self.force_max_h[load_id] = force_max_h
         await self._tick_and_plan("knob")
+
+    def load_param(self, load_id: str, key: str) -> Any:
+        """Return a load's parameter as it stands: the knob's value, else the subentry's."""
+        override = self.load_params.get(load_id, {})
+        if key in override:
+            return override[key]
+        return self._load(load_id).config.params.get(key)
+
+    async def async_set_load_param(self, load_id: str, key: str, value: Any) -> None:
+        """Move one of a load's parameters from an entity (D8 §5.5); the next tick reads it (INV-47)."""
+        self._load(load_id)
+        current = self.load_params.setdefault(load_id, {})
+        if current.get(key) == value:
+            return
+        current[key] = value
+        await self._tick_and_plan("knob")
+
+    def load_mode(self, load_id: str) -> Mode:
+        """Return the load's configured mode: the select's, else the engine's state."""
+        if load_id in self.load_modes:
+            return self.load_modes[load_id]
+        return self._load_state(load_id).mode
 
     async def async_release_load(self, load_id: str) -> None:
         """`powerplan.release`: undo the shed, leave the mode as it is (INV-26)."""

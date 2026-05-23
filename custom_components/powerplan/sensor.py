@@ -24,6 +24,7 @@ from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 from .core.model import Carrier, Snapshot
 from .entity import PowerplanEntity, digest_of
+from .load_entities import load_sensors
 from .runtime import Runtime
 
 if TYPE_CHECKING:
@@ -463,6 +464,7 @@ async def async_setup_entry(
         )
         for carrier in runtime.build.carrier_sources
     )
+    entities.extend(load_sensors(runtime))
     async_add_entities(entities)
 
 

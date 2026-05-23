@@ -9,6 +9,7 @@ from homeassistant.const import EntityCategory, UnitOfEnergy
 
 from .core.tariffs.target import EPS_DEFAULT_KWH_PER_HOUR, EPS_MAX_KWH
 from .entity import PowerplanEntity
+from .load_entities import load_numbers
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -27,7 +28,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the margin number."""
-    async_add_entities([MarginNumber(entry.runtime_data)])
+    async_add_entities([MarginNumber(entry.runtime_data), *load_numbers(entry.runtime_data)])
 
 
 class MarginNumber(PowerplanEntity, RestoreNumber, NumberEntity):

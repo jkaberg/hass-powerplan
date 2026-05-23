@@ -22,10 +22,12 @@ from .const import DOMAIN
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from .core.engine import LoadStatus
+    from .core.loads import Load
     from .core.model import Snapshot
     from .runtime import Runtime
 
-__all__ = ["PowerplanEntity", "site_device_info", "unique_id"]
+__all__ = ["LoadEntity", "PowerplanEntity", "load_device_info", "site_device_info", "unique_id"]
 
 MANUFACTURER = "powerplan"
 
@@ -94,6 +96,50 @@ class PowerplanEntity(CoordinatorEntity[DataUpdateCoordinator["Snapshot"]]):
             return
         self._last_digest = digest
         super()._handle_coordinator_update()
+
+
+def load_device_info(runtime: Runtime, load: Load) -> DeviceInfo:
+    """Return a load's device: named after the load, the type as model, via the site (D8 §5.5)."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{runtime.entry.entry_id}:{load.load_id}")},
+        name=load.config.name,
+        manufacturer=MANUFACTURER,
+        model=load.config.type_key,
+        via_device=(DOMAIN, runtime.entry.entry_id),
+    )
+
+
+class LoadEntity(PowerplanEntity):
+    """An entity of one load's device (D8 §5.5, the load table).
+
+    The unique id is the entry id, the subentry id and the key (INV-50); the
+    entity is available when the coordinator has a snapshot and the load is
+    not held unhealthy on stale roles (§5.5 "Availability").
+    """
+
+    def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
+        """Bind to one load of the site."""
+        super().__init__(runtime, key)
+        self.load = load
+        self.load_id = load.load_id
+        self._attr_unique_id = unique_id(runtime.entry.entry_id, key, load.load_id)
+        self._attr_device_info = load_device_info(runtime, load)
+
+    @property
+    def status(self) -> LoadStatus | None:
+        """This load's row of the last snapshot, if any."""
+        snapshot = self.snapshot
+        if snapshot is None:
+            return None
+        return snapshot.loads.get(self.load_id)
+
+    @property
+    def available(self) -> bool:
+        """Available with a snapshot, unless the load is unhealthy on stale roles."""
+        status = self.status
+        if status is None:
+            return self.coordinator.data is not None
+        return not (status.health.unhealthy and status.health.stale_roles)
 
 
 def digest_of(state: Any, attributes: Mapping[str, Any] | None = None) -> str:

@@ -258,7 +258,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 
 | WP | Name | Status |
 |---|---|---|
-| 0.0 | Prerequisites | todo |
+| 0.0 | Prerequisites | in progress |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -284,7 +284,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 2.1 | WriteGate executor | done |
 | 2.2 | Profiles | done |
 | 2.3 | `ev` complete | done |
-| 2.4 | Load subentry flow and load entities | todo |
+| 2.4 | Load subentry flow and load entities | done |
 | 2.5 | Circuits | todo |
 | 2.6 | Subentry hot paths | todo |
 | 2.7 | Accounting surface | todo |

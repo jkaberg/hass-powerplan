@@ -39,6 +39,23 @@ CONF_NOTIFICATIONS: Final = "notifications"
 CONF_QUIET_HOURS: Final = "quiet_hours"
 CONF_ACTIVE: Final = "active"
 
+# --------------------------------------------------------------------------- #
+# Load subentries (D8 §4 `LoadSubentryData`, §5.2)
+# --------------------------------------------------------------------------- #
+SUBENTRY_LOAD: Final = "load"
+LOAD_TYPE: Final = "type"
+LOAD_PROFILE: Final = "profile"
+LOAD_DEVICE_ID: Final = "device_id"
+LOAD_BINDINGS: Final = "bindings"
+LOAD_ANSWERS: Final = "answers"
+LOAD_PARAMS: Final = "params"
+LOAD_DERIVATION_VERSION: Final = "derivation_version"
+LOAD_STRATEGY: Final = "strategy"
+LOAD_STRATEGY_PARAMS: Final = "strategy_params"
+LOAD_PRIORITY: Final = "priority"
+LOAD_GROUP: Final = "group"
+LOAD_MANUAL_OVERRIDES: Final = "manual_overrides"
+
 #: The collapsed section every step puts its advanced fields in. Home Assistant
 #: deprecated `show_advanced_options` in 2026.9 and asks for a section instead;
 #: a collapsed section is also a better reading of INV-65, because the field is
