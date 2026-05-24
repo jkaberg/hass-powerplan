@@ -99,14 +99,21 @@ class PowerplanEntity(CoordinatorEntity[DataUpdateCoordinator["Snapshot"]]):
 
 
 def load_device_info(runtime: Runtime, load: Load) -> DeviceInfo:
-    """Return a load's device: named after the load, the type as model, via the site (D8 §5.5)."""
-    return DeviceInfo(
+    """Return a load's device: named after the load, the type as model, via the site (D8 §5.5).
+
+    `via_device_id`, not the deprecated `via_device` (identifiers) form: the
+    site device is registered eagerly in `Runtime.start()`, ahead of any
+    platform, precisely so its id is already known here (HA rule, 2027.8.0).
+    """
+    info = DeviceInfo(
         identifiers={(DOMAIN, f"{runtime.entry.entry_id}:{load.load_id}")},
         name=load.config.name,
         manufacturer=MANUFACTURER,
         model=load.config.type_key,
-        via_device=(DOMAIN, runtime.entry.entry_id),
     )
+    if runtime.site_device_id is not None:
+        info["via_device_id"] = runtime.site_device_id
+    return info
 
 
 class LoadEntity(PowerplanEntity):

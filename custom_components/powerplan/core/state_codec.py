@@ -9,6 +9,7 @@ WP0.10 needed it for D11's section too (`design/DECISIONS.md` D-0267).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from datetime import date, datetime
@@ -18,6 +19,8 @@ from types import UnionType
 from typing import Any, Final, Literal, Union, get_args, get_origin, get_type_hints
 
 __all__ = ["decode", "encode"]
+
+_LOGGER = logging.getLogger(__name__)
 
 #: A `Mapping[K, V]` annotation carries exactly two type arguments.
 _KEY_VALUE: Final = 2
@@ -76,7 +79,24 @@ def decode(kind: Any, raw: Any) -> Any:  # noqa: PLR0911, PLR0912 - one branch p
         return (origin or list)(decode(arg, item) for item in raw)
     if origin is not None and issubclass(_as_type(origin), Mapping):
         key_kind, value_kind = get_args(kind) or (Any, Any)
-        return {decode(key_kind, key): decode(value_kind, item) for key, item in raw.items()}
+        out: dict[Any, Any] = {}
+        for key, item in raw.items():
+            try:
+                out[decode(key_kind, key)] = decode(value_kind, item)
+            except (TypeError, ValueError, KeyError, AttributeError) as err:
+                # A stale or malformed entry from an earlier schema - dropped,
+                # not fatal: the caller's own default (a fresh LoadState(),
+                # an empty section) is what a load with no persisted state
+                # already means (D7 §7). One bad key must never cost the
+                # whole section, or the whole site.
+                _LOGGER.warning(
+                    "state section: %r's entry %r could not be decoded as %s (%s) — dropped",
+                    key,
+                    item,
+                    value_kind,
+                    err,
+                )
+        return out
     if not isinstance(kind, type):
         return raw
     if issubclass(kind, Enum):

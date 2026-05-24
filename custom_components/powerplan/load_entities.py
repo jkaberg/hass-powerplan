@@ -492,7 +492,13 @@ def _plan_slots(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
         return {"slots": []}
     return {
         "slots": [
-            {"start": slot.start.isoformat(), "end": slot.end.isoformat(), "w": round(slot.w)}
+            {
+                "start": slot.start.isoformat(),
+                "end": slot.end.isoformat(),
+                # None is its own answer (INV-30): no plan, control freely -
+                # never collapsed into 0, which is "stand still" (D5 §4).
+                "w": None if slot.envelope_w is None else round(slot.envelope_w),
+            }
             for slot in plan.slots
         ]
     }

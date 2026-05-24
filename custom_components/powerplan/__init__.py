@@ -51,7 +51,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:
     """Set up one site: D7 §5.5's order, from the store to the triggers (INV-48)."""
-    runtime = Runtime(hass, entry, build_site(hass, entry))
+    # build_site() reads two preset JSON files and, for a non-default country,
+    # imports and runs the holidays library's own table builder - all blocking,
+    # so it runs off the event loop (HA's rule: no blocking
+    # call in the loop). Nothing inside it needs the loop: every state and
+    # config read it makes is a fast, in-memory one HA allows from either
+    # thread.
+    site = await hass.async_add_executor_job(build_site, hass, entry)
+    runtime = Runtime(hass, entry, site)
     entry.runtime_data = runtime
     await runtime.start()
     # A load subentry added, changed or removed rebuilds the site (D7 §2). The

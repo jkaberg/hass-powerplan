@@ -28,6 +28,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import CoreState, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_point_in_utc_time,
@@ -116,6 +117,7 @@ from .core.tariffs.grammar import StepTable
 from .core.tariffs.history import Override
 from .core.tariffs.presets import loader
 from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
+from .entity import site_device_info
 from .events import build as build_event
 from .events import event_name
 from .flow.load import binding_from_data
@@ -700,6 +702,10 @@ class Runtime:
         self.entry = entry
         self.build = build
         self.site_name = entry.title
+        #: The site's own device id, registered eagerly in `start()` so every
+        #: load device can carry `via_device_id` rather than the deprecated
+        #: `via_device` (HA rule, 2027.8.0).
+        self.site_device_id: str | None = None
         self.store = SiteStore(hass, entry.entry_id)
         self.coordinator: DataUpdateCoordinator[Snapshot] = DataUpdateCoordinator(
             hass,
@@ -768,6 +774,14 @@ class Runtime:
         self.raw = RawSlotStore(self.store.get(Section.PRICES))
         self.notifications.last_sent = dict(self.state.events.last_sent)
         build = self.build
+        # Registered here, ahead of any platform, so every load device's own
+        # DeviceInfo can carry `via_device_id` - a lookup at that point would
+        # race the site's own entities, which may register in the same batch.
+        self.site_device_id = (
+            dr.async_get(self.hass)
+            .async_get_or_create(config_entry_id=self.entry.entry_id, **site_device_info(self))
+            .id
+        )
         if self.state.tariff is not None:
             # The month's peaks, the target and the risk come back with the state
             # (D2 §7), before the ledger takes its reference to the history and

@@ -140,6 +140,22 @@ async def test_a_metered_site_sets_up_ticks_and_unloads(
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
+async def test_setup_never_blocks_the_event_loop(
+    hass: HomeAssistant, meter: FakeMeter, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`build_site()`'s own file reads and the holidays import run off the loop.
+
+    A live site (country NO, a bound preset) logged three of
+    these - the holidays table's own import and both preset JSON files -
+    because `build_site()` ran synchronously inside `async_setup_entry`
+    (`__init__.py`'s `hass.async_add_executor_job` fix). Nothing in the log
+    should ever again say "Detected blocking call" for this site.
+    """
+    entry = site_entry(hass)
+    await _setup(hass, entry)
+    assert "Detected blocking call" not in caplog.text
+
+
 async def test_a_price_only_site_has_no_meter_and_still_ticks(
     hass: HomeAssistant, at_boundary_minus_one: datetime, ticks: list[tuple[datetime, str]]
 ) -> None:

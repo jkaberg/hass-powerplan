@@ -249,7 +249,12 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(
     assert load_device is not None
     assert load_device.name == "Charger"
     assert load_device.model == "ev"
-    assert load_device.via_device_id is not None
+    # `via_device_id`, not the deprecated `via_device` (identifiers) form -
+    # the site's own device is registered eagerly in `Runtime.start()`, ahead
+    # of any platform, precisely so this is never resolved by HA's own
+    # deprecated fallback (2027.8.0).
+    assert load_device.via_device_id == runtime.site_device_id
+    assert runtime.site_device_id is not None
     for platform, key, category, enabled in EV_ENTITIES:
         entity_id = registry.async_get_entity_id(
             platform, DOMAIN, unique_id(site.entry_id, key, sub.subentry_id)
