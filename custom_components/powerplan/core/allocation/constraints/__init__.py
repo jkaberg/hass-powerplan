@@ -7,7 +7,7 @@ load and pins rather than caps: it is what a started programme holds (INV-59).
 """
 
 from .base import AllocCtx, Constraint, MarginalCost, Scope, Violation
-from .circuit import CircuitLimit
+from .circuit import CircuitLimit, CircuitSpec
 from .cycle import CycleReservation
 from .group import GroupCap, default_max_concurrent_w
 from .hard import ContractedPowerLimit, ExternalLimit, SiteFuse
@@ -17,6 +17,7 @@ from .zone import Zone, ZoneChoice, ZoneSource
 __all__ = [
     "AllocCtx",
     "CircuitLimit",
+    "CircuitSpec",
     "Constraint",
     "ContractedPowerLimit",
     "CycleReservation",

@@ -10,11 +10,11 @@ tick's inputs (INV-47).
 
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import time
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
+from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import EntityCategory
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
@@ -32,18 +32,13 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.loads.types.ev import DERIVATION_VERSION
 from custom_components.powerplan.entity import unique_id
-from tests.builders.houses import OSLO, nordic_detached
-from tests.e2e.fake_house import FakeHouse
-from tests.runtime.conftest import site_entry
 
 if TYPE_CHECKING:
-    from freezegun.api import FrozenDateTimeFactory
     from homeassistant.core import HomeAssistant
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.powerplan.runtime import Runtime
-
-START = datetime(2027, 1, 12, 15, 40, 17, tzinfo=OSLO)
+    from tests.e2e.fake_house import FakeHouse
 
 #: The `ev` rows of D8 §5.5's load table: (platform, key, category, enabled by default).
 EV_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
@@ -62,32 +57,6 @@ EV_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "session", None, True),
     ("binary_sensor", "shed", None, True),
 )
-
-
-@pytest.fixture
-async def charger(
-    hass: HomeAssistant,
-    freezer: FrozenDateTimeFactory,
-    ams_meter: str,
-) -> FakeHouse:
-    """Publish the Easee-shaped charger (and the rest of the house) as entities."""
-    freezer.move_to(START)
-    await hass.config.async_update(time_zone=OSLO.key)
-    house = nordic_detached(seed=20260919, controlled=frozenset({"ev"}))
-    fake = FakeHouse(hass, house, START)
-    fake.install()
-    await hass.async_block_till_done()
-    return fake
-
-
-@pytest.fixture
-async def site(hass: HomeAssistant, charger: FakeHouse) -> MockConfigEntry:
-    """Return a loaded metered site, no loads yet."""
-    entry = site_entry(hass, target_kw=10.0)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.LOADED
-    return entry
 
 
 async def _answer(hass: HomeAssistant, result: dict[str, Any], **user_input: Any) -> dict[str, Any]:

@@ -40,6 +40,11 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CIRCUIT_FUSE_A,
+    CIRCUIT_MEMBERS,
+    CIRCUIT_PHASES,
+    CIRCUIT_SUB_METER,
+    CIRCUIT_UNMETERED_W,
     CONF_ACTIVE,
     CONF_CURRENCY,
     CONF_ELECTRICAL,
@@ -65,10 +70,12 @@ from .const import (
     ROLE_PHASE_L2,
     ROLE_PHASE_L3,
     ROLE_PRODUCTION_POWER,
+    SUBENTRY_CIRCUIT,
     SUBENTRY_LOAD,
 )
 from .core.accounting.close import AccountingConfig
 from .core.accounting_hook import AccountingAdapter
+from .core.allocation import CircuitSpec
 from .core.engine import (
     Effects,
     Engine,
@@ -122,6 +129,7 @@ from .events import build as build_event
 from .events import event_name
 from .flow.load import binding_from_data
 from .notifications import NotificationPolicy, QuietHours
+from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
 from .providers.prices import (
     EntitySource,
@@ -369,6 +377,10 @@ class SiteBuild:
     active: bool
     loads: tuple[Load, ...] = ()
     devices: Mapping[str, LoadDevice] = field(default_factory=dict)
+    #: The site's circuits from their subentries (D6 §6) and, per
+    #: sub-metered one, the meter the tick samples into `Inputs.circuits`.
+    circuits: tuple[CircuitSpec, ...] = ()
+    circuit_meters: Mapping[str, CircuitMeter] = field(default_factory=dict)
     #: The tariff step select's options (D8 §5.5): `auto`, each step, or the configured kW.
     target_options: tuple[str, ...] = ("auto",)
     #: The configured kW target, when the tariff has no steps.
@@ -474,6 +486,9 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         away_delay=timedelta(minutes=int(presence_data.get("away_delay_min", 30))),
     )
     loads, devices = build_loads(hass, entry, electrical)
+    circuits, circuit_meters = build_circuits(
+        hass, entry, frozenset(load.load_id for load in loads)
+    )
     return SiteBuild(
         cfg=cfg,
         tariff=tariff,
@@ -492,6 +507,8 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         active=bool(data.get(CONF_ACTIVE, False)),
         loads=loads,
         devices=devices,
+        circuits=circuits,
+        circuit_meters=circuit_meters,
         target_options=_target_options(peak, tariff_data),
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
@@ -528,6 +545,48 @@ def build_loads(
         loads.append(load)
         devices[load.load_id] = device
     return tuple(loads), devices
+
+
+def build_circuits(
+    hass: HomeAssistant, entry: ConfigEntry, load_ids: frozenset[str]
+) -> tuple[tuple[CircuitSpec, ...], dict[str, CircuitMeter]]:
+    """Build every circuit subentry's `CircuitSpec` and its sub-meter, if bound (D6 §6).
+
+    A member that is no longer a load of this site is dropped with a warning:
+    the circuit still binds the members it has (INV-53). The circuit's key is
+    its subentry id, which is what `Grant.capped_by`, the report and the
+    `breach` event name it by.
+    """
+    specs: list[CircuitSpec] = []
+    meters: dict[str, CircuitMeter] = {}
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_CIRCUIT:
+            continue
+        data = subentry.data
+        members = frozenset(str(member) for member in data.get(CIRCUIT_MEMBERS) or ())
+        missing = members - load_ids
+        if missing:
+            _LOGGER.warning(
+                "circuit %s names loads that are not on this site and are ignored: %s",
+                subentry.title,
+                ", ".join(sorted(missing)),
+            )
+        sub_meter = data.get(CIRCUIT_SUB_METER) or None
+        phases = int(data.get(CIRCUIT_PHASES, 1))
+        specs.append(
+            CircuitSpec(
+                key=subentry.subentry_id,
+                fuse_a=float(data[CIRCUIT_FUSE_A]),
+                phases=1 if phases == 1 else 3,
+                members=members & load_ids,
+                sub_metered=sub_meter is not None,
+                unmetered_w=float(data.get(CIRCUIT_UNMETERED_W, 0.0)),
+                name=subentry.title,
+            )
+        )
+        if sub_meter is not None:
+            meters[subentry.subentry_id] = CircuitMeter(hass, str(sub_meter))
+    return tuple(specs), meters
 
 
 def load_from_subentry(
@@ -810,6 +869,7 @@ class Runtime:
             ),
             build.tariff,
             build.loads,
+            constraints=tuple(spec.limit(build.cfg.electrical) for spec in build.circuits),
             accounting=adapter,
         )
         for load in build.loads:
@@ -1036,11 +1096,13 @@ class Runtime:
             )
             for load in build.loads
         }
+        circuits = {key: await source.sample(now) for key, source in build.circuit_meters.items()}
         return Inputs(
             now=now,
             site=build.cfg,
             meter=meter,
             loads=loads,
+            circuits=circuits,
             knobs=Knobs(
                 active=self.active,
                 target=self.target,
@@ -1440,6 +1502,11 @@ class Runtime:
             for role, entity_id in build.meter_entities.items()
             if role in (ROLE_GRID_POWER, ROLE_PRODUCTION_POWER)
         ]
+        power_entities.extend(
+            entity_id
+            for source in build.circuit_meters.values()
+            for entity_id in sorted(source.entity_ids())
+        )
         if power_entities:
             self._track(
                 async_track_state_change_event(hass, power_entities, self._on_power_changed)

@@ -72,23 +72,24 @@ tools/
 ```python
 @dataclass
 class Scenario:          name: str; house: str; days: int; curve: CurveSpec; weather: WeatherSpec; events: list[EventSpec]
-                         faults: list[FaultSpec]   # meter_stale(t, dur), ble_flap(t, dur), price_outage(day), restart(t), clock_jump(t, s), engine_exception(t, n) - WP1.1: n consecutive ticks in which the engine's own step raises
+                         faults: list[FaultSpec]   # meter_stale(t, dur), ble_flap(t, dur), price_outage(day), restart(t), clock_jump(t, s),
+                                                   # engine_exception(t, n): n ticks in a row whose engine step raises,
+                                                   # unmetered_load(t, dur, watts, circuit): watts nobody meters on the grid and on one circuit's clamp
                          expect: list[Expectation] # windows_over_target == 0; comfort_violations == 0; legionella_completed ≥ 1; writes_per_device_per_10min ≤ 1; …
 
 @dataclass
 class BacktestMetrics:   windows: int; over_target: int; max_window_kwh: float; level_reached: str; fee: Money
-                         metric_kw: float; target_kw: float; gate: bool         # WP0.9b: the metric and the bound behind level_reached
+                         metric_kw: float; target_kw: float; gate: bool         # the metric and the bound behind level_reached
                          confidence: str; coarse_windows: int; estimated_windows: int; days: int   # how much of the reconstruction to trust (§5.4)
                          load_kwh: Mapping[str, float]; load_quality: Mapping[str, str]
-                         comfort_violation_min: float; kwh_shifted: float; cost_energy: Money; cost_counterfactual: Money; savings: Money   # produced by D11's Accounting over the replay
+                         comfort_violation_min: float; kwh_shifted: float; cost_energy: Money; cost_counterfactual: Money; savings: Money   # from D11's Accounting over the replay
                          writes: Mapping[str, int]; sessions_dropped: int; reconstruction: str
-                         # A plain replay fills everything but the four controller fields
-                         # (comfort, kwh_shifted, writes, sessions_dropped) and the three money
-                         # ones, which stay None until WP0.10 and `--simulate` (D-0226).
+                         # a plain replay fills everything but the four controller fields (comfort, kwh_shifted,
+                         # writes, sessions_dropped) and the three money ones, which need `--simulate` (D-0226)
 
-# tests/sim/base.py owns these four: they are the simulators' own vocabulary and
-# import nothing from custom_components, so a simulator does not move when the
-# core's types move. WP0.9's runner adapts between them and core.model (D-0041).
+# tests/sim/base.py owns these four: they're the simulators' own vocabulary and import
+# nothing from custom_components, so a simulator doesn't move when the core's types move.
+# The runner adapts between them and core.model (D-0041).
 @dataclass(frozen=True)
 class Env:               now: datetime; outdoor_c: float; solar_w_per_m2: float = 0.0
                          ground_c: float = 8.0; cold_water_c: float = 8.0; occupants: int = 0
@@ -101,18 +102,19 @@ class Reads:             power_w: float; amps: tuple[float, float, float]; avail
 
 class SimLoad(Protocol): def step(self, dt_s: float, command: Any, env: Env) -> Reads     # physics forward
 class SimSource[T](Protocol): seed: int; def at(self, t: datetime) -> T
-                         # a generator (weather, prices, uncontrolled, household): a pure function of
-                         # t given the seed, so the planner may look ahead and two runs in any order
-                         # agree byte for byte. Its natural return is its own type, not Reads.
+                         # a generator (weather, prices, uncontrolled, household): a pure function of t
+                         # given the seed, so the planner may look ahead and two runs in any order agree
+                         # byte for byte. Its natural return is its own type, not Reads.
 
 @dataclass(frozen=True)
 class BenchmarkHouse:    name: str; site: SiteSpec; loads: tuple[LoadSpec, ...]; household: HouseholdSpec; uncontrolled: UncontrolledSpec
-                         # LoadSpec carries the D4 questionnaire answers (what a user would type) AND the simulator model + quirks; a load whose type is not yet implemented runs on its own thermostat/charger logic ("uncontrolled") until it is
+                         # LoadSpec carries the D4 questionnaire answers (what a user would type) AND the simulator model + quirks;
+                         # a load whose type isn't implemented yet runs on its own thermostat/charger logic ("uncontrolled") until it is
 
 @dataclass(frozen=True)
 class SyntheticYear:     start: date; days: int; tz: str; price_regimes: tuple[PriceRegime, ...]; weather: WeatherSpec; tariff_versions: tuple[str, ...]
                          faults: tuple[FaultSpec, ...]; events: tuple[EventSpec, ...]; seed: int
-                         # PriceRegime(from, to, kind=flat|spot_like|negative_days|outage, params) - e.g. Norgespris flat to 2026-12-31, NO3-shaped spot from 2027-01-01
+                         # PriceRegime(from, to, kind=flat|spot_like|negative_days|outage, params), eg Norgespris flat for the autumn, NO3-shaped spot after new year
 
 @dataclass(frozen=True)
 class BenchmarkResult:   house: str; year: str; tier: str; build: str; months: Mapping[str, BacktestMetrics]; total: BacktestMetrics
@@ -120,7 +122,7 @@ class BenchmarkResult:   house: str; year: str; tier: str; build: str; months: M
                          controlled_share: float             # fraction of the house's loads under control in this build
 
 @dataclass(frozen=True)
-class Baseline:          house: str; year: str; result: BenchmarkResult; tolerances: Mapping[str, Tolerance]; since: str   # WP id that set it
+class Baseline:          house: str; year: str; result: BenchmarkResult; tolerances: Mapping[str, Tolerance]; since: str   # the WP that set it
 @dataclass(frozen=True)
 class Tolerance:         kind: Literal["zero", "not_worse", "pct", "abs"]; value: float | None
 ```
@@ -160,6 +162,8 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 
 **The house's own stepping is one object.** The household (plug-in, unplug, the dishwasher after dinner, the Saturday sauna), the simulators in their fixed order (the sum's order is the meter's float rounding) and the AMS register's stamping (a new `Reading.at` only when the value moved, `last_reported`) live in `HouseDriver` (`tests/scenarios/runner.py`), which `run_scenario` and `tests/e2e/fake_house.py` both drive (D-0278).
 
+**Circuits in the runner.** `House.circuits` (a tuple of D6 `CircuitSpec`s; `house(with_sauna=, circuits=)` and `GARAGE_CIRCUIT` in `tests/builders/houses.py`) become the engine's `constraints=`. Per tick `HouseDriver.circuits(now)` reads each sub-metered circuit's clamp - its members' own draw plus what an `unmetered_load` fault put on it - into `Inputs.circuits`, and `ScenarioResult.circuit_breaches` counts the `breach` events with `breach = "circuit"`. The Saturday sauna's `force` knob goes back to `auto` when the session ends: a mode knob is sticky, and without that the sauna stays forced past the household's switch-off (D-0285).
+
 ### 5.3 Scenario catalogue (v1 must pass)
 
 | scenario | asserts |
@@ -179,7 +183,7 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 | `es_contracted_p1_p2` | never trips; P2 limit used at night |
 | `us_srp_demand_cooling` | pre-cooling before 15:00; 30-min on-peak demand ≤ target |
 | `au_solar_soak` (v1.x) | surplus consumed before grid |
-| `circuit_garage_32a` | EV + sauna never exceed 32 A; circuit breach sheds EV only |
+| `circuit_garage_32a` | EV + sauna never exceed 32 A; circuit breach sheds EV only. **As asserted (`tests/scenarios/test_phase2.py`, D-0284, D-0285):** the winter week's Saturday from 18:17, the car at 15 % under `force`, a 25 kW ceiling so the circuit is what binds, the garage `CircuitSpec` (32 A, three phases, the charger and the sauna, a clamp on the feed - `tests/builders/houses.py::GARAGE_CIRCUIT`). Before 19:00 the charger draws the whole fuse, capped by the garage; when the household lights the sauna the circuit is over its fuse for at most three ticks while the charger yields, then the two share it for the session and the sauna is never shed. From 20:47 for fifteen minutes an `unmetered_load` of 11 kW (a guest's car on the dumb socket and the fan heater) sits on the clamp: one `breach` event with `breach = "circuit"`; the charger at stage 4 at its floor (its stop vetoed by the plan horizon), capped by the garage, the fuse over by no more than that floor; the sauna off; the site's ladder where it was and the tank's and the loops' grants on the breach tick equal to the tick before; the charger back above its floor within five minutes of the guest leaving; `over_target`, `sessions_dropped` and `zero_amp_writes` 0 |
 | `hybrid_gas_switch` | gas chosen at COP < ratio; hysteresis prevents flapping |
 | `engine_exception_x3` | safe mode; all released. **As asserted:** the runner patches the engine's step to raise for three ticks (`Fault(kind="engine_exception", at, count=3)`); safe mode is entered on the third, every later snapshot keeps it with the site off and the publish continuing; the charger is back at its own maximum, the loops out of any shed and inside their band (a plan's coast setpoint is not a shed - D7 §8, D-0272), the tank at its comfort minimum, and nothing is written afterwards |
 | `savings_vs_twin` | `reference_winter_day` × 30 controlled vs. the same 30 days with every load `always` on a `NoPeak` site; D11's reported counterfactual cost within ±10 % of the twin's actual cost; site savings sign correct; capacity savings = the twin's fee − the controlled fee exactly (D11 §9) |

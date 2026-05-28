@@ -39,6 +39,7 @@ from .budget import (
 from .constraints import (
     AllocCtx,
     CircuitLimit,
+    CircuitSpec,
     Constraint,
     ContractedPowerLimit,
     CycleReservation,
@@ -99,6 +100,7 @@ __all__ = [
     "BudgetCfg",
     "CircuitLimit",
     "CircuitReport",
+    "CircuitSpec",
     "Constraint",
     "ContractedPowerLimit",
     "CycleReservation",

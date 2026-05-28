@@ -1796,6 +1796,88 @@
         "already_configured": "This device is already a load.",
         "reconfigure_successful": "The load was updated."
       }
+    },
+    "circuit": {
+      "entry_type": "Circuit",
+      "initiate_flow": {
+        "user": "Add circuit",
+        "reconfigure": "Reconfigure circuit"
+      },
+      "step": {
+        "user": {
+          "title": "Add a circuit",
+          "description": "A sub-fuse and the loads behind it — the garage's 32 A with the charger and the sauna. powerplan keeps the loads on it under the fuse together, before the site's own limit is considered.",
+          "data": {
+            "name": "Name",
+            "fuse_a": "Fuse",
+            "phases": "Phases",
+            "members": "Loads on this circuit",
+            "sub_meter": "Sub-meter"
+          },
+          "data_description": {
+            "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
+            "fuse_a": "The circuit's own fuse, in amps.",
+            "phases": "How many phases the circuit is wired on; the fuse is per phase.",
+            "members": "The loads powerplan steers that sit behind this fuse.",
+            "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "What no meter sees.",
+              "data": {
+                "unmetered_w": "Unmetered load"
+              },
+              "data_description": {
+                "unmetered_w": "Watts to keep clear for things on the circuit that powerplan neither steers nor measures — a freezer, the lights. Usually 0."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure the circuit",
+          "description": "The same questions, pre-filled with what the circuit has now.",
+          "data": {
+            "name": "Name",
+            "fuse_a": "Fuse",
+            "phases": "Phases",
+            "members": "Loads on this circuit",
+            "sub_meter": "Sub-meter"
+          },
+          "data_description": {
+            "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
+            "fuse_a": "The circuit's own fuse, in amps.",
+            "phases": "How many phases the circuit is wired on; the fuse is per phase.",
+            "members": "The loads powerplan steers that sit behind this fuse.",
+            "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "What no meter sees.",
+              "data": {
+                "unmetered_w": "Unmetered load"
+              },
+              "data_description": {
+                "unmetered_w": "Watts to keep clear for things on the circuit that powerplan neither steers nor measures — a freezer, the lights. Usually 0."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Before this circuit is added",
+          "description": "**{name}** is fused at {fuse_a} A on {phases} phase(s): {members} will never exceed it together.\n\nSub-meter: {sub_meter}. Unmetered allowance: {unmetered_w} W."
+        }
+      },
+      "error": {
+        "no_name": "Give the circuit a name.",
+        "no_members": "Pick at least one load; a circuit with nothing behind it limits nothing.",
+        "unknown_member": "One of the loads is not on this site any more."
+      },
+      "abort": {
+        "no_loads": "Add a load first: a circuit is the loads behind a fuse.",
+        "reconfigure_successful": "The circuit was updated."
+      }
     }
   }
 }

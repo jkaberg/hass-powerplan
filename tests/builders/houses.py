@@ -20,6 +20,7 @@ from datetime import date
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from custom_components.powerplan.core.allocation import CircuitSpec
 from custom_components.powerplan.core.engine import SiteConfig
 from custom_components.powerplan.core.loads import Load, Transport
 from custom_components.powerplan.core.loads.targets import ConstantSchedule
@@ -145,6 +146,10 @@ class House:
     #: thermostat or charger logic and are metered into `uncontrolled` (D9 §9 11).
     passive: dict[str, Any] = field(default_factory=dict)
     spec: str = HOUSE_ID
+    #: The house's sub-fuses and the loads behind them (D6 §5.8; D9 §5.3
+    #: `circuit_garage_32a`). The runner builds one `CircuitLimit` per spec and,
+    #: for a sub-metered one, reads the members' own draw into `Inputs.circuits`.
+    circuits: tuple[CircuitSpec, ...] = ()
 
     def load(self, load_id: str) -> Load:
         """Return the load with `load_id`."""
@@ -257,6 +262,8 @@ def house(
     cfg: SiteConfig | None = None,
     strategy: str | None = None,
     tariff: Evaluator | None = None,
+    with_sauna: bool = False,
+    circuits: tuple[CircuitSpec, ...] = (),
 ) -> House:
     """Return the reference house, or a subset of it, ready for one run.
 
@@ -264,6 +271,8 @@ def house(
     assert on; WP0.11's benchmark passes all five and every other type.
     `strategy` re-plans every load by one key (`always` for the twin of
     `savings_vs_twin`); `tariff` replaces the Tensio evaluator (`no_peak(tensio())`).
+    `with_sauna` adds the 6 kW Saturday sauna and `circuits` the sub-fuses
+    (`GARAGE_CIRCUIT` for D9 §5.3's `circuit_garage_32a`).
     """
     cfg = cfg or site_config()
     loads: list[Load] = []
@@ -324,6 +333,12 @@ def house(
         )
         sims["tank"] = tank
 
+    if with_sauna:
+        loads.append(
+            load_from("generic_switch", {"appliance": "sauna", "power_w": 6000.0}, load_id="sauna")
+        )
+        sims["sauna"] = SwitchSim()
+
     regimes = (
         PriceRegime(
             kind=price_kind,
@@ -352,7 +367,20 @@ def house(
         ),
         meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
         seed=seed,
+        circuits=circuits,
     )
+
+
+#: The garage of D9 §5.3's `circuit_garage_32a`: a 32 A three-phase sub-fuse with
+#: the charger and the sauna behind it, read by its own clamp (D6 §6's example).
+GARAGE_CIRCUIT = CircuitSpec(
+    key="garage",
+    fuse_a=32.0,
+    phases=3,
+    members=frozenset({"ev", "sauna"}),
+    sub_metered=True,
+    name="Garage",
+)
 
 
 def _ev(seed: int, soc: float) -> tuple[Load, EvSim, BleChargerSim]:

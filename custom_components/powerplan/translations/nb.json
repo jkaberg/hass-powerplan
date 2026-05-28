@@ -1796,6 +1796,88 @@
         "already_configured": "Denne enheten er allerede en last.",
         "reconfigure_successful": "Lasten ble oppdatert."
       }
+    },
+    "circuit": {
+      "entry_type": "Kurs",
+      "initiate_flow": {
+        "user": "Legg til kurs",
+        "reconfigure": "Endre kurs"
+      },
+      "step": {
+        "user": {
+          "title": "Legg til en kurs",
+          "description": "En sikring og lastene bak den — garasjens 32 A med laderen og badstuen. powerplan holder lastene på kursen under sikringen sammen, før anleggets egen grense vurderes.",
+          "data": {
+            "name": "Navn",
+            "fuse_a": "Sikring",
+            "phases": "Faser",
+            "members": "Laster på denne kursen",
+            "sub_meter": "Undermåler"
+          },
+          "data_description": {
+            "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
+            "fuse_a": "Kursens egen sikring, i ampere.",
+            "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
+            "members": "Lastene powerplan styrer som sitter bak denne sikringen.",
+            "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Det ingen måler ser.",
+              "data": {
+                "unmetered_w": "Umålt last"
+              },
+              "data_description": {
+                "unmetered_w": "Watt å holde ledig for ting på kursen som powerplan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Endre kursen",
+          "description": "De samme spørsmålene, forhåndsutfylt med det kursen har nå.",
+          "data": {
+            "name": "Navn",
+            "fuse_a": "Sikring",
+            "phases": "Faser",
+            "members": "Laster på denne kursen",
+            "sub_meter": "Undermåler"
+          },
+          "data_description": {
+            "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
+            "fuse_a": "Kursens egen sikring, i ampere.",
+            "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
+            "members": "Lastene powerplan styrer som sitter bak denne sikringen.",
+            "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Det ingen måler ser.",
+              "data": {
+                "unmetered_w": "Umålt last"
+              },
+              "data_description": {
+                "unmetered_w": "Watt å holde ledig for ting på kursen som powerplan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Før denne kursen legges til",
+          "description": "**{name}** er sikret med {fuse_a} A på {phases} fase(r): {members} vil aldri overstige den sammen.\n\nUndermåler: {sub_meter}. Umålt last: {unmetered_w} W."
+        }
+      },
+      "error": {
+        "no_name": "Gi kursen et navn.",
+        "no_members": "Velg minst én last; en kurs uten noe bak seg begrenser ingenting.",
+        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+      },
+      "abort": {
+        "no_loads": "Legg til en last først: en kurs er lastene bak en sikring.",
+        "reconfigure_successful": "Kursen ble oppdatert."
+      }
     }
   }
 }

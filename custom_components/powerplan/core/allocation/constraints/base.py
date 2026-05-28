@@ -88,6 +88,11 @@ class AllocCtx:
     frozen: bool = False
     hard: HardLimits | None = None
     marginal_cost: MarginalCost | None = None
+    #: This tick's sub-meter power per circuit key (D3 §2, D6 §5.8): a key is
+    #: present for every sub-metered circuit, and `None` when its meter cannot
+    #: answer, which is the fall-back to Σ members + `unmetered_w` (D6 §8). A
+    #: circuit without a key has no sub-meter.
+    circuits: Mapping[str, float | None] = field(default_factory=dict)
 
     def load(self, load_id: str) -> LoadView | None:
         """Return one load's view, or `None` when it is not in this tick."""
@@ -132,14 +137,20 @@ class AllocCtx:
 class Constraint(Protocol):
     """One limit the allocator must respect (D6 §2).
 
-    `key` names it in `Grant.capped_by` and in the report; `shed_reason` is what a
-    load denied by it is shed *for*, so a new constraint is one module with one
-    reason and no conditional anywhere else ("extension is by registry").
+    `key` names it in `Grant.capped_by` and in the report - the class's own for a
+    site-wide limit, the instance's for a circuit, a group or a zone, which is why
+    it is not a `ClassVar`; `shed_reason` is what a load denied by it is shed
+    *for*, so a new constraint is one module with one reason and no conditional
+    anywhere else ("extension is by registry").
     """
 
-    key: ClassVar[str]
     scope: ClassVar[Scope]
     shed_reason: ClassVar[ShedReason]
+
+    @property
+    def key(self) -> str:
+        """Name this constraint in `Grant.capped_by` and the report."""
+        ...
 
     def prepare(self, ctx: AllocCtx) -> None:
         """Read the measurements and compute this tick's caps."""

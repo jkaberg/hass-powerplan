@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.powerplan.core.model import Mode
-from tests.builders.houses import house, no_peak, tensio
+from tests.builders.houses import GARAGE_CIRCUIT, house, no_peak, tensio
 from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
 
@@ -249,9 +249,53 @@ def ble_flaps() -> Scenario:
     return _winter_evening("ble_flaps", FLAPS)
 
 
+#: D6's row (D9 §5.3 `circuit_garage_32a`): the Saturday sauna evening of the
+#: winter week, the car at 15 % under `force`, the garage fused at 32 A with the
+#: charger and the sauna behind it and a clamp on the feed (`GARAGE_CIRCUIT`).
+#: From 20:47, for fifteen minutes, a guest's car on the dumb three-phase socket
+#: and the garage's fan heater - 11 kW nobody meters - sit on the same fuse.
+GARAGE_START = datetime(2027, 1, 16, 18, 17, 17, tzinfo=OSLO)
+GARAGE_DAYS = 0.2
+#: A ceiling wide enough that the circuit, not the site, is what holds the charger.
+GARAGE_TARGET_KW = 25.0
+GARAGE_GUEST_AT = datetime(2027, 1, 16, 20, 47, 0, tzinfo=OSLO)
+GARAGE_GUEST_S = 900.0
+GARAGE_GUEST_W = 11_000.0
+
+
+def circuit_garage_32a() -> Scenario:
+    """Return the sauna evening with the garage circuit and its guest (D6 §9 14, D9 §5.3)."""
+    return Scenario(
+        name="circuit_garage_32a",
+        house=lambda: house(
+            day=GARAGE_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.15,
+            slab_start_c=24.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+            with_sauna=True,
+            circuits=(GARAGE_CIRCUIT,),
+        ),
+        start=GARAGE_START,
+        days=GARAGE_DAYS,
+        target_kw=GARAGE_TARGET_KW,
+        faults=(
+            Fault(
+                kind="unmetered_load",
+                at=GARAGE_GUEST_AT,
+                seconds=GARAGE_GUEST_S,
+                watts=GARAGE_GUEST_W,
+                circuit=GARAGE_CIRCUIT.key,
+            ),
+        ),
+        modes={"ev": Mode.FORCE},
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
-PHASE2 = (ble_flaps,)
+PHASE2 = (ble_flaps, circuit_garage_32a)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

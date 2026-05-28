@@ -64,12 +64,13 @@ Public API of `core/engine.py`:
 
 ```python
 @dataclass(frozen=True)
-class Inputs:            # everything the tick may read; assembled by runtime from hass.states, stores and domain objects
+class Inputs:            # everything the tick may read, assembled by the runtime from hass.states, stores and domain objects
     now: datetime; site: SiteConfig; meter: MeterSample; loads: Mapping[str, LoadReads]; knobs: Knobs
     curves: Curves | None; forecasts: Forecasts | None; events: Sequence[Event]
+    circuits: Mapping[str, MeterSample]      # each sub-metered circuit's own meter, by circuit key (D3 §2, D6 §5.8)
 
 @dataclass(frozen=True)
-class Effects:           # everything the tick wants done; executed by runtime AFTER the tick returns
+class Effects:           # everything the tick wants done, executed by the runtime AFTER the tick returns
     commands: tuple[LoadCommand, ...]        # → WriteGate (D4)
     ha_events: tuple[HaEvent, ...]           # → hass.bus
     store_dirty: frozenset[str]              # sections to save
@@ -89,7 +90,7 @@ class Engine:
 
 ### 4.1 Snapshot (the contract with D8, D9)
 
-**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes. The `Warning` type is spelled `SiteWarning`.
+**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes - 2 since WP2.5 (`CircuitReport.sub_meter`, D-0283). The `Warning` type is spelled `SiteWarning`.
 
 ```python
 @dataclass(frozen=True)
@@ -129,7 +130,7 @@ class Runtime:
     async def execute(effects: Effects)
 ```
 
-**In code (D-0271).** `runtime.py::Runtime(hass, entry, build)` over a `SiteBuild` that `build_site(hass, entry)` assembles from `entry.data` (INV-66): `SiteConfig`, the tariff `Evaluator` (the chosen preset, or a `NoPeak` spec on the price-only path), the holiday calendar, the `HaSensorsMeter` (or none), the price sources, the modifier chain and the forecaster (`CarryKnown` → `Synthesised` seeded with the chain's `TouSchedule`), the export modifier, the carriers, the presence answers and the ceiling knobs. Loads and their `LoadDevice`s are on the build too - the runtime releases, restores, reads and writes them - and are filled by the load subentry flow and the hot paths; until then the tuple is empty and the tests inject them. The runtime owns the `SiteStore`, the push `DataUpdateCoordinator[Snapshot]`, the `WriteGate` (its `StateReader` is `hass.states.get`, the one place outside `providers/` that reads it - INV-3), one `asyncio.Lock`, the raw price store (`RawSlotStore`, D1 §5.1's `RawStore`, persisted as the `prices` section) and a `startup` trail that names the lifecycle steps in the order they ran (§9 7). `Inputs.trigger` carries the trigger's name into the snapshot.
+`runtime.py::Runtime(hass, entry, build)` runs over a `SiteBuild` that `build_site(hass, entry)` assembles from `entry.data` (INV-66): `SiteConfig`, the tariff `Evaluator` (from the stored copy, or a `NoPeak` spec on the price-only path), the holiday calendar, the `HaSensorsMeter` (or none), the price sources, the modifier chain and the forecaster (`CarryKnown` → `Synthesised` seeded with the chain's `TouSchedule`), the export modifier, the carriers, the presence answers, the ceiling knobs, the `circuit` subentries' `CircuitSpec`s and their `CircuitMeter`s, and the loads with their `LoadDevice`s - the runtime releases, restores, reads and writes those. The runtime owns the `SiteStore`, the push `DataUpdateCoordinator[Snapshot]`, the `WriteGate` (its `StateReader` is `hass.states.get`, the one place outside `providers/` that reads it, INV-3), one `asyncio.Lock`, the raw price store (`RawSlotStore`, persisted as the `prices` section) and a `startup` trail naming the lifecycle steps in the order they ran (§9 7). `Inputs.trigger` carries the trigger's name into the snapshot (D-0271, D-0283).
 
 ---
 

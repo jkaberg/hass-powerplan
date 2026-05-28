@@ -107,8 +107,10 @@ from .metering import (
     MeterSnapshot,
     WindowMeter,
     WindowState,
+    is_fresh,
     window_bounds,
 )
+from .metering.health import STALE_CAP_S
 from .metering.loads import LoadSlot
 from .model import (
     Carrier,
@@ -180,7 +182,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 1
+SnapshotSchema: int = 2
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -301,6 +303,9 @@ class SiteConfig:
 #: The knob keys that rebuild a thermal load's target profile (D4 §4.4).
 _TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_presence")
 
+#: D6 §2's evaluation order: outermost physical limit first, preferences last.
+_SCOPE_ORDER: Final = ("site", "circuit", "phase", "group", "zone", "load")
+
 
 @dataclass(frozen=True, slots=True)
 class Knobs:
@@ -360,6 +365,11 @@ class Inputs:
     transport: TransportBudget = field(default_factory=TransportBudget.empty)
     #: What woke this tick, for the trail. The runtime's vocabulary (D7 §5.3).
     trigger: str = "tick"
+    #: Each sub-metered circuit's own meter this tick, by circuit key (D3 §2: a
+    #: plain second `MeterSource`, power only, no `WindowMeter` over it). A
+    #: circuit without a sub-meter has no entry and is summed from its members
+    #: (D6 §5.8).
+    circuits: Mapping[str, MeterSample] = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -910,10 +920,17 @@ class Engine:
         tariff: TariffModel,
         loads: Sequence[Load],
         *,
-        constraints: Sequence[Constraint] | None = None,
+        constraints: Sequence[Constraint] = (),
         accounting: AccountingHook | None = None,
     ) -> None:
-        """Wire one site. Nothing here reads a store or a state (INV-3)."""
+        """Wire one site. Nothing here reads a store or a state (INV-3).
+
+        `constraints` are the site's beyond its own hard limits - its circuits
+        , later its groups and zones - built by the runtime from the
+        subentries (D7 §5.5 step 2). The site fuse and the phase limits are
+        always there, and the walk takes every constraint in D6 §2's order:
+        site → circuit → phase → group → zone, outermost physical limit first.
+        """
         self.site = site
         self._meter = meter
         self._tariff = tariff
@@ -921,10 +938,11 @@ class Engine:
             sorted(loads, key=lambda load: (-load.config.priority, load.load_id))
         )
         self._loads: tuple[Load, ...] = self._configured
-        self._constraints: tuple[Constraint, ...] = (
-            (SiteFuse(site.electrical.fuse_w()), PhaseLimit(site.electrical))
-            if constraints is None
-            else tuple(constraints)
+        self._constraints: tuple[Constraint, ...] = tuple(
+            sorted(
+                (SiteFuse(site.electrical.fuse_w()), PhaseLimit(site.electrical), *constraints),
+                key=lambda constraint: _SCOPE_ORDER.index(constraint.scope),
+            )
         )
         self._accounting = accounting
 
@@ -1105,6 +1123,7 @@ class Engine:
             frozen=frozen,
             hard=hard,
             marginal_cost=self._tariff.marginal_cost,
+            circuits=_circuit_watts(inputs),
         )
         grants, report, alloc_state = allocate(
             ctx,
@@ -2477,6 +2496,49 @@ def _plug_edges(edges: dict[str, str], observations: Mapping[str, Any]) -> list[
     return events
 
 
+def _circuit_events(edges: dict[str, str], report: AllocReport) -> list[HaEvent]:
+    """Return one `breach` event per circuit whose fuse is newly exceeded (D6 §8).
+
+    D6's `circuit_breach(circuit, members)` is D8 §5.6's `breach` row with
+    `breach = "circuit"` and the circuit as its scope; the table is the members'
+    rows only, because the breach says nothing about the rest of the house (INV-60).
+    """
+    events: list[HaEvent] = []
+    for key, circuit in sorted(report.circuits.items()):
+        breached = "1" if circuit.breach else "0"
+        if edges.get(f"circuit:{key}") == breached:
+            continue
+        edges[f"circuit:{key}"] = breached
+        if not circuit.breach:
+            continue
+        members = set(circuit.members)
+        events.append(
+            HaEvent(
+                EventKind.BREACH,
+                {
+                    "breach": "circuit",
+                    "excess_w": max(0.0, (circuit.measured_w or 0.0) - circuit.limit_w),
+                    "scope": key,
+                    "limit_w": circuit.limit_w,
+                    "measured_w": circuit.measured_w,
+                    "sub_meter": circuit.sub_meter,
+                    "members": list(circuit.members),
+                    "table": [
+                        {
+                            "load": row.load,
+                            "granted": row.granted_w,
+                            "measured": row.measured_w,
+                            "reserved": row.reserved_w,
+                        }
+                        for row in report.reserved
+                        if row.load in members
+                    ],
+                },
+            )
+        )
+    return events
+
+
 def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     edges: dict[str, str],
     ladder: LadderState,
@@ -2531,6 +2593,7 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
                     },
                 )
             )
+    events.extend(_circuit_events(edges, report))
     comfort = ",".join(sorted(report.comfort))
     if edges.get("comfort") != comfort:
         edges["comfort"] = comfort
@@ -2615,6 +2678,24 @@ def _level_events(edges: dict[str, str], tariff: TariffModel, budget: Budget) ->
             )
         )
     return events
+
+
+def _circuit_watts(inputs: Inputs) -> dict[str, float | None]:
+    """Return each sub-metered circuit's power this tick, `None` where its meter is blind.
+
+    A sub-meter is judged like the site's power reading: OK and no older than the
+    site meter's own stale cap (D3 §5.4). Blind or stale, the circuit falls back to
+    its members' own measurements plus the unmetered allowance (D6 §8) - a stuck
+    sub-meter may neither open the fuse nor slam it.
+    """
+    return {
+        key: (
+            sample.grid_w.value
+            if sample.grid_w is not None and is_fresh(sample.grid_w, inputs.now, STALE_CAP_S)
+            else None
+        )
+        for key, sample in inputs.circuits.items()
+    }
 
 
 def _grant_reasons(views: Sequence[LoadView], grants: Grants) -> list[str]:

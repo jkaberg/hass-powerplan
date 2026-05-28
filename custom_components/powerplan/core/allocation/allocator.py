@@ -323,6 +323,14 @@ class _Walk:
                 load = self.ctx.load(load_id)
                 if load is None or load_id in self.comfort or not load.sheddable:
                     continue
+                grant = self.grants[load_id]
+                if grant.w <= 0.0:
+                    # Nothing to take. A member the cap already denied keeps its
+                    # reason and turns blunt, so its write is urgent; one that is
+                    # satisfied at zero is not a shed at all (INV-25).
+                    if grant.shed:
+                        self.grants[load_id] = replace(grant, stage=STAGE_BLUNT, blunt=True)
+                    continue
                 self._restate(load, reason=reason, stage=STAGE_BLUNT, blunt=True)
         return tuple(found)
 
@@ -440,7 +448,7 @@ class _Walk:
 
         self._admit(load, want=want, cap=cap, capped_by=capped_by, stop_ok=stop_ok)
 
-    def _admit(
+    def _admit(  # noqa: PLR0911 - D6 §5.3 steps 5–6: one return per way a load is decided
         self,
         load: LoadView,
         *,
@@ -481,6 +489,18 @@ class _Walk:
             return
 
         need = load.nameplate_w
+        if cap + _EPS_W < need and "plan" not in capped_by:
+            # A relay draws its nameplate or nothing (D6 §5.2): a constraint's cap
+            # that does not cover it is a denial with that constraint's reason,
+            # never a partial grant the relay would overdraw - a garage circuit
+            # with 4.7 kW left cannot hold a 6 kW sauna (D-0284). A plan's
+            # cap is pacing, which the kind turns into a duty cycle, and stays.
+            self._deny(
+                load,
+                self._binding_reason(capped_by, 0.0),
+                f"cap {cap:.0f} W below the {need:.0f} W nameplate",
+            )
+            return
         if room + _EPS_W >= need:
             self._give(load, want, capped_by=capped_by, reason="priority")
             return
@@ -550,15 +570,26 @@ class _Walk:
         self.sticky.pop(load.load_id, None)
 
     def _restate(self, load: LoadView, *, reason: ShedReason, stage: int, blunt: bool) -> None:
-        """Re-decide one load at a scoped stage 4 (INV-60), keeping a vetoed EV afloat."""
+        """Re-decide one load at a scoped stage 4 (INV-60), keeping a vetoed EV afloat.
+
+        A scoped breach is as blunt as the site's: a charger behind the breached
+        fuse may stop on the same terms as under a site fuse breach - the window
+        horizon's minimum-stop guard, not the site's own blunt flag, which a
+        circuit breach leaves at 0 (D-0284).
+        """
         grant = self.grants[load.load_id]
-        if load.kind in MODULATING_KINDS and not self.stop_ok.get(load.load_id, False):
-            watts = self._quantise(load, 0.0, stop_ok=False, session=self._session(load))
-            self.grants[load.load_id] = replace(grant, w=watts, stage=stage, blunt=blunt)
-        else:
-            self.grants[load.load_id] = replace(
-                grant, w=0.0, shed=True, shed_reason=reason, stage=stage, blunt=blunt
-            )
+        if load.kind in MODULATING_KINDS:
+            stop_ok = self.stop_ok.get(load.load_id, False) or self._budget_stop_ok(load)
+            self.stop_ok[load.load_id] = stop_ok
+            if not stop_ok:
+                watts = self._quantise(load, 0.0, stop_ok=False, session=self._session(load))
+                self.grants[load.load_id] = replace(grant, w=watts, stage=stage, blunt=blunt)
+                self._recount()
+                return
+            grant = replace(grant, stop_ok=True)
+        self.grants[load.load_id] = replace(
+            grant, w=0.0, shed=True, shed_reason=reason, stage=stage, blunt=blunt
+        )
         self._recount()
 
     def _recount(self) -> None:
@@ -622,13 +653,7 @@ class _Walk:
         plan = self.ctx.plans.get(load.load_id)
         cap = None if plan is None else plan.cap_w(self.ctx.now)
         plan_stop = cap is not None and cap <= 0.0
-
-        horizon_s = self.ctx.meter.t_rem_h * 3600.0
-        if plan is not None:
-            next_active = plan.next_active(self.ctx.now)
-            if next_active is not None:
-                horizon_s = min(horizon_s, (next_active - self.ctx.now).total_seconds())
-        budget_ok = horizon_s >= self.cfg.ev_min_stop_s
+        budget_ok = self._budget_stop_ok(load)
         # A plan that never draws again while the load still owes energy has run
         # out, not decided to idle: it was cut for a requirement that is still
         # there, and the next cycle re-cuts it. A pause between two blocks is a
@@ -641,6 +666,16 @@ class _Walk:
             and (plan.next_active(self.ctx.now) is not None or not owed)
         )
         return (self.ctx.blunt and budget_ok) or (plan_stop and plan_ok), plan_stop
+
+    def _budget_stop_ok(self, load: LoadView) -> bool:
+        """Whether a blunt stop is worth it: the window horizon, bounded by the plan's next slot."""
+        plan = self.ctx.plans.get(load.load_id)
+        horizon_s = self.ctx.meter.t_rem_h * 3600.0
+        if plan is not None:
+            next_active = plan.next_active(self.ctx.now)
+            if next_active is not None:
+                horizon_s = min(horizon_s, (next_active - self.ctx.now).total_seconds())
+        return horizon_s >= self.cfg.ev_min_stop_s
 
     def _is_sticky(self, load: LoadView) -> bool:
         """Whether a running load keeps its grant for `min_on_s` (D6 §5.3 step 5).
@@ -713,6 +748,7 @@ class _Walk:
                 reserved_w=reserved,
                 members=tuple(sorted(constraint.members)),
                 breach=breach,
+                sub_meter=constraint.sub_metered,
             )
         return rows
 

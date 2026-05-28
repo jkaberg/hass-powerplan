@@ -91,6 +91,10 @@ class CircuitReport:
     reserved_w: float
     members: tuple[str, ...]
     breach: bool
+    #: Whether `measured_w` is the sub-meter's figure; `False` is the members' own
+    #: sum plus the unmetered allowance - the fall-back when there is no sub-meter
+    #: or it cannot answer this tick (D6 §8).
+    sub_meter: bool = False
 
 
 @dataclass(frozen=True, slots=True)

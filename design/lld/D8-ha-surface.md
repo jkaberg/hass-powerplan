@@ -139,6 +139,8 @@ reconfigure     → `async_step_reconfigure` on the subentry flow: the same ques
 
 Single step each with members (entity/subentry multi-select filtered by type), parameters per D6 §6, and a review line.
 
+**In code (D-0285) - circuits.** `flow/circuit.py::CircuitSubentryFlow`, registered under `circuit`. *user*: name, fuse (A, box, default 16), phases (the site's by default, the shared `phases` vocabulary), members (a multi-select over the site's load subentries by title, stored by id), an optional sub-meter (`EntitySelector`, `sensor` with `device_class: power`), `unmetered_w` in the collapsed Advanced section. A site without loads aborts `no_loads`; a blank name, no member and a member that is not a load are field errors. *review*: D6 §6's sentence with the circuit's own numbers as placeholders (`name`, `fuse_a`, `phases`, `members` as titles joined, `sub_meter`, `unmetered_w`), an empty form, `last_step` (INV-67). *reconfigure*: the same form pre-filled from the subentry, then the review, then `async_update_and_abort`; the entry reloads until WP2.6. The subentry is D6 §6's `CircuitSubentryData` - `fuse_a`, `phases`, `members`, `sub_meter`, `unmetered_w` - and the runtime's `build_circuits` reads exactly those (D7 §5.5). Groups and zones follow the same shape in WP3.2 and WP5.3.
+
 ### 5.4 Questionnaire rendering
 
 | `Question.kind` | selector |
@@ -239,7 +241,7 @@ Availability: an entity is `available` when the coordinator has a Snapshot; load
 |---|---|
 | `powerplan_stage_changed` | `old, new, reason, blunt, projected_kwh, ceiling_kwh` |
 | `powerplan_peak_warning` | `warning (peak/peak_uncontrolled), window_start, window_end, expected_kwh, ceiling_kwh, drivers: [[load, kwh]], uncontrolled_share, advice: [str], active: bool, cleared: bool` |
-| `powerplan_breach` | `breach (fuse/trip/window/circuit), excess_w, scope, table: [{load, granted, measured, nameplate, reserved}]` |
+| `powerplan_breach` | `breach (fuse/trip/window/circuit), excess_w, scope, table: [{load, granted, measured, nameplate, reserved}]` - a `circuit` breach names the circuit as `scope` and adds `limit_w`, `measured_w`, `sub_meter`, `members`; its table is the members' rows |
 | `powerplan_comfort_violation` | `load, current, floor, served: bool, over_allowance: bool` |
 | `powerplan_deadline_at_risk` | `load, deadline, shortfall_kwh, reason` |
 | `powerplan_plan_adopted` | `load, mode, planned_kwh, cost, next_start, reason` |

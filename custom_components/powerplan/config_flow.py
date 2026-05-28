@@ -52,6 +52,7 @@ from .const import (
     ROLE_GRID_POWER,
     ROLE_IMPORT_REGISTER,
     SECTION_ADVANCED,
+    SUBENTRY_CIRCUIT,
     SUBENTRY_LOAD,
     TIMEZONE_FROM_HASS,
     TIMEZONE_FROM_USER,
@@ -60,6 +61,7 @@ from .const import (
 from .core.pricing import modifiers
 from .core.tariffs.presets import loader
 from .flow import device_pick, review, steps
+from .flow.circuit import CircuitSubentryFlow
 from .flow.load import LoadSubentryFlow
 from .flow.questionnaire import store_value, value_of
 from .providers.prices.formats import registry as formats
@@ -709,10 +711,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
         Loads, groups, zones and circuits are config subentries with only a
         `user` and a `reconfigure` step (D8 §5.2–5.3, PLAN §7 dec. 4). The load
-        flow is WP2.4's; circuits arrive in WP2.5, groups and zones in WP3.2 and
-        WP5.3.
+        flow is WP2.4's and the circuit flow WP2.5's; groups and zones arrive
+        in WP3.2 and WP5.3.
         """
-        return {SUBENTRY_LOAD: LoadSubentryFlow}
+        return {SUBENTRY_LOAD: LoadSubentryFlow, SUBENTRY_CIRCUIT: CircuitSubentryFlow}
 
 
 __all__ = ["PowerplanConfigFlow"]

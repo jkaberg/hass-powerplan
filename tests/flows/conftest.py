@@ -14,17 +14,24 @@ holes that meter really has (no current sensors, four energy registers).
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from tests.builders.houses import OSLO, nordic_detached
+from tests.e2e.fake_house import FakeHouse
+from tests.runtime.conftest import site_entry
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from freezegun.api import FrozenDateTimeFactory
     from homeassistant.core import HomeAssistant
 
 CAPTURED = Path(__file__).resolve().parents[1] / "fixtures" / "captured"
@@ -113,3 +120,33 @@ def persons(hass: HomeAssistant) -> list[str]:
     for entity_id, name in (("person.joel", "Joel"), ("person.kari", "Kari")):
         hass.states.async_set(entity_id, "home", {"friendly_name": name})
     return ["person.joel", "person.kari"]
+
+
+#: The subentry flows' evening: the winter Tuesday, the car at home.
+START = datetime(2027, 1, 12, 15, 40, 17, tzinfo=OSLO)
+
+
+@pytest.fixture
+async def charger(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    ams_meter: str,
+) -> FakeHouse:
+    """Publish the Easee-shaped charger (and the rest of the house) as entities."""
+    freezer.move_to(START)
+    await hass.config.async_update(time_zone=OSLO.key)
+    house = nordic_detached(seed=20260919, controlled=frozenset({"ev"}))
+    fake = FakeHouse(hass, house, START)
+    fake.install()
+    await hass.async_block_till_done()
+    return fake
+
+
+@pytest.fixture
+async def site(hass: HomeAssistant, charger: FakeHouse) -> MockConfigEntry:
+    """Return a loaded metered site, no loads yet."""
+    entry = site_entry(hass, target_kw=10.0)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    return entry

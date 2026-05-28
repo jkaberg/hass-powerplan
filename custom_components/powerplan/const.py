@@ -56,6 +56,16 @@ LOAD_PRIORITY: Final = "priority"
 LOAD_GROUP: Final = "group"
 LOAD_MANUAL_OVERRIDES: Final = "manual_overrides"
 
+# --------------------------------------------------------------------------- #
+# Circuit subentries (D6 §6 `CircuitSubentryData`, D8 §5.3)
+# --------------------------------------------------------------------------- #
+SUBENTRY_CIRCUIT: Final = "circuit"
+CIRCUIT_FUSE_A: Final = "fuse_a"
+CIRCUIT_PHASES: Final = "phases"
+CIRCUIT_MEMBERS: Final = "members"
+CIRCUIT_SUB_METER: Final = "sub_meter"
+CIRCUIT_UNMETERED_W: Final = "unmetered_w"
+
 #: The collapsed section every step puts its advanced fields in. Home Assistant
 #: deprecated `show_advanced_options` in 2026.9 and asks for a section instead;
 #: a collapsed section is also a better reading of INV-65, because the field is

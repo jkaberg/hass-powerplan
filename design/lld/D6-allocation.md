@@ -201,6 +201,7 @@ allocate():
       cap = min(demand.max_w, plan.cap_w(now) if not None, constraints.cap_w(load) …)      # plan None = free; 0 = stand still
       if plan.cap_w == 0: grant 0, shed=False ("planned idle" is not a shed - INV-25)
       elif on/off: grant nameplate if avail ≥ nameplate else 0 (denied, start starvation clock)
+              a constraint's cap below the nameplate is the same denial, with that constraint's reason - a relay draws its nameplate or nothing, so it is never granted the 4.7 kW a circuit has left (D-0284); a plan's cap below it is pacing and stays
       elif modulating: grant min(cap, avail) quantised DOWN by D4's kind (via LoadView.quantise; a vetoed stop returns the floor's W) ; EV last on the residual
       sticky: a grant > 0 holds for min_on_s unless stage ≥ 3 (sticky_until)
       P_free = avail − reserved_w(load, grant)
@@ -301,6 +302,18 @@ at its floor.
 
 `ExternalLimit`: from D1 `load_limit` events (§14a: `max_w = 4200` for the named loads while the event is active) → `cap_w` for those loads, and a site-wide event caps `P_hard`.
 
+**WP2.5 - circuits as wired** (`design/DECISIONS.md` D-0283, D-0284; supersedes D-0167's circuit half). A circuit is budgeted the way the site is in §5.3, one level in:
+
+```
+unseen_w              = max(0, sub_meter_w − Σ measured(members))            0 without a clamp; measured settling-aware (D3 §5.8)
+cap_w(load ∈ members) = fuse_w − unmetered_w − unseen_w − Σ reserved(members decided before it)
+still_w(grants)       = unmetered_w + unseen_w + Σ contribution(member, grant) − fuse_w
+                        contribution: a modulating load its grant; a relay its reservation, or its own reading if higher; nothing at a zero grant
+post()                = Violation(blunt=True, excess_w=still_w, members) when still_w > 0
+```
+
+The members are charged their **reservations** in walk order - the sauna the household lit is charged to the charger on the tick it's granted, before it draws a watt - and the clamp only adds what the members' own readings don't explain: the garage freezer, a guest's car on the dumb socket. `post()` reads §2 literally, "what's still violated once the grants are decided": a fuse at 118 % for the ten seconds a charger takes to back off is the grants' job, and a breach is what the members can't resolve by yielding. A breach re-decides the members at stage 4, with two refinements: a charger behind the breached fuse may stop on the site's own blunt terms (the window horizon's minimum-stop guard, step 8), the grant carrying `stop_ok` so the kind writes the stop and not the floor; and a member already at zero isn't shed again (INV-25) - one the cap denied turns blunt so its write is urgent. The reading arrives per tick in `AllocCtx.circuits` (from `Inputs.circuits`, D7 §3). `None` is a clamp that's blind or older than the site meter's stale cap, and the circuit falls back to Σ members + `unmetered_w` (§8), which `CircuitReport.sub_meter` says. `CircuitSpec` (`constraints/circuit.py`) is the circuit as §6's subentry stores it and `spec.limit(electrical)` the constraint over it, the fuse converted with the site's own volts (D3 §5.1). The runtime builds one per `circuit` subentry and the walk takes them in §2's order with the site fuse and the phase limits, which the engine always adds.
+
 ### 5.9 Breach logging (INV-40 corollary)
 
 On every tick with `breach_w > 0` or `deficit_w > 0`: one WARNING line with the reservation table (load, granted, measured, nameplate, reserved), the stage and reason, `P_allow`, `P_total`, and which constraint bound, so a blind spot like the old controller's shows up the next time and not a night later. Rate-limited to one per 60 s per condition.
@@ -313,7 +326,7 @@ Site (Advanced, defaults from effektstyring): `eps_kwh` 0.30/60 min (D2), `reser
 
 Group subentry: name, members, `max_concurrent_w` (default: the two largest members' nameplates summed), `from_stage` 1, `ceiling_fraction` 0.85, `starve_seconds` 1800.
 Zone subentry: name, member loads (demand), sources (loads with carrier + efficiency from D4), `min_cop` 2.0, `switch_hysteresis` 15 %, `min_dwell_min` 30, `substitutable` per member (bathroom default off).
-Circuit subentry: name, fuse A, phases, members, optional sub-meter power entity, `unmetered_w` 0.
+Circuit subentry: name, fuse A, phases, members, optional sub-meter power entity, `unmetered_w` 0. **In code (D-0285):** `flow/circuit.py`, one questionnaire step and a review (D8 §5.3); the members are the site's load subentries picked by title and stored by id, the circuit subentry is the relation's one owner (the load's `circuit` key stays `None`), the sub-meter a `sensor` with `device_class: power`, `unmetered_w` under Advanced; the subentry's key is its id and is what `Grant.capped_by`, the report and the `breach` event name the circuit by.
 
 Review texts: group - "Six floor loops share 2 kW when the hour gets tight; the coldest gets it first." zone - "The living-room slab and the first-floor heat pump heat the same space; powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk." circuit - "The garage circuit is fused at 32 A: the charger and the sauna will never exceed it together."
 
@@ -341,7 +354,7 @@ Review texts: group - "Six floor loops share 2 kW when the hour gets tight; the 
 | Ladder flapping | two-tick de-escalation, hysteresis, settle skip | stage history |
 | EV stop veto forever (the hour is always about to turn) | hold at ≥ 6 A instead of stopping, by design | `ev_stop_ok=false` |
 
-Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, table)`, `comfort_over_allowance`, `trim_applied(freed_w, loads)`, `circuit_breach(circuit, members)`.
+Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, table)`, `comfort_over_allowance`, `trim_applied(freed_w, loads)`, and `circuit_breach(circuit, members)`, emitted as D8 §5.6's `breach` with `breach = "circuit"`, the circuit key as `scope`, `limit_w`, `measured_w`, `sub_meter`, `members` and the members' reservation rows, once per edge.
 
 ---
 
@@ -360,7 +373,7 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 11. EV stop gates: budget stop vetoed at HH:50 with plan charging at HH:00; plan stop allowed when idle 3 h; both horizons (INV-39).
 12. Rotation: stage 0 with 11.5 kW free sheds nothing; ranking by target deficit; stop at first non-fit; starvation jump; top member admitted alone (INV-41).
 13. Zones: COP inversion - heat pump kept, slab substituted; disengages below COP 2.0; bathroom never; cross-carrier gas/pump choice with hysteresis and dwell (INV-42).
-14. Circuits: garage 32 A with EV + sauna → EV capped; circuit breach → stage 4 for members only, site unaffected (INV-60).
+14. Circuits: garage 32 A with EV + sauna → EV capped; circuit breach → stage 4 for members only, site unaffected (INV-60). **As asserted:** `tests/core/allocation/test_14_circuits.py` (the pure cases, plus the reading handed in by the tick, a blind clamp's fall-back and the settling-aware sum), `tests/core/engine/test_circuits.py` (through the engine with `Inputs.circuits`: the charger capped under the sauna, a blind or stale clamp, a heater the charger absorbs without a stage 4, a guest car the members cannot - stage 4 for them, the site's ladder at 0, one `breach` event per edge) and scenario `circuit_garage_32a` (D9 §5.3).
 15. Phases: known L1 load capped by L1 headroom; unknown by min headroom.
 16. Running cycle survives stages 1–3; shed at 4 (INV-59).
 17. External limit event caps the named loads to 4.2 kW while active.

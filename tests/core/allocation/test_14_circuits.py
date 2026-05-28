@@ -10,6 +10,7 @@ amps of the house.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -147,3 +148,85 @@ def test_14_a_circuit_breach_is_a_stage_four_for_its_members_only() -> None:
     assert grants["tank"].stage == 0
     assert report.circuits["circuit_garage"].breach is True
     assert report.circuits["circuit_garage"].members == ("ev", "sauna")
+
+
+# --------------------------------------------------------------------------- #
+# WP2.5 - the reading arrives with the tick, and the sum honours settling
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.inv("INV-60")
+def test_14_the_tick_hands_the_sub_meter_reading_to_the_circuit() -> None:
+    """`AllocCtx.circuits` is the sub-meter this tick; the constraint takes it in `prepare()`."""
+    ev = ev_view()
+    ctx = replace(
+        alloc_ctx(
+            [ev],
+            budget=budget_of(20_000.0),
+            views={"ev": controlled("ev", measured_w=10.0 * W_PER_AMP)},
+        ),
+        circuits={"circuit_garage": 25.0 * W_PER_AMP},
+    )
+    circuit = _garage()
+    assert circuit.sub_meter_w is None
+
+    grants, report, _state = allocate(ctx, (circuit,), AllocCfg(), AllocState())
+
+    # 32 A of fuse − (25 A measured − 10 A of our own) = 17 A, as with a constant reading.
+    assert grants["ev"].w == pytest.approx(17.0 * W_PER_AMP)
+    assert report.circuits["circuit_garage"].sub_meter is True
+    assert report.circuits["circuit_garage"].measured_w == pytest.approx(25.0 * W_PER_AMP)
+
+
+@pytest.mark.inv("INV-60")
+@pytest.mark.inv("INV-17")
+def test_14_a_blind_sub_meter_falls_back_to_the_members_sum() -> None:
+    """`None` in the tick is a meter that cannot answer: Σ members + unmetered, and the report says so (D6 §8)."""
+    ev = ev_view()
+    sauna = _sauna()
+    ctx = replace(
+        alloc_ctx(
+            [sauna, ev],
+            budget=budget_of(20_000.0),
+            views={
+                "ev": controlled("ev", measured_w=10.0 * W_PER_AMP),
+                "sauna": controlled("sauna", measured_w=20.0 * W_PER_AMP),
+            },
+        ),
+        circuits={"circuit_garage": None},
+    )
+    circuit = _garage(sub_meter_w=8000.0, unmetered_w=1.0 * W_PER_AMP)
+
+    grants, report, _state = allocate(ctx, (circuit,), AllocCfg(), AllocState())
+
+    # Last tick's 8 kW is forgotten with the reading: the members' own sum rules.
+    assert circuit.sub_meter_w is None
+    row = report.circuits["circuit_garage"]
+    assert row.sub_meter is False
+    assert row.measured_w == pytest.approx(31.0 * W_PER_AMP)
+    assert row.breach is False
+    assert grants["ev"].w == pytest.approx(11.0 * W_PER_AMP)
+
+
+@pytest.mark.inv("INV-18")
+def test_14_the_members_sum_uses_the_commanded_figure_while_a_write_settles() -> None:
+    """D3 §9's "circuit sum with settling": the antiphase tick is judged on what was commanded."""
+    ev = ev_view()
+    sauna = _sauna()
+    ctx = alloc_ctx(
+        [sauna, ev],
+        budget=budget_of(20_000.0),
+        views={
+            "ev": controlled(
+                "ev", measured_w=30.0 * W_PER_AMP, commanded_w=10.0 * W_PER_AMP, settling=True
+            ),
+            "sauna": controlled("sauna", measured_w=20.0 * W_PER_AMP),
+        },
+    )
+
+    _grants, report, _state = allocate(ctx, (_garage(),), AllocCfg(), AllocState())
+
+    # 30 A measured + 20 A would be a breach; 10 A commanded + 20 A is not.
+    row = report.circuits["circuit_garage"]
+    assert row.measured_w == pytest.approx(30.0 * W_PER_AMP)
+    assert row.breach is False

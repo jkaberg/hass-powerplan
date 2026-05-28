@@ -37,6 +37,7 @@ from custom_components.powerplan.core.engine import (
     Effects,
     Engine,
     EngineState,
+    EventKind,
     Inputs,
     Knobs,
     LoadReads,
@@ -106,7 +107,7 @@ OFFSET_S = 17.0
 
 @dataclass(frozen=True, slots=True)
 class Fault:
-    """One injected fault (D9 §4): `meter_stale(at, seconds)`, `ble_flap(at, seconds)`, `price_outage(day)`, `restart(at)`, `clock_jump(at, seconds)`, `engine_exception(at, count)`."""
+    """One injected fault (D9 §4): `meter_stale(at, seconds)`, `ble_flap(at, seconds)`, `price_outage(day)`, `restart(at)`, `clock_jump(at, seconds)`, `engine_exception(at, count)`, `unmetered_load(at, seconds, watts, circuit)`."""
 
     kind: str
     at: datetime | None = None
@@ -114,6 +115,11 @@ class Fault:
     day: date | None = None
     #: `engine_exception`: how many consecutive ticks the engine's own step raises.
     count: int = 0
+    #: `unmetered_load(at, seconds, watts, circuit)`: a heater nobody meters plugged
+    #: into `circuit` - its watts are on the grid and on the circuit's sub-meter,
+    #: and no load's own reading (D9 §5.3 `circuit_garage_32a`).
+    watts: float = 0.0
+    circuit: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +164,8 @@ class ScenarioResult:
     max_writes_per_10min: dict[str, int] = field(default_factory=dict)
     zero_amp_writes: int = 0
     ev_stops: int = 0
+    #: `breach` events with `breach = "circuit"`: one per edge (D6 §8).
+    circuit_breaches: int = 0
     plan_adoptions: int = 0
     plan_changes: int = 0
     plan_changes_by_load: dict[str, int] = field(default_factory=dict)
@@ -220,6 +228,7 @@ class ScenarioResult:
             "max_writes_per_10min": dict(sorted(self.max_writes_per_10min.items())),
             "zero_amp_writes": self.zero_amp_writes,
             "ev_stops": self.ev_stops,
+            "circuit_breaches": self.circuit_breaches,
             "plan_adoptions": self.plan_adoptions,
             "plan_changes": self.plan_changes,
             "plan_changes_by_load": dict(sorted(self.plan_changes_by_load.items())),
@@ -406,6 +415,9 @@ class HouseDriver:
     passive_steps: dict[str, SimReads] = field(default_factory=dict)
     memo: dict[str, Any] = field(default_factory=dict)
     sauna_on: bool = False
+    #: Watts nobody meters, by circuit key: on the grid and on that circuit's
+    #: sub-meter, invisible to every load's own reading (`unmetered_load`).
+    unmetered_w: dict[str, float] = field(default_factory=dict)
     requested_days: set[date] = field(default_factory=set)
     plugged_days: set[date] = field(default_factory=set)
     unplugged_days: set[date] = field(default_factory=set)
@@ -495,7 +507,27 @@ class HouseDriver:
             passive_step = passive.step(TICK_S, self.passive_pending.pop(load_id, None), env)
             self.passive_steps[load_id] = passive_step
             total_w += passive_step.power_w
+        total_w += sum(self.unmetered_w.values())
         return house.meter.step(TICK_S, total_w, env)
+
+    def circuits(self, now: datetime) -> dict[str, MeterSample]:
+        """Return each sub-metered circuit's clamp: its members' draw plus what nobody meters."""
+        return {
+            spec.key: MeterSample(
+                grid_w=Reading(
+                    value=sum(
+                        self.steps[member].power_w
+                        for member in spec.members
+                        if member in self.steps
+                    )
+                    + self.unmetered_w.get(spec.key, 0.0),
+                    at=now,
+                    source=f"sub:{spec.key}",
+                )
+            )
+            for spec in self.house.circuits
+            if spec.sub_metered
+        }
 
     def sample(
         self, now: datetime, meter_step: SimReads, stale_until: datetime | None = None
@@ -612,6 +644,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
         ),
         house.tariff,
         house.loads,
+        constraints=tuple(spec.limit(cfg.electrical) for spec in house.circuits),
         accounting=ledger,
     )
     state = EngineState()
@@ -646,6 +679,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     outage_days = {f.day for f in scenario.faults if f.kind == "price_outage" and f.day is not None}
     restarts = sorted(f.at for f in scenario.faults if f.kind == "restart" and f.at is not None)
     failing_ticks = 0
+    unplug_at: dict[str, datetime] = {}
     jumps = {
         f.at: f.seconds for f in scenario.faults if f.kind == "clock_jump" and f.at is not None
     }
@@ -665,6 +699,13 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 flap_until = fault.at + timedelta(seconds=fault.seconds)
             elif fault.kind == "engine_exception":
                 failing_ticks = fault.count
+            elif fault.kind == "unmetered_load":
+                driver.unmetered_w[fault.circuit] = fault.watts
+                unplug_at[fault.circuit] = fault.at + timedelta(seconds=fault.seconds)
+        for circuit_key, until in list(unplug_at.items()):
+            if prev_now < until <= now:
+                driver.unmetered_w.pop(circuit_key, None)
+                del unplug_at[circuit_key]
         if restarts and prev_now < restarts[0] <= now:
             restarts.pop(0)
             state = EngineState.from_sections(json.loads(json.dumps(state.to_sections())))
@@ -704,7 +745,15 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 target=target,
                 presence=_presence(house.household.presence_at(now)),
                 modes={
-                    **({"sauna": Mode.FORCE} if driver.sauna_on and "sauna" in house.sims else {}),
+                    # The session's `force` is cleared when it ends: a mode knob is
+                    # sticky (D7 §3), so an absent key would leave the sauna forced
+                    # until `force_max_h` expired, hours after the household switched
+                    # it off (found by `circuit_garage_32a`).
+                    **(
+                        {"sauna": Mode.FORCE if driver.sauna_on else Mode.AUTO}
+                        if "sauna" in house.sims
+                        else {}
+                    ),
                     **forced_modes,
                 },
             )
@@ -732,6 +781,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             curves=curves,
             outdoor_c=env.outdoor_c,
             trigger="tick",
+            circuits=driver.circuits(now),
         )
 
         # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #
@@ -986,6 +1036,11 @@ def _apply_effects(  # noqa: PLR0917 - the loop's threaded bookkeeping
     month: str = "",
 ) -> None:
     """Hand each written decision to its simulator; count the writes (D9 §5.3)."""
+    result.circuit_breaches += sum(
+        1
+        for event in effects.ha_events
+        if event.kind is EventKind.BREACH and event.data.get("breach") == "circuit"
+    )
     for command in effects.commands:
         decision = command.decision
         if decision.action is not Action.WRITTEN or decision.command is None:
