@@ -149,8 +149,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from datetime import tzinfo
 
-    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.config_entries import ConfigEntry, ConfigSubentry
     from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
+    from homeassistant.helpers.entity import Entity
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
     from homeassistant.helpers.event import EventStateChangedData
 
     from .core.loads import LoadState
@@ -755,7 +757,9 @@ def _price_source(
 class Runtime:
     """One site's wiring: triggers in, ticks and plans through the lock, effects out."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, build: SiteBuild) -> None:
+    def __init__(  # noqa: PLR0915 - one field per line, D7 §4.3's whole state in one place
+        self, hass: HomeAssistant, entry: ConfigEntry, build: SiteBuild
+    ) -> None:
         """Wire the site; nothing runs until `start()`."""
         self.hass = hass
         self.entry = entry
@@ -815,6 +819,22 @@ class Runtime:
         self._platforms_forwarded = False
         self._rng = Random(entry.entry_id)
         self._unsubs: list[CALLBACK_TYPE] = []
+        #: The power and load-entity subscriptions are their own, replaced
+        #: (not appended to `_unsubs`) whenever a circuit or a load subentry
+        #: changes (D7 §2); still released once on unload, from here.
+        self._power_entities_unsub: CALLBACK_TYPE | None = None
+        self._load_entities_unsub: CALLBACK_TYPE | None = None
+        #: The subentries as last applied - refreshed after `start()` and after
+        #: every hot change, diffed against `entry.subentries` on the next
+        #: update to say what changed (D7 §2).
+        self._known_subentries: dict[str, tuple[str, str, dict[str, Any]]] = {}
+        self._known_data: Mapping[str, Any] = {}
+        #: One row per platform: its `async_add_entities` and how it builds one
+        #: load's rows, so a hot-added load gets entities on every platform
+        #: without a reload (D8 §5.5).
+        self._load_platforms: list[
+            tuple[AddConfigEntryEntitiesCallback, Callable[[Runtime, Sequence[Load]], list[Entity]]]
+        ] = []
         self._power_timer: CALLBACK_TYPE | None = None
         self._guard_timer: CALLBACK_TYPE | None = None
         self._pending_trigger: str | None = None
@@ -874,6 +894,10 @@ class Runtime:
         )
         for load in build.loads:
             self.gate.track(load.load_id, self._release_plan(load.load_id))
+        # The subentries as of this build: what the hot paths diff against
+        # on the next entry mutation (D7 §2).
+        self._known_subentries = self._subentry_snapshot()
+        self._known_data = dict(self.entry.data)
         self._log_step("build")
 
         # A restart clears safe mode (D7 §2): the repair that announced it goes too.
@@ -939,6 +963,12 @@ class Runtime:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        if self._power_entities_unsub is not None:
+            self._power_entities_unsub()
+            self._power_entities_unsub = None
+        if self._load_entities_unsub is not None:
+            self._load_entities_unsub()
+            self._load_entities_unsub = None
         for cancel in self._retry_timers.values():
             cancel()
         self._retry_timers.clear()
@@ -1039,6 +1069,209 @@ class Runtime:
         outcomes = await self.gate.async_apply(actuations)
         self._adopt_outcomes(outcomes)
         return outcomes
+
+    # ------------------------------------------------------- subentry hot paths (D7 §2) #
+
+    def setup_load_platform(
+        self,
+        async_add_entities: AddConfigEntryEntitiesCallback,
+        builder: Callable[[Runtime, Sequence[Load]], list[Entity]],
+    ) -> None:
+        """Register one platform's load-row builder and add every current load's rows (D8 §5.5).
+
+        Each load's entities are added under its own subentry id
+        (`config_subentry_id`), so removing the subentry removes them with it -
+        Home Assistant's own registry cleanup, the "remove" hot path's entity
+        half; the site's own entities never carry one. A load added later gets
+        the same treatment from `_add_load_entities`.
+        """
+        self._load_platforms.append((async_add_entities, builder))
+        for load in self.build.loads:
+            self._add_entities_for(load, async_add_entities, builder)
+
+    def _add_entities_for(
+        self,
+        load: Load,
+        async_add_entities: AddConfigEntryEntitiesCallback,
+        builder: Callable[[Runtime, Sequence[Load]], list[Entity]],
+    ) -> None:
+        entities = builder(self, (load,))
+        if entities:
+            async_add_entities(entities, config_subentry_id=load.load_id)
+
+    def _add_load_entities(self, load: Load) -> None:
+        """Add one load's rows on every platform that has registered (D8 §5.5)."""
+        for async_add_entities, builder in self._load_platforms:
+            self._add_entities_for(load, async_add_entities, builder)
+
+    def _rebuild_engine(self) -> None:
+        """Swap the engine's loads and constraints in place, over the current build.
+
+        `WindowMeter`, the tariff `Evaluator` and the accounting adapter own
+        internal state a fresh `Engine(...)` would lose (D7 §4.3's "collaborators,
+        not state") - only what changed, the configured loads and the
+        constraints beyond the site's own hard limits, is swapped.
+        """
+        if self.engine is None:
+            return
+        self.engine.set_loads(self.build.loads)
+        self.engine.set_constraints(
+            tuple(spec.limit(self.build.cfg.electrical) for spec in self.build.circuits)
+        )
+
+    def _persist_sections(self, sections: frozenset[Section]) -> None:
+        """Save exactly these sections at once - a hot path's own edge, not a tick's (D7 §7)."""
+        document = self.state.to_sections()
+        for section in sections:
+            self.store.set(section, document[section.value], at_once=True)
+
+    async def _add_load(self, subentry: ConfigSubentry) -> None:
+        """Build one load from its subentry and include it on the next tick (D7 §2).
+
+        A subentry that cannot be built is logged and skipped - the site runs
+        without it, exactly as a full reload would leave it (INV-53). Provisions
+        are D4's cold-path retry loop, not yet wired for any load (WP2.6 adds no
+        provisioning that startup itself does not already skip).
+        """
+        try:
+            load = load_from_subentry(
+                subentry.subentry_id, subentry.title, subentry.data, self.build.cfg.electrical
+            )
+            device = device_from_subentry(self.hass, subentry.data)
+        except KeyError, ValueError:
+            _LOGGER.exception(
+                "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
+            )
+            return
+        self.build.loads = (*self.build.loads, load)
+        self.build.devices = {**self.build.devices, load.load_id: device}
+        self.gate.track(load.load_id, self._release_plan(load.load_id))
+        self._rebuild_engine()
+        self._subscribe_loads()
+        self._add_load_entities(load)
+        _LOGGER.info(
+            "site %s: load %s (%s) added without a reload",
+            self.site_name,
+            subentry.title,
+            subentry.subentry_id,
+        )
+
+    async def _remove_load(self, load_id: str) -> None:
+        """Let a load go, drop it from the engine, and its store section (D7 §2).
+
+        Its entities go with the subentry (Home Assistant's own registry
+        cleanup, `config_subentry_id`); this is the rest - the pure `release()`
+        (INV-26), the engine's loads, the gate's tracking, and `EngineState`'s
+        per-load rows.
+        """
+        if load_id not in self.build.devices:
+            return
+        outcome = await self.gate.async_release(load_id)
+        if outcome is not None:
+            self._adopt_outcomes((outcome,))
+        self.gate.untrack(load_id)
+        self.build.loads = tuple(load for load in self.build.loads if load.load_id != load_id)
+        self.build.devices = {
+            other_id: device
+            for other_id, device in self.build.devices.items()
+            if other_id != load_id
+        }
+        self.state = replace(
+            self.state,
+            loads={
+                other_id: row for other_id, row in self.state.loads.items() if other_id != load_id
+            },
+            load_meters={
+                other_id: row
+                for other_id, row in self.state.load_meters.items()
+                if other_id != load_id
+            },
+            plans=replace(
+                self.state.plans,
+                plans={
+                    other_id: plan
+                    for other_id, plan in self.state.plans.plans.items()
+                    if other_id != load_id
+                },
+            ),
+        )
+        self.load_modes.pop(load_id, None)
+        self.force_max_h.pop(load_id, None)
+        self.load_params.pop(load_id, None)
+        self._rebuild_engine()
+        self._subscribe_loads()
+        self._persist_sections(frozenset({Section.LOADS, Section.METER, Section.PLANS}))
+        _LOGGER.info("site %s: load %s removed without a reload", self.site_name, load_id)
+
+    def _reload_circuits(self) -> None:
+        """Rebuild the site's circuits from their subentries and the current loads (D7 §2).
+
+        Cheap and unconditional: a circuit's own membership follows the load
+        set (`build_circuits` intersects with `load_ids`), so this runs after
+        any load change too, not only a circuit subentry's own.
+        """
+        circuits, circuit_meters = build_circuits(
+            self.hass, self.entry, frozenset(load.load_id for load in self.build.loads)
+        )
+        self.build.circuits = circuits
+        self.build.circuit_meters = circuit_meters
+        self._rebuild_engine()
+        self._subscribe_power()
+
+    def _subentry_snapshot(self) -> dict[str, tuple[str, str, dict[str, Any]]]:
+        """Return `{subentry_id: (type, title, data)}`, a copy the next mutation cannot touch.
+
+        `ConfigSubentry` mutates its own `title`/`data` in place on
+        `async_update_subentry` (`object.__setattr__`, never a new object,
+        never a new `entry.subentries` mapping either) - so the live objects
+        can never be diffed against themselves; only a copy taken in plain
+        values survives to the next comparison.
+        """
+        return {
+            subentry_id: (subentry.subentry_type, subentry.title, dict(subentry.data))
+            for subentry_id, subentry in self.entry.subentries.items()
+        }
+
+    async def async_handle_subentry_update(self) -> None:
+        """Apply one entry mutation in place where D7 §2's hot paths cover it.
+
+        A `load` or `circuit` subentry add, remove or update patches the engine,
+        the store and the entities without a reload. An update is a remove and
+        an add under the same subentry id - nothing in a load's stored data is
+        knob-level (knobs never touch the subentry, D-0282), so there is no
+        smaller in-place case to special-case. Anything else - the site's own
+        `entry.data` - still reloads: `async_setup_entry` runs D7 §5.5's whole
+        order (INV-48).
+        """
+        entry = self.entry
+        if dict(entry.data) != self._known_data:
+            await self.hass.config_entries.async_reload(entry.entry_id)
+            return
+        old = self._known_subentries
+        new = self._subentry_snapshot()
+        added_ids = [subentry_id for subentry_id in new if subentry_id not in old]
+        removed_ids = [subentry_id for subentry_id in old if subentry_id not in new]
+        updated_ids = [
+            subentry_id
+            for subentry_id in new
+            if subentry_id in old and new[subentry_id] != old[subentry_id]
+        ]
+        if not (added_ids or removed_ids or updated_ids):
+            return
+        for subentry_id in removed_ids:
+            if old[subentry_id][0] == SUBENTRY_LOAD:
+                await self._remove_load(subentry_id)
+        for subentry_id in updated_ids:
+            if old[subentry_id][0] == SUBENTRY_LOAD:
+                await self._remove_load(subentry_id)
+        for subentry_id in (*updated_ids, *added_ids):
+            subentry = entry.subentries[subentry_id]
+            if subentry.subentry_type == SUBENTRY_LOAD:
+                await self._add_load(subentry)
+        # A circuit's own membership follows the load set (`build_circuits`
+        # intersects it with `load_ids`), so this runs whichever type changed.
+        self._reload_circuits()
+        self._known_subentries = new
 
     def _set_load_state(self, load_id: str, state: LoadState) -> None:
         self.state = replace(self.state, loads={**self.state.loads, load_id: state})
@@ -1490,13 +1723,17 @@ class Runtime:
 
     # ---------------------------------------------------------- triggers #
 
-    def _subscribe(self) -> None:
-        """D7 §5.3's table, every subscription released on unload."""
-        hass = self.hass
-        build = self.build
-        tz = build.cfg.tz
-        window_min = build.cfg.window_min
+    def _subscribe_power(self) -> None:
+        """(Re)subscribe to the site's power and every circuit's clamp (D7 §5.3).
 
+        Its own cancellable subscription, replaced whenever a circuit subentry
+        changes (`_reload_circuits`) - the site's grid and production roles never
+        move, only the circuit clamps do.
+        """
+        if self._power_entities_unsub is not None:
+            self._power_entities_unsub()
+            self._power_entities_unsub = None
+        build = self.build
         power_entities = [
             entity_id
             for role, entity_id in build.meter_entities.items()
@@ -1508,9 +1745,42 @@ class Runtime:
             for entity_id in sorted(source.entity_ids())
         )
         if power_entities:
-            self._track(
-                async_track_state_change_event(hass, power_entities, self._on_power_changed)
+            self._power_entities_unsub = async_track_state_change_event(
+                self.hass, power_entities, self._on_power_changed
             )
+
+    def _subscribe_loads(self) -> None:
+        """(Re)subscribe to every load device's entities (D7 §5.3).
+
+        Its own cancellable subscription, replaced whenever a load subentry
+        changes - the rest of §5.3's table (heartbeat, boundaries, prices,
+        presence) never depends on which loads exist.
+        """
+        if self._load_entities_unsub is not None:
+            self._load_entities_unsub()
+            self._load_entities_unsub = None
+        build = self.build
+        load_entities = [
+            entity_id for device in build.devices.values() for entity_id in device.entity_ids
+        ]
+        load_entities.extend(
+            str(load.config.params["calendar_entity"])
+            for load in build.loads
+            if load.config.params.get("calendar_entity")
+        )
+        if load_entities:
+            self._load_entities_unsub = async_track_state_change_event(
+                self.hass, load_entities, self._on_load_changed
+            )
+
+    def _subscribe(self) -> None:
+        """D7 §5.3's table, every subscription released on unload."""
+        hass = self.hass
+        build = self.build
+        tz = build.cfg.tz
+        window_min = build.cfg.window_min
+
+        self._subscribe_power()
         register = build.meter_entities.get(ROLE_IMPORT_REGISTER)
         if register:
             self._track(async_track_state_change_event(hass, [register], self._on_register_changed))
@@ -1552,16 +1822,7 @@ class Runtime:
             else:
                 self._schedule_publication(source.key, publication)
         self._schedule_hole_check()
-        load_entities = [
-            entity_id for device in build.devices.values() for entity_id in device.entity_ids
-        ]
-        load_entities.extend(
-            str(load.config.params["calendar_entity"])
-            for load in build.loads
-            if load.config.params.get("calendar_entity")
-        )
-        if load_entities:
-            self._track(async_track_state_change_event(hass, load_entities, self._on_load_changed))
+        self._subscribe_loads()
         del tz
 
     @callback

@@ -934,22 +934,48 @@ class Engine:
         self.site = site
         self._meter = meter
         self._tariff = tariff
-        self._configured: tuple[Load, ...] = tuple(
-            sorted(loads, key=lambda load: (-load.config.priority, load.load_id))
-        )
-        self._loads: tuple[Load, ...] = self._configured
-        self._constraints: tuple[Constraint, ...] = tuple(
-            sorted(
-                (SiteFuse(site.electrical.fuse_w()), PhaseLimit(site.electrical), *constraints),
-                key=lambda constraint: _SCOPE_ORDER.index(constraint.scope),
-            )
-        )
+        self._configured: tuple[Load, ...] = ()
+        self._loads: tuple[Load, ...] = ()
+        self._constraints: tuple[Constraint, ...] = ()
         self._accounting = accounting
+        self.set_loads(loads)
+        self.set_constraints(constraints)
 
     @property
     def loads(self) -> tuple[Load, ...]:
         """The site's loads, in the order the walk and the budget spend them."""
         return self._loads
+
+    def set_loads(self, loads: Sequence[Load]) -> None:
+        """Replace the configured loads, in priority order (D7 §2's hot add/remove/update).
+
+        The site's collaborators - `WindowMeter`, the tariff `Evaluator`, the
+        accounting hook - own state of their own and are untouched; only the
+        loads a tick walks change. `_apply_load_knobs` re-derives `_loads` from
+        `_configured` every tick regardless, so a call between ticks is enough.
+        """
+        self._configured = tuple(
+            sorted(loads, key=lambda load: (-load.config.priority, load.load_id))
+        )
+        self._loads = self._configured
+
+    def set_constraints(self, constraints: Sequence[Constraint]) -> None:
+        """Replace the constraints beyond the site's own hard limits (D7 §2).
+
+        The site fuse and the phase limits are always there; `constraints` are
+        the rest - circuits today, groups and zones later - walked in D6 §2's
+        order: site → circuit → phase → group → zone.
+        """
+        self._constraints = tuple(
+            sorted(
+                (
+                    SiteFuse(self.site.electrical.fuse_w()),
+                    PhaseLimit(self.site.electrical),
+                    *constraints,
+                ),
+                key=lambda constraint: _SCOPE_ORDER.index(constraint.scope),
+            )
+        )
 
     def _apply_load_knobs(self, knobs: Knobs) -> None:
         """Put this tick's per-load knob parameters over the configured loads (D8 §5.5).

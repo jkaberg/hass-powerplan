@@ -30,7 +30,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the master switch."""
-    async_add_entities([ActiveSwitch(entry.runtime_data), *load_switches(entry.runtime_data)])
+    runtime = entry.runtime_data
+    async_add_entities([ActiveSwitch(runtime)])
+    runtime.setup_load_platform(async_add_entities, load_switches)
 
 
 class ActiveSwitch(PowerplanEntity, SwitchEntity, RestoreEntity):

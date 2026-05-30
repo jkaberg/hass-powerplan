@@ -61,18 +61,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     runtime = Runtime(hass, entry, site)
     entry.runtime_data = runtime
     await runtime.start()
-    # A load subentry added, changed or removed rebuilds the site (D7 §2). The
-    # hot paths that add and remove a load without a reload are WP2.6's; until
-    # then the listener reloads the entry, which releases every load on the way
-    # out (INV-26) and restores on the way back in (INV-48).
-    entry.async_on_unload(entry.add_update_listener(_async_reload_on_update))
+    # A load or circuit subentry added, changed or removed patches the site in
+    # place (D7 §2); the site's own `entry.data` still reloads it, which
+    # releases every load on the way out (INV-26) and restores on the way back
+    # in (INV-48) - `Runtime.async_handle_subentry_update` tells them apart.
+    entry.async_on_unload(entry.add_update_listener(_async_handle_update))
     _LOGGER.debug("Site %s set up (entry %s): %s", entry.title, entry.entry_id, runtime.startup)
     return True
 
 
-async def _async_reload_on_update(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
-    """Reload the site when its entry or one of its subentries changed."""
-    await hass.config_entries.async_reload(entry.entry_id)
+async def _async_handle_update(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
+    """Apply a subentry hot path, or reload the site when its own data changed (D7 §2)."""
+    del hass
+    await entry.runtime_data.async_handle_subentry_update()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:

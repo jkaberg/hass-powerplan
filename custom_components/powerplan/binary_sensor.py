@@ -94,10 +94,8 @@ async def async_setup_entry(
 ) -> None:
     """Create the site's binary sensors."""
     runtime = entry.runtime_data
-    async_add_entities(
-        [SiteBinarySensor(runtime, description) for description in BINARY_SENSORS]
-        + load_binary_sensors(runtime)
-    )
+    async_add_entities([SiteBinarySensor(runtime, description) for description in BINARY_SENSORS])
+    runtime.setup_load_platform(async_add_entities, load_binary_sensors)
 
 
 class SiteBinarySensor(PowerplanEntity, BinarySensorEntity):

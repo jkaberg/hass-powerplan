@@ -29,7 +29,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the replan button."""
-    async_add_entities([ReplanButton(entry.runtime_data), *load_buttons(entry.runtime_data)])
+    runtime = entry.runtime_data
+    async_add_entities([ReplanButton(runtime)])
+    runtime.setup_load_platform(async_add_entities, load_buttons)
 
 
 class ReplanButton(PowerplanEntity, ButtonEntity):

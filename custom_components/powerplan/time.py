@@ -19,4 +19,4 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the loads' time knobs; the site itself has none."""
-    async_add_entities(load_times(entry.runtime_data))
+    entry.runtime_data.setup_load_platform(async_add_entities, load_times)

@@ -28,7 +28,9 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the margin number."""
-    async_add_entities([MarginNumber(entry.runtime_data), *load_numbers(entry.runtime_data)])
+    runtime = entry.runtime_data
+    async_add_entities([MarginNumber(runtime)])
+    runtime.setup_load_platform(async_add_entities, load_numbers)
 
 
 class MarginNumber(PowerplanEntity, RestoreNumber, NumberEntity):

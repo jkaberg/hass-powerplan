@@ -62,8 +62,9 @@ THERMAL_TYPES = frozenset({"floor_heating", "radiator", "heat_pump", "water_heat
 FORCE_MAX_H_MIN, FORCE_MAX_H_MAX = 0.5, 24.0
 
 
-def _loads(runtime: Runtime) -> Iterable[Load]:
-    return runtime.build.loads
+def _loads(runtime: Runtime, loads: Iterable[Load] | None = None) -> Iterable[Load]:
+    """Return `loads`, or every load of the site when none is given (WP2.6 hot add)."""
+    return runtime.build.loads if loads is None else loads
 
 
 # --------------------------------------------------------------------------- #
@@ -105,9 +106,9 @@ class LoadModeSelect(LoadEntity, SelectEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-def load_selects(runtime: Runtime) -> list[SelectEntity]:
+def load_selects(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SelectEntity]:
     """One mode select per load."""
-    return [LoadModeSelect(runtime, load) for load in _loads(runtime)]
+    return [LoadModeSelect(runtime, load) for load in _loads(runtime, loads)]
 
 
 # --------------------------------------------------------------------------- #
@@ -153,11 +154,11 @@ class LoadForceSwitch(LoadEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-def load_switches(runtime: Runtime) -> list[SwitchEntity]:
+def load_switches(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SwitchEntity]:
     """Return a force switch for the types that take one."""
     return [
         LoadForceSwitch(runtime, load)
-        for load in _loads(runtime)
+        for load in _loads(runtime, loads)
         if load.config.type_key in FORCE_TYPES
     ]
 
@@ -333,10 +334,10 @@ class LoadForceHoursNumber(LoadEntity, RestoreNumber, NumberEntity):
         self.async_write_ha_state()
 
 
-def load_numbers(runtime: Runtime) -> list[NumberEntity]:
+def load_numbers(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[NumberEntity]:
     """Return the parameter knobs and the force hours, per load and type."""
     out: list[NumberEntity] = []
-    for load in _loads(runtime):
+    for load in _loads(runtime, loads):
         out.extend(
             LoadParamNumber(runtime, load, description)
             for description in PARAM_NUMBERS
@@ -366,11 +367,11 @@ class LoadRunNowButton(LoadEntity, ButtonEntity):
         await self.runtime.async_run_now(self.load_id)
 
 
-def load_buttons(runtime: Runtime) -> list[ButtonEntity]:
+def load_buttons(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[ButtonEntity]:
     """Return a run-now button for the cycle type."""
     return [
         LoadRunNowButton(runtime, load)
-        for load in _loads(runtime)
+        for load in _loads(runtime, loads)
         if load.config.type_key == "appliance_cycle"
     ]
 
@@ -422,10 +423,10 @@ class LoadTimeKnob(LoadEntity, TimeEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-def load_times(runtime: Runtime) -> list[TimeEntity]:
+def load_times(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[TimeEntity]:
     """`ready_by` for cycles and tanks; a one-off `deadline` for the car (D8 §5.5)."""
     out: list[TimeEntity] = []
-    for load in _loads(runtime):
+    for load in _loads(runtime, loads):
         kind = load.config.type_key
         if kind in ("appliance_cycle", "water_heater") and "ready_by" in load.config.params:
             out.append(LoadTimeKnob(runtime, load, "ready_by", "ready_by"))
@@ -674,11 +675,11 @@ class LoadSensor(LoadEntity, SensorEntity):
         return digest_of(self.native_value, self.extra_state_attributes)
 
 
-def load_sensors(runtime: Runtime) -> list[SensorEntity]:
+def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
     """Return the sensor rows, per load and type."""
     return [
         LoadSensor(runtime, load, row)
-        for load in _loads(runtime)
+        for load in _loads(runtime, loads)
         for row in LOAD_SENSORS
         if row.applies(load)
     ]
@@ -717,6 +718,8 @@ class LoadShedBinarySensor(LoadEntity, BinarySensorEntity):
         }
 
 
-def load_binary_sensors(runtime: Runtime) -> list[BinarySensorEntity]:
+def load_binary_sensors(
+    runtime: Runtime, loads: Iterable[Load] | None = None
+) -> list[BinarySensorEntity]:
     """One shed sensor per load."""
-    return [LoadShedBinarySensor(runtime, load) for load in _loads(runtime)]
+    return [LoadShedBinarySensor(runtime, load) for load in _loads(runtime, loads)]

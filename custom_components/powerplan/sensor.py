@@ -464,8 +464,8 @@ async def async_setup_entry(
         )
         for carrier in runtime.build.carrier_sources
     )
-    entities.extend(load_sensors(runtime))
     async_add_entities(entities)
+    runtime.setup_load_platform(async_add_entities, load_sensors)
 
 
 class SiteSensor(PowerplanEntity, SensorEntity):

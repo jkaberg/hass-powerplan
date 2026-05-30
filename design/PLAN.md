@@ -286,7 +286,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 2.3 | `ev` complete | done |
 | 2.4 | Load subentry flow and load entities | done |
 | 2.5 | Circuits | done |
-| 2.6 | Subentry hot paths | todo |
+| 2.6 | Subentry hot paths | done |
 | 2.7 | Accounting surface | todo |
 | 3.1 | Generic profiles with capability detection | done |
 | 3.2 | `floor_heating`, `heat_capacitor`, groups | todo |

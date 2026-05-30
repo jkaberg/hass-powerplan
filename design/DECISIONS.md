@@ -1277,3 +1277,13 @@ Supersedes D-0167's circuit half. (1) `unseen_w = max(0, sub_meter − Σ measur
 
 `CircuitSubentryFlow`: `user` (name, fuse A, phases, members, optional power-sensor sub-meter, `unmetered_w` under Advanced) → `review` (D6 §6's sentence, `last_step`) → subentry; `reconfigure` pre-fills. A site without loads aborts `no_loads`. INV-67 wants the review before saving. The scenario runner also returns the sauna's mode knob to `auto` when a session ends; a sticky knob kept it forced until `force_max_h`. Affects D8 §5.3, D9 §4, §5.3.
 **Rejected:** the review sentence in the `user` step - it needs the answers. A circuit select in the load flow - two owners for one relation.
+
+### D-0286 · The subentry snapshot is plain values, because `ConfigSubentry` mutates itself
+
+`_subentry_snapshot()` returns `{id: (type, title, dict(data))}` and updates diff the previous snapshot against a fresh one. `async_update_subentry` replaces `data` on the same `ConfigSubentry` object, so a snapshot of the live objects has its "old" values overwritten by the change it's meant to detect.
+**Rejected:** diffing `entry.modified_at` - doesn't say which subentry changed.
+
+### D-0287 · A load's entities carry its subentry id; the site's never do
+
+`Runtime.setup_load_platform` adds the site's entities without `config_subentry_id` and each load's in its own call with `config_subentry_id=load.load_id`. HA removes an entity with its subentry only when that id matches; without it the entity outlives the load. Affects D7 §2, §9 9.
+**Rejected:** removing by enumerated unique ids - a second copy of D8 §5.5's table.

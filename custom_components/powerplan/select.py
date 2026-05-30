@@ -35,14 +35,8 @@ async def async_setup_entry(
 ) -> None:
     """Create the three selects."""
     runtime = entry.runtime_data
-    async_add_entities(
-        [
-            PresenceSelect(runtime),
-            TargetSelect(runtime),
-            RiskSelect(runtime),
-            *load_selects(runtime),
-        ]
-    )
+    async_add_entities([PresenceSelect(runtime), TargetSelect(runtime), RiskSelect(runtime)])
+    runtime.setup_load_platform(async_add_entities, load_selects)
 
 
 class _RestoringSelect(PowerplanEntity, SelectEntity, RestoreEntity):
