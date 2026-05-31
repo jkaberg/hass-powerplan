@@ -468,90 +468,17 @@
       }
     },
     "sensor": {
-      "window_used": {
-        "name": "Brukt i timen"
-      },
-      "window_projected": {
-        "name": "Forventet i timen"
-      },
-      "ceiling": {
-        "name": "Tak"
+      "advice": {
+        "name": "Råd"
       },
       "allowance": {
         "name": "Tillatt effekt"
       },
-      "stage": {
-        "name": "Trinn"
-      },
-      "level": {
-        "name": "Kapasitetstrinn"
-      },
-      "projected_level": {
-        "name": "Forventet kapasitetstrinn"
-      },
-      "advice": {
-        "name": "Råd"
-      },
-      "next_peak_warning": {
-        "name": "Neste effektvarsel"
-      },
-      "price": {
-        "name": "Pris"
-      },
-      "price_forecast": {
-        "name": "Prisprognose"
-      },
-      "price_export": {
-        "name": "Salgspris"
-      },
-      "price_carrier": {
-        "name": "Pris {carrier}"
-      },
-      "plan": {
-        "name": "Plan"
-      },
-      "production": {
-        "name": "Produksjon"
-      },
-      "surplus": {
-        "name": "Overskudd"
-      },
-      "meter_health": {
-        "name": "Målerhelse",
-        "state": {
-          "ok": "OK",
-          "stale": "Utdatert",
-          "degraded": "Svekket"
-        }
-      },
-      "price_source_health": {
-        "name": "Priskildehelse",
-        "state": {
-          "ok": "OK",
-          "stale": "Utdatert",
-          "dead": "Død"
-        }
-      },
       "baseline_confidence": {
         "name": "Grunnlastsikkerhet"
       },
-      "tick_ms": {
-        "name": "Tikketid"
-      },
-      "reasons": {
-        "name": "Begrunnelser"
-      },
-      "granted": {
-        "name": "Tildelt"
-      },
-      "measured": {
-        "name": "Målt"
-      },
-      "reserved": {
-        "name": "Reservert"
-      },
-      "plan_next": {
-        "name": "Neste i planen"
+      "ceiling": {
+        "name": "Tak"
       },
       "comfort_state": {
         "name": "Komfort",
@@ -561,6 +488,15 @@
           "violated": "Under gulvet"
         }
       },
+      "cost": {
+        "name": "Kostnad"
+      },
+      "energy": {
+        "name": "Energi"
+      },
+      "granted": {
+        "name": "Tildelt"
+      },
       "health": {
         "name": "Helse",
         "state": {
@@ -569,8 +505,81 @@
           "unhealthy": "Usunn"
         }
       },
+      "level": {
+        "name": "Kapasitetstrinn"
+      },
+      "measured": {
+        "name": "Målt"
+      },
+      "meter_health": {
+        "name": "Målerhelse",
+        "state": {
+          "ok": "OK",
+          "stale": "Utdatert",
+          "degraded": "Svekket"
+        }
+      },
+      "next_peak_warning": {
+        "name": "Neste effektvarsel"
+      },
+      "plan": {
+        "name": "Plan"
+      },
+      "plan_next": {
+        "name": "Neste i planen"
+      },
+      "price": {
+        "name": "Pris"
+      },
+      "price_carrier": {
+        "name": "Pris {carrier}"
+      },
+      "price_export": {
+        "name": "Salgspris"
+      },
+      "price_forecast": {
+        "name": "Prisprognose"
+      },
+      "price_source_health": {
+        "name": "Priskildehelse",
+        "state": {
+          "ok": "OK",
+          "stale": "Utdatert",
+          "dead": "Død"
+        }
+      },
+      "production": {
+        "name": "Produksjon"
+      },
+      "projected_level": {
+        "name": "Forventet kapasitetstrinn"
+      },
+      "reasons": {
+        "name": "Begrunnelser"
+      },
+      "reserved": {
+        "name": "Reservert"
+      },
+      "savings": {
+        "name": "Besparelse"
+      },
       "session": {
         "name": "Økt"
+      },
+      "stage": {
+        "name": "Trinn"
+      },
+      "surplus": {
+        "name": "Overskudd"
+      },
+      "tick_ms": {
+        "name": "Tikketid"
+      },
+      "window_projected": {
+        "name": "Forventet i timen"
+      },
+      "window_used": {
+        "name": "Brukt i timen"
       }
     },
     "select": {
@@ -722,7 +731,7 @@
     },
     "savings_low_confidence": {
       "title": "Besparelsen er usikker",
-      "description": "{site}: en lasts kontrafaktiske forbruk har bommet på kalibreringen i en uke; besparelsen vises med lav sikkerhet."
+      "description": "{site}: {load}s kontrafaktiske forbruk har bommet på kalibreringen i en uke; besparelsen vises med lav sikkerhet."
     },
     "notify_service_missing": {
       "title": "Varslingstjeneste mangler",

@@ -53,6 +53,10 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     defaults = result["data_schema"]({})
     result = await _answer(hass, result, **{**defaults, "power_w": 6000.0})
     assert result["step_id"] == "review", result
+    explanation = result["description_placeholders"]["explanation"]
+    assert "Its savings are not shown" in explanation, (
+        "the sauna has no shadow (hours_per_day unset): D11 §6"
+    )
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Sauna"})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY, result

@@ -468,90 +468,17 @@
       }
     },
     "sensor": {
-      "window_used": {
-        "name": "Window used"
-      },
-      "window_projected": {
-        "name": "Window projected"
-      },
-      "ceiling": {
-        "name": "Ceiling"
+      "advice": {
+        "name": "Advice"
       },
       "allowance": {
         "name": "Allowance"
       },
-      "stage": {
-        "name": "Stage"
-      },
-      "level": {
-        "name": "Capacity step"
-      },
-      "projected_level": {
-        "name": "Projected capacity step"
-      },
-      "advice": {
-        "name": "Advice"
-      },
-      "next_peak_warning": {
-        "name": "Next peak warning"
-      },
-      "price": {
-        "name": "Price"
-      },
-      "price_forecast": {
-        "name": "Price forecast"
-      },
-      "price_export": {
-        "name": "Export price"
-      },
-      "price_carrier": {
-        "name": "Price {carrier}"
-      },
-      "plan": {
-        "name": "Plan"
-      },
-      "production": {
-        "name": "Production"
-      },
-      "surplus": {
-        "name": "Surplus"
-      },
-      "meter_health": {
-        "name": "Meter health",
-        "state": {
-          "ok": "OK",
-          "stale": "Stale",
-          "degraded": "Degraded"
-        }
-      },
-      "price_source_health": {
-        "name": "Price source health",
-        "state": {
-          "ok": "OK",
-          "stale": "Stale",
-          "dead": "Dead"
-        }
-      },
       "baseline_confidence": {
         "name": "Baseline confidence"
       },
-      "tick_ms": {
-        "name": "Tick duration"
-      },
-      "reasons": {
-        "name": "Reasons"
-      },
-      "granted": {
-        "name": "Granted"
-      },
-      "measured": {
-        "name": "Measured"
-      },
-      "reserved": {
-        "name": "Reserved"
-      },
-      "plan_next": {
-        "name": "Plan next"
+      "ceiling": {
+        "name": "Ceiling"
       },
       "comfort_state": {
         "name": "Comfort",
@@ -561,6 +488,15 @@
           "violated": "Under the floor"
         }
       },
+      "cost": {
+        "name": "Cost"
+      },
+      "energy": {
+        "name": "Energy"
+      },
+      "granted": {
+        "name": "Granted"
+      },
       "health": {
         "name": "Health",
         "state": {
@@ -569,8 +505,81 @@
           "unhealthy": "Unhealthy"
         }
       },
+      "level": {
+        "name": "Capacity step"
+      },
+      "measured": {
+        "name": "Measured"
+      },
+      "meter_health": {
+        "name": "Meter health",
+        "state": {
+          "ok": "OK",
+          "stale": "Stale",
+          "degraded": "Degraded"
+        }
+      },
+      "next_peak_warning": {
+        "name": "Next peak warning"
+      },
+      "plan": {
+        "name": "Plan"
+      },
+      "plan_next": {
+        "name": "Plan next"
+      },
+      "price": {
+        "name": "Price"
+      },
+      "price_carrier": {
+        "name": "Price {carrier}"
+      },
+      "price_export": {
+        "name": "Export price"
+      },
+      "price_forecast": {
+        "name": "Price forecast"
+      },
+      "price_source_health": {
+        "name": "Price source health",
+        "state": {
+          "ok": "OK",
+          "stale": "Stale",
+          "dead": "Dead"
+        }
+      },
+      "production": {
+        "name": "Production"
+      },
+      "projected_level": {
+        "name": "Projected capacity step"
+      },
+      "reasons": {
+        "name": "Reasons"
+      },
+      "reserved": {
+        "name": "Reserved"
+      },
+      "savings": {
+        "name": "Savings"
+      },
       "session": {
         "name": "Session"
+      },
+      "stage": {
+        "name": "Stage"
+      },
+      "surplus": {
+        "name": "Surplus"
+      },
+      "tick_ms": {
+        "name": "Tick duration"
+      },
+      "window_projected": {
+        "name": "Window projected"
+      },
+      "window_used": {
+        "name": "Window used"
       }
     },
     "select": {
@@ -722,7 +731,7 @@
     },
     "savings_low_confidence": {
       "title": "Savings figure is uncertain",
-      "description": "{site}: a load's counterfactual has missed its calibration for a week; its savings are shown with low confidence."
+      "description": "{site}: {load}'s counterfactual has missed its calibration for a week; its savings are shown with low confidence."
     },
     "notify_service_missing": {
       "title": "Notification service missing",

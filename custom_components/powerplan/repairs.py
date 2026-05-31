@@ -10,6 +10,7 @@ recovered store - edge-triggered after every tick.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -21,8 +22,6 @@ from homeassistant.helpers import issue_registry as ir
 from .const import DOMAIN
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from homeassistant.core import HomeAssistant
 
     from .core.model import Snapshot
@@ -73,6 +72,8 @@ REGISTER_MISSING_AFTER = timedelta(hours=24)
 #: D8 §5.9: the integral's bias against the register, and for how many windows.
 SCALING_BIAS_FRACTION = 0.05
 SCALING_WINDOWS = 6
+#: D11 §5.5: a load's calibration error over threshold this long before it is worth telling.
+SAVINGS_LOW_CONFIDENCE_AFTER = timedelta(days=7)
 
 
 def registry_id(entry_id: str, issue_id: str) -> str:
@@ -138,6 +139,10 @@ class RepairsWatch:
     bias_windows: int = 0
     windows_seen: int = 0
     active: set[str] = field(default_factory=set)
+    #: D11 §5.5, per load: since when its `savings_confidence` has read `low`,
+    #: unbroken; popped the moment it reads anything else (INV-63: calibration
+    #: never changes a parameter, and this issue never either).
+    low_since: dict[str, datetime] = field(default_factory=dict)
 
     def evaluate(self, now: datetime, snapshot: Snapshot) -> None:
         """Compare the conditions to what is raised and change only what changed."""
@@ -154,6 +159,11 @@ class RepairsWatch:
             "store_reset": {"path": self.runtime.store.corrupt_path or ""},
             "preset_outdated": {"preset": str(self.runtime.build.preset_file or "")},
         }
+        for load_id, wanted in self._savings_low_confidence(now, snapshot).items():
+            issue_id = f"savings_low_confidence_{load_id}"
+            conditions[issue_id] = wanted
+            load = snapshot.loads.get(load_id)
+            placeholders[issue_id] = {"load": load.name if load is not None else load_id}
         for issue_id, wanted in conditions.items():
             if wanted == (issue_id in self.active):
                 continue
@@ -206,6 +216,23 @@ class RepairsWatch:
         else:
             self.bias_windows = 0
         return self.bias_windows >= SCALING_WINDOWS
+
+    def _savings_low_confidence(self, now: datetime, snapshot: Snapshot) -> dict[str, bool]:
+        """D11 §5.5: a load's `savings_confidence` reading `low` for seven days, unbroken."""
+        wanted: dict[str, bool] = {}
+        seen = set()
+        for load_id, row in snapshot.accounting.per_load.items():
+            seen.add(load_id)
+            if not isinstance(row, Mapping) or row.get("savings_confidence") != "low":
+                self.low_since.pop(load_id, None)
+                wanted[load_id] = False
+                continue
+            since = self.low_since.setdefault(load_id, now)
+            wanted[load_id] = now - since >= SAVINGS_LOW_CONFIDENCE_AFTER
+        for load_id in list(self.low_since):
+            if load_id not in seen:
+                self.low_since.pop(load_id, None)
+        return wanted
 
 
 # --------------------------------------------------------------------------- #

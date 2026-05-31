@@ -302,7 +302,9 @@ A rollover found late (HA down over midnight) runs when the first slot of the ne
 
 ## 6. Configuration schema
 
-Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off drops the store section and the entities), `calibration_threshold` 0.15, `reprice_days` 7 (bounded by D1's retention). Advanced (load, D4 review): `counterfactual` select - `auto` (by store kind) / `none` (this load's savings are not stated). The review step (INV-67) says which shadow was chosen in plain words: "Without powerplan this floor would hold 22 °C on its own thermostat; savings are what the night charge saves against that."
+Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off drops the store section and the entities), `calibration_threshold` 0.15, `reprice_days` 7 (bounded by D1's retention). A per-load opt-out of the savings figure doesn't ship in v1, `store_kind_of` alone decides whether a load gets a savings sensor (D-0291). The review step (INV-67) says which counterfactual was picked in plain words: "Without powerplan this floor would hold 22 °C on its own thermostat; savings are what the night charge saves against that."
+
+`flow/load.py::_shadow_sentence(type_key, params)` has one sentence per registry type: the thermal types (`floor_heating`, `radiator`, `heat_pump`) name the room/floor/pump and the `comfort_c` answer, `water_heater`, `ev`, `appliance_cycle` and `battery` each have their own, and `generic_switch` reads the sentence above when `hours_per_day` was answered and "its savings are not shown" otherwise (an on-call appliance like a sauna is `StoreKind.NONE`, §5.3). It's appended to `explanation_text`'s paragraph, so it needs no new placeholder in `strings.json` (D-0291).
 
 ---
 

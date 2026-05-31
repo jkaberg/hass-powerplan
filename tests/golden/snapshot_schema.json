@@ -1,6 +1,24 @@
 {
   "fields": {
     "accounting": {
+      "capacity_fee": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "capacity_savings": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "cf_cost": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
       "closed_to": {
         "one_of": [
           "datetime",
@@ -14,18 +32,74 @@
           "None"
         ]
       },
+      "energy_cost": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "energy_savings": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "estimated_share": "float",
+      "export_credit": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "lifetime_cost": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "lifetime_savings": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
       "month_key": {
         "one_of": [
           "str",
           "None"
         ]
       },
+      "month_start": {
+        "one_of": [
+          "datetime",
+          "None"
+        ]
+      },
       "per_load": {
         "mapping": "Any"
       },
+      "previous_cost": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "previous_savings": {
+        "one_of": [
+          "Money",
+          "None"
+        ]
+      },
+      "pricing_confidence": "str",
       "savings": {
         "one_of": [
           "Money",
+          "None"
+        ]
+      },
+      "since": {
+        "one_of": [
+          "datetime",
           "None"
         ]
       },
@@ -346,6 +420,12 @@
           },
           "wants": "bool"
         },
+        "energy_source": {
+          "one_of": [
+            "str",
+            "None"
+          ]
+        },
         "error": {
           "one_of": [
             "str",
@@ -403,6 +483,7 @@
         "learned": {
           "mapping": "float"
         },
+        "lifetime_kwh": "float",
         "load_id": "str",
         "measured_w": {
           "one_of": [
@@ -839,5 +920,5 @@
       }
     }
   },
-  "schema": 2
+  "schema": 3
 }

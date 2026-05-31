@@ -56,6 +56,9 @@ EV_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "health", EntityCategory.DIAGNOSTIC, True),
     ("sensor", "session", None, True),
     ("binary_sensor", "shed", None, True),
+    ("sensor", "energy", None, True),
+    ("sensor", "cost", None, True),
+    ("sensor", "savings", None, True),
 )
 
 
@@ -102,6 +105,9 @@ async def _add_charger(
     assert "60" in explanation, explanation
     assert "80" in explanation, explanation
     assert "ev_review" not in explanation, "the review shows words, never a key (INV-67)"
+    assert "Without powerplan this car would charge at its full rate" in explanation, (
+        "D11 §6's shadow sentence"
+    )
     return result
 
 

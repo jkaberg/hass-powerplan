@@ -1146,6 +1146,10 @@ class Runtime:
         self.build.loads = (*self.build.loads, load)
         self.build.devices = {**self.build.devices, load.load_id: device}
         self.gate.track(load.load_id, self._release_plan(load.load_id))
+        if self.adapter is not None:
+            self.adapter.add_load(load, dt_util.utcnow())
+            self.state = replace(self.state, accounting=self.adapter.section())
+            self._persist_sections(frozenset({Section.ACCOUNTING}))
         self._rebuild_engine()
         self._subscribe_loads()
         self._add_load_entities(load)
@@ -1170,6 +1174,8 @@ class Runtime:
         if outcome is not None:
             self._adopt_outcomes((outcome,))
         self.gate.untrack(load_id)
+        if self.adapter is not None:
+            self.adapter.remove_load(load_id, dt_util.utcnow())
         self.build.loads = tuple(load for load in self.build.loads if load.load_id != load_id)
         self.build.devices = {
             other_id: device
@@ -1198,9 +1204,13 @@ class Runtime:
         self.load_modes.pop(load_id, None)
         self.force_max_h.pop(load_id, None)
         self.load_params.pop(load_id, None)
+        sections = {Section.LOADS, Section.METER, Section.PLANS}
+        if self.adapter is not None:
+            self.state = replace(self.state, accounting=self.adapter.section())
+            sections.add(Section.ACCOUNTING)
         self._rebuild_engine()
         self._subscribe_loads()
-        self._persist_sections(frozenset({Section.LOADS, Section.METER, Section.PLANS}))
+        self._persist_sections(frozenset(sections))
         _LOGGER.info("site %s: load %s removed without a reload", self.site_name, load_id)
 
     def _reload_circuits(self) -> None:

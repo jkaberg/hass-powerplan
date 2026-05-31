@@ -313,21 +313,66 @@ def _hhmm(value: Any) -> str:
 
 
 def explanation_text(
-    derived: Derived, answers: Answers, labels: Mapping[str, str], type_name: str
+    derived: Derived,
+    answers: Answers,
+    labels: Mapping[str, str],
+    type_name: str,
+    type_key: str = "",
 ) -> str:
     """Render `explain()` as one paragraph in the user's language.
 
     The key names the type; the values are what the derivation thought worth a
     sentence, listed with the question labels as vocabulary. A derived value
     that is a table (the departures) is spelled out; a number keeps at most two
-    decimals; nothing here is an internal key.
+    decimals; nothing here is an internal key. `type_key` - the registry key,
+    never shown - picks D11 §6's shadow sentence; empty says nothing extra.
     """
     explanation = explain(answers, derived)
     parts: list[str] = []
     for key, value in explanation.params.items():
         label = labels.get(key, key.replace("_", " "))
         parts.append(f"{label}: {_pretty(value)}")
-    return f"{type_name} — " + "; ".join(parts) + "."
+    sentence = f"{type_name} — " + "; ".join(parts) + "."
+    shadow = _shadow_sentence(type_key, derived.params)
+    return f"{sentence} {shadow}" if shadow else sentence
+
+
+def _shadow_sentence(type_key: str, params: Mapping[str, Any]) -> str | None:
+    """Say in plain words what D11's shadow bills savings against (D11 §6).
+
+    One sentence per store kind, keyed by the type the way `store_kind_of`
+    settles it for every load this table names (the SLAB/ROOM split inside
+    `generic_climate` is one kind per type here, not per bound entity, which is
+    all the review step can know before the device is built). A relay with no
+    daily quota - an on-call appliance such as a sauna - has none: powerplan can
+    only shed and restore it, not say what it would otherwise have cost.
+    """
+    comfort_c = params.get("comfort_c")
+    held = f"hold {comfort_c:g} °C" if isinstance(comfort_c, int | float) else "hold its target"
+    against = "savings are what the plan saves against that."
+    if type_key == "generic_switch":
+        if params.get("hours_per_day") is not None:
+            return f"Without powerplan this appliance would run spread evenly through the day; {against}"
+        return (
+            "Its savings are not shown: powerplan can only shed and restore this appliance, "
+            "not say what running it would otherwise have cost."
+        )
+    thermostat: dict[str, str] = {
+        "floor_heating": "floor",
+        "radiator": "room",
+        "heat_pump": "heat pump",
+    }
+    if type_key in thermostat:
+        return f"Without powerplan this {thermostat[type_key]} would {held} on its own thermostat; {against}"
+    other: dict[str, str] = {
+        "water_heater": "this tank would reheat to its setpoint the moment it drew below it",
+        "ev": "this car would charge at its full rate from plug-in until it reached your target",
+        "appliance_cycle": "this appliance would run as soon as it was asked",
+        "battery": "this battery would neither charge nor discharge",
+    }
+    if type_key in other:
+        return f"Without powerplan {other[type_key]}; {against}"
+    return None
 
 
 def _pretty(value: Any) -> str:
@@ -678,7 +723,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             ),
             description_placeholders={
                 "explanation": explanation_text(
-                    self._derived, self._answers, labels, labels.get("__type__", str(self._type))
+                    self._derived,
+                    self._answers,
+                    labels,
+                    labels.get("__type__", str(self._type)),
+                    str(self._type),
                 ),
                 "strategy": self._derived.strategy,
             },
@@ -767,7 +816,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             data_schema=schema,
             description_placeholders={
                 "explanation": explanation_text(
-                    fresh, self._answers, labels, labels.get("__type__", str(self._type))
+                    fresh,
+                    self._answers,
+                    labels,
+                    labels.get("__type__", str(self._type)),
+                    str(self._type),
                 ),
                 "diff": "\n".join(f"- {line}" for line in diff_lines) or "—",
                 "manual": ", ".join(previous_manual) or "—",

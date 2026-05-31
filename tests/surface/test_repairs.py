@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -10,7 +11,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from custom_components.powerplan import repairs
 from custom_components.powerplan.const import DOMAIN
-from custom_components.powerplan.core.engine import Engine, EngineHealth
+from custom_components.powerplan.core.engine import AccountingStatus, Engine, EngineHealth
 from tests.runtime.conftest import SITE_ENTRY_ID, site_data, site_entry
 
 if TYPE_CHECKING:
@@ -147,3 +148,43 @@ async def test_10f_the_engine_failing_fix_flow_leaves_safe_mode(
     assert _issue(hass, site.entry_id, "engine_failing") is None
     assert runtime.snapshot is not None
     assert runtime.snapshot.health.engine is EngineHealth.OK
+
+
+async def test_10g_a_loads_low_confidence_for_a_week_raises_and_recovery_clears(
+    hass: HomeAssistant,
+    site: MockConfigEntry,
+    runtime: Runtime,
+    meter: FakeMeter,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """D11 §5.5: seven unbroken days of `savings_confidence: low`, named by the load."""
+    await runtime.run_tick("test")
+    assert runtime.snapshot is not None
+    low = replace(
+        runtime.snapshot,
+        accounting=AccountingStatus(per_load={"ev": {"savings_confidence": "low"}}),
+    )
+    now = runtime.state.runtime.last_tick_at or freezer.time_to_freeze
+    watch = runtime.repairs
+
+    watch.evaluate(now, low)
+    assert _issue(hass, site.entry_id, "savings_low_confidence_ev") is None, "not a week yet"
+
+    watch.evaluate(now + timedelta(days=6, hours=23), low)
+    assert _issue(hass, site.entry_id, "savings_low_confidence_ev") is None
+
+    watch.evaluate(now + timedelta(days=7, hours=1), low)
+    issue = _issue(hass, site.entry_id, "savings_low_confidence_ev")
+    assert issue is not None
+    assert issue.translation_placeholders is not None
+    # No load "ev" in this bare snapshot's `loads`, so the name falls back to the id.
+    assert issue.translation_placeholders.get("load") == "ev"
+
+    # Recovery clears it, and the clock resets - a later relapse waits its own week.
+    ok = replace(
+        runtime.snapshot,
+        accounting=AccountingStatus(per_load={"ev": {"savings_confidence": "ok"}}),
+    )
+    watch.evaluate(now + timedelta(days=7, hours=2), ok)
+    assert _issue(hass, site.entry_id, "savings_low_confidence_ev") is None
+    assert "ev" not in watch.low_since

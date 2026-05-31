@@ -449,6 +449,7 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         SiteSensor(runtime, description) for description in SENSORS if description.applies(runtime)
     ]
+    entities.extend([SiteCostSensor(runtime), SiteSavingsSensor(runtime)])
     entities.extend(
         SiteSensor(
             runtime,
@@ -508,3 +509,103 @@ class SiteSensor(PowerplanEntity, SensorEntity):
         if not self.entity_description.digest_gated:
             return None
         return digest_of(self.native_value, self.extra_state_attributes)
+
+
+# --------------------------------------------------------------------------- #
+# sensor.<site>_cost / _savings (D11)
+# --------------------------------------------------------------------------- #
+
+
+class _SiteMoneySensor(PowerplanEntity, SensorEntity):
+    """Shared shape for the site's two monetary sensors (D8 §5.5).
+
+    `state_class: total`, never `total_increasing`: a negative price or a
+    battery's arbitrage revenue makes a month go down, and HA's long-term
+    statistics need the sensor to say so rather than clamp it (INV-51 in
+    spirit). `last_reset` is the open month's start, read fresh every update -
+    a rollover moves it without restarting the entity.
+    """
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, runtime: Runtime, key: str) -> None:
+        """Bind to the site; the unit is the site's own currency."""
+        super().__init__(runtime, key)
+        self._attr_native_unit_of_measurement = runtime.build.cfg.currency
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """The open month's start (D11 `Ledger.month_start_utc`)."""
+        snapshot = self.snapshot
+        return None if snapshot is None else snapshot.accounting.month_start
+
+    def _since_install(self) -> str | None:
+        snapshot = self.snapshot
+        return None if snapshot is None else _iso(snapshot.accounting.since)
+
+
+class SiteCostSensor(_SiteMoneySensor):
+    """`sensor.<site>_cost`: month-to-date energy cost − export credit + capacity fee."""
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site."""
+        super().__init__(runtime, "cost")
+
+    @property
+    def native_value(self) -> Any:
+        """Month-to-date cost, or `None` before the first slot has priced."""
+        snapshot = self.snapshot
+        if snapshot is None or snapshot.accounting.cost is None:
+            return None
+        return snapshot.accounting.cost.amount
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any]:
+        """Return `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install` and more."""
+        snapshot = self.snapshot
+        status = None if snapshot is None else snapshot.accounting
+        return {
+            "energy_cost": None if status is None else _money(status.energy_cost),
+            "export_credit": None if status is None else _money(status.export_credit),
+            "capacity_fee": None if status is None else _money(status.capacity_fee),
+            "previous_month": None if status is None else _money(status.previous_cost),
+            "since_install": self._since_install(),
+            "confidence": None if status is None else status.pricing_confidence,
+            "estimated_share": None if status is None else status.estimated_share,
+        }
+
+
+class SiteSavingsSensor(_SiteMoneySensor):
+    """`sensor.<site>_savings`: month-to-date vs. no powerplan; may be negative."""
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site."""
+        super().__init__(runtime, "savings")
+
+    @property
+    def native_value(self) -> Any:
+        """Month-to-date savings (unclamped - negative is a real answer), or `None` unpriced."""
+        snapshot = self.snapshot
+        if snapshot is None or snapshot.accounting.savings is None:
+            return None
+        return snapshot.accounting.savings.amount
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any]:
+        """Return `energy_savings`, `capacity_savings`, `counterfactual_cost`, `kwh_shifted` and more."""
+        snapshot = self.snapshot
+        status = None if snapshot is None else snapshot.accounting
+        return {
+            "energy_savings": None if status is None else _money(status.energy_savings),
+            "capacity_savings": None if status is None else _money(status.capacity_savings),
+            "counterfactual_cost": None if status is None else _money(status.cf_cost),
+            # No site-wide figure in D11's `SiteFigures`; the sum of the loads' own.
+            "kwh_shifted": None
+            if status is None
+            else round(sum(row.get("kwh_shifted") or 0.0 for row in status.per_load.values()), 3),
+            "previous_month": None if status is None else _money(status.previous_savings),
+            "since_install": self._since_install(),
+            "savings_confidence": None if status is None else status.confidence,
+        }

@@ -165,6 +165,13 @@ class TariffModel(Protocol):
         """Restore what `state()` returned."""
         ...
 
+    #: The live history `bill()` prices against by default; `.counterfactual()`
+    #: is the shadow view D11 bills the capacity half of savings against, fed by
+    #: `record_counterfactual` inside its own `close_slot` (D2 §2, INV-69). Read
+    #: externally by the runtime (`AccountingAdapter`'s own constructor arg) and,
+    #: for `period_closed`'s bill pair, by the engine (D8 §5.6).
+    history: PeakHistory
+
 
 __all__ = [
     "AUTO",

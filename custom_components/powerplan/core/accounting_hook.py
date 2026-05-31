@@ -121,6 +121,30 @@ class AccountingAdapter:
                     load.load_id, params.kind, None, now, ShadowCtx(params=params)
                 )
 
+    # ------------------------------------------------------ subentry hot paths #
+
+    def add_load(self, load: Load, now: datetime) -> None:
+        """Bring one load into the ledger (D7 §2's hot add).
+
+        `on_load_added` alone opens the ledger row and the shadow; `close_slot`
+        also needs this load's params and target profile to build its `ShadowCtx`
+        and to accept its slot at all (`ClosedSlot.loads` is filtered to
+        `self._params`, D-0267) - both go stale the moment a load is added or
+        removed without updating them, so this is the one place that does both.
+        """
+        params = params_of(load)
+        self._params[load.load_id] = params
+        self._profiles[load.load_id] = load.config.target
+        self.accounting.on_load_added(
+            load.load_id, params.kind, None, now, ShadowCtx(params=params)
+        )
+
+    def remove_load(self, load_id: str, now: datetime) -> None:
+        """Fold one load out of the ledger; its history stays (D11 §5.7)."""
+        self.accounting.on_load_removed(load_id, now)
+        self._params.pop(load_id, None)
+        self._profiles.pop(load_id, None)
+
     # ------------------------------------------------------------ the hook #
 
     def close_slot(self, close: SlotClose) -> AccountingClose:
@@ -166,25 +190,54 @@ class AccountingAdapter:
             slot_start=close.start,
             slot_end=close.end,
             month_closed=None if report.month_closed is None else report.month_closed.month,
-            state={
-                STATE_KEY: encode(self.accounting.state()),
-                STATUS_KEY: _status_data(status),
-                "month_key": status.month_key,
-            },
+            state=self._section(status),
             status=status,
             reason=f"{len(slot.loads)} load(s) priced",
         )
+
+    def _section(self, status: AccountingStatus) -> dict[str, Any]:
+        """Return the `accounting` store section for `status` (D7 §2, §4.2)."""
+        return {
+            STATE_KEY: encode(self.accounting.state()),
+            STATUS_KEY: _status_data(status),
+            "month_key": status.month_key,
+        }
+
+    def section(self) -> dict[str, Any]:
+        """Return the `accounting` store section as of right now (D7 §2).
+
+        `close_slot` refreshes `EngineState.accounting` itself, once per slot;
+        this is for the subentry hot paths, whose `add_load`/`remove_load`
+        change the ledger between closes and would otherwise persist a section
+        one add or remove stale.
+        """
+        return self._section(self.status())
 
     # -------------------------------------------------------------- figures #
 
     def status(self) -> AccountingStatus:
         """Return D7's `AccountingStatus` section from D11's month-to-date figures."""
         figures = self.accounting.status()
+        site = figures.site
         return AccountingStatus(
             month_key=figures.month,
-            cost=figures.site.cost,
-            savings=figures.site.savings,
-            confidence=figures.site.savings_confidence.value,
+            month_start=figures.last_reset,
+            since=figures.since,
+            cost=site.cost,
+            savings=site.savings,
+            confidence=site.savings_confidence.value,
+            pricing_confidence=site.confidence.value,
+            energy_cost=site.energy_cost,
+            export_credit=site.export_credit,
+            capacity_fee=site.capacity_fee,
+            energy_savings=site.energy_savings,
+            capacity_savings=site.capacity_savings,
+            cf_cost=site.cf_cost,
+            estimated_share=site.estimated_share,
+            previous_cost=None if site.previous is None else site.previous[0],
+            previous_savings=None if site.previous is None else site.previous[1],
+            lifetime_cost=site.lifetime[0],
+            lifetime_savings=site.lifetime[1],
             per_load={
                 load_id: {
                     "kwh": round(row.kwh, 3),
@@ -197,6 +250,12 @@ class AccountingAdapter:
                     "savings_confidence": row.savings_confidence.value,
                     "calibration_error": row.calibration_error,
                     "pending": row.pending,
+                    "previous_cost": None if row.previous is None else _money_data(row.previous[0]),
+                    "previous_savings": None
+                    if row.previous is None
+                    else _money_data(row.previous[1]),
+                    "lifetime_cost": _money_data(row.lifetime[0]),
+                    "lifetime_savings": _money_data(row.lifetime[1]),
                 }
                 for load_id, row in figures.loads.items()
             },

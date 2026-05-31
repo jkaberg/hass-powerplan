@@ -1287,3 +1287,23 @@ Supersedes D-0167's circuit half. (1) `unseen_w = max(0, sub_meter − Σ measur
 
 `Runtime.setup_load_platform` adds the site's entities without `config_subentry_id` and each load's in its own call with `config_subentry_id=load.load_id`. HA removes an entity with its subentry only when that id matches; without it the entity outlives the load. Affects D7 §2, §9 9.
 **Rejected:** removing by enumerated unique ids - a second copy of D8 §5.5's table.
+
+### D-0288 · The Snapshot carries D11's full site and load figures
+
+`AccountingStatus` carries what D8 §5.5's attributes need: `pricing_confidence` (distinct from savings `confidence`), the cost and savings components, `estimated_share`, previous-month and lifetime figures, `month_start` for `last_reset` and `since`. `LoadStatus` gets `lifetime_kwh` and `energy_source`. `SnapshotSchema` 3. D11 already computed them all. Entities read the Snapshot only (D7 §4.1).
+**Rejected:** sensors reading the adapter directly - state could change between coordinator updates with nothing calling `async_write_ha_state`.
+
+### D-0289 · `period_closed` fires on the ledger's month edge, priced by D2's `bill()`
+
+Beside `month_closed`, the engine rebuilds D2's `Period` and prices it with `bill(period)` and `bill(period, history.counterfactual())`, emitting period, level, metric, fee, counterfactual fee and capacity savings. Every shipped preset's period is the month. One code path prices both worlds, as D11's capacity savings already do (INV-69). `TariffModel.history` joins the protocol.
+**Rejected:** a separate rollover watch for yearly periods - dead code until such a preset exists.
+
+### D-0290 · `savings_low_confidence` is per load, watched HA-side
+
+`RepairsWatch` tracks per load how long `savings_confidence` has read `low` unbroken and raises `savings_low_confidence_<load_id>` after seven days, named with the load's name. D11 applies the threshold; the duration clock is the same pattern `scaling_mismatch` already uses in `repairs.py`.
+**Rejected:** a clock in `core/accounting` - a second mechanism for one repair.
+
+### D-0291 · The review's shadow sentence is a fixed table by type
+
+The load review adds one sentence naming what savings are measured against, by type ("would hold 24 °C on its own thermostat"; for an on-call appliance, "its savings are not shown"). D11 §6's per-load `counterfactual: none` opt-out isn't built: nothing depends on it, so a shadow's presence decides whether savings show.
+**Rejected:** building the opt-out now - a new question threaded through every type for no current need.

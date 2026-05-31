@@ -33,9 +33,17 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.components.time import TimeEntity
-from homeassistant.const import EntityCategory, UnitOfPower, UnitOfTemperature, UnitOfTime
+from homeassistant.const import (
+    EntityCategory,
+    UnitOfEnergy,
+    UnitOfPower,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .core.accounting.shadow.base import StoreKind
+from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
 from .core.loads import Load
 from .core.model import Mode
@@ -677,12 +685,155 @@ class LoadSensor(LoadEntity, SensorEntity):
 
 def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
     """Return the sensor rows, per load and type."""
-    return [
+    rows = [
         LoadSensor(runtime, load, row)
         for load in _loads(runtime, loads)
         for row in LOAD_SENSORS
         if row.applies(load)
     ]
+    rows.extend(load_money_sensors(runtime, loads))
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# sensor.<load>_energy / _cost / _savings (D11)
+# --------------------------------------------------------------------------- #
+
+
+def _load_money(text: str | None) -> float | None:
+    """Parse a `Snapshot.accounting.per_load` money string ("12.34 NOK") to its amount.
+
+    `per_load`'s values are pre-formatted (`design/DECISIONS.md`, `_money_data` in
+    `accounting_hook.py`) so the scenario tests can read them without a `Money`
+    import; an entity's `native_value` wants the number back.
+    """
+    if text is None:
+        return None
+    return float(text.split(" ", 1)[0])
+
+
+class LoadEnergySensor(LoadEntity, SensorEntity):
+    """`sensor.<load>_energy`: lifetime kWh since the load was added (D3 `LoadMeter`)."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "energy")
+
+    @property
+    def native_value(self) -> float | None:
+        """The load's own monotone counter - never the device's register, never resets."""
+        status = self.status
+        return None if status is None else status.lifetime_kwh
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Where the figure comes from: register, power, or estimated (D3 §5.9)."""
+        status = self.status
+        return {"source": None if status is None else status.energy_source}
+
+
+class _LoadMoneySensor(LoadEntity, SensorEntity):
+    """Shared shape for a load's two monetary sensors (D8 §5.5)."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
+        """Bind to the load; the unit is the site's own currency."""
+        super().__init__(runtime, load, key)
+        self._attr_native_unit_of_measurement = runtime.build.cfg.currency
+
+    @property
+    def _row(self) -> Mapping[str, Any] | None:
+        snapshot = self.snapshot
+        if snapshot is None:
+            return None
+        row = snapshot.accounting.per_load.get(self.load_id)
+        return row if isinstance(row, Mapping) else None
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """The open month's start - the same one the site's monetary sensors use."""
+        snapshot = self.snapshot
+        return None if snapshot is None else snapshot.accounting.month_start
+
+    def _since_install(self) -> str | None:
+        snapshot = self.snapshot
+        return None if snapshot is None else _iso(snapshot.accounting.since)
+
+
+class LoadCostSensor(_LoadMoneySensor):
+    """`sensor.<load>_cost`: month-to-date energy cost."""
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "cost")
+
+    @property
+    def native_value(self) -> float | None:
+        """Month-to-date cost, or `None` before the first slot has priced this load."""
+        row = self._row
+        return None if row is None else _load_money(row.get("cost"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """`kwh`, `avg_price`, `previous_month`, `since_install`, `confidence`."""
+        row = self._row
+        kwh = None if row is None else row.get("kwh")
+        cost = None if row is None else _load_money(row.get("cost"))
+        return {
+            "kwh": kwh,
+            "avg_price": None if not kwh or cost is None else round(cost / kwh, 4),
+            "previous_month": None if row is None else row.get("previous_cost"),
+            "since_install": self._since_install(),
+            "confidence": None if row is None else row.get("confidence"),
+        }
+
+
+class LoadSavingsSensor(_LoadMoneySensor):
+    """`sensor.<load>_savings`: month-to-date energy-shift savings; absent for shadow kind `none`."""
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "savings")
+
+    @property
+    def native_value(self) -> float | None:
+        """Month-to-date savings, unclamped - negative is a real answer."""
+        row = self._row
+        return None if row is None else _load_money(row.get("savings"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """`counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `calibration_error`, `shadow`."""
+        row = self._row
+        return {
+            "counterfactual_cost": None if row is None else row.get("cf_cost"),
+            "counterfactual_kwh": None if row is None else row.get("cf_kwh"),
+            "kwh_shifted": None if row is None else row.get("kwh_shifted"),
+            "previous_month": None if row is None else row.get("previous_savings"),
+            "since_install": self._since_install(),
+            "savings_confidence": None if row is None else row.get("savings_confidence"),
+            "calibration_error": None if row is None else row.get("calibration_error"),
+            "shadow": store_kind_of(self.load).value,
+        }
+
+
+def load_money_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
+    """Return `_energy` and `_cost` for every load, `_savings` where it has a shadow (D8 §5.5)."""
+    out: list[SensorEntity] = []
+    for load in _loads(runtime, loads):
+        out.append(LoadEnergySensor(runtime, load))
+        out.append(LoadCostSensor(runtime, load))
+        if store_kind_of(load) is not StoreKind.NONE:
+            out.append(LoadSavingsSensor(runtime, load))
+    return out
 
 
 # --------------------------------------------------------------------------- #

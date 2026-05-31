@@ -182,7 +182,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 2
+SnapshotSchema: int = 3
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -586,6 +586,13 @@ class LoadStatus:
     learned: Mapping[str, float]
     held: bool
     error: str | None
+    #: D3 `LoadMeter.lifetime_kwh`: powerplan's own monotone counter since the
+    #: load was added, never the device's register (D8 §5.5 `sensor.<load>_energy`).
+    lifetime_kwh: float = 0.0
+    #: D3 `LoadEnergySource.value` behind the last accrual: register / power /
+    #: estimated (D8 §5.5 `sensor.<load>_energy`'s `source` attr); `None` before
+    #: the meter has anything to report.
+    energy_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -611,9 +618,34 @@ class AccountingStatus:
     slots_closed: int = 0
     closed_to: datetime | None = None
     month_key: str | None = None
+    #: The open month's start - D8 §5.5's monetary sensors' `last_reset` (D11
+    #: `Ledger.month_start_utc`; not `closed_to`, which is a slot boundary).
+    month_start: datetime | None = None
+    #: Since when the site's lifetime totals have accrued (D11 `Lifetime.since`) -
+    #: D8 §5.5's `since_install` attr, on the site's monetary sensors and, for
+    #: want of a per-load one, a load's too.
+    since: datetime | None = None
     cost: Money | None = None
     savings: Money | None = None
+    #: The site's *savings* confidence (D11 `SavingsConfidence`) - the field the
+    #: `month_closed` event already reads. `pricing_confidence` below is the
+    #: *slot-pricing* one (D11 `SlotConfidence`, D8 §5.5's `sensor.<site>_cost`
+    #: `confidence` attr); the two answer different questions and are not the
+    #: same string.
     confidence: str = "none"
+    #: WP2.7 - the rest of D11's `SiteFigures`, for `sensor.<site>_cost`/`_savings`.
+    pricing_confidence: str = "none"
+    energy_cost: Money | None = None
+    export_credit: Money | None = None
+    capacity_fee: Money | None = None
+    energy_savings: Money | None = None
+    capacity_savings: Money | None = None
+    cf_cost: Money | None = None
+    estimated_share: float = 0.0
+    previous_cost: Money | None = None
+    previous_savings: Money | None = None
+    lifetime_cost: Money | None = None
+    lifetime_savings: Money | None = None
     per_load: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -1247,7 +1279,15 @@ class Engine:
             prices=_price_status(inputs, site),
             plans=_plan_statuses(state.plans.plans, now),
             loads=self._load_statuses(
-                load_states, inputs, grants, observations, results, views, failed, frozen
+                load_states,
+                inputs,
+                grants,
+                observations,
+                results,
+                views,
+                failed,
+                frozen,
+                load_meters,
             ),
             alloc=report,
             forecasts=_forecast_status(inputs),
@@ -1818,6 +1858,7 @@ class Engine:
         views: Mapping[str, ControlledView],
         failed: Mapping[str, str],
         frozen: bool,
+        load_meters: Mapping[str, LoadMeterState],
     ) -> dict[str, LoadStatus]:
         """Return one row per load: what it wanted, got, and did (D7 §4.1)."""
         out: dict[str, LoadStatus] = {}
@@ -1889,12 +1930,16 @@ class Engine:
                 learned={key: row.value for key, row in state.learned.items()},
                 held=frozen or load_id in failed,
                 error=failed.get(load_id),
+                lifetime_kwh=0.0
+                if (meter_row := load_meters.get(load_id)) is None
+                else meter_row.lifetime_kwh,
+                energy_source=None if meter_row is None else meter_row.source.value,
             )
         return out
 
     # ------------------------------------------------------------ the planner #
 
-    def plan(  # noqa: PLR0915 - D7 §5.2's cycle, kept in one place and in order
+    def plan(  # noqa: PLR0912, PLR0915 - D7 §5.2's cycle, kept in one place and in order
         self, state: EngineState, inputs: Inputs
     ) -> tuple[EngineState, PlanReport, Effects]:
         """Run one planning cycle (D7 §5.2). Fetches nothing: the runtime did the I/O.
@@ -2006,6 +2051,9 @@ class Engine:
                         {"month": close.month_closed, "period": close.month_closed},
                     )
                 )
+                period_event = self._period_closed_event(close.month_closed)
+                if period_event is not None:
+                    events.append(period_event)
         if closes:
             dirty.add(Section.ACCOUNTING)
             reasons.append(
@@ -2054,6 +2102,36 @@ class Engine:
                 store_dirty=frozenset(dirty),
                 notifications=tuple(notes),
             ),
+        )
+
+    def _period_closed_event(self, month_key: str) -> HaEvent | None:
+        """Return `period_closed` for the capacity period that closed with `month_key` (D2 §2).
+
+        D11's ledger month and D2's tariff period are the same calendar
+        boundary for every preset shipped so far (`period: month`, never
+        `year`, `design/DECISIONS.md`) - a yearly-period preset would need its
+        own edge, deferred until one ships. `history.counterfactual()` is
+        already fed by the accounting hook's own `close_slot` just above, so
+        the pair of bills is meaningful the same tick the ledger rolls.
+        """
+        try:
+            at = datetime.fromisoformat(f"{month_key}-01T00:00:00+00:00")
+        except ValueError:
+            return None
+        period = self._tariff.period(at)
+        actual = self._tariff.bill(period)
+        counterfactual = self._tariff.bill(period, self._tariff.history.counterfactual())
+        savings = counterfactual.capacity_fee.amount - actual.capacity_fee.amount
+        return HaEvent(
+            EventKind.PERIOD_CLOSED,
+            {
+                "period": month_key,
+                "level": actual.level.name,
+                "metric_kw": actual.metric_kw,
+                "fee": str(actual.capacity_fee.amount),
+                "counterfactual_fee": str(counterfactual.capacity_fee.amount),
+                "capacity_savings": str(savings),
+            },
         )
 
     def _close_slots(
