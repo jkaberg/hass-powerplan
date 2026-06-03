@@ -644,7 +644,10 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
         ),
         house.tariff,
         house.loads,
-        constraints=tuple(spec.limit(cfg.electrical) for spec in house.circuits),
+        constraints=(
+            *(spec.limit(cfg.electrical) for spec in house.circuits),
+            *house.groups,
+        ),
         accounting=ledger,
     )
     state = EngineState()

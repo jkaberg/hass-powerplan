@@ -1307,3 +1307,18 @@ Beside `month_closed`, the engine rebuilds D2's `Period` and prices it with `bil
 
 The load review adds one sentence naming what savings are measured against, by type ("would hold 24 °C on its own thermostat"; for an on-call appliance, "its savings are not shown"). D11 §6's per-load `counterfactual: none` opt-out isn't built: nothing depends on it, so a shadow's presence decides whether savings show.
 **Rejected:** building the opt-out now - a new question threaded through every type for no current need.
+
+### D-0292 · The group subentry owns the relation; the default cap is a suggestion
+
+`GroupSubentryFlow`: one step (name, members, `max_concurrent_w`; `from_stage`, `ceiling_fraction`, `starve_seconds` under Advanced) → review → subentry. Like circuits, the group owns membership. D6 §6's default ("the two largest members' nameplates") can't react to members picked in the same step, so the box is pre-filled from the site's loads' stored nameplates as a starting point the review lets the household correct. Affects D6 §6, D8 §5.3.
+**Rejected:** reading `runtime_data` for exact nameplates - flows answer from subentry data only. Two steps - D8 §5.3 draws one.
+
+### D-0293 · Groups are rebuilt beside circuits, and a newly grouped load gets its rows without a reload
+
+`_reload_relations` rebuilds circuits and groups together and re-adds the entities of any load newly named in a group; HA skips existing unique ids, so only the new `starved_s` row lands. Loads come first and groups after, so this is the normal path, not an edge case. Affects D7 §2, D6 §6.
+**Rejected:** a single-entity re-add - no cheap way to pick one platform's builder, and the whole re-add is proven code.
+
+### D-0294 · `sensor.<load>_starved_s` reads the allocator's own rotation clock
+
+`LoadStatus.starved_s` is `AllocState.starved_since` for the load as elapsed seconds, 0 without a clock; `SnapshotSchema` 4. The row exists only for loads a group names. `GroupCap` already keeps this clock for its ranking (D-0240), and re-deriving it in the HA layer could drift from the number that decides admission. Affects D8 §5.5.
+**Rejected:** publishing the queue position - D8 names a duration, and seconds already exist.

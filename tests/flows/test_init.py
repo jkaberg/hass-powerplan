@@ -86,14 +86,17 @@ async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
     assert entry.state is ConfigEntryState.NOT_LOADED
 
 
-async def test_the_load_and_circuit_subentry_types_are_supported(hass: HomeAssistant) -> None:
-    """The load flow is WP2.4's and the circuit flow WP2.5's; groups and zones land in 3.2 and 5.3."""
+async def test_the_load_circuit_and_group_subentry_types_are_supported(
+    hass: HomeAssistant,
+) -> None:
+    """The load flow is WP2.4's, circuit WP2.5's and group WP3.2's; zones land in 5.3."""
     entry = MockConfigEntry(domain=DOMAIN, title="Home", data={CONF_NAME: "Home"})
     entry.add_to_hass(hass)
 
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert set(entry.supported_subentry_types) == {"load", "circuit"}
+    assert set(entry.supported_subentry_types) == {"load", "circuit", "group"}
     assert entry.supported_subentry_types["load"]["supports_reconfigure"] is True
     assert entry.supported_subentry_types["circuit"]["supports_reconfigure"] is True
+    assert entry.supported_subentry_types["group"]["supports_reconfigure"] is True

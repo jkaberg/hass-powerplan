@@ -57,6 +57,11 @@ from .const import (
     CONF_TARIFF,
     CONF_TIMEZONE,
     DOMAIN,
+    GROUP_CEILING_FRACTION,
+    GROUP_FROM_STAGE,
+    GROUP_MAX_CONCURRENT_W,
+    GROUP_MEMBERS,
+    GROUP_STARVE_SECONDS,
     LOAD_BINDINGS,
     LOAD_DEVICE_ID,
     LOAD_PARAMS,
@@ -71,11 +76,12 @@ from .const import (
     ROLE_PHASE_L3,
     ROLE_PRODUCTION_POWER,
     SUBENTRY_CIRCUIT,
+    SUBENTRY_GROUP,
     SUBENTRY_LOAD,
 )
 from .core.accounting.close import AccountingConfig
 from .core.accounting_hook import AccountingAdapter
-from .core.allocation import CircuitSpec
+from .core.allocation import CircuitSpec, GroupCap
 from .core.engine import (
     Effects,
     Engine,
@@ -383,6 +389,9 @@ class SiteBuild:
     #: sub-metered one, the meter the tick samples into `Inputs.circuits`.
     circuits: tuple[CircuitSpec, ...] = ()
     circuit_meters: Mapping[str, CircuitMeter] = field(default_factory=dict)
+    #: The site's groups from their subentries (D6 §6): who rations
+    #: together and how, the walk takes unchanged (`Engine(constraints=)`).
+    groups: tuple[GroupCap, ...] = ()
     #: The tariff step select's options (D8 §5.5): `auto`, each step, or the configured kW.
     target_options: tuple[str, ...] = ("auto",)
     #: The configured kW target, when the tariff has no steps.
@@ -488,9 +497,9 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         away_delay=timedelta(minutes=int(presence_data.get("away_delay_min", 30))),
     )
     loads, devices = build_loads(hass, entry, electrical)
-    circuits, circuit_meters = build_circuits(
-        hass, entry, frozenset(load.load_id for load in loads)
-    )
+    load_ids = frozenset(load.load_id for load in loads)
+    circuits, circuit_meters = build_circuits(hass, entry, load_ids)
+    groups = build_groups(entry, load_ids)
     return SiteBuild(
         cfg=cfg,
         tariff=tariff,
@@ -511,6 +520,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         devices=devices,
         circuits=circuits,
         circuit_meters=circuit_meters,
+        groups=groups,
         target_options=_target_options(peak, tariff_data),
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
@@ -589,6 +599,41 @@ def build_circuits(
         if sub_meter is not None:
             meters[subentry.subentry_id] = CircuitMeter(hass, str(sub_meter))
     return tuple(specs), meters
+
+
+def build_groups(entry: ConfigEntry, load_ids: frozenset[str]) -> tuple[GroupCap, ...]:
+    """Build every group subentry's `GroupCap` (D6 §6).
+
+    A member that is no longer a load of this site is dropped with a warning:
+    the group still rations the members it has (INV-53). The group's key is
+    its subentry id, which is what `Grant.capped_by` and the report name it
+    by; rotation's own memory (`starved_since`) is seeded by the allocator
+    from `AllocState` (D6 §7), not built here.
+    """
+    groups: list[GroupCap] = []
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_GROUP:
+            continue
+        data = subentry.data
+        members = frozenset(str(member) for member in data.get(GROUP_MEMBERS) or ())
+        missing = members - load_ids
+        if missing:
+            _LOGGER.warning(
+                "group %s names loads that are not on this site and are ignored: %s",
+                subentry.title,
+                ", ".join(sorted(missing)),
+            )
+        groups.append(
+            GroupCap(
+                key=subentry.subentry_id,
+                members=members & load_ids,
+                max_concurrent_w=float(data[GROUP_MAX_CONCURRENT_W]),
+                from_stage=int(data.get(GROUP_FROM_STAGE, 1)),
+                ceiling_fraction=float(data.get(GROUP_CEILING_FRACTION, 0.85)),
+                starve_seconds=float(data.get(GROUP_STARVE_SECONDS, 1800.0)),
+            )
+        )
+    return tuple(groups)
 
 
 def load_from_subentry(
@@ -889,7 +934,10 @@ class Runtime:
             ),
             build.tariff,
             build.loads,
-            constraints=tuple(spec.limit(build.cfg.electrical) for spec in build.circuits),
+            constraints=(
+                *(spec.limit(build.cfg.electrical) for spec in build.circuits),
+                *build.groups,
+            ),
             accounting=adapter,
         )
         for load in build.loads:
@@ -1116,7 +1164,10 @@ class Runtime:
             return
         self.engine.set_loads(self.build.loads)
         self.engine.set_constraints(
-            tuple(spec.limit(self.build.cfg.electrical) for spec in self.build.circuits)
+            (
+                *(spec.limit(self.build.cfg.electrical) for spec in self.build.circuits),
+                *self.build.groups,
+            )
         )
 
     def _persist_sections(self, sections: frozenset[Section]) -> None:
@@ -1213,18 +1264,30 @@ class Runtime:
         self._persist_sections(frozenset(sections))
         _LOGGER.info("site %s: load %s removed without a reload", self.site_name, load_id)
 
-    def _reload_circuits(self) -> None:
-        """Rebuild the site's circuits from their subentries and the current loads (D7 §2).
+    def _reload_relations(self) -> None:
+        """Rebuild the site's circuits and groups from their subentries and the loads (D7 §2).
 
-        Cheap and unconditional: a circuit's own membership follows the load
-        set (`build_circuits` intersects with `load_ids`), so this runs after
-        any load change too, not only a circuit subentry's own.
+        Cheap and unconditional: a circuit's or a group's own membership
+        follows the load set (`build_circuits`/`build_groups` intersect with
+        `load_ids`), so this runs after any load change too, not only a
+        circuit or group subentry's own.
         """
-        circuits, circuit_meters = build_circuits(
-            self.hass, self.entry, frozenset(load.load_id for load in self.build.loads)
+        load_ids = frozenset(load.load_id for load in self.build.loads)
+        grouped_before = frozenset(
+            member for group in self.build.groups for member in group.members
         )
+        circuits, circuit_meters = build_circuits(self.hass, self.entry, load_ids)
         self.build.circuits = circuits
         self.build.circuit_meters = circuit_meters
+        self.build.groups = build_groups(self.entry, load_ids)
+        grouped_after = frozenset(member for group in self.build.groups for member in group.members)
+        # A load named by a group for the first time gets `sensor.<load>_starved_s`
+        # without a reload - `_add_load_entities` re-adding its other rows too is
+        # harmless (Home Assistant ignores an already-registered unique id).
+        for load_id in grouped_after - grouped_before:
+            load = next((load for load in self.build.loads if load.load_id == load_id), None)
+            if load is not None:
+                self._add_load_entities(load)
         self._rebuild_engine()
         self._subscribe_power()
 
@@ -1245,13 +1308,15 @@ class Runtime:
     async def async_handle_subentry_update(self) -> None:
         """Apply one entry mutation in place where D7 §2's hot paths cover it.
 
-        A `load` or `circuit` subentry add, remove or update patches the engine,
-        the store and the entities without a reload. An update is a remove and
-        an add under the same subentry id - nothing in a load's stored data is
-        knob-level (knobs never touch the subentry, D-0282), so there is no
-        smaller in-place case to special-case. Anything else - the site's own
-        `entry.data` - still reloads: `async_setup_entry` runs D7 §5.5's whole
-        order (INV-48).
+        A `load`, `circuit` or `group` subentry add, remove or update patches
+        the engine, the store and the entities without a reload. An update is
+        a remove and an add under the same subentry id for a load - nothing in
+        a load's stored data is knob-level (knobs never touch the subentry,
+        D-0282), so there is no smaller in-place case to special-case; a
+        circuit or a group has no per-subentry case at all, only the walk's
+        own constraints, which `_reload_relations` always rebuilds from
+        scratch. Anything else - the site's own `entry.data` - still reloads:
+        `async_setup_entry` runs D7 §5.5's whole order (INV-48).
         """
         entry = self.entry
         if dict(entry.data) != self._known_data:
@@ -1278,9 +1343,10 @@ class Runtime:
             subentry = entry.subentries[subentry_id]
             if subentry.subentry_type == SUBENTRY_LOAD:
                 await self._add_load(subentry)
-        # A circuit's own membership follows the load set (`build_circuits`
-        # intersects it with `load_ids`), so this runs whichever type changed.
-        self._reload_circuits()
+        # A circuit's or a group's own membership follows the load set
+        # (`build_circuits`/`build_groups` intersect it with `load_ids`), so
+        # this runs whichever type changed.
+        self._reload_relations()
         self._known_subentries = new
 
     def _set_load_state(self, load_id: str, state: LoadState) -> None:

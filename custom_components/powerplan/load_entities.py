@@ -685,13 +685,14 @@ class LoadSensor(LoadEntity, SensorEntity):
 
 def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
     """Return the sensor rows, per load and type."""
-    rows = [
+    rows: list[SensorEntity] = [
         LoadSensor(runtime, load, row)
         for load in _loads(runtime, loads)
         for row in LOAD_SENSORS
         if row.applies(load)
     ]
     rows.extend(load_money_sensors(runtime, loads))
+    rows.extend(load_group_sensors(runtime, loads))
     return rows
 
 
@@ -834,6 +835,47 @@ def load_money_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) ->
         if store_kind_of(load) is not StoreKind.NONE:
             out.append(LoadSavingsSensor(runtime, load))
     return out
+
+
+# --------------------------------------------------------------------------- #
+# sensor.<load>_starved_s
+# --------------------------------------------------------------------------- #
+
+
+class LoadStarvedSensor(LoadEntity, SensorEntity):
+    """`sensor.<load>_starved_s`: how long rotation has held this member back (D6 §5.6)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:timer-sand"
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "starved_s")
+
+    @property
+    def native_value(self) -> float | None:
+        """0 while this member has its turn or the group makes no decision; its clock otherwise."""
+        status = self.status
+        return None if status is None else round(status.starved_s)
+
+
+def load_group_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
+    """Return `_starved_s` for every load that is a member of a group (D8 §5.5).
+
+    Built from `runtime.build.groups` as they stand when called - at platform
+    setup, when a load is hot-added, and when `_reload_relations` re-adds a
+    load a group has just named for the first time (D7 §2).
+    """
+    grouped = {member for group in runtime.build.groups for member in group.members}
+    return [
+        LoadStarvedSensor(runtime, load)
+        for load in _loads(runtime, loads)
+        if load.load_id in grouped
+    ]
 
 
 # --------------------------------------------------------------------------- #

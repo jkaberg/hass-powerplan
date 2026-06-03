@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.powerplan.core.model import Mode
-from tests.builders.houses import GARAGE_CIRCUIT, house, no_peak, tensio
+from tests.builders.houses import FLOOR_GROUP, FLOOR_LOOPS, GARAGE_CIRCUIT, house, no_peak, tensio
 from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
 
@@ -293,9 +293,39 @@ def circuit_garage_32a() -> Scenario:
     )
 
 
+#: D6's row (D9 §5.3 `floor_group_rotation`): a cold house, every floor loop
+#: wanting heat at once, sharing `FLOOR_GROUP`'s 2 kW under a site ceiling tight
+#: enough that the ladder rations too - real scarcity, not just the group's own
+#: cap. Loops summed are ~5 kW nameplate against the group's 2 kW.
+FLOOR_ROTATION_START = datetime(2027, 1, 14, 17, 7, 17, tzinfo=OSLO)
+FLOOR_ROTATION_DAYS = 0.3
+FLOOR_ROTATION_TARGET_KW = 8.0
+
+
+def floor_group_rotation() -> Scenario:
+    """Return the cold evening with every floor loop rationed under `FLOOR_GROUP` (D6 §9 12)."""
+    return Scenario(
+        name="floor_group_rotation",
+        house=lambda: house(
+            day=FLOOR_ROTATION_START.date(),
+            price_kind=SPOT_LIKE,
+            loops=FLOOR_LOOPS,
+            ev_soc=0.35,
+            slab_start_c=18.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+            groups=(FLOOR_GROUP,),
+        ),
+        start=FLOOR_ROTATION_START,
+        days=FLOOR_ROTATION_DAYS,
+        target_kw=FLOOR_ROTATION_TARGET_KW,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
+PHASE3 = (floor_group_rotation,)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

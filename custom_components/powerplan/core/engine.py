@@ -182,7 +182,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 3
+SnapshotSchema: int = 4
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -593,6 +593,10 @@ class LoadStatus:
     #: estimated (D8 §5.5 `sensor.<load>_energy`'s `source` attr); `None` before
     #: the meter has anything to report.
     energy_source: str | None = None
+    #: D6 §5.6's rotation clock (`AllocState.starved_since`) as of this tick, in
+    #: seconds - 0 while this member has its turn or is not in a group; how long
+    #: it has been held back otherwise (D8 §5.5 `sensor.<load>_starved_s`).
+    starved_s: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1288,6 +1292,7 @@ class Engine:
                 failed,
                 frozen,
                 load_meters,
+                alloc_state.starved_since,
             ),
             alloc=report,
             forecasts=_forecast_status(inputs),
@@ -1859,6 +1864,7 @@ class Engine:
         failed: Mapping[str, str],
         frozen: bool,
         load_meters: Mapping[str, LoadMeterState],
+        starved_since: Mapping[str, datetime],
     ) -> dict[str, LoadStatus]:
         """Return one row per load: what it wanted, got, and did (D7 §4.1)."""
         out: dict[str, LoadStatus] = {}
@@ -1934,6 +1940,9 @@ class Engine:
                 if (meter_row := load_meters.get(load_id)) is None
                 else meter_row.lifetime_kwh,
                 energy_source=None if meter_row is None else meter_row.source.value,
+                starved_s=0.0
+                if (since := starved_since.get(load_id)) is None
+                else max(0.0, (inputs.now - since).total_seconds()),
             )
         return out
 

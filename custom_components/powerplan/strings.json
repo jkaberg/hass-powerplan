@@ -1887,6 +1887,88 @@
         "no_loads": "Add a load first: a circuit is the loads behind a fuse.",
         "reconfigure_successful": "The circuit was updated."
       }
+    },
+    "group": {
+      "entry_type": "Group",
+      "initiate_flow": {
+        "user": "Add group",
+        "reconfigure": "Reconfigure group"
+      },
+      "step": {
+        "user": {
+          "title": "Add a group",
+          "description": "Loads that take turns for a shared allowance — six floor loops sharing 2 kW when the hour gets tight. powerplan gives it to whichever is coldest first, and rotates so none is left behind.",
+          "data": {
+            "name": "Name",
+            "members": "Loads in this group",
+            "max_concurrent_w": "Shared cap"
+          },
+          "data_description": {
+            "name": "What the group is called: the floor loops, the bedroom radiators.",
+            "members": "The loads that share this cap and take turns for it.",
+            "max_concurrent_w": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "When rationing starts, and how long a load waits before it jumps the queue.",
+              "data": {
+                "from_stage": "Ladder stage",
+                "ceiling_fraction": "Ceiling fraction",
+                "starve_seconds": "Starvation timeout"
+              },
+              "data_description": {
+                "from_stage": "The capacity ladder's stage at which the group starts rationing.",
+                "ceiling_fraction": "The window's projected use, as a fraction of the ceiling, at which the group rations even before that stage.",
+                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue, in seconds."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure the group",
+          "description": "The same questions, pre-filled with what the group has now.",
+          "data": {
+            "name": "Name",
+            "members": "Loads in this group",
+            "max_concurrent_w": "Shared cap"
+          },
+          "data_description": {
+            "name": "What the group is called: the floor loops, the bedroom radiators.",
+            "members": "The loads that share this cap and take turns for it.",
+            "max_concurrent_w": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "When rationing starts, and how long a load waits before it jumps the queue.",
+              "data": {
+                "from_stage": "Ladder stage",
+                "ceiling_fraction": "Ceiling fraction",
+                "starve_seconds": "Starvation timeout"
+              },
+              "data_description": {
+                "from_stage": "The capacity ladder's stage at which the group starts rationing.",
+                "ceiling_fraction": "The window's projected use, as a fraction of the ceiling, at which the group rations even before that stage.",
+                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue, in seconds."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Before this group is added",
+          "description": "**{name}** shares {max_concurrent_kw} kW between {members} when the hour gets tight: the coldest gets it first.\n\nRationing begins at ladder stage {from_stage} or {ceiling_fraction}% of the ceiling; a load held back more than {starve_min} minutes jumps the queue."
+        }
+      },
+      "error": {
+        "no_name": "Give the group a name.",
+        "no_members": "Pick at least one load; a group with nothing in it shares nothing.",
+        "unknown_member": "One of the loads is not on this site any more."
+      },
+      "abort": {
+        "no_loads": "Add a load first: a group is loads that share a cap.",
+        "reconfigure_successful": "The group was updated."
+      }
     }
   }
 }

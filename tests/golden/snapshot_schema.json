@@ -511,6 +511,7 @@
           ]
         },
         "stage": "int",
+        "starved_s": "float",
         "type_key": "str"
       }
     },
@@ -920,5 +921,5 @@
       }
     }
   },
-  "schema": 3
+  "schema": 4
 }

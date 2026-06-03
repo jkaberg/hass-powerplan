@@ -15,7 +15,7 @@ single-writer rule is unchanged: nothing here actuates a device, and
 the only file outside the gate that calls an action, and that every call in it is
 read-only. See `design/DECISIONS.md` D-0080.
 
-Response shape, from `homeassistant/components/nordpool/services.py` at 2026.5.0:
+Response shape, from `homeassistant/components/nordpool/services.py` at 2026.6.0:
 `{area: [{"start": iso, "end": iso, "price": float}]}`, with `price` in the
 requested currency **per MWh** - the integration's own sensors divide by 1000 for
 their `<CUR>/kWh` state - and `{area: []}` when the upstream response was empty.

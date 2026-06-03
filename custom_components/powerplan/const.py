@@ -66,6 +66,16 @@ CIRCUIT_MEMBERS: Final = "members"
 CIRCUIT_SUB_METER: Final = "sub_meter"
 CIRCUIT_UNMETERED_W: Final = "unmetered_w"
 
+# --------------------------------------------------------------------------- #
+# Group subentries (D6 §6 `GroupSubentryData`, D8 §5.3)
+# --------------------------------------------------------------------------- #
+SUBENTRY_GROUP: Final = "group"
+GROUP_MEMBERS: Final = "members"
+GROUP_MAX_CONCURRENT_W: Final = "max_concurrent_w"
+GROUP_FROM_STAGE: Final = "from_stage"
+GROUP_CEILING_FRACTION: Final = "ceiling_fraction"
+GROUP_STARVE_SECONDS: Final = "starve_seconds"
+
 #: The collapsed section every step puts its advanced fields in. Home Assistant
 #: deprecated `show_advanced_options` in 2026.9 and asks for a section instead;
 #: a collapsed section is also a better reading of INV-65, because the field is

@@ -1887,6 +1887,88 @@
         "no_loads": "Legg til en last først: en kurs er lastene bak en sikring.",
         "reconfigure_successful": "Kursen ble oppdatert."
       }
+    },
+    "group": {
+      "entry_type": "Gruppe",
+      "initiate_flow": {
+        "user": "Legg til gruppe",
+        "reconfigure": "Endre gruppe"
+      },
+      "step": {
+        "user": {
+          "title": "Legg til en gruppe",
+          "description": "Laster som deler en felles ramme og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. powerplan gir den til den kaldeste først, og roterer slik at ingen blir hengende.",
+          "data": {
+            "name": "Navn",
+            "members": "Laster i denne gruppen",
+            "max_concurrent_w": "Delt tak"
+          },
+          "data_description": {
+            "name": "Hva gruppen heter: gulvsløyfene, soveromsradiatorene.",
+            "members": "Lastene som deler dette taket og tar tur på det.",
+            "max_concurrent_w": "Hvor mye disse lastene samlet kan trekke når de rasjoneres. Standard er de to største lastenes egen effekt summert."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Når rasjonering starter, og hvor lenge en last venter før den hopper i køen.",
+              "data": {
+                "from_stage": "Stigetrinn",
+                "ceiling_fraction": "Takandel",
+                "starve_seconds": "Sultegrense"
+              },
+              "data_description": {
+                "from_stage": "Stigens trinn der gruppen begynner å rasjonere.",
+                "ceiling_fraction": "Vinduets forventede forbruk, som andel av taket, der gruppen rasjonerer selv før det trinnet.",
+                "starve_seconds": "Hvor lenge en last kan holdes tilbake før den hopper fremst i køen, i sekunder."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Endre gruppen",
+          "description": "De samme spørsmålene, forhåndsutfylt med det gruppen har nå.",
+          "data": {
+            "name": "Navn",
+            "members": "Laster i denne gruppen",
+            "max_concurrent_w": "Delt tak"
+          },
+          "data_description": {
+            "name": "Hva gruppen heter: gulvsløyfene, soveromsradiatorene.",
+            "members": "Lastene som deler dette taket og tar tur på det.",
+            "max_concurrent_w": "Hvor mye disse lastene samlet kan trekke når de rasjoneres. Standard er de to største lastenes egen effekt summert."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Når rasjonering starter, og hvor lenge en last venter før den hopper i køen.",
+              "data": {
+                "from_stage": "Stigetrinn",
+                "ceiling_fraction": "Takandel",
+                "starve_seconds": "Sultegrense"
+              },
+              "data_description": {
+                "from_stage": "Stigens trinn der gruppen begynner å rasjonere.",
+                "ceiling_fraction": "Vinduets forventede forbruk, som andel av taket, der gruppen rasjonerer selv før det trinnet.",
+                "starve_seconds": "Hvor lenge en last kan holdes tilbake før den hopper fremst i køen, i sekunder."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Før denne gruppen legges til",
+          "description": "**{name}** deler {max_concurrent_kw} kW mellom {members} når timen blir trang: den kaldeste får det først.\n\nRasjonering starter ved stigetrinn {from_stage} eller {ceiling_fraction}% av taket; en last som holdes tilbake mer enn {starve_min} minutter hopper i køen."
+        }
+      },
+      "error": {
+        "no_name": "Gi gruppen et navn.",
+        "no_members": "Velg minst én last; en gruppe uten noe i seg deler ingenting.",
+        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+      },
+      "abort": {
+        "no_loads": "Legg til en last først: en gruppe er laster som deler et tak.",
+        "reconfigure_successful": "Gruppen ble oppdatert."
+      }
     }
   }
 }
