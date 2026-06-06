@@ -92,7 +92,7 @@ class Engine:
 
 ### 4.1 Snapshot (the contract with D8, D9)
 
-**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes - 2 since WP2.5 (`CircuitReport.sub_meter`, D-0283), 3 since WP2.7 (`AccountingStatus` carries D11's `SiteFigures`/`LoadFigures` in full and `LoadStatus` carries D3's `lifetime_kwh`/`energy_source`, D-0288), 4 since WP3.2 (`LoadStatus.starved_s`, the allocator's own `AllocState.starved_since` clock turned into seconds per load - D8 §5.5 `sensor.<load>_starved_s`, D-0294). The `Warning` type is spelled `SiteWarning`.
+**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes - 2 since WP2.5 (`CircuitReport.sub_meter`, D-0283), 3 since WP2.7 (`AccountingStatus` carries D11's `SiteFigures`/`LoadFigures` in full and `LoadStatus` carries D3's `lifetime_kwh`/`energy_source`, D-0288), 4 since WP3.2 (`LoadStatus.starved_s`, the allocator's own `AllocState.starved_since` clock turned into seconds per load - D8 §5.5 `sensor.<load>_starved_s`, D-0294), 5 since WP3.3 (`LoadStatus.legionella_due_at` from `Observation.legionella_due_at` - D8 §5.5 `sensor.<load>_next_legionella`, D-0295). The `Warning` type is spelled `SiteWarning`.
 
 ```python
 @dataclass(frozen=True)
@@ -191,6 +191,8 @@ triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the r
 ```
 
 **Plug-in.** The tick fires `ev_connected` on a car's connected edge in either direction (D4 §5.11). The runtime sees it among the tick's `ha_events` and creates a `run_plan("demand")` task, so the plan runs after the tick and never under its lock. The pure runner's household plans at the same tick on its own, so the event moves no scenario digest (D-0281).
+
+**Legionella edges.** `_legionella_events(edges, observations)` is `_circuit_events`'s pattern over four keys: `Observation.legionella_active`/`_in_progress`/`_at_risk` as one-way boolean edges (`due`/`started`/`at_risk`) and `legionella_last_completed` as a changed-value edge (`completed`), none firing on a load's first observed tick. No new trigger: the cycle's lead window is 24 h wide, so unlike a car's plug-in the regular quarter-hour cadence always notices in time (D-0295, D-0296).
 
 ### 5.3 Triggers (HA side, INV-43)
 

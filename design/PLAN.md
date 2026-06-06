@@ -290,7 +290,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 2.7 | Accounting surface | done |
 | 3.1 | Generic profiles with capability detection | done |
 | 3.2 | `floor_heating`, `heat_capacitor`, groups | done |
-| 3.3 | `water_heater` and legionella | todo |
+| 3.3 | `water_heater` and legionella | done |
 | 3.4 | `heat_pump`, `radiator`, `best_save` | todo |
 | 3.5 | Target profiles and presence | todo |
 | 3.6 | `appliance_cycle` and `run_once` | todo |

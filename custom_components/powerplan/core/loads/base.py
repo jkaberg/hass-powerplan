@@ -363,6 +363,16 @@ class Observation:
     #: What only a type with a plug knows (`ev`): a car on the cable, and its charge.
     connected: bool | None = None
     soc: float | None = None
+    #: What only a type with a periodic hygiene cycle knows (`water_heater`, §5.12,
+    #: INV-54): `None` for a type with no such cycle, or one running its own
+    #: programme. `legionella_active` is the lead window or the cycle itself;
+    #: `legionella_in_progress` the cycle alone; both feed D8's `powerplan_legionella`
+    #: edges (`due`, `started`) and `legionella_due_at` its sensor.
+    legionella_due_at: datetime | None = None
+    legionella_last_completed: datetime | None = None
+    legionella_active: bool | None = None
+    legionella_in_progress: bool | None = None
+    legionella_at_risk: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,12 +580,19 @@ class Load:
         demand = self.device_type.demand(self, state, ctx)
         connected = getattr(self.device_type, "connected", None)
         soc = getattr(self.device_type, "soc", None)
+        legionella = getattr(self.device_type, "legionella", None)
+        cycle = legionella(self, state, ctx) if callable(legionella) else None
         return state, Observation(
             demand=demand,
             measured_w=ctx.reads.value(Role.POWER),
             health=self.health(state, ctx),
             connected=connected(ctx) if callable(connected) else None,
             soc=soc(ctx) if callable(soc) else None,
+            legionella_due_at=None if cycle is None else cycle.due_at,
+            legionella_last_completed=None if cycle is None else cycle.last_completed,
+            legionella_active=None if cycle is None else cycle.active,
+            legionella_in_progress=None if cycle is None else cycle.in_progress,
+            legionella_at_risk=None if cycle is None else cycle.at_risk,
         )
 
     def apply(self, grant: Grant, state: LoadState, ctx: LoadCtx) -> tuple[LoadState, ApplyResult]:

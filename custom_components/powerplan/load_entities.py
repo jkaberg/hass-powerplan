@@ -549,6 +549,10 @@ def _session(status: LoadStatus, _runtime: Runtime) -> str | None:
     return status.demand.reason if status.demand is not None else None
 
 
+def _next_legionella(status: LoadStatus, _runtime: Runtime) -> datetime | None:
+    return status.legionella_due_at
+
+
 def _session_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     state = runtime.state.loads.get(status.load_id)
     return {
@@ -638,6 +642,13 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         attributes=_session_attributes,
         icon="mdi:ev-station",
         applies=lambda load: load.config.type_key == "ev",
+    ),
+    LoadSensorRow(
+        key="next_legionella",
+        value=_next_legionella,
+        device_class=SensorDeviceClass.TIMESTAMP,
+        icon="mdi:water-thermometer",
+        applies=lambda load: load.config.type_key == "water_heater",
     ),
 )
 

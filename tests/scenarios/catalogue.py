@@ -322,10 +322,38 @@ def floor_group_rotation() -> Scenario:
     )
 
 
+#: D4's row (D9 §5.3 `legionella_expensive_week`): a winter week of never-cheap
+#: spot prices under a ceiling tight enough that nothing about the plan wants
+#: the anti-legionella cycle to run early - INV-54's absolute deadline has to
+#: win it, not the price. Eight days: the default 7-day interval plus a day's
+#: margin to see the first cycle actually complete, not just fall due.
+LEGIONELLA_WEEK_START = datetime(2027, 1, 11, 19, 27, 17, tzinfo=OSLO)
+LEGIONELLA_WEEK_DAYS = 8.0
+LEGIONELLA_WEEK_TARGET_KW = 6.0
+
+
+def legionella_expensive_week() -> Scenario:
+    """Return the expensive January week the tank's cycle has to complete inside (D4 §9 11)."""
+    return Scenario(
+        name="legionella_expensive_week",
+        house=lambda: house(
+            day=LEGIONELLA_WEEK_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.30,
+            slab_start_c=21.0,
+            tank_top_c=47.0,
+            tank_bottom_c=45.0,
+        ),
+        start=LEGIONELLA_WEEK_START,
+        days=LEGIONELLA_WEEK_DAYS,
+        target_kw=LEGIONELLA_WEEK_TARGET_KW,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
-PHASE3 = (floor_group_rotation,)
+PHASE3 = (floor_group_rotation, legionella_expensive_week)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

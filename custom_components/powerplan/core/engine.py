@@ -182,7 +182,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 4
+SnapshotSchema: int = 5
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -597,6 +597,9 @@ class LoadStatus:
     #: seconds - 0 while this member has its turn or is not in a group; how long
     #: it has been held back otherwise (D8 §5.5 `sensor.<load>_starved_s`).
     starved_s: float = 0.0
+    #: D4 §5.12's anti-legionella cycle, `None` for a type with none or one
+    #: running its own programme (D8 §5.5 `sensor.<load>_next_legionella`).
+    legionella_due_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1943,6 +1946,7 @@ class Engine:
                 starved_s=0.0
                 if (since := starved_since.get(load_id)) is None
                 else max(0.0, (inputs.now - since).total_seconds()),
+                legionella_due_at=None if observation is None else observation.legionella_due_at,
             )
         return out
 
@@ -2609,6 +2613,43 @@ def _plug_edges(edges: dict[str, str], observations: Mapping[str, Any]) -> list[
     return events
 
 
+def _legionella_events(edges: dict[str, str], observations: Mapping[str, Any]) -> list[HaEvent]:
+    """Return `legionella` for every water heater's cycle edge this tick (D4 §5.12, D8 §5.6).
+
+    Four one-way edges per load, `None` for a type with no cycle or one running
+    its own programme (`Observation.legionella_*`): the lead window opening is
+    `due`, the hold starting `started`, a hold finishing `completed`, and the
+    cycle turning unable to finish in time `at_risk` - none of the four ever
+    fires on the tick a load is first observed (§9 8's "none for what the first
+    observation happened to find", matching `_plug_edges`), which also keeps the
+    adoption anchor (D-0203) from reading as a completed cycle.
+    """
+    events: list[HaEvent] = []
+    for load_id, observation in observations.items():
+        active = getattr(observation, "legionella_active", None)
+        if active is None:
+            continue
+        for state_name, value in (
+            ("due", active),
+            ("started", getattr(observation, "legionella_in_progress", None)),
+            ("at_risk", getattr(observation, "legionella_at_risk", None)),
+        ):
+            key = f"legionella_{state_name}:{load_id}"
+            current = "1" if value else "0"
+            previous = edges.get(key)
+            edges[key] = current
+            if previous is not None and previous != current and value:
+                events.append(HaEvent(EventKind.LEGIONELLA, {"load": load_id, "state": state_name}))
+        completed = getattr(observation, "legionella_last_completed", None)
+        key = f"legionella_completed:{load_id}"
+        current = "" if completed is None else completed.isoformat()
+        previous = edges.get(key)
+        edges[key] = current
+        if previous is not None and previous != current and completed is not None:
+            events.append(HaEvent(EventKind.LEGIONELLA, {"load": load_id, "state": "completed"}))
+    return events
+
+
 def _circuit_events(edges: dict[str, str], report: AllocReport) -> list[HaEvent]:
     """Return one `breach` event per circuit whose fuse is newly exceeded (D6 §8).
 
@@ -2707,6 +2748,7 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
                 )
             )
     events.extend(_circuit_events(edges, report))
+    events.extend(_legionella_events(edges, observations))
     comfort = ",".join(sorted(report.comfort))
     if edges.get("comfort") != comfort:
         edges["comfort"] = comfort

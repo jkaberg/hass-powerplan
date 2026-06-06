@@ -1,11 +1,11 @@
 """The other two fills `plan_one` can do: the block constraint and `spread`.
 
 Not a numbered item - D5 §9 2 is the block variant's own property test (within
-5 % of brute force on small instances) and belongs with the tank in WP3.3. What
-is pinned here is the part of §5.3 that is a rule rather than a bound: a chosen
-run is never shorter than `min_block_min`, and it is the cheapest run in the
-window. A tank element that cycles every quarter hour wears out, and a charger
-that renegotiates every quarter hour drops the session.
+5 % of brute force on small instances, `tests/property/test_block_vs_bruteforce.py`).
+What is pinned here is the part of §5.3 that is a rule rather than a bound: a
+chosen run is never shorter than `min_block_min`, and it is the cheapest run in
+the window. A tank element that cycles every quarter hour wears out, and a
+charger that renegotiates every quarter hour drops the session.
 
 `spread` is §5.9's other flat-day policy: same cost, lower peak.
 """

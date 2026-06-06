@@ -1,11 +1,19 @@
-"""D9 §5.3 - D6's row `floor_group_rotation`.
+"""D9 §5.3 - D6's row `floor_group_rotation` and D4's `legionella_expensive_week`.
 
-A cold January evening: all five floor loops of the reference house want heat
-at once - roughly 5 kW of nameplate against `FLOOR_GROUP`'s 2 kW cap - under a
-site ceiling tight enough that the ladder rations too. D6 §5.6's rotation has
-to decide who gets the group's share and who waits, and the starvation clock
-has to make good on its promise: held back long enough, a loop jumps the queue
-rather than waiting behind whichever loops happen to be cheap to admit.
+`floor_group_rotation`: a cold January evening: all five floor loops of the
+reference house want heat at once - roughly 5 kW of nameplate against
+`FLOOR_GROUP`'s 2 kW cap - under a site ceiling tight enough that the ladder
+rations too. D6 §5.6's rotation has to decide who gets the group's share and
+who waits, and the starvation clock has to make good on its promise: held back
+long enough, a loop jumps the queue rather than waiting behind whichever loops
+happen to be cheap to admit.
+
+`legionella_expensive_week`: an eight-day January week of never-cheap spot
+prices under a tight ceiling, so nothing about the plan wants the tank's
+anti-legionella cycle to run early. INV-54's absolute deadline has to win it
+anyway - the cycle the type completes under a hand-fed "never charge" plan in
+`tests/core/loads/test_11_legionella.py`, here completing under the real
+engine, the real price curve and real competition from the EV and the floors.
 """
 
 from __future__ import annotations
@@ -128,3 +136,53 @@ def test_a_load_outside_the_group_carries_no_starvation_clock(
     _result, trail = cold_evening
     assert all(snapshot.loads["ev"].starved_s == 0.0 for _now, snapshot in trail.rows)
     assert all(snapshot.loads["tank"].starved_s == 0.0 for _now, snapshot in trail.rows)
+
+
+# --------------------------------------------------------------------------- #
+# D4's row `legionella_expensive_week`: the tank's cycle under a week
+# that never wants to run it
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="module")
+def expensive_week() -> tuple[ScenarioResult, _Trail]:
+    """Run the week once for the module."""
+    trail = _Trail()
+    return run_scenario(catalogue.legionella_expensive_week(), trail), trail
+
+
+def _due_at_transitions(trail: _Trail) -> list[tuple[object, object]]:
+    """Return `(now, due_at)` each time the tank's own due date moves - one per cycle."""
+    transitions: list[tuple[object, object]] = []
+    previous = None
+    for now, snapshot in trail.rows:
+        due_at = snapshot.loads["tank"].legionella_due_at
+        if due_at != previous:
+            transitions.append((now, due_at))
+            previous = due_at
+    return transitions
+
+
+@pytest.mark.inv("INV-54")
+def test_the_site_holds_and_the_cycle_completes_by_its_due_date(
+    expensive_week: tuple[ScenarioResult, _Trail],
+) -> None:
+    """No site breach, no comfort floor crossed, and the tank's own deadline wins the price.
+
+    The first `due_at` the tick ever reports is the adoption anchor's (D-0203):
+    `START + interval_days`, never revised. The clock only moves the *next*
+    time `legionella_last_completed` changes - a real completed hold - so a
+    second transition inside the scenario's eight days is the cycle finishing,
+    and it must land at or before the `due_at` the first transition named.
+    """
+    result, trail = expensive_week
+    assert result.engine_failures == 0
+    assert result.over_target == 0
+    assert result.comfort_violation_min == 0.0, "INV-54 never asks a bathroom to pay for the tank"
+
+    transitions = _due_at_transitions(trail)
+    assert len(transitions) >= 2, "the cycle never completed inside the week"
+    first_now, first_due_at = transitions[0]
+    completed_at, _next_due_at = transitions[1]
+    assert completed_at <= first_due_at, (completed_at, first_due_at)
+    assert completed_at > first_now, "a real completion, not the adoption anchor itself"

@@ -483,6 +483,12 @@
         "learned": {
           "mapping": "float"
         },
+        "legionella_due_at": {
+          "one_of": [
+            "datetime",
+            "None"
+          ]
+        },
         "lifetime_kwh": "float",
         "load_id": "str",
         "measured_w": {
@@ -921,5 +927,5 @@
       }
     }
   },
-  "schema": 4
+  "schema": 5
 }

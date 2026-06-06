@@ -1322,3 +1322,18 @@ The load review adds one sentence naming what savings are measured against, by t
 
 `LoadStatus.starved_s` is `AllocState.starved_since` for the load as elapsed seconds, 0 without a clock; `SnapshotSchema` 4. The row exists only for loads a group names. `GroupCap` already keeps this clock for its ranking (D-0240), and re-deriving it in the HA layer could drift from the number that decides admission. Affects D8 §5.5.
 **Rejected:** publishing the queue position - D8 names a duration, and seconds already exist.
+
+### D-0295 · `Observation` gets five flat `legionella_*` fields, not the type's `Legionella`
+
+`legionella_due_at`, `_last_completed`, `_active`, `_in_progress` and `_at_risk`, filled in `Load.observe()` by the same duck-typed dispatch as `connected`/`soc`. `base.py` never imports a concrete type, and `Legionella` holds tank-specific fields nothing else shares; consumers only ever need one or two fields. Affects D4 §5.12, D7 §4.1.
+**Rejected:** moving `Legionella` to `core/model.py` - not shared. Recomputing due dates in the engine - a second copy of §5.12's arithmetic.
+
+### D-0296 · `powerplan_legionella`'s four states are four one-way edges
+
+The engine tracks `due`, `started`, `at_risk` and `completed` per load and fires on each rising edge (or a new completion time), never on first observation, the same pattern as circuit events. `due` and `started` currently fire together for the water heater, but D8 names four states and a future type may separate them. Affects D4 §5.12, D7 §5.1, D8 §5.6.
+**Rejected:** merging `due` and `started` - D8's schema has four independent values.
+
+### D-0297 · `sensor.<load>_next_legionella` is a table row
+
+A `LOAD_SENSORS` row (timestamp, `applies` when the type is `water_heater`) reading `LoadStatus.legionella_due_at`. Whether a load has a legionella cycle is a fact of its type, decidable from the `Load` alone, unlike group membership. Affects D8 §5.5.
+**Rejected:** a dedicated class like `starved_s` - that one needed runtime state; this doesn't.
