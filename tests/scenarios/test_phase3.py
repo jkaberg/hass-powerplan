@@ -1,4 +1,4 @@
-"""D9 §5.3 - D6's row `floor_group_rotation` and D4's `legionella_expensive_week`.
+"""D9 §5.3's phase-3 rows: `floor_group_rotation`, `legionella_expensive_week`, `heat_pump_defrost_evening`.
 
 `floor_group_rotation`: a cold January evening: all five floor loops of the
 reference house want heat at once - roughly 5 kW of nameplate against
@@ -14,6 +14,12 @@ anti-legionella cycle to run early. INV-54's absolute deadline has to win it
 anyway - the cycle the type completes under a hand-fed "never charge" plan in
 `tests/core/loads/test_11_legionella.py`, here completing under the real
 engine, the real price curve and real competition from the EV and the floors.
+
+`heat_pump_defrost_evening`: a whole reference house on a night cold enough
+that the heat pump defrosts several times over - power up while the outlet
+air falls (D4 §5.14) - while the evening's own ordinary capacity squeeze (the
+EV's deadline, late) runs alongside it. Neither is allowed to touch the other:
+a defrost is never shed, and the squeeze is never blamed on the pump icing up.
 """
 
 from __future__ import annotations
@@ -186,3 +192,75 @@ def test_the_site_holds_and_the_cycle_completes_by_its_due_date(
     completed_at, _next_due_at = transitions[1]
     assert completed_at <= first_due_at, (completed_at, first_due_at)
     assert completed_at > first_now, "a real completion, not the adoption anchor itself"
+
+
+# --------------------------------------------------------------------------- #
+# D4's row `heat_pump_defrost_evening`: defrost cycling and the
+# evening's own capacity squeeze, side by side
+# --------------------------------------------------------------------------- #
+
+#: The reference heat pump's rated power (D9 §5.9: 1.5 kW), and how close a
+#: reading has to be to call it "at rated" (the sim's own modulation noise).
+RATED_W = 1500.0
+NEAR_RATED_W = RATED_W * 0.99
+#: `tests/sim/heatpump.py`'s own defrost duration is 300 s; a run is counted
+#: once it has held near rated for at least that long.
+DEFROST_MIN_S = 300.0
+
+
+@pytest.fixture(scope="module")
+def cold_night() -> tuple[ScenarioResult, _Trail]:
+    """Run the evening once for the module."""
+    trail = _Trail()
+    return run_scenario(catalogue.heat_pump_defrost_evening(), trail), trail
+
+
+def _near_rated_runs(trail: _Trail) -> list[list[object]]:
+    """Return `[start, end]` for every *consecutive* run of ticks at rated power.
+
+    Consecutive, not merely present: two defrosts three quarters of an hour
+    apart are two runs, never one that swallows the quiet interval between them.
+    """
+    runs: list[list[object]] = []
+    active = False
+    for now, snapshot in trail.rows:
+        status = snapshot.loads.get("heat_pump")
+        at_rated = status is not None and (status.measured_w or 0.0) >= NEAR_RATED_W
+        if at_rated and active:
+            runs[-1][1] = now
+        elif at_rated:
+            runs.append([now, now])
+            active = True
+        else:
+            active = False
+    return [run for run in runs if (run[1] - run[0]).total_seconds() >= DEFROST_MIN_S]
+
+
+@pytest.mark.inv("INV-29")
+def test_the_evening_runs_clean_and_the_heat_pump_actually_defrosts(
+    cold_night: tuple[ScenarioResult, _Trail],
+) -> None:
+    """No engine failure, no comfort floor crossed, and several real defrost cycles."""
+    result, trail = cold_night
+    assert result.engine_failures == 0
+    assert result.comfort_violation_min == 0.0
+
+    runs = _near_rated_runs(trail)
+    assert len(runs) >= 3, "the cold night never drove a handful of real defrosts"
+
+
+@pytest.mark.inv("INV-29")
+def test_a_defrost_run_is_never_shed(cold_night: tuple[ScenarioResult, _Trail]) -> None:
+    """D4 §5.14: power up while the outlet falls is a signature, never a reason to shed.
+
+    The evening's own ordinary squeeze (D9 §5.9's EV, late) still sheds the
+    pump on its own terms - that shed just never lands inside a defrost run.
+    """
+    _result, trail = cold_night
+    runs = _near_rated_runs(trail)
+    assert runs, "no defrost run to check"
+    by_time = dict(trail.rows)
+    for start, end in runs:
+        during = [now for now in by_time if start <= now <= end]
+        shed = [now for now in during if by_time[now].loads["heat_pump"].shed]
+        assert not shed, (start, end, shed)

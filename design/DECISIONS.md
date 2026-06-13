@@ -1337,3 +1337,13 @@ The engine tracks `due`, `started`, `at_risk` and `completed` per load and fires
 
 A `LOAD_SENSORS` row (timestamp, `applies` when the type is `water_heater`) reading `LoadStatus.legionella_due_at`. Whether a load has a legionella cycle is a fact of its type, decidable from the `Load` alone, unlike group membership. Affects D8 §5.5.
 **Rejected:** a dedicated class like `starved_s` - that one needed runtime state; this doesn't.
+
+### D-0298 · The heat pump's outdoor and outlet sensors are bound after `derive()`, replacing only what they answer
+
+`_extra_bindings` turns `heat_pump`'s `outdoor_entity` and `outlet_entity` answers into `RoleBinding`s through the same `numeric_binding()` the match step uses, and replaces a match-step binding only for a role actually answered, so a blank field keeps `generic_climate`'s own detected outdoor sensor. Without it `OUTLET_TEMP` was never bound and defrost detection could never fire. Affects D4 §5.14.
+**Rejected:** folding them into the match step - the household may point at a sensor on no device the match step ever saw.
+
+### D-0299 · `heat_pump_defrost_evening` exercises "no shed" end to end, and the PI needs no exemption
+
+`kind_ctx()` already forces `shed=False` while defrosting (INV-29), but it reads `OUTLET_TEMP`, which only D-0298 binds. The scenario runs a simulated defrost through the real binding and engine: six defrost runs, none shed, `over_target` 0, no comfort minutes; the evening's one stage-2 shed lands 22 minutes clear of a defrost. "Window excluded from the PI trim" needs no code: a setpoint load's reservation tracks its measured draw, spike included, so the PI never sees an outlier. Affects D4 §5.14, D9 §5.3.
+**Rejected:** a defrost carve-out in the PI trim now - it changes no result, and should be written against a failure when one appears.

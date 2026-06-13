@@ -104,6 +104,13 @@ _WEEKDAYS = tuple(str(day) for day in range(7))
 #: The role-entity fields of the match step are prefixed so they never collide
 #: with `type` and `profile`.
 _ROLE_PREFIX = "role_"
+#: A type's own questionnaire can ask for an optional entity the match step
+#: never sees - the heat pump's outdoor/outlet sensors (D4 §5.14), read off
+#: whatever device they happen to live on, unlike a match-step role's own
+#: device. `(question key, the role it becomes)`, by type.
+_EXTRA_ROLE_ANSWERS: dict[str, tuple[tuple[str, Role], ...]] = {
+    "heat_pump": (("outdoor_entity", Role.OUTDOOR_TEMP), ("outlet_entity", Role.OUTLET_TEMP)),
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -612,6 +619,26 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             attribute=previous.attribute if previous is not None else None,
         )
 
+    def _extra_bindings(self, type_key: str, params: Mapping[str, Any]) -> tuple[RoleBinding, ...]:
+        """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only.
+
+        Unlike a match-step role, the entity did not come from the device the
+        household picked - the profile it reached from never saw it, so there is
+        no `MatchResult` binding to start from, only the answer itself.
+        """
+        out: list[RoleBinding] = []
+        for key, role in _EXTRA_ROLE_ANSWERS.get(type_key, ()):
+            entity_id = params.get(key)
+            if not entity_id:
+                continue
+            view = DeviceView.from_states(self.hass, [str(entity_id)]).get(str(entity_id))
+            if view is None:
+                continue
+            binding = numeric_binding(view, role, profile=self._profile or "")
+            if binding is not None:
+                out.append(binding)
+        return tuple(out)
+
     # -------------------------------------------------------------------- user
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
@@ -684,6 +711,15 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 values = raw
             else:
                 self._derived = device_type.derive(self._answers, self._ctx)
+                # Only a role this answer actually names is replaced - an
+                # unanswered `outdoor_entity` leaves the match step's own
+                # auto-detected outdoor_temp binding standing (D4 §5.14).
+                extra = self._extra_bindings(str(self._type), self._derived.params)
+                answered_roles = {binding.role for binding in extra}
+                self._bindings = (
+                    *(b for b in self._bindings if b.role not in answered_roles),
+                    *extra,
+                )
                 if self.source == "reconfigure":
                     return await self.async_step_reconfigure_review()
                 return await self.async_step_review()

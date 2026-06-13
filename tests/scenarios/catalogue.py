@@ -14,7 +14,15 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from custom_components.powerplan.core.model import Mode
-from tests.builders.houses import FLOOR_GROUP, FLOOR_LOOPS, GARAGE_CIRCUIT, house, no_peak, tensio
+from tests.builders.houses import (
+    FLOOR_GROUP,
+    FLOOR_LOOPS,
+    GARAGE_CIRCUIT,
+    house,
+    no_peak,
+    nordic_detached,
+    tensio,
+)
 from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
 
@@ -350,10 +358,32 @@ def legionella_expensive_week() -> Scenario:
     )
 
 
+#: D4's row (D9 §5.3 `heat_pump_defrost_evening`): a January evening cold enough
+#: (below `DEFROST_BELOW_C`, `tests/sim/heatpump.py`) that the reference heat
+#: pump cycles through several real defrosts - power up while the outlet air
+#: falls (§5.14) - while the rest of the house runs its own evening. The whole
+#: house is controlled, so the ladder's own ordinary evening squeeze (the EV's
+#: deadline, late) still runs alongside the defrosts, unrelated to them.
+HEAT_PUMP_DEFROST_START = datetime(2027, 1, 28, 17, 7, 17, tzinfo=OSLO)
+HEAT_PUMP_DEFROST_DAYS = 0.3
+HEAT_PUMP_DEFROST_TARGET_KW = 15.0
+
+
+def heat_pump_defrost_evening() -> Scenario:
+    """Return the cold evening the reference heat pump defrosts through (D4 §5.14, §9 18)."""
+    return Scenario(
+        name="heat_pump_defrost_evening",
+        house=lambda: nordic_detached(start=HEAT_PUMP_DEFROST_START.date()),
+        start=HEAT_PUMP_DEFROST_START,
+        days=HEAT_PUMP_DEFROST_DAYS,
+        target_kw=HEAT_PUMP_DEFROST_TARGET_KW,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
-PHASE3 = (floor_group_rotation, legionella_expensive_week)
+PHASE3 = (floor_group_rotation, legionella_expensive_week, heat_pump_defrost_evening)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)
