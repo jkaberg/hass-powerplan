@@ -237,20 +237,23 @@ edge-triggered per window; cleared when expected < 0.85 × ceiling; at most one 
 async_setup_entry:
   1 load SiteStore; migrate sections; restore the tariff evaluator from `tariff` (history, target, risk - D2 §7, D-0280) before anything holds a reference to its history
   2 build domain objects from entry + subentries (site profile, meter source, price sources, tariff evaluator, loads, groups, zones, circuits, forecasts)
-  3 release_all("startup") - a load never inherits the mode it was left in (INV-26)
-  4 restore comfort targets (D4 restore(), a correction never an adoption)
-  5 run provisions (D4), retried on their own schedule
-  6 first tick (observe reads, no writes if the site is off) → coordinator has data before platforms load
-  7 forward entry setups to platforms (sensor, binary_sensor, number, switch, select, button, time)
-  8 subscribe triggers; start the planning cycle after the first tick (services are registered once in `async_setup`, PLAN §7 dec. 8)
-  9 seed baseline/backfill in executor jobs (D2/D10) without blocking setup
+  3 hydrate every load's bound `schedule.*` helper (D4 §4.4), read once, not live - the fetch is I/O and needs Home Assistant's entities, so it cannot run inside step 2
+  4 release_all("startup") - a load never inherits the mode it was left in (INV-26)
+  5 restore comfort targets (D4 restore(), a correction never an adoption)
+  6 run provisions (D4), retried on their own schedule
+  7 first tick (observe reads, no writes if the site is off) → coordinator has data before platforms load
+  8 forward entry setups to platforms (sensor, binary_sensor, number, switch, select, button, time)
+  9 subscribe triggers; start the planning cycle after the first tick (services are registered once in `async_setup`, PLAN §7 dec. 8)
+  10 seed baseline/backfill in executor jobs (D2/D10) without blocking setup
 async_unload_entry / homeassistant_stop:
   1 unsubscribe triggers; stop planning; 2 release_all("unload"); 3 flush store; 4 unload platforms
 options / subentry updates: §2
 async_migrate_entry: config-entry version migrations (entry data), separate from store migrations
 ```
 
-**In code (D-0271).** `async_setup_entry` is `Runtime(hass, entry, build_site(hass, entry))` then `start()`: 1 the store is loaded and `EngineState.from_sections` restores it (an empty store is a fresh state); 2 the engine is built over the restored `WindowState` and the D11 adapter over the `accounting` section, and every load's release plan is tracked on the gate; a stale `engine_failing` repair is deleted, because a restart clears safe mode (§2); 3–9 run at once when Home Assistant is running and on `EVENT_HOMEASSISTANT_STARTED` otherwise: `release_all` (the gate's pure `release()` per load), `restore_all` (D4 `restore()`, a correction), provisions (D4's, per device - none until WP2.2's profiles are bound), the first tick (`trigger = "startup"`), the platforms (`PLATFORMS` is empty until WP1.4), the triggers, and the first price fetch as a task that plans when it lands - so the planning cycle starts after the first tick and its I/O never holds the lock (INV-46). `stop(reason)` releases the subscriptions, `release_all`, cancels the gate's read-backs, flushes and closes the store; `async_unload_entry` and `homeassistant_stop` both call it, once.
+`async_setup_entry` is `Runtime(hass, entry, build_site(hass, entry))` then `start()`. 1: the store is loaded and `EngineState.from_sections` restores it (an empty store is a fresh state). 2: the engine is built over the restored `WindowState` and the D11 adapter over the `accounting` section, and every load's release plan is tracked on the gate. A stale `engine_failing` repair is deleted, since a restart clears safe mode (§2). 3–10 run at once when HA is running, and on `EVENT_HOMEASSISTANT_STARTED` otherwise: hydrate schedules, `release_all` (the gate's pure `release()` per load), `restore_all` (D4 `restore()`, a correction), provisions (D4's, per device), the first tick (`trigger = "startup"`), the platforms, the triggers, and the first price fetch as a task that plans when it lands - so the planning cycle starts after the first tick and its I/O never holds the lock (INV-46). `stop(reason)` releases the subscriptions, runs `release_all`, cancels the gate's read-backs, flushes and closes the store. `async_unload_entry` and `homeassistant_stop` both call it, once (D-0271).
+
+`Runtime._hydrate_schedules` walks `self.build.loads`, and for each one whose `config.params["schedule_entity"]` is bound it awaits `providers.schedules.fetch_windows(hass, entity_id)` and, only on success (`windows is not None`), replaces its `TargetProfile.schedule` with an `HaScheduleEntity(entity_id, zone=build.cfg.tz, on_value=comfort_c, off_value=vacation_c, windows)` (D-0300). `on_value`/`off_value` reuse the two numbers `profile_from_params` already derives from the type's questionnaire, so nothing new is asked to say what "on" and "off" mean (D-0301). A load without `schedule_entity`, or whose fetch fails, keeps its `ConstantSchedule`, the safe fallback and never an always-off schedule. `_rebuild_engine()` (§2) pushes the hydrated set into the engine before `release_all`/`restore_all`, so the very first restore sees the schedule-bound target. The add path (§2's `_add_load`) calls `_hydrate_schedule` on the new load before it joins `self.build.loads`. Nothing refreshes a bound schedule after this - a live edit needs a reload to be seen, and live pickup is v1.x.
 
 ### 5.6 Effects execution and the single writer (INV-3)
 

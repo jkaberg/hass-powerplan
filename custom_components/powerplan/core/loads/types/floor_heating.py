@@ -267,6 +267,20 @@ QUESTIONNAIRE = Questionnaire(
             advanced=True,
             help_key="floor_heating_presence",
         ),
+        Question(
+            key="schedule_entity",
+            kind=QuestionKind.ENTITY,
+            default=None,
+            advanced=True,
+            help_key="floor_heating_schedule_entity",
+        ),
+        Question(
+            key="arrival_sources",
+            kind=QuestionKind.ENTITY,
+            default=(),
+            advanced=True,
+            help_key="floor_heating_arrival_sources",
+        ),
     )
 )
 
@@ -332,6 +346,8 @@ class FloorHeating:
             "command_interval_s": answers.number("command_interval_s"),
             "substitutable": room != "bathroom",
             "follow_presence": answers.flag("follow_presence"),
+            "schedule_entity": answers.get("schedule_entity"),
+            "arrival_sources": [str(entity) for entity in answers.get("arrival_sources") or ()],
             "hydronic": hydronic,
             "phases": 1,
         }

@@ -7,6 +7,7 @@
   },
   "answers": {
     "area_m2": 12.0,
+    "arrival_sources": [],
     "comfort_c": null,
     "command_interval_s": 600.0,
     "covering": "wood",
@@ -18,6 +19,7 @@
     "min_off_s": 900.0,
     "min_on_s": 900.0,
     "room": "bathroom",
+    "schedule_entity": null,
     "screed_depth_mm": null,
     "sensor": "floor",
     "swing_k": null
@@ -25,6 +27,7 @@
   "derived": {
     "params": {
       "area_m2": 12.0,
+      "arrival_sources": [],
       "command_interval_s": 600.0,
       "comfort_c": 24.0,
       "covering": "wood",
@@ -43,6 +46,7 @@
       "nameplate_w": 960.0,
       "phases": 1,
       "room": "bathroom",
+      "schedule_entity": null,
       "screed_mm": 40.0,
       "sensor": "floor",
       "shed_setpoint_c": 21.0,

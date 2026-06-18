@@ -10,6 +10,7 @@
   },
   "answers": {
     "area_m2": null,
+    "arrival_sources": [],
     "comfort_c": null,
     "command_interval_s": 300.0,
     "control": "plug",
@@ -21,11 +22,13 @@
     "min_on_s": 1800.0,
     "power_entity": "sensor.panelovn_power",
     "power_w": 800.0,
-    "room": "bedroom"
+    "room": "bedroom",
+    "schedule_entity": null
   },
   "derived": {
     "params": {
       "area_m2": 12.0,
+      "arrival_sources": [],
       "comfort_c": 19.0,
       "command_interval_s": 300.0,
       "control": "plug",
@@ -42,6 +45,7 @@
       "phases": 1,
       "power_entity": "sensor.panelovn_power",
       "room": "bedroom",
+      "schedule_entity": null,
       "shed_setpoint_c": 17.0,
       "store": "room",
       "substitutable": true,

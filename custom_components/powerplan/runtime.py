@@ -96,7 +96,7 @@ from .core.engine import (
 )
 from .core.loads import Load, LoadConfig, LoadCtx, Transport
 from .core.loads.gate import Action, Decision
-from .core.loads.targets import CalendarEvent, PresenceMode, profile_from_params
+from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
 from .core.metering import (
     ElectricalProfile,
@@ -147,6 +147,7 @@ from .providers.prices import (
 )
 from .providers.profiles import registry as profiles
 from .providers.profiles.base import LiveDevice
+from .providers.schedules import fetch_windows
 from .repairs import RepairsWatch, async_clear, async_report
 from .storage import Section, SiteStore
 from .writegate import Actuation, WriteGate
@@ -964,6 +965,9 @@ class Runtime:
 
     async def _start_after_ha(self) -> None:
         """Run steps 3–9 of §5.5, once Home Assistant's entities are there to read."""
+        await self._hydrate_schedules()
+        self._rebuild_engine()
+        self._log_step("schedules")
         await self.release_all("startup")
         self._log_step("release")
         await self.restore_all()
@@ -1170,6 +1174,38 @@ class Runtime:
             )
         )
 
+    async def _hydrate_schedule(self, load: Load) -> Load:
+        """Swap in one load's bound `schedule.*` helper, if it has one (D4 §4.4, D-0300).
+
+        Read once - at startup and on hot-add, never on a tick, matching
+        `WeeklyTable`'s own docstring framing live-editing pickup as v1.x. A
+        fetch that cannot answer (`None`) leaves `profile_from_params`'s
+        `ConstantSchedule` in place rather than adopt an `HaScheduleEntity`
+        that would be wrongly always off.
+        """
+        profile = load.config.target
+        entity_id = load.config.params.get("schedule_entity")
+        if profile is None or not entity_id:
+            return load
+        windows = await fetch_windows(self.hass, str(entity_id))
+        if windows is None:
+            return load
+        params = load.config.params
+        schedule = HaScheduleEntity(
+            entity_id=str(entity_id),
+            zone=self.build.cfg.tz,
+            on_value=float(params.get("comfort_c", profile.comfort_default)),
+            off_value=float(params.get("vacation_c", profile.floor)),
+            windows=windows,
+        )
+        return replace(
+            load, config=replace(load.config, target=replace(profile, schedule=schedule))
+        )
+
+    async def _hydrate_schedules(self) -> None:
+        """Hydrate every load's bound schedule at once, over the current build (D-0300)."""
+        self.build.loads = tuple([await self._hydrate_schedule(load) for load in self.build.loads])
+
     def _persist_sections(self, sections: frozenset[Section]) -> None:
         """Save exactly these sections at once - a hot path's own edge, not a tick's (D7 §7)."""
         document = self.state.to_sections()
@@ -1194,6 +1230,7 @@ class Runtime:
                 "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
             )
             return
+        load = await self._hydrate_schedule(load)
         self.build.loads = (*self.build.loads, load)
         self.build.devices = {**self.build.devices, load.load_id: device}
         self.gate.track(load.load_id, self._release_plan(load.load_id))
@@ -1428,24 +1465,46 @@ class Runtime:
         )
 
     def _calendar_events(self, load: Load, now: datetime) -> tuple[CalendarEvent, ...]:
-        """Return the bound calendar's current or next event, as D4 §4.4 hands it over.
+        """Return every bound calendar's current or next event (D4 §4.4).
+
+        Two sources, merged: `calendar_entity`, the EV's own departure
+        calendar (singular - one trip is one deadline), and a thermal
+        profile's `arrival_sources` (plural, WP3.5 - any one of several
+        calendars coming home is a deadline to be at target). A load carries
+        at most one of the two: EV has no `TargetProfile` (`profile_from_params`
+        returns `None` without a `comfort_c`), and a thermal type's `derive()`
+        never sets `calendar_entity`.
+        """
+        entity_ids: list[str] = []
+        single = load.config.params.get("calendar_entity")
+        if single:
+            entity_ids.append(str(single))
+        profile = load.config.target
+        if profile is not None:
+            entity_ids.extend(profile.arrival_sources)
+        events = [
+            event
+            for entity_id in dict.fromkeys(entity_ids)
+            if (event := self._one_calendar_event(entity_id, now)) is not None
+        ]
+        return tuple(sorted(events, key=lambda event: event.start))
+
+    def _one_calendar_event(self, entity_id: str, now: datetime) -> CalendarEvent | None:
+        """Return one `calendar` entity's current or next event, past events excluded.
 
         A Home Assistant `calendar` entity exposes one event - the one in
         progress or the next - as `start_time`, `end_time` and `message`; an
-        event already over is not a departure.
+        event already over is not a deadline.
         """
-        entity_id = load.config.params.get("calendar_entity")
-        if not entity_id:
-            return ()
-        state = self.hass.states.get(str(entity_id))
+        state = self.hass.states.get(entity_id)
         if state is None:
-            return ()
+            return None
         start = _calendar_moment(state.attributes.get("start_time"), self.build.cfg.tz)
         end = _calendar_moment(state.attributes.get("end_time"), self.build.cfg.tz)
         if start is None or end is None or end <= now:
-            return ()
-        return (
-            CalendarEvent(start=start, end=end, summary=str(state.attributes.get("message") or "")),
+            return None
+        return CalendarEvent(
+            start=start, end=end, summary=str(state.attributes.get("message") or "")
         )
 
     # -------------------------------------------------------------- ticks #
@@ -1843,6 +1902,12 @@ class Runtime:
             str(load.config.params["calendar_entity"])
             for load in build.loads
             if load.config.params.get("calendar_entity")
+        )
+        load_entities.extend(
+            entity_id
+            for load in build.loads
+            if load.config.target is not None
+            for entity_id in load.config.target.arrival_sources
         )
         if load_entities:
             self._load_entities_unsub = async_track_state_change_event(

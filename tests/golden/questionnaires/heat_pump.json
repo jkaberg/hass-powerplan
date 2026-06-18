@@ -14,6 +14,7 @@
   },
   "answers": {
     "area_m2": 60.0,
+    "arrival_sources": [],
     "band_k": 1.0,
     "building": "2000_2010",
     "comfort_c": 21.0,
@@ -30,11 +31,13 @@
     "outlet_entity": null,
     "preheat": false,
     "preheat_max_outdoor_c": 5.0,
-    "rated_kw": 1.5
+    "rated_kw": 1.5,
+    "schedule_entity": null
   },
   "derived": {
     "params": {
       "area_m2": 60.0,
+      "arrival_sources": [],
       "band_k": 1.0,
       "building": "2000_2010",
       "can_cool": true,
@@ -68,6 +71,7 @@
       "preheat": false,
       "preheat_max_outdoor_c": 5.0,
       "rated_kw": 1.5,
+      "schedule_entity": null,
       "shed_setpoint_c": 17.0,
       "store": "room",
       "substitutable": true,

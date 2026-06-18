@@ -380,10 +380,51 @@ def heat_pump_defrost_evening() -> Scenario:
     )
 
 
+#: D4 §4.4's row (D9 §5.3 `presence_away_day`): an ordinary January weekday.
+#: `HouseholdSim` marks every non-holiday weekday `away` from the morning
+#: departure to the afternoon arrival (`tests/sim/household.py`), which is the
+#: real presence signal the scenario runs through - not a hand-fed knob. The
+#: window starts before departure and runs past arrival with margin, so both
+#: the relaxation and the recovery land inside it. No `target_kw`: nothing
+#: about this scenario is capacity or price scarcity, so a shed here would be
+#: a confound, not a finding, exactly `flat_price_night`'s reasoning.
+PRESENCE_AWAY_DAY_START = datetime(2027, 1, 13, 6, 0, 17, tzinfo=OSLO)
+PRESENCE_AWAY_DAY_DAYS = 0.65
+
+
+def presence_away_day() -> Scenario:
+    """Return the weekday the household leaves and comes back (D4 §4.4, §9 10).
+
+    `loops=FLOOR_LOOPS[2:3]` (the hall: comfort 22 °C, floor 18 °C) rather than
+    the default two bathrooms - a bathroom's comfort and floor are 24/21, and
+    `away_delta`'s default 3 K lands the away target exactly on the floor, a
+    boundary a target-relaxation scenario should not have to argue about.
+    """
+    return Scenario(
+        name="presence_away_day",
+        house=lambda: house(
+            day=PRESENCE_AWAY_DAY_START.date(),
+            price_kind=SPOT_LIKE,
+            loops=FLOOR_LOOPS[2:3],
+            ev_soc=0.35,
+            slab_start_c=22.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=PRESENCE_AWAY_DAY_START,
+        days=PRESENCE_AWAY_DAY_DAYS,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
-PHASE3 = (floor_group_rotation, legionella_expensive_week, heat_pump_defrost_evening)
+PHASE3 = (
+    floor_group_rotation,
+    legionella_expensive_week,
+    heat_pump_defrost_evening,
+    presence_away_day,
+)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

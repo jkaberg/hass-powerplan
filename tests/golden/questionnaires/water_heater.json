@@ -9,6 +9,7 @@
     ]
   },
   "answers": {
+    "arrival_sources": [],
     "comfort_min_c": 45.0,
     "command_interval_s": 120.0,
     "control": "thermostat",
@@ -28,12 +29,14 @@
     "ready_by": "06:30",
     "ready_by_2": "17:00",
     "ready_temp_c": 75.0,
+    "schedule_entity": null,
     "standby_loss_w": 60.0,
     "temp_entity": null
   },
   "derived": {
     "params": {
       "anchor_c": 75.0,
+      "arrival_sources": [],
       "comfort_c": 45.0,
       "comfort_min_c": 45.0,
       "command_interval_s": 120.0,
@@ -64,6 +67,7 @@
       "ready_by": "06:30",
       "ready_by_2": "17:00",
       "ready_temp_c": 75.0,
+      "schedule_entity": null,
       "sensorless": false,
       "shed_setpoint_c": 45.0,
       "shiftable_kwh": 10.68,

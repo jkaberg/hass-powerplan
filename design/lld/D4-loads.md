@@ -224,6 +224,8 @@ class TargetProfile:
     def deadlines(self, from_, until, presence, calendar) -> list[tuple[datetime, float]]   # step-ups + arrivals
 ```
 
+`floor_heating`, `water_heater`, `heat_pump` and `radiator` each have two questions next to `follow_presence`: `schedule_entity` (a bound `schedule.*` helper) and `arrival_sources` (calendar entity ids, multi-select). `providers/schedules/ha_schedule.py::fetch_windows` reads a bound helper's weekly windows through the `schedule.get_schedule` action (D-0300, the second exception to "actions only in `writegate.py`" next to `nordpool_action.py`), returning `None` when it couldn't be read - a missing helper, the `schedule` integration not loaded, an unbound entity - and otherwise only a real answer, possibly `()` for a truly empty week. `Runtime._hydrate_schedule` (D7 §5.5 step 3) turns a successful fetch into an `HaScheduleEntity(entity_id, zone=site tz, on_value=comfort_c, off_value=vacation_c or the floor, windows)`, once, at startup and when a load is added, never live (D-0301); a failed fetch or no binding leaves `profile_from_params`'s `ConstantSchedule` as it is. `arrival_sources` reuses `Runtime._calendar_events`'s per-entity parsing, merging `ev`'s own `calendar_entity` and both sources and subscribing to every entity either names (D-0302).
+
 ### 4.5 Profiles
 
 ```python

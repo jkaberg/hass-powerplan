@@ -162,12 +162,52 @@ class LoadForceSwitch(LoadEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
+class LoadFollowPresenceSwitch(LoadEntity, SwitchEntity):
+    """`switch.<load>_follow_presence`: a knob over `TargetProfile.follow_presence` (D8 §5.5, D4 §4.4).
+
+    A boolean knob merges the same way `LoadParamNumber`'s numeric ones do -
+    `Runtime.async_set_load_param` into `Knobs.load_params`, which
+    `Engine._apply_load_knobs` (`_TARGET_KEYS`) turns back into a
+    `TargetProfile` through `profile_from_params` on the next tick (INV-47).
+    It is its own class rather than a row in `PARAM_NUMBERS` because it is the
+    only boolean knob so far - `ParamNumber`'s table exists for the six
+    numeric ones already sharing it.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:home-account"
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "follow_presence")
+
+    @property
+    def is_on(self) -> bool:
+        """Whether away/vacation presently move this load's target."""
+        return bool(self.runtime.load_param(self.load_id, "follow_presence"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Let presence move the target again."""
+        await self.runtime.async_set_load_param(self.load_id, "follow_presence", True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Hold the target at comfort regardless of who is home."""
+        await self.runtime.async_set_load_param(self.load_id, "follow_presence", False)
+        self.async_write_ha_state()
+
+
 def load_switches(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SwitchEntity]:
-    """Return a force switch for the types that take one."""
+    """Return a force switch and a follow-presence switch for the types that take one."""
     return [
         LoadForceSwitch(runtime, load)
         for load in _loads(runtime, loads)
         if load.config.type_key in FORCE_TYPES
+    ] + [
+        LoadFollowPresenceSwitch(runtime, load)
+        for load in _loads(runtime, loads)
+        if load.config.type_key in THERMAL_TYPES and load.config.target is not None
     ]
 
 
@@ -190,6 +230,9 @@ class ParamNumber:
     enabled: bool = True
     icon: str = "mdi:tune"
     applies: Callable[[Load], bool] = lambda _load: True
+    #: Visible by default unless the load makes it redundant - `comfort_c`
+    #: hides once a `schedule_entity` drives the target instead (D8 §5.5).
+    visible: Callable[[Load], bool] = lambda _load: True
 
 
 PARAM_NUMBERS: tuple[ParamNumber, ...] = (
@@ -204,6 +247,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         applies=lambda load: (
             load.config.type_key in THERMAL_TYPES and load.config.target is not None
         ),
+        visible=lambda load: not load.config.params.get("schedule_entity"),
     ),
     ParamNumber(
         key="comfort_min_c",
@@ -284,6 +328,7 @@ class LoadParamNumber(LoadEntity, RestoreNumber, NumberEntity):
         self._attr_native_step = description.step
         self._attr_entity_category = description.category
         self._attr_entity_registry_enabled_default = description.enabled
+        self._attr_entity_registry_visible_default = description.visible(load)
         self._attr_icon = description.icon
 
     async def async_added_to_hass(self) -> None:

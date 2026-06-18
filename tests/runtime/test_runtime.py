@@ -120,6 +120,7 @@ async def test_a_metered_site_sets_up_ticks_and_unloads(
     assert runtime.startup == [
         "store",
         "build",
+        "schedules",
         "release",
         "restore",
         "provision",
@@ -349,15 +350,16 @@ async def test_07_startup_restores_a_loop_left_in_eco_before_the_first_tick(
     floor.register()
     entry = site_entry(hass)
     runtime = await _runtime_with_floor(hass, entry, floor)
-    assert runtime.startup[:6] == [
+    assert runtime.startup[:7] == [
         "store",
         "build",
+        "schedules",
         "release",
         "restore",
         "provision",
         "first_tick",
     ]
-    assert runtime.startup[6:] == ["platforms", "triggers", "seed"]
+    assert runtime.startup[7:] == ["platforms", "triggers", "seed"]
     assert floor.seen[0] == (FLOOR_CLIMATE, 24.0), "restored to the configured comfort (INV-27)"
     assert floor.setpoint_c == 24.0
     assert ticks

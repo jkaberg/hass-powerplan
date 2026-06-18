@@ -18,7 +18,7 @@ powerplan is a Home Assistant custom integration that steers flexible loads - EV
 
 ### 1.1 Goals
 
-- Works in every market whose tariff can be expressed by the grammar in §6.2. Verified on paper against NO, SE, FI, DK, NL, BE, DE, AT, CH, FR, ES, IT, PT, PL, CZ, EE/LV/LT, IE, UK, US, CA, AU (§8).
+- Works in every market whose tar iff can be expressed by the grammar in §6.2. Verified on paper against NO, SE, FI, DK, NL, BE, DE, AT, CH, FR, ES, IT, PT, PL, CZ, EE/LV/LT, IE, UK, US, CA, AU (§8).
 - Fully UI-configured. No YAML, no `input_*` helpers, no restart to change a limit.
 - Self-explanatory setup. The user describes a device in plain terms (room, floor covering, heating type, area); powerplan derives the technical parameters, picks a sensible default strategy and says what it decided and why (§7.9).
 - Every domain extensible by adding one module to a registry; the config flow renders new entries without changes.
@@ -146,7 +146,7 @@ tests/                    core tests (no HA), provider tests, flow tests, backte
 ```
 
 **INV-2 Purity.** `core/` MUST NOT import `homeassistant`. A test asserts it.
-**INV-3 Single reader, single writer.** Only `runtime.py` and `providers/` read `hass.states`; only `writegate.py` performs device writes. A price provider may invoke a read-only response action - `providers/prices/nordpool_action.py` calls the core Nord Pool integration's `get_prices_for_date`, registered `SupportsResponse.ONLY`, which reads prices and writes nothing. A grep in CI asserts both rules, and asserts that every action call in that one file passes `return_response=True` (D9 §5.7, `design/DECISIONS.md` D-0080).
+**INV-3 Single reader, single writer.** Only `runtime.py` and `providers/` read `hass.states`; only `writegate.py` performs device writes. A provider may invoke a read-only response action - `providers/prices/nordpool_action.py` calls the core Nord Pool integration's `get_prices_for_date`; `providers/schedules/ha_schedule.py` calls the `schedule` integration's `get_schedule`, the only way to read a `schedule.*` helper's weekly windows, since its state and attributes never carry them - both registered `SupportsResponse.ONLY`, reading and writing nothing. A grep in CI asserts both rules, and asserts that every action call in each of those files passes `return_response=True` (D9 §5.7, `design/DECISIONS.md` D-0080, D-0300).
 
 `core/` is written so it can later be published as `powerplan-core` on PyPI; that is not a v1 deliverable.
 

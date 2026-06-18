@@ -1347,3 +1347,23 @@ A `LOAD_SENSORS` row (timestamp, `applies` when the type is `water_heater`) read
 
 `kind_ctx()` already forces `shed=False` while defrosting (INV-29), but it reads `OUTLET_TEMP`, which only D-0298 binds. The scenario runs a simulated defrost through the real binding and engine: six defrost runs, none shed, `over_target` 0, no comfort minutes; the evening's one stage-2 shed lands 22 minutes clear of a defrost. "Window excluded from the PI trim" needs no code: a setpoint load's reservation tracks its measured draw, spike included, so the PI never sees an outlier. Affects D4 §5.14, D9 §5.3.
 **Rejected:** a defrost carve-out in the PI trim now - it changes no result, and should be written against a failure when one appears.
+
+### D-0300 · A second read-only action: a schedule helper's week
+
+`providers/schedules/ha_schedule.py` calls `schedule.get_schedule` with `return_response=True`. A `schedule.*` entity's state is only on/off with `next_event`; the weekly table is private and not recorded, and this `SupportsResponse.ONLY` action is the public way to read it. `HaScheduleEntity.target_at(t)` must answer for 24-48 h ahead, which the live state can't. INV-3's single-writer rule is about device writes; `test_single_writer.py` machine-checks `return_response=True` here as for D-0080. Affects HLD §5, D9 §5.7, D4 §4.4, D8 §5.2.
+**Rejected:** polling the live state - can't tell the plan about a change before it happens. Reading the component's private `_config` - no contract at all.
+
+### D-0301 · `fetch_windows`: `None` for "couldn't read", `()` for "empty"; on/off reuse `comfort_c`/`vacation_c`
+
+`fetch_windows` returns `None` when the call raised or the response omits the entity, and `()` when all seven days are genuinely empty. `_hydrate_schedule` swaps in an `HaScheduleEntity` only when it isn't `None`, so a transient failure can't turn into a schedule that's off all week. The schedule's on and off values are the load's own `comfort_c` and `vacation_c` ("on means comfort, off means setback"). Affects D4 §4.4, D7 §5.5.
+**Rejected:** a separate on/off pair per type - a third pair of numbers nobody asked for. Treating `None` and `()` alike - ignores a real schedule that's empty some days.
+
+### D-0302 · `arrival_sources` reuses the calendar plumbing, made plural
+
+The four thermal types get an `arrival_sources` entity question; `_calendar_events` gathers from both `calendar_entity` and a profile's `arrival_sources` through the same `_one_calendar_event`, and subscribes to all of them. The flow's multi-entity keys become a set (`never_switch`, `arrival_sources`) with domain filters for calendars and schedules. `Answers.as_json` now turns any tuple into a list, since an untouched tuple default didn't survive a store round trip. Affects D4 §4.4, D7 §5.3, §5.5.
+**Rejected:** a separate path for thermal arrivals - same question, different cardinality, twice the parsing.
+
+### D-0303 · `switch.<load>_follow_presence` is its own entity class
+
+A `SwitchEntity` (config, disabled by default) for thermal loads with a target profile, writing through the existing `async_set_load_param` path; the engine already rebuilt the profile on `follow_presence`. A boolean isn't a row in the `ParamNumber` table, and `LoadForceSwitch` is the precedent. Affects D8 §5.5.
+**Rejected:** a `ParamSwitch` table for one row - a table of one is the class it replaces, plus indirection.

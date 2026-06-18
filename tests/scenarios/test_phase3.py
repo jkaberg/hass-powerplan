@@ -1,4 +1,4 @@
-"""D9 §5.3's phase-3 rows: `floor_group_rotation`, `legionella_expensive_week`, `heat_pump_defrost_evening`.
+"""D9 §5.3's phase-3 rows: `floor_group_rotation`, `legionella_expensive_week`, `heat_pump_defrost_evening`, `presence_away_day`.
 
 `floor_group_rotation`: a cold January evening: all five floor loops of the
 reference house want heat at once - roughly 5 kW of nameplate against
@@ -20,6 +20,14 @@ that the heat pump defrosts several times over - power up while the outlet
 air falls (D4 §5.14) - while the evening's own ordinary capacity squeeze (the
 EV's deadline, late) runs alongside it. Neither is allowed to touch the other:
 a defrost is never shed, and the squeeze is never blamed on the pump icing up.
+
+`presence_away_day`: an ordinary January weekday. `HouseholdSim` marks every
+non-holiday weekday `away` from the morning departure to the afternoon
+arrival (`tests/sim/household.py`) - the real presence signal, not a hand-fed
+knob - and D4 §4.4's `TargetProfile.target()` is what has to answer for it:
+the hall's target relaxes by `away_delta` while nobody is home and is back at
+comfort once the household returns, with no capacity pressure in the
+scenario to confound the two.
 """
 
 from __future__ import annotations
@@ -29,6 +37,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from custom_components.powerplan.core.allocation.constraints.group import DEFAULT_STARVE_SECONDS
+from custom_components.powerplan.core.loads import PresenceMode
 from tests.builders.houses import FLOOR_GROUP
 from tests.scenarios import catalogue
 from tests.scenarios.runner import run_scenario
@@ -264,3 +273,69 @@ def test_a_defrost_run_is_never_shed(cold_night: tuple[ScenarioResult, _Trail]) 
         during = [now for now in by_time if start <= now <= end]
         shed = [now for now in during if by_time[now].loads["heat_pump"].shed]
         assert not shed, (start, end, shed)
+
+
+# --------------------------------------------------------------------------- #
+# D4's row `presence_away_day`: the target relaxes away and recovers
+# home
+# --------------------------------------------------------------------------- #
+
+#: The hall loop's own comfort target (`FLOOR_LOOPS[2]`, `tests/builders/houses.py`).
+HALL_COMFORT_C = 22.0
+HALL_FLOOR_C = 18.0
+#: `TargetProfile.away_delta`'s default (D4 §4.4).
+AWAY_DELTA_K = 3.0
+
+
+@pytest.fixture(scope="module")
+def away_day() -> tuple[ScenarioResult, _Trail]:
+    """Run the weekday once for the module."""
+    trail = _Trail()
+    return run_scenario(catalogue.presence_away_day(), trail), trail
+
+
+def _hall_targets(trail: _Trail) -> list[tuple[object, PresenceMode, float]]:
+    """Return `(now, presence, target)` for every tick the hall's status is there."""
+    rows = []
+    for now, snapshot in trail.rows:
+        status = snapshot.loads.get("loop_hall")
+        if status is not None and status.comfort is not None and snapshot.site.presence is not None:
+            rows.append((now, snapshot.site.presence, status.comfort.target))
+    return rows
+
+
+def test_the_day_runs_clean_with_no_capacity_pressure(
+    away_day: tuple[ScenarioResult, _Trail],
+) -> None:
+    """No engine failure, no floor crossed, nothing shed - this scenario has no scarcity."""
+    result, _trail = away_day
+    assert result.engine_failures == 0
+    assert result.comfort_violation_min == 0.0
+    assert result.over_target == 0
+
+
+@pytest.mark.inv("INV-55")
+def test_the_household_leaves_and_the_hall_s_target_relaxes(
+    away_day: tuple[ScenarioResult, _Trail],
+) -> None:
+    """`HouseholdSim`'s real departure/arrival, not a hand-fed knob, drives `TargetProfile.target()`.
+
+    The floor never moves (INV-55): the relaxed target still clears it by a
+    clean margin, since the hall's comfort/floor gap (4 K) is wider than
+    `away_delta` (3 K) - unlike the bathrooms, where the two would coincide.
+    """
+    _result, trail = away_day
+    rows = _hall_targets(trail)
+    assert rows, "the hall never reached the report"
+
+    away_targets = [target for _now, presence, target in rows if presence is PresenceMode.AWAY]
+    home_targets = [target for _now, presence, target in rows if presence is PresenceMode.HOME]
+    assert away_targets, "the household was never away — the scenario's own premise"
+    assert home_targets, "the household never came home either"
+
+    assert all(target == pytest.approx(HALL_COMFORT_C - AWAY_DELTA_K) for target in away_targets)
+    assert all(target > HALL_FLOOR_C for target in away_targets)
+    # The last row is the latest tick the run reached - after the afternoon
+    # arrival, given the scenario's own margin past it (D9 §5.3 catalogue).
+    assert rows[-1][1] is PresenceMode.HOME
+    assert rows[-1][2] == pytest.approx(HALL_COMFORT_C)

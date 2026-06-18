@@ -207,7 +207,11 @@ def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
     `comfort_c` makes a thermal load; `floor_c` (the questionnaire's `min_c`,
     derived) is the floor it never goes under, `max_c` the ceiling, and
     `follow_presence` whether away and vacation move it. No `comfort_c`, no
-    profile - a charger or a plug has none (D-0282).
+    profile - a charger or a plug has none (D-0282). `arrival_sources`
+    is every calendar entity id the questionnaire's `arrival_sources` answer
+    named (D4 §4.4) - `Runtime._calendar_events` (D7) is what turns
+    them into `CalendarEvent`s `deadlines()` can see; nothing here reaches for
+    a state (INV-2).
     """
     comfort = params.get("comfort_c")
     if comfort is None:
@@ -219,6 +223,7 @@ def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
         ceiling=None if params.get("max_c") is None else float(params["max_c"]),
         vacation_level=None if params.get("vacation_c") is None else float(params["vacation_c"]),
         follow_presence=bool(params.get("follow_presence", True)),
+        arrival_sources=tuple(str(entity) for entity in params.get("arrival_sources") or ()),
     )
 
 

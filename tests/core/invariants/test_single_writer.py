@@ -2,14 +2,18 @@
 
 Only `writegate.py` performs **device writes**. `hass.services.async_call` is
 allowed there, in `notifications.py` for notify and persistent_notification, and
-in the two price providers that read a market through a *response action* -
+in the providers that read something through a *response action* -
 `providers/prices/nordpool_action.py` for the core Nord Pool integration's
-`get_prices_for_date`, and `providers/prices/action.py` for the format table's
-action-backed rows (Tibber, EnergyZero, easyEnergy). Every one of those actions is
-registered `SupportsResponse.ONLY`: it reads prices and writes nothing. Those two
-files are held to the stricter rule the second test below enforces: every call
-site in them passes `return_response=True`, so the exemption cannot quietly
-become a write (`design/DECISIONS.md` D-0080, D-0101).
+`get_prices_for_date`, `providers/prices/action.py` for the format table's
+action-backed rows (Tibber, EnergyZero, easyEnergy), and
+`providers/schedules/ha_schedule.py` for the `schedule` integration's
+`get_schedule` - a bound `schedule.*` helper's weekly windows are on neither its
+state nor its attributes, so this action is the only way to read them (WP3.5,
+D-0300). Every one of those actions is registered `SupportsResponse.ONLY`: it
+reads and writes nothing. Those three files are held to the stricter rule the
+second test below enforces: every call site in them passes
+`return_response=True`, so the exemption cannot quietly become a write
+(`design/DECISIONS.md` D-0080, D-0101, D-0300).
 
 `hass.states.get` and `hass.states.async_all` are allowed in `runtime.py` and
 under `providers/`. Anywhere else bypasses the write gate's rate limits, dwell
@@ -31,12 +35,14 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION = REPO_ROOT / "custom_components" / "powerplan"
 
-#: The price providers allowed to invoke a read-only response action (D-0080):
-#: Nord Pool's own source, and `action.py`, the one call site the format table's
-#: action-backed rows reach (`tibber_action`, `energyzero_action` - D-0101).
+#: The providers allowed to invoke a read-only response action (D-0080, D-0101,
+#: D-0300): Nord Pool's own source, `action.py` (the one call site the format
+#: table's action-backed rows reach - `tibber_action`, `energyzero_action`), and
+#: the schedule provider's `get_schedule` read.
 READ_ONLY_ACTION_CALLERS = (
     "providers/prices/nordpool_action.py",
     "providers/prices/action.py",
+    "providers/schedules/ha_schedule.py",
 )
 
 # (what we grep for, which relative paths or path prefixes may contain it)

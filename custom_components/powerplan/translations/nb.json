@@ -650,6 +650,9 @@
       },
       "force": {
         "name": "Tvang"
+      },
+      "follow_presence": {
+        "name": "Følg tilstedeværelse"
       }
     },
     "button": {
@@ -1338,6 +1341,7 @@
               "name": "Avansert",
               "description": "Allerede fylt ut. Åpne den bare om du vet du vil ha noe annet.",
               "data": {
+                "arrival_sources": "Ankomstkalendere",
                 "band_k": "Bånd",
                 "calendar_entity": "Avreisekalender",
                 "charge_eff": "Ladevirkningsgrad",
@@ -1366,6 +1370,7 @@
                 "preheat": "Forvarm",
                 "preheat_max_outdoor_c": "Forvarm opp til",
                 "ready_temp_c": "Klartemperatur",
+                "schedule_entity": "Tidsplan",
                 "screed_depth_mm": "Støpedybde",
                 "settle_s": "Settletid",
                 "standby_loss_w": "Tomgangstap",
@@ -1375,6 +1380,7 @@
                 "swing_k": "Termostatsving"
               },
               "data_description": {
+                "arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
                 "band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
                 "charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
@@ -1403,6 +1409,7 @@
                 "preheat": "Avansert: lagre varme før en dyr time.",
                 "preheat_max_outdoor_c": "Avansert: ingen forvarming over denne utetemperaturen.",
                 "ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
+                "schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
                 "screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
                 "standby_loss_w": "Avansert: watt tanken taper i ro.",
@@ -1435,6 +1442,7 @@
                 "param_allow_grid_charge": "Lad fra nettet",
                 "param_appliance": "Apparat",
                 "param_area_m2": "Areal",
+                "param_arrival_sources": "Ankomstkalendere",
                 "param_band_k": "Bånd",
                 "param_building": "Byggeår",
                 "param_calendar_entity": "Avreisekalender",
@@ -1497,6 +1505,7 @@
                 "param_ready_temp_c": "Klartemperatur",
                 "param_reserve_pct": "Reserve",
                 "param_room": "Rom",
+                "param_schedule_entity": "Tidsplan",
                 "param_screed_depth_mm": "Støpedybde",
                 "param_sensor": "Føler",
                 "param_settle_s": "Settletid",
@@ -1518,6 +1527,7 @@
                 "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
                 "param_appliance": "Hva slags apparat dette er.",
                 "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
+                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
                 "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "param_building": "Når huset ble bygget. Det setter varmetapet.",
                 "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
@@ -1580,6 +1590,7 @@
                 "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
                 "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
                 "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
+                "param_schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
                 "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "param_sensor": "Hvilken føler termostaten regulerer på.",
                 "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
@@ -1623,6 +1634,7 @@
                 "param_allow_grid_charge": "Lad fra nettet",
                 "param_appliance": "Apparat",
                 "param_area_m2": "Areal",
+                "param_arrival_sources": "Ankomstkalendere",
                 "param_band_k": "Bånd",
                 "param_building": "Byggeår",
                 "param_calendar_entity": "Avreisekalender",
@@ -1685,6 +1697,7 @@
                 "param_ready_temp_c": "Klartemperatur",
                 "param_reserve_pct": "Reserve",
                 "param_room": "Rom",
+                "param_schedule_entity": "Tidsplan",
                 "param_screed_depth_mm": "Støpedybde",
                 "param_sensor": "Føler",
                 "param_settle_s": "Settletid",
@@ -1706,6 +1719,7 @@
                 "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
                 "param_appliance": "Hva slags apparat dette er.",
                 "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
+                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
                 "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "param_building": "Når huset ble bygget. Det setter varmetapet.",
                 "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
@@ -1768,6 +1782,7 @@
                 "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
                 "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
                 "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
+                "param_schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
                 "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "param_sensor": "Hvilken føler termostaten regulerer på.",
                 "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",

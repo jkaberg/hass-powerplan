@@ -72,6 +72,7 @@ async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
     assert entry.runtime_data.startup == [
         "store",
         "build",
+        "schedules",
         "release",
         "restore",
         "provision",

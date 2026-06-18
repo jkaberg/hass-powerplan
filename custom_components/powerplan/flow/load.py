@@ -93,10 +93,14 @@ __all__ = ["LoadSubentryFlow", "binding_from_data", "binding_to_data", "load_tit
 
 #: Which `entity` question binds which domain (D8 §5.4 "domain filter from the Question").
 _ENTITY_DOMAINS: dict[str, tuple[str, ...]] = {
+    "arrival_sources": ("calendar",),
     "calendar_entity": ("calendar",),
     "never_switch": ("switch", "input_boolean", "binary_sensor"),
+    "schedule_entity": ("schedule",),
 }
 _ENTITY_DEFAULT_DOMAINS: tuple[str, ...] = ("sensor",)
+#: `entity` questions whose answer is more than one entity (D4 §4.4).
+_MULTI_ENTITY_KEYS: frozenset[str] = frozenset({"arrival_sources", "never_switch"})
 #: Units rendered as a slider rather than a box (D8 §5.4).
 _SLIDER_UNITS = frozenset({"°C", "%"})
 #: The weekly-time question's seven day keys, Monday first (`Question.kind = weekly_time`).
@@ -195,7 +199,7 @@ def _selector(question: Question, type_key: str) -> Any:  # noqa: PLR0911 - one 
         case QuestionKind.TIME:
             return TimeSelector()
         case QuestionKind.ENTITY:
-            multiple = question.key == "never_switch"
+            multiple = question.key in _MULTI_ENTITY_KEYS
             return EntitySelector(
                 EntitySelectorConfig(
                     domain=list(_ENTITY_DOMAINS.get(question.key, _ENTITY_DEFAULT_DOMAINS)),
@@ -218,7 +222,7 @@ def _form_default(question: Question, value: Any) -> Any:  # noqa: PLR0911 - one
         if isinstance(value, Mapping):
             return ", ".join(f"{float(x):g}:{float(y):g}" for x, y in sorted(value.items()))
         return str(value)
-    if question.kind is QuestionKind.ENTITY and question.key == "never_switch":
+    if question.kind is QuestionKind.ENTITY and question.key in _MULTI_ENTITY_KEYS:
         return list(value) if isinstance(value, list | tuple) else [value]
     if question.kind is QuestionKind.NUMBER:
         return float(value)
@@ -300,7 +304,7 @@ def answers_from_form(
             value = _parse_curve(value)
         elif question.kind is QuestionKind.TIME and isinstance(value, str):
             value = _hhmm(value)
-        elif question.kind is QuestionKind.ENTITY and question.key == "never_switch":
+        elif question.kind is QuestionKind.ENTITY and question.key in _MULTI_ENTITY_KEYS:
             value = tuple(value or ())
         raw[question.key] = value
     return raw

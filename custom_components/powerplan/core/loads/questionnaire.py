@@ -157,11 +157,20 @@ class Answers:
 
 
 def _jsonable(value: Any) -> Any:
-    """Narrow an answer to something a `Store` can hold."""
+    """Narrow an answer to something a `Store` can hold.
+
+    A multi-entity question's untouched default (`never_switch`,
+    `arrival_sources`) is a tuple, and JSON has no tuple - round-tripped
+    through a `Store` it comes back a list, so it is turned into one here too,
+    or a subentry read straight after being written would already differ from
+    itself.
+    """
     if isinstance(value, time):
         return value.strftime("%H:%M")
     if isinstance(value, Mapping):
         return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_jsonable(v) for v in value]
     return value
 
 
