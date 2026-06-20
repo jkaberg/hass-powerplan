@@ -1,4 +1,4 @@
-"""D9 §5.3's phase-3 rows: `floor_group_rotation`, `legionella_expensive_week`, `heat_pump_defrost_evening`, `presence_away_day`.
+"""D9 §5.3's phase-3 rows: `floor_group_rotation`, `legionella_expensive_week`, `heat_pump_defrost_evening`, `presence_away_day`, `dishwasher_weeknight`.
 
 `floor_group_rotation`: a cold January evening: all five floor loops of the
 reference house want heat at once - roughly 5 kW of nameplate against
@@ -28,10 +28,19 @@ knob - and D4 §4.4's `TargetProfile.target()` is what has to answer for it:
 the hall's target relaxes by `away_delta` while nobody is home and is back at
 comfort once the household returns, with no capacity pressure in the
 scenario to confound the two.
+
+`dishwasher_weeknight`: a Wednesday evening, the whole reference house, under a
+ceiling tight enough to warn (not breach) once the dishwasher joins the load -
+D6 §2's `CycleReservation` has a real squeeze to prove itself against,
+the same reasoning `heat_pump_defrost_evening`'s own `target_kw` carries. The
+household loads it after dinner (19:30); `run_once` picks the cheapest block
+that still finishes by the 07:00 ready-by, and the block is never shed once it
+starts, whatever the ladder does around it.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -339,3 +348,72 @@ def test_the_household_leaves_and_the_hall_s_target_relaxes(
     # arrival, given the scenario's own margin past it (D9 §5.3 catalogue).
     assert rows[-1][1] is PresenceMode.HOME
     assert rows[-1][2] == pytest.approx(HALL_COMFORT_C)
+
+
+# --------------------------------------------------------------------------- #
+# D4's row `dishwasher_weeknight`: the cycle reservation under a real
+# squeeze
+# --------------------------------------------------------------------------- #
+
+#: The reference dishwasher's ready-by, local (D9 §5.9), the morning after the
+#: scenario's own start date.
+DISHWASHER_READY_BY = datetime(2027, 1, 21, 7, 0, tzinfo=catalogue.OSLO)
+
+
+@pytest.fixture(scope="module")
+def weeknight() -> tuple[ScenarioResult, _Trail]:
+    """Run the evening once for the module."""
+    trail = _Trail()
+    return run_scenario(catalogue.dishwasher_weeknight(), trail), trail
+
+
+def _dishwasher_runs(trail: _Trail) -> list[list[object]]:
+    """Return `[start, end]` for every consecutive run of ticks granted power.
+
+    `granted_w` (the reservation's own pinned value, D6 §2) rather than
+    `measured_w`: the simulator's real power trace dips well below the flat
+    reservation mid-programme (a wash-and-rinse cycle is not a constant draw),
+    where the grant stays flat for the whole block.
+    """
+    runs: list[list[object]] = []
+    active = False
+    for now, snapshot in trail.rows:
+        status = snapshot.loads.get("dishwasher")
+        granted = status is not None and status.granted_w > 0.0
+        if granted and active:
+            runs[-1][1] = now
+        elif granted:
+            runs.append([now, now])
+            active = True
+        else:
+            active = False
+    return runs
+
+
+@pytest.mark.inv("INV-59")
+def test_the_evening_runs_clean_and_the_dishwasher_completes_by_ready_by(
+    weeknight: tuple[ScenarioResult, _Trail],
+) -> None:
+    """No engine failure, no comfort floor crossed, one contiguous block finishing on time."""
+    result, trail = weeknight
+    assert result.engine_failures == 0
+    assert result.comfort_violation_min == 0.0
+
+    runs = _dishwasher_runs(trail)
+    assert len(runs) == 1, "one programme, one block — not split, not repeated"
+    start, end = runs[0]
+    assert end - start >= timedelta(hours=2, minutes=30), "close to the full 3 h programme"
+    assert end <= DISHWASHER_READY_BY
+
+
+@pytest.mark.inv("INV-59")
+def test_the_running_block_is_never_shed(weeknight: tuple[ScenarioResult, _Trail]) -> None:
+    """D6 §2's `CycleReservation`: granted before the walk, out of the shed set below stage 4."""
+    _result, trail = weeknight
+    runs = _dishwasher_runs(trail)
+    assert runs, "no run to check"
+    by_time = dict(trail.rows)
+    for start, end in runs:
+        during = [now for now in by_time if start <= now <= end]
+        shed = [now for now in during if by_time[now].loads["dishwasher"].shed]
+        assert not shed, (start, end, shed)

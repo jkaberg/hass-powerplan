@@ -293,7 +293,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 3.3 | `water_heater` and legionella | done |
 | 3.4 | `heat_pump`, `radiator`, `best_save` | done |
 | 3.5 | Target profiles and presence | done |
-| 3.6 | `appliance_cycle` and `run_once` | todo |
+| 3.6 | `appliance_cycle` and `run_once` | done |
 | 4.1 | Remaining strategies and combinators | todo |
 | 4.2 | Forecaster and remaining modifiers | done |
 | 4.3 | Tariffs and benchmark houses | todo |

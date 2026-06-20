@@ -28,7 +28,7 @@ from custom_components.powerplan.core.accounting import (
     StoreKind,
     shadow_for,
 )
-from custom_components.powerplan.core.loads.base import effective_mode
+from custom_components.powerplan.core.loads.base import CycleProfile, effective_mode
 from custom_components.powerplan.core.loads.stores import DEFAULT_COP_CURVES, SlabStore
 from custom_components.powerplan.core.model import Mode
 from tests.core.accounting.conftest import (
@@ -38,6 +38,7 @@ from tests.core.accounting.conftest import (
     curve,
     demand,
     local,
+    no3,
     shadow_ctx,
     site,
 )
@@ -372,6 +373,96 @@ def test_05d_a_forced_charge_saves_nothing_and_says_so() -> None:
     assert rec.cf_kwh == pytest.approx(rec.kwh)
     assert rec.savings.amount == 0
     assert rec.excluded_slots == 0, "a force is accounted, not excluded"
+
+
+# --------------------------------------------------------------------------- #
+# 7 - the on-request shadow
+# --------------------------------------------------------------------------- #
+
+REQUESTED_AT = local(2026, 12, 3, 19, 0)
+CYCLE_ENERGY_KWH = 0.9
+CYCLE_DURATION_H = 3.0
+UNIFORM_10 = tuple(1.0 / 10 for _ in range(10))
+
+
+def _cycle_ctx(*, wants: bool = True) -> ShadowCtx:
+    return shadow_ctx(
+        params=LoadParams(
+            kind=StoreKind.CYCLE,
+            nameplate_w=2000.0,
+            cycle_profile=CycleProfile(
+                duration_s=CYCLE_DURATION_H * 3600.0, energy_kwh=CYCLE_ENERGY_KWH, shape=UNIFORM_10
+            ),
+        ),
+        demand=demand(wants=wants, required_kwh=CYCLE_ENERGY_KWH if wants else None),
+    )
+
+
+def test_07_the_shadow_runs_from_the_request_slot_in_its_own_shape() -> None:
+    """Requested 19:00, powerplan ran it 02:00–05:00 - the shadow runs 19:00–22:00 (D11 §9 7)."""
+    under_test = site(import_curve=curve(ORDINARY, days=2))
+    under_test.with_load("dishwasher", _cycle_ctx(), at=REQUESTED_AT.astimezone(UTC))
+
+    # The real load stays quiet until powerplan's own chosen block overnight;
+    # the request (`wants`) stays true the whole time, exactly as a queued
+    # cycle's does until the real machine finishes.
+    for hour in (19, 20, 21):
+        under_test.close(
+            closed_slot(local(2026, 12, 3, hour, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+        )
+    for hour in (22, 23):
+        under_test.close(
+            closed_slot(local(2026, 12, 3, hour, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+        )
+    for hour, kwh in ((0, 0.0), (1, 0.0), (2, 0.3), (3, 0.3), (4, 0.3)):
+        under_test.close(
+            closed_slot(local(2026, 12, 4, hour, 0).astimezone(UTC), loads={"dishwasher": kwh})
+        )
+    under_test.ctx_for("dishwasher", demand=demand(wants=False))
+    under_test.close(
+        closed_slot(local(2026, 12, 4, 5, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+    )
+
+    rec = under_test.accounting.state().ledger.loads["dishwasher"]
+    assert rec.kwh == pytest.approx(CYCLE_ENERGY_KWH)
+    assert rec.cf_kwh == pytest.approx(CYCLE_ENERGY_KWH)
+    # cf: 0.3 kWh at each of 19, 20, 21 local (NO3: 1.25, 1.40, 1.55 NOK/kWh).
+    assert rec.cf_cost.amount == Decimal("0.3") * (no3(19) + no3(20) + no3(21))
+    # actual: 0.3 kWh at each of 02, 03, 04 local (NO3: 0.17, 0.19, 0.22 NOK/kWh).
+    assert rec.cost.amount == Decimal("0.3") * (no3(2) + no3(3) + no3(4))
+    assert rec.savings.amount == rec.cf_cost.amount - rec.cost.amount
+    assert rec.savings.amount > 0, "the block moved to cheaper, later hours"
+
+
+def test_07b_the_shadow_stops_at_its_own_duration_even_if_the_request_lingers() -> None:
+    """The shadow's own 3-hour run ends at 22:00 and does not restart while `wants` stays true."""
+    under_test = site(import_curve=curve(ORDINARY, days=2))
+    under_test.with_load("dishwasher", _cycle_ctx(), at=REQUESTED_AT.astimezone(UTC))
+
+    for hour in (19, 20, 21, 22, 23):
+        under_test.close(
+            closed_slot(local(2026, 12, 3, hour, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+        )
+
+    rec = under_test.accounting.state().ledger.loads["dishwasher"]
+    assert rec.cf_kwh == pytest.approx(CYCLE_ENERGY_KWH), "not a second programme's worth"
+
+
+def test_07c_a_cancelled_request_cancels_the_shadow_run() -> None:
+    """`wants` dropping mid-run stops the shadow exactly there - nothing was ever loaded."""
+    under_test = site(import_curve=curve(ORDINARY, days=2))
+    under_test.with_load("dishwasher", _cycle_ctx(), at=REQUESTED_AT.astimezone(UTC))
+
+    under_test.close(
+        closed_slot(local(2026, 12, 3, 19, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+    )
+    under_test.ctx_for("dishwasher", demand=demand(wants=False))
+    under_test.close(
+        closed_slot(local(2026, 12, 3, 20, 0).astimezone(UTC), loads={"dishwasher": 0.0})
+    )
+
+    rec = under_test.accounting.state().ledger.loads["dishwasher"]
+    assert rec.cf_kwh == pytest.approx(CYCLE_ENERGY_KWH / 3.0), "one of the three hours, no more"
 
 
 # --------------------------------------------------------------------------- #

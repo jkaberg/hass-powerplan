@@ -33,6 +33,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
+from ...loads.base import CycleProfile
 from ...loads.stores import CopCurve, StoreModel
 from ...model import Carrier, Demand, Mode
 
@@ -94,6 +95,11 @@ class LoadParams:
     rated_w: float | None = None
     charge_eff: float = 0.9
     max_w: float | None = None
+    #: The cycle's own profile - duration, shape, energy - for `on_request`'s
+    #: shadow. The type's default (D4 §6.8), never a live learned one: no
+    #: shadow chases a live-updating parameter today (INV-63's promise is
+    #: D10's, not yet wired to accounting for any kind).
+    cycle_profile: CycleProfile | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +148,11 @@ class ShadowState:
     #: dropped and came back is not a new session.
     latched_kwh: float | None = None
     real_kwh: float = 0.0
+    #: The on-request shadow's own run start (D11 §5.3, `cycle`), separate from
+    #: `anchored_at` - the generic driver overwrites `anchored_at` on every
+    #: re-anchor (month rollover, observe-slot end, return from blindness),
+    #: which would otherwise silently reset an in-progress shadow run's clock.
+    run_started_at: datetime | None = None
 
 
 class Shadow(Protocol):

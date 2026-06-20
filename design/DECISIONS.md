@@ -1367,3 +1367,23 @@ The four thermal types get an `arrival_sources` entity question; `_calendar_even
 
 A `SwitchEntity` (config, disabled by default) for thermal loads with a target profile, writing through the existing `async_set_load_param` path; the engine already rebuilt the profile on `follow_presence`. A boolean isn't a row in the `ParamNumber` table, and `LoadForceSwitch` is the precedent. Affects D8 §5.5.
 **Rejected:** a `ParamSwitch` table for one row - a table of one is the class it replaces, plus indirection.
+
+### D-0304 · The `on_request` shadow: `run_started_at` and the default profile
+
+`OnRequestShadow` runs a cycle's programme from the request instant in its ten-segment shape (D11 §9 7). `ShadowState.run_started_at` is separate from `anchored_at`, which the generic driver overwrites on every re-anchor; it stays set after the programme ends until `demand.wants` falls, so a lingering request doesn't restart the programme. `LoadParams.cycle_profile` comes from `appliance_cycle.profile_of(load)`, the type's default profile, like every other shadow's parameters. Affects D11 §5.3, §9 7.
+**Rejected:** counting slots since the request - slot length changes across DST and granularity changes.
+
+### D-0305 · `CycleReservation` is built fresh every tick inside the engine
+
+`Engine._cycle_reservations` builds one for each load whose cycle is `STARTED` or `RUNNING`, from its profile, and splices them into `allocate()`'s constraints beside the structural ones. It needs this tick's observation, so it can't live with circuits and groups, which change only on subentry edits; `ContractedPowerLimit` is already built per tick the same way. Until now the allocator's protection had only been tested against a hand-built object. Affects D6 §2, §5.7.
+**Rejected:** building it in `runtime.py` - it needs no I/O and would drag `LoadState` across the HA boundary.
+
+### D-0306 · `powerplan_cycle`'s states come from `CycleState.notify_state`
+
+`notify_state` maps the six phases to D8's four: finished, aborted, started (`STARTED` or `RUNNING`), and planned (idle with `requested_at` set). Nothing ever assigns `CyclePhase.PLANNED`, so reading it literally would never fire. `Observation` carries `cycle_state` and `cycle_started_at`; `_cycle_events` detects edges on one string. Affects D4 §5.13, D8 §5.6.
+**Rejected:** making `latch()` assign `PLANNED` - changes a tested state machine to simplify one read.
+
+### D-0307 · The smoke baseline's comfort minutes rise with the cycle reservation
+
+`total.comfort_violation_min` went from 10.5 to 12.0 once `CycleReservation` was wired. Re-running the January week before and after the change in isolation: 9.83 vs 10.17 minutes, on the same two bedroom radiators (17 °C floor, 0.2 K swing), the tightest comfort margin in the house by design. Reserving the dishwasher's power ahead of the walk takes flexibility the site shouldn't have had. The same update also records the small, constant delta D-0277 caused, whose baseline update had been missed. Baseline updated with a changelog line (D9 §5.11).
+**Rejected:** tuning the house so the radiators absorb it - flatters a metric. Gating the reservation - INV-59 is why it exists.

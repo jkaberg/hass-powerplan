@@ -39,7 +39,9 @@ class Constraint(Protocol):
 ```
 Order: **grid-switched loads → site hard limits → circuits → phases → groups → zones**, outermost physical limit first and preferences last. Zones also act *before* allocation as a demand transform, deciding which sources carry a zone's demand this tick (§5.7). Each constraint's `cap_w` is applied as `min(...)` while walking loads in priority order, so an inner limit can only tighten what an outer one allowed (INV-60). `GridSwitched` (scope `switched`, hard, first in the walk, `ShedReason.GRID_SWITCHED`) keeps a load the grid switches (D13 G14) at 0 outside its windows (D-0608).
 
-**Cycle reservation.** A running cycle contributes `reserve_w = nameplate` through a `CycleReservation` constraint (scope `load`), is excluded from the shed candidates below stage 4, and is granted its nameplate before the priority walk (like a comfort violator). A planned-but-not-started cycle is an ordinary plan cap.
+**Cycle reservation.** A running cycle contributes `reserve_w = profile.mean_w` - the learned or default programme's own average draw, not the nameplate - through a `CycleReservation` constraint (scope `load`), is excluded from the shed candidates below stage 4, and is granted that power before the priority walk, like a comfort violator. A planned cycle that hasn't started is an ordinary plan cap.
+
+`Engine._cycle_reservations` builds the tuple fresh every tick inside `tick()`'s step 8, from the loads `_observe()` (step 7) found with `LoadState.cycle.active`, next to `ContractedPowerLimit(hard.contracted)` at the same `allocate()` call. That's the pattern for a constraint synthesised per tick, as opposed to `self._constraints` (circuits, groups), which is structural and only rebuilt on a subentry change (D-0305).
 
 **Baseline shrinking the reserve without removing the σ floor.**
 

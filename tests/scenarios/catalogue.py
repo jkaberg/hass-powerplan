@@ -416,6 +416,29 @@ def presence_away_day() -> Scenario:
     )
 
 
+#: D4's row (D9 §5.3 `dishwasher_weeknight`): a Wednesday evening, the whole
+#: reference house - the dishwasher's own `powerplan_cycle` edges and its
+#: `CycleReservation` (D6 §2) need a real capacity squeeze alongside it
+#: to prove the reservation protects a running block, the same reasoning
+#: `heat_pump_defrost_evening`'s target_kw carried (D9 §5.3). The window opens
+#: before the household loads it (19:30, D9 §5.9) and runs well past its
+#: 07:00 ready-by the next morning.
+DISHWASHER_WEEKNIGHT_START = datetime(2027, 1, 20, 18, 7, 17, tzinfo=OSLO)
+DISHWASHER_WEEKNIGHT_DAYS = 0.6
+DISHWASHER_WEEKNIGHT_TARGET_KW = 15.0
+
+
+def dishwasher_weeknight() -> Scenario:
+    """Return the weeknight the dishwasher runs its cycle under real scarcity (D4 §5.13, §9 12)."""
+    return Scenario(
+        name="dishwasher_weeknight",
+        house=lambda: nordic_detached(start=DISHWASHER_WEEKNIGHT_START.date()),
+        start=DISHWASHER_WEEKNIGHT_START,
+        days=DISHWASHER_WEEKNIGHT_DAYS,
+        target_kw=DISHWASHER_WEEKNIGHT_TARGET_KW,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
@@ -424,6 +447,7 @@ PHASE3 = (
     legionella_expensive_week,
     heat_pump_defrost_evening,
     presence_away_day,
+    dishwasher_weeknight,
 )
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.

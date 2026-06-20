@@ -19,6 +19,7 @@ from .accounting.savings import site_savings
 from .accounting.shadow.base import LoadParams, ShadowCtx, StoreKind
 from .engine import AccountingClose, AccountingStatus, SlotClose, SlotLoad
 from .loads.stores import EnergyStore, RoomStore, SlabStore, TankStore
+from .loads.types.appliance_cycle import profile_of
 from .loads.types.heat_pump import curve_of
 from .model import Carrier, Money
 from .state_codec import decode, encode
@@ -86,6 +87,7 @@ def params_of(load: Load) -> LoadParams:
         rated_w=load.config.nameplate_w if kind is StoreKind.HEAT_PUMP else None,
         charge_eff=float(params.get("charge_eff", 0.9)),
         max_w=load.config.nameplate_w,
+        cycle_profile=profile_of(load) if kind is StoreKind.CYCLE else None,
     )
 
 

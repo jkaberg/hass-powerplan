@@ -59,6 +59,7 @@ __all__ = [
     "SEGMENTS",
     "ApplianceCycle",
     "Programme",
+    "profile_of",
 ]
 
 #: Bumped whenever a table below changes (INV-66).
@@ -596,3 +597,17 @@ def _reason(cycle: CycleState, *, wants: bool, forced: bool) -> str:
 
 
 TYPE = register(ApplianceCycle())
+
+
+def profile_of(load: Load) -> CycleProfile:
+    """Return the cycle's default profile - duration, shape, energy - as materialised (INV-66).
+
+    `state=None`: the default branch of `profile()`, never a live learned one -
+    D11's accounting shadow reads a load's *effective* parameters once, at add
+    time (`accounting_hook.py::params_of`), the same as every other kind's, and
+    none of them chase a live-updating value yet (D10's fit gate is not wired to
+    accounting for any kind, INV-63's promise). A fresh `ApplianceCycle()`, not
+    `TYPE`: the registry's own `register()` returns the generic `DeviceType`
+    protocol, which does not name `profile()`.
+    """
+    return ApplianceCycle().profile(load.config, None)

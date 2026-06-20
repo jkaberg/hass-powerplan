@@ -202,6 +202,28 @@ class CycleState:
         """Whether a run is under way - the half of INV-59 a load can answer."""
         return self.phase in {CyclePhase.STARTED, CyclePhase.RUNNING}
 
+    @property
+    def notify_state(self) -> str:
+        """D8 §5.6's `powerplan_cycle` state name for this phase, or `""` for none.
+
+        `CyclePhase.PLANNED` is never assigned by `latch()` (`design/DECISIONS.md`
+        D-0304): a request sits at `phase = IDLE` with `requested_at` set until
+        the appliance starts, so "planned" reads that combination instead - "a
+        cycle has been requested and has not started" is what the name means to
+        a household, whichever phase value holds it. `started` covers `STARTED`
+        and `RUNNING` alike: the household is told once that the machine is
+        going, not a second time when it confirms.
+        """
+        if self.phase is CyclePhase.FINISHED:
+            return "finished"
+        if self.phase is CyclePhase.ABORTED:
+            return "aborted"
+        if self.phase in {CyclePhase.STARTED, CyclePhase.RUNNING}:
+            return "started"
+        if self.phase in {CyclePhase.IDLE, CyclePhase.PLANNED} and self.requested_at is not None:
+            return "planned"
+        return ""
+
 
 # --------------------------------------------------------------------------- #
 # Configuration and state
@@ -373,6 +395,13 @@ class Observation:
     legionella_active: bool | None = None
     legionella_in_progress: bool | None = None
     legionella_at_risk: bool | None = None
+    #: What only a type with a run-once programme knows (`appliance_cycle`,
+    #: §5.13, INV-59): `cycle_state` is `CycleState.notify_state` - `""` for a
+    #: type with `LoadState.cycle` but nothing notify-worthy this tick, `None`
+    #: for a type with no cycle at all - and `cycle_started_at` the run's own
+    #: start once it has one. Both feed D8's `powerplan_cycle` edges.
+    cycle_state: str | None = None
+    cycle_started_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -581,18 +610,20 @@ class Load:
         connected = getattr(self.device_type, "connected", None)
         soc = getattr(self.device_type, "soc", None)
         legionella = getattr(self.device_type, "legionella", None)
-        cycle = legionella(self, state, ctx) if callable(legionella) else None
+        hygiene = legionella(self, state, ctx) if callable(legionella) else None
         return state, Observation(
             demand=demand,
             measured_w=ctx.reads.value(Role.POWER),
             health=self.health(state, ctx),
             connected=connected(ctx) if callable(connected) else None,
             soc=soc(ctx) if callable(soc) else None,
-            legionella_due_at=None if cycle is None else cycle.due_at,
-            legionella_last_completed=None if cycle is None else cycle.last_completed,
-            legionella_active=None if cycle is None else cycle.active,
-            legionella_in_progress=None if cycle is None else cycle.in_progress,
-            legionella_at_risk=None if cycle is None else cycle.at_risk,
+            legionella_due_at=None if hygiene is None else hygiene.due_at,
+            legionella_last_completed=None if hygiene is None else hygiene.last_completed,
+            legionella_active=None if hygiene is None else hygiene.active,
+            legionella_in_progress=None if hygiene is None else hygiene.in_progress,
+            legionella_at_risk=None if hygiene is None else hygiene.at_risk,
+            cycle_state=None if state.cycle is None else state.cycle.notify_state,
+            cycle_started_at=None if state.cycle is None else state.cycle.started_at,
         )
 
     def apply(self, grant: Grant, state: LoadState, ctx: LoadCtx) -> tuple[LoadState, ApplyResult]:

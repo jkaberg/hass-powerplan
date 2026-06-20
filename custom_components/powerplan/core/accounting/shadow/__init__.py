@@ -2,10 +2,12 @@
 
 Importing this package registers every shadow that ships. WP0.10a ships the
 thermostat rows (`slab`, `room`, `heat_pump`) and the plug-in row (`energy`);
-`tank`, `on_request`, `schedule` and the battery's `idle`
-(phase 5) are each one module that calls `@register` and changes nothing else. A
-store model with no shadow answers `shadow_for(kind) is None`, and that load's
-cost is shown while its savings are not stated.
+WP3.6 ships `on_request` (`cycle`). `tank` and `schedule` and the
+battery's `idle` (phase 5) are each one module that calls `@register` and
+changes nothing else - `tank` needs `ShadowCtx.draw_off_kwh`/`.legionella_active`
+wired first (both dead fields today, `design/PLAN.md`'s WP3.3 row). A store model
+with no shadow answers `shadow_for(kind) is None`, and that load's cost is shown
+while its savings are not stated.
 """
 
 from .base import (
@@ -20,6 +22,7 @@ from .base import (
     register,
     shadow_for,
 )
+from .on_request import OnRequestShadow
 from .plug_in import PlugInShadow
 from .thermostat import HeatPumpShadow, RoomThermostatShadow, ThermostatShadow
 
@@ -27,6 +30,7 @@ __all__ = [
     "COUNTED_MODES",
     "HeatPumpShadow",
     "LoadParams",
+    "OnRequestShadow",
     "PlugInShadow",
     "RoomThermostatShadow",
     "Shadow",

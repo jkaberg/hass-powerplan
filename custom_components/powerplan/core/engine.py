@@ -60,6 +60,7 @@ from .allocation import (
     BudgetCfg,
     Constraint,
     ContractedPowerLimit,
+    CycleReservation,
     Grants,
     HardLimits,
     Ladder,
@@ -1040,6 +1041,37 @@ class Engine:
             out.append(replace(load, config=replace(load.config, params=params, target=target)))
         self._loads = tuple(out)
 
+    def _cycle_reservations(
+        self, load_states: Mapping[str, LoadState]
+    ) -> tuple[CycleReservation, ...]:
+        """Return one `CycleReservation` per appliance cycle under way this tick (D6 §2, §5.7).
+
+        Built fresh every tick, unlike `self._constraints` (circuits, groups -
+        structural, only rebuilt on a subentry change): whether a cycle is
+        `started`/`running` is this tick's own observation, and INV-59 protects
+        the two alike (D4 §5.13). A type with no `profile()` method - every type
+        but `appliance_cycle` - is skipped by the same duck-typed dispatch
+        `Load.observe()` uses for `legionella` (D-0295).
+        """
+        out: list[CycleReservation] = []
+        for load in self._loads:
+            state = load_states.get(load.load_id)
+            if state is None or state.cycle is None or not state.cycle.active:
+                continue
+            profile_fn = getattr(load.device_type, "profile", None)
+            if profile_fn is None:
+                continue
+            profile = profile_fn(load.config, state)
+            out.append(
+                CycleReservation(
+                    load_id=load.load_id,
+                    power_w=profile.mean_w,
+                    running=True,
+                    started_at=state.cycle.started_at,
+                )
+            )
+        return tuple(out)
+
     # ----------------------------------------------------------------- the tick #
 
     def tick(self, state: EngineState, inputs: Inputs) -> tuple[EngineState, Snapshot, Effects]:
@@ -1192,7 +1224,11 @@ class Engine:
         )
         grants, report, alloc_state = allocate(
             ctx,
-            (*self._constraints, ContractedPowerLimit(hard.contracted)),
+            (
+                *self._constraints,
+                ContractedPowerLimit(hard.contracted),
+                *self._cycle_reservations(load_states),
+            ),
             site.alloc,
             replace(state.alloc, pi=pi, ladder=ladder_state),
         )
@@ -2650,6 +2686,39 @@ def _legionella_events(edges: dict[str, str], observations: Mapping[str, Any]) -
     return events
 
 
+def _cycle_events(edges: dict[str, str], observations: Mapping[str, Any]) -> list[HaEvent]:
+    """Return `cycle` for every appliance cycle's phase edge this tick (D4 §5.13, D8 §5.6).
+
+    One string per load, `Observation.cycle_state` - `None` for a type with no
+    cycle at all, `""` for one with nothing notify-worthy this tick - the same
+    single-field edge shape `_plug_edges` uses for `connected`, simpler than
+    legionella's four because a cycle's four names are already one mutually
+    exclusive value (`CycleState.notify_state`). None of the four fires on the
+    tick a load is first observed, matching every other edge here.
+    """
+    events: list[HaEvent] = []
+    for load_id, observation in observations.items():
+        current = getattr(observation, "cycle_state", None)
+        if current is None:
+            continue
+        key = f"cycle:{load_id}"
+        previous = edges.get(key)
+        edges[key] = current
+        if previous is not None and previous != current and current:
+            started_at = getattr(observation, "cycle_started_at", None)
+            events.append(
+                HaEvent(
+                    EventKind.CYCLE,
+                    {
+                        "load": load_id,
+                        "state": current,
+                        "start_at": None if started_at is None else started_at.isoformat(),
+                    },
+                )
+            )
+    return events
+
+
 def _circuit_events(edges: dict[str, str], report: AllocReport) -> list[HaEvent]:
     """Return one `breach` event per circuit whose fuse is newly exceeded (D6 §8).
 
@@ -2749,6 +2818,7 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
             )
     events.extend(_circuit_events(edges, report))
     events.extend(_legionella_events(edges, observations))
+    events.extend(_cycle_events(edges, observations))
     comfort = ",".join(sorted(report.comfort))
     if edges.get("comfort") != comfort:
         edges["comfort"] = comfort
