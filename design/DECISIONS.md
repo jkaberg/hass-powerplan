@@ -1387,3 +1387,8 @@ A `SwitchEntity` (config, disabled by default) for thermal loads with a target p
 
 `total.comfort_violation_min` went from 10.5 to 12.0 once `CycleReservation` was wired. Re-running the January week before and after the change in isolation: 9.83 vs 10.17 minutes, on the same two bedroom radiators (17 °C floor, 0.2 K swing), the tightest comfort margin in the house by design. Reserving the dishwasher's power ahead of the walk takes flexibility the site shouldn't have had. The same update also records the small, constant delta D-0277 caused, whose baseline update had been missed. Baseline updated with a changelog line (D9 §5.11).
 **Rejected:** tuning the house so the radiators absorb it - flatters a metric. Gating the reservation - INV-59 is why it exists.
+
+### D-0308 · `observe` and `opportunistic` aren't strategies; `battery` defaults to `always` for now
+
+Eight types listed `"observe"` among their strategies and two listed `"opportunistic"`, neither registered, so picking one in the flow would `KeyError` on the next tick; `battery`'s default `peak_shave` wasn't registered either, breaking every new battery on its first tick. Observe is a mode (`select.<load>_mode`), and `opportunistic` is a combinator (D5 §5.11). Both are removed, the battery defaults to `always` until its strategies exist, and a test asserts every type's strategies are registered. Affects D5 §3, §10; D8 §5.4.
+**Rejected:** registering trivial `Observe`/`Opportunistic` strategies - duplicates the mode select and the combinator. Hiding batteries from the flow - covers one bug with another.

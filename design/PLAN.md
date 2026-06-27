@@ -294,7 +294,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 3.4 | `heat_pump`, `radiator`, `best_save` | done |
 | 3.5 | Target profiles and presence | done |
 | 3.6 | `appliance_cycle` and `run_once` | done |
-| 4.1 | Remaining strategies and combinators | todo |
+| 4.1 | Remaining strategies and combinators | done |
 | 4.2 | Forecaster and remaining modifiers | done |
 | 4.3 | Tariffs and benchmark houses | todo |
 | 4.3a | Tariff presets | done |

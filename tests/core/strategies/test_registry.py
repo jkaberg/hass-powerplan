@@ -15,7 +15,7 @@ from datetime import timedelta
 
 import pytest
 
-from custom_components.powerplan.core.loads import CalendarEvent, Mode
+from custom_components.powerplan.core.loads import CalendarEvent, Mode, device_types
 from custom_components.powerplan.core.loads.stores import SlabStore
 from custom_components.powerplan.core.loads.stores.base import StoreCtx
 from custom_components.powerplan.core.model import PlanMode
@@ -104,6 +104,23 @@ def test_every_strategy_takes_the_combinators() -> None:
     """A combinator is an extra on any load, so it is in every schema (§5.11)."""
     for key in keys():
         assert set(COMMON_DEFAULTS) <= {field.key for field in entry(key).schema}, key
+
+
+def test_every_device_type_offers_only_registered_strategies() -> None:
+    """A name in `device_type.strategies` `get()` cannot find crashes the planner.
+
+    The moment a household picks it - `flow/load.py`'s own review-step select
+    renders `device_type.strategies` directly (D8 §5.2), with nothing between
+    the choice and `plan_all`'s `get(view.strategy)` (D-0308).
+    `"observe"` (a mode, `select.<load>_mode`'s own - D4 §5.2) and
+    `"opportunistic"` (a combinator toggle, `COMBINATOR_SCHEMA` - §5.11) are
+    not, and never were, registered strategies.
+    """
+    roster = set(keys())
+    type_keys = device_types.keys()
+    for type_key in type_keys:
+        offered = set(device_types.get(type_key).strategies)
+        assert offered <= roster, (type_key, offered - roster)
 
 
 def test_always_defers_to_the_allocator_in_every_slot() -> None:

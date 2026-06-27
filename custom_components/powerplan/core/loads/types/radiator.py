@@ -230,12 +230,7 @@ class Radiator:
 
     key: ClassVar[str] = "radiator"
     kinds: ClassVar[tuple[str, ...]] = ("switch", "setpoint")
-    strategies: ClassVar[tuple[str, ...]] = (
-        "best_save",
-        "heat_capacitor",
-        "always",
-        "observe",
-    )
+    strategies: ClassVar[tuple[str, ...]] = ("best_save", "heat_capacitor", "always")
     default_strategy: ClassVar[str] = "best_save"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

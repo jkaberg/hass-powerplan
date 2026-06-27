@@ -206,7 +206,7 @@ class ApplianceCycle:
 
     key: ClassVar[str] = "appliance_cycle"
     kinds: ClassVar[tuple[str, ...]] = ("switch",)
-    strategies: ClassVar[tuple[str, ...]] = ("run_once", "always", "observe")
+    strategies: ClassVar[tuple[str, ...]] = ("run_once", "always")
     default_strategy: ClassVar[str] = "run_once"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

@@ -291,7 +291,7 @@ class FloorHeating:
 
     key: ClassVar[str] = "floor_heating"
     kinds: ClassVar[tuple[str, ...]] = ("mode", "setpoint")
-    strategies: ClassVar[tuple[str, ...]] = ("heat_capacitor", "best_save", "always", "observe")
+    strategies: ClassVar[tuple[str, ...]] = ("heat_capacitor", "best_save", "always")
     default_strategy: ClassVar[str] = "heat_capacitor"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

@@ -239,13 +239,7 @@ class Ev:
 
     key: ClassVar[str] = "ev"
     kinds: ClassVar[tuple[str, ...]] = ("modulate",)
-    strategies: ClassVar[tuple[str, ...]] = (
-        "deadline_fill",
-        "cheapest_hours",
-        "always",
-        "opportunistic",
-        "observe",
-    )
+    strategies: ClassVar[tuple[str, ...]] = ("deadline_fill", "cheapest_hours", "always")
     default_strategy: ClassVar[str] = "deadline_fill"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

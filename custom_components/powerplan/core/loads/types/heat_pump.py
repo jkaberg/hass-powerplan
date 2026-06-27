@@ -298,12 +298,7 @@ class HeatPump:
     #: One kind, and it is not a relay: INV-29's mains switch has nothing to be
     #: actuated *by*. `sg_ready` joins it in v1.x (D4 §10).
     kinds: ClassVar[tuple[str, ...]] = ("setpoint",)
-    strategies: ClassVar[tuple[str, ...]] = (
-        "heat_capacitor",
-        "best_save",
-        "always",
-        "observe",
-    )
+    strategies: ClassVar[tuple[str, ...]] = ("heat_capacitor", "best_save", "always")
     default_strategy: ClassVar[str] = "heat_capacitor"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

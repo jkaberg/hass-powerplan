@@ -81,6 +81,8 @@ def should_adopt(old: Plan | None, new: Plan, policy: HysteresisPolicy, *, curve
 
 `plan_all` is in `base.py` next to the registry it dispatches through - `context.py` can't call the registry without importing `base.py`, which imports it (D-0133). `headroom` overrides what `SiteContext` would build, for the backtest and the scenarios.
 
+Every `device_type.strategies` tuple (D4, each type's own module) is a subset of `keys()`, checked by `tests/core/strategies/test_registry.py::test_every_device_type_offers_only_registered_strategies`, since `get(view.strategy)` raises `KeyError` the moment the review select lets a household pick an unregistered key (D-0308). §9's tests are one file per number under `tests/core/strategies/test_NN_*.py` and `tests/property/`.
+
 ---
 
 ## 4. Types

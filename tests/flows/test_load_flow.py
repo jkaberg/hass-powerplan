@@ -161,6 +161,31 @@ async def test_02_the_load_flow_creates_a_subentry_with_answers_derived_and_vers
     assert again["errors"] == {"device": "already_configured"}
 
 
+async def test_02a_a_non_default_strategy_pick_is_stored_and_the_runtime_honours_it(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """D8 §5.2's select offers every strategy the type lists, not just the default.
+
+    WP4.1, D-0308 - the only path a household has into `LoadConfig.strategy` is this
+    select, so a pick other than the derived default must reach the runtime unchanged.
+    """
+    result = await _add_charger(hass, site, charger)
+    review = result["data_schema"]({})
+    assert review["strategy"] == "deadline_fill", "the derived default, unless overridden"
+    result = await _answer(
+        hass, result, **{**review, "name": "Garage charger", "strategy": "cheapest_hours"}
+    )
+    await hass.async_block_till_done()
+    assert result["type"] is FlowResultType.CREATE_ENTRY, result
+
+    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
+    assert sub.data["strategy"] == "cheapest_hours"
+
+    runtime: Runtime = site.runtime_data
+    load = runtime.build.loads[0]
+    assert load.config.strategy == "cheapest_hours"
+
+
 @pytest.mark.inv("INV-66")
 async def test_03_reconfigure_re_derives_shows_the_diff_and_keeps_manual_edits(
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
