@@ -86,6 +86,15 @@ def test_the_sun_is_dark_at_midnight_and_up_at_noon_in_june() -> None:
     assert june > january > 0.0
 
 
+def test_a_lower_latitude_gets_more_winter_sun_than_trondheims_own() -> None:
+    """WP4.3, D-0310: `latitude_deg` only steers the sun angle, never the climate normals."""
+    trondheim = WeatherSim(seed=11)
+    amsterdam = WeatherSim(seed=11, latitude_deg=52.3676)
+    noon = datetime(2027, 1, 13, 11, tzinfo=UTC)
+    assert amsterdam.at(noon).solar_w_per_m2 > trondheim.at(noon).solar_w_per_m2 > 0.0
+    assert amsterdam.at(noon).outdoor_c == trondheim.at(noon).outdoor_c
+
+
 def test_env_at_carries_ground_and_mains_temperatures() -> None:
     """The slab needs the ground and the tank needs the mains - both seasonal."""
     sim = WeatherSim(seed=11)

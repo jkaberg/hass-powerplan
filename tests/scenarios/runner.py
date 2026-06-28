@@ -494,6 +494,8 @@ class HouseDriver:
         """Step every simulator under last tick's commands; return what the meter saw."""
         house = self.house
         total_w = house.uncontrolled.at(now)
+        if house.production is not None:
+            total_w += house.production.at(now)
         for load in house.loads:
             sim = house.sims[load.load_id]
             command = pending[load.load_id]
@@ -585,7 +587,7 @@ def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
                     start=slot.start,
                     end=slot.start + timedelta(seconds=slot.seconds),
                     value=Decimal(str(round(slot.nok_per_kwh, 5))),
-                    currency="NOK",
+                    currency=house.cfg.currency,
                     source="sim",
                     fetched_at=now,
                 )
@@ -593,10 +595,14 @@ def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
     ctx = PriceContext(
         now=now,
         tz=tz,
-        currency="NOK",
+        currency=house.cfg.currency,
         mtd_kwh_at=lambda _t: 0.0,
         ytd_kwh_at=lambda _t: 0.0,
         day_type_at=lambda _d: None,
+        # nl_pv/be_quarter's own tariffs carry no `tou_schedule` energy
+        # component, so `tou` above is always `None` for them and `holidays`
+        # never reaches a `TimeFilter` - this stays `nordic_detached`'s own
+        # calendar until a house whose energy component actually needs one exists.
         holidays=NO_HOLIDAYS,
     )
     curve = build_curve(

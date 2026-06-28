@@ -2,25 +2,28 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from tests.sim.base import QUARTER_S
 from tests.sim.prices import (
+    EPEX_NL_MEAN_EUR_PER_KWH,
     FLAT,
     MONTHLY_SPOT_NOK,
     NEGATIVE_DAYS,
     NEGATIVE_DEPTH_NOK,
     NORGESPRIS_NOK_PER_KWH,
     OUTAGE,
+    SOLAR_GLUT,
     SPOT_LIKE,
     PriceRegime,
     PriceSim,
 )
 
 OSLO = ZoneInfo("Europe/Oslo")
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 WINTER_DAY = date(2027, 1, 13)
 DST_AUTUMN = date(2026, 10, 25)
 DST_SPRING = date(2027, 3, 28)
@@ -82,6 +85,36 @@ def test_a_negative_day_goes_below_zero_and_nothing_clamps_it() -> None:
     prices = prices_of(sim(kind=NEGATIVE_DAYS), date(2027, 4, 1))
     assert min(prices) == pytest.approx(-NEGATIVE_DEPTH_NOK, abs=1e-9)
     assert max(prices) > 0.0
+
+
+def test_solar_glut_troughs_at_midday_and_goes_negative_on_some_summer_days() -> None:
+    """WP4.3, D9 §5.9 `nl_pv`: a duck curve, negative at midday on the volatile days."""
+    source = PriceSim(seed=11, tz=AMSTERDAM, regimes=(PriceRegime(SOLAR_GLUT, *_all_time()),))
+    june_noons = [source.at(datetime(2027, 6, d, 12, tzinfo=AMSTERDAM)) for d in range(1, 31)]
+    assert any(v is not None and v < 0.0 for v in june_noons), "some June middays go negative"
+    assert any(v is not None and v > 0.0 for v in june_noons), "not every June midday does"
+    midnight = source.at(datetime(2027, 6, 15, 0, 0, tzinfo=AMSTERDAM))
+    noon = source.at(datetime(2027, 6, 15, 12, 0, tzinfo=AMSTERDAM))
+    assert midnight is not None
+    assert noon is not None
+    assert noon < midnight, "the trough is at midday, not midnight, unlike the Nordic shape"
+
+
+def test_solar_glut_s_annual_level_is_the_epex_nl_mean() -> None:
+    """The year-round average sits near the sourced EPEX NL figure, not a made-up one."""
+    source = PriceSim(seed=11, tz=AMSTERDAM, regimes=(PriceRegime(SOLAR_GLUT, *_all_time()),))
+    samples = [
+        source.at(datetime(2027, month, 15, hour, 0, tzinfo=AMSTERDAM))
+        for month in range(1, 13)
+        for hour in range(24)
+    ]
+    values = [v for v in samples if v is not None]
+    mean = sum(values) / len(values)
+    assert mean == pytest.approx(EPEX_NL_MEAN_EUR_PER_KWH, rel=0.35)
+
+
+def _all_time() -> tuple[date, date]:
+    return date(2026, 1, 1), date(2028, 1, 1)
 
 
 @pytest.mark.parametrize(

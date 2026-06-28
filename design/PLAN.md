@@ -114,6 +114,7 @@ HLD §9 phase 4. **Gate (simulated):** golden tests per market; one benchmark ho
 | **4.2 Forecaster and remaining modifiers** | D1 complete | D1 | D1 §9 7-10, 13-15 | 0.4 |
 | **4.3 Tariffs and benchmark houses** | multi-market, measured: one house per market | D2 presets; D9 §5.9 | D2 §9 golden, 12; the market scenarios | 0.3, 0.7, 0.11 |
 | **4.3a Tariff presets** | the market presets with a golden each | D2 §6 | D2 §9 1, 12 | 0.3 |
+| **4.3b Market houses: FI, ES, FR** | `fi_linear`, `es_contracted`, `fr_tempo` on one builder | D9 §5.9 | their scenarios and baselines | 4.3a, 4.9 |
 | **4.4 Entity format table** | price sensors from any market | D1 §2 | D1 §9 1 | 1.2 |
 
 ### Phase 5 - Forecasts, zones, battery, external limits, delegated
@@ -296,8 +297,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 3.6 | `appliance_cycle` and `run_once` | done |
 | 4.1 | Remaining strategies and combinators | done |
 | 4.2 | Forecaster and remaining modifiers | done |
-| 4.3 | Tariffs and benchmark houses | todo |
+| 4.3 | Tariffs and benchmark houses | done |
 | 4.3a | Tariff presets | done |
+| 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
 | 5.1 | D10 core and providers | todo |
 | 5.1a | D10 core | done |

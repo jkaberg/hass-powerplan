@@ -18,7 +18,9 @@ from tests.builders.houses import (
     FLOOR_GROUP,
     FLOOR_LOOPS,
     GARAGE_CIRCUIT,
+    be_quarter,
     house,
+    nl_pv,
     no_peak,
     nordic_detached,
     tensio,
@@ -27,6 +29,7 @@ from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
 
 OSLO = ZoneInfo("Europe/Oslo")
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 
 #: A Tuesday in January 2027 - spot prices, the heating season, both Tensio
 #: versions loaded (D9 §5.9's year). 16:17:17 local: the car arrives soon after.
@@ -439,6 +442,57 @@ def dishwasher_weeknight() -> Scenario:
     )
 
 
+#: WP4.3, D9 §5.9 `nl_pv`: a summer midday with a real negative EUR/kWh price
+#: under this seed's own `SOLAR_GLUT` draw (confirmed against `sim/prices.py`
+#: directly, not asserted blind) - the day proves nothing about `nl/connection`
+#: (D2's hard 17.25 kW trip, no capacity fee) if prices never actually go
+#: negative on it.
+NL_PV_NEGATIVE_MIDDAY_START = datetime(2027, 4, 9, 5, 7, 17, tzinfo=AMSTERDAM)
+NL_PV_NEGATIVE_MIDDAY_DAYS = 1.0
+
+
+def nl_pv_negative_midday() -> Scenario:
+    """Return the summer midday EPEX NL goes negative under (D9 §5.9 `nl_pv`, D-0312).
+
+    No `target_kw`: `ContractedPower` answers a hard limit and no ceiling (D2's
+    own `TariffModel` docstring) - the household's flexible loads face a trip
+    risk, not a capacity step, so a Tensio-shaped target would test the wrong
+    thing here.
+    """
+    return Scenario(
+        name="nl_pv_negative_midday",
+        house=lambda: nl_pv(start=NL_PV_NEGATIVE_MIDDAY_START.date()),
+        start=NL_PV_NEGATIVE_MIDDAY_START,
+        days=NL_PV_NEGATIVE_MIDDAY_DAYS,
+        target_kw=None,
+    )
+
+
+#: WP4.3, D9 §5.9 `be_quarter`: an ordinary winter week - Fluvius's own
+#: `min_kw = 2.5` floor and 15-minute windows (`be/fluvius.json`) need no
+#: engineered scarcity to exercise, unlike a Tensio step.
+BE_QUARTER_ROLLING_START = datetime(2027, 1, 11, 6, 7, 17, tzinfo=OSLO).astimezone(
+    ZoneInfo("Europe/Brussels")
+)
+BE_QUARTER_ROLLING_DAYS = 2.0
+
+
+def be_quarter_hour_rolling() -> Scenario:
+    """Return the winter days Fluvius's quarter-hour, rolling-12 tariff prices (D9 §5.9, D-0312).
+
+    No `target_kw`: Fluvius bills a measured kW peak against its own floor and
+    rolling window, not a site-defended ceiling this scenario would engineer
+    scarcity against.
+    """
+    return Scenario(
+        name="be_quarter_hour_rolling",
+        house=lambda: be_quarter(start=BE_QUARTER_ROLLING_START.date()),
+        start=BE_QUARTER_ROLLING_START,
+        days=BE_QUARTER_ROLLING_DAYS,
+        target_kw=None,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
@@ -449,6 +503,7 @@ PHASE3 = (
     presence_away_day,
     dishwasher_weeknight,
 )
+PHASE4 = (nl_pv_negative_midday, be_quarter_hour_rolling)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

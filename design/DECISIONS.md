@@ -1392,3 +1392,23 @@ A `SwitchEntity` (config, disabled by default) for thermal loads with a target p
 
 Eight types listed `"observe"` among their strategies and two listed `"opportunistic"`, neither registered, so picking one in the flow would `KeyError` on the next tick; `battery`'s default `peak_shave` wasn't registered either, breaking every new battery on its first tick. Observe is a mode (`select.<load>_mode`), and `opportunistic` is a combinator (D5 §5.11). Both are removed, the battery defaults to `always` until its strategies exist, and a test asserts every type's strategies are registered. Affects D5 §3, §10; D8 §5.4.
 **Rejected:** registering trivial `Observe`/`Opportunistic` strategies - duplicates the mode select and the combinator. Hiding batteries from the flow - covers one bug with another.
+
+### D-0309 · `ContractedPower` already exists; the benchmark houses split two now, four later
+
+The plan still listed the `ContractedPower` node as open, but the model node, evaluator, allocator constraint and preset loader are all in place and tested (D2 §9 12). What's left is D9 §5.9's other houses: `nl_pv` and `be_quarter` now, `fi_linear`, `es_contracted`, `us_demand` and `fr_tempo` in a follow-up. `nl_pv` alone needs a PV production simulator, and each other house is similar weight again.
+**Rejected:** all six at once - six houses of simulator work in one package, where every other package this phase is one feature.
+
+### D-0310 · `WeatherSim` takes a latitude; a PVWatts-style `ProductionSim` joins `sim/`
+
+`WeatherSim.latitude_deg` feeds only the sun-angle formula; the temperature tables stay the default climate's, and the default latitude keeps `nordic_detached` byte-identical. `nl_pv` passes Amsterdam's latitude. `ProductionSim` turns irradiance into export watts: `rated_kwp × irradiance/1000 × 0.859` (PVWatts' default losses), clipped at the rating; `HouseDriver.step` adds it to the meter. The house's point is the roof, the tariff and the price shape, not a Dutch climate.
+**Rejected:** a Dutch climate-normal table - research for a claim this house doesn't make. A temperature-coefficient derate - PVWatts' losses already include one.
+
+### D-0311 · `sim/prices.py` gains `SOLAR_GLUT`; `be_quarter` reuses `SPOT_LIKE` in EUR
+
+`SOLAR_GLUT` has a midday trough, an annual mean of €87/MWh (TenneT's 2025 market update) and extra volatility April-August, so the deepest hour goes negative on roughly a third of summer days and rarely otherwise, tuned against TenneT's negative-hour counts rather than fitted, which the module's `SOURCES` say. `be_quarter`'s point is 15-minute windows and a rolling 12-month average, not a Belgian price curve. `_curves` now reads the house's currency instead of hardcoding NOK, which stopped both houses at the first slot close.
+**Rejected:** fitting exactly to the yearly negative-hour count - a market-wide count isn't a per-hour probability. Forking `_curves` - it reads everything else from the house already.
+
+### D-0312 · `nl_pv` and `be_quarter`: TN 400 V, real holiday calendars, their own price regimes
+
+Both reuse `nordic_detached`'s twelve loads and simulators ("same generators", D9 §5.9) behind a `TN_400`, EUR site and their own presets (`nl/connection`, `be/fluvius`) with the country's calendar. Their benchmark wrappers take the shared year's start and weather events but not its Norwegian price regimes, which would overwrite the one thing each house exists to prove.
+**Rejected:** their own synthetic year - shared fault and weather instants are what make runs comparable. Researching NL/BE fuse conventions - the fuse is wiring realism, not the house's point.

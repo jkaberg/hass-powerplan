@@ -37,6 +37,7 @@ FLAT = "flat"
 SPOT_LIKE = "spot_like"
 NEGATIVE_DAYS = "negative_days"
 OUTAGE = "outage"
+SOLAR_GLUT = "solar_glut"
 
 NORGESPRIS_NOK_PER_KWH = 0.50
 #: NO3 day-ahead monthly mean, NOK/kWh ex VAT, January … December.
@@ -90,6 +91,50 @@ QUARTER_NOISE_NOK = 0.004
 NEGATIVE_DEPTH_NOK = 0.05
 WEEKDAYS_PER_WEEK = 5
 WEEKEND_DAYS_PER_WEEK = 2
+#: EPEX NL day-ahead annual mean, EUR/kWh (87 EUR/MWh) - TenneT's Annual Market
+#: Update 2025: prices "rose by 12% in 2025, to €87/MWh".
+EPEX_NL_MEAN_EUR_PER_KWH = 0.087
+#: Relative price by hour of local day under high solar penetration: a midday
+#: trough deep enough to go negative on a volatile day, shoulders at the
+#: morning and evening ramps - the "duck curve" reported for EPEX NL since
+#: rooftop and utility solar grew large (COMCAM Energy, "Negative power prices
+#: 2025"; TenneT: 423 negative hours in the Netherlands through July 2025 vs
+#: 314 the same span in 2024, 458 for all of 2024). Normalised to mean 1.0 at
+#: use, like `HOUR_SHAPE`.
+HOUR_SHAPE_SOLAR = (
+    1.25,
+    1.20,
+    1.15,
+    1.05,
+    0.95,
+    0.90,
+    0.90,
+    0.95,
+    0.80,
+    0.65,
+    0.50,
+    0.42,
+    0.40,
+    0.42,
+    0.50,
+    0.65,
+    0.90,
+    1.20,
+    1.45,
+    1.55,
+    1.50,
+    1.40,
+    1.35,
+    1.30,
+)
+#: The months the trough goes deepest - April–August, when PV output (and so
+#: the real negative-price hour count, TenneT/COMCAM above) is highest.
+SOLAR_MONTHS = (4, 5, 6, 7, 8)
+#: assumed: the within-day amplitude is 1.4× larger in the solar months -
+#: mirrors `WINTER_VOLATILITY_FACTOR`'s role for the Nordic regime, tuned so a
+#: minority of solar-month days dip negative at the trough hour rather than
+#: most of them (`test_prices.py`'s own frequency check)
+SOLAR_VOLATILITY_FACTOR = 1.4
 
 SOURCES: dict[str, str] = {
     "NORGESPRIS_NOK_PER_KWH": "HLD §8: Norgespris, 0.50 NOK/kWh incl. VAT",
@@ -129,6 +174,27 @@ SOURCES: dict[str, str] = {
     "WEEKDAYS_PER_WEEK": "the calendar",
     "WEEKEND_DAYS_PER_WEEK": "the calendar",
     "QUARTER_S": "see sim/base.py",
+    "EPEX_NL_MEAN_EUR_PER_KWH": (
+        "TenneT Annual Market Update 2025: Dutch day-ahead prices 'rose by 12% in 2025, to "
+        "€87/MWh' (https://www.tennet.eu/nl-en/news/rising-electricity-prices-increased-"
+        "electricity-exports-and-stable-congestion-management-costs)"
+    ),
+    "HOUR_SHAPE_SOLAR": (
+        "assumed: a duck-curve shape (deep midday trough, morning/evening shoulders), the "
+        "pattern EPEX NL is widely reported to show under high solar penetration — no published "
+        "hour-of-day table was found inside the lookup budget, so only the shape's relative form "
+        "and the fact that it troughs at midday are load-bearing; replaced by the fitted "
+        "hour-of-day means of the EPEX NL series when loaded"
+    ),
+    "SOLAR_MONTHS": (
+        "TenneT/COMCAM (EPEX_NL_MEAN_EUR_PER_KWH's sources): negative-price hours in the "
+        "Netherlands cluster where PV output is highest, April–August"
+    ),
+    "SOLAR_VOLATILITY_FACTOR": (
+        "assumed: mirrors WINTER_VOLATILITY_FACTOR's role, tuned (test_prices.py) so negative "
+        "midday excursions are a minority of solar-month days, not most of them — replaced by "
+        "the fitted EPEX NL negative-hour frequency when loaded"
+    ),
 }
 
 
@@ -159,6 +225,7 @@ class PriceSim:
     regimes: Sequence[PriceRegime] = ()
     default_kind: str = SPOT_LIKE
     _day_draws: dict[int, tuple[float, float]] = field(default_factory=dict)
+    _solar_day_draws: dict[int, tuple[float, float]] = field(default_factory=dict)
 
     def kind_on(self, day: date) -> str:
         """Which regime is in force on the local date `day`."""
@@ -205,6 +272,41 @@ class PriceSim:
         rng = derive_rng(self.seed, "price_quarter", int(t.timestamp()))
         return this * (1.0 - w) + nxt * w + rng.uniform(-QUARTER_NOISE_NOK, QUARTER_NOISE_NOK)
 
+    # -- the duck-curve shape (D9 §5.9 `nl_pv`) ----------------------- #
+
+    def _hour_shape_solar(self, local: datetime) -> float:
+        mean = sum(HOUR_SHAPE_SOLAR) / len(HOUR_SHAPE_SOLAR)
+        return HOUR_SHAPE_SOLAR[local.hour] / mean
+
+    def _draws_solar(self, local_day: date) -> tuple[float, float]:
+        """Draw the day's mean price (EUR/kWh) and within-day amplitude gain, once."""
+        ordinal = local_day.toordinal()
+        cached = self._solar_day_draws.get(ordinal)
+        if cached is not None:
+            return cached
+        level = EPEX_NL_MEAN_EUR_PER_KWH
+        level *= math.exp(derive_rng(self.seed, "eur_level", ordinal).gauss(0.0, SPREAD_SIGMA))
+        gain = math.exp(derive_rng(self.seed, "eur_gain", ordinal).gauss(0.0, SHAPE_GAIN_SIGMA))
+        if local_day.month in SOLAR_MONTHS:
+            gain *= SOLAR_VOLATILITY_FACTOR
+        self._solar_day_draws[ordinal] = (level, gain)
+        return level, gain
+
+    def _hourly_eur_solar(self, t: datetime) -> float:
+        """Duck-curve price of the UTC hour starting at `t` (D9 §5.9 `nl_pv`)."""
+        local = t.astimezone(self.tz)
+        level, gain = self._draws_solar(local.date())
+        return level * (1.0 + gain * (self._hour_shape_solar(local) - 1.0))
+
+    def _solar_glut_at(self, t: datetime) -> float:
+        """Quarter-hour duck-curve price: the hourly values interpolated, plus noise."""
+        hour_start = t.replace(minute=0, second=0, microsecond=0)
+        this = self._hourly_eur_solar(hour_start)
+        nxt = self._hourly_eur_solar(hour_start + timedelta(hours=1))
+        w = (t - hour_start).total_seconds() / 3600.0
+        rng = derive_rng(self.seed, "eur_quarter", int(t.timestamp()))
+        return this * (1.0 - w) + nxt * w + rng.uniform(-QUARTER_NOISE_NOK, QUARTER_NOISE_NOK)
+
     # -- the generator ------------------------------------------------------ #
 
     def at(self, t: datetime) -> float | None:
@@ -215,6 +317,8 @@ class PriceSim:
             return None
         if kind == FLAT:
             return NORGESPRIS_NOK_PER_KWH
+        if kind == SOLAR_GLUT:
+            return self._solar_glut_at(t)
         spot = self._spot_at(t)
         if kind == NEGATIVE_DAYS:
             # Shift the whole day down until its trough is below zero.

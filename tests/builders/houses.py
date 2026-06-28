@@ -25,7 +25,7 @@ from custom_components.powerplan.core.engine import SiteConfig
 from custom_components.powerplan.core.loads import Load, Transport
 from custom_components.powerplan.core.loads.targets import ConstantSchedule
 from custom_components.powerplan.core.metering import ElectricalProfile, VoltageSystem
-from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
+from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS, calendar_for
 from custom_components.powerplan.core.tariffs import Evaluator, NoPeak
 from custom_components.powerplan.core.tariffs.presets import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
@@ -35,7 +35,15 @@ from tests.sim.ev import EvSim
 from tests.sim.heatpump import HeatPumpSim
 from tests.sim.household import HouseholdSim
 from tests.sim.meter import MeterSim
-from tests.sim.prices import FLAT, SPOT_LIKE, PriceRegime, PriceSim
+from tests.sim.prices import (
+    EPEX_NL_MEAN_EUR_PER_KWH,
+    FLAT,
+    SOLAR_GLUT,
+    SPOT_LIKE,
+    PriceRegime,
+    PriceSim,
+)
+from tests.sim.production import ProductionSim
 from tests.sim.room import RoomSim
 from tests.sim.slab import SlabSim
 from tests.sim.switch import SwitchSim
@@ -154,6 +162,10 @@ class House:
     #: The runner takes them into `Engine(constraints=)` unchanged - a group
     #: reads no live input, so the runner needs no per-tick wiring for it.
     groups: tuple[GroupCap, ...] = ()
+    #: Rooftop PV, if the house has any (D9 §5.9 `nl_pv`). `None` for
+    #: every other house - `HouseDriver.step` adds its `.at(now)` (negative,
+    #: export) into the meter's signed total beside `uncontrolled`.
+    production: ProductionSim | None = None
 
     def load(self, load_id: str) -> Load:
         """Return the load with `load_id`."""
@@ -537,4 +549,289 @@ def nordic_detached(
         meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
         controlled_share=len(steer & set(ALL_LOADS)) / len(ALL_LOADS),
         seed=seed,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# nl_pv - D9 §5.9's second "other house": the same twelve loads, a Dutch
+# connection-capacity tariff instead of a Norwegian capacity step, a 6 kWp
+# roof, and an EPEX-shaped duck-curve energy price.
+# --------------------------------------------------------------------------- #
+
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
+#: Amsterdam, Netherlands - a public, undisputed coordinate.
+AMSTERDAM_LATITUDE_DEG = 52.3676
+#: D9 §5.9's own line for this house: "PV 6 kWp".
+NL_PV_ARRAY_KWP = 6.0
+#: 3×25 A, the connection size `nl/connection.json`'s own preset offers as its
+#: default (17.25 kW at 230 V, TN, three phase - the preset's own file note).
+NL_MAIN_FUSE_A = 25.0
+
+NL_PV_HOUSE_ID = "nl_pv@1"
+
+#: Where nl_pv's own numbers (the ones nordic_detached's don't already cover) come from.
+NL_PV_SOURCES: dict[str, str] = {
+    "site": (
+        "D9 §5.9: EPEX 15-min, PV 6 kWp, ContractedPower, negative midday; TN 400 V, three "
+        "phase — the Dutch mains standard (unlike Norway's IT 230 V, `sim/base.py`)"
+    ),
+    "tariff": "preset nl/connection (D2, WP4.3a): 3×25 A = 17.25 kW trip, zero tolerance",
+    "prices": (
+        f"sim/prices.py SOLAR_GLUT: EPEX NL day-ahead annual mean "
+        f"{EPEX_NL_MEAN_EUR_PER_KWH} EUR/kWh (TenneT, 2025), a duck-curve shape, negative on "
+        "the more volatile midday hours — see sim/prices.py's own SOURCES for the citations"
+    ),
+    "production": (
+        f"D9 §5.9: {NL_PV_ARRAY_KWP} kWp — `sim/production.py`'s PVWatts-simple model, "
+        f"Amsterdam's own latitude ({AMSTERDAM_LATITUDE_DEG}° N) for the sun angle, "
+        "`sim/weather.py`'s Trondheim climate normals kept for outdoor temperature (D-0310) — "
+        "the house's heating behaviour is not this house's own point, only PV/ContractedPower/"
+        "negative-midday pricing are"
+    ),
+    "main_fuse_a": "assumed: the preset's own default connection size, 3×25 A",
+}
+
+
+def nl_pv(
+    *,
+    seed: int = 20260919,
+    start: date = date(2026, 7, 1),
+    price_regimes: tuple[PriceRegime, ...] | None = None,
+    weather_events: tuple[WeatherEvent, ...] = (),
+    controlled: frozenset[str] | None = None,
+    ev_soc: float = 0.55,
+    slab_start_c: float = 22.0,
+    cfg: SiteConfig | None = None,
+) -> House:
+    """Return `nl_pv` (D9 §5.9): `nordic_detached`'s own loads under a Dutch roof.
+
+    Same generators (D9 §5.9's own phrase): the twelve loads and their physics
+    simulators are `nordic_detached`'s, unchanged. What differs is the site
+    (Amsterdam, TN 400 V), the tariff (`nl/connection`'s hard trip limit, no
+    capacity fee), the energy price (`SOLAR_GLUT`'s duck curve, EUR) and the
+    new roof (`ProductionSim`, negative watts into the meter beside `uncontrolled`).
+    """
+    cfg = cfg or site_config(
+        site_id="nl_pv",
+        tz=AMSTERDAM,
+        electrical=ElectricalProfile(
+            system=VoltageSystem.TN_400, phases=3, main_fuse_a=NL_MAIN_FUSE_A
+        ),
+        name="NL rooftop PV",
+        currency="EUR",
+    )
+    steer = frozenset(ALL_LOADS) if controlled is None else controlled
+    loads: dict[str, Load] = {}
+    sims: dict[str, Any] = {}
+
+    ev_load_, ev, charger = _ev(seed, ev_soc)
+    loads["ev"] = ev_load_
+    sims["ev"] = charger
+
+    for load_id, room, area_m2, comfort_c, floor_c in FLOOR_LOOPS:
+        loads[load_id] = _floor(load_id, room, area_m2, comfort_c, floor_c)
+        sims[load_id] = _slab(area_m2, comfort_c, floor_c, start_c=slab_start_c)
+
+    tank_load, tank = _tank(seed, 60.0, 50.0)
+    loads["tank"] = tank_load
+    sims["tank"] = tank
+
+    loads["heat_pump"] = load_from(
+        "heat_pump",
+        {"hp_type": "a2a", "rated_kw": 1.5, "area_m2": 60.0, "building": "2000_2010"},
+        load_id="heat_pump",
+    )
+    sims["heat_pump"] = HeatPumpSim(area_m2=60.0, room_c=21.0, setpoint_c=21.0)
+
+    for load_id in ("radiator_bed_1", "radiator_bed_2"):
+        loads[load_id] = load_from(
+            "radiator",
+            {
+                "heater_type": "panel",
+                "room": "bedroom",
+                "control": "plug",
+                "power_w": 800.0,
+                "area_m2": 12.0,
+                "comfort_c": 19.0,
+            },
+            load_id=load_id,
+        )
+        sims[load_id] = RoomSim(
+            area_m2=12.0, nameplate_w=800.0, dial_c=19.0, room_c=19.0, plug_on=True
+        )
+
+    loads["dishwasher"] = load_from(
+        "appliance_cycle",
+        {"appliance": "dishwasher_eco", "start_control": "start_program"},
+        load_id="dishwasher",
+    )
+    sims["dishwasher"] = CycleSim()
+
+    loads["sauna"] = load_from(
+        "generic_switch", {"appliance": "sauna", "power_w": 6000.0}, load_id="sauna"
+    )
+    sims["sauna"] = SwitchSim()
+
+    regimes = price_regimes or (
+        PriceRegime(kind=SOLAR_GLUT, start=start, end=start.replace(year=start.year + 1)),
+    )
+    weather = WeatherSim(
+        seed=seed, tz=AMSTERDAM, events=tuple(weather_events), latitude_deg=AMSTERDAM_LATITUDE_DEG
+    )
+    uncontrolled = UncontrolledSim(seed=seed, tz=AMSTERDAM)
+    uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
+    return House(
+        cfg=cfg,
+        tariff=Evaluator(loader.load("nl/connection"), tz=AMSTERDAM, calendar=calendar_for("NL")),
+        loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
+        sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
+        passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},
+        ev=ev,
+        charger=charger,
+        tank=tank,
+        household=HouseholdSim(seed=seed, tz=AMSTERDAM),
+        uncontrolled=uncontrolled,
+        weather=weather,
+        prices=PriceSim(seed=seed, tz=AMSTERDAM, regimes=regimes, default_kind=SOLAR_GLUT),
+        meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
+        controlled_share=len(steer & set(ALL_LOADS)) / len(ALL_LOADS),
+        seed=seed,
+        production=ProductionSim(rated_kwp=NL_PV_ARRAY_KWP, weather=weather),
+        spec=NL_PV_HOUSE_ID,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# be_quarter - D9 §5.9's third "other house": the same twelve loads, quarter-
+# hour windows, Fluvius's rolling-12-month capacity tariff. No PV, no new
+# price shape - its own point is the tariff's window length and averaging
+# period, not the energy price under it (`SPOT_LIKE` reused, in EUR).
+# --------------------------------------------------------------------------- #
+
+BRUSSELS = ZoneInfo("Europe/Brussels")
+#: assumed: a typical Belgian household connection, 3×40 A - Fluvius's own
+#: capacity tariff (`be/fluvius.json`) has no connection-size limit of its own,
+#: so this is wiring realism only, the same role `nordic_detached`'s 63 A plays.
+BE_MAIN_FUSE_A = 40.0
+
+BE_QUARTER_HOUSE_ID = "be_quarter@1"
+
+BE_QUARTER_SOURCES: dict[str, str] = {
+    "site": "D9 §5.9: 15-min windows, rolling-12, no free ride; TN 400 V, three phase (Belgium)",
+    "tariff": (
+        "preset be/fluvius (D2, WP4.3a): 53.39 EUR/kW/year, min 2.5 kW, the highest 15-min "
+        "window of a rolling 12 months — every day counts, unlike Tensio's own daily-maximum "
+        "exemption (D-0278), which is this house's own point"
+    ),
+    "prices": (
+        "sim/prices.py SPOT_LIKE, reused as-is and read in EUR: this house's own point is the "
+        "capacity tariff's window length and averaging period, not a fitted Belgian day-ahead "
+        "shape — replaced by a BELPEX-fitted regime if the energy price itself becomes load-bearing"
+    ),
+    "main_fuse_a": "assumed: a typical Belgian household connection, 3×40 A",
+}
+
+
+def be_quarter(
+    *,
+    seed: int = 20260919,
+    start: date = date(2026, 7, 1),
+    price_regimes: tuple[PriceRegime, ...] | None = None,
+    weather_events: tuple[WeatherEvent, ...] = (),
+    controlled: frozenset[str] | None = None,
+    ev_soc: float = 0.55,
+    slab_start_c: float = 22.0,
+    cfg: SiteConfig | None = None,
+) -> House:
+    """Return `be_quarter` (D9 §5.9): `nordic_detached`'s own loads under Fluvius's capacity tariff.
+
+    Same generators, same reasoning as `nl_pv`: what differs is the site
+    (Brussels, quarter-hour windows), the tariff (`be/fluvius`'s rolling-12
+    peak) and the energy price's currency (EUR, `SPOT_LIKE`'s own shape reused -
+    see `BE_QUARTER_SOURCES`).
+    """
+    cfg = cfg or site_config(
+        site_id="be_quarter",
+        tz=BRUSSELS,
+        electrical=ElectricalProfile(
+            system=VoltageSystem.TN_400, phases=3, main_fuse_a=BE_MAIN_FUSE_A
+        ),
+        name="BE quarter-hour rolling",
+        window_min=15,
+        currency="EUR",
+    )
+    steer = frozenset(ALL_LOADS) if controlled is None else controlled
+    loads: dict[str, Load] = {}
+    sims: dict[str, Any] = {}
+
+    ev_load_, ev, charger = _ev(seed, ev_soc)
+    loads["ev"] = ev_load_
+    sims["ev"] = charger
+
+    for load_id, room, area_m2, comfort_c, floor_c in FLOOR_LOOPS:
+        loads[load_id] = _floor(load_id, room, area_m2, comfort_c, floor_c)
+        sims[load_id] = _slab(area_m2, comfort_c, floor_c, start_c=slab_start_c)
+
+    tank_load, tank = _tank(seed, 60.0, 50.0)
+    loads["tank"] = tank_load
+    sims["tank"] = tank
+
+    loads["heat_pump"] = load_from(
+        "heat_pump",
+        {"hp_type": "a2a", "rated_kw": 1.5, "area_m2": 60.0, "building": "2000_2010"},
+        load_id="heat_pump",
+    )
+    sims["heat_pump"] = HeatPumpSim(area_m2=60.0, room_c=21.0, setpoint_c=21.0)
+
+    for load_id in ("radiator_bed_1", "radiator_bed_2"):
+        loads[load_id] = load_from(
+            "radiator",
+            {
+                "heater_type": "panel",
+                "room": "bedroom",
+                "control": "plug",
+                "power_w": 800.0,
+                "area_m2": 12.0,
+                "comfort_c": 19.0,
+            },
+            load_id=load_id,
+        )
+        sims[load_id] = RoomSim(
+            area_m2=12.0, nameplate_w=800.0, dial_c=19.0, room_c=19.0, plug_on=True
+        )
+
+    loads["dishwasher"] = load_from(
+        "appliance_cycle",
+        {"appliance": "dishwasher_eco", "start_control": "start_program"},
+        load_id="dishwasher",
+    )
+    sims["dishwasher"] = CycleSim()
+
+    loads["sauna"] = load_from(
+        "generic_switch", {"appliance": "sauna", "power_w": 6000.0}, load_id="sauna"
+    )
+    sims["sauna"] = SwitchSim()
+
+    regimes = price_regimes or (
+        PriceRegime(kind=SPOT_LIKE, start=start, end=start.replace(year=start.year + 1)),
+    )
+    uncontrolled = UncontrolledSim(seed=seed, tz=BRUSSELS)
+    uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
+    return House(
+        cfg=cfg,
+        tariff=Evaluator(loader.load("be/fluvius"), tz=BRUSSELS, calendar=calendar_for("BE")),
+        loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
+        sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
+        passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},
+        ev=ev,
+        charger=charger,
+        tank=tank,
+        household=HouseholdSim(seed=seed, tz=BRUSSELS),
+        uncontrolled=uncontrolled,
+        weather=WeatherSim(seed=seed, tz=BRUSSELS, events=tuple(weather_events)),
+        prices=PriceSim(seed=seed, tz=BRUSSELS, regimes=regimes, default_kind=SPOT_LIKE),
+        meter=MeterSim(seed=seed, true_import_kwh=100_000.0, reported_import_kwh=100_000.0),
+        controlled_share=len(steer & set(ALL_LOADS)) / len(ALL_LOADS),
+        seed=seed,
+        spec=BE_QUARTER_HOUSE_ID,
     )

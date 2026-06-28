@@ -24,6 +24,7 @@ MODULES = (
     "prices",
     "uncontrolled",
     "household",
+    "production",
 )
 
 #: What a source must not be.  A short answer is fine - "SI", "the calendar" -

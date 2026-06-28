@@ -54,7 +54,9 @@ SOURCES: dict[str, str] = {
     ),
     "MONTHLY_MAX_C": "same table — mean daily maximum, the upper half of the diurnal amplitude",
     "MONTHLY_MIN_C": "same table — mean daily minimum",
-    "LATITUDE_DEG": "Trondheim lufthavn Værnes, 63.4575° N",
+    "LATITUDE_DEG": "Trondheim lufthavn Værnes, 63.4575° N — the default; a house at another "
+    "latitude passes its own to `WeatherSim` (only the solar-position formula reads it, the "
+    "climate-normal tables stay Trondheim's, D-0310)",
     "CLEAR_SKY_W_PER_M2": (
         "assumed: 1000 W/m² clear-sky global horizontal irradiance at zenith, the standard "
         "test condition. Replaced by a met.no irradiance series"
@@ -113,6 +115,9 @@ class WeatherSim:
     seed: int = 0
     tz: ZoneInfo = field(default_factory=lambda: ZoneInfo("Europe/Oslo"))
     events: Sequence[WeatherEvent] = ()
+    #: Only `_solar_w_per_m2`'s sun-angle formula reads this (SOURCES); the
+    #: climate-normal tables above stay Trondheim's regardless (D-0310).
+    latitude_deg: float = LATITUDE_DEG
 
     # -- levels ------------------------------------------------------------- #
 
@@ -185,7 +190,7 @@ class WeatherSim:
         )
         hour = local.hour + local.minute / 60.0
         hour_angle = math.radians(DEGREES_PER_HOUR * (hour - 12.0))
-        phi = math.radians(LATITUDE_DEG)
+        phi = math.radians(self.latitude_deg)
         sin_alt = math.sin(phi) * math.sin(declination) + math.cos(phi) * math.cos(
             declination
         ) * math.cos(hour_angle)
