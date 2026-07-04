@@ -40,6 +40,7 @@ from custom_components.powerplan.const import (
     TRANSPORT_OFF,
 )
 from custom_components.powerplan.core.metering.profile import VoltageSystem
+from custom_components.powerplan.providers.forecasts.base import detect_weather_entity
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -116,6 +117,24 @@ def _tariff(tariff: Mapping[str, Any] | None, absent: str) -> str:
     return str(description) if description else absent
 
 
+def _forecasts(hass: HomeAssistant, meter: Mapping[str, Any] | None, absent: str) -> str:
+    """D10 §6: nothing to ask, so the review says what was auto-detected.
+
+    The state read INV-3 restricts to `runtime.py` and `providers/` happens
+    inside `detect_weather_entity` itself - reached here through
+    `providers/forecasts/base.py`, the same way `flow/load.py` reaches
+    `providers/profiles` rather than reading live state directly.
+    """
+    entity_id = detect_weather_entity(hass)
+    weather_text = f"found {entity_id}" if entity_id else absent
+    if meter is None or ROLE_IMPORT_REGISTER not in meter["roles"]:
+        return f"{weather_text} for temperature; no meter bound, so no usage profile to learn"
+    return (
+        f"{weather_text} for temperature; it will learn your household's usual load "
+        "per hour of the week from the meter, offered after about two weeks"
+    )
+
+
 def _presence(presence: Mapping[str, Any], absent: str) -> str:
     people = presence.get("persons") or []
     if presence["mode"] == "manual" or not people:
@@ -145,6 +164,7 @@ async def placeholders(hass: HomeAssistant, data: Mapping[str, Any]) -> dict[str
         "prices": _prices(data[CONF_PRICES], absent),
         "currency": data[CONF_CURRENCY],
         "tariff": _tariff(data[CONF_TARIFF], absent),
+        "forecasts": _forecasts(hass, data[CONF_METER], absent),
         "presence": _presence(data[CONF_PRESENCE], absent),
         "notifications": _notifications(data[CONF_NOTIFICATIONS], (quiet[0], quiet[1])),
         "timezone": data[CONF_TIMEZONE],

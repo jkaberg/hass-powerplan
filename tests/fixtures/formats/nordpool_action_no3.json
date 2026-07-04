@@ -1,5 +1,5 @@
 {
-  "source": "https://github.com/home-assistant/core/blob/2026.6.0/homeassistant/components/nordpool/services.py — `get_prices_for_date`, registered with SupportsResponse.ONLY, returns {area: [{start, end, price}]} with `price` in the requested currency per MWh (sensor.py divides by 1000 for its /kWh state).",
+  "source": "https://github.com/home-assistant/core/blob/2026.7.0/homeassistant/components/nordpool/services.py — `get_prices_for_date`, registered with SupportsResponse.ONLY, returns {area: [{start, end, price}]} with `price` in the requested currency per MWh (sensor.py divides by 1000 for its /kWh state).",
   "service": "nordpool.get_prices_for_date",
   "data": {
     "config_entry": "nordpool-entry-id",

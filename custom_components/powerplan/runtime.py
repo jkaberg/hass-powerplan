@@ -94,6 +94,9 @@ from .core.engine import (
     SiteConfig,
     SitePath,
 )
+from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
+from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
+from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
 from .core.loads import Load, LoadConfig, LoadCtx, Transport
 from .core.loads.gate import Action, Decision
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
@@ -124,6 +127,7 @@ from .core.pricing.forecasters.synthesised import Synthesised
 from .core.pricing.holidays import NoHolidays, UnknownCalendarError, calendar_for
 from .core.pricing.modifiers.base import PriceModifier
 from .core.pricing.modifiers.tou_schedule import TouSchedule
+from .core.state_codec import decode, encode
 from .core.strategies.context import Curves
 from .core.tariffs import AUTO, Evaluator, NoPeak, Target, TariffSpec, TariffVersion
 from .core.tariffs.grammar import StepTable
@@ -135,6 +139,9 @@ from .events import build as build_event
 from .events import event_name
 from .flow.load import binding_from_data
 from .notifications import NotificationPolicy, QuietHours
+from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
+from .providers.forecasts.recorder_baseline import async_seed
+from .providers.forecasts.weather_entity import WeatherEntitySource
 from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
 from .providers.prices import (
@@ -162,6 +169,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
     from homeassistant.helpers.event import EventStateChangedData
 
+    from .core.forecasts.model import PlannerForecasts, Series
     from .core.loads import LoadState
     from .core.loads.base import ApplyResult
     from .core.loads.gate import TransportBudget
@@ -199,6 +207,12 @@ RAW_KEEP_DAYS = 15
 #: A source without a fetch for this long is dead (D1 §5.1).
 SOURCE_DEAD_H = 24.0
 MINUTES_PER_HOUR = 60
+#: D10 §5.7: weather refreshes hourly (+ on the bound entity's own change).
+WEATHER_REFRESH_INTERVAL = timedelta(hours=1)
+#: D10 §5.4: how far ahead the weather fetch asks for.
+WEATHER_HORIZON = timedelta(hours=48)
+#: D10 §5.2: how far back a baseline seed (and a `rebuild_baseline`) reaches.
+BASELINE_SEED_DAYS = 60
 
 #: The platforms the site device forwards to (D8 §3, §5.5).
 PLATFORMS: tuple[Platform, ...] = (
@@ -889,6 +903,14 @@ class Runtime:
         self._issues: set[str] = set()
         self._gate_states: dict[str, Any] = {}
         self._stopped = False
+        #: D10's own two sources: `forecasts_adapter` is the engine's
+        #: `ForecastHook`, holding the live `HourOfWeekBaseline`; `weather_entity`
+        #: is auto-detected (D10 §6 - nothing to ask), its last fetch cached as
+        #: `weather_series` and read into every tick's `Inputs.forecasts`.
+        self.forecasts_adapter: ForecastsAdapter | None = None
+        self._weather_entity_id: str | None = None
+        self._weather_series: Series | None = None
+        self._weather_fetched_at: datetime | None = None
 
     # ----------------------------------------------------------- lifecycle #
 
@@ -925,6 +947,11 @@ class Runtime:
             state=self.store.get(Section.ACCOUNTING) or None,
         )
         self.adapter = adapter
+        self.forecasts_adapter = (
+            ForecastsAdapter(baseline=self._restored_baseline(build.cfg.tz, build.holidays))
+            if ROLE_IMPORT_REGISTER in build.meter_entities
+            else None
+        )
         self.engine = Engine(
             build.cfg,
             WindowMeter(
@@ -940,6 +967,7 @@ class Runtime:
                 *build.groups,
             ),
             accounting=adapter,
+            forecasts=self.forecasts_adapter,
         )
         for load in build.loads:
             self.gate.track(load.load_id, self._release_plan(load.load_id))
@@ -985,6 +1013,36 @@ class Runtime:
         # first fetch is I/O and runs outside the lock (INV-46).
         self.hass.async_create_task(self._fetch_then_plan("startup"))
         self._log_step("seed")
+        if self.forecasts_adapter is not None and not self.forecasts_adapter.baseline.state.bins:
+            # A fresh baseline (nothing restored from the store): seed it from
+            # the recorder in the background (D10 §5.2) - slow, and nothing
+            # the first tick or plan needs (D10 §8: no baseline yet is a
+            # graceful "reserve on σ alone", never a block on startup).
+            self.hass.async_create_task(self._seed_baseline("startup"))
+
+    async def _seed_baseline(self, trigger: str) -> None:
+        """Seed the baseline from the recorder - at startup, and on `rebuild_baseline` (D10 §5.2)."""
+        adapter = self.forecasts_adapter
+        register = self.build.meter_entities.get(ROLE_IMPORT_REGISTER)
+        if adapter is None or not register:
+            return
+        try:
+            await async_seed(
+                self.hass,
+                adapter.baseline,
+                register_entity_id=register,
+                loads=(),
+                now=dt_util.utcnow(),
+                tz=self.build.cfg.tz,
+                span_days=BASELINE_SEED_DAYS,
+            )
+        except ForecastSourceError as err:
+            _LOGGER.warning("site %s: baseline seed (%s) failed: %s", self.site_name, trigger, err)
+            return
+        self.state = replace(
+            self.state, forecasts={BASELINE_STATE_KEY: encode(adapter.baseline.state)}
+        )
+        self._persist_sections(frozenset({Section.FORECASTS}))
 
     async def stop(self, reason: str) -> None:
         """D7 §5.5: unsubscribe, stop planning, release every load, flush the store."""
@@ -1155,6 +1213,13 @@ class Runtime:
         """Add one load's rows on every platform that has registered (D8 §5.5)."""
         for async_add_entities, builder in self._load_platforms:
             self._add_entities_for(load, async_add_entities, builder)
+
+    def _restored_baseline(self, tz: tzinfo, holidays: HolidayCalendar) -> HourOfWeekBaseline:
+        """Return the site's baseline from the store, or an empty one (D10 §7)."""
+        section = self.store.get(Section.FORECASTS) or {}
+        raw = section.get(BASELINE_STATE_KEY)
+        state = decode(BaselineState, raw) if raw else None
+        return HourOfWeekBaseline(state, tz=tz, holidays=holidays)
 
     def _rebuild_engine(self) -> None:
         """Swap the engine's loads and constraints in place, over the current build.
@@ -1443,6 +1508,7 @@ class Runtime:
             for load in build.loads
         }
         circuits = {key: await source.sample(now) for key, source in build.circuit_meters.items()}
+        confidence = self._forecast_confidence(now)
         return Inputs(
             now=now,
             site=build.cfg,
@@ -1462,7 +1528,33 @@ class Runtime:
             curves=self.curves,
             transport=self.gate.budget,
             trigger=trigger,
+            forecasts=self._forecasts_view(now),
+            forecast_confidence=confidence,
+            forecast_ready=confidence is not None and confidence >= OFFER_CONFIDENCE,
         )
+
+    def _forecast_confidence(self, now: datetime) -> float | None:
+        """Return the baseline's own confidence at `now`, or `None` with no baseline."""
+        adapter = self.forecasts_adapter
+        if adapter is None or not adapter.baseline.state.bins:
+            return None
+        return adapter.baseline.confidence(now)
+
+    def _forecasts_view(self, now: datetime) -> PlannerForecasts | None:
+        """Return D5's narrow view of D10, cheap and pure - never I/O (D7 §3).
+
+        `None` when the site has no import-register role bound at all (no
+        `ForecastsAdapter`, D10 §8's own "no weather entity" row extended to
+        "no meter at all"); with one, the weather series is whatever the last
+        `fetch()` cached and the baseline is whatever `ForecastsAdapter`'s own
+        `close_slot` has folded in so far - both read fresh every tick.
+        """
+        adapter = self.forecasts_adapter
+        if adapter is None:
+            return None
+        return Forecasts(
+            at=now, weather=self._weather_series, baseline=adapter.baseline
+        ).for_planner()
 
     def _calendar_events(self, load: Load, now: datetime) -> tuple[CalendarEvent, ...]:
         """Return every bound calendar's current or next event (D4 §4.4).
@@ -1575,10 +1667,45 @@ class Runtime:
 
     async def _fetch_then_plan(self, trigger: str) -> None:
         changed = await self.fetch(trigger)
+        if self.forecasts_adapter is not None:
+            await self._fetch_weather_if_due(dt_util.utcnow())
         await self.run_plan(trigger)
         if changed:
             # New prices: the plan is on them, and the published price should be too.
             await self.run_tick("prices")
+
+    async def _fetch_weather_if_due(self, now: datetime) -> None:
+        """D10 §5.4, §5.7: hourly, or forced by `_on_weather_changed`'s own trigger."""
+        if self._weather_entity_id is None:
+            self._weather_entity_id = detect_weather_entity(self.hass)
+            if self._weather_entity_id is None:
+                return
+        if (
+            self._weather_fetched_at is not None
+            and now - self._weather_fetched_at < WEATHER_REFRESH_INTERVAL
+        ):
+            return
+        await self._fetch_weather(now)
+
+    async def _fetch_weather(self, now: datetime) -> None:
+        """Fetch the bound weather entity's forecast; keep the last series on failure (D10 §8)."""
+        if self._weather_entity_id is None:
+            return
+        try:
+            self._weather_series = await WeatherEntitySource(
+                self.hass, entity_id=self._weather_entity_id
+            ).fetch(WEATHER_HORIZON, now)
+            self._weather_fetched_at = now
+        except ForecastSourceError as err:
+            _LOGGER.warning(
+                "site %s: weather %s failed: %s", self.site_name, self._weather_entity_id, err
+            )
+
+    async def _on_weather_changed(self, event: Event[EventStateChangedData]) -> None:
+        """D7 §5.2's own `forecast update` trigger, D10 §5.7's "on entity change"."""
+        del event
+        await self._fetch_weather(dt_util.utcnow())
+        await self.run_plan("forecast")
 
     # ----------------------------------------------------------- effects #
 
@@ -1925,6 +2052,18 @@ class Runtime:
         register = build.meter_entities.get(ROLE_IMPORT_REGISTER)
         if register:
             self._track(async_track_state_change_event(hass, [register], self._on_register_changed))
+        if self.forecasts_adapter is not None:
+            # Detected here, not lazily in `_fetch_weather_if_due` (which runs
+            # only after this method, D7 §5.5's own step order) - a fresh
+            # `weather.*` entity added later needs a reload to be picked up,
+            # the same "detected at setup" D10 §6 already says for every source.
+            self._weather_entity_id = detect_weather_entity(self.hass)
+            if self._weather_entity_id:
+                self._track(
+                    async_track_state_change_event(
+                        hass, [self._weather_entity_id], self._on_weather_changed
+                    )
+                )
         self._track(
             async_track_time_interval(hass, self._on_heartbeat, timedelta(seconds=HEARTBEAT_S))
         )
@@ -2242,6 +2381,22 @@ class Runtime:
     async def async_replan(self) -> None:
         """`powerplan.replan` (D8 §5.7)."""
         await self._fetch_then_plan("service")
+
+    async def async_rebuild_baseline(self) -> None:
+        """`powerplan.rebuild_baseline` / the button (D10 §6, §8's drift row).
+
+        A fresh `HourOfWeekBaseline`, not a blend into the old one: the whole
+        point is to skip past the half-life's own month-long adaptation after
+        a lifestyle change (a new EV, a new tenant) rather than wait for it.
+        """
+        adapter = self.forecasts_adapter
+        if adapter is None:
+            return
+        # `Engine` holds this same adapter by reference (never swapped, unlike
+        # `set_loads`/`set_constraints`) - replacing its `baseline` in place is
+        # what the next tick and the next `close_slot` both see immediately.
+        adapter.baseline = HourOfWeekBaseline(tz=self.build.cfg.tz, holidays=self.build.holidays)
+        await self._seed_baseline("rebuild_baseline")
 
     @property
     def has_register(self) -> bool:

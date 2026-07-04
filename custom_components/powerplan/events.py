@@ -127,6 +127,7 @@ SCHEMAS: dict[EventKind, vol.Schema] = {
     EventKind.FORCE: _schema(load=str, state=vol.In(("on", "expired", "ignored")), reason=str),
     EventKind.PRESENCE_CHANGED: _schema(old=_maybe_str, new=str, source=str),
     EventKind.SAFE_MODE: _schema(entered=bool, reason=str),
+    EventKind.BASELINE_READY: _schema(confidence=_number),
 }
 
 #: The event entity's `event_types`: every kind, without the domain prefix.

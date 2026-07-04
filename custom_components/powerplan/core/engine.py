@@ -154,6 +154,8 @@ __all__ = [
     "EngineState",
     "EventKind",
     "EventsState",
+    "ForecastClose",
+    "ForecastHook",
     "ForecastStatus",
     "HaEvent",
     "HealthStatus",
@@ -246,6 +248,7 @@ class EventKind(StrEnum):
     FORCE = "force"
     PRESENCE_CHANGED = "presence_changed"
     EV_CONNECTED = "ev_connected"
+    BASELINE_READY = "baseline_ready"
 
 
 # --------------------------------------------------------------------------- #
@@ -371,6 +374,14 @@ class Inputs:
     #: circuit without a sub-meter has no entry and is summed from its members
     #: (D6 §5.8).
     circuits: Mapping[str, MeterSample] = field(default_factory=dict)
+    #: D10's own confidence at `now` and whether it clears the offer gate
+    #: - computed by `runtime.py` from the full `core/forecasts` model
+    #: it holds, never by the engine (`forecasts` above is D5's narrow view,
+    #: which collapses "not offered" into `0.0` and cannot answer this).
+    #: `_forecast_status` only republishes both; INV-2's one-way direction is
+    #: why the numbers cross here instead of the engine importing D10.
+    forecast_confidence: float | None = None
+    forecast_ready: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -922,6 +933,39 @@ class AccountingHook(Protocol):
         ...
 
 
+class ForecastHook(Protocol):
+    """The one call `plan()` makes into D10 (mirrors `AccountingHook`).
+
+    `close_slot` is called for every price slot the same way `AccountingHook`'s
+    is - the baseline updates once per *closed window*, not per slot, so the
+    adapter (`core/forecasts_hook.py`) is the one that watches for
+    `close.window_closed`; the engine itself stays ignorant of the difference
+    and, exactly as for accounting, never imports `core/forecasts` (INV-2's
+    one-way direction) and never reaches this from `tick()`.
+    """
+
+    def close_slot(self, close: SlotClose) -> ForecastClose:
+        """Close the price slot `close` describes and return what it changed."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ForecastClose:
+    """What one price slot's close did to D10's baseline (mirrors `AccountingClose`)."""
+
+    window_updated: bool = False
+    #: `True` only on the slot the day's mean confidence first crosses D10's
+    #: `OFFER_CONFIDENCE` - an edge, computed by the adapter's own memory of
+    #: whether it had already crossed it, never a level (D10 §8's event).
+    baseline_ready: bool = False
+    confidence: float = 0.0
+    #: The persisted `BaselineState`, encoded - set only when `window_updated`,
+    #: the same "state travels back through the close" shape `AccountingClose`
+    #: uses so `plan()` can write it into `EngineState.forecasts` without this
+    #: module importing `core/forecasts` (INV-2's one-way direction).
+    state: Mapping[str, Any] = field(default_factory=dict)
+
+
 @dataclass(frozen=True, slots=True)
 class PlanReport:
     """What one planning cycle did (D7 §3, §5.2)."""
@@ -962,6 +1006,7 @@ class Engine:
         *,
         constraints: Sequence[Constraint] = (),
         accounting: AccountingHook | None = None,
+        forecasts: ForecastHook | None = None,
     ) -> None:
         """Wire one site. Nothing here reads a store or a state (INV-3).
 
@@ -978,6 +1023,7 @@ class Engine:
         self._loads: tuple[Load, ...] = ()
         self._constraints: tuple[Constraint, ...] = ()
         self._accounting = accounting
+        self._forecasts = forecasts
         self.set_loads(loads)
         self.set_constraints(constraints)
 
@@ -2087,7 +2133,7 @@ class Engine:
             for view in views:
                 edges[f"uncovered:{view.load_id}"] = "1" if view.load_id in uncovered else "0"
 
-        runtime, closes, load_meters = self._close_slots(state, inputs, views)
+        runtime, closes, forecast_closes, load_meters = self._close_slots(state, inputs, views)
         accounting = dict(state.accounting)
         month_closed: str | None = None
         for close in closes:
@@ -2108,6 +2154,16 @@ class Engine:
             reasons.append(
                 f"accounting: closed {len(closes)} slot(s) up to {_iso(runtime.closed_to)}"
             )
+        forecasts_state = dict(state.forecasts)
+        for forecast_close in forecast_closes:
+            if forecast_close.baseline_ready:
+                events.append(
+                    HaEvent(EventKind.BASELINE_READY, {"confidence": forecast_close.confidence})
+                )
+            if forecast_close.window_updated:
+                forecasts_state = dict(forecast_close.state)
+        if forecasts_state != dict(state.forecasts):
+            dirty.add(Section.FORECASTS)
 
         duration_ms = (time.perf_counter() - started) * 1000.0
         runtime = replace(runtime, last_plan_at=now)
@@ -2122,6 +2178,7 @@ class Engine:
             load_meters=load_meters,
             plans=plans,
             accounting=accounting,
+            forecasts=forecasts_state,
             events=replace(state.events, edges=edges),
             runtime=runtime,
         )
@@ -2185,7 +2242,12 @@ class Engine:
 
     def _close_slots(
         self, state: EngineState, inputs: Inputs, views: Sequence[LoadView]
-    ) -> tuple[RuntimeState, tuple[AccountingClose, ...], Mapping[str, LoadMeterState]]:
+    ) -> tuple[
+        RuntimeState,
+        tuple[AccountingClose, ...],
+        tuple[ForecastClose, ...],
+        Mapping[str, LoadMeterState],
+    ]:
         """Close every price slot that ended since the last cycle, oldest first.
 
         A cycle skipped for an hour closes the backlog on the next one, in order,
@@ -2197,10 +2259,10 @@ class Engine:
         """
         runtime = state.runtime
         if inputs.curves is None:
-            return runtime, (), state.load_meters
+            return runtime, (), (), state.load_meters
         curve = inputs.curves.import_.get(Carrier.ELECTRICITY)
         if curve is None:
-            return runtime, (), state.load_meters
+            return runtime, (), (), state.load_meters
         cursor = runtime.closed_to
         if cursor is None:
             # A fresh site: nothing before the meters' first slot is a slot at all.
@@ -2208,8 +2270,9 @@ class Engine:
             # would be priced at 0 kWh and could open the ledger in the wrong month.
             cursor = _first_metered(state.load_meters)
             if cursor is None:
-                return runtime, (), state.load_meters
+                return runtime, (), (), state.load_meters
         closed: list[AccountingClose] = []
+        forecast_closes: list[ForecastClose] = []
         last: datetime | None = None
         handed = runtime.windows_closed_to
         by_id = {view.load_id: view for view in views}
@@ -2223,14 +2286,14 @@ class Engine:
             window = _window_due(runtime.windows_pending, slot.end, handed)
             if window is not None:
                 handed = _window_end(window)
-            if self._accounting is not None:
-                closed.append(
-                    self._accounting.close_slot(
-                        self._slot_close(state, inputs, slot, by_id, window)
-                    )
-                )
+            if self._accounting is not None or self._forecasts is not None:
+                close = self._slot_close(state, inputs, slot, by_id, window)
+                if self._accounting is not None:
+                    closed.append(self._accounting.close_slot(close))
+                if self._forecasts is not None:
+                    forecast_closes.append(self._forecasts.close_slot(close))
         if last is None:
-            return runtime, (), state.load_meters
+            return runtime, (), (), state.load_meters
         acked = {
             load_id: _acked(load_id, meter_state, last)
             for load_id, meter_state in state.load_meters.items()
@@ -2248,6 +2311,7 @@ class Engine:
                 ),
             ),
             tuple(closed),
+            tuple(forecast_closes),
             acked,
         )
 
@@ -3194,7 +3258,7 @@ def _curves_stale(curves: Curves | None, now: datetime) -> bool:
 
 
 def _forecast_status(inputs: Inputs) -> ForecastStatus:
-    """Return what D10 could answer this tick (D7 §4.1; WP5.1 fills the rest)."""
+    """Return what D10 could answer this tick (D7 §4.1)."""
     forecasts = inputs.forecasts
     if forecasts is None:
         return ForecastStatus()
@@ -3203,6 +3267,8 @@ def _forecast_status(inputs: Inputs) -> ForecastStatus:
         outdoor_c=forecasts.outdoor_c(inputs.now),
         surplus_w=forecasts.surplus_w(inputs.now),
         baseline_w=forecasts.baseline_w(inputs.now),
+        baseline_ready=inputs.forecast_ready,
+        confidence=inputs.forecast_confidence,
     )
 
 

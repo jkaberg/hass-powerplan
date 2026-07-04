@@ -3,8 +3,10 @@
 A service names a site by its config entry id (`site`), or none for every
 loaded site, and a load by its id (`load`). Each reaches one runtime call and
 nothing else; validation errors are `ServiceValidationError`s with a
-translation key. `rebuild_peak_history` and `rebuild_baseline` register with
-the seeds they run.
+translation key. `rebuild_baseline` (WP5.1, folding in WP1.6's own deferred
+row) discards D10's learned baseline and re-seeds it from the recorder;
+`rebuild_peak_history` - D2's own, separate tariff-history seed - is not yet
+built anywhere and stays open.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ if TYPE_CHECKING:
 __all__ = ["SERVICES", "async_setup_services", "runtimes_for"]
 
 SERVICE_REPLAN = "replan"
+SERVICE_REBUILD_BASELINE = "rebuild_baseline"
 SERVICE_RELEASE = "release"
 SERVICE_BOOST = "boost"
 SERVICE_RUN_NOW = "run_now"
@@ -42,6 +45,7 @@ _LOAD: dict[Any, Any] = {vol.Required("load"): cv.string, **_SITE}
 
 SCHEMAS: dict[str, vol.Schema] = {
     SERVICE_REPLAN: vol.Schema(_SITE),
+    SERVICE_REBUILD_BASELINE: vol.Schema(_SITE),
     SERVICE_RELEASE: vol.Schema(_LOAD),
     SERVICE_BOOST: vol.Schema(
         {**_LOAD, vol.Optional("hours"): vol.All(vol.Coerce(float), vol.Range(min=0.25, max=24))}
@@ -70,6 +74,7 @@ SCHEMAS: dict[str, vol.Schema] = {
 #: The services and whether they answer.
 SERVICES: dict[str, SupportsResponse] = {
     SERVICE_REPLAN: SupportsResponse.NONE,
+    SERVICE_REBUILD_BASELINE: SupportsResponse.NONE,
     SERVICE_RELEASE: SupportsResponse.NONE,
     SERVICE_BOOST: SupportsResponse.NONE,
     SERVICE_RUN_NOW: SupportsResponse.NONE,
@@ -116,6 +121,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for runtime in runtimes_for(hass, call.data.get("site")):
             await runtime.async_replan()
 
+    async def rebuild_baseline(call: ServiceCall) -> None:
+        for runtime in runtimes_for(hass, call.data.get("site")):
+            await runtime.async_rebuild_baseline()
+
     async def release(call: ServiceCall) -> None:
         runtime = _runtime_of_load(hass, call.data.get("site"), call.data["load"])
         await runtime.async_release_load(call.data["load"])
@@ -159,6 +168,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     handlers: dict[str, Callable[[ServiceCall], Coroutine[Any, Any, Any]]] = {
         SERVICE_REPLAN: replan,
+        SERVICE_REBUILD_BASELINE: rebuild_baseline,
         SERVICE_RELEASE: release,
         SERVICE_BOOST: boost,
         SERVICE_RUN_NOW: run_now,

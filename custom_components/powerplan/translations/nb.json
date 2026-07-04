@@ -426,7 +426,7 @@
       },
       "review": {
         "title": "Før powerplan starter",
-        "description": "Dette er hva powerplan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}. powerplan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. Den harde grensen din er {hard_limit_kw} kW.\n\n**Måler** — {meter}\n\n**Priser** — {prices}, i {currency}.\n\n**Nettleie** — {tariff}\n\n**Tilstedeværelse** — {presence}\n\n**Varsler** — {notifications}\n\n**Tider** — alt powerplan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. powerplan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
+        "description": "Dette er hva powerplan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}. powerplan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. Den harde grensen din er {hard_limit_kw} kW.\n\n**Måler** — {meter}\n\n**Priser** — {prices}, i {currency}.\n\n**Nettleie** — {tariff}\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}\n\n**Varsler** — {notifications}\n\n**Tider** — alt powerplan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. powerplan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
         "data": {
           "start_in_observe": "Start i observasjon"
         },
@@ -658,6 +658,9 @@
     "button": {
       "replan": {
         "name": "Planlegg på nytt"
+      },
+      "rebuild_baseline": {
+        "name": "Gjenoppbygg grunnlinje"
       },
       "run_now": {
         "name": "Kjør nå"
@@ -1033,6 +1036,16 @@
         "site": {
           "name": "Anlegg",
           "description": "Anlegget som skal planlegges; alle når feltet er tomt."
+        }
+      }
+    },
+    "rebuild_baseline": {
+      "name": "Gjenoppbygg grunnlinje",
+      "description": "Forkast den lærte vanlige belastningen per time og bygg en ny fra historikken nå, i stedet for å vente på at halveringstiden tilpasser seg.",
+      "fields": {
+        "site": {
+          "name": "Anlegg",
+          "description": "Anlegget som skal gjenoppbygges; alle anlegg med måler når feltet er tomt."
         }
       }
     },

@@ -426,7 +426,7 @@
       },
       "review": {
         "title": "Before powerplan starts",
-        "description": "Here is what powerplan understood. Nothing has been saved yet.\n\n**Connection** — {connection}. powerplan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}\n\n**Prices** — {prices}, in {currency}.\n\n**Grid tariff** — {tariff}\n\n**Presence** — {presence}\n\n**Notifications** — {notifications}\n\n**Times** — everything powerplan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. powerplan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
+        "description": "Here is what powerplan understood. Nothing has been saved yet.\n\n**Connection** — {connection}. powerplan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}\n\n**Prices** — {prices}, in {currency}.\n\n**Grid tariff** — {tariff}\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}\n\n**Notifications** — {notifications}\n\n**Times** — everything powerplan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. powerplan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
         "data": {
           "start_in_observe": "Start in observe"
         },
@@ -658,6 +658,9 @@
     "button": {
       "replan": {
         "name": "Replan"
+      },
+      "rebuild_baseline": {
+        "name": "Rebuild baseline"
       },
       "run_now": {
         "name": "Run now"
@@ -1033,6 +1036,16 @@
         "site": {
           "name": "Site",
           "description": "The site to replan; every site when omitted."
+        }
+      }
+    },
+    "rebuild_baseline": {
+      "name": "Rebuild baseline",
+      "description": "Discard the learned usual-load-per-hour profile and seed a fresh one from the recorder now, rather than wait for the half-life to adapt.",
+      "fields": {
+        "site": {
+          "name": "Site",
+          "description": "The site to rebuild; every site with a meter when omitted."
         }
       }
     },

@@ -431,6 +431,9 @@ async def test_the_review_explains_what_was_derived(
     assert "sensor.dataskap_strommaler_energy" in placeholders["meter"]
     assert "NO3" in placeholders["prices"]
     assert "person.joel" in placeholders["presence"]
+    # D10 §6: nothing to ask, so the review says what was found - a meter is
+    # bound in this flow, so the baseline half is offered, not "not configured".
+    assert "usual load" in placeholders["forecasts"]
     assert result["last_step"] is True
 
 

@@ -6,6 +6,14 @@ replan:
         config_entry:
           integration: powerplan
 
+rebuild_baseline:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+
 release:
   fields:
     load:

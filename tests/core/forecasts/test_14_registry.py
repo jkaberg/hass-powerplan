@@ -1,15 +1,20 @@
 """D10 §9 14 - the forecast-source registry (D10 §3, §6).
 
 The added §9 item: extension is by registry, not by conditional, and
-the registry is what the site flow renders its "what was found" review from. In
-this WP it ships **empty**: `weather_entity` and `recorder_baseline` are HA
-adapters and register themselves when `providers/forecasts/` lands in WP5.1, the
-same way `providers/prices/formats/` registers into D1's table.
+the registry is what the site flow renders its "what was found" review from.
+`core/forecasts/registry.py` itself ships **empty**: `weather_entity` and
+`recorder_baseline` are HA adapters, registering themselves from
+`providers/forecasts/`, the same way `providers/prices/formats/`
+registers into D1's table - once that package is imported anywhere in a test
+session, `registry.keys()` legitimately carries them, so `test_14d` checks
+`registry.py`'s own source text rather than runtime state (immune to import
+order, the same reasoning `test_single_writer.py`'s grep tests use).
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -54,8 +59,10 @@ def test_14_a_registered_source_is_found_by_key_and_by_kind() -> None:
 
     assert entry.kind is ForecastKind.BASELINE
     assert entry.schema[0].key == "watts"
-    assert registry.keys_for(ForecastKind.BASELINE) == ("test_baseline",)
-    assert registry.keys_for(ForecastKind.WEATHER) == ()
+    # Membership, not equality: `recorder_baseline` may already be
+    # registered too, in a session that also imported `providers/forecasts/`.
+    assert "test_baseline" in registry.keys_for(ForecastKind.BASELINE)
+    assert "test_baseline" not in registry.keys_for(ForecastKind.WEATHER)
 
 
 def test_14b_the_registry_builds_a_source_from_saved_options() -> None:
@@ -73,10 +80,18 @@ def test_14c_an_unknown_key_is_a_lookup_error() -> None:
 
 
 def test_14d_core_ships_no_home_assistant_sources() -> None:
-    """The v1 sources are HA adapters and arrive with `providers/forecasts/`."""
-    registered = registry.keys()
-    assert "weather_entity" not in registered
-    assert "recorder_baseline" not in registered
+    """The v1 sources are HA adapters, registered by `providers/forecasts/`, not `core/`.
+
+    Checked against `registry.py`'s own source text, not `registry.keys()`:
+    once `providers/forecasts/` is imported anywhere in the same test
+    session, `weather_entity`/`recorder_baseline` are legitimately present -
+    this test's real claim is about which *file* registers them, immune to
+    import order the way `tests/core/invariants/test_single_writer.py`'s
+    own grep tests are.
+    """
+    source = Path(registry.__file__).read_text(encoding="utf-8")
+    assert "@register" not in source, "registry.py declares the mechanism, never uses it itself"
+    assert "import homeassistant" not in source
 
 
 async def test_14e_the_protocol_is_satisfied_by_the_registered_class() -> None:

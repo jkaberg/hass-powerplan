@@ -1412,3 +1412,33 @@ The plan still listed the `ContractedPower` node as open, but the model node, ev
 
 Both reuse `nordic_detached`'s twelve loads and simulators ("same generators", D9 §5.9) behind a `TN_400`, EUR site and their own presets (`nl/connection`, `be/fluvius`) with the country's calendar. Their benchmark wrappers take the shared year's start and weather events but not its Norwegian price regimes, which would overwrite the one thing each house exists to prove.
 **Rejected:** their own synthetic year - shared fault and weather instants are what make runs comparable. Researching NL/BE fuse conventions - the fuse is wiring realism, not the house's point.
+
+### D-0313 · A `ForecastHook`, mirroring `AccountingHook`, feeds D10's baseline from slot closes
+
+`ForecastHook.close_slot(SlotClose) -> ForecastClose` is called from `_close_slots` off the same object as accounting; `plan()` folds its state into `EngineState.forecasts` and fires `baseline_ready` on its edge. `ForecastsAdapter` accumulates controlled loads' slot energy and updates `HourOfWeekBaseline` only when a window closes, then reads the confidence of the bin it just updated (the window's start, not the slot's end, which is the next bin). The engine imports neither accounting nor forecasts (INV-2). Affects D7 §5.2, D8 §5.6.
+**Rejected:** folding it into the accounting hook - couples D10 and D11. `baseline_ready` as a level - D10 §8 says "first time".
+
+### D-0314 · `weather_entity.py` joins the read-only-action allowlist; confidence decays linearly to 0.6 at 48 h
+
+A weather entity's state holds only the current condition, so `WeatherEntitySource` calls `weather.get_forecasts` (hourly, `SupportsResponse.ONLY`), the fourth file on `READ_ONLY_ACTION_CALLERS`. Confidence is 0.9 for 24 h, then linear to 0.6 at 48 h and held there, so age alone never makes a forecast "synthesised". The physical outdoor sensor override (D10 §5.4) waits for `Inputs.outdoor_c` to be populated, which is D4's binding work. Affects D10 §5.4, §9 6.
+**Rejected:** wiring the sensor override from the forecasts provider - reaches into D4's role binding from the wrong direction.
+
+### D-0315 · `recorder_baseline.py` seeds from the site register; per-load sources and fits stay unwired
+
+`async_seed` reads the import register's short-term and long-term statistics and folds them through `uncontrolled_history` into the same `update()` calls the live adapter makes. No controlled load's history is read yet, so the seed is D10 §2's `none` grade: biased high, conservative for the reserve. The live path already subtracts every controlled load's measured energy, so what the baseline learns from install on is exact. `fit_all()` isn't called; its consumer is D6's reserve. Affects D10 §5.2, §9 5.
+**Rejected:** per-load sources now - a second recorder surface for a one-time bias the 28-day half-life works off anyway.
+
+### D-0316 · `Inputs` carries `forecast_confidence` and `forecast_ready`
+
+The runtime fills both from the real baseline and the engine republishes them in `ForecastStatus`. `Inputs.forecasts` is D5's narrow protocol, which deliberately has no confidence (D-0217). Affects D7 §4.1.
+**Rejected:** importing `OFFER_CONFIDENCE` into the engine - the first crack in the one-way import rule.
+
+### D-0317 · `rebuild_baseline` is a full reset, not a blend
+
+`button.<site>_rebuild_baseline` (config, disabled by default) and `powerplan.rebuild_baseline` replace the baseline with a fresh one and re-seed. D10 §8's use case is a lifestyle change (new EV, new tenant), where the point is skipping the month-long wait. `rebuild_peak_history` isn't built yet and the services docstring says so. Affects D8 §5.5, §5.7.
+**Rejected:** blending old bins at reduced weight - the half-life already is a continuous blend.
+
+### D-0318 · The site review names the detected weather entity and the baseline's timeline
+
+The review's "Forecasts" paragraph names the first loaded `weather.*` entity and, with a meter, that the baseline is offered after about two weeks. It doesn't count months of recorder history: that would be a throwaway recorder read at flow time. `detect_weather_entity` lives in `providers/forecasts/base.py`, since reading `hass.states` from `flow/review.py` breaks INV-3 (the grep test caught it), and the runtime uses it too. Affects D10 §6.
+**Rejected:** querying the history span at review - a second recorder read for phrasing.

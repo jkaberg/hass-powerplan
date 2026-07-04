@@ -301,7 +301,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3a | Tariff presets | done |
 | 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
-| 5.1 | D10 core and providers | todo |
+| 5.1 | D10 core and providers | done |
 | 5.1a | D10 core | done |
 | 5.2 | Baseline-aware reserve and warning | todo |
 | 5.3 | Zones | todo |

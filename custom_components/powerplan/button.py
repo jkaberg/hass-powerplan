@@ -1,8 +1,7 @@
-"""The site's buttons (D8 §5.5): `button.<site>_replan`.
+"""The site's buttons (D8 §5.5): `button.<site>_replan`, `button.<site>_rebuild_baseline`.
 
-`rebuild_peak_history` and `rebuild_baseline` arrive with the seeds they press
-(D2's recorder seed in WP1.6, D10's in WP5.1); a button without an action
-behind it would be a lie on the device page.
+`rebuild_baseline` arrives only where a meter is bound - a button
+without an action behind it would be a lie on the device page.
 """
 
 from __future__ import annotations
@@ -28,9 +27,12 @@ async def async_setup_entry(
     entry: PowerplanConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Create the replan button."""
+    """Create the replan button, and `rebuild_baseline` where a meter is bound."""
     runtime = entry.runtime_data
-    async_add_entities([ReplanButton(runtime)])
+    entities: list[ButtonEntity] = [ReplanButton(runtime)]
+    if runtime.forecasts_adapter is not None:
+        entities.append(RebuildBaselineButton(runtime))
+    async_add_entities(entities)
     runtime.setup_load_platform(async_add_entities, load_buttons)
 
 
@@ -47,3 +49,19 @@ class ReplanButton(PowerplanEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Fetch what is missing and plan."""
         await self.runtime.async_replan()
+
+
+class RebuildBaselineButton(PowerplanEntity, ButtonEntity):
+    """`button.<site>_rebuild_baseline`: re-seed D10's baseline from the recorder (D10 §6)."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:chart-bell-curve"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site."""
+        super().__init__(runtime, "rebuild_baseline")
+
+    async def async_press(self) -> None:
+        """Discard the learned profile and seed a fresh one from the recorder."""
+        await self.runtime.async_rebuild_baseline()

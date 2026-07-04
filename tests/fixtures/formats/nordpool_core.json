@@ -1,5 +1,5 @@
 {
-  "source": "tests/fixtures/captured/nordpool_core_no3.json (the reference house's own core Nord Pool integration) plus https://github.com/home-assistant/core/blob/2026.6.0/homeassistant/components/nordpool/sensor.py - the `Current price` sensor carries the price as its STATE in <currency>/kWh and no forecast attributes at all. The slot boundary comes from the entity's own state-machine timestamp, so the test freezes the clock rather than the fixture carrying one.",
+  "source": "tests/fixtures/captured/nordpool_core_no3.json (the reference house's own core Nord Pool integration) plus https://github.com/home-assistant/core/blob/2026.7.0/homeassistant/components/nordpool/sensor.py - the `Current price` sensor carries the price as its STATE in <currency>/kWh and no forecast attributes at all. The slot boundary comes from the entity's own state-machine timestamp, so the test freezes the clock rather than the fixture carrying one.",
   "entity_id": "sensor.nord_pool_no3_current_price",
   "state": "0.45089",
   "attributes": {

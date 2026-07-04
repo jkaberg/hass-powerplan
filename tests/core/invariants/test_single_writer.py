@@ -5,15 +5,17 @@ allowed there, in `notifications.py` for notify and persistent_notification, and
 in the providers that read something through a *response action* -
 `providers/prices/nordpool_action.py` for the core Nord Pool integration's
 `get_prices_for_date`, `providers/prices/action.py` for the format table's
-action-backed rows (Tibber, EnergyZero, easyEnergy), and
-`providers/schedules/ha_schedule.py` for the `schedule` integration's
-`get_schedule` - a bound `schedule.*` helper's weekly windows are on neither its
-state nor its attributes, so this action is the only way to read them (WP3.5,
-D-0300). Every one of those actions is registered `SupportsResponse.ONLY`: it
-reads and writes nothing. Those three files are held to the stricter rule the
-second test below enforces: every call site in them passes
-`return_response=True`, so the exemption cannot quietly become a write
-(`design/DECISIONS.md` D-0080, D-0101, D-0300).
+action-backed rows (Tibber, EnergyZero, easyEnergy), `providers/schedules/
+ha_schedule.py` for the `schedule` integration's `get_schedule` - a bound
+`schedule.*` helper's weekly windows are on neither its state nor its
+attributes, so this action is the only way to read them (D-0300) - and
+`providers/forecasts/weather_entity.py` for `weather.get_forecasts`:
+a weather entity's hourly forecast is likewise reachable only through its own
+response action. Every one of those actions is registered
+`SupportsResponse.ONLY`: it reads and writes nothing. Those four files are
+held to the stricter rule the second test below enforces: every call site in
+them passes `return_response=True`, so the exemption cannot quietly become a
+write (`design/DECISIONS.md` D-0080, D-0101, D-0300, D-0314).
 
 `hass.states.get` and `hass.states.async_all` are allowed in `runtime.py` and
 under `providers/`. Anywhere else bypasses the write gate's rate limits, dwell
@@ -36,13 +38,15 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION = REPO_ROOT / "custom_components" / "powerplan"
 
 #: The providers allowed to invoke a read-only response action (D-0080, D-0101,
-#: D-0300): Nord Pool's own source, `action.py` (the one call site the format
-#: table's action-backed rows reach - `tibber_action`, `energyzero_action`), and
-#: the schedule provider's `get_schedule` read.
+#: D-0300, D-0314): Nord Pool's own source, `action.py` (the one call site the
+#: format table's action-backed rows reach - `tibber_action`,
+#: `energyzero_action`), the schedule provider's `get_schedule` read, and the
+#: weather provider's `get_forecasts` read.
 READ_ONLY_ACTION_CALLERS = (
     "providers/prices/nordpool_action.py",
     "providers/prices/action.py",
     "providers/schedules/ha_schedule.py",
+    "providers/forecasts/weather_entity.py",
 )
 
 # (what we grep for, which relative paths or path prefixes may contain it)
