@@ -35,6 +35,7 @@ __all__ = [
     "KNOWN_CONFIDENCE",
     "OFFER_CONFIDENCE",
     "BaselineModel",
+    "BudgetForecast",
     "ForecastKind",
     "ForecastSource",
     "Forecasts",
@@ -204,6 +205,40 @@ class PlannerForecasts:
 
 
 @dataclass(frozen=True, slots=True)
+class BudgetForecast:
+    """D6's own view of D10, the `allocation.budget.Baseline` protocol's shape.
+
+    (`design/DECISIONS.md` D-0319.) Built fresh each tick, bound to one `at`,
+    so `confidence` can be the bare property D6 §2 asks for - `core/allocation`
+    never imports this module (the one-way direction D-0313 and D-0316 already
+    keep); it is satisfied structurally, the same way `HourOfWeekBaseline`
+    satisfies `BaselineModel`.
+    """
+
+    source: Forecasts
+    at: datetime
+
+    @property
+    def confidence(self) -> float:
+        """Return the baseline's raw confidence at `at`, 0.0 with none fitted."""
+        if self.source.baseline is None:
+            return 0.0
+        _mean_w, _sigma_w, confidence = self.source.baseline.predict(self.at)
+        return confidence
+
+    def energy_kwh(self, start: datetime, hours: float) -> float:
+        """Return the baseline's own energy integral over `[start, start+hours)`."""
+        if self.source.baseline is None:
+            return 0.0
+        kwh, _confidence = self.source.baseline.kwh_between(start, start + timedelta(hours=hours))
+        return kwh
+
+    def residual_sigma_w(self, t: datetime) -> float | None:
+        """Return the bin's residual σ at `t`, ungated (D6 §2, INV-62)."""
+        return self.source.residual_sigma_w(t)
+
+
+@dataclass(frozen=True, slots=True)
 class Forecasts:
     """Everything D10 tells the rest of the engine (D10 §3, §4).
 
@@ -263,6 +298,10 @@ class Forecasts:
     def for_planner(self) -> PlannerForecasts:
         """Return the view D5's `PlanContext` takes (`design/DECISIONS.md` D-0217)."""
         return PlannerForecasts(source=self)
+
+    def for_budget(self, at: datetime) -> BudgetForecast:
+        """Return the view D6's `budget()` takes (`design/DECISIONS.md` D-0319)."""
+        return BudgetForecast(source=self, at=at)
 
     def _outdoor(self, t: datetime) -> float | None:
         """Return the outdoor temperature the baseline's weather term would use."""

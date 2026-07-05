@@ -73,6 +73,7 @@ class Forecasts:
     def baseline_kwh(self, a, b) -> tuple[float, Confidence] | None
     def residual_sigma_w(self, t) -> float | None
     def for_planner(self) -> PlannerForecasts          # D5's protocol: bare floats, 0.0 when not offered (D-0217)
+    def for_budget(self, at: datetime) -> BudgetForecast   # D6's protocol: bound to one `at` (D-0320)
 class HourOfWeekBaseline:                              # mutable around a frozen BaselineState, as D3's WindowMeter is
     state: BaselineState                               # property; what D7 persists
     def update(self, window: ClosedWindow, uncontrolled_kwh: float, t_out: float | None = None) -> None
@@ -187,7 +188,9 @@ envelopes and heavy screeds land inside the bounds and are applied.
 
 Weather: hourly and on change. Baseline: per closed window (cheap). Fits: daily at 03:xx (+ jitter, never :00). PV: when the source updates. Everything that touches network or disk runs in the planning loop or an executor job (INV-46).
 
-**In code (D-0313…D-0318).** Weather: `providers/forecasts/weather_entity.py::WeatherEntitySource` over `weather.get_forecasts` (INV-3's fourth read-only-action file), fetched by `runtime.py::_fetch_weather_if_due` - hourly (`WEATHER_REFRESH_INTERVAL`) inside `_fetch_then_plan`, and immediately on the bound entity's own state change (`_on_weather_changed`, which also runs a plan - D7 §5.2's own long-named `forecast update` trigger). The entity itself is auto-detected once at `_subscribe()` time (D10 §6: the first `weather.*` entity, preferring one with `WeatherEntityFeature.FORECAST_HOURLY`); a later-added weather entity needs a reload, matching every other auto-detected source. Baseline: `core/forecasts_hook.py::ForecastsAdapter`, called from the engine's own `_close_slots` (D-0313) - exactly "per closed window," never from `tick()` (`tests/core/engine/test_forecasts_wiring.py`, D10 §9 11's own half this WP closes). Seeding (§5.2): `providers/forecasts/recorder_baseline.py::async_seed`, run once at startup when the store has no persisted `BaselineState`, and again on `rebuild_baseline` (D-0317) - the site's own register only (D-0315); persisted through `core/state_codec`, restored the same way on the next `start()` (§7, unchanged). Fits (§5.6): **not built** - no `LoadHistory` is assembled anywhere, D-0315's own scope line; WP5.2 is what reads `effective` into D6's reserve and is the natural place fits' own recorder wiring lands too.
+**In code (D-0313…D-0318).** Weather: `providers/forecasts/weather_entity.py::WeatherEntitySource` over `weather.get_forecasts` (INV-3's fourth read-only-action file), fetched by `runtime.py::_fetch_weather_if_due` - hourly (`WEATHER_REFRESH_INTERVAL`) inside `_fetch_then_plan`, and immediately on the bound entity's own state change (`_on_weather_changed`, which also runs a plan - D7 §5.2's own long-named `forecast update` trigger). The entity itself is auto-detected once at `_subscribe()` time (D10 §6: the first `weather.*` entity, preferring one with `WeatherEntityFeature.FORECAST_HOURLY`); a later-added weather entity needs a reload, matching every other auto-detected source. Baseline: `core/forecasts_hook.py::ForecastsAdapter`, called from the engine's own `_close_slots` (D-0313) - exactly "per closed window," never from `tick()` (`tests/core/engine/test_forecasts_wiring.py`, D10 §9 11's own half this WP closes). Seeding (§5.2): `providers/forecasts/recorder_baseline.py::async_seed`, run once at startup when the store has no persisted `BaselineState`, and again on `rebuild_baseline` (D-0317) - the site's own register only (D-0315); persisted through `core/state_codec`, restored the same way on the next `start()` (§7, unchanged). Fits (§5.6): **not built** - no `LoadHistory` is assembled anywhere, D-0315's own scope line; still unwired after WP5.2 (below) - no WP names a fits provider yet.
+
+D6's reserve and projection and D7's peak warning read the baseline through `Forecasts.for_budget(at)`. It satisfies `core/allocation/budget.py::Baseline` structurally, so neither package imports the other (`BudgetForecast`, next to `PlannerForecasts`, D-0319, D-0320).
 
 ---
 
@@ -231,25 +234,27 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 
 ## 9. Tests that must exist before merge
 
-1. Welford weighted moments match a reference implementation; decay halves weight at `half_life`.
-2. Holiday windows land in Sunday bins.
-3. Confidence gating: a bin with n_eff 3 is not offered; with 8 it is.
-4. Reconstruction: with power histories → `full`; with on/off only → nameplate × fraction, `partial`; with nothing → `none`.
-5. Seeding from synthetic LTS rows reproduces a known weekly profile.
-6. Weather series: hourly forecast parsed; physical sensor overrides the first point; decay after failure.
-7. Fits: synthetic cooling episodes recover `loss_coeff` within 10 %; too few episodes → `ok = False`, `effective = configured` (INV-63); out-of-bounds value not applied.
-8. EV efficiency from three synthetic sessions; a single session → not ok.
-9. Nameplate p95 within bounds; a heat pump's modulating power does not produce a "nameplate" (type excluded).
-10. INV-62 cross-test with D6: a perfect baseline never reduces the reserve below `σ_floor × k × t_rem`.
-11. Fits never run inside `engine.tick` (a test asserts the tick calls no fit function).
+1. Weighted Welford moments match a reference implementation, decay halves the weight at `half_life`.
+2. Holiday windows land in the Sunday bins.
+3. Confidence gate: a bin with n_eff 3 isn't offered, with 8 it is.
+4. Reconstruction: with power histories `full`, with on/off only nameplate × fraction and `partial`, with nothing `none`.
+5. Seeding from synthetic LTS rows gives back a known weekly profile.
+6. Weather: hourly forecast parsed, a physical sensor overrides the first point, decay after a failure.
+7. Fits: synthetic cooling episodes recover `loss_coeff` within 10 %. Too few episodes gives `ok = False` and `effective = configured` (INV-63), and a value out of bounds isn't applied.
+8. EV efficiency from three synthetic sessions, a single session is not ok.
+9. Nameplate p95 within bounds. A heat pump's modulating power doesn't produce a "nameplate" (type excluded).
+10. INV-62 against D6: a perfect baseline never takes the reserve below `σ_floor × k × t_rem`. Asserted in `tests/core/allocation/test_03_reserve.py::test_03_a_baseline_is_accepted_and_never_removes_the_floor`, and through a real `tick()` in `tests/core/engine/test_baseline_reserve.py`.
+11. Fits never run inside `engine.tick` (the tick calls no fit function).
 12. 15-min windows aggregate into hour bins correctly across DST.
 13. Tank standby loss from three idle episodes recovers `tests/sim/tank.py`'s 60 W
-    within 10 %; two episodes are not applied; an episode falling faster than
-    3 K/h is a draw and is dropped (§5.6's fifth row had no item).
-14. The forecast-source registry: a registered source is found by key and by kind,
+    within 10 %. Two episodes aren't applied, and an episode falling faster than
+    3 K/h is a draw and dropped.
+14. The forecast source registry: a registered source is found by key and by kind,
     built from saved options, an unknown key raises, and `core/` ships no HA source.
 15. `Forecasts.for_planner()` satisfies D5's `strategies/context.Forecasts`
-    protocol, and an unoffered baseline subtracts nothing from `Headroom` (D-0217).
+    protocol, and a baseline not offered takes nothing off `Headroom` (D-0217).
+16. `Forecasts.for_budget(at)` satisfies D6's `allocation.budget.Baseline` protocol
+    structurally, without `core/allocation` importing `core/forecasts` (D-0320).
 
 ---
 

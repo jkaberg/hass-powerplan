@@ -1442,3 +1442,13 @@ The runtime fills both from the real baseline and the engine republishes them in
 
 The review's "Forecasts" paragraph names the first loaded `weather.*` entity and, with a meter, that the baseline is offered after about two weeks. It doesn't count months of recorder history: that would be a throwaway recorder read at flow time. `detect_weather_entity` lives in `providers/forecasts/base.py`, since reading `hass.states` from `flow/review.py` breaks INV-3 (the grep test caught it), and the runtime uses it too. Affects D10 §6.
 **Rejected:** querying the history span at review - a second recorder read for phrasing.
+
+### D-0319 · `budget()` takes `controlled_planned_kwh`; projection and reserve switch at `BASELINE_CONFIDENCE`
+
+D6 §2's formula needs the loads' planned energy over the window's remainder, which `budget()` can't compute: the tick sums `plan.kwh_between(now, now + t_rem)` over the plans and passes it as a defaulted seventh argument. `Plan.kwh_between` prorates envelopes; a `None` envelope counts nothing (INV-30). With a baseline at confidence ≥ 0.6 (`BASELINE_CONFIDENCE`, kept separate from D10's `OFFER_CONFIDENCE`), `projected = used + planned + baseline.energy_kwh(...)` and σ is the baseline's residual; otherwise the smoothed-power path is unchanged. The σ floor clamp holds on both paths (INV-62). Affects D6 §2, §3.
+**Rejected:** passing `plans` into `budget()` - it runs before `AllocCtx` exists. Separate confidences for σ and projection - D6 §2 names one.
+
+### D-0320 · `BudgetForecast` bridges D10 to D6's `Baseline` protocol
+
+D6's `Baseline` wants a bare `confidence`, `energy_kwh(start, hours)` and `residual_sigma_w(t)`; D10's baseline takes a time argument for each. `Forecasts.for_budget(at)` binds one instant, like `for_planner()` (D-0217), and satisfies the protocol structurally, so neither domain imports the other. `Inputs.forecast_baseline` is the third field in D-0316's pattern, built from the same per-tick `Forecasts` the runtime already assembles. Affects D6 §2, D10 §3.
+**Rejected:** handing `budget()` the raw `HourOfWeekBaseline` - ties D6's protocol to one concrete model.

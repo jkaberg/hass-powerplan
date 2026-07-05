@@ -161,7 +161,7 @@ engine.tick(state, inputs):                               # the sacred order
       WP0.10: `LoadMeter(LoadMeterConfig(load_id, nameplate_w), previous).sample(now, view, energy=ENERGY reading, slot_minutes)` per load, slot length from the curve in force (15 min without one); the two site meters sample the grid reading the same way. A frozen tick still samples them (the ledger wants what was drawn).
   3 closed windows → tariff.record_window; period rollover       (D2) - the counterfactual window is recorded by D11 inside plan(), never here (INV-68)
   4 ceiling = tariff.ceiling_kwh(...)                     (D2)
-  5 budget = budget(ceiling, meter, hard limits, pi, baseline)   (D6)
+  5 budget = budget(ceiling, meter, hard limits, pi, baseline, controlled_planned_kwh)   (D6)
   6 ladder.update(projection, P_total, hard limits, …)    (D6) - this tick's stage from the smoothed projection (INV-38); frozen → unchanged, no escalation
   7 demands, comfort = [load.observe(reads)]              (D4) - per-load try/except (INV-45)
   8 grants, report, alloc_state = allocate(…, stage, blunt)   (D6) - stage actions and the trim run inside; frozen → previous grants
@@ -192,6 +192,8 @@ triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the r
 
 `ForecastHook`/`ForecastsAdapter` sits next to `AccountingHook`/`AccountingAdapter`, called from the same `_close_slots` loop off the same `SlotClose`, which is the "baseline per closed window" above. Weather and the baseline's recorder seed are the pseudocode's `[no lock]` executor jobs: `_fetch_weather_if_due` runs there (hourly, and on the bound entity's own change, the `forecast update` trigger), and `async_seed` runs once at startup as its own background task, never blocking the first tick or plan - no baseline yet means a reserve on σ alone, not a block (D10 §8). `Inputs.forecast_confidence`/`.forecast_ready`, computed by the runtime from the same `HourOfWeekBaseline` the hook updates, are what `_forecast_status` republishes into the snapshot (§4.1, D-0313…D-0318).
 
+**The baseline reaches D6 and the peak warning.** `Inputs.forecast_baseline: Baseline | None` is a third field next to `forecast_confidence`/`.forecast_ready`, built by `runtime.py` around the same `Forecasts` object each tick (`_forecast_baseline`, a sibling of `_forecasts_view`). `inputs.forecasts` stays D5's narrow protocol and can't answer D6's questions. Step 5 above sums `Plan.kwh_between(now, now + t_rem_h)` over `state.plans.plans` before calling `budget()`, and §5.4's `_expected_uncontrolled_kwh` reads the same field for the peak warning's uncontrolled term. Neither the engine nor `runtime.py` decides the confidence gate - `budget()` and `_expected_uncontrolled_kwh` each check `baseline.confidence >= BASELINE_CONFIDENCE` (D6 §2), the engine only threads the one object through (D-0319, D-0320).
+
 **Plug-in.** The tick fires `ev_connected` on a car's connected edge in either direction (D4 §5.11). The runtime sees it among the tick's `ha_events` and creates a `run_plan("demand")` task, so the plan runs after the tick and never under its lock. The pure runner's household plans at the same tick on its own, so the event moves no scenario digest (D-0281).
 
 **Legionella edges.** `_legionella_events(edges, observations)` is `_circuit_events`'s pattern over four keys: `Observation.legionella_active`/`_in_progress`/`_at_risk` as one-way boolean edges (`due`/`started`/`at_risk`) and `legionella_last_completed` as a changed-value edge (`completed`), none firing on a load's first observed tick. No new trigger: the cycle's lead window is 24 h wide, so unlike a car's plug-in the regular quarter-hour cadence always notices in time (D-0295, D-0296).
@@ -217,7 +219,9 @@ There's no cron at `HH:00` running a full tick, the register report is the bound
 
 ### 5.4 Peak warning
 
-**In code (D-0238).** The EMA variant: `expected = EMA_uncontrolled × window_h + Σ planned kWh (+ an urgent unplanned demand at max_w)`; warn once per coming window at ≥ `warn_fraction` (0.95) of the window's flat ceiling, clear below `clear_fraction` (0.85); the live warning for the current window is an edge event keyed on `PeakWarnState.live`. WP5.2 replaces the EMA term with D10's baseline.
+Until the baseline is confident the warning uses an EMA: `expected = EMA_uncontrolled × window_h` plus the no-vote demands below. Warn once per coming window at ≥ `warn_fraction` (0.95) of the window's flat ceiling, clear below `clear_fraction` (0.85). The live warning for the current window is an edge event keyed on `PeakWarnState.live` (D-0238).
+
+`_expected_uncontrolled_kwh` (`core/engine.py`) is the switch: `inputs.forecast_baseline` (the same field `budget()` reads, D-0320) confident at `BASELINE_CONFIDENCE` (0.6) answers `baseline.energy_kwh(start, hours)` for the coming window, otherwise the EMA term. The live warning needs no extra wiring, it reads `budget.projected_kwh`, which is baseline-aware as soon as `budget()` is (D6 §2). A 500 W EMA that alone would never warn still fires against a confident baseline forecasting 12 kW (D-0319).
 
 Computed in the tick from the planning cycle's artefacts, cheap:
 
@@ -322,7 +326,7 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 9. Subentry add/remove/update hot paths. **As asserted (`tests/flows/test_subentry_hot_paths.py`):** a second load added beside a first, no reload (`async_reload` spied, zero calls); removed - dropped from the engine, its entities gone from both the registry and the state machine, its `loads`/`load_meters`/`plans.plans` rows gone from the store, the other load untouched; a circuit's membership shrinks when a member load is removed; a circuit added and removed on its own, no reload; the site's own `entry.data` changing still reloads (INV-48).
 10. Store migrations: v0 → v1 fixture; unknown section preserved; corrupt file renamed and recovered.
 11. Save throttle: 100 samples in 10 s → exactly 2 writes (one per 5 s) and a 1 s cadence never starves the save; an anchor change writes at once; stop flushes (INV-14).
-12. Peak warning fires for a window where baseline + plan > 0.95 ceiling; clears below 0.85; one notification per window.
+12. Peak warning fires for a window where baseline + plan > 0.95 ceiling; clears below 0.85; one notification per window. **As asserted:** the EMA half in `test_the_ema_peak_warning_fires_once_per_window_and_clears`, the baseline half in `test_the_baseline_peak_warning_replaces_the_ema_term_when_confident` (`tests/core/engine/test_engine.py`).
 13. Tick budget: a 20-load synthetic site ticks in < 50 ms (perf test, D9).
 14. Clock jump handling.
 15. Snapshot schema golden: field set stable (D8 depends on it).

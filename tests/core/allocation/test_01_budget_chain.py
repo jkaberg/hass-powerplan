@@ -20,6 +20,7 @@ from the implementation.
 from __future__ import annotations
 
 import math
+from datetime import timedelta
 
 import pytest
 
@@ -31,7 +32,15 @@ from custom_components.powerplan.core.allocation import (
     projection_kwh,
     reserve_kwh,
 )
-from tests.core.allocation.conftest import FUSE_W, ceiling, meter
+from tests.core.allocation.conftest import (
+    FUSE_W,
+    NOW,
+    PerfectBaseline,
+    ceiling,
+    free_plan,
+    meter,
+    plan_of,
+)
 
 CEILING_KWH = 9.70
 USED_KWH = 6.00
@@ -115,6 +124,39 @@ def test_01_the_projection_is_used_plus_the_smoothed_power_for_the_time_left() -
     assert projection_kwh(USED_KWH, 4000.0, T_REM_H) == pytest.approx(8.00)
     assert result.projected_kwh == pytest.approx(8.00)
     assert result.projection_source == "smooth"
+
+
+def test_01_a_confident_baseline_replaces_the_projection_with_its_own_integral() -> None:
+    """`used + Σ_controlled_planned + ∫baseline` replaces `used + P_smooth × t_rem` (D6 §2)."""
+    snapshot = meter(used_kwh=USED_KWH, t_rem_h=T_REM_H, grid_smooth_w=4000.0)
+
+    result = budget(
+        ceiling(CEILING_KWH),
+        snapshot,
+        FUSE_W,
+        PiState(),
+        BudgetCfg(),
+        PerfectBaseline(),
+        1.5,
+    )
+
+    assert result.projection_source == "baseline"
+    assert result.projected_kwh == pytest.approx(USED_KWH + 1.5 + 1.2 * T_REM_H)
+
+
+def test_01_plan_kwh_between_is_sigma_controlled_planned() -> None:
+    """`Plan.kwh_between` prorates at the edges and skips a free (`None`) plan."""
+    # 7 kW for the first 15 min inside the window, then idle, then 3 kW starting
+    # 5 min before the window ends - only its first 5 min are inside [NOW, end).
+    window_end = NOW + timedelta(minutes=30)
+    charger = plan_of("ev", (0, 7000.0), (15, 0.0), (25, 3000.0), now=NOW, minutes=10)
+    idle = free_plan("tank")
+
+    assert charger.kwh_between(NOW, window_end) == pytest.approx(
+        7000.0 * (10 / 60) / 1000.0 + 3000.0 * (5 / 60) / 1000.0
+    )
+    assert idle.kwh_between(NOW, window_end) == 0.0
+    assert charger.kwh_between(NOW, NOW) == 0.0
 
 
 def test_01_an_ineligible_window_is_bounded_by_the_hard_limits_alone() -> None:

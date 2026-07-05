@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from ..tariffs import Ceiling
 
 __all__ = [
+    "BASELINE_CONFIDENCE",
     "DEGRADED_BUMP_KWH",
     "SIGMA_FLOOR_W",
     "Baseline",
@@ -55,6 +56,12 @@ __all__ = [
 #: predictable, and a baseline that says it is has over-fitted.
 SIGMA_FLOOR_W = 300.0
 
+#: D6 §2's own gate on the baseline: below this the projection stays `smooth`
+#: and the reserve stays on the live EMA σ. Same number as D10's own
+#: `OFFER_CONFIDENCE` (`core/forecasts/model.py`) but owned separately here -
+#: `core/allocation` never imports `core/forecasts` (D-0313, D-0316).
+BASELINE_CONFIDENCE = 0.6
+
 #: What a degraded anchor adds to the reserve, in kWh (D6 §5.1): `used` is an
 #: estimate, so hold more back rather than trust it.
 DEGRADED_BUMP_KWH = 0.2
@@ -65,21 +72,30 @@ _SECOND_H = 1.0 / 3600.0
 
 
 class Baseline(Protocol):
-    """D10's forecast of the uncontrolled load, as D6 §2 asks it (wired in WP5.2).
+    """D10's forecast of the uncontrolled load, as D6 §2 asks it (D-0319).
 
-    Accepted by `budget()` today and deliberately ignored: the projection stays
-    `smooth` until WP5.2 builds the baseline term (`design/DECISIONS.md` D-0161).
-    The σ floor is already here, because it is the half that cannot wait - a
-    forecast must never be able to shrink the reserve to nothing (INV-62).
+    `core/forecasts/model.py::BudgetForecast` satisfies this structurally, built
+    fresh each tick by `runtime.py` around `HourOfWeekBaseline` and handed in
+    through `Inputs.forecast_baseline` - `core/allocation` never imports
+    `core/forecasts` (the one-way direction D-0313 and D-0316 already keep).
     """
 
     @property
     def confidence(self) -> float:
-        """How much the fit is worth trusting, 0–1; D6 §2 wants ≥ 0.6."""
+        """How much the fit is worth trusting, 0–1; D6 §2 wants ≥ `BASELINE_CONFIDENCE`."""
         ...
 
     def energy_kwh(self, start: datetime, hours: float) -> float:
         """Return the energy the uncontrolled load is forecast to take."""
+        ...
+
+    def residual_sigma_w(self, t: datetime) -> float | None:
+        """Return the bin's residual σ in W, or `None` with fewer than two samples.
+
+        `None` is never treated as zero (INV-62): `reserve_kwh` floors whatever it
+        is handed, so a `None` here falls back to the live EMA `σ_uc`, never to
+        "no deviation".
+        """
         ...
 
 
@@ -286,21 +302,37 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
     pi: PiState,
     cfg: BudgetCfg,
     baseline: Baseline | None,
+    controlled_planned_kwh: float = 0.0,
 ) -> Budget:
-    """Return the whole chain's answer for this tick (D6 §3, §5.1).
+    """Return the whole chain's answer for this tick (D6 §3, §5.1, §2).
 
     An **ineligible** window - D2 answers `+inf` because the tariff does not
     measure it - has no ceiling at all: only the hard limits bind (item 1 of the
-    precedence). `baseline` is accepted and ignored until WP5.2 (D-0161).
+    precedence).
+
+    `baseline`, when its confidence clears `BASELINE_CONFIDENCE`, sharpens the
+    projection to `used + controlled_planned_kwh + ∫baseline` instead of the
+    smoothed-power extrapolation, and may replace the reserve's σ with D10's own
+    residual - `controlled_planned_kwh` is the caller's own Σ over the loads'
+    plans for `[now, now + t_rem)` (`Plan.kwh_between`, D-0319). Below the
+    gate, or with no baseline at all, both stay exactly as they were (D6 §2).
     """
     eps_kwh = eps_for_window(cfg.eps_base_kwh, meter.window_min)
-    sigma = cfg.sigma_floor_w if meter.sigma_uncontrolled_w is None else meter.sigma_uncontrolled_w
+
+    sigma_w = meter.sigma_uncontrolled_w
+    projected_kwh: float | None = None
+    projection_source: Literal["smooth", "baseline"] = "smooth"
+    if baseline is not None and baseline.confidence >= BASELINE_CONFIDENCE:
+        resid = baseline.residual_sigma_w(meter.now)
+        if resid is not None:
+            sigma_w = resid
+        projected_kwh = (
+            meter.used_kwh + controlled_planned_kwh + baseline.energy_kwh(meter.now, meter.t_rem_h)
+        )
+        projection_source = "baseline"
+
     reserve = reserve_kwh(
-        meter.t_rem_h,
-        meter.sigma_uncontrolled_w,
-        pi.r_trim_kwh,
-        cfg,
-        degraded=meter.health.degraded,
+        meter.t_rem_h, sigma_w, pi.r_trim_kwh, cfg, degraded=meter.health.degraded
     )
     if ceiling.eligible:
         p_allow, e_budget = allowance_w(
@@ -310,20 +342,23 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
         p_allow = hard_limit_w
         e_budget = ceiling.kwh - meter.used_kwh - reserve
 
-    smooth_w = meter.grid_smooth_w if meter.grid_smooth_w is not None else (meter.grid_w or 0.0)
+    if projected_kwh is None:
+        smooth_w = meter.grid_smooth_w if meter.grid_smooth_w is not None else (meter.grid_w or 0.0)
+        projected_kwh = projection_kwh(meter.used_kwh, smooth_w, meter.t_rem_h)
+    reported_sigma_w = cfg.sigma_floor_w if sigma_w is None else max(sigma_w, cfg.sigma_floor_w)
     return Budget(
         ceiling_kwh=ceiling.kwh,
         eps_kwh=eps_kwh,
         used_kwh=meter.used_kwh,
         t_rem_h=meter.t_rem_h,
         reserve_kwh=reserve,
-        sigma_w=max(sigma, cfg.sigma_floor_w),
+        sigma_w=reported_sigma_w,
         r_trim_kwh=pi.r_trim_kwh,
         p_allow_w=p_allow,
         p_hard_w=hard_limit_w,
         p_free_w=max(0.0, p_allow - (meter.uncontrolled_w or 0.0)),
-        projected_kwh=projection_kwh(meter.used_kwh, smooth_w, meter.t_rem_h),
-        projection_source="smooth",
+        projected_kwh=projected_kwh,
+        projection_source=projection_source,
         eligible=ceiling.eligible,
         free_ride=ceiling.free_ride,
         e_budget_kwh=e_budget,

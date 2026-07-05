@@ -52,6 +52,8 @@ reserve_kwh    = clamp( max(σ_uc, σ_floor) × k × t_rem + r_trim, min, max ) 
 ```
 The baseline improves the *projection*, the *reserve* still covers deviation from it using measured σ, never below the floor. When D10's residual σ per hour-of-week is available and confident, `σ_uc` may become `max(σ_resid, σ_floor)`, and the floor stays.
 
+`core/engine.py::tick()` computes `controlled_planned_kwh` at step 5, before `budget()`, as `Σ plan.kwh_between(now, now + t_rem_h)` over `state.plans.plans` - the same plans the allocator walks three steps later - and passes it as `budget()`'s defaulted last parameter. `Plan.kwh_between(a, b)` prorates a slot's `envelope_w` by its overlap with `[a, b)`, `None` (no plan) adds nothing. `baseline.confidence >= BASELINE_CONFIDENCE` (0.6, a `core/allocation/budget.py` constant, not imported from D10's `OFFER_CONFIDENCE` of the same value) gates both formula switches together, one number and not two. `Inputs.forecast_baseline`, built by `runtime.py` around `Forecasts.for_budget(now)` (a `BudgetForecast` view next to `for_planner()`), is the bridge, and `core/allocation` never imports `core/forecasts` (D-0319, D-0320).
+
 ---
 
 ## 3. Module layout
@@ -78,7 +80,7 @@ custom_components/powerplan/core/allocation/
 Public API:
 
 ```python
-def budget(ceiling: Ceiling, meter: MeterSnapshot, hard_limit_w: float, pi: PiState, cfg: BudgetCfg, baseline: Baseline | None) -> Budget
+def budget(ceiling: Ceiling, meter: MeterSnapshot, hard_limit_w: float, pi: PiState, cfg: BudgetCfg, baseline: Baseline | None, controlled_planned_kwh: float = 0.0) -> Budget
 def allocate(ctx: AllocCtx, constraints: Sequence[Constraint], cfg: AllocCfg, state: AllocState) -> tuple[Grants, AllocReport, AllocState]
 class Ladder: def update(self, budget: Budget, *, p_total_w, hard: HardLimits, target_kwh, now, cfg) -> LadderState
 def proportional_trim(loads, grants, deficit_w, protected, cfg, *, views, blunt, stop_ok) -> tuple[Grants, float]
@@ -94,6 +96,13 @@ rides on its own `LoadView`. `Ladder.update` reads the five numbers §3 listed
 separately off the `Budget` that carries them, plus `p_allow_w` for the clean-tick
 test. `proportional_trim` returns the grants instead of writing into a report,
 because `AllocReport` is frozen (§4).
+
+**WP5.2 amendment** (`design/DECISIONS.md` D-0319). `budget` grows a seventh,
+defaulted parameter - `controlled_planned_kwh: float = 0.0` - because §2's
+formula needs `Σ_controlled_planned` and nothing inside `core/allocation` has the
+plans to sum it from at the point `tick()` calls `budget()` (step 5, before
+`AllocCtx` exists at step 8); the default keeps every pre-WP5.2 positional call
+site unchanged.
 
 ---
 
@@ -366,7 +375,7 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 
 1. Budget chain numbers for the reference case (ceiling 9.70, used 6.0, σ 0.5 kW, t_rem 0.5 h) - hand-computed.
 2. ε in kWh: a 300 W "margin" is rejected by config; protection at:05 and:55 identical.
-3. Reserve shrinks with `t_rem`; σ floor holds under a perfect baseline (INV-62).
+3. Reserve shrinks with `t_rem`; σ floor holds under a perfect baseline (INV-62). **As asserted:** `tests/core/allocation/test_01_budget_chain.py` (the projection switches to `baseline` at `BASELINE_CONFIDENCE` and `Plan.kwh_between` prorates at the slot edges), `test_03_reserve.py` (a confident, near-perfect baseline still floors the reserve at `σ_floor × k × t_rem`; an unconfident one changes nothing) and `tests/core/engine/test_baseline_reserve.py` (the same, through a real `tick()` - D10 §9 10's own cross-test).
 4. PI: outlier and non-binding windows do not move `r_trim`; degraded suppresses binding.
 5. Reservation: tank grant 348 W paced → reserved 3 000 W; heat pump 23 W measured → reserved 523 W not 3 000.
 6. Comfort violators first at any priority; over allowance → served + breach event.

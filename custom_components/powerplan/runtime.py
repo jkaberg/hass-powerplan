@@ -169,6 +169,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
     from homeassistant.helpers.event import EventStateChangedData
 
+    from .core.allocation import Baseline
     from .core.forecasts.model import PlannerForecasts, Series
     from .core.loads import LoadState
     from .core.loads.base import ApplyResult
@@ -1531,6 +1532,7 @@ class Runtime:
             forecasts=self._forecasts_view(now),
             forecast_confidence=confidence,
             forecast_ready=confidence is not None and confidence >= OFFER_CONFIDENCE,
+            forecast_baseline=self._forecast_baseline(now),
         )
 
     def _forecast_confidence(self, now: datetime) -> float | None:
@@ -1540,21 +1542,29 @@ class Runtime:
             return None
         return adapter.baseline.confidence(now)
 
-    def _forecasts_view(self, now: datetime) -> PlannerForecasts | None:
-        """Return D5's narrow view of D10, cheap and pure - never I/O (D7 §3).
+    def _forecasts(self, now: datetime) -> Forecasts | None:
+        """Return D10's full model, read fresh every tick - never I/O (D7 §3).
 
         `None` when the site has no import-register role bound at all (no
         `ForecastsAdapter`, D10 §8's own "no weather entity" row extended to
         "no meter at all"); with one, the weather series is whatever the last
         `fetch()` cached and the baseline is whatever `ForecastsAdapter`'s own
-        `close_slot` has folded in so far - both read fresh every tick.
+        `close_slot` has folded in so far.
         """
         adapter = self.forecasts_adapter
         if adapter is None:
             return None
-        return Forecasts(
-            at=now, weather=self._weather_series, baseline=adapter.baseline
-        ).for_planner()
+        return Forecasts(at=now, weather=self._weather_series, baseline=adapter.baseline)
+
+    def _forecasts_view(self, now: datetime) -> PlannerForecasts | None:
+        """Return D5's narrow view of D10 (D-0217)."""
+        forecasts = self._forecasts(now)
+        return None if forecasts is None else forecasts.for_planner()
+
+    def _forecast_baseline(self, now: datetime) -> Baseline | None:
+        """Return D6's own view of D10 for the budget (D-0319)."""
+        forecasts = self._forecasts(now)
+        return None if forecasts is None else forecasts.for_budget(now)
 
     def _calendar_events(self, load: Load, now: datetime) -> tuple[CalendarEvent, ...]:
         """Return every bound calendar's current or next event (D4 §4.4).

@@ -4,7 +4,7 @@ Both axes meet here. The price axis arrives as a `Plan` per load, the capacity a
 as a `Ceiling` and the hard limits, and this package answers one question per tick:
 **what may each load draw right now, and why**.
 
-    budget(ceiling, meter, hard_limit_w, pi, cfg, baseline) → Budget
+    budget(ceiling, meter, hard_limit_w, pi, cfg, baseline, controlled_planned_kwh) → Budget
     allocate(ctx, constraints, cfg, state)                  → (Grants, AllocReport, AllocState)
     Ladder().update(budget, …)                              → LadderState
     proportional_trim(loads, grants, deficit_w, …)          → (Grants, freed_w)
@@ -21,6 +21,7 @@ tick never touches the ledger.
 
 from .allocator import EV_MIN_STOP_S, AllocCfg, AllocState, Grants, allocate
 from .budget import (
+    BASELINE_CONFIDENCE,
     DEGRADED_BUMP_KWH,
     SIGMA_FLOOR_W,
     Baseline,
@@ -82,6 +83,7 @@ from .reserved import GRANT_MARGIN_W, MODULATING_KINDS, ON_W, measured_w, reserv
 from .trim import TrimCfg, proportional_trim, trim_candidates
 
 __all__ = [
+    "BASELINE_CONFIDENCE",
     "BLUNT_REASONS",
     "DEGRADED_BUMP_KWH",
     "EV_MIN_STOP_S",

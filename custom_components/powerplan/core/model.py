@@ -586,6 +586,29 @@ class Plan:
             return None
         return max(self._active_starts[index], now)
 
+    def kwh_between(self, a: datetime, b: datetime) -> float:
+        """Return the energy this plan intends to move over `[a, b)` (D6 §2).
+
+        A load with no plan (`envelope_w is None`) contributes nothing - there is
+        no committed number to sum, the same reading `cap_w` gives it. A slot only
+        partly inside `[a, b)` is prorated by its own overlap, using `envelope_w`
+        rather than the whole-slot `kwh` (D5's own estimate, which does not know
+        about this caller's arbitrary window - the budget's remaining time).
+        """
+        if b <= a:
+            return 0.0
+        total = 0.0
+        for slot in self.slots_between(a, b):
+            if slot.envelope_w is None:
+                continue
+            start = max(slot.start, a)
+            end = min(slot.end, b)
+            if end <= start:
+                continue
+            hours = (end - start).total_seconds() / 3600.0
+            total += slot.envelope_w * hours / 1000.0
+        return total
+
 
 # --------------------------------------------------------------------------- #
 # Grant (D6) - the allocator's decision

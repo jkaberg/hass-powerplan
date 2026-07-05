@@ -67,14 +67,15 @@ Public API:
 
 ```python
 def plan_all(loads, curves, ctx: SiteContext, now, *, previous: Mapping[str, Plan] | None = None,
-             headroom: Headroom | None = None) -> SitePlan              # priority-decomposed; adopts per 5.9
+             headroom: Headroom | None = None) -> SitePlan              # priority-decomposed, adopts per 5.9
 class Plan:                                                             # declared in core/model.py (D-0130)
     def cap_w(self, now: datetime) -> float | None            # None = no plan; 0 = stand still; w = cap
     def desired_state_at(self, now) -> DesiredState | None
     def idle_seconds_from(self, now, horizon_s: float = 3600) -> float   # for D6's EV stop guard
     def next_active(self, now) -> datetime | None
+    def kwh_between(self, a: datetime, b: datetime) -> float   # Σ_controlled_planned over [a, b), prorated (D6 §2, D-0319)
     # cost_estimate, coverage, covered, confidence, planned_kwh are FIELDS (§4), not methods: they are
-    # what §7 persists and a restored plan carries (D-0134). build_plan() computes all of them.
+    # what §7 persists and what a restored plan carries (D-0134). build_plan() computes them all.
 def should_adopt(old: Plan | None, new: Plan, policy: HysteresisPolicy, *, curve: PriceCurve, tz: tzinfo,
                  now: datetime, inputs_changed: bool = False, stale: bool = False) -> bool   # D-0135
 ```

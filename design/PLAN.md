@@ -303,7 +303,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.4 | Entity format table | done |
 | 5.1 | D10 core and providers | done |
 | 5.1a | D10 core | done |
-| 5.2 | Baseline-aware reserve and warning | todo |
+| 5.2 | Baseline-aware reserve and warning | done |
 | 5.3 | Zones | todo |
 | 5.4 | `battery`, `arbitrage`, `peak_shave` | todo |
 | 5.5 | External limits and `delegated` | todo |

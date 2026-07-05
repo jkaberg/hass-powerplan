@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 import json
 import time
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -310,6 +310,54 @@ def test_the_ema_peak_warning_fires_once_per_window_and_clears() -> None:
         if e.kind is EventKind.PEAK_WARNING and e.data.get("active") is False
     ]
     assert cleared, "the warning clears below 0.85 of the ceiling"
+
+
+@dataclass(frozen=True)
+class _RichBaseline:
+    """A confident D10 baseline forecasting a steady, high rate (D7 §5.4)."""
+
+    rate_w: float
+    confidence: float = 1.0
+
+    def energy_kwh(self, start: datetime, hours: float) -> float:
+        """Return the energy this rate implies over `hours`, whatever `start`."""
+        del start
+        return self.rate_w / 1000.0 * hours
+
+    def residual_sigma_w(self, t: datetime) -> float:
+        """Return a residual well under the floor - irrelevant to this test."""
+        del t
+        return 50.0
+
+
+def test_the_baseline_peak_warning_replaces_the_ema_term_when_confident() -> None:
+    """D7 §5.4/§9 12: a confident baseline warns where the EMA alone would not.
+
+    500 W of grid draw settles the EMA far below any 10 kW-target ceiling, so a
+    warning here can only be the baseline term (D-0319) - never the EMA.
+    """
+    cfg = site()
+    engine = engine_for(reference_loads(), cfg=cfg)
+    knobs = Knobs(target=Target(kind="kw", kw=10.0))
+    baseline = _RichBaseline(rate_w=12_000.0)
+
+    state = EngineState()
+    fired = False
+    for index in range(30):
+        at = START + timedelta(seconds=TICK_S * index)
+        inputs = replace(
+            inputs_at(cfg, at, grid_w=500.0, loads=both(at), knobs=knobs, curves_=curves()),
+            forecast_baseline=baseline,
+        )
+        state, _snapshot, effects = engine.tick(state, inputs)
+        if any(
+            e.kind is EventKind.PEAK_WARNING and e.data.get("active", True)
+            for e in effects.ha_events
+        ):
+            fired = True
+            break
+
+    assert fired, "a baseline predicting 12 kW must warn even though the EMA (500 W) would not"
 
 
 # --------------------------------------------------------------------------- #

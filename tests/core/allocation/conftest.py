@@ -17,7 +17,7 @@ is the same cliff `apply()` will hit (INV-28, D6 §9 23).
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -86,6 +86,21 @@ NOW = datetime(2026, 2, 3, 18, 7, 13, tzinfo=OSLO)
 
 #: The house's main fuse in watts: 63 A × √3 × 230 V.
 FUSE_W = REFERENCE_PROFILE.fuse_w()
+
+
+@dataclass(frozen=True)
+class PerfectBaseline:
+    """A D10 baseline that predicts the uncontrolled load almost exactly (D6 §2)."""
+
+    confidence: float = 1.0
+
+    def energy_kwh(self, start: datetime, hours: float) -> float:
+        """Return the energy the uncontrolled load will take - exactly right."""
+        return 1.2 * hours
+
+    def residual_sigma_w(self, t: datetime) -> float:
+        """Return a small but nonzero residual - even a good fit misses a little."""
+        return 50.0
 
 
 # --------------------------------------------------------------------------- #

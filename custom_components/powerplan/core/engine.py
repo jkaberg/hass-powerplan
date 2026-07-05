@@ -51,6 +51,7 @@ from typing import (
 )
 
 from .allocation import (
+    BASELINE_CONFIDENCE,
     AllocCfg,
     AllocCtx,
     AllocReport,
@@ -382,6 +383,11 @@ class Inputs:
     #: why the numbers cross here instead of the engine importing D10.
     forecast_confidence: float | None = None
     forecast_ready: bool = False
+    #: D6's own view of D10 for the budget's reserve/projection (D-0319) -
+    #: `core/forecasts/model.py::BudgetForecast`, built fresh each tick by
+    #: `runtime.py`. `None` with no baseline at all; below `BASELINE_CONFIDENCE`
+    #: `budget()` reads its `.confidence` and falls back to `smooth` itself.
+    forecast_baseline: Baseline | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -1217,8 +1223,18 @@ class Engine:
 
         # -- 5. the budget ------------------------------------------------- #
         hard, runtime = self._hard_limits(now, meter, runtime)
+        controlled_planned_kwh = sum(
+            plan.kwh_between(now, now + timedelta(hours=meter.t_rem_h))
+            for plan in state.plans.plans.values()
+        )
         budget = build_budget(
-            ceiling, meter, hard.p_hard_w(), pi, site.budget, _baseline(inputs.forecasts)
+            ceiling,
+            meter,
+            hard.p_hard_w(),
+            pi,
+            site.budget,
+            _baseline(inputs),
+            controlled_planned_kwh,
         )
         reasons.append(
             f"budget: ceiling {budget.ceiling_kwh:.2f} kWh − used {budget.used_kwh:.2f} − "
@@ -1780,12 +1796,12 @@ class Engine:
         views: Sequence[LoadView],
         plans: Mapping[str, Plan],
     ) -> tuple[tuple[SiteWarning, ...], RuntimeState, list[HaEvent], list[Notification]]:
-        """Return the peak warnings for the coming windows (D7 §5.4, EMA variant).
+        """Return the peak warnings for the coming windows (D7 §5.4).
 
-        The EMA variant: without D10 the expectation for a coming window is the
-        current uncontrolled EMA held for the window, plus what the plans intend
-        to move in it, plus what an urgent demand will take whether it is planned
-        or not. WP5.2 replaces the first term with the baseline.
+        The expectation for a coming window's uncontrolled term is D10's baseline
+        when it clears `BASELINE_CONFIDENCE`, else the EMA held for the window
+        (D-0319) - plus what the plans intend to move in it, plus what an
+        urgent demand will take whether it is planned or not.
         """
         cfg = inputs.site.engine
         warnings: list[SiteWarning] = []
@@ -1793,6 +1809,7 @@ class Engine:
         notes: list[Notification] = []
         warned = set(runtime.peak.warned)
         ema = runtime.peak.ema_w
+        baseline = inputs.forecast_baseline
 
         for start, end in _coming_windows(meter, cfg.warn_horizon_h):
             limit = self._window_ceiling_kwh(start, end, inputs.knobs.target)
@@ -1800,7 +1817,7 @@ class Engine:
                 continue
             hours = (end - start).total_seconds() / 3600.0
             drivers: list[tuple[str, float]] = []
-            expected = 0.0 if ema is None else ema / 1000.0 * hours
+            expected = _expected_uncontrolled_kwh(baseline, ema, start, hours)
             if expected > 0.0:
                 drivers.append(("uncontrolled", expected))
             for view in views:
@@ -2446,9 +2463,15 @@ def _smooth_w(meter: MeterSnapshot) -> float:
     return meter.grid_w or 0.0
 
 
-def _baseline(forecasts: Forecasts | None) -> Baseline | None:
-    """Return D10's baseline for the budget - `None` until WP5.2 (D-0161)."""
-    return None
+def _baseline(inputs: Inputs) -> Baseline | None:
+    """Return D6's own view of D10's baseline for the budget (D-0319).
+
+    `inputs.forecasts` is D5's narrow view (`outdoor_c`/`surplus_w`/`baseline_w`,
+    D-0316) and cannot answer `budget()`'s questions - `forecast_baseline` is the
+    dedicated field `runtime.py` builds instead, the same pattern as
+    `forecast_confidence`/`forecast_ready`.
+    """
+    return inputs.forecast_baseline
 
 
 def _window_stats(runtime: RuntimeState, meter: MeterSnapshot) -> RuntimeState:
@@ -2589,6 +2612,19 @@ def _coming_windows(
         out.append((start, start + step))
         start += step
     return tuple(out)
+
+
+def _expected_uncontrolled_kwh(
+    baseline: Baseline | None, ema: float | None, start: datetime, hours: float
+) -> float:
+    """Return a coming window's uncontrolled term (D7 §5.4, D-0319).
+
+    D10's baseline once it clears `BASELINE_CONFIDENCE`, else the EMA held for
+    the window - the same gate `budget()` uses for the projection (D6 §2).
+    """
+    if baseline is not None and baseline.confidence >= BASELINE_CONFIDENCE:
+        return baseline.energy_kwh(start, hours)
+    return 0.0 if ema is None else ema / 1000.0 * hours
 
 
 def _planned_kwh(plan: Plan | None, start: datetime, end: datetime) -> float:
