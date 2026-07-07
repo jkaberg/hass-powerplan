@@ -86,6 +86,7 @@ def _rotation_rows(trail: _Trail) -> list[tuple[object, Snapshot, object]]:
     ]
 
 
+@pytest.mark.xdist_group(name="phase3_cold_evening")
 @pytest.mark.inv("INV-41")
 def test_the_site_holds_and_the_group_rations_the_loops(
     cold_evening: tuple[ScenarioResult, _Trail],
@@ -109,6 +110,7 @@ def test_the_site_holds_and_the_group_rations_the_loops(
         )
 
 
+@pytest.mark.xdist_group(name="phase3_cold_evening")
 @pytest.mark.inv("INV-41")
 def test_a_held_back_loop_jumps_the_queue_after_the_starve_timeout(
     cold_evening: tuple[ScenarioResult, _Trail],
@@ -153,6 +155,7 @@ def test_a_held_back_loop_jumps_the_queue_after_the_starve_timeout(
     assert jumped_to_front, "a fully-starved loop never sorted first in the following tick's queue"
 
 
+@pytest.mark.xdist_group(name="phase3_cold_evening")
 def test_a_load_outside_the_group_carries_no_starvation_clock(
     cold_evening: tuple[ScenarioResult, _Trail],
 ) -> None:
@@ -187,6 +190,7 @@ def _due_at_transitions(trail: _Trail) -> list[tuple[object, object]]:
     return transitions
 
 
+@pytest.mark.xdist_group(name="phase3_expensive_week")
 @pytest.mark.inv("INV-54")
 def test_the_site_holds_and_the_cycle_completes_by_its_due_date(
     expensive_week: tuple[ScenarioResult, _Trail],
@@ -254,6 +258,7 @@ def _near_rated_runs(trail: _Trail) -> list[list[object]]:
     return [run for run in runs if (run[1] - run[0]).total_seconds() >= DEFROST_MIN_S]
 
 
+@pytest.mark.xdist_group(name="phase3_cold_night")
 @pytest.mark.inv("INV-29")
 def test_the_evening_runs_clean_and_the_heat_pump_actually_defrosts(
     cold_night: tuple[ScenarioResult, _Trail],
@@ -267,6 +272,7 @@ def test_the_evening_runs_clean_and_the_heat_pump_actually_defrosts(
     assert len(runs) >= 3, "the cold night never drove a handful of real defrosts"
 
 
+@pytest.mark.xdist_group(name="phase3_cold_night")
 @pytest.mark.inv("INV-29")
 def test_a_defrost_run_is_never_shed(cold_night: tuple[ScenarioResult, _Trail]) -> None:
     """D4 §5.14: power up while the outlet falls is a signature, never a reason to shed.
@@ -313,6 +319,7 @@ def _hall_targets(trail: _Trail) -> list[tuple[object, PresenceMode, float]]:
     return rows
 
 
+@pytest.mark.xdist_group(name="phase3_away_day")
 def test_the_day_runs_clean_with_no_capacity_pressure(
     away_day: tuple[ScenarioResult, _Trail],
 ) -> None:
@@ -323,6 +330,7 @@ def test_the_day_runs_clean_with_no_capacity_pressure(
     assert result.over_target == 0
 
 
+@pytest.mark.xdist_group(name="phase3_away_day")
 @pytest.mark.inv("INV-55")
 def test_the_household_leaves_and_the_hall_s_target_relaxes(
     away_day: tuple[ScenarioResult, _Trail],
@@ -390,6 +398,7 @@ def _dishwasher_runs(trail: _Trail) -> list[list[object]]:
     return runs
 
 
+@pytest.mark.xdist_group(name="phase3_weeknight")
 @pytest.mark.inv("INV-59")
 def test_the_evening_runs_clean_and_the_dishwasher_completes_by_ready_by(
     weeknight: tuple[ScenarioResult, _Trail],
@@ -406,6 +415,7 @@ def test_the_evening_runs_clean_and_the_dishwasher_completes_by_ready_by(
     assert end <= DISHWASHER_READY_BY
 
 
+@pytest.mark.xdist_group(name="phase3_weeknight")
 @pytest.mark.inv("INV-59")
 def test_the_running_block_is_never_shed(weeknight: tuple[ScenarioResult, _Trail]) -> None:
     """D6 §2's `CycleReservation`: granted before the walk, out of the shed set below stage 4."""

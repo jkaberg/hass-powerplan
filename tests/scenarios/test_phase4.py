@@ -55,6 +55,7 @@ def test_the_scenario_s_own_day_really_does_go_negative_at_midday() -> None:
     assert price < 0.0
 
 
+@pytest.mark.xdist_group(name="phase4_negative_midday")
 def test_the_day_runs_clean_and_never_averages_over_the_trip_limit(
     negative_midday: ScenarioResult,
 ) -> None:
@@ -73,6 +74,7 @@ def quarter_hour_week() -> ScenarioResult:
     return run_scenario(catalogue.be_quarter_hour_rolling())
 
 
+@pytest.mark.xdist_group(name="phase4_quarter_hour_week")
 def test_the_windows_are_genuinely_quarter_hour(quarter_hour_week: ScenarioResult) -> None:
     """96 windows a day is Fluvius's own 15-minute cadence, not Tensio's 24 hourly ones."""
     result = quarter_hour_week
@@ -81,6 +83,7 @@ def test_the_windows_are_genuinely_quarter_hour(quarter_hour_week: ScenarioResul
     assert result.windows == pytest.approx(expected, abs=2)
 
 
+@pytest.mark.xdist_group(name="phase4_quarter_hour_week")
 def test_the_days_run_clean(quarter_hour_week: ScenarioResult) -> None:
     """No engine failure over the two days."""
     result = quarter_hour_week

@@ -35,6 +35,7 @@ everything network-bound happens in the planning loop or in a provider (INV-46).
 
 from __future__ import annotations
 
+import functools
 import logging
 import math
 import time
@@ -1030,6 +1031,14 @@ class Engine:
         self._constraints: tuple[Constraint, ...] = ()
         self._accounting = accounting
         self._forecasts = forecasts
+        #: `_planned_kwh` memoised per load, keyed on the plan's own `built_at`
+        #: (perf only, WP6.1's own gap found while profiling the benchmark
+        #: runner - D-0321): a plan is re-cut roughly every 900 s but `_warnings`
+        #: asks the same `[window_start, window_end)` of it every 10 s tick, so
+        #: without this the slot walk repeats ~90× for an unchanged answer.
+        self._planned_kwh_cache: dict[
+            str, tuple[datetime, dict[tuple[datetime, datetime], float]]
+        ] = {}
         self.set_loads(loads)
         self.set_constraints(constraints)
 
@@ -1786,6 +1795,29 @@ class Engine:
 
     # ----------------------------------------------------------- the warnings #
 
+    def _cached_planned_kwh(
+        self, load_id: str, plan: Plan | None, start: datetime, end: datetime
+    ) -> float:
+        """Return `_planned_kwh(plan, start, end)`, memoised per plan (perf, D-0321).
+
+        `_warnings` asks the same handful of `[start, end)` windows of the same
+        plan every tick until the next replan (~90× at 10 s ticks); the plan's
+        own `built_at` is the cache's invalidation key, so a stale entry can
+        never survive a replan.
+        """
+        if plan is None:
+            return 0.0
+        cached = self._planned_kwh_cache.get(load_id)
+        if cached is None or cached[0] != plan.built_at:
+            cached = (plan.built_at, {})
+            self._planned_kwh_cache[load_id] = cached
+        by_window = cached[1]
+        value = by_window.get((start, end))
+        if value is None:
+            value = _planned_kwh(plan, start, end)
+            by_window[(start, end)] = value
+        return value
+
     def _warnings(  # noqa: PLR0917 - the tick's threaded inputs, positional by design
         self,
         runtime: RuntimeState,
@@ -1821,7 +1853,9 @@ class Engine:
             if expected > 0.0:
                 drivers.append(("uncontrolled", expected))
             for view in views:
-                planned = _planned_kwh(plans.get(view.load_id), start, end)
+                planned = self._cached_planned_kwh(
+                    view.load_id, plans.get(view.load_id), start, end
+                )
                 if planned <= 0.0 and _unplanned_want(view, plans.get(view.load_id), start, end):
                     planned = max(0.0, view.max_w) / 1000.0 * hours
                 if planned > 0.0:
@@ -3308,6 +3342,19 @@ def _forecast_status(inputs: Inputs) -> ForecastStatus:
     )
 
 
+@functools.lru_cache(maxsize=8)
+def _decode_money(amount: str, currency: str) -> Money:
+    """Return the `Money` `amount`/`currency` decode to, memoised (perf, D-0321).
+
+    The ledger's month-to-date figure changes only when a slot closes, but this
+    is read every tick for `Snapshot.accounting` (INV-44) - small and bounded:
+    at most a handful of currencies are ever live in one site. `Money` has no
+    `as_dict`/`from_dict` of its own (D7 §7's generic dataclass shape), so this
+    is exactly what `_decode(Money,...)` would build, without its reflection.
+    """
+    return Money(Decimal(amount), currency)
+
+
 def _accounting_status(state: EngineState) -> AccountingStatus:
     """Return the ledger's section as of the last closed slot (D11, INV-68).
 
@@ -3322,8 +3369,8 @@ def _accounting_status(state: EngineState) -> AccountingStatus:
         slots_closed=state.runtime.slots_closed,
         closed_to=state.runtime.closed_to,
         month_key=state.accounting.get("month_key"),
-        cost=None if cost is None else _decode(Money, cost),
-        savings=None if savings is None else _decode(Money, savings),
+        cost=None if cost is None else _decode_money(cost["amount"], cost["currency"]),
+        savings=None if savings is None else _decode_money(savings["amount"], savings["currency"]),
         confidence=str(status.get("confidence", "none")),
         per_load=dict(status.get("per_load", {})),
     )

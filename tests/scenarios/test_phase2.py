@@ -50,6 +50,7 @@ def flapped() -> tuple[ScenarioResult, _Trail]:
 RECOVERY = timedelta(minutes=5)
 
 
+@pytest.mark.xdist_group(name="phase2_flapped")
 @pytest.mark.inv("INV-22")
 @pytest.mark.inv("INV-39")
 def test_a_flap_is_a_transient_first_and_the_charger_recovers(
@@ -108,6 +109,7 @@ def test_a_flap_is_a_transient_first_and_the_charger_recovers(
     assert healthy_after
 
 
+@pytest.mark.xdist_group(name="phase2_flapped")
 @pytest.mark.inv("INV-28")
 def test_no_zero_amp_write_and_no_session_dropped(flapped: tuple[ScenarioResult, _Trail]) -> None:
     """D9 §5.3's other two claims: the cliff is never written and the car keeps its session."""
@@ -150,6 +152,7 @@ def _garage_rows(trail: _Trail) -> list[tuple[Any, Snapshot, Any]]:
     ]
 
 
+@pytest.mark.xdist_group(name="phase2_garage")
 @pytest.mark.inv("INV-60")
 def test_the_charger_and_the_sauna_never_exceed_the_garage_fuse(
     garage: tuple[ScenarioResult, _Trail],
@@ -202,6 +205,7 @@ def test_the_charger_and_the_sauna_never_exceed_the_garage_fuse(
     assert all((sauna.measured_w or 0.0) > 0.0 for _now, sauna in session)
 
 
+@pytest.mark.xdist_group(name="phase2_garage")
 @pytest.mark.inv("INV-60")
 def test_a_circuit_breach_sheds_the_charger_only(garage: tuple[ScenarioResult, _Trail]) -> None:
     """The guest's car and the heater breach the garage: the charger goes, the house does not.

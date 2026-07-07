@@ -83,6 +83,7 @@ def _consecutive(starts: list[datetime], window: timedelta) -> bool:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 @pytest.mark.inv("INV-1")
 def test_winter_day_no_window_over_target(winter: ScenarioResult) -> None:
     """A cold Tuesday with the EV, the tank and two bathrooms under a 10 kW target."""
@@ -91,6 +92,7 @@ def test_winter_day_no_window_over_target(winter: ScenarioResult) -> None:
     assert winter.windows == 24
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 @pytest.mark.inv("INV-28")
 def test_winter_day_the_car_is_charged_by_departure(winter: ScenarioResult) -> None:
     """EV at 80 % by the 07:30 departure, no session dropped (INV-28)."""
@@ -100,12 +102,14 @@ def test_winter_day_the_car_is_charged_by_departure(winter: ScenarioResult) -> N
     assert winter.sessions_dropped == 0
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 def test_winter_day_the_tank_is_ready_by_half_past_six(winter: ScenarioResult) -> None:
     """At its ready temperature within the thermostat's differential (D-0256)."""
     assert winter.tank_top_at_ready is not None
     assert winter.tank_top_at_ready >= TANK_REACHED_C
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 @pytest.mark.inv("INV-55")
 def test_winter_day_the_bathrooms_never_fall_below_their_floor(winter: ScenarioResult) -> None:
     """The floor is physical: 21 °C as the thermostat reports it (INV-55, D-0259)."""
@@ -113,6 +117,7 @@ def test_winter_day_the_bathrooms_never_fall_below_their_floor(winter: ScenarioR
     assert winter.bathroom_min_c >= BATHROOM_FLOOR_C
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 @pytest.mark.inv("INV-58")
 def test_winter_day_zwave_gets_one_command_per_ten_minutes(winter: ScenarioResult) -> None:
     """Two Heatit loops on Z-Wave: at most one command each per ten minutes."""
@@ -121,6 +126,7 @@ def test_winter_day_zwave_gets_one_command_per_ten_minutes(winter: ScenarioResul
     assert winter.zero_amp_writes == 0
 
 
+@pytest.mark.xdist_group(name="phase0_winter")
 @pytest.mark.inv("INV-32")
 def test_winter_day_no_unforced_commitment_break(winter: ScenarioResult) -> None:
     """A re-cut never reneges on a committed slot with the same inputs (INV-32)."""
@@ -133,6 +139,7 @@ def test_winter_day_no_unforced_commitment_break(winter: ScenarioResult) -> None
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase0_flat")
 @pytest.mark.inv("INV-32")
 def test_flat_night_the_plan_does_not_churn(flat: ScenarioResult) -> None:
     """Norgespris: every slot costs the same, so nothing may be re-decided (INV-32)."""
@@ -142,6 +149,7 @@ def test_flat_night_the_plan_does_not_churn(flat: ScenarioResult) -> None:
     assert flat.plan_runs_max["ev"] == 1, "one contiguous run, the earliest slots first"
 
 
+@pytest.mark.xdist_group(name="phase0_flat")
 @pytest.mark.inv("INV-39")
 def test_flat_night_the_car_charges_contiguously_and_stops_once(flat: ScenarioResult) -> None:
     """The EV charges in one run and stops when done - no start/stop churn (INV-39).
@@ -158,6 +166,7 @@ def test_flat_night_the_car_charges_contiguously_and_stops_once(flat: ScenarioRe
     assert flat.ev_soc_at_departure >= EV_TARGET_SOC - 1e-6
 
 
+@pytest.mark.xdist_group(name="phase0_flat")
 def test_flat_night_comfort_and_the_ceiling_hold(flat: ScenarioResult) -> None:
     """The flat night still keeps the ceiling, the bathrooms and the tank."""
     assert flat.over_target == 0
@@ -171,6 +180,7 @@ def test_flat_night_comfort_and_the_ceiling_hold(flat: ScenarioResult) -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase0_autumn")
 @pytest.mark.inv("INV-7")
 def test_dst_autumn_has_twenty_five_windows(autumn: ScenarioResult) -> None:
     """The 25-hour day: 25 windows, none missing, none doubled (D3, INV-7)."""
@@ -183,6 +193,7 @@ def test_dst_autumn_has_twenty_five_windows(autumn: ScenarioResult) -> None:
     assert autumn.engine_failures == 0
 
 
+@pytest.mark.xdist_group(name="phase0_autumn")
 @pytest.mark.inv("INV-32")
 def test_dst_autumn_plans_without_gaps_or_churn(autumn: ScenarioResult) -> None:
     """The 25-hour night opens no hole in any plan and re-decides nothing."""
@@ -192,6 +203,7 @@ def test_dst_autumn_plans_without_gaps_or_churn(autumn: ScenarioResult) -> None:
     assert autumn.zero_amp_writes == 0
 
 
+@pytest.mark.xdist_group(name="phase0_spring")
 @pytest.mark.inv("INV-7")
 def test_dst_spring_has_twenty_three_windows(spring: ScenarioResult) -> None:
     """The 23-hour day, in the household's Easter week (D4 §5.12: ready-by dropped)."""
@@ -204,6 +216,7 @@ def test_dst_spring_has_twenty_three_windows(spring: ScenarioResult) -> None:
     assert spring.engine_failures == 0
 
 
+@pytest.mark.xdist_group(name="phase0_spring")
 @pytest.mark.inv("INV-32")
 def test_dst_spring_plans_without_gaps_or_churn(spring: ScenarioResult) -> None:
     """The 23-hour night opens no hole in any plan and re-decides nothing."""
@@ -219,6 +232,7 @@ def test_dst_spring_plans_without_gaps_or_churn(spring: ScenarioResult) -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase0_outage")
 @pytest.mark.inv("INV-5")
 def test_outage_plans_on_the_synthesised_floor(outage: ScenarioResult) -> None:
     """Two days without prices: the last forecaster's floor, and it still knows night."""
@@ -228,6 +242,7 @@ def test_outage_plans_on_the_synthesised_floor(outage: ScenarioResult) -> None:
     assert outage.outage_night_kwh > outage.outage_day_kwh
 
 
+@pytest.mark.xdist_group(name="phase0_outage")
 def test_outage_the_house_still_holds(outage: ScenarioResult) -> None:
     """Without prices the ceiling, the deadlines and the comfort floors still hold."""
     assert outage.over_target == 0
@@ -241,6 +256,7 @@ def test_outage_the_house_still_holds(outage: ScenarioResult) -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase0_flat")
 def test_a_scenario_is_byte_identical_across_runs(flat: ScenarioResult) -> None:
     """Seeded noise: the same day twice is the same day (D9 §8)."""
     again = run_scenario(catalogue.flat_price_night())

@@ -1452,3 +1452,13 @@ D6 §2's formula needs the loads' planned energy over the window's remainder, wh
 
 D6's `Baseline` wants a bare `confidence`, `energy_kwh(start, hours)` and `residual_sigma_w(t)`; D10's baseline takes a time argument for each. `Forecasts.for_budget(at)` binds one instant, like `for_planner()` (D-0217), and satisfies the protocol structurally, so neither domain imports the other. `Inputs.forecast_baseline` is the third field in D-0316's pattern, built from the same per-tick `Forecasts` the runtime already assembles. Affects D6 §2, D10 §3.
 **Rejected:** handing `budget()` the raw `HourOfWeekBaseline` - ties D6's protocol to one concrete model.
+
+### D-0321 · The tick memoises two recomputations that don't change between replans
+
+Profiling the smoke tier (187 ticks/s against D9 §5.9's 500) found `_warnings` re-asking the same plan the same planned-kWh question every tick between replans, now cached per load on `plan.built_at`, and `_accounting_status` decoding the ledger's money through the generic reflective decoder every tick, now an `lru_cache`d constructor. About 8 % faster, results unchanged. The larger cost, `dataclasses.replace` across forty-odd state transitions, needs its own pass.
+**Rejected:** hand-optimising `replace` now - forty call sites, each needing its own correctness check. Caching `LoadView.of()` - its inputs change every tick.
+
+### D-0322 · The test suite runs on `pytest-xdist --dist=loadgroup`, with scenario fixtures grouped
+
+xdist's default `--dist=load` recomputes a module-scoped scenario fixture on every worker that draws one of its tests (`test_phase0.py` took 25 minutes on four workers), and `loadscope` pins a whole file to one worker. `loadgroup` plus an `xdist_group` per module-scoped fixture fixes both: `test_phase0.py` runs in 67 s. The two thirty-day accounting runs (`controlled`, `twin`) were most of the suite's wall time on one core, so they run as two `spawn` processes via `ProcessPoolExecutor`: 29 minutes to 17. `forkserver` is blocked by `pytest-socket`, and `fork` from xdist's threaded worker can deadlock. The PR command gains `-n auto --dist=loadgroup`.
+**Rejected:** splitting a scenario run by month - each tick depends on the last. xdist in `addopts` - a targeted three-test run would pay worker startup.

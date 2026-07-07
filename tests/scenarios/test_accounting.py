@@ -11,7 +11,9 @@ paid.
 
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal
+from multiprocessing import get_context
 
 import pytest
 
@@ -32,16 +34,46 @@ OBSERVE_SAVINGS_SHARE = 0.05
 CALIBRATION_MAX = 0.10
 
 
-@pytest.fixture(scope="module")
-def controlled() -> ScenarioResult:
-    """Run the controlled month once for the module."""
-    return run_scenario(catalogue.savings_vs_twin())
+def _run_named(name: str) -> ScenarioResult:
+    """Run a named catalogue scenario.
+
+    A plain top-level function so `ProcessPoolExecutor` can pickle a reference
+    to it (perf, D-0321/WP6.1a).
+    """
+    return run_scenario(getattr(catalogue, name)())
 
 
 @pytest.fixture(scope="module")
-def twin() -> ScenarioResult:
-    """Run the twin month once for the module."""
-    return run_scenario(catalogue.savings_twin())
+def _twin_pair() -> tuple[ScenarioResult, ScenarioResult]:
+    """Run the controlled month and its twin concurrently, not sequentially.
+
+    Both are thirty days (`TWIN_DAYS`) through the whole engine, independent
+    and pure - profiling found this pair alone accounts for nearly all of
+    `tests/scenarios`' own wall time (D-0321/WP6.1a). Two processes, not
+    threads: the run is CPU-bound and the GIL would serialise it right back.
+    """
+    # `spawn`, not the default `forkserver`: the latter's control channel is a
+    # Unix socket, which `pytest-socket` (on by default under
+    # `pytest-homeassistant-custom-component`) blocks even for loopback IPC.
+    # Not `fork` either - Python itself warns that forking xdist's own
+    # multi-threaded worker can deadlock a child; `spawn` starts each process
+    # clean, at the cost of a re-import `run_scenario` (minutes) dwarfs.
+    with ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn")) as pool:
+        controlled_future = pool.submit(_run_named, "savings_vs_twin")
+        twin_future = pool.submit(_run_named, "savings_twin")
+        return controlled_future.result(), twin_future.result()
+
+
+@pytest.fixture(scope="module")
+def controlled(_twin_pair: tuple[ScenarioResult, ScenarioResult]) -> ScenarioResult:
+    """Return the controlled month's result, from the concurrent pair."""
+    return _twin_pair[0]
+
+
+@pytest.fixture(scope="module")
+def twin(_twin_pair: tuple[ScenarioResult, ScenarioResult]) -> ScenarioResult:
+    """Return the twin month's result, from the concurrent pair."""
+    return _twin_pair[1]
 
 
 @pytest.fixture(scope="module")
@@ -81,6 +113,7 @@ def _controlled_fee(controlled: ScenarioResult) -> Decimal:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="accounting_twin")
 @pytest.mark.inv("INV-69")
 def test_the_counterfactual_lands_within_ten_percent_of_the_twins_bill(
     controlled: ScenarioResult, twin: ScenarioResult
@@ -96,6 +129,7 @@ def test_the_counterfactual_lands_within_ten_percent_of_the_twins_bill(
     assert gap <= TWIN_TOLERANCE, (cf_cost, twin_actual, gap)
 
 
+@pytest.mark.xdist_group(name="accounting_twin")
 def test_the_site_saves_money_and_the_sign_is_right(
     controlled: ScenarioResult, twin: ScenarioResult
 ) -> None:
@@ -114,6 +148,7 @@ def test_the_site_saves_money_and_the_sign_is_right(
     )
 
 
+@pytest.mark.xdist_group(name="accounting_twin")
 @pytest.mark.inv("INV-52")
 def test_capacity_savings_are_the_twins_fee_minus_the_controlled_fee(
     controlled: ScenarioResult, twin: ScenarioResult
@@ -128,6 +163,7 @@ def test_capacity_savings_are_the_twins_fee_minus_the_controlled_fee(
     )
 
 
+@pytest.mark.xdist_group(name="accounting_twin")
 def test_the_twin_has_no_capacity_axis(twin: ScenarioResult) -> None:
     """`NoPeak` + `always`: no capacity figure of its own, nothing counted over a target."""
     month = _month()
@@ -150,6 +186,7 @@ def _with_shadow(result: ScenarioResult) -> list[str]:
     ]
 
 
+@pytest.mark.xdist_group(name="accounting_observed")
 @pytest.mark.inv("INV-63")
 def test_five_observe_days_calibrate_every_shadow_and_change_no_parameter(
     observed: ScenarioResult,
@@ -176,6 +213,7 @@ def test_five_observe_days_calibrate_every_shadow_and_change_no_parameter(
         assert load.store == fresh.load(load.load_id).store, load.load_id
 
 
+@pytest.mark.xdist_group(name="accounting_observed")
 def test_a_load_without_a_shadow_states_cost_and_no_savings(observed: ScenarioResult) -> None:
     """The tank is `none` until WP3.3: its cost is shown, its savings are zero and unstated."""
     assert observed.house is not None
@@ -189,6 +227,7 @@ def test_a_load_without_a_shadow_states_cost_and_no_savings(observed: ScenarioRe
     assert row["calibration_error"] is None
 
 
+@pytest.mark.xdist_group(name="accounting_observed")
 def test_observe_writes_nothing(observed: ScenarioResult) -> None:
     """Every load in `observe`: the engine commands no device for five days (D4 §5.2)."""
     assert sum(observed.writes.values()) == 0, observed.writes

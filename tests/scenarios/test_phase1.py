@@ -76,6 +76,7 @@ def failing() -> tuple[ScenarioResult, _Trail]:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase1_restarted")
 @pytest.mark.inv("INV-14")
 def test_used_kwh_is_continuous_across_the_restart(
     restarted: tuple[ScenarioResult, _Trail], control: ScenarioResult
@@ -90,6 +91,7 @@ def test_used_kwh_is_continuous_across_the_restart(
     assert result.windows >= 6
 
 
+@pytest.mark.xdist_group(name="phase1_restarted")
 @pytest.mark.inv("INV-14")
 def test_the_restart_opens_no_gate(
     restarted: tuple[ScenarioResult, _Trail], control: ScenarioResult
@@ -111,6 +113,7 @@ def test_the_restart_opens_no_gate(
         assert count <= without.get(load_id, 0), (load_id, with_restart, without)
 
 
+@pytest.mark.xdist_group(name="phase1_restarted")
 @pytest.mark.inv("INV-27")
 def test_the_loops_are_restored_not_adopted(restarted: tuple[ScenarioResult, _Trail]) -> None:
     """After the restart the loops' comfort target is the configured one, whatever the device says."""
@@ -136,6 +139,7 @@ def test_the_loops_are_restored_not_adopted(restarted: tuple[ScenarioResult, _Tr
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.xdist_group(name="phase1_failing")
 @pytest.mark.inv("INV-44")
 @pytest.mark.inv("INV-26")
 def test_three_engine_failures_enter_safe_mode_and_release_every_load(
@@ -198,6 +202,7 @@ def _roast_window_start(result: ScenarioResult) -> datetime:
     return max(zip(starts, result.window_kwh, strict=True), key=lambda row: row[1])[0]
 
 
+@pytest.mark.xdist_group(name="phase1_roast")
 @pytest.mark.inv("INV-35")
 def test_the_roast_is_an_outlier_the_reserve_does_not_integrate(
     roast: tuple[ScenarioResult, _Trail],
@@ -217,6 +222,7 @@ def test_the_roast_is_an_outlier_the_reserve_does_not_integrate(
     assert after.reserve_kwh == pytest.approx(before.reserve_kwh, rel=0.01), "reserve unchanged"
 
 
+@pytest.mark.xdist_group(name="phase1_roast")
 def test_the_peak_warning_fires_twenty_minutes_before_the_roasts_window(
     roast: tuple[ScenarioResult, _Trail],
 ) -> None:

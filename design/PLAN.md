@@ -137,6 +137,7 @@ HLD §9 phase 6.
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **6.1 Quality and performance gates** | CI that refuses regressions | D9 §2, §5.1; `quality_scale.yaml` | D9 §9 1, 2, 4, 5, 6; perf green | all |
+| **6.1a Suite speed** | the tick's cheap memos; the suite on `pytest-xdist` | D9 §5.1 | the suite unchanged | 6.1 |
 | **6.2 Documentation** | user pages (split into 6.2a and 6.2b, then into the documentation stream) | D8 §5.13 | - | - |
 
 ### Release
@@ -308,6 +309,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 5.4 | `battery`, `arbitrage`, `peak_shave` | todo |
 | 5.5 | External limits and `delegated` | todo |
 | 6.1 | Quality and performance gates | todo |
+| 6.1a | Suite speed | done |
 | 6.2 | Documentation | todo |
 | 6.3 | Release v1.0 | todo |
 
