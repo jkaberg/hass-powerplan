@@ -54,6 +54,7 @@ from .constraints import (
     Zone,
     ZoneChoice,
     ZoneSource,
+    ZoneSpec,
     default_max_concurrent_w,
 )
 from .ladder import (
@@ -128,6 +129,7 @@ __all__ = [
     "ZoneChoice",
     "ZoneReport",
     "ZoneSource",
+    "ZoneSpec",
     "allocate",
     "allowance_w",
     "budget",

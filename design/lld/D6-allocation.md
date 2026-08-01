@@ -284,6 +284,8 @@ non-admitted eligible members → shed set with reason "group_cap"; starvation c
 
 `constraints/zone.py::Zone`: sources ranked by €/kWh-heat from the carrier curves and the COP curve, the unchosen sources capped to 0 W with reason `zone_substituted`, dwell and confirmation as wall-clock instants on `ZoneChoice` seeded from `AllocState.zone_choice`. A comfort-urgent member is never substituted, and neither is a `never_substitute` member (D-0241…D-0244).
 
+`ZoneSpec` (same file) is a zone's structural half - members, resolved `ZoneSource`s, `never_substitute`, the five tuning numbers - built by `runtime.build_zones` from the `zone` subentry (§6) and only rebuilt when it or the load set changes, like `CircuitSpec`/`GroupCap`. `spec.build(prices, outdoor_c) -> Zone` is its per-tick constructor: `Engine._zone_constraints` calls it once per zone inside `tick()` and splices the result into `allocate()`'s constraints, the same per-tick pattern as `_cycle_reservations`, which is why `self._zones` isn't part of `self._constraints`. `flow/zone.py::ZoneSubentryFlow` only asks for members and `never_substitute`. A source's carrier and efficiency come off its own load config (`load.config.carrier`, `heat_pump.curve_of` for a heat pump, `CopCurve.flat(1.0)` otherwise) instead of being asked twice, so what the UI can build is electric substitution pairs - no D4 type offers a non-electric carrier yet. The cross-carrier ranking itself, `capacity_penalty` included, is tested (D-0323, D-0324).
+
 A zone has `sources: [(load_id, carrier, efficiency_fn)]` and `demand` = the zone's comfort deficit (from its members' comfort states, floors and thermostats). Per tick:
 
 ```
@@ -337,9 +339,9 @@ On every tick with `breach_w > 0` or `deficit_w > 0`: one WARNING line with the 
 
 Site (Advanced, defaults from effektstyring): `eps_kwh` 0.30/60 min (D2), `reserve.k` 1.5, `reserve.min_kwh` 0.10, `reserve.max_kwh` 2.00, `sigma_floor_w` 300, `degraded_bump_kwh` 0.2, `pi.ki` 0.05, `pi.clamp` [−0.5, 1.5], `pi.target_utilisation` 0.95, `ladder.thresholds` [0.85, 0.95, 1.0], `ladder.de_escalate_ticks` 2, `ladder.hysteresis_w` 300, `ladder.fuse_hold_s` 120, `trim.margin_w` 250, `ev_min_stop_s` 600, `grant_margin_w` 500. None of them in the guided flow.
 
-Group subentry: name, members, `max_concurrent_w` (default: the two largest members' nameplates summed), `from_stage` 1, `ceiling_fraction` 0.85, `starve_seconds` 1800. **In code (D-0292):** `flow/group.py`, one questionnaire step and a review (D8 §5.3); the members are the site's load subentries picked by title and stored by id, the group subentry is the relation's one owner (a load's `group` key stays unused, as `circuit` does, D-0283 (6)); the cap's suggested default is computed over the site's loads as the form renders, since a selection made within the same step cannot yet be known.
-Zone subentry: name, member loads (demand), sources (loads with carrier + efficiency from D4), `min_cop` 2.0, `switch_hysteresis` 15 %, `min_dwell_min` 30, `substitutable` per member (bathroom default off).
-Circuit subentry: name, fuse A, phases, members, optional sub-meter power entity, `unmetered_w` 0. **In code (D-0285):** `flow/circuit.py`, one questionnaire step and a review (D8 §5.3); the members are the site's load subentries picked by title and stored by id, the circuit subentry is the relation's one owner (the load's `circuit` key stays `None`), the sub-meter a `sensor` with `device_class: power`, `unmetered_w` under Advanced; the subentry's key is its id and is what `Grant.capped_by`, the report and the `breach` event name the circuit by.
+Group subentry: name, members, `max_concurrent_w` (default: the two largest members' nameplates summed), `from_stage` 1, `ceiling_fraction` 0.85, `starve_seconds` 1800. `flow/group.py`, one questionnaire step and a review (D8 §5.3). Members are the site's load subentries picked by title and stored by id, and the group subentry is the relation's one owner (D-0292).
+Zone subentry: name, member loads (demand and sources both, electric substitution pairs, §5.7), carrier + efficiency read from D4 instead of asked, `never_substitute` (a multi-select over the members, `Zone`'s own `frozenset[str]`), `min_cop` 2.0, `switch_hysteresis` 15 %, `min_dwell_min` 30, `switch_confirm_s` 1800, `capacity_penalty` 1.00 under Advanced.
+Circuit subentry: name, fuse A, phases, members, an optional sub-meter power entity, `unmetered_w` 0. `flow/circuit.py`, one questionnaire step and a review (D8 §5.3). Members are the site's load subentries picked by title and stored by id, the circuit subentry is the relation's one owner, the sub-meter a `sensor` with `device_class: power`, `unmetered_w` under Advanced. The subentry's key is its id, which `Grant.capped_by`, the report and the `breach` event name the circuit by (D-0285).
 
 Review texts: group - "Six floor loops share 2 kW when the hour gets tight; the coldest gets it first." zone - "The living-room slab and the first-floor heat pump heat the same space; powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk." circuit - "The garage circuit is fused at 32 A: the charger and the sauna will never exceed it together."
 
@@ -373,29 +375,29 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 
 ## 9. Tests that must exist before merge
 
-1. Budget chain numbers for the reference case (ceiling 9.70, used 6.0, σ 0.5 kW, t_rem 0.5 h) - hand-computed.
-2. ε in kWh: a 300 W "margin" is rejected by config; protection at:05 and:55 identical.
-3. Reserve shrinks with `t_rem`; σ floor holds under a perfect baseline (INV-62). **As asserted:** `tests/core/allocation/test_01_budget_chain.py` (the projection switches to `baseline` at `BASELINE_CONFIDENCE` and `Plan.kwh_between` prorates at the slot edges), `test_03_reserve.py` (a confident, near-perfect baseline still floors the reserve at `σ_floor × k × t_rem`; an unconfident one changes nothing) and `tests/core/engine/test_baseline_reserve.py` (the same, through a real `tick()` - D10 §9 10's own cross-test).
-4. PI: outlier and non-binding windows do not move `r_trim`; degraded suppresses binding.
-5. Reservation: tank grant 348 W paced → reserved 3 000 W; heat pump 23 W measured → reserved 523 W not 3 000.
+1. Budget chain numbers for the reference case (ceiling 9.70, used 6.0, σ 0.5 kW, t_rem 0.5 h), hand-computed.
+2. ε in kWh: a 300 W "margin" is refused by config, and protection at :05 and :55 is identical.
+3. The reserve shrinks with `t_rem`, and the σ floor holds under a perfect baseline (INV-62). `tests/core/allocation/test_01_budget_chain.py` (the projection switches to `baseline` at `BASELINE_CONFIDENCE`, `Plan.kwh_between` prorates at the slot edges), `test_03_reserve.py` (a confident, near-perfect baseline still floors the reserve at `σ_floor × k × t_rem`, an unconfident one changes nothing) and `tests/core/engine/test_baseline_reserve.py` (the same through a real `tick()`, D10 §9 10's cross-test).
+4. PI: outlier and non-binding windows don't move `r_trim`, degraded suppresses binding.
+5. Reservation: tank grant 348 W paced → reserved 3 000 W; heat pump 23 W measured → reserved 523 W, not 3 000.
 6. Comfort violators first at any priority; over allowance → served + breach event.
-7. Planned idle (`cap_w == 0`) is not in the shed set; a satisfied loop at target is not shed (INV-25).
-8. Stage 4 only with a blunt reason; a 10.5 kW "capacity step" never produces stage 4 (INV-36); escalation guard caps at 3.
-9. De-escalation after exactly two clean ticks; fuse path holds 120 s.
-10. Trim: 1.4 kW deficit removes ~1.4 kW ascending priority, never 10 kW; EV 30 → 22 → 14 → 6 and never below without `stop_ok`; settle-window skip.
-11. EV stop gates: budget stop vetoed at HH:50 with plan charging at HH:00; plan stop allowed when idle 3 h; both horizons (INV-39).
-12. Rotation: stage 0 with 11.5 kW free sheds nothing; ranking by target deficit; stop at first non-fit; starvation jump; top member admitted alone (INV-41).
-13. Zones: COP inversion - heat pump kept, slab substituted; disengages below COP 2.0; bathroom never; cross-carrier gas/pump choice with hysteresis and dwell (INV-42).
-14. Circuits: garage 32 A with EV + sauna → EV capped; circuit breach → stage 4 for members only, site unaffected (INV-60). **As asserted:** `tests/core/allocation/test_14_circuits.py` (the pure cases, plus the reading handed in by the tick, a blind clamp's fall-back and the settling-aware sum), `tests/core/engine/test_circuits.py` (through the engine with `Inputs.circuits`: the charger capped under the sauna, a blind or stale clamp, a heater the charger absorbs without a stage 4, a guest car the members cannot - stage 4 for them, the site's ladder at 0, one `breach` event per edge) and scenario `circuit_garage_32a` (D9 §5.3).
-15. Phases: known L1 load capped by L1 headroom; unknown by min headroom.
-16. Running cycle survives stages 1–3; shed at 4 (INV-59).
-17. External limit event caps the named loads to 4.2 kW while active.
-18. Frozen tick returns previous grants unchanged.
-19. Shed set filtered to agree with grants; every shed has a reason (INV-40).
-20. `unconstrained_ask_w` reported per tick equals Σ unconstrained asks; nothing in `core/allocation` imports `core.accounting` (INV-68).
-21. Own-reservation accounting: a tank already on (3 kW reserved) with `P_allow` 5 kW and nothing else stays on; the same tank with `P_allow` 2.5 kW is shed - a load is never asked to fit beside its own reservation.
-22. PI sign: a binding window closed at 80 % utilisation lowers `r_trim`; one closed at 102 % raises it; neither moves on a non-binding window.
-23. A 0 W grant to a charging EV without `stop_ok` yields the floor (6 A), never a hold at the previous amps; `P_free` is charged the floor.
+7. Planned idle (`cap_w == 0`) isn't in the shed set, and a satisfied loop at target isn't shed (INV-25).
+8. Stage 4 only with a blunt reason: a 10.5 kW "capacity step" never gives stage 4 (INV-36), the escalation guard caps at 3.
+9. De-escalation after exactly two clean ticks, the fuse path holds 120 s.
+10. Trim: a 1.4 kW deficit removes ~1.4 kW in ascending priority, never 10 kW; EV 30 → 22 → 14 → 6 and never below without `stop_ok`; settle-window skip.
+11. EV stop gates: a budget stop vetoed at HH:50 with the plan charging at HH:00, a plan stop allowed when idle 3 h, both horizons (INV-39).
+12. Rotation: stage 0 with 11.5 kW free sheds nothing; ranking by target deficit; stop at the first non-fit; starvation jump; top member admitted alone (INV-41).
+13. Zones: COP inversion - heat pump kept, slab substituted; disengages below COP 2.0; bathroom never; cross-carrier gas/pump choice with hysteresis and dwell (INV-42). The engine wiring (`ZoneSpec` → a real `Zone` built fresh each tick, the choice persisting in `AllocState`) in `tests/core/engine/test_zones.py`, the subentry flow round trip in `tests/flows/test_zone_flow.py`.
+14. Circuits: garage 32 A with EV + sauna → EV capped; a circuit breach → stage 4 for members only, site unaffected (INV-60). `tests/core/allocation/test_14_circuits.py` (the pure cases, the reading handed in by the tick, a blind clamp's fallback, the settling-aware sum), `tests/core/engine/test_circuits.py` (through the engine with `Inputs.circuits`: the charger capped under the sauna, a blind or stale clamp, a heater the charger absorbs without a stage 4, a guest car the members can't - stage 4 for them, the site's ladder at 0, one `breach` event per edge) and scenario `circuit_garage_32a` (D9 §5.3).
+15. Phases: a known L1 load capped by L1 headroom, an unknown one by the min headroom.
+16. A running cycle survives stages 1–3, shed at 4 (INV-59).
+17. An external limit event caps the named loads to 4.2 kW while active.
+18. A frozen tick returns the previous grants unchanged.
+19. The shed set agrees with the grants, and every shed has a reason (INV-40).
+20. `unconstrained_ask_w` reported per tick equals Σ unconstrained asks, and nothing in `core/allocation` imports `core.accounting` (INV-68).
+21. Own-reservation accounting: a tank already on (3 kW reserved) with `P_allow` 5 kW and nothing else stays on; the same tank with `P_allow` 2.5 kW is shed. A load is never asked to fit next to its own reservation.
+22. PI sign: a binding window closed at 80 % utilisation lowers `r_trim`, one at 102 % raises it, and neither moves on a non-binding window.
+23. A 0 W grant to a charging EV without `stop_ok` gives the floor (6 A), never a hold at the previous amps, and `P_free` is charged the floor.
 
 ---
 

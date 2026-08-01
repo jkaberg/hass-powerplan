@@ -57,6 +57,7 @@ __all__ = [
     "Zone",
     "ZoneChoice",
     "ZoneSource",
+    "ZoneSpec",
 ]
 
 #: Never engage a heat pump below this COP (D6 §5.7, INV-42).
@@ -124,6 +125,43 @@ class ZoneSource:
         if outdoor_c is not None:
             return self.efficiency.at(outdoor_c)
         return min(cop for _t, cop in self.efficiency.points)
+
+
+@dataclass(frozen=True, slots=True)
+class ZoneSpec:
+    """One zone as configured (D6 §6): what the subentry says, no reading in it.
+
+    A zone is built fresh every tick, unlike a circuit or a group - its cost
+    ranking needs this tick's prices and outdoor temperature. `spec.build`
+    is the per-tick constructor, the same shape as `CircuitSpec.limit`.
+    """
+
+    key: str
+    members: frozenset[str]
+    sources: tuple[ZoneSource, ...]
+    never_substitute: frozenset[str] = frozenset()
+    min_cop: float = DEFAULT_MIN_COP
+    switch_hysteresis: float = DEFAULT_SWITCH_HYSTERESIS
+    min_dwell_min: float = DEFAULT_MIN_DWELL_MIN
+    switch_confirm_s: float = DEFAULT_SWITCH_CONFIRM_S
+    capacity_penalty: Decimal = DEFAULT_CAPACITY_PENALTY
+    name: str = ""
+
+    def build(self, prices: Mapping[Carrier, PriceCurve], outdoor_c: float | None) -> Zone:
+        """Return the constraint over this zone; the choice is seeded by `allocate()`."""
+        return Zone(
+            key=self.key,
+            members=self.members,
+            sources=self.sources,
+            prices=prices,
+            outdoor_c=outdoor_c,
+            never_substitute=self.never_substitute,
+            min_cop=self.min_cop,
+            switch_hysteresis=self.switch_hysteresis,
+            min_dwell_min=self.min_dwell_min,
+            switch_confirm_s=self.switch_confirm_s,
+            capacity_penalty=self.capacity_penalty,
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -1462,3 +1462,13 @@ Profiling the smoke tier (187 ticks/s against D9 §5.9's 500) found `_warnings` 
 
 xdist's default `--dist=load` recomputes a module-scoped scenario fixture on every worker that draws one of its tests (`test_phase0.py` took 25 minutes on four workers), and `loadscope` pins a whole file to one worker. `loadgroup` plus an `xdist_group` per module-scoped fixture fixes both: `test_phase0.py` runs in 67 s. The two thirty-day accounting runs (`controlled`, `twin`) were most of the suite's wall time on one core, so they run as two `spawn` processes via `ProcessPoolExecutor`: 29 minutes to 17. `forkserver` is blocked by `pytest-socket`, and `fork` from xdist's threaded worker can deadlock. The PR command gains `-n auto --dist=loadgroup`.
 **Rejected:** splitting a scenario run by month - each tick depends on the last. xdist in `addopts` - a targeted three-test run would pay worker startup.
+
+### D-0323 · `ZoneSpec` holds a zone's configuration; the engine builds a `Zone` from it every tick
+
+A `Zone` needs this tick's prices and outdoor temperature, so unlike circuits and groups it can't be built once. `ZoneSpec` holds the subentry's half (members, sources, `never_substitute`, tuning) and `spec.build(prices, outdoor_c)` builds the tick's `Zone`, like `CircuitSpec.limit()`. `Engine.set_zones` and `_zone_constraints` mirror `set_constraints` and `_cycle_reservations`; `allocate()` already seeds any `Zone` from `AllocState.zone_choice`.
+**Rejected:** rebuilding zones inside `allocate()` - the allocator decides, the engine composes. A mutable `update_prices` - every other per-tick constraint is a fresh value.
+
+### D-0324 · The zone flow asks for members and which are never substituted; carrier and efficiency come from each load
+
+`ZoneSubentryFlow` asks a name, the members (also the candidate sources), `never_substitute` and the five tuning numbers under Advanced, the same one-step-plus-review shape as groups and circuits. `runtime.build_zones` reads each member's `load.config.carrier` and, for a heat pump, its COP curve (`heat_pump.curve_of`); everything else is resistive, as D6 §6 says ("from D4"). No D4 type lets a household set a non-electric carrier yet, so zones built through the UI rank electric sources (a heat pump against resistive backup). The cross-carrier `Zone` logic is implemented and tested against hand-built sources. Affects D6 §6, D8 §5.3.
+**Rejected:** a separate sources pick - doubles the form for a hydronic case D4 defers. A per-source efficiency field - meaningless without the carrier's price curve.

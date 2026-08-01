@@ -1997,6 +1997,96 @@
         "no_loads": "Legg til en last først: en gruppe er laster som deler et tak.",
         "reconfigure_successful": "Gruppen ble oppdatert."
       }
+    },
+    "zone": {
+      "entry_type": "Sone",
+      "initiate_flow": {
+        "user": "Legg til sone",
+        "reconfigure": "Endre sone"
+      },
+      "step": {
+        "user": {
+          "title": "Legg til en sone",
+          "description": "To eller flere laster som kan varme det samme rommet — en varmepumpe og en resistiv gulvflate, en varmepumpe og en kjel. powerplan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.",
+          "data": {
+            "name": "Navn",
+            "members": "Laster i denne sonen",
+            "never_substitute": "Aldri erstatt"
+          },
+          "data_description": {
+            "name": "Hva sonen heter: stuen, badet.",
+            "members": "Lastene som kan varme dette rommet. Deres egen bærer og virkningsgrad leses fra hvordan hver er konfigurert — en varmepumpes egen COP-kurve, strøm for alt annet.",
+            "never_substitute": "Laster som alltid beholder sin egen kilde, uansett hva rangeringen sier — en badegulvsløyfe, for eksempel."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Sperrene som hindrer et jevnt valg fra å hoppe mellom kilder.",
+              "data": {
+                "min_cop": "Minimum COP",
+                "switch_hysteresis": "Byttemargin",
+                "min_dwell_min": "Minimum opphold",
+                "switch_confirm_s": "Byttebekreftelse",
+                "capacity_penalty": "Kapasitetstillegg"
+              },
+              "data_description": {
+                "min_cop": "Koble aldri inn en varmepumpe under denne COP-en — en pumpe som såvidt slår en resistiv kilde er ikke noe å overlate huset til.",
+                "switch_hysteresis": "Hvor mye billigere alternativet må være, som andel, før et bytte er verdt det.",
+                "min_dwell_min": "Hvor lenge kilden som kjører beholder sonen før en annen kan overta, i minutter.",
+                "switch_confirm_s": "Hvor lenge en billigere kilde må forbli billigere før byttet gjennomføres, i sekunder.",
+                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når taket er truet, lagt til prisen per kWh."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Endre sonen",
+          "description": "De samme spørsmålene, forhåndsutfylt med det sonen har nå.",
+          "data": {
+            "name": "Navn",
+            "members": "Laster i denne sonen",
+            "never_substitute": "Aldri erstatt"
+          },
+          "data_description": {
+            "name": "Hva sonen heter: stuen, badet.",
+            "members": "Lastene som kan varme dette rommet. Deres egen bærer og virkningsgrad leses fra hvordan hver er konfigurert — en varmepumpes egen COP-kurve, strøm for alt annet.",
+            "never_substitute": "Laster som alltid beholder sin egen kilde, uansett hva rangeringen sier — en badegulvsløyfe, for eksempel."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Avansert",
+              "description": "Sperrene som hindrer et jevnt valg fra å hoppe mellom kilder.",
+              "data": {
+                "min_cop": "Minimum COP",
+                "switch_hysteresis": "Byttemargin",
+                "min_dwell_min": "Minimum opphold",
+                "switch_confirm_s": "Byttebekreftelse",
+                "capacity_penalty": "Kapasitetstillegg"
+              },
+              "data_description": {
+                "min_cop": "Koble aldri inn en varmepumpe under denne COP-en — en pumpe som såvidt slår en resistiv kilde er ikke noe å overlate huset til.",
+                "switch_hysteresis": "Hvor mye billigere alternativet må være, som andel, før et bytte er verdt det.",
+                "min_dwell_min": "Hvor lenge kilden som kjører beholder sonen før en annen kan overta, i minutter.",
+                "switch_confirm_s": "Hvor lenge en billigere kilde må forbli billigere før byttet gjennomføres, i sekunder.",
+                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når taket er truet, lagt til prisen per kWh."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Før denne sonen legges til",
+          "description": "**{name}** deler {members}: powerplan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.\n\nAldri erstattet: {never_substitute}. En varmepumpe under COP {min_cop} kobles aldri inn."
+        }
+      },
+      "error": {
+        "no_name": "Gi sonen et navn.",
+        "not_enough_members": "Velg minst to laster; en sone trenger noe å erstatte med.",
+        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+      },
+      "abort": {
+        "not_enough_loads": "Legg til minst to laster først: en sone trenger to laster som kan varme samme rom.",
+        "reconfigure_successful": "Sonen ble oppdatert."
+      }
     }
   }
 }

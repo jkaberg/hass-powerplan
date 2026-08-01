@@ -78,10 +78,25 @@ from .const import (
     SUBENTRY_CIRCUIT,
     SUBENTRY_GROUP,
     SUBENTRY_LOAD,
+    SUBENTRY_ZONE,
+    ZONE_CAPACITY_PENALTY,
+    ZONE_MEMBERS,
+    ZONE_MIN_COP,
+    ZONE_MIN_DWELL_MIN,
+    ZONE_NEVER_SUBSTITUTE,
+    ZONE_SWITCH_CONFIRM_S,
+    ZONE_SWITCH_HYSTERESIS,
 )
 from .core.accounting.close import AccountingConfig
 from .core.accounting_hook import AccountingAdapter
-from .core.allocation import CircuitSpec, GroupCap
+from .core.allocation import CircuitSpec, GroupCap, ZoneSource, ZoneSpec
+from .core.allocation.constraints.zone import (
+    DEFAULT_CAPACITY_PENALTY,
+    DEFAULT_MIN_COP,
+    DEFAULT_MIN_DWELL_MIN,
+    DEFAULT_SWITCH_CONFIRM_S,
+    DEFAULT_SWITCH_HYSTERESIS,
+)
 from .core.engine import (
     Effects,
     Engine,
@@ -101,6 +116,7 @@ from .core.loads import Load, LoadConfig, LoadCtx, Transport
 from .core.loads.gate import Action, Decision
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
+from .core.loads.types.heat_pump import curve_of
 from .core.metering import (
     ElectricalProfile,
     MeterSample,
@@ -408,6 +424,10 @@ class SiteBuild:
     #: The site's groups from their subentries (D6 §6): who rations
     #: together and how, the walk takes unchanged (`Engine(constraints=)`).
     groups: tuple[GroupCap, ...] = ()
+    #: The site's zones from their subentries (D6 §6): unlike a circuit
+    #: or a group, a `ZoneSpec` is not itself a constraint - `Engine.set_zones`
+    #: holds the specs and builds a fresh `Zone` from each every tick.
+    zones: tuple[ZoneSpec, ...] = ()
     #: The tariff step select's options (D8 §5.5): `auto`, each step, or the configured kW.
     target_options: tuple[str, ...] = ("auto",)
     #: The configured kW target, when the tariff has no steps.
@@ -516,6 +536,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     load_ids = frozenset(load.load_id for load in loads)
     circuits, circuit_meters = build_circuits(hass, entry, load_ids)
     groups = build_groups(entry, load_ids)
+    zones = build_zones(entry, loads)
     return SiteBuild(
         cfg=cfg,
         tariff=tariff,
@@ -537,6 +558,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         circuits=circuits,
         circuit_meters=circuit_meters,
         groups=groups,
+        zones=zones,
         target_options=_target_options(peak, tariff_data),
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
@@ -650,6 +672,68 @@ def build_groups(entry: ConfigEntry, load_ids: frozenset[str]) -> tuple[GroupCap
             )
         )
     return tuple(groups)
+
+
+def _zone_source(load: Load) -> ZoneSource:
+    """Return `load`'s own carrier and efficiency, never asked in the zone form (D6 §6).
+
+    A heat pump's own COP curve (D4 §5.14, `heat_pump.curve_of`); every other
+    type today answers a flat 1.0 (resistive) on `load.config.carrier`, which
+    is electricity for all of them - no D4 type yet offers a non-electric
+    carrier in its own questionnaire (WP5.3's own gap, `design/DECISIONS.md`).
+    """
+    if load.config.type_key == "heat_pump":
+        return ZoneSource(
+            load_id=load.load_id, carrier=load.config.carrier, efficiency=curve_of(load)
+        )
+    return ZoneSource(load_id=load.load_id, carrier=load.config.carrier)
+
+
+def build_zones(entry: ConfigEntry, loads: Sequence[Load]) -> tuple[ZoneSpec, ...]:
+    """Build every zone subentry's `ZoneSpec` (D6 §6).
+
+    A member that is no longer a load of this site is dropped with a warning,
+    the same as a circuit or a group (INV-53). Unlike them, a `ZoneSpec` is not
+    itself a `Constraint` - `Engine._zone_constraints` builds a real `Zone`
+    from it fresh every tick, because the cost ranking needs that tick's own
+    prices and outdoor temperature (D6 §5.7).
+    """
+    by_id = {load.load_id: load for load in loads}
+    load_ids = frozenset(by_id)
+    specs: list[ZoneSpec] = []
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_ZONE:
+            continue
+        data = subentry.data
+        members = frozenset(str(member) for member in data.get(ZONE_MEMBERS) or ())
+        missing = members - load_ids
+        if missing:
+            _LOGGER.warning(
+                "zone %s names loads that are not on this site and are ignored: %s",
+                subentry.title,
+                ", ".join(sorted(missing)),
+            )
+        present = members & load_ids
+        never = frozenset(str(member) for member in data.get(ZONE_NEVER_SUBSTITUTE) or ()) & present
+        specs.append(
+            ZoneSpec(
+                key=subentry.subentry_id,
+                members=present,
+                sources=tuple(_zone_source(by_id[member]) for member in sorted(present)),
+                never_substitute=never,
+                min_cop=float(data.get(ZONE_MIN_COP, DEFAULT_MIN_COP)),
+                switch_hysteresis=float(
+                    data.get(ZONE_SWITCH_HYSTERESIS, DEFAULT_SWITCH_HYSTERESIS)
+                ),
+                min_dwell_min=float(data.get(ZONE_MIN_DWELL_MIN, DEFAULT_MIN_DWELL_MIN)),
+                switch_confirm_s=float(data.get(ZONE_SWITCH_CONFIRM_S, DEFAULT_SWITCH_CONFIRM_S)),
+                capacity_penalty=Decimal(
+                    str(data.get(ZONE_CAPACITY_PENALTY, DEFAULT_CAPACITY_PENALTY))
+                ),
+                name=subentry.title,
+            )
+        )
+    return tuple(specs)
 
 
 def load_from_subentry(
@@ -967,6 +1051,7 @@ class Runtime:
                 *(spec.limit(build.cfg.electrical) for spec in build.circuits),
                 *build.groups,
             ),
+            zones=build.zones,
             accounting=adapter,
             forecasts=self.forecasts_adapter,
         )
@@ -1239,6 +1324,7 @@ class Runtime:
                 *self.build.groups,
             )
         )
+        self.engine.set_zones(self.build.zones)
 
     async def _hydrate_schedule(self, load: Load) -> Load:
         """Swap in one load's bound `schedule.*` helper, if it has one (D4 §4.4, D-0300).
@@ -1368,12 +1454,12 @@ class Runtime:
         _LOGGER.info("site %s: load %s removed without a reload", self.site_name, load_id)
 
     def _reload_relations(self) -> None:
-        """Rebuild the site's circuits and groups from their subentries and the loads (D7 §2).
+        """Rebuild the site's circuits, groups and zones from their subentries and the loads (D7 §2).
 
-        Cheap and unconditional: a circuit's or a group's own membership
-        follows the load set (`build_circuits`/`build_groups` intersect with
-        `load_ids`), so this runs after any load change too, not only a
-        circuit or group subentry's own.
+        Cheap and unconditional: a circuit's, a group's or a zone's own
+        membership follows the load set (`build_circuits`/`build_groups`/
+        `build_zones` intersect with the site's own loads), so this runs
+        after any load change too, not only a relation subentry's own.
         """
         load_ids = frozenset(load.load_id for load in self.build.loads)
         grouped_before = frozenset(
@@ -1383,6 +1469,7 @@ class Runtime:
         self.build.circuits = circuits
         self.build.circuit_meters = circuit_meters
         self.build.groups = build_groups(self.entry, load_ids)
+        self.build.zones = build_zones(self.entry, self.build.loads)
         grouped_after = frozenset(member for group in self.build.groups for member in group.members)
         # A load named by a group for the first time gets `sensor.<load>_starved_s`
         # without a reload - `_add_load_entities` re-adding its other rows too is

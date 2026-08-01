@@ -55,6 +55,7 @@ from .const import (
     SUBENTRY_CIRCUIT,
     SUBENTRY_GROUP,
     SUBENTRY_LOAD,
+    SUBENTRY_ZONE,
     TIMEZONE_FROM_HASS,
     TIMEZONE_FROM_USER,
     OnboardingPath,
@@ -66,6 +67,7 @@ from .flow.circuit import CircuitSubentryFlow
 from .flow.group import GroupSubentryFlow
 from .flow.load import LoadSubentryFlow
 from .flow.questionnaire import store_value, value_of
+from .flow.zone import ZoneSubentryFlow
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
 
@@ -713,13 +715,14 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
         Loads, groups, zones and circuits are config subentries with only a
         `user` and a `reconfigure` step (D8 §5.2–5.3, PLAN §7 dec. 4). The load
-        flow is WP2.4's, the circuit flow WP2.5's and the group flow WP3.2's;
-        zones arrive in WP5.3.
+        flow is WP2.4's, the circuit flow WP2.5's, the group flow WP3.2's and
+        the zone flow WP5.3's.
         """
         return {
             SUBENTRY_LOAD: LoadSubentryFlow,
             SUBENTRY_CIRCUIT: CircuitSubentryFlow,
             SUBENTRY_GROUP: GroupSubentryFlow,
+            SUBENTRY_ZONE: ZoneSubentryFlow,
         }
 
 

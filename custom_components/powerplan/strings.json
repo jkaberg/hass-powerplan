@@ -1997,6 +1997,96 @@
         "no_loads": "Add a load first: a group is loads that share a cap.",
         "reconfigure_successful": "The group was updated."
       }
+    },
+    "zone": {
+      "entry_type": "Zone",
+      "initiate_flow": {
+        "user": "Add zone",
+        "reconfigure": "Reconfigure zone"
+      },
+      "step": {
+        "user": {
+          "title": "Add a zone",
+          "description": "Two or more loads that can heat the same space — a heat pump and a resistive slab, a heat pump and a boiler. powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.",
+          "data": {
+            "name": "Name",
+            "members": "Loads in this zone",
+            "never_substitute": "Never substitute"
+          },
+          "data_description": {
+            "name": "What the zone is called: the living room, the bathroom.",
+            "members": "The loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else.",
+            "never_substitute": "Loads that always keep their own source, whatever the ranking says — a bathroom floor, say."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "The guards that stop a close call flapping between sources.",
+              "data": {
+                "min_cop": "Minimum COP",
+                "switch_hysteresis": "Switch margin",
+                "min_dwell_min": "Minimum dwell",
+                "switch_confirm_s": "Switch confirmation",
+                "capacity_penalty": "Capacity penalty"
+              },
+              "data_description": {
+                "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
+                "switch_hysteresis": "How much cheaper the alternative must be, as a fraction, before a switch is worth it.",
+                "min_dwell_min": "How long the source that is running keeps the zone before another may take over, in minutes.",
+                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken, in seconds.",
+                "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure the zone",
+          "description": "The same questions, pre-filled with what the zone has now.",
+          "data": {
+            "name": "Name",
+            "members": "Loads in this zone",
+            "never_substitute": "Never substitute"
+          },
+          "data_description": {
+            "name": "What the zone is called: the living room, the bathroom.",
+            "members": "The loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else.",
+            "never_substitute": "Loads that always keep their own source, whatever the ranking says — a bathroom floor, say."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "The guards that stop a close call flapping between sources.",
+              "data": {
+                "min_cop": "Minimum COP",
+                "switch_hysteresis": "Switch margin",
+                "min_dwell_min": "Minimum dwell",
+                "switch_confirm_s": "Switch confirmation",
+                "capacity_penalty": "Capacity penalty"
+              },
+              "data_description": {
+                "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
+                "switch_hysteresis": "How much cheaper the alternative must be, as a fraction, before a switch is worth it.",
+                "min_dwell_min": "How long the source that is running keeps the zone before another may take over, in minutes.",
+                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken, in seconds.",
+                "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
+              }
+            }
+          }
+        },
+        "review": {
+          "title": "Before this zone is added",
+          "description": "**{name}** shares {members}: powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.\n\nNever substituted: {never_substitute}. A heat pump below COP {min_cop} is never engaged."
+        }
+      },
+      "error": {
+        "no_name": "Give the zone a name.",
+        "not_enough_members": "Pick at least two loads; a zone needs something to substitute to.",
+        "unknown_member": "One of the loads is not on this site any more."
+      },
+      "abort": {
+        "not_enough_loads": "Add at least two loads first: a zone needs two loads that can heat the same space.",
+        "reconfigure_successful": "The zone was updated."
+      }
     }
   }
 }

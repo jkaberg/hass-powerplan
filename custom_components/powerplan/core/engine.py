@@ -70,6 +70,8 @@ from .allocation import (
     LadderState,
     PhaseLimit,
     SiteFuse,
+    Zone,
+    ZoneSpec,
     allocate,
     frozen_for,
     is_outlier,
@@ -1012,16 +1014,22 @@ class Engine:
         loads: Sequence[Load],
         *,
         constraints: Sequence[Constraint] = (),
+        zones: Sequence[ZoneSpec] = (),
         accounting: AccountingHook | None = None,
         forecasts: ForecastHook | None = None,
     ) -> None:
         """Wire one site. Nothing here reads a store or a state (INV-3).
 
         `constraints` are the site's beyond its own hard limits - its circuits
-        , later its groups and zones - built by the runtime from the
-        subentries (D7 §5.5 step 2). The site fuse and the phase limits are
-        always there, and the walk takes every constraint in D6 §2's order:
-        site → circuit → phase → group → zone, outermost physical limit first.
+        and its groups - built by the runtime from the
+        subentries (D7 §5.5 step 2). `zones` are kept separately: unlike a
+        circuit or a group, a `Zone` constraint needs this tick's own prices
+        and outdoor temperature, so `self._zones` holds the specs and
+        `_zone_constraints` builds fresh `Zone` objects every tick (WP5.3,
+        the same "built fresh, not structural" precedent as
+        `_cycle_reservations`). The site fuse and the phase limits are always
+        there, and the walk takes every constraint in D6 §2's order: site →
+        circuit → phase → group → zone, outermost physical limit first.
         """
         self.site = site
         self._meter = meter
@@ -1029,6 +1037,7 @@ class Engine:
         self._configured: tuple[Load, ...] = ()
         self._loads: tuple[Load, ...] = ()
         self._constraints: tuple[Constraint, ...] = ()
+        self._zones: tuple[ZoneSpec, ...] = tuple(zones)
         self._accounting = accounting
         self._forecasts = forecasts
         #: `_planned_kwh` memoised per load, keyed on the plan's own `built_at`
@@ -1077,6 +1086,10 @@ class Engine:
                 key=lambda constraint: _SCOPE_ORDER.index(constraint.scope),
             )
         )
+
+    def set_zones(self, zones: Sequence[ZoneSpec]) -> None:
+        """Replace the zone specs a tick builds fresh `Zone` constraints from."""
+        self._zones = tuple(zones)
 
     def _apply_load_knobs(self, knobs: Knobs) -> None:
         """Put this tick's per-load knob parameters over the configured loads (D8 §5.5).
@@ -1132,6 +1145,20 @@ class Engine:
                 )
             )
         return tuple(out)
+
+    def _zone_constraints(self, curves: Curves | None, outdoor_c: float | None) -> tuple[Zone, ...]:
+        """Return one `Zone` per configured zone, costed for this tick (D6 §5.7).
+
+        Built fresh every tick, unlike `self._constraints`: the cost ranking
+        needs this tick's own prices per carrier and outdoor temperature. The
+        choice, dwell and candidate are not passed here - `allocate()` seeds
+        them from `AllocState.zone_choice` itself (D6 §7), the same as it
+        already does for `GroupCap.seed`.
+        """
+        if not self._zones:
+            return ()
+        prices = {} if curves is None else curves.import_
+        return tuple(spec.build(prices, outdoor_c) for spec in self._zones)
 
     # ----------------------------------------------------------------- the tick #
 
@@ -1299,6 +1326,7 @@ class Engine:
                 *self._constraints,
                 ContractedPowerLimit(hard.contracted),
                 *self._cycle_reservations(load_states),
+                *self._zone_constraints(inputs.curves, inputs.outdoor_c),
             ),
             site.alloc,
             replace(state.alloc, pi=pi, ladder=ladder_state),

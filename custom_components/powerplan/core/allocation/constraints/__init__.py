@@ -12,7 +12,7 @@ from .cycle import CycleReservation
 from .group import GroupCap, default_max_concurrent_w
 from .hard import ContractedPowerLimit, ExternalLimit, SiteFuse
 from .phase import PhaseLimit
-from .zone import Zone, ZoneChoice, ZoneSource
+from .zone import Zone, ZoneChoice, ZoneSource, ZoneSpec
 
 __all__ = [
     "AllocCtx",
@@ -31,5 +31,6 @@ __all__ = [
     "Zone",
     "ZoneChoice",
     "ZoneSource",
+    "ZoneSpec",
     "default_max_concurrent_w",
 ]

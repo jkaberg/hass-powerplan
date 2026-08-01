@@ -76,6 +76,22 @@ GROUP_FROM_STAGE: Final = "from_stage"
 GROUP_CEILING_FRACTION: Final = "ceiling_fraction"
 GROUP_STARVE_SECONDS: Final = "starve_seconds"
 
+# --------------------------------------------------------------------------- #
+# Zone subentries (D6 §6 `ZoneSubentryData`, D8 §5.3)
+# --------------------------------------------------------------------------- #
+SUBENTRY_ZONE: Final = "zone"
+ZONE_MEMBERS: Final = "members"
+ZONE_SOURCES: Final = "sources"
+#: Per non-heat-pump source, its heat efficiency (η, 0-1] - a heat pump's own
+#: COP curve (D4 §5.14) answers this instead and is never asked twice.
+ZONE_SOURCE_EFFICIENCY: Final = "source_efficiency"
+ZONE_NEVER_SUBSTITUTE: Final = "never_substitute"
+ZONE_MIN_COP: Final = "min_cop"
+ZONE_SWITCH_HYSTERESIS: Final = "switch_hysteresis"
+ZONE_MIN_DWELL_MIN: Final = "min_dwell_min"
+ZONE_SWITCH_CONFIRM_S: Final = "switch_confirm_s"
+ZONE_CAPACITY_PENALTY: Final = "capacity_penalty"
+
 #: The collapsed section every step puts its advanced fields in. Home Assistant
 #: deprecated `show_advanced_options` in 2026.9 and asks for a section instead;
 #: a collapsed section is also a better reading of INV-65, because the field is
