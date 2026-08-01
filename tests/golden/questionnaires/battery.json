@@ -57,7 +57,7 @@
       "usable_kwh": 9.5
     },
     "priority": 30,
-    "strategy": "always",
+    "strategy": "peak_shave",
     "strategy_params": {
       "allow_grid_charge": true,
       "max_soc": 100.0,

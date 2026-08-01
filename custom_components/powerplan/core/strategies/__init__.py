@@ -41,6 +41,7 @@ from .base import (
     register,
     supports,
 )
+from .battery import Arbitrage, PeakShave
 from .best_save import BestSave
 from .cheapest_hours import CheapestHours
 from .context import (
@@ -67,6 +68,7 @@ __all__ = [
     "MIN_REPLAN_INTERVAL_S",
     "REQUIREMENT_TOLERANCE",
     "Always",
+    "Arbitrage",
     "BestSave",
     "CeilingSource",
     "CheapestHours",
@@ -79,6 +81,7 @@ __all__ = [
     "Headroom",
     "HeatCapacitor",
     "LoadView",
+    "PeakShave",
     "Plan",
     "PlanContext",
     "PlanMode",

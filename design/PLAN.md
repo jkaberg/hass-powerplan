@@ -306,7 +306,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 5.1a | D10 core | done |
 | 5.2 | Baseline-aware reserve and warning | done |
 | 5.3 | Zones | done |
-| 5.4 | `battery`, `arbitrage`, `peak_shave` | todo |
+| 5.4 | `battery`, `arbitrage`, `peak_shave` | done |
 | 5.5 | External limits and `delegated` | todo |
 | 6.1 | Quality and performance gates | todo |
 | 6.1a | Suite speed | done |

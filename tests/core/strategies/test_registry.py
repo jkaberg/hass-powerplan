@@ -53,16 +53,18 @@ from tests.core.strategies.conftest import (
 def test_the_registered_roster_is_what_the_flow_offers() -> None:
     """`keys()` is the roster; each entry carries its own fields (D5 §3, §6).
 
-    Deliberate: `battery` (`arbitrage`, `peak_shave`) is phase 5 and `surplus` is
-    v1.x, so neither is a row yet, and the combinators are not rows at all - they
-    are extras on any load (D5 §5.11, `base.py`'s roster comment).
+    `arbitrage`/`peak_shave` land with WP5.4; `surplus` is still v1.x, so it is
+    not a row yet, and the combinators are not rows at all - they are extras on
+    any load (D5 §5.11, `base.py`'s roster comment).
     """
     assert keys() == (
         "always",
+        "arbitrage",
         "best_save",
         "cheapest_hours",
         "deadline_fill",
         "heat_capacitor",
+        "peak_shave",
         "run_once",
         "schedule",
     )

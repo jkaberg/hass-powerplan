@@ -218,9 +218,11 @@ Parameters: `delta_k` (±1.0 default, bounded by the store's max/min, INV-56), `
 ```
 Cooling: the signs flip (`store.direction`).
 
-### 5.8 Battery (design; phase 5)
+### 5.8 Battery
 
 `arbitrage`: pair the cheapest charge slots with the dearest discharge slots later in the horizon, taking a pair only if `p_dis × η_rt − p_chg > threshold` (default 0.05 major/kWh). The SoC path is simulated slot by slot within `[min_soc, max_soc]`, with `reserve_soc` kept for `peak_shave`. `peak_shave`: reserve discharge capacity for windows where D10's baseline + planned grants > D2's ceiling, envelope negative in those windows, and charge the reserve back in the cheapest slots before. The two compose: `peak_shave` claims first, `arbitrage` uses what's left.
+
+`core/strategies/battery.py::Arbitrage`/`PeakShave`. The pairing isn't literal - no charge slot is bound to one discharge slot. Both are ranked by price and walked together from the extremes inward, and the *state of charge* is what's actually simulated, once, forward through the horizon in time order (`_simulate`), so a discharge slot only earns what has been banked by the time it arrives. `peak_shave` reads `PlanContext.headroom` directly for its reservation: by the battery's own turn in the priority walk (30, after every thermal load), a negative headroom entry already *is* "baseline + planned grants > ceiling". It hands its forced charge/discharge decisions to the same `_simulate` call `arbitrage`'s ranking then runs against, which is what "claims first, uses what's left" means in code. `battery`'s `strategies` is `("peak_shave", "arbitrage", "always")`, default `peak_shave`. D6 §5.3's tick-level ladder discharge (faster than the planning cycle on an unplanned spike) and D11's battery shadow are separate (D-0325, D-0326).
 
 ### 5.9 Adoption and commitment (INV-32)
 
@@ -300,28 +302,28 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 
 ## 9. Tests that must exist before merge
 
-1. `plan_one` equals brute force on 1 000 random instances (property test; the one that stops someone "improving" the greedy).
-2. Block variant within 5 % of brute force on the seeded small instances (the worst gap over 1 200 instances on four seeds is recorded in D-0199); never violates `min_block_min`.
-3. Flat curve: identical plans across 96 consecutive replans with float noise added to prices (INV-32).
+1. `plan_one` equals brute force on 1 000 random instances (property test, the one that stops someone "improving" the greedy).
+2. The block variant within 5 % of brute force on the seeded small instances (the worst gap over 1 200 instances on four seeds is in D-0199), never breaking `min_block_min`.
+3. Flat curve: identical plans across 96 replans in a row with float noise added to prices (INV-32).
 4. Force mode: time order from now, deadline ignored, stops when covered.
-5. `cheapest_hours` consecutive and non-consecutive; `max_price` exclusion.
-6. `best_save`: off only when saving ≥ threshold; `max_off`/`min_on`/recovery honoured.
-7. `run_once`: single contiguous block; profile-weighted cost; infeasible → earliest feasible with event; started block committed through stage 3 (INV-59).
-8. `heat_capacitor`: never exceeds `store.max_level` (INV-56); rate limit; step-up deadline produces a fill before it; tariff-window banking; heat pump outdoor gate; cooling sign flip.
-9. Combinators: `threshold` masks; `merge` and/or; `opportunistic` fills to max at ≤ 0 and not beyond.
-10. Priority decomposition: heat pump reservation reduces EV headroom; EV never plans into a slot the tank fully owns.
-11. `should_adopt`: hysteresis as a fraction of spread; doubled when stale; commitment window.
+5. `cheapest_hours` consecutive and non-consecutive, `max_price` exclusion.
+6. `best_save`: off only when saving ≥ threshold, `max_off`/`min_on`/recovery honoured.
+7. `run_once`: a single contiguous block, profile-weighted cost, infeasible → earliest feasible with an event, a started block committed through stage 3 (INV-59).
+8. `heat_capacitor`: never exceeds `store.max_level` (INV-56), rate limit, a step-up deadline gives a fill before it, tariff-window banking, the heat pump outdoor gate, cooling sign flip.
+9. Combinators: `threshold` masks, `merge` and/or, `opportunistic` fills to max at ≤ 0 and not beyond.
+10. Priority decomposition: a heat pump reservation reduces EV headroom, and the EV never plans into a slot the tank fully owns.
+11. `should_adopt`: hysteresis as a fraction of spread, doubled when stale, the commitment window.
 12. `idle_seconds_from` horizons for plan vs budget stops.
-13. Presence change and arrival events replan; away lowers targets but never a floor (D4 test cross-reference).
+13. Presence changes and arrivals replan, away lowers targets but never a floor (D4 test cross-reference).
 14. DST day: 92/100 slots planned without gaps or duplicates.
-15. Reward events raise effective price only for participating loads.
+15. Reward events only raise the effective price for participating loads.
+16. Battery (D-0325): `arbitrage` charges the cheapest slots and discharges the dearest, never crossing `[reserve_soc, max_soc]`. A flat curve trades nothing (no pair clears `threshold`), and `force` and an unknown SoC both plan nothing. `peak_shave` forces a discharge in a slot `Headroom` reports negative, up to the inverter, and still reserves charge and runs ordinary arbitrage on the rest of the horizon (`tests/core/strategies/test_16_battery.py`).
 
 ---
 
 ## 10. Deliberately deferred
 
-- `surplus` strategy (v1.x, needs D10 PV forecast).
-- Battery strategies (phase 5).
+- `surplus` strategy (v1.x, needs D10 PV forecast) - and, specifically, a battery that charges from surplus before grid arbitrage (`design/PLAN.md`'s own "Open items" §5).
 - Joint optimisation / MPC (non-goal; an `optimizer` strategy slot is reserved in the registry).
 - Learning per-load price elasticity (D10 v2).
 

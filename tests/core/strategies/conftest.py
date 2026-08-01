@@ -210,6 +210,48 @@ def ev_store() -> EnergyStore:
     return EnergyStore(capacity_kwh=64.0, min_soc=20.0, max_soc=80.0, max_charge_w=7360.0)
 
 
+def battery_store(**kwargs: Any) -> EnergyStore:
+    """Return a 10 kWh home battery: LFP-shaped efficiencies, a 20 % reserve (D4 §6.6)."""
+    options: dict[str, Any] = {
+        "capacity_kwh": 10.0,
+        "min_soc": 21.0,
+        "max_soc": 100.0,
+        "max_charge_w": 5000.0,
+        "usable_fraction": 0.95,
+        "charge_eff": 0.95,
+        "discharge_eff": 0.95,
+        "reserve_soc": 20.0,
+        "max_discharge_w": 5000.0,
+    }
+    options.update(kwargs)
+    return EnergyStore(**options)
+
+
+def battery_view(**kwargs: Any) -> LoadView:
+    """Return a home battery as the planner sees it (D5 §4, D4 §6.6)."""
+    options: dict[str, Any] = {
+        "load_id": "battery",
+        "priority": 30,
+        "strategy": "arbitrage",
+        "demand": demand(
+            wants=True,
+            required_kwh=None,
+            deadline=None,
+            min_w=-5000.0,
+            max_w=5000.0,
+            urgency=Urgency.NORMAL,
+            price_sensitive=True,
+            reason="20 % of 100 %",
+        ),
+        "nameplate_w": 5000.0,
+        "kind": "modulate",
+        "store": battery_store(),
+        "level_now": 50.0,
+    }
+    options.update(kwargs)
+    return LoadView(**options)
+
+
 def slab_store() -> SlabStore:
     """Return the bathroom slab: 12 m² under 40 mm of screed (D4 §6.1)."""
     return SlabStore(area_m2=12.0, screed_mm=40.0, loss_coeff_w_per_k=None, max_c=27.0)

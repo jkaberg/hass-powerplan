@@ -1472,3 +1472,13 @@ A `Zone` needs this tick's prices and outdoor temperature, so unlike circuits an
 
 `ZoneSubentryFlow` asks a name, the members (also the candidate sources), `never_substitute` and the five tuning numbers under Advanced, the same one-step-plus-review shape as groups and circuits. `runtime.build_zones` reads each member's `load.config.carrier` and, for a heat pump, its COP curve (`heat_pump.curve_of`); everything else is resistive, as D6 §6 says ("from D4"). No D4 type lets a household set a non-electric carrier yet, so zones built through the UI rank electric sources (a heat pump against resistive backup). The cross-carrier `Zone` logic is implemented and tested against hand-built sources. Affects D6 §6, D8 §5.3.
 **Rejected:** a separate sources pick - doubles the form for a hydronic case D4 defers. A per-source efficiency field - meaningless without the carrier's price curve.
+
+### D-0325 · `arbitrage` and `peak_shave` rank both ends of the horizon and simulate the state of charge once
+
+`_candidates()` walks the price ranking from both ends together (Kth cheapest against Kth dearest) and stops at the first pair where `p_discharge × round_trip_eff − p_charge` doesn't clear the threshold; profit is non-increasing in K. Pairs aren't literal, since energy is fungible through storage: `_simulate()` walks the horizon once in time order, applying `peak_shave`'s forced reservation first and then the ranked sets, clamped to `[reserve_soc, max_soc]` and the inverter's limits. `peak_shave` reads negative `PlanContext.headroom` as the slots it must cover and forces the cheapest slots to charge for them. The battery defaults to `peak_shave` again (D-0308). Affects D5 §5.8.
+**Rejected:** exhaustive pair search scored by clamped energy - O(n³) on a 190-slot horizon for no visible gain. Two separate simulations - the second could double-book slots the first claimed.
+
+### D-0326 · The ladder's tick-level battery discharge and a battery shadow wait
+
+D6 §5.3's "(design)" note, a stage ≥ 1 discharge before any comfort shed, is new allocator-walk logic whose placement relative to steps 3-8 the note doesn't settle, in code INV-1 governs tightly. `peak_shave` already protects the ceiling at the planning cadence. A battery has no registered shadow, so `shadow_for` answers `None`: cost shown, savings not (D11 §5.3). A battery's honest counterfactual is "no battery at all", closer to a whole-site question than a per-load one.
+**Rejected:** building the tick-level discharge now - precedence code shouldn't be a rushed addition. A trivial idle shadow - not what a battery's savings mean.

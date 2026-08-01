@@ -227,7 +227,7 @@ allocate():
  9 trim (5.5) against measured P_total if deficit > 0
 10 report + unconstrained_ask_w = Σ demands.max_w for loads that wanted power (unconstrained ask) - published in AllocReport; D11 records its own counterfactual per window
 ```
-Batteries (design): at stage ≥ 1 with `soc > reserve_soc`, grant `−min(deficit_w, max_discharge_w)` **before** any comfort shed; at stage 0 the plan (arbitrage) governs.
+Batteries (design): at stage ≥ 1 with `soc > reserve_soc`, grant `−min(deficit_w, max_discharge_w)` **before** any comfort shed; at stage 0 the plan (arbitrage) governs. **Still design, not built (D-0326):** D5 §5.8's `peak_shave` strategy delivers the same underlying protection at the planning cadence today - a negative `Headroom` slot is forced to discharge before the plan is even adopted - but this tick-level, faster-than-a-replan mechanism is not built; a household running `peak_shave` is not undefended, just not defended as fast as this note describes.
 
 ### 5.4 The ladder (INV-36, INV-38)
 

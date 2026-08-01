@@ -164,14 +164,11 @@ class Battery:
 
     key: ClassVar[str] = "battery"
     kinds: ClassVar[tuple[str, ...]] = ("modulate",)
-    #: `peak_shave`/`arbitrage` are WP5.4's own (D5 §5.8, §10's "Deliberately
-    #: deferred" - "Battery strategies (phase 5)"): neither is a registered
-    #: `Strategy` yet, so naming either here would offer a choice that crashes
-    #: the planner the moment it is picked (`design/DECISIONS.md` D-0308).
-    #: `battery` itself was registered ahead of its own strategies; `always`
-    #: is the safe default until WP5.4 restores the real pair.
-    strategies: ClassVar[tuple[str, ...]] = ("always",)
-    default_strategy: ClassVar[str] = "always"
+    #: `peak_shave` claims discharge for a threatened ceiling first and lets
+    #: `arbitrage` plan the rest - the safer default (D5 §5.8); `always`
+    #: stays offered for a household that wants no price steering at all.
+    strategies: ClassVar[tuple[str, ...]] = ("peak_shave", "arbitrage", "always")
+    default_strategy: ClassVar[str] = "peak_shave"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
