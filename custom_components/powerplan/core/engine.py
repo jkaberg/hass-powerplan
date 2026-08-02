@@ -63,6 +63,7 @@ from .allocation import (
     Constraint,
     ContractedPowerLimit,
     CycleReservation,
+    ExternalLimit,
     Grants,
     HardLimits,
     Ladder,
@@ -129,6 +130,7 @@ from .model import (
     Snapshot,
 )
 from .pricing import Event, HysteresisPolicy
+from .pricing import EventKind as PricingEventKind
 from .state_codec import decode as _decode
 from .state_codec import encode as _encode
 from .strategies import Curves, Forecasts, LoadView, SiteContext, plan_all
@@ -1327,6 +1329,7 @@ class Engine:
                 ContractedPowerLimit(hard.contracted),
                 *self._cycle_reservations(load_states),
                 *self._zone_constraints(inputs.curves, inputs.outdoor_c),
+                *_external_limits(inputs.events, now),
             ),
             site.alloc,
             replace(state.alloc, pi=pi, ladder=ladder_state),
@@ -2673,6 +2676,34 @@ def _coming_windows(
     while start < end:
         out.append((start, start + step))
         start += step
+    return tuple(out)
+
+
+def _external_limits(events: Sequence[Event], now: datetime) -> tuple[ExternalLimit, ...]:
+    """Return one `ExternalLimit` per active load-limit event (D6 §5.8).
+
+    From D1's own `load_limit` announcements (`design/DECISIONS.md` D-0327):
+    the named loads - or the whole site, with none named - may take
+    `max_w` and no more while the event is active, §14a's own 4.2 kW
+    example. Built fresh every tick, the same "not structural" precedent
+    as a zone or a cycle reservation: an event is a fact this tick reads,
+    not something a subentry configures.
+    """
+    out: list[ExternalLimit] = []
+    for event in events:
+        if event.kind is not PricingEventKind.LOAD_LIMIT or not event.is_active_at(now):
+            continue
+        max_w = event.payload.get("max_w")
+        if not isinstance(max_w, int | float):
+            continue
+        loads = event.payload.get("loads") or ()
+        out.append(
+            ExternalLimit(
+                float(max_w),
+                loads=frozenset(str(load_id) for load_id in loads),
+                event_id=event.id,
+            )
+        )
     return tuple(out)
 
 

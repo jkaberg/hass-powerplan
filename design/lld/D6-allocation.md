@@ -317,6 +317,8 @@ at its floor.
 
 `ExternalLimit`: from D1 `load_limit` events (§14a: `max_w = 4200` for the named loads while the event is active) → `cap_w` for those loads, and a site-wide event caps `P_hard`.
 
+**In code (D-0327).** `Engine._external_limits(events, now)` reads `Inputs.events`, keeps every `EventKind.LOAD_LIMIT` announcement that `is_active_at(now)`, and builds one `ExternalLimit` per match from its own `payload["max_w"]`/`payload["loads"]` - the same "not structural, synthesised fresh every tick" shape `_cycle_reservations` and `_zone_constraints` already use, spliced into the same `allocate()` call. Proven against a real `Engine.tick()` in `tests/core/engine/test_external_limits.py` (5 tests: an active named-load cap, an ended event's no-op, a site-wide cap, a non-`load_limit` event ignored, the uncapped baseline) - using a forced EV charger rather than a floor loop, since a `SETPOINT`-kind device (D4 §5.4) writes a temperature, not a wattage, and only a `MODULATE`-kind device's own grant is literally throttleable tick to tick. What this WP did not build: the event source itself. Nothing populates an `EventStore` in `runtime.py` today, for any of D1's five `EventKind`s, and the DSO/aggregator provider plus its configuration UI are D8's own v1.x deferral (`design/lld/D8-ha-surface.md`'s deferred-items list) - this bridge is exercised by a hand-built `Event`, standing in for whatever a future provider hands the engine.
+
 **WP2.5 - circuits as wired** (`design/DECISIONS.md` D-0283, D-0284; supersedes D-0167's circuit half). A circuit is budgeted the way the site is in §5.3, one level in:
 
 ```

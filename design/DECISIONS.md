@@ -1482,3 +1482,8 @@ A `Zone` needs this tick's prices and outdoor temperature, so unlike circuits an
 
 D6 §5.3's "(design)" note, a stage ≥ 1 discharge before any comfort shed, is new allocator-walk logic whose placement relative to steps 3-8 the note doesn't settle, in code INV-1 governs tightly. `peak_shave` already protects the ceiling at the planning cadence. A battery has no registered shadow, so `shadow_for` answers `None`: cost shown, savings not (D11 §5.3). A battery's honest counterfactual is "no battery at all", closer to a whole-site question than a per-load one.
 **Rejected:** building the tick-level discharge now - precedence code shouldn't be a rushed addition. A trivial idle shadow - not what a battery's savings mean.
+
+### D-0327 · `_external_limits` bridges `Inputs.events` to `ExternalLimit`; the DSO provider and its UI are v1.x
+
+`ExternalLimit` (D6 §5.8) and `Mode.DELEGATED` (D4 §5.2) were already built and tested. `Engine._external_limits(events, now)` turns each active `load_limit` event into one `ExternalLimit` from its payload, built fresh per tick like cycle reservations and zones. D1's `EventKind` is imported as `PricingEventKind` beside the engine's own. D8 already defers the DSO limit's configuration UI to v1.x. Note: the runtime doesn't yet hold an `EventStore`, so none of D1's event kinds reach a live tick; tests drive `_external_limits` with hand-built events. Wiring that belongs to the first work that needs a live event kind.
+**Rejected:** a `providers/events/` module and a publish service now - DSO and aggregator shapes differ enough to build the wrong one.

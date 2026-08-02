@@ -389,7 +389,7 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 - A custom Lovelace card (a starter YAML dashboard ships instead).
 - Built-in weekly schedule editor (§10 decision 6).
 - Energy dashboard price sensor (v1.x); cost and savings sensors are v1 (D11).
-- External DSO limit configuration UI (`ExternalLimit` v1.x).
+- External DSO limit configuration UI (`ExternalLimit` v1.x). The engine-level bridge - `Inputs.events` → `ExternalLimit`, no UI or provider involved - is built (`design/DECISIONS.md` D-0327); nothing populates an `EventStore` in `runtime.py` yet, for this or any of D1's other event kinds.
 - Blueprints for common automations (post-v1).
 
 ---
