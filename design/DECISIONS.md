@@ -1487,3 +1487,8 @@ D6 §5.3's "(design)" note, a stage ≥ 1 discharge before any comfort shed, is 
 
 `ExternalLimit` (D6 §5.8) and `Mode.DELEGATED` (D4 §5.2) were already built and tested. `Engine._external_limits(events, now)` turns each active `load_limit` event into one `ExternalLimit` from its payload, built fresh per tick like cycle reservations and zones. D1's `EventKind` is imported as `PricingEventKind` beside the engine's own. D8 already defers the DSO limit's configuration UI to v1.x. Note: the runtime doesn't yet hold an `EventStore`, so none of D1's event kinds reach a live tick; tests drive `_external_limits` with hand-built events. Wiring that belongs to the first work that needs a live event kind.
 **Rejected:** a `providers/events/` module and a publish service now - DSO and aggregator shapes differ enough to build the wrong one.
+
+### D-0329 · Four bugs a live install surfaced
+
+(1) `build_site()` reads preset files and builds holiday tables, blocking I/O HA's loop detector flagged on every setup; `async_setup_entry` now runs it in the executor. (2) Load devices used the deprecated `via_device` tuple; the site device is registered up front in `Runtime.start()` so every load's `DeviceInfo` carries `via_device_id`. (3) One malformed `loads` entry in the store made `decode` raise and took the site down on every restart; each entry now decodes independently, and a dropped one degrades to `LoadState()` as a missing one already did. (4) `sensor.<load>_plan` read a `PlanSlot.w` that never existed; it reads `envelope_w`, keeping `None` distinct from `0.0` (INV-30). Each now has a test.
+**Rejected:** fixing only the two crashes - the warnings name a breaking release or already cost latency.
