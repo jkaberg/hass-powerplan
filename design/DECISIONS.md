@@ -1492,3 +1492,8 @@ D6 §5.3's "(design)" note, a stage ≥ 1 discharge before any comfort shed, is 
 
 (1) `build_site()` reads preset files and builds holiday tables, blocking I/O HA's loop detector flagged on every setup; `async_setup_entry` now runs it in the executor. (2) Load devices used the deprecated `via_device` tuple; the site device is registered up front in `Runtime.start()` so every load's `DeviceInfo` carries `via_device_id`. (3) One malformed `loads` entry in the store made `decode` raise and took the site down on every restart; each entry now decodes independently, and a dropped one degrades to `LoadState()` as a missing one already did. (4) `sensor.<load>_plan` read a `PlanSlot.w` that never existed; it reads `envelope_w`, keeping `None` distinct from `0.0` (INV-30). Each now has a test.
 **Rejected:** fixing only the two crashes - the warnings name a breaking release or already cost latency.
+
+### D-0330 · The site's own config entry gets `async_step_reconfigure`
+
+The site had no gear icon: changing the fuse, meter roles or tariff target meant removing it. `async_step_reconfigure` restores every attribute `_assemble()` would set and re-enters at `name`, never the path menu. Seven schema functions gain a `values`/`default` parameter to pre-fill. The finish calls `async_update_entry` then aborts `reconfigure_successful`; the existing update listener reloads. `async_update_reload_and_abort` would reload twice. The stored fuse is numeric while the select needs `"63"`, so the restore converts back. Modifier and carrier options aren't pre-filled yet. Affects D8 §5.1.
+**Rejected:** letting reconfigure change the onboarding path - adds steps a site never walked; a different, larger flow.

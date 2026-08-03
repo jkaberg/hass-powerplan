@@ -443,7 +443,8 @@
       "eps_not_positive": "Sikkerhetsmarginen må være større enn null."
     },
     "abort": {
-      "already_configured": "Denne måleren er allerede satt opp som et powerplan-anlegg."
+      "already_configured": "Denne måleren er allerede satt opp som et powerplan-anlegg.",
+      "reconfigure_successful": "Lagret — anlegget laster på nytt med de nye svarene."
     }
   },
   "entity": {

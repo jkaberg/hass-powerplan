@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import zoneinfo
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -92,7 +93,7 @@ from custom_components.powerplan.providers.prices.nordpool_action import (
 from .questionnaire import advanced_section, render
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
     from homeassistant.core import HomeAssistant
 
@@ -471,11 +472,11 @@ def price_entity_schema(*, default_entity: str | None, default_format: str | Non
     )
 
 
-def fixed_price_schema(currency: str) -> vol.Schema:
+def fixed_price_schema(currency: str, *, default: float = 0.0) -> vol.Schema:
     """One number: what a kWh costs when nothing publishes a curve (D1 §6)."""
     return vol.Schema(
         {
-            vol.Optional("price", default=0.0): NumberSelector(
+            vol.Optional("price", default=default): NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement=f"{currency}/kWh"
                 )
@@ -530,17 +531,19 @@ def modifier_options_schema(key: str) -> vol.Schema:
 EXPORT_NONE: Final = "none"
 
 
-def export_schema() -> vol.Schema:
+def export_schema(*, values: Mapping[str, Any] | None = None) -> vol.Schema:
     """Return D1 §6's export question, from `export_price`'s own schema."""
     schema = modifiers.entry("export_price").schema
     mode_field = next(field for field in schema if field.key == "mode")
     options = [EXPORT_NONE, *(str(option) for option in mode_field.options)]
+    values = values or {}
     rendered = render(
         tuple(field for field in schema if field.key != "mode"),
         translation_prefix="export",
+        values=values.get("options"),
     )
     fields: dict[Any, Any] = {
-        vol.Optional("mode", default=EXPORT_NONE): SelectSelector(
+        vol.Optional("mode", default=values.get("mode", EXPORT_NONE)): SelectSelector(
             SelectSelectorConfig(
                 options=options,
                 mode=SelectSelectorMode.LIST,
@@ -557,12 +560,12 @@ CARRIER_FIXED: Final = "fixed"
 CARRIER_SENSOR: Final = "sensor"
 
 
-def carriers_schema() -> vol.Schema:
+def carriers_schema(chosen: Sequence[str] | None = None) -> vol.Schema:
     """Which other carriers the house buys (D1 §6); none by default."""
     options = [str(carrier) for carrier in Carrier if carrier is not Carrier.ELECTRICITY]
     return vol.Schema(
         {
-            vol.Optional("carriers", default=[]): SelectSelector(
+            vol.Optional("carriers", default=list(chosen) if chosen else []): SelectSelector(
                 SelectSelectorConfig(
                     options=options,
                     multiple=True,
@@ -703,17 +706,20 @@ def risk_key(risk: float) -> str:
     return "flat"
 
 
-def tariff_target_schema(version: TariffVersion) -> vol.Schema:
+def tariff_target_schema(
+    version: TariffVersion, *, values: Mapping[str, Any] | None = None
+) -> vol.Schema:
     """Target, risk, and the two advanced numbers of D2 §6."""
     peak = peak_of(version)
     default = default_risk(version.grammar)
+    values = values or {}
     fields: dict[Any, Any] = {
-        vol.Optional("target", default="auto"): SelectSelector(
+        vol.Optional("target", default=values.get("target", "auto")): SelectSelector(
             SelectSelectorConfig(
                 options=target_options(version), mode=SelectSelectorMode.DROPDOWN, sort=False
             )
         ),
-        vol.Optional("risk", default=risk_key(default)): SelectSelector(
+        vol.Optional("risk", default=values.get("risk", risk_key(default))): SelectSelector(
             SelectSelectorConfig(
                 options=list(RISK_LABELS),
                 mode=SelectSelectorMode.LIST,
@@ -723,17 +729,21 @@ def tariff_target_schema(version: TariffVersion) -> vol.Schema:
         ),
     }
     if peak is not None and not isinstance(peak.pricing, StepTable):
-        fields[vol.Optional("target_kw", default=5.0)] = NumberSelector(
+        fields[vol.Optional("target_kw", default=values.get("target_kw") or 5.0)] = NumberSelector(
             NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW")
         )
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
         {
-            vol.Optional("eps_kwh", default=EPS_DEFAULT_KWH_PER_HOUR): NumberSelector(
+            vol.Optional(
+                "eps_kwh", default=values.get("eps_kwh", EPS_DEFAULT_KWH_PER_HOUR)
+            ): NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kWh"
                 )
             ),
-            vol.Optional("cap_margin_kw", default=CAP_MARGIN_KW): NumberSelector(
+            vol.Optional(
+                "cap_margin_kw", default=values.get("cap_margin_kw", CAP_MARGIN_KW)
+            ): NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW"
                 )
@@ -758,19 +768,18 @@ def needs_bills(version: TariffVersion) -> bool:
     return peak is not None and peak.period == "rolling_months"
 
 
-def bills_schema(peak: PeakTariff) -> vol.Schema:
+def bills_schema(peak: PeakTariff, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
     """Return the last twelve monthly metrics, all of them optional (D2 §6)."""
     months = peak.rolling_months
-    return vol.Schema(
-        {
-            vol.Optional(f"month_{index + 1}"): NumberSelector(
-                NumberSelectorConfig(
-                    mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW"
-                )
-            )
-            for index in range(months)
-        }
-    )
+    values = values or {}
+    fields: dict[Any, Any] = {}
+    for index in range(months):
+        key = f"month_{index + 1}"
+        marker = vol.Optional(key, default=values[key]) if key in values else vol.Optional(key)
+        fields[marker] = NumberSelector(
+            NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW")
+        )
+    return vol.Schema(fields)
 
 
 def needs_limits(version: TariffVersion) -> bool:
@@ -778,14 +787,21 @@ def needs_limits(version: TariffVersion) -> bool:
     return version.contracted is not None
 
 
-def limits_schema(version: TariffVersion) -> vol.Schema:
-    """One number per contracted period, pre-filled from the preset (D2 §6)."""
+def limits_schema(version: TariffVersion, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
+    """One number per contracted period (D2 §6).
+
+    Pre-filled from the preset - or, on a reconfigure, from what the household
+    actually confirmed last time.
+    """
     contracted = version.contracted
     assert contracted is not None
     unit = "kVA" if contracted.unit == "kva" else "kW"
+    values = values or {}
     return vol.Schema(
         {
-            vol.Optional(f"limit_{index + 1}", default=limit.limit_kw): NumberSelector(
+            vol.Optional(
+                f"limit_{index + 1}", default=values.get(f"limit_{index + 1}", limit.limit_kw)
+            ): NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement=unit
                 )
@@ -852,28 +868,33 @@ def hard_limits_schema(profile: ElectricalProfile, contracted: float | None) -> 
     )
 
 
-def presence_schema(hass: HomeAssistant) -> vol.Schema:
+def presence_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
     """Auto from `person` entities, or manual (D8 §5.1)."""
     people = sorted(
         entry.entity_id
         for entry in er.async_get(hass).entities.values()
         if entry.domain == "person"
     ) or sorted(hass.states.async_entity_ids("person"))
+    values = values or {}
     fields: dict[Any, Any] = {
-        vol.Optional("mode", default="auto" if people else "manual"): SelectSelector(
+        vol.Optional(
+            "mode", default=values.get("mode", "auto" if people else "manual")
+        ): SelectSelector(
             SelectSelectorConfig(
                 options=["auto", "manual"],
                 mode=SelectSelectorMode.LIST,
                 translation_key="presence_mode",
             )
         ),
-        vol.Optional("persons", default=people): EntitySelector(
+        vol.Optional("persons", default=values.get("persons", people)): EntitySelector(
             EntitySelectorConfig(domain="person", multiple=True)
         ),
     }
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
         {
-            vol.Optional("away_delay_min", default=30): NumberSelector(
+            vol.Optional(
+                "away_delay_min", default=values.get("away_delay_min", 30)
+            ): NumberSelector(
                 NumberSelectorConfig(mode=NumberSelectorMode.BOX, step=1, unit_of_measurement="min")
             )
         }
@@ -886,9 +907,9 @@ def notify_services(hass: HomeAssistant) -> list[str]:
     return sorted(hass.services.async_services().get("notify", {}))
 
 
-def _transport_field(category: str) -> tuple[Any, Any]:
+def _transport_field(category: str, default: str | None = None) -> tuple[Any, Any]:
     return (
-        vol.Optional(category, default=NOTIFICATION_DEFAULTS[category]),
+        vol.Optional(category, default=default or NOTIFICATION_DEFAULTS[category]),
         SelectSelector(
             SelectSelectorConfig(
                 options=list(TRANSPORTS),
@@ -900,29 +921,54 @@ def _transport_field(category: str) -> tuple[Any, Any]:
     )
 
 
-def notifications_schema(hass: HomeAssistant) -> vol.Schema:
+def notifications_schema(
+    hass: HomeAssistant,
+    *,
+    values: Mapping[str, Any] | None = None,
+    quiet: Sequence[str] | None = None,
+) -> vol.Schema:
     """Per-category transport and quiet hours (D8 §5.1, §5.8).
 
     The three categories that ask something of the household are in the form; the
     eight that default to off are in the collapsed advanced section, because
     eleven selects abreast is the "overwhelming" HLD §7.9 exists to prevent
-    (INV-65, D-0129).
+    (INV-65, D-0129). `values` is `notifications_data`'s own shape (one row per
+    category), for a reconfigure's pre-fill.
     """
-    fields: dict[Any, Any] = dict(_transport_field(category) for category in PROMINENT_CATEGORIES)
+    values = values or {}
+
+    def _default(category: str) -> str | None:
+        row = values.get(category)
+        return row.get("transport") if isinstance(row, Mapping) else None
+
+    fields: dict[Any, Any] = dict(
+        _transport_field(category, _default(category)) for category in PROMINENT_CATEGORIES
+    )
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
         dict(
-            _transport_field(category)
+            _transport_field(category, _default(category))
             for category in NOTIFICATION_DEFAULTS
             if category not in PROMINENT_CATEGORIES
         )
     )
     services = notify_services(hass)
+    stored_service = next(
+        (
+            row["service"]
+            for row in values.values()
+            if isinstance(row, Mapping) and row.get("service")
+        ),
+        None,
+    )
     if services:
-        fields[vol.Optional("notify_service", default=services[0])] = SelectSelector(
-            SelectSelectorConfig(options=services, mode=SelectSelectorMode.DROPDOWN, sort=False)
+        fields[vol.Optional("notify_service", default=stored_service or services[0])] = (
+            SelectSelector(
+                SelectSelectorConfig(options=services, mode=SelectSelectorMode.DROPDOWN, sort=False)
+            )
         )
-    fields[vol.Optional("quiet_start", default=QUIET_START_DEFAULT)] = TimeSelector()
-    fields[vol.Optional("quiet_end", default=QUIET_END_DEFAULT)] = TimeSelector()
+    quiet_start, quiet_end = tuple(quiet) if quiet else (None, None)
+    fields[vol.Optional("quiet_start", default=quiet_start or QUIET_START_DEFAULT)] = TimeSelector()
+    fields[vol.Optional("quiet_end", default=quiet_end or QUIET_END_DEFAULT)] = TimeSelector()
     return vol.Schema(fields)
 
 
@@ -938,9 +984,16 @@ def notifications_data(answers: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def review_schema() -> vol.Schema:
-    """One tick box: start in observe, and it starts ticked (PLAN §7 dec. 20)."""
-    return vol.Schema({vol.Optional("start_in_observe", default=True): BooleanSelector()})
+def review_schema(*, default_observe: bool = True) -> vol.Schema:
+    """One tick box: start in observe, ticked by default on a first setup.
+
+    A reconfigure passes the site's own current state instead (PLAN §7 dec. 20) -
+    re-saving an already-active site must not silently switch it back to
+    observe.
+    """
+    return vol.Schema(
+        {vol.Optional("start_in_observe", default=default_observe): BooleanSelector()}
+    )
 
 
 __all__ = [

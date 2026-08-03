@@ -100,7 +100,17 @@ rules:
   entity-translations: todo
   exception-translations: todo
   icon-translations: todo
-  reconfiguration-flow: todo
+  reconfiguration-flow:
+    status: done
+    comment: >-
+      Every subentry flow (load, circuit, group, zone) has a reconfigure step
+      that pre-fills from the existing subentry and re-derives on save - D4/D6
+      §9, tested per kind (e.g. test_zone_flow.py's own reconfigure case, WP5.3).
+      The site's own entry has one too (`PowerplanConfigFlow.
+      async_step_reconfigure`, found missing at WP6.1): it restores every
+      instance attribute `_assemble()` would have set and re-enters the same
+      step chain at `name`, so every step's own form is pre-filled exactly as
+      onboarding's is - `tests/flows/test_site_reconfigure.py`.
   repair-issues: todo
   stale-devices: todo
 

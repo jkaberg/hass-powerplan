@@ -443,7 +443,8 @@
       "eps_not_positive": "The guard band has to be more than zero."
     },
     "abort": {
-      "already_configured": "This meter is already set up as a powerplan site."
+      "already_configured": "This meter is already set up as a powerplan site.",
+      "reconfigure_successful": "Saved — the site reloads with the new answers."
     }
   },
   "entity": {
