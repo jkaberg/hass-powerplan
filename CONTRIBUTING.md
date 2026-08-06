@@ -79,6 +79,10 @@ Every test outside the simulations runs in under a minute, so run all of them wh
 
 At the end of a WP that touches `core/`, also run every scenario file, `tools/benchmark.py --tier smoke --compare`, and the month tier. After a change to `runtime.py`, `storage.py`, `writegate.py` or the flows, run the e2e day (`uv run pytest -m e2e -q`).
 
+### Coverage
+
+The coverage floors are CI gates: `core/` 90 % of lines, `writegate.py` 100 %, 85 % overall. They are set in `pyproject.toml`, and `tools/coverage_gate.py` enforces them.
+
 ## Commands
 
 ```

@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 PRESENCE_OPTIONS: tuple[str, ...] = ("auto", "home", "away", "vacation")
 RISK_OPTIONS: tuple[str, ...] = ("flat", "free_ride", "full")
 
+#: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

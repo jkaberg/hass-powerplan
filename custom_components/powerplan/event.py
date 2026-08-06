@@ -19,6 +19,9 @@ if TYPE_CHECKING:
     from . import PowerplanConfigEntry
     from .runtime import Runtime
 
+#: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

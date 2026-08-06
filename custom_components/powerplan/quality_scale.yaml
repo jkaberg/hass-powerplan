@@ -8,7 +8,12 @@
 # that has nothing to discover and no credentials.
 rules:
   # --- Bronze ---------------------------------------------------------------
-  action-setup: todo
+  action-setup:
+    status: done
+    comment: >-
+      Site-wide services (replan, release, boost, …) are registered once in
+      async_setup, never per entry - the docstring names this rule directly
+      (__init__.py, PLAN §7 dec. 8).
   appropriate-polling:
     status: exempt
     comment: >-
@@ -16,10 +21,32 @@ rules:
       on meter updates (debounced ~10 s) and a 30 s heartbeat, and publishes
       with async_set_updated_data (HLD §4, D7 §5.1).
   brands: todo
-  common-modules: todo
-  config-flow: todo
-  config-flow-test-coverage: todo
-  dependency-transparency: todo
+  common-modules:
+    status: done
+    comment: >-
+      entity.py holds the shared PowerplanEntity/LoadEntity base classes;
+      runtime.py owns a real homeassistant.helpers.update_coordinator.
+      DataUpdateCoordinator rather than a separate coordinator.py - the
+      coordinator's own data is the site's engine state, which runtime.py
+      already orchestrates end to end (D7 §4.3, §5.5).
+  config-flow:
+    status: done
+    comment: >-
+      config_flow.py plus one subentry flow per kind (load, circuit, group,
+      zone) under flow/, each rendering from its own device type's or
+      constraint's registry schema (D4/D6, WP2.4…5.3).
+  config-flow-test-coverage:
+    status: done
+    comment: >-
+      flow/ measures 90.9 % line coverage (floor 80 %, `tools/coverage_gate.py`,
+      WP6.1 checkpoint) - tests/flows/ covers every subentry kind
+      plus the site's own onboarding and reconfigure flows.
+  dependency-transparency:
+    status: done
+    comment: >-
+      manifest.json's requirements list the integration's only third-party
+      dependency (holidays>=0.84, core/pricing/holidays.py); core/ is pure
+      Python and stdlib, providers/ use only HA's own helpers.
   docs-actions: todo
   docs-conditions:
     status: exempt
@@ -34,10 +61,27 @@ rules:
     comment: >-
       powerplan provides no trigger platform. Every transition is fired on the
       bus as a powerplan_* event with its reason attached (D8 §5.6).
-  entity-event-setup: todo
-  entity-unique-id: todo
-  has-entity-name: todo
-  runtime-data: todo
+  entity-event-setup:
+    status: done
+    comment: >-
+      Every coordinator-driven platform relies on CoordinatorEntity's own
+      listener wiring; the one entity that also owns a bespoke subscription
+      (event.py's SiteEventEntity, the bus mirror) registers and unregisters
+      it through async_on_remove in async_added_to_hass.
+  entity-unique-id:
+    status: done
+    comment: >-
+      entity.py::unique_id() derives every entity's id from the entry id (and
+      the subentry id and load id for a load entity), never from a name
+      (INV-50).
+  has-entity-name:
+    status: done
+    comment: PowerplanEntity sets _attr_has_entity_name = True for every entity.
+  runtime-data:
+    status: done
+    comment: >-
+      type PowerplanConfigEntry = ConfigEntry[Runtime]; entry.runtime_data is
+      set in async_setup_entry and read everywhere else, never hass.data[DOMAIN].
   test-before-configure:
     status: exempt
     comment: >-
@@ -55,24 +99,67 @@ rules:
       Nothing identifies a site but the name the user gives it.
 
   # --- Silver ---------------------------------------------------------------
-  action-exceptions: todo
-  config-entry-unloading: todo
+  action-exceptions:
+    status: done
+    comment: >-
+      Every service handler raises homeassistant.exceptions.ServiceValidationError
+      on bad input (services.py), never a bare ValueError.
+  config-entry-unloading:
+    status: done
+    comment: >-
+      async_unload_entry calls Runtime.stop(), which calls
+      hass.config_entries.async_unload_platforms(entry, PLATFORMS) and flushes
+      the store; async_setup_entry's own async_forward_entry_setups is its pair.
   docs-configuration-parameters: todo
   docs-installation-parameters: todo
-  entity-unavailable: todo
-  integration-owner: todo
-  log-when-unavailable: todo
-  parallel-updates: todo
+  entity-unavailable:
+    status: done
+    comment: >-
+      PowerplanEntity.available is false without a snapshot; LoadEntity.available
+      also folds in the load's own health (unhealthy AND stale_roles) - never a
+      state the coordinator itself does not vouch for.
+  integration-owner:
+    status: done
+    comment: manifest.json's codeowners names @jkaberg.
+  log-when-unavailable:
+    status: done
+    comment: >-
+      providers/meters/base.py::_fault logs once per (entity, reason) and never
+      again while the same fault holds - the docstring names the rule's own
+      shape directly (D3 §8); providers/profiles/base.py's own unit- and
+      domain-binding warnings fire once, at bind time (materialised at setup,
+      not read per tick).
+  parallel-updates:
+    status: done
+    comment: >-
+      PARALLEL_UPDATES = 0 on every platform module (WP6.1) - every entity is
+      pushed by the coordinator, none polls or calls a service of its own
+      (writes go through the single WriteGate, INV-20/INV-24).
   reauthentication-flow:
     status: exempt
     comment: >-
       No credentials. Every input is an HA entity, a number or a preset; there
       is nothing that can expire.
-  test-coverage: todo
+  test-coverage:
+    status: done
+    comment: >-
+      Overall 94.8 % lines (floor 85 %, `tools/coverage_gate.py`, WP6.1
+      checkpoint) - core/ 96.9 %, providers/ 94.2 %, writegate.py
+      100 %, flow/ 90.9 %; gated in CI, not just measured.
 
   # --- Gold -----------------------------------------------------------------
-  devices: todo
-  diagnostics: todo
+  devices:
+    status: done
+    comment: >-
+      entity.py::load_device_info/site_device_info group every entity under a
+      site device or a load device, the load devices linked to the site with
+      via_device_id (D8 §5.5).
+  diagnostics:
+    status: done
+    comment: >-
+      diagnostics.py: async_get_config_entry_diagnostics and
+      async_get_device_diagnostics, redacting persons, the notify target and
+      the home's coordinates (D8 §5.10).
   discovery:
     status: exempt
     comment: >-
@@ -94,10 +181,25 @@ rules:
     comment: >-
       Loads, groups, zones and circuits are config subentries the user adds and
       removes; nothing appears at runtime that was not configured.
-  entity-category: todo
+  entity-category:
+    status: done
+    comment: >-
+      Diagnostic and config entities set entity_category (EntityCategory.
+      DIAGNOSTIC/CONFIG) across binary_sensor.py, sensor.py, number.py,
+      button.py, select.py and load_entities.py.
   entity-device-class: todo
-  entity-disabled-by-default: todo
-  entity-translations: todo
+  entity-disabled-by-default:
+    status: done
+    comment: >-
+      Noisy or rarely used entities set entity_registry_enabled_default = False
+      across sensor.py, binary_sensor.py, button.py, number.py and
+      load_entities.py.
+  entity-translations:
+    status: done
+    comment: >-
+      strings.json's entity block covers every platform; translations/en.json
+      and nb.json mirror it (has_entity_name + translation_key on every
+      entity, per entity.py).
   exception-translations: todo
   icon-translations: todo
   reconfiguration-flow:
@@ -111,7 +213,11 @@ rules:
       instance attribute `_assemble()` would have set and re-enters the same
       step chain at `name`, so every step's own form is pre-filled exactly as
       onboarding's is - `tests/flows/test_site_reconfigure.py`.
-  repair-issues: todo
+  repair-issues:
+    status: done
+    comment: >-
+      repairs.py's CATALOGUE, raised/cleared under a per-site issue id,
+      evaluated edge-triggered after every tick by RepairsWatch (D8 §5.9, §8).
   stale-devices: todo
 
   # --- Platinum -------------------------------------------------------------

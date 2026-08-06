@@ -24,6 +24,9 @@ if TYPE_CHECKING:
     from . import PowerplanConfigEntry
     from .runtime import Runtime
 
+#: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 @dataclass(frozen=True, kw_only=True)
 class SiteBinaryDescription(BinarySensorEntityDescription):

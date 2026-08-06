@@ -157,11 +157,20 @@ markers = [
 ]
 
 # --------------------------------------------------------------------------- #
-# coverage - floors are declared here and GATED in WP6.1 (PLAN §9), not now
+# coverage (D9 §2) - floors declared here, gated by tools/coverage_gate.py
+# (WP6.1): core/ 90 % lines / 85 % branches, providers/ 80 %, writegate.py
+# 100 %, flow/ 80 %, overall 85 %. pytest-cov's own --cov-fail-under is a
+# single overall number and cannot express five different floors, hence the
+# separate script rather than a fail_under here.
 # --------------------------------------------------------------------------- #
 [tool.coverage.run]
 source = ["custom_components/powerplan"]
-branch = false
+branch = true
+# One data file per process (pytest-xdist's own workers, and test_accounting.py's
+# ProcessPoolExecutor twin pair, D-0322) rather than every process contending on
+# one shared file - pytest-cov combines them automatically at the end. Without
+# this, a run under -n auto hung outright (WP6.1's own checkpoint).
+parallel = true
 
 [tool.coverage.report]
 exclude_also = [
@@ -169,5 +178,3 @@ exclude_also = [
     "raise NotImplementedError",
     "@(typing\\.)?overload",
 ]
-# Floors (D9 §2): core/ 90 %, writegate.py 100 %, overall 85 %.
-# fail_under is deliberately unset until WP6.1 turns the floors into gates.

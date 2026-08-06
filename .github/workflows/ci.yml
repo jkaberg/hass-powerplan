@@ -66,11 +66,25 @@ jobs:
         run: uv run mypy custom_components/powerplan/core
 
       - name: pytest
-        # Coverage floors (core/ 90 %, writegate.py 100 %, overall 85 %) are
-        # configured in pyproject.toml and become gates in WP6.1.
         run: |
           uv run pytest -m "not perf and not backtest and not bench and not e2e" -q \
-            --cov --cov-report=term-missing --cov-report=xml
+            -n auto --dist=loadgroup \
+            --cov --cov-report=term-missing --cov-report=xml --cov-report=json
+
+      - name: Coverage floors (D9 §2)
+        # Per-path floors (core/ 90 % lines / 85 % branches, providers/ 80 %,
+        # writegate.py 100 %, flow/ 80 %, overall 85 %) - one gate script since
+        # pytest-cov's own --cov-fail-under is a single overall number (WP6.1).
+        run: uv run python tools/coverage_gate.py
+
+      - name: Perf budgets (D9 §5.1)
+        # tick < 50 ms, planning < 500 ms, both at 20 loads - excluded from the
+        # main pytest run above (marker perf) so a slow CI runner never fails
+        # correctness; this step's own failure is a timing regression only.
+        # Named explicitly: tick_budget.py/plan_budget.py are D9's own module
+        # names, not test_*.py, so `pytest tests/perf` alone silently collects
+        # nothing.
+        run: uv run pytest tests/perf/tick_budget.py tests/perf/plan_budget.py -m perf -q
 
       - name: INV → tests matrix (D9 §5.6)
         if: matrix.line == 'ha-latest'
@@ -81,12 +95,27 @@ jobs:
             uv run python tools/inv_report.py
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # --- Reference benchmark (D9 §5.9–5.11) - built in WP0.11 -------------
-      # - name: bench smoke (every PR, ≤ 1 min; table posted to the PR)
-      #   run: uv run python tools/benchmark.py --tier smoke --compare
-      # - name: bench month (required before merge for any PR touching core/)
-      #   if: contains(github.event.pull_request.labels.*.name, 'core')
-      #   run: uv run python tools/benchmark.py --tier month --compare
+      # --- Reference benchmark (D9 §5.9–5.11) --------------------------------
+      - name: bench smoke (every PR, ≤ 1 min budget; table posted to the PR)
+        if: matrix.line == 'ha-latest'
+        run: |
+          {
+            echo '### Benchmark: nordic_detached × y2026_27, smoke'
+            echo
+            echo '```'
+            uv run python tools/benchmark.py --tier smoke --compare
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: bench month (required before merge for a PR touching core/)
+        if: matrix.line == 'ha-latest' && contains(github.event.pull_request.labels.*.name, 'core')
+        run: |
+          {
+            echo '### Benchmark: nordic_detached × y2026_27, month'
+            echo
+            echo '```'
+            uv run python tools/benchmark.py --tier month --compare
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       # `bench full` runs nightly on main and on a PR labelled `bench-full`;
       # the `e2e` day runs weekly in `e2e.yml` (D9 §5.10, WP1.7).
 

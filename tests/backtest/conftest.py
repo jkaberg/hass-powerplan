@@ -3,7 +3,7 @@
 Two writers, one history. `write_recorder` builds a synthetic Home Assistant
 recorder database - the statistics subset `tools/backtest.py` reads, with the
 column list taken verbatim from `homeassistant.components.recorder.db_schema` at
-HA 2026.7.0 - and `write_csv` writes the same rows in the CSV layout the tool
+HA 2026.8.0 - and `write_csv` writes the same rows in the CSV layout the tool
 documents. A test that asserts the two agree therefore compares two readers, not
 two fixtures.
 
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 OSLO = ZoneInfo("Europe/Oslo")
 
-#: The tables `tools/backtest.py` opens, with HA 2026.7.0's columns. `CHAR(0)`
+#: The tables `tools/backtest.py` opens, with HA 2026.8.0's columns. `CHAR(0)`
 #: is what HA's own DDL emits for the legacy datetime columns it no longer
 #: writes; they are here so the reader meets the shape it will meet in the
 #: house, including the ones it must ignore.

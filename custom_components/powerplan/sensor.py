@@ -37,6 +37,9 @@ if TYPE_CHECKING:
 #: `sensor.<site>_reasons` states the last reason, cut to the recorder's limit.
 STATE_MAX_LEN = 255
 
+#: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 @dataclass(frozen=True, kw_only=True)
 class SiteSensorDescription(SensorEntityDescription):

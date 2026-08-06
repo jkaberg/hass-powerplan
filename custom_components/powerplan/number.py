@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 EPS_MIN_KWH = 0.05
 EPS_STEP_KWH = 0.05
 
+#: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
