@@ -229,6 +229,8 @@ allocate():
 ```
 Batteries (design): at stage ≥ 1 with `soc > reserve_soc`, grant `−min(deficit_w, max_discharge_w)` **before** any comfort shed; at stage 0 the plan (arbitrage) governs. **Still design, not built (D-0326):** D5 §5.8's `peak_shave` strategy delivers the same underlying protection at the planning cadence today - a negative `Headroom` slot is forced to discharge before the plan is even adopted - but this tick-level, faster-than-a-replan mechanism is not built; a household running `peak_shave` is not undefended, just not defended as fast as this note describes.
 
+**Surplus following.** A plan built on the effective curve (D5 §2) says per slot how much of its envelope it planned from surplus (`PlanSlot.surplus_w`) and how much from the grid (`grid_w`). The forecast is only a forecast, so in the tick a `MODULATE` load's grant in such a slot follows the **measured** surplus instead: `grant = min(cap, avail, grid_w + live_surplus_share)`, where `live_surplus` is D3's export power plus what the surplus loads themselves draw now, shared in step 5's priority order. It never imports more than the plan's `grid_w` for that slot, so the capacity axis - which only counts import (INV-19) - sees nothing new, and every ceiling, circuit and stage above still caps it. A surplus-only load (`grid_w = 0`, D5's `surplus`) starts when `live_surplus ≥ min_surplus_w` has held for 60 s and stops when it has imported for 300 s, evcc's enable and disable delays, and an EV still obeys INV-39's stop gates (600 s). The two delays are defaults tuned on `pv_no_battery_ev_waits`, not measured constants. A `SETPOINT` or `MODE` load can't follow watts, its surplus slots keep their plan and the replan trigger (D5 §5.9) corrects the next ones.
+
 ### 5.4 The ladder (INV-36, INV-38)
 
 | stage | trigger (projection from `P_smooth`, τ = 120 s) | action |
@@ -345,6 +347,8 @@ Group subentry: name, members, `max_concurrent_w` (default: the two largest memb
 Zone subentry: name, member loads (demand and sources both, electric substitution pairs, §5.7), carrier + efficiency read from D4 instead of asked, `never_substitute` (a multi-select over the members, `Zone`'s own `frozenset[str]`), `min_cop` 2.0, `switch_hysteresis` 15 %, `min_dwell_min` 30, `switch_confirm_s` 1800, `capacity_penalty` 1.00 under Advanced.
 Circuit subentry: name, fuse A, phases, members, an optional sub-meter power entity, `unmetered_w` 0. `flow/circuit.py`, one questionnaire step and a review (D8 §5.3). Members are the site's load subentries picked by title and stored by id, the circuit subentry is the relation's one owner, the sub-meter a `sensor` with `device_class: power`, `unmetered_w` under Advanced. The subentry's key is its id, which `Grant.capped_by`, the report and the `breach` event name the circuit by (D-0285).
 
+*(D8 §5.15)* In the household's words the flows are "Legg til sikringskurs", "Legg til gruppe" and "Legg til rom med flere varmekilder" (LOAD-8). Members are multi-selects sorted A–Å; the room flow offers heating appliances only, and "never substitute" becomes "Apparater som alltid skal bruke egen varme", limited to the members chosen (LOAD-7). A circuit's fuse is a `select` of sizes (CTL-1, LOAD-10), its `unmetered_w` is "Annet forbruk på kursen (ikke styrt)" in kW, and a group's shared cap is computed after its members are chosen, in kW (CTL-15).
+
 Review texts: group - "Six floor loops share 2 kW when the hour gets tight; the coldest gets it first." zone - "The living-room slab and the first-floor heat pump heat the same space; powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk." circuit - "The garage circuit is fused at 32 A: the charger and the sauna will never exceed it together."
 
 ---
@@ -401,6 +405,8 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 22. PI sign: a binding window closed at 80 % utilisation lowers `r_trim`, one at 102 % raises it, and neither moves on a non-binding window.
 23. A 0 W grant to a charging EV without `stop_ok` gives the floor (6 A), never a hold at the previous amps, and `P_free` is charged the floor.
 
+24. *(Phase 7)* Surplus following: in a slot planned with `grid_w = 1 kW` and `surplus_w = 3 kW`, a charger's grant tracks the measured surplus as it falls from 3 kW to 0.5 kW and never makes grid import exceed 1 kW; a surplus-only load starts after 60 s of surplus above `min_surplus_w` and stops after 300 s of import; the ceiling, circuits and stages still cap every grant.
+25. *(Phase 7)* Tick-level battery discharge: at stage ≥ 1 with `soc > reserve_soc` the battery is granted `−min(deficit_w, max_discharge_w)` before any comfort shed; at stage 0 the plan governs; below `reserve_soc` it is never discharged.
 ---
 
 ## 10. Deliberately deferred

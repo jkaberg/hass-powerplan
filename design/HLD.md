@@ -67,6 +67,29 @@ powerplan is a Home Assistant custom integration that steers flexible loads - EV
 | **Counterfactual** | What a load would have drawn with no powerplan: its own store model stepped under `always` with no capacity axis - a *shadow*. Priced by the same curves and evaluator as the actual (INV-69). |
 | **Accounting month** | The calendar month in the site's local time zone; the grain of cost and savings sensors. |
 
+*(`design/reviews/ux-review.md` §3.)* **The household's words.** This vocabulary is the design's and stays in code and documents. No screen shows it. Every string a household reads uses the review's glossary instead:
+
+| design term | the household's (en / nb) |
+|---|---|
+| site | home / hjem |
+| load | appliance / apparat |
+| circuit | circuit / sikringskurs |
+| group | group / gruppe |
+| zone | room / rom |
+| tariff step, level | capacity step / effekttrinn |
+| target | target / mål |
+| hard limit | limit / grense |
+| shed | paused / satt på pause |
+| force | run now / kjør nå |
+| observe | trial mode / prøvemodus |
+| safe mode | fallback mode / nødmodus |
+| baseline | normal usage / vanlig forbruk |
+| carrier | heat source / varmekilde |
+| modifier | price add-on / pristillegg |
+| COP | efficiency (COP) / virkningsgrad (COP) |
+
+The mapping and the checks are in D8 §5.15.
+
 ---
 
 ## 3. The two axes and the precedence
@@ -141,7 +164,9 @@ custom_components/powerplan/
 ├── config_flow.py        site flow + subentry flows, generated from registry schemas         (D8)
 ├── entity platforms      sensor / binary_sensor / number / switch / select / button / time   (D8)
 ├── services.py, events.py, notifications.py, diagnostics.py, repairs.py, strings.json, translations/ (D8)
-└── storage.py            Store wrappers and migrations                                       (D7)
+├── storage.py            Store wrappers and migrations                                       (D7)
+├── dashboard/            the dashboard's layout, built in Python from the registry; a websocket command (D12)
+└── frontend/             the dashboard strategy and its two cards, one committed ES module   (D12)
 tests/                    core tests (no HA), provider tests, flow tests, backtest harness     (D9)
 ```
 
@@ -242,7 +267,7 @@ class TariffModel(Protocol):                         # one generic evaluator imp
     def bill(self, period: Period, history: History) -> Bill                    # prices any history, incl. the counterfactual D11 records
 ```
 
-**Extension points.** `presets/` - data-only (JSON, schema-validated) definitions per DSO/utility, community-extendable. A preset is a list of **versions with `valid_from`**: prices and step tables change every 1 January and sometimes mid-year. v1 presets: NO generic top-3 steps (Tensio, Elvia…), SE Ellevio, FI Energiavirasto-2026, BE Fluvius, DK/NL/UK/IE `NoPeak`, ES 2.0TD `ContractedPower`, US APS and SRP, AU Ausgrid. A `custom` preset exposes the grammar in the UI.
+**Extension points.** `presets/` - data-only (JSON, schema-validated) definitions per DSO/utility, community-extendable. A preset is a list of **versions with `valid_from`**: prices and step tables change every 1 January and sometimes mid-year. v1 presets: NO generic top-3 steps (Tensio, Elvia…), SE Ellevio, FI Energiavirasto-2026, BE Fluvius, DK/NL/UK/IE `NoPeak`, ES 2.0TD `ContractedPower`, US APS and SRP, AU Ausgrid. A `custom` preset exposes the grammar in the UI. *(D2 §2)* A shipped preset carries **verified facts only**: every version cites the operator's or regulator's own document, carries the date it was read, assumes nothing, and never precedes its `valid_from`. An operator with several tariff areas ships one preset per area; a grammar that is national but whose numbers are each DSO's ships as a **template** without prices, completed from the household's bill.
 
 **Invariants.**
 - **INV-9** The "free ride" - the slack a window has once the period metric can no longer rise because of it - is **derived** from the grammar's `slack`, never special-cased. Under `per_day = max` it is daily (once today's max is set, later windows today are free of the peak charge). Under `per_day = all, period = rolling_months` (BE) there is no daily free ride, only a within-month one worth 1/12 of a kW-year, and `marginal_cost` says so (D2 §5.4).
@@ -354,7 +379,7 @@ Store models are **direction-agnostic**: heating and cooling are the same model 
 
 Six questions, all with defaults, and the review step reads back: "A heavy slab under wood in a bathroom: powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted." The EV asks make/model or battery kWh, charger maximum and usual departure; the water heater asks litres, element kW and household size; the heat pump asks air-to-air / air-to-water / ground-source and heated area; an appliance asks dishwasher / washer / dryer and learns the rest from its first run. Advanced parameters - screed depth, loss coefficient, dwell times, tolerances - exist, are pre-filled from the derivation, and are never required.
 
-**Extension points.** `DeviceType`, `ControlKind`, `DeviceProfile` registries. Product profiles exist **only for EV chargers and batteries**, where the transport carries semantics HA does not expose (`easee_ble`: read-back verification, `offline ≠ disconnected`, session-done latch, `charging_blocked_by`). Everything thermal - floor heating, heat pumps, radiators, water heaters - is driven through **generic** profiles (`generic_climate`, `generic_switch`, `generic_number`) that *detect capabilities* from the entities (an operation-mode select, an eco-setpoint number, a floor-minimum number; scaling read from the entity's own unit/step/range) and take the physics - rated power, COP curve, area, covering - from the questionnaire; powerplan computes forward from those numbers and never needs the brand. A profile declares `matches(device) → confidence` so the config flow can auto-bind roles from a chosen HA device. Hydronic floor heating fed by a heat pump is designed (D4 §5.15) and deferred to v1.x.
+**Extension points.** `DeviceType`, `ControlKind`, `DeviceProfile` registries. Product profiles exist **only for EV chargers and batteries**, where the transport carries semantics HA does not expose (`easee_ble`: read-back verification, `offline ≠ disconnected`, session-done latch, `charging_blocked_by`). *(D4 §5.9)* v1 chargers, chosen by market share and HA installs: `easee_ble`, `zaptec` (one change per 15 min, the vendor's rule), `easee_cloud` (a dynamic limit that resets on every plug-in), `ocpp` (the long tail), and vocabulary profiles - a status map and quirks, no logic - for Wallbox, Peblar, V2C, KEBA and go-e. Everything thermal - floor heating, heat pumps, radiators, water heaters - is driven through **generic** profiles (`generic_climate`, `generic_switch`, `generic_number`) that *detect capabilities* from the entities (an operation-mode select, an eco-setpoint number, a floor-minimum number; scaling read from the entity's own unit/step/range) and take the physics - rated power, COP curve, area, covering - from the questionnaire; powerplan computes forward from those numbers and never needs the brand. A profile declares `matches(device) → confidence` so the config flow can auto-bind roles from a chosen HA device. Hydronic floor heating fed by a heat pump is designed (D4 §5.15) and deferred to v1.x.
 
 **Invariants.**
 - **INV-20** Every write passes the `WriteGate`. A `hass.services` call anywhere else bypasses every rate limit, dwell clock and idempotency check at once.
@@ -408,7 +433,9 @@ class PlanSlot: start; end; envelope_w: float | None      # None = no plan (cont
 | `schedule` | powersaver Fixed Schedule | fixed windows |
 | `always` | - | no price steering |
 | `run_once` | new | for cycles: the cheapest **contiguous** window of the cycle's duration before the ready-by time; started once, never interrupted |
-| `surplus` | evcc | v1.x: consume PV surplus first (live surplus + D10 forecast); grid top-up only when the deadline requires it or import is cheaper than the export price |
+| `surplus` | evcc | v1 (phase 7): consume PV surplus first (live surplus + D10 forecast); grid top-up only when the deadline requires it or import is cheaper than the export price |
+
+*(phase 7, D5 §2)* With a PV forecast every ranking strategy plans on an **effective curve**: the slot's forecast surplus priced at the export price (0 above an export cap), the rest at the composed import price - INV-31's composed curve with a surplus tier, identical to it when there is no surplus. `surplus` is the stricter surplus-only mode; the battery ranks charge and discharge on the same curve after `peak_shave`'s reserve (INV-1).
 
 Combinators (optional extras on any load, not separate strategies): `threshold(inner, off_above, on_below)`, `merge(a, b, and|or)`, and `opportunistic(inner, below_price)` - below the threshold (typically ≤ 0) every store fills to its **maximum**, not its requirement (INV-51, INV-56).
 
@@ -550,7 +577,7 @@ class ParameterFit:         # offline, in the planning loop
 
 Consumers: D5 (`heat_capacitor` sizes tonight's charge from tomorrow's temperature; `surplus` from production), D6 (the reserve uses the baseline for the rest of the window instead of only σ over the last 15 minutes), D7 (peak warning: baseline + planned grants vs. ceiling for upcoming windows), D2 (advice).
 
-**Extension points.** `ForecastSource` registry - v1: `weather_entity` (any HA weather forecast), `recorder_baseline` (hour-of-week profile of uncontrolled load, fitted from the recorder, refreshed daily). v1.x: `forecast_solar`, `solcast`, `open_meteo_solar` through their HA entities. v2: occupancy patterns.
+**Extension points.** `ForecastSource` registry - v1: `weather_entity` (any HA weather forecast), `recorder_baseline` (hour-of-week profile of uncontrolled load, fitted from the recorder, refreshed daily). v1 (phase 7): PV forecasts through HA's energy platform (`async_get_solar_forecast`), which covers Forecast.Solar, Solcast and Open-Meteo Solar at once - Forecast.Solar publishes no per-period attribute. v2: occupancy patterns.
 
 **Invariants.**
 - **INV-62** A forecast is an input with a confidence, never an authority. It may shrink the reserve, never below the σ floor; it may never open a gate the meter says is closed; the ladder and the trim never read a forecast.
@@ -592,6 +619,16 @@ savings(site, month)   = Σ_loads savings(load) + (bill(counterfactual) − bill
 
 **Open for the LLD.** Period grain and rolling-12 tariffs; per-device attribution of the capacity fee; the exact shadow per store kind and its anchoring; unmetered loads; re-pricing of slots priced from a synthesised price; calibration thresholds; which modes count.
 
+### 6.12 D12 - Dashboard
+
+**Responsibility.** One dashboard per site that shows the **past, present and future** from what powerplan already knows, with the day-to-day knobs, and that looks and behaves like Home Assistant's own Energy dashboard.
+
+**Shape.** A dashboard **strategy** (`custom:powerplan`) the integration registers from its own frontend module, listed in HA's "Add dashboard" dialog. Its views mirror the Energy dashboard's - `sections` views of titled cards, three columns, the period picker in the footer, HA's energy palette. They are `overview` (now and today), `plan` (the next 48 h), `loads` (one section per load with its knobs) and `history` (cost, savings, capacity windows and the level, over HA's long-term statistics). The layout is generated in Python from the site's registry and fetched over one websocket command. **Built-in cards wherever one can show the thing** - tiles with their features for every knob, `statistics-graph` following the picker for the past, `calendar` for the plan through a new `calendar.<site>_plan`, `distribution`, `repairs`, `logbook`, and the Energy dashboard's own cards where the household has configured energy. **Two custom cards** cover what no built-in card can draw: the future **timeline** (prices, plans per load, ceilings, forecasts) and the current **window gauge**.
+
+**Invariants.** No new INV. The dashboard calls no service and reads no `hass.states` on the server (INV-3); every knob is an existing entity changed through its own service, so the dashboard can do exactly what the entities page can. The large attributes it reads stay recorder-excluded (INV-61).
+
+**Open for the LLD.** Settled in D12: the card map per view, how the future is drawn, data through entities rather than a data API, degrading on older HA versions, never writing the Energy preferences.
+
 ---
 
 ## 7. Cross-cutting concerns
@@ -612,7 +649,7 @@ savings(site, month)   = Σ_loads savings(load) + (bill(counterfactual) − bill
 
 **7.8 Fail-safe states.** If Home Assistant dies mid-shed, devices stay where the controller left them. Every shed state MUST therefore be one the household can live in indefinitely: hardware floor limits are provisioned where the device supports them (the Heatit floor minimum), thermostat sheds are setpoints not relay cuts, a paused charger is parked at 0 A deliberately, and a tank's legionella protection is left to the hardware where it has one. **INV-64** No shed may put a device into a state that needs powerplan to come back to be safe.
 
-**7.9 Configuration UX.** Left alone, an integration with ten domains and sixty invariants becomes overwhelming to set up. So: (1) **describe, don't configure** - questions are about the physical thing (room, covering, heating type, area, litres, make and model), never about our model (kWh/K, dwell, tolerance); (2) **every answer has a default**, taken from the HA device and area wherever possible; (3) **derive and explain** - the flow shows what it decided and why before it saves (INV-67); (4) **progressive disclosure** - Advanced exists, is pre-filled, and is never required (INV-65); (5) **materialise** derived values so behaviour never changes behind the user's back (INV-66); (6) **few entities by default** - categorised, rarely used ones disabled; (7) **one vocabulary** - the same words in the flow, the entities, the events and the docs. The derivation tables are data that live with each device type and are reviewed like presets.
+**7.9 Configuration UX.** Left alone, an integration with ten domains and sixty invariants becomes overwhelming to set up. So: (1) **describe, don't configure** - questions are about the physical thing (room, covering, heating type, area, litres, make and model), never about our model (kWh/K, dwell, tolerance); (2) **every answer has a default**, taken from the HA device and area wherever possible; (3) **derive and explain** - the flow shows what it decided and why before it saves (INV-67); (4) **progressive disclosure** - Advanced exists, is pre-filled, and is never required (INV-65); (5) **materialise** derived values so behaviour never changes behind the user's back (INV-66); (6) **few entities by default** - categorised, rarely used ones disabled; (7) **one vocabulary** - the same words in the flow, the entities, the events and the docs; (8) **say little, link the rest** - flow text is short, and what needs explaining lives in user pages under `docs/`, linked from the step that needs it (D8 §5.13); (9) **for someone who knows their bill, not the grid** - one question per screen in the household's words; detect first and ask only to confirm; "don't know" with a safe default; controls that make a wrong answer hard (sizes to pick, sliders, form lists, filtered pickers - never free text for a fuse or YAML for a tariff); no text built in code, no internal key on a screen; names and states that read as a sentence, and never "unknown" for a normal state (D8 §5.15). The derivation tables are data that live with each device type and are reviewed like presets.
 
 ---
 
@@ -655,8 +692,10 @@ Every gate is **simulated**: the reference benchmark (D9 §5.9 - a fictional but
 | 3 | `generic_climate` with capability detection + `floor_heating` + groups; `water_heater` (legionella), `heat_pump` (rated power + COP, generic), `radiator`; target profiles + presence; `appliance_cycle` + `run_once`; the `tank` and `on_request` shadows | benchmark with every load controlled: `over_target` = 0, no comfort violation, no legionella lapse, no late cycle for the year; `savings_vs_twin` and `observe_calibration` green | a newcomer adds a floor loop in under two minutes without reading docs; each load's counterfactual within ±10 % over its observe days; schedules verified over a week |
 | 4 | Remaining strategies, `opportunistic`, forecaster, presets SE/FI/BE/DK/NL/UK/ES/US/AU, `entity` format table; one benchmark house per market | golden tests per preset; each market house meets its zero tolerances; `nordic_detached` unchanged | - |
 | 5 | D10 (`weather_entity`, `recorder_baseline`), baseline-aware reserve, zones (pairs first), `battery`, `ExternalLimitSource`, `delegated` | on the benchmark year the reserve shrinks on quiet hours with `over_target` still 0 | - |
-| 6 | HACS release, docs, translations (en, nb) | all four tiers (`smoke`, `month`, `full`, `e2e`) green on the tag | - |
-| 7 (v1.x) | `surplus` + PV forecast sources (with per-load surplus attribution in the ledger), SG-Ready, Energy-dashboard price sensor, multi-charger circuits, 1p/3p switching | `au_solar` house | - |
+| 6 | User docs linked from the flows, translations (en, nb); the dashboard (D12) | every flow link resolves to a docs heading; hassfest green; the dashboard's generated config references only existing entities and built-in cards plus its two own | a load added from the flow and its linked pages alone; a week read from the dashboard |
+| 7 | `surplus` + PV forecasts through HA's energy platform, with per-load surplus attribution in the ledger; the surplus-aware battery | `au_solar` house; `nl_pv` across the Dutch net-metering end | - |
+| Release | HACS v1.0 - the last item | all four tiers (`smoke`, `month`, `full`, `e2e`) green on the tag | - |
+| v1.x | SG-Ready, Energy-dashboard price sensor, multi-charger circuits, 1p/3p switching | - | - |
 
 No parallel run with effektstyring and no parity checks against it: the pyscript app is switched off when phase 2 reaches the house and stays off. powerplan is judged on its own benchmark.
 

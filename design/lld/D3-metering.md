@@ -119,7 +119,7 @@ class Reading:
 class VoltageSystem(StrEnum):
     IT_230 = "it_230"          # NO legacy: 230 V line-line, no neutral. 3φ: √3·230·I = 398 W/A; 1φ (L-L): 230 W/A
     TN_400 = "tn_400"          # EU standard: 400 V L-L, 230 V L-N. 3φ: √3·400·I = 693 W/A; 1φ: 230 W/A
-    TT_400 = "tt_400"          # FR/ES/IT earthing variant; electrically as TN_400 for our purposes
+    TT_400 = "tt_400"          # FR/ES/IT earthing variant, electrically TN_400 for our purposes
     SPLIT_240 = "split_240"    # US/CA: 120 V L-N, 240 V L-L, 1φ 3-wire. EV/range 240 W/A; general 120 W/A
     SINGLE_230 = "single_230"  # UK/AU/IE single-phase supply: 230 W/A
     SINGLE_120 = "single_120"  # rare
@@ -131,8 +131,9 @@ class ElectricalProfile:
     main_fuse_a: float
     per_phase_limit_a: float | None = None      # defaults to main_fuse_a on 3φ systems
     frequency_hz: Literal[50, 60] = 50
+    export_limit_w: float | None = None         # the most the site may export (Germany's 60 % rule without a smart meter, a DSO cap); None = the fuse. D5 §2 prices surplus above it at 0, it can't be sold
     def v_ll(self) -> float; def v_ln(self) -> float | None
-    def w_per_amp(self, load_phases: Literal[1, 2, 3]) -> float      # see table §5.1
+    def w_per_amp(self, load_phases: Literal[1, 2, 3]) -> float      # table in §5.1
     def fuse_w(self) -> float                                          # main_fuse_a × w_per_amp(phases)
     def plausible_w(self) -> tuple[float, float]                       # (−1.2·fuse_w, 1.2·fuse_w)
 
@@ -142,14 +143,14 @@ class MeterSample:                     # what a MeterSource yields per tick
     import_kwh: Reading | None          # cumulative register
     export_kwh: Reading | None
     production_w: Reading | None
-    meter_window_kwh: Reading | None    # meter-computed value for the CURRENT window, if the meter offers one
-    meter_window_start: datetime | None # WP1.2: the entity's `last_reset`, rounded to the second (D-0083)
+    meter_window_kwh: Reading | None    # meter-computed value for the CURRENT window, if the meter has one
+    meter_window_start: datetime | None # the entity's `last_reset`, rounded to the second (D-0083)
     phase_a: tuple[Reading, ...] | None # L1[, L2, L3]
     battery_charge_w: Reading | None    # from the battery load, for surplus; positive = charging
 
 class AnchorKind(StrEnum): METER_WINDOW = "meter_window"; REGISTER_LATCHED = "register_latched"; REGISTER_INTERPOLATED = "register_interpolated"; WALL_CLOCK = "wall_clock"
 
-@dataclass(frozen=True, slots=True)     # WP0.2: frozen - it crosses into D7's store
+@dataclass(frozen=True, slots=True)     # frozen, it crosses into D7's store (D-0021)
 class WindowState:                      # persisted
     window_min: int
     window_start_utc: datetime
@@ -161,16 +162,16 @@ class WindowState:                      # persisted
     last_grid_w: float | None
     last_register_kwh: float | None
     last_register_at: datetime | None
-    register_cadence_s: float | None    # learned; None until ≥ 5 intervals observed
+    register_cadence_s: float | None    # learned; None until ≥ 5 intervals seen
     ema_w: float | None                 # projection EMA, τ = projection_tau_s, carried across boundaries
     degraded_gap_s: float               # unobserved seconds inside this window
-    pending_closed: tuple[ClosedWindow, ...]  # emitted to D2, cleared when D2 acknowledges
+    pending_closed: tuple[ClosedWindow, ...]  # sent to D2, cleared when D2 acknowledges
     pending_window_min: int | None      # set by set_window_min()
-    cadence_samples: tuple[float, ...]  # WP0.2: the last 8 register intervals (§7's sibling key)
-    closing: PendingClose | None        # WP0.2: a window past its boundary, awaiting its report (§5.5)
-    schema: int = 1                     # WP0.2: last, so the required fields can precede it
+    cadence_samples: tuple[float, ...]  # the last 8 register intervals
+    closing: PendingClose | None        # a window past its boundary, waiting for its report (§5.5)
+    schema: int = 1                     # last, so the required fields can come first
 
-@dataclass(frozen=True)                 # WP0.2: §5.5's wait, made a type
+@dataclass(frozen=True)                 # §5.5's wait
 class PendingClose:
     start_utc: datetime; window_min: int
     anchor_kwh: float | None; anchor_kind: AnchorKind    # the anchor the window started from
@@ -178,7 +179,7 @@ class PendingClose:
     degraded: bool                      # its degraded flag at the boundary
     r_before_kwh: float | None; r_before_at: datetime | None   # the last reading before the boundary
     deadline_utc: datetime              # boundary + register_grace_s
-    def end_utc(self) -> datetime       # the boundary itself: the instant a latched report describes
+    def end_utc(self) -> datetime       # the boundary itself, the instant a latched report describes
 
 @dataclass(frozen=True)
 class ClosedWindow:
@@ -198,17 +199,17 @@ class PhaseReadings:
 
 class LoadEnergySource(StrEnum): REGISTER = "register"; POWER = "power"; ESTIMATED = "estimated"
 
-@dataclass
+@dataclass(frozen=True)
 class LoadMeterState:                   # persisted per load, section `meter.loads[load_id]`
-    schema: int = 1
     source: LoadEnergySource
     slot_start_utc: datetime; slot_minutes: int
     slot_kwh: float                     # this slot so far
     anchor_kwh: float | None            # register value at slot start (REGISTER)
     last_at: datetime | None; last_w: float | None; last_register_kwh: float | None
-    lifetime_kwh: float                 # since the load was added; never decreases
+    lifetime_kwh: float                 # since the load was added, never decreases
     gap_s: float                        # unobserved seconds inside this slot
-    pending_closed: list[LoadSlot]      # emitted to D11, cleared on ack
+    pending_closed: tuple[LoadSlot, ...]  # sent to D11, cleared on ack
+    schema: int = 1
 
 @dataclass(frozen=True)
 class LoadSlot:
@@ -220,10 +221,10 @@ class MeterHealth:
     power_age_s: float | None; register_age_s: float | None; stale: bool; degraded: bool
     implausible_count: int; register_cadence_s: float | None; integral_bias_w: float | None
     anchor_kind: AnchorKind; production_known: bool
-    unmetered_controlled: tuple[str, ...] = ()   # WP0.2: the loads §5.8 counts as 0 W
+    unmetered_controlled: tuple[str, ...] = ()   # the loads §5.8 counts as 0 W
 
 @dataclass(frozen=True)
-class MeterSnapshot:                    # D3's output, one per tick; embedded in the engine Snapshot
+class MeterSnapshot:                    # D3's output, one per tick, embedded in the engine Snapshot
     now: datetime
     window_start_utc: datetime; window_min: int; t_elapsed_h: float; t_rem_h: float
     seam: bool; frozen_reason: str | None          # "seam" | "stale" | None
@@ -396,15 +397,18 @@ Site flow, step **meter** (skipped on the *price only* path, INV-53 handles a si
 | Phase currents L1 / L2 / L3 | entity ×3, optional, `device_class: current` | same device, matched by the suffix `l1/l2/l3`, `_1/_2/_3` |
 | Meter window value | entity, optional | DSMR "current average demand" / Tibber "accumulated consumption last hour" when present |
 
+*(D8 §5.15)* Two household questions replace the step: **"Hvor måler du strømforbruket?"** - a device picker limited to devices with a power sensor, the roles mapped and shown back as found, the role form only for what is missing, L1–L3 under one optional "Per fase" section (HUB-22) - and **"Hvor stor er hovedsikringen?"** - a `select` of standard sizes in A with "Vet ikke", and voltage as a radio "230 V (vanligst i eldre boliger)" / "400 V (vanligst i nyere boliger)" / "Vet ikke" (CTL-1). "Vet ikke" takes the country's most common value from the table below and says so in the review. Country, phases and the limit in kW are derived and shown. Role pickers are filtered by `device_class`, unit and `state_class` (CTL-10): the review found the export register auto-mapped to a sensor merely named "Energi", which the filter forbids. The **hard limit's default is the main fuse** (§5.1's `fuse_w`); the review found 10 kW offered, which is a bug.
+
 Site flow, step **electrical** (always):
 
 | Field | Selector | Default / derivation |
 |---|---|---|
 | Country | select | from HA's configured country |
-| Voltage system | select with plain labels - "230 V, three wires, no neutral (older Norwegian houses)" / "400 V with neutral (most of Europe)" / "120/240 V (North America)" / "230 V single-phase (UK, Ireland, Australia)" | by country: NO → asks (IT vs TN, both common); EU → TN_400; US/CA → SPLIT_240; UK/IE/AU → SINGLE_230 |
+| Voltage system | select with plain labels: "230 V, three wires, no neutral (older Norwegian houses)" / "400 V with neutral (most of Europe)" / "120/240 V (North America)" / "230 V single-phase (UK, Ireland, Australia)" | by country: NO → asks (IT and TN both common), EU → TN_400, US/CA → SPLIT_240, UK/IE/AU → SINGLE_230 |
 | Phases | select 1 / 3 | 3 for NO/SE/FI/DK/DE/NL/BE/AT/CH, 1 for UK/IE/AU/US |
-| Main fuse | select 16 / 20 / 25 / 32 / 35 / 40 / 50 / 63 / 80 / 100 / 125 A, or "kVA" list for FR | 25 A (EU), 63 A (NO), 100 A (UK), 200 A (US) |
+| Main fuse | select 16 / 20 / 25 / 32 / 35 / 40 / 50 / 63 / 80 / 100 / 125 A, or a "kVA" list for FR | 25 A (EU), 63 A (NO), 100 A (UK), 200 A (US) |
 | Per-phase limit | number, Advanced | = main fuse |
+| Export limit | number kW, Advanced, only asked when a production sensor is bound (meter step) | none (the fuse): "Only if your grid company or your inverter caps what you may export" (D-0649) |
 
 Review text (INV-67): "Your connection can deliver about **25 kW** (63 A, three-phase 230 V IT). powerplan will never let the whole house exceed that, and treats readings outside ±30 kW as sensor errors."
 
@@ -481,6 +485,7 @@ Provider (`tests/providers/meters/`): `ha_sensors` maps W and kW, unavailable �
 
 Property: random power traces + random register report jitter, `Σ closed.kwh` over a day equals the register delta within 0.1 %. The same for every `LoadMeter` in REGISTER mode, and `Σ_loads slot.kwh ≤ import slot kWh + export` for consistent traces.
 
+21. `export_limit_w`: `None` behaves as the fuse. A set limit is carried into D5's `PlanContext` unchanged and never enters the capacity axis, which counts import only (INV-19).
 ---
 
 ## 10. Deliberately deferred

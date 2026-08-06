@@ -13,12 +13,12 @@
 
 **In scope.**
 
-- `ForecastSource` protocol and registry; v1 sources `weather_entity`, `recorder_baseline`; v1.x `forecast_solar`, `solcast`, `open_meteo_solar` (all through their HA entities); design for `occupancy` (v2).
-- The `Forecasts` object handed to D5/D6/D7: outdoor temperature, production, baseline (uncontrolled load), surplus, each with confidence.
-- The uncontrolled-load **baseline model**: hour-of-week profile, recency weighting, weather adjustment (v1.x), residual σ per bin, warm-up rules.
-- Reconstructing "uncontrolled" from history for houses whose loads were never separately metered.
-- **Parameter fitting**: slab/room coast rate and heat-up rate, EV charge efficiency, nameplate power, tank standby loss; bounds, quality, fallback, publication.
-- Refresh scheduling and persistence.
+- `ForecastSource` protocol and registry. Sources in v1 are `weather_entity`, `recorder_baseline` and `energy_solar`, the last one reads HA's energy platform so Forecast.Solar, Solcast, Open-Meteo Solar and anything else feeding the Energy dashboard works (§5.5). `occupancy` is designed for, but v2.
+- The `Forecasts` object D5/D6/D7 gets: outdoor temperature, production, baseline (uncontrolled load) and surplus, each with an confidence.
+- The **baseline model** for uncontrolled load: hour-of-week profile, recency weighting, a weather term (v1.x), residual σ per bin and warm-up rules.
+- Reconstructing "uncontrolled" from history, since most houses never metered their loads separately.
+- **Parameter fits**: slab/room coast rate and heat-up rate, EV charge efficiency, nameplate power, tank standby loss. Each with bounds, quality, fallback and publication.
+- Refresh schedule and persistence.
 
 **Out of scope.** Price forecasting (D1), controlling PV (non-goal) and acting on any forecast (D5/D6/D7).
 
@@ -54,10 +54,10 @@ custom_components/powerplan/core/forecasts/
 └── registry.py      forecast sources by key with their Schema (empty until providers/ register)
 
 custom_components/powerplan/providers/forecasts/
-├── base.py          the entity readers (the `ForecastSource` protocol itself is in `core/forecasts/model.py`, D-0219)
+├── base.py          the entity readers (the protocol itself is in core/forecasts/model.py, D-0219)
 ├── weather_entity.py  weather.get_forecasts (hourly) → outdoor °C series
-├── recorder_baseline.py  reads recorder/LTS through the shared helper (D3 §5.11) and D4 load views
-└── pv_entities.py   v1.x: Forecast.Solar / Solcast / Open-Meteo Solar entities → production series
+├── recorder_baseline.py  recorder/LTS through the shared helper (D3 §5.11) and D4 load views
+└── energy_solar.py  the Energy dashboard's solar forecasts → production series (§5.5)
 ```
 
 Public API:
@@ -155,9 +155,19 @@ D3's `reconstruct_windows` gives grid import, `reconstruct.uncontrolled_history`
 
 `weather_entity` calls `weather.get_forecasts(type=hourly)` every hour and on entity change, and yields outdoor °C points with `confidence = 0.9` for the first 24 h, decaying to 0.6 at 48 h. If the site has an physical outdoor sensor (D4's heat pump role) its current reading overrides the forecast's first point. Used by D4's store models (loss term, COP), D5's `heat_capacitor` (bank scaling, preheat gate) and the baseline's β term.
 
-### 5.5 Production (v1.x)
+### 5.5 Production
 
-Reads the PV forecast integration's hourly attributes (Forecast.Solar `watts`, Solcast `detailedForecast`, Open-Meteo Solar) into a `PRODUCTION` series; confidence from the source where given, else 0.7. Surplus display per §2.
+Reading each integration's hourly attributes (Forecast.Solar `watts`, Solcast `detailedForecast`, Open-Meteo Solar) doesn't work - Forecast.Solar, about 65 000 of the roughly 80 000 installs of the three, publishes no per-period attribute at all.
+
+So `energy_solar` reads what the **Energy dashboard** reads:
+
+1. The site's solar sources and their forecast entries come from the Energy preferences (the `energy` manager data, each `energy_sources` entry of type `solar` lists its `config_entry_solar_forecast`). Nothing is asked, and a site without a solar source has no production series.
+2. For each forecast entry the integration's energy platform answers `async_get_solar_forecast(hass, entry_id) → {"wh_hours": {iso_timestamp: Wh}}`. Forecast.Solar, Solcast and Open-Meteo Solar all implement it (HA's `energy/websocket_api.py` collects them through `async_get_energy_platforms`).
+3. Each `wh_hours` map becomes periods as long as the gap to the next timestamp (the last period takes the one before it), average watts is `Wh ÷ period_h`. Entries of one source are summed per period, and so are sources. A period no entry covers is a **hole**, never a zero - same rule D1 has for prices.
+4. Confidence 0.7 since the platform publishes none, 0.5 beyond the first 24 h.
+5. Refreshed in the planning loop (INV-46) every hour and when the Energy preferences change, never in the tick. The live value is D3's `production_w`, this series is only the forecast.
+
+`async_get_energy_platforms` is internal to Home Assistant, not a published API. It's called from this one module and wrapped: an import or signature failure degrades the site to "no PV forecast" (no surplus is planned, D5 §2) and raises the repair `pv_forecast_unavailable`, never a crash (PLAN R3, R13). Surplus display per §2.
 
 ### 5.6 Parameter fits (INV-63)
 
@@ -182,6 +192,8 @@ That is the conservative outcome and INV-63 working, not a bug; the bounds are l
 as they are until a house says otherwise (`design/DECISIONS.md` D-0216). Leaky
 envelopes and heavy screeds land inside the bounds and are applied.
 
+**Wiring.** The runtime runs `fit_all` once a day in the planning loop (§5.7's 03:xx slot, D7 §5.2) over a `LoadHistory` per load, built by `recorder_baseline`'s shared recorder helper (60 days, the roles each fit names). The `Fit`s are stored in the `forecasts` section and `effective` goes to D4's `Learned` state and D11's shadows on the next plan.
+
 `effective = value if quality.ok else configured`. Every fit is published with its quality (`sensor.<load>_learned_<key>`, diagnostic, disabled by default). A fit that fails its gate is *kept as information* and never applied. D4 reads `effective` through the load's `Learned` state.
 
 ### 5.7 Refresh schedule
@@ -200,10 +212,10 @@ The site flow does **not** ask about forecasts, there is nothing for the user to
 
 | Source | Auto-detection | Advanced |
 |---|---|---|
-| `weather_entity` | the first `weather.*` entity, prefer one with hourly forecast support | choose entity; disable |
-| `recorder_baseline` | always on when a site meter exists | half-life days (28), T_ref (15), disable, `rebuild_baseline` button |
-| PV (v1.x) | a Forecast.Solar / Solcast / Open-Meteo Solar entity if present | choose; disable |
-| Fits | on for every load with the needed roles | per fit: disable, "reset to configured" |
+| `weather_entity` | the first `weather.*` entity, one with hourly forecast preferred | choose entity; disable |
+| `recorder_baseline` | always on when there is a site meter | half-life days (28), T_ref (15), disable, `rebuild_baseline` button |
+| `energy_solar` | the forecast entries of the Energy dashboard's solar sources, named in the review ("PV forecast: Forecast.Solar, 2 planes") | disable |
+| Fits | on for every load with the roles it needs | per fit: disable, "reset to configured" |
 
 Review text: "powerplan found `weather.home` for temperature forecasts and 14 months of meter history. It will learn your household's usual load per hour of the week and start using it in about two weeks."
 
@@ -256,15 +268,18 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 16. `Forecasts.for_budget(at)` satisfies D6's `allocation.budget.Baseline` protocol
     structurally, without `core/allocation` importing `core/forecasts` (D-0320).
 
+17. `energy_solar` on three `wh_hours` payloads written from Forecast.Solar's, Solcast's and Open-Meteo Solar's `energy.py`: hourly and half-hourly periods become average watts; two entries on one source sum; a period no entry covers is a hole, not 0; no solar source in the Energy preferences yields no series.
+18. `energy_solar` degrades: a missing or changed `async_get_energy_platforms` yields no series and raises `pv_forecast_unavailable`; the tick and the plan run unchanged.
+19. Fits through the runtime: a simulated 60-day history reaches `fit_all` once per day in the planning loop, a gated fit changes the load's `effective` value on the next plan, and a failed gate leaves `configured` (INV-63); §9 11 still holds.
+
 ---
 
 ## 10. Deliberately deferred
 
 - Weather term in the baseline (v1.x, needs a winter of data to validate).
-- PV sources (v1.x, with `surplus`).
-- Occupancy learning from `person`/motion history (v2).
+- Occupancy learned from `person`/motion history (v2).
 - Learned phase assignment of loads by correlation with phase currents (v2).
-- Price-elasticity learning (v2).
+- Learning price elasticity (v2).
 
 ---
 
@@ -277,5 +292,7 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 **Apply fits without gates.** *For:* that's the point of learning. *Against:* the setpoint ratchet was exactly a system trusting what it measured about itself. **Decision:** bounds, quality, fallback and publication (INV-63).
 
 **Ask for weather/PV sources in the flow.** *For:* explicit. *Against:* there's nothing to decide, so detect and say what was found (HLD §7.9). **Decision:** detect, expose it under Advanced.
+
+**Read each PV integration's attributes instead of the energy platform.** *For:* entity attributes are public, the energy platform is internal to HA, and Solcast's attribute has p10/p90. *Against:* Forecast.Solar, most of the installs, has no per-period attribute to read, three readers are three formats to keep up with, and the energy platform is what the household already set up and sees on its dashboard. **Decision:** `energy_solar`, wrapped so a change in HA degrades to "no forecast" with a repair. Solcast's p10/p90 is v2.
 
 **Compute the baseline in the tick.** *For:* freshest. *Against:* INV-46's tick budget, and the baseline only changes once per window anyway. **Decision:** planning loop.

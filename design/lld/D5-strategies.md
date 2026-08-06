@@ -13,14 +13,14 @@
 
 **In scope.**
 
-- The `Plan` model and the single question the allocator asks it (`cap_w(load, now)` → `None | 0 | w`) plus `desired_state` for MODE/SETPOINT loads.
+- The `Plan` model and the one question the allocator asks it (`cap_w(load, now)` → `None | 0 | w`), plus `desired_state` for MODE/SETPOINT loads.
 - `PlanContext` and how headroom per slot is built (priority decomposition, tariff eligibility, baseline).
-- The strategies: `deadline_fill`, `cheapest_hours`, `best_save`, `heat_capacitor`, `run_once`, `schedule`, `always`, `arbitrage`, `peak_shave`, `surplus` (v1.x).
+- The strategies: `deadline_fill`, `cheapest_hours`, `best_save`, `heat_capacitor`, `run_once`, `schedule`, `always`, `arbitrage`, `peak_shave`, `surplus`.
 - Combinators: `threshold`, `merge`, `opportunistic`.
 - Turning target-profile step-ups and arrivals into deadlines.
 - Plan adoption: hysteresis, commitment, replan triggers.
-- Force mode planning; stop horizons for D6 (`idle_seconds_from`).
-- Plan publishing (per load and site summary) and persistence.
+- Force mode planning, and stop horizons for D6 (`idle_seconds_from`).
+- Plan publishing (per load and a site summary) and persistence.
 
 **Out of scope.** Enforcing anything (D6), computing prices (D1), computing forecasts (D10), the UI (D8).
 
@@ -30,7 +30,17 @@
 
 **A target profile's step-up as a deadline.** `TargetProfile.deadlines(from, until, presence, calendar)` (D4 §5.8) yields `(t, target)` pairs for schedule step-ups and arrivals. For each, `required_kwh = store.required_kwh(level_predicted(t), target, t)`, where the level predicted at `t` uses the store's coast model (or the current level without one, conservative). Each pair becomes a `deadline_fill` sub-plan, and `heat_capacitor` is the union of those with its ±Δ modulation, the sub-plans winning where they overlap.
 
-**`surplus` arithmetic.** Each slot has an import price `p_in` and an export price `p_out` (D1's export curve; 0 if none). Consuming a kWh of surplus costs the *forgone export*, `p_out`; consuming from the grid costs `p_in`. The strategy builds an effective price curve `p_eff(slot) = p_out` for the surplus part (up to `surplus_w(slot)` from D10) and `p_in` for the rest, then runs `deadline_fill` over the two-tier capacity. Because `p_out ≤ p_in` almost everywhere, surplus fills first; grid top-up happens only when the deadline requires it. Under negative `p_in`, `opportunistic` takes over. v1.x.
+**`surplus` arithmetic.** Each slot has an import price `p_in` and an export price `p_out` (D1's export curve, 0 if none). A kWh of surplus costs the *forgone export*, `p_out`, a kWh from the grid costs `p_in`. So the effective price of a slot is `p_out` for the surplus part (up to `surplus_w(slot)` from D10) and `p_in` for the rest, and `deadline_fill` runs over that two-tier capacity. Since `p_out ≤ p_in` almost everywhere surplus fills first, and the grid only tops up when the deadline needs it. Under a negative `p_in`, `opportunistic` takes over.
+
+**The effective curve is the rule for every ranking strategy** (PLAN §7 dec. 25), not a strategy of its own:
+
+- `PlanContext.surplus_left[slot]` starts at D10's `surplus_naive_w(slot)` (production − baseline) and each plan's envelope within it is taken off in INV-33's walk, the same as `headroom`, so surplus goes to loads in priority order.
+- `PlanContext.effective_price(slot, w)` prices a slot's watts in three tiers: surplus above the site's `export_limit_w` (D3, power that can't be exported anyway) at **0**, the rest of the surplus at the export price `p_out`, and everything beyond the surplus at the import price `p_in`.
+- `deadline_fill`, `cheapest_hours`, `heat_capacitor`, `best_save` and `run_once` rank on `effective_price` instead of `p_in`. A site without a production forecast has `surplus_left = 0`, so `effective_price ≡ p_in` and its plans are bit-identical (`nordic_detached` stays byte-identical).
+- Surplus tiers are only used where D10's production confidence is ≥ 0.5, beyond that the slot is priced at `p_in`, so no deadline ever waits for sun the forecast barely believes.
+- A production reading missing its forecast by more than 30 % for 15 min is a replan trigger (§5.9).
+
+`surplus` is then the strategy that **only** runs on surplus (evcc's "PV" mode): it plans in surplus tiers alone and takes grid energy only for the part of `required_kwh` the forecast surplus can't cover before the deadline (`grid_top_up`, on by default). The battery ranks on the same curve (§5.8).
 
 **Hysteresis defaults per currency.** Currency-agnostic by construction (INV-8): `fraction_of_spread = 0.03` of the local day's spread, floored at one minor unit (`0.01` major), doubled when any slot in the plan window is `STALE`. `is_flat` uses the same threshold, and a flat day uses the load's `fill` (earliest) or `spread` (even) policy.
 
@@ -48,16 +58,17 @@
 custom_components/powerplan/core/strategies/
 ├── __init__.py
 ├── plan.py             re-exports Plan, PlanSlot, PlanMode, DesiredState from core/model.py; build_plan(), inputs_digest()
-├── context.py          PlanContext, SiteContext, SitePlan, Headroom builder, LoadView, Curves, Forecasts, CeilingSource
+├── context.py          PlanContext, SiteContext, SitePlan, Headroom builder, LoadView, Curves, Forecasts, CeilingSource, surplus_bands()
 ├── base.py             Strategy protocol, registry, StrategyParams schemas, plan_all()
-├── deadline_fill.py    plan_one() - greedy exact fill, block constraint variant, force mode
+├── deadline_fill.py    plan_one(): greedy exact fill, block variant, force mode
 ├── cheapest_hours.py
 ├── best_save.py
 ├── heat_capacitor.py
+├── holding.py          hold_kwh per slot (§5.7)
 ├── run_once.py
 ├── schedule.py, always.py
-├── battery.py          arbitrage, peak_shave (design; built phase 5)
-├── surplus.py          v1.x
+├── battery.py          arbitrage, peak_shave
+├── surplus.py          surplus-only with a deadline top-up (§2); the effective curve itself lives in context.py
 ├── combinators.py      threshold, merge, opportunistic
 ├── adoption.py         should_adopt(), commitment rules, replan triggers
 └── deadlines.py        profile step-ups + arrivals → (deadline, required_kwh)
@@ -222,6 +233,8 @@ Cooling: the signs flip (`store.direction`).
 
 `arbitrage`: pair the cheapest charge slots with the dearest discharge slots later in the horizon, taking a pair only if `p_dis × η_rt − p_chg > threshold` (default 0.05 major/kWh). The SoC path is simulated slot by slot within `[min_soc, max_soc]`, with `reserve_soc` kept for `peak_shave`. `peak_shave`: reserve discharge capacity for windows where D10's baseline + planned grants > D2's ceiling, envelope negative in those windows, and charge the reserve back in the cheapest slots before. The two compose: `peak_shave` claims first, `arbitrage` uses what's left.
 
+**With a production forecast** (§2), `arbitrage` ranks **charge** slots on `effective_price` - stranded surplus at 0, surplus at `p_out`, grid at `p_in` only with `allow_grid_charge` - and **discharge** slots on what the energy displaces: `p_in` where the house is forecast to import in that slot (baseline + planned > production), `p_out` where it would export. A pair is taken when `value_dis × η_rt − cost_chg > threshold`, so charging from surplus for the evening wins when the evening import is worth more than exporting now, and selling the surplus wins when it isn't. Precedence is INV-1's: `peak_shave`'s reserve first (the capacity ceiling), then one ranking over the rest - surplus wins over grid arbitrage because it's cheaper, not because of a separate pass. `surplus_priority_soc` (default 100 %) is evcc's `prioritySoc`: above it the battery stops claiming surplus and leaves it to lower-priority loads. At a negative `p_out` a surplus charge earns money and is taken first. Export is never curtailed (HLD non-goal).
+
 `core/strategies/battery.py::Arbitrage`/`PeakShave`. The pairing isn't literal - no charge slot is bound to one discharge slot. Both are ranked by price and walked together from the extremes inward, and the *state of charge* is what's actually simulated, once, forward through the horizon in time order (`_simulate`), so a discharge slot only earns what has been banked by the time it arrives. `peak_shave` reads `PlanContext.headroom` directly for its reservation: by the battery's own turn in the priority walk (30, after every thermal load), a negative headroom entry already *is* "baseline + planned grants > ceiling". It hands its forced charge/discharge decisions to the same `_simulate` call `arbitrage`'s ranking then runs against, which is what "claims first, uses what's left" means in code. `battery`'s `strategies` is `("peak_shave", "arbitrage", "always")`, default `peak_shave`. D6 §5.3's tick-level ladder discharge (faster than the planning cycle on an unplanned spike) and D11's battery shadow are separate (D-0325, D-0326).
 
 ### 5.9 Adoption and commitment (INV-32)
@@ -235,6 +248,7 @@ should_adopt(old, new):
     adopt if new.cost < old.cost − h
 commitment: a slot that has started, or is KNOWN and starts within `commit_min` (30) minutes, moves only if the improvement exceeds 2h (avoid churn at the boundary)
 replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, service `replan`, startup (D7 §5.2)
+                 (Phase 7) production reading ≥ 30 % off its forecast for 15 min (§2)
 ```
 
 `h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
@@ -262,14 +276,15 @@ Strategies are pre-selected by D4's derivation. Their parameters are under **Adv
 
 | Strategy | Parameters (defaults) |
 |---|---|
-| `deadline_fill` | `min_block_min` (EV 0, tank 30), `flat_policy` (`fill`), `prefer_late: bool` (False - for equal prices take earlier slots; True keeps a car warm-charged near departure) |
+| `deadline_fill` | `min_block_min` (EV 0, tank 30), `flat_policy` (`fill`), `prefer_late: bool` (False: equal prices take the earlier slots; True keeps a car warm-charged near departure) |
 | `cheapest_hours` | `hours_per_day` (4), `window` (all day), `consecutive` (False), `max_price` (None) |
 | `best_save` | `min_saving` (10 %), `max_off_min` (120), `min_on_min` (30), `recovery_factor` (0.5) |
 | `heat_capacitor` | `delta_k` (1.0), `quantiles` (0.25), `max_rate_k_per_h` (1.0), `bank_scale_with_cold` (True), `respect_tariff_windows` (True) |
 | `run_once` | `ready_by` (07:00), `allow_late_start` (True) |
 | `schedule` | windows (weekly) |
 | `always` | - |
-| `arbitrage` / `peak_shave` | `threshold`, `round_trip_eff` (0.85), `reserve_soc` (20 %) |
+| `arbitrage` / `peak_shave` | `threshold`, `round_trip_eff` (0.85), `reserve_soc` (20 %), `surplus_priority_soc` (100 %), `allow_grid_charge` |
+| `surplus` | `grid_top_up` (True), `min_surplus_w` (the load's own minimum, an EV's 6 A × phases × volts) |
 | combinators | `threshold.off_above/on_below`, `opportunistic.below_price` (0), `merge` partner |
 | all | `participate_in_events` (False), `horizon_h` (48) |
 
@@ -319,12 +334,17 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 15. Reward events only raise the effective price for participating loads.
 16. Battery (D-0325): `arbitrage` charges the cheapest slots and discharges the dearest, never crossing `[reserve_soc, max_soc]`. A flat curve trades nothing (no pair clears `threshold`), and `force` and an unknown SoC both plan nothing. `peak_shave` forces a discharge in a slot `Headroom` reports negative, up to the inverter, and still reserves charge and runs ordinary arbitrage on the rest of the horizon (`tests/core/strategies/test_16_battery.py`).
 
+17. The effective curve: a slot with 2 kW surplus, a 1 kW export cap and a 3 kW load prices 1 kW at 0, 1 kW at `p_out`, 1 kW at `p_in`. Loads walked in INV-33's order take surplus first, and without a production forecast every plan equals the plan on `p_in` (property over random instances).
+18. `surplus`: only plans in surplus tiers, tops up from the grid only for the kWh the forecast surplus can't deliver before the deadline, and with `grid_top_up = False` never plans a grid kWh.
+19. Battery with panels: charges from surplus and discharges into the evening import when `p_in(evening) × η_rt − p_out(noon) > threshold`, and exports instead when not. Never charges from the grid without `allow_grid_charge`, `peak_shave`'s reserve still holds in a dark month, and above `surplus_priority_soc` the surplus reaches the next load.
+20. Confidence and replan: a slot whose production confidence is below 0.5 is priced at `p_in`, and a production reading 30 % below forecast for 15 min triggers exactly one replan.
+21. Negative export price: a surplus charge is taken first and nothing is curtailed.
 ---
 
 ## 10. Deliberately deferred
 
-- `surplus` strategy (v1.x, needs D10 PV forecast) - and, specifically, a battery that charges from surplus before grid arbitrage (`design/PLAN.md`'s own "Open items" §5).
-- Joint optimisation / MPC (non-goal; an `optimizer` strategy slot is reserved in the registry).
+- Curtailing export or commanding an inverter's own export (HLD non-goal).
+- Joint optimisation / MPC (non-goal, an `optimizer` strategy slot is reserved in the registry).
 - Learning per-load price elasticity (D10 v2).
 
 ---
@@ -332,6 +352,8 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 ## 11. Alternatives considered (steelmanned)
 
 **A joint optimiser (LP/MILP) over all loads.** *For:* provably optimal, handles interactions (tank vs EV headroom) exactly, one algorithm instead of eight. *Against:* opaque to the user ("why did it move my car?"), brittle over a 48 h horizon of estimated prices, needs a solver dependency HA can't ship, and the reference house's problem was never optimality - it was stability and safety. **Decision:** per-load strategies decomposed by priority, the optimiser slot exists for later.
+
+**`surplus` as the only solar-aware strategy.** *For:* one strategy to test, and a household picks it knowingly. *Against:* a floor or a tank on `heat_capacitor` next to panels would ignore the sun unless its owner switched strategy and lost what `heat_capacitor` does, and the arithmetic is the same for every ranking strategy. **Decision:** every ranking strategy plans on the effective curve, `surplus` is the stricter surplus-only mode.
 
 **The plan as a schedule of device states instead of an envelope.** *For:* directly actionable, matches powersaver's output. *Against:* the allocator then has two masters, and an envelope lets the capacity axis cut without breaking what the plan means. **Decision:** envelope + optional `desired_state`, the allocator decides.
 

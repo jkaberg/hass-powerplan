@@ -20,7 +20,7 @@
 - **Store models**: `SlabStore`, `RoomStore`, `TankStore`, `EnergyStore` - direction-agnostic, with maxima (INV-56).
 - **Target profiles** (schedule × presence → target) and arrival deadlines (INV-55).
 - **Device types** and their demand logic, latches and questionnaires: `ev`, `water_heater` (incl. legionella, INV-54), `floor_heating`, `heat_pump`, `radiator`, `battery`, `generic_switch`, `appliance_cycle`.
-- **Device profiles**: role vocabulary, auto-binding, read/write adapters, scaling, option matching, provisioning, quirks. **Product profiles exist only for EV chargers and batteries** (integration-specific transports and semantics); thermostats, floor heating and heat pumps are always driven through **generic** profiles that detect capabilities from the entities and take rated power, COP and the like from the questionnaire. v1 profiles: `generic_climate` (with capability detection), `generic_switch`, `generic_number`, `easee_ble`.
+- **Device profiles**: role vocabulary, auto-binding, read/write adapters, scaling, option matching, provisioning, quirks. **Product profiles exist only for EV chargers and batteries** (integration-specific transports and semantics); thermostats, floor heating and heat pumps are always driven through **generic** profiles that detect capabilities from the entities and take rated power, COP and the like from the questionnaire. v1 profiles: `generic_climate` (with capability detection), `generic_switch`, `generic_number`, `easee_ble`; *(PLAN §7 dec. 24)* the product profiles `zaptec`, `easee_cloud`, `ocpp`, and vocabulary profiles (a status map and quirks over an amp `number`, no logic of their own) for `wallbox`, `peblar`, `v2c`, `keba` and `goecharger_api2` (§5.9).
 - The **`WriteGate`** (INV-20 … 24, INV-58).
 - Questionnaire framework and derivations (INV-65, INV-66).
 - Per-load persistence.
@@ -88,6 +88,8 @@ custom_components/powerplan/providers/profiles/
 ├── generic_climate.py   climate entity + optional detected capabilities: mode select, eco setpoint, floor min limit, hysteresis, floor/air temp - all scaling from entity attributes
 ├── generic_switch.py generic_number.py
 ├── easee_ble.py         EV: integration profile (transport quirks, status vocabulary, read-back)
+├── zaptec.py easee_cloud.py ocpp.py      EV product profiles (§5.9)
+├── wallbox.py peblar.py v2c.py keba.py goecharger.py   EV vocabulary profiles (§5.9)
 └── registry.py
 
 custom_components/powerplan/writegate.py    the EXECUTOR: hass.services.async_call(blocking=True), verify read-back scheduling, token buckets per transport - the only caller of hass.services (INV-3, INV-20); every decision comes from core/loads/gate.py
@@ -465,6 +467,31 @@ both `generic_thermostat` helpers at 0.6 as `radiator`s - a tank and a panel hea
 are indistinguishable from their entities, so §6.3's Control question is what tells
 them apart. The goldens are `tests/golden/profiles/*.json`, one per capture.
 
+**Charger profiles by evidence (PLAN §7 dec. 24).** Chosen by European unit share (LCP Delta) and Home Assistant installs (HA's opt-in analytics). Every entity and action name below is read from the integration's own source, and a fixture is written from that source (D-0081's precedent), since no house here owns the hardware.
+
+| profile | platform | `CURRENT_SET` | stop / start | `STATUS` | transport | quirks |
+|---|---|---|---|---|---|---|
+| `zaptec` (HACS ≥ 0.8) | `zaptec` | `number` *Available current* on the **installation** device, bound through the charger's `via_device` | `switch` *Charging* | `sensor` *Charger operation mode* | cloud | Zaptec asks for a change at most every 15 min, so `min_interval_s = 900`: the allocator gets its fast trims from other loads and from urgent sheds (row 6), and scenario `zaptec_slow_trim` proves the ceiling holds. One charger per installation in v1: a second charger shares the installation's current and is a circuit (v1.x). |
+| `easee_cloud` (HACS `easee`) | `easee` | action `easee.set_charger_dynamic_limit(device_id, current, time_to_live = 0)`, read back from `sensor` *dynamic charger limit* | the same limit: below 6 A the charger pauses, 6 A or more resumes (Easee's own rule); no flash-stored switch or limit is ever bound | `sensor` *status* | cloud (push) | `rearm_on_session_start`: the dynamic limit resets on every plug-in and reboot, so the plug-in edge (§5.11) re-sends it. `time_to_live = 0`, because an expiring limit returns the charger to its own maximum exactly when powerplan has stopped watching. Non-dynamic limits wear flash and are never written. |
+| `ocpp` (HACS `ocpp`) | `ocpp` | `number` *Maximum current* | the integration's charge-control switch | `sensor` *Status connector* (OCPP 1.6 `ChargePointStatus`) | local | One profile for every brand speaking OCPP 1.6/2.0.1 (ABB, Alfen, CTEK, Wallbox, EVBox, …). A charging profile applies only during a transaction, so a limit written before plug-in is re-sent on the plug-in edge. |
+| `wallbox` (core) | `wallbox` | `number` *Max charging current* | `switch` pause/resume | `sensor` *Status description* | cloud | Polled every 90 s: `verify_after_s = 90`. |
+| `peblar` (core) | `peblar` | `number` *Charge limit* (≥ 6 A) | `switch` *Charge* | `sensor` *State* | local | Polled every 10 s. |
+| `v2c` (core) | `v2c` | `number` *intensity* | `switch` *pause session* | the charge-point state sensor | local | |
+| `keba` (core) | `keba` | action `keba.set_current` | `keba.enable` / `keba.disable` | `binary_sensor` plug and charging | local (UDP) | Its failsafe needs a periodic `set_current`, so the profile re-sends the held limit inside the failsafe timeout. Only if its entities belong to a device the load flow can pick; else v1.x. |
+| `goecharger_api2` (HACS) | `goecharger_api2` | `number` requested current (`amp`) | `select` force state (`frc`) | `sensor` car state (`car`) | local | |
+
+Status vocabularies, onto `SessionState` (the table is data, §5.11):
+
+| profile | `DISCONNECTED` | `CONNECTED` | `CHARGING` | `DONE` | `LINK_DOWN` |
+|---|---|---|---|---|---|
+| `zaptec` | `disconnected` | `connected_requesting` | `connected_charging` | `connected_finished` | `unknown`, missing |
+| `easee_cloud` | `disconnected` | `awaiting_start`, `ready_to_charge`, `awaiting_authorization`, `de_authorizing`, `awaiting_load_balancing`, `awaiting_smart_start`, `stop_charging` | `charging`, `start_charging` | `completed` | `offline`, `error`, missing |
+| `ocpp` | `Available`, `Reserved` | `Preparing`, `SuspendedEVSE`, `SuspendedEV` | `Charging` | `Finishing` | `Unavailable`, `Faulted`, missing |
+| `goecharger_api2` | `Idle` | `WaitCar` | `Charging` | `Complete` | `Error`, `Unknown`, missing |
+| `wallbox`, `peblar`, `v2c`, `keba` | read from the integration's source in WP4.8b and added here with it | | | | |
+
+Chargers **no profile reaches in v1**: a charger whose integration exposes no amp control (myenergi zappi, Ohme: a mode select only) needs an `ev` on a `MODE` or `SWITCH` kind, and control through the car (Tesla Fleet, Teslemetry, Tessie: billed per command and polled every 10 min) is too slow and too costly for the tick. Both are §10. A household running evcc already has a controller and puts the charger's load in `delegated` or `observe`.
+
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
 **The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the
@@ -519,6 +546,8 @@ leaves **no settle window** behind, or row 5 would hold the `urgent` retry §8
 asks for (D-0144); and a command stays atomic, so a role with nothing bound sends
 nothing at all (D-0148).
 
+ **A `DeviceCall` may address a device.** Some integrations are driven only through an action that takes a `device_id` (Easee cloud's `set_charger_dynamic_limit`, KEBA's `set_current`), so `DeviceCall` carries `entity_id` **or** `device_id` as its target and `writegate.py` passes whichever it has. Nothing else changes: the call is still the executor's alone (INV-3), still `blocking=True` (INV-24), and the read-back still reads the bound role's entity (INV-22) - a device-addressed write with no entity to read back is refused at match time, not sent blind.
+
 **Transport budgets** (INV-58): a site-level `TokenBucket` per transport: `zwave 6/min`, `zigbee 10/min`, `ble 4/min`, `cloud 2/min`, `modbus 20/min`, `local 30/min`, `mqtt 30/min`. Blunt sheds are exempt (a breaker beats a budget); everything else waits its turn, highest priority first.
 
 Defaults per kind (a load's own `command_min_interval` may raise, never lower):
@@ -529,6 +558,10 @@ Defaults per kind (a load's own `command_min_interval` may raise, never lower):
 | generic_climate, MODE kind (Z-Wave thermostats) | exact | 600 s | 90 s | one command per change; ≤ 1 cmd/dev/10 min |
 | heat pump setpoint | 0.25 °C | 300 s | 120 s | own `min_setpoint_interval` 900 s and `dwell` 1800 s bind first |
 | easee_ble (amps) | 0.5 A | 30 s | 30 s (poll) | suppression ≥ 2 A or ≥ 60 s stale; shed exempt |
+| zaptec (amps) | 1 A | 900 s | the integration's poll | Zaptec's own 15-min guidance; urgent and blunt sheds still pass (rows 6–8) |
+| easee_cloud (amps) | 0.5 A | 60 s | 30 s (push) | re-armed on each session start |
+| ocpp (amps) | 1 A | 30 s | 30 s | re-sent on the plug-in edge |
+| vocabulary profiles | the kind's row | the kind's row | the integration's poll | wallbox 90 s, peblar 10 s |
 | switch | on/off | 120 s | 30 s | |
 | battery (W) | 50 W | 30 s | 30 s | |
 | sg_ready | exact | 900 s | 60 s | v1.x |
@@ -614,6 +647,8 @@ Common in the Nordics: an air-to-water or ground-source heat pump feeds a manifo
 ---
 
 ## 6. Configuration schema - questionnaires and derivations
+
+*(D8 §5.15)* The flow opens with **"Hva vil du styre?"** - Elbillader · Varmtvannsbereder · Gulvvarme eller panelovn · Varmepumpe · Annet apparat - then a device list filtered to plausible devices for that type, never PowerPlan's own, with those already added marked (LOAD-3, CTL-11). §5.9's matching then confirms rather than decides. Below 0.6 confidence the match sentence warns in words, and it never shows a profile key or an entity id (LOAD-2). Role labels are translated (LOAD-1); required roles are shown, optional ones under Avansert, each with a one-line reason (LOAD-6). Question controls follow D8 §5.15's table: temperature sliders with per-type ranges (floor 15–30 °C, water heater 40–85 °C) and `min ≤ comfort ≤ max` checked inline; hours per day 1–24 as a slider; durations as `duration`; deadlines and ready-by as half-hour selects; the COP curve as an `object` list or a type preset (CTL-4, CTL-5, CTL-7, CTL-8, CTL-13); power in kW (CTL-15). Two review findings are §5.9's to fix: an access point's LED was offered as a switchable load at 0.40, so `generic_switch` no longer claims a `light` entity without a power sensor; and a single-option field (Profil) is not shown (CTL-14).
 
 Common to every load: pick the HA device → suggested type + bindings (§5.9) → the type's questions → review. Common derived: `priority` (type default, room adjusted), `carrier` (electricity unless the profile says gas/district heat), `phases` (profile or question), `group` (type default: floor loops → `floor_heating`, radiators → `radiators`).
 
@@ -751,13 +786,16 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 13. Store models: slab 57.5 m² × 50 mm → 1.58 kWh/K; tank 300 L 45→75 °C at η 0.98 → ≈ 10.7 kWh; cooling direction flips signs; `max_c` respected.
 14. Sensorless tank model re-anchors when the thermostat stops drawing.
 15. Questionnaire derivations: golden answers → golden `Derived` for every type; `materialise` stores `derivation_version`; changing a default table does not change an existing load (INV-66).
-16. Profile matching on captured device views (Easee BLE, a Z-Wave floor thermostat, a plain climate entity, an air-to-air heat pump) yields the documented confidences, suggested types and bindings.
+16. Profile matching on captured device views (Easee BLE, a Z-Wave floor thermostat, a plain climate entity, an air-to-air heat pump) yields the documented confidences, suggested types and bindings. Plus one row per §5.9 charger profile, from fixtures written from each integration's source: Zaptec (charger and installation devices), Easee cloud, OCPP, Wallbox, Peblar, V2C, KEBA, go-e.
 17. `delegated` never writes, reserves nameplate; `observe` releases on entry and logs the would-be write; site `active = off` makes every load's effective mode `observe` (§5.2).
 18. Heat pump: defrost detected → no shed; `never_switch` never actuated at any stage; band > 2 K rejected.
 19. Plan delta reaches the device: a `heat_capacitor` slot with `setpoint_delta = −1` lowers a SETPOINT thermostat to `target − 1` (clamped at the floor) and puts a MODE thermostat in `shed_option`; a comfort violation overrides both; a `+1` never exceeds `ceiling` (INV-30, INV-56).
 20. Physical floors and bands: a tank within `READY_BAND_K` of its target wants nothing and owes nothing, one tenth of a kelvin further down it wants; a floor loop's shed and its deepest plan delta both stop at `floor + swing_k / 2` (D-0256, D-0259).
 21. On call and the press: a sauna with its relay off wants nothing, on it wants its nameplate, shed by us it keeps wanting until restored, and forced it wants regardless; a `START` role is pressed once when the plan says go and never written `False` nor pressed while the programme runs (D-0262, D-0263).
 
+22. A device-addressed `DeviceCall` sends `device_id`, not `entity_id`, with `blocking=True`, and its read-back reads the bound entity; a profile whose `CURRENT_SET` is device-addressed with no readable entity is refused at match time (§5.10).
+23. `easee_cloud` re-arms: after a plug-in edge the held dynamic limit is sent again even though the gate last sent the same value (the charger has forgotten it); `time_to_live` is 0 on every call.
+24. `zaptec` holds `held_interval` for 900 s after a write unless the write is urgent or blunt; the vocabulary profiles map every status their fixture declares, and an unmapped status is `LINK_DOWN`, never `CONNECTED` (INV-15).
 ---
 
 ## 10. Deliberately deferred
@@ -765,7 +803,8 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 - `SG_READY` kind (v1.x) - a generic kind over two switches/relays, not a product profile.
 - Hydronic floor heating through a heat pump (§5.15, v1.x - needs a real installation to settle the open points).
 - Multi-charger circuits, 1p/3p phase switching, V2H (v1.x).
-- Battery profiles for specific inverters (v1.x, phase 5).
+- Battery profiles for specific inverters - research first (PLAN WP7.5, before v1.0 since the release is last); only `generic_number` reaches a battery today.
+- Chargers with no amp control (myenergi zappi, Ohme) through an `ev` on `MODE` or `SWITCH`; charging through the car (Tesla Fleet, Teslemetry, Tessie); a second charger on one Zaptec installation (v1.x).
 - A built-in weekly schedule editor (§10 decision 6 - bind HA `schedule.*` first).
 - Occupancy sensors per room as presence inputs (D10 v2).
 - A car database (asking kWh is simpler and always right).
@@ -781,6 +820,8 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 **Ask raw parameters instead of a questionnaire.** *For:* transparent, no derivation tables to maintain, power users prefer it. *Against:* the target user does not know their slab's kWh/K, and a wrong guess is invisible until the bathroom is cold. **Decision:** questionnaire with Advanced pre-filled (INV-65).
 
 **Live derivation instead of materialised values.** *For:* one source of truth, defaults improve for everyone. *Against:* a release that changes a default silently changes a running house. **Decision:** materialise; offer re-derive with a diff (INV-66).
+
+**One OCPP profile instead of product profiles.** *For:* one module, a standard status vocabulary, local transport, and most brands speak OCPP. *Against:* households run the vendors' own integrations - Easee 3 616 and Zaptec 2 068 installs against 2 456 for OCPP across every brand (HA analytics) - and re-pointing a charger's backend is not setup powerplan should require. **Decision:** product profiles for the two Nordic leaders, OCPP for the long tail, vocabulary profiles for core integrations that already expose an amp `number`.
 
 **A car/charger database.** *For:* pick the model, done. *Against:* maintenance, licensing, and the number is on the spec sheet anyway. **Decision:** ask kWh.
 

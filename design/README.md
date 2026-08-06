@@ -1,11 +1,13 @@
 # powerplan - documentation
 
-| Document | Status | Purpose |
-|---|---|---|
-| [HLD.md](HLD.md) | draft v0.4.2 | High-level design: purpose, precedence, HA shape, layering, the ten domains, cross-cutting concerns, market coverage, delivery plan, changelog |
-| [PLAN.md](PLAN.md) | v0.3.1 | Project plan: work packages per phase with LLD §9 exit tests, critical path, house gates, risks, decisions taken since the LLDs, steelmanned alternatives, checklist |
-| [DECISIONS.md](DECISIONS.md) | living | Decision log: what the code forced that the HLD and the LLDs did not decide - date, WP, what, why, affected §, rejected alternative (PLAN §7 dec. 6) |
-| `lld/` | draft v0.1.1 (D9 v0.2.1, D10 v0.1), all eleven | One low-level design per domain (below). Each LLD settles the "open for the LLD" questions in its HLD section and defines modules, types, algorithms, storage, tests - and steelmans the alternatives it rejected. |
+| Document | Purpose |
+|---|---|
+| [HLD.md](HLD.md) | High-level design: purpose, precedence, HA shape, layering, the domains, cross-cutting concerns, market coverage, delivery |
+| [PLAN.md](PLAN.md) | Project plan: work packages per phase with their LLD §9 exit tests, the critical path, risks, decisions, alternatives, checklist |
+| [DECISIONS.md](DECISIONS.md) | Decision log: what the code forced that the HLD and the LLDs didn't decide, with the rejected alternative (PLAN §7 dec. 6) |
+| `lld/` | One low-level design per domain (below). Each settles the open questions of its HLD section and defines modules, types, algorithms, storage, configuration, failure modes, tests and alternatives |
+| `reviews/` | Reviews the LLDs cite by item id: the household's screens ([ux-review](reviews/ux-review.md)) and device attachment ([device-attachment](reviews/device-attachment.md)) |
+| `benchmarks/` | The reference benchmark's changelog: every baseline change and why |
 
 ## LLD roster
 
@@ -22,6 +24,7 @@
 | D9 | Testing, the reference benchmark, backtest & tooling | 6.9, 9 | all | [D9-testing.md](lld/D9-testing.md) |
 | D10 | Forecasts & learning - weather, PV, uncontrolled-load baseline, parameter fitting | 6.10 | D1, D3 | [D10-forecasts.md](lld/D10-forecasts.md) |
 | D11 | Accounting - per-load and site ledgers, slot pricing, counterfactual shadows, savings, calibration | 6.11 | D1, D2, D3, D4, D10 | [D11-accounting.md](lld/D11-accounting.md) |
+| D12 | Dashboard - a strategy dashboard in the Energy dashboard's shape: past, present, future and the knobs, built-in cards plus a timeline and a window gauge | 6.12 | D1, D2, D5, D7, D8, D10, D11 | [D12-dashboard.md](lld/D12-dashboard.md) |
 
 Suggested order: D3 → D2 → D1 → D4 → D5 → D6 → D10 → D11 → D7 → D8 → D9. D3 first because the window is the unit everything else counts in; D2 next because its grammar is the biggest change from effektstyring and D5/D6 both consume it; D10 after D6 because it only *feeds* the planner and the reserve, and its v1 build is small (weather entity + recorder baseline).
 

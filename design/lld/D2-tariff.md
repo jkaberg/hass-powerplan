@@ -37,6 +37,8 @@
 
 **Preset schema and CI validation.** JSON files under `core/tariffs/presets/<country>/<id>.json`, validated against `presets/schema.json` **by the loader on every load** and in CI, plus a golden test per preset (§9). A preset's `versions` are sorted by `valid_from`; overlapping or unsorted versions fail validation. The schema is interpreted by a stdlib subset validator in `loader.py` - `core/` carries no third-party dependency (D-0053) - and a version with `verified: null` is refused unless it carries an `assumed` sentence (D-0054).
 
+*(PLAN §7 dec. 21 - supersedes D-0054 for shipped presets.)* **A shipped preset carries verified facts only.** Every version of a shipped preset has a `source_url` to the operator's or the regulator's own document (a price page, a tariff sheet, a regulator PDF, an official API such as Energinet's DatahubPricelist - never a retailer, a blog or a secondary summary), a `verified` date on which that document was read, **no `assumed`**, and `valid_from ≤ verified`: a table is not entered before it is in force, even when it is published. The loader enforces all four for every file under `presets/<cc>/`; `assumed` survives only on `custom.json`, on templates (below) and on test fixtures under `tests/`. Operators that publish more than one tariff area ship one preset per area (`no/tensio-ts`, `no/tensio-tn`; one `be/fluvius-<area>` per VREG tariff sheet). A grammar that is national but whose **numbers belong to each DSO** (Norway's top-3 steps, Finland's power fee) is not a preset: it ships as a **template** - `"template": true`, the grammar and its source (the regulation that defines it), every price `null` - which the tariff step offers as "your grid company is not listed: start from the national rules" and completes from the household's bill. Consequence (PLAN R12): presets go stale between releases; a patch release follows each 1 January and 1 July, the site keeps its stored copy (§11, "copy the preset") and is offered the update with a diff.
+
 **`Bill` and the counterfactual.** `bill(period, history) → Bill` prices the **capacity component only** from a `History` - any set of windows, the real one or the counterfactual D11 records per closed window (uncontrolled load unchanged, each controlled load replaced by its shadow, D11 §5.4). The energy component is priced by D1's curves in D11. The site's savings figure is `Σ energy savings + (bill(counterfactual) − bill(actual)).capacity_fee`, both bills from this evaluator under the same version (INV-52, INV-69). Under rolling-12 D11 takes the month's share as the rolling fee at month end minus at month start.
 
 ---
@@ -54,9 +56,11 @@ custom_components/powerplan/core/tariffs/
 ├── presets/
 │   ├── schema.json
 │   ├── loader.py    load(), validate(), render_plain_language()
-│   └── <cc>/*.json  no/generic-top3.json, no/tensio.json, no/elvia.json, se/ellevio.json, fi/energiavirasto-2026.json,
-│                    be/fluvius.json, dk/nopeak.json, nl/connection.json, uk/nopeak.json, es/2_0td.json,
-│                    us/aps-saver-choice-max.json, us/srp-e27.json, au/ausgrid-ea116.json, custom.json
+│   └── <cc>/*.json  no/tensio-ts.json, no/tensio-tn.json, no/elvia.json, no/template.json, se/ellevio.json,
+│                    fi/template.json (+ fi/helen.json if its own list verifies), be/fluvius-<area>.json (one per VREG sheet),
+│                    dk/<company>.json (generated from DatahubPricelist by tools/, D9), nl/connection.json, uk/nopeak.json,
+│                    es/2_0td.json, us/aps-saver-choice-max.json, us/srp-e27.json, au/ausgrid-ea116.json, custom.json
+│                    (WP4.6: no/generic-top3, no/tensio, fi/energiavirasto-2026, be/fluvius, dk/nopeak retired)
 └── backfill.py      seed_from_windows(), seed_from_bills()
 ```
 
@@ -156,6 +160,7 @@ class TariffVersion:  valid_from: date; version_id: str; grammar: tuple[Grammar,
 class TariffSpec:  id: str; name: str; versions: tuple[TariffVersion, ...]; currency: str
                    country: str | None; operator: str | None; source_url: str | None
                    verified: str | None; assumed: str | None
+                   template: bool = False    # grammar + source, every price None; completed in the flow (§2, §6)
 
 @dataclass(frozen=True)
 class HardLimit:  w: float; reason: Literal["contracted_trip", "contracted_surcharge"]; tolerance_s: int; tolerance_w: float
@@ -313,15 +318,26 @@ The freezing (`_freeze`, `_touch`) is D2's own, run every tick from `ceiling_kwh
 
 ## 6. Configuration schema
 
+*(D8 §5.15)* The step becomes three questions:
+
+| question | control | notes |
+|---|---|---|
+| **Hvilket nettselskap har du?** | searchable `select`, one entry per preset (per tariff area), sorted A–Å in the user's language, "Finner ikke mitt nettselskap" and "Legg inn selv" pinned last; the likely company pre-selected from the home location | country is not asked again (HUB-2, HUB-11) |
+| **Stemmer dette med nettleiefakturaen din?** | radio: yes · no, I'll enter it | `render_plain_language` becomes a translated **table** - step · kW · price per month - plus the energy charge day/night in øre/kWh, with the source and date; numbers formatted for the language ("1 200 kr"; HUB-12). "No" opens the template or custom form (§2), since HA flows have no back (HUB-4) |
+| **Hvilket effekttrinn vil du holde deg i?** | `select`: "Automatisk – hold deg i trinnet du er i nå (anbefalt)", then each step as "Trinn 2 · 2–5 kW · 137 kr/mnd" (HUB-13); strictness as a radio | a suggestion from the last 30 days where history exists |
+
+**Strictness - strict by default (review CTL-12; PLAN §7 dec. 18, dec. 28).** The household chooses from three radio choices in plain words: **Streng – ingen time over målet (anbefalt)** (`risk` 0, **the default for every preset**), **Bruk timene du alt har betalt for i dag** (0.5), and **Fleksibel – enkelte timer kan gå over, så lenge snittet av månedens tre høyeste timer holder seg i trinnet** (1.0). INV-9 is unchanged: the free ride is still derived from the grammar's `slack`, and it is used when the household picks 0.5 or 1.0. Only the default changes (`target.py::default_risk` returns 0 for every grammar), in WP U.3, with a benchmark re-baseline and a `design/benchmarks/CHANGELOG.md` line.
+
 Site flow, step **tariff** (skipped on the *fuse only* path):
 
 | Field | Selector | Default / derivation |
 |---|---|---|
 | Country | select | site country (from the electrical step) |
-| Grid company / tariff | select of presets for the country + "I don't know / not listed" + "Custom" | if the country has one generic preset (FI, BE), that one |
-| *Rendered description* | read-only text from `render_plain_language(preset)` | e.g. "Tensio bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 137 kr, up to 5 kW 244 kr, up to 10 kW 416 kr, …" |
+| Grid company / tariff | select of presets for the country (one entry per tariff area) + "Not listed - start from the national rules" (the country's template, where one exists) + "Custom" | the only preset when the country has one; else none (the household picks) |
+| *Template prices* (template only) | the template's `null` numbers as a form - for a step table, the step boundaries and fees from the bill | none: every field required, each with "from your bill" as its description |
+| *Rendered description* | read-only text from `render_plain_language(preset)`, ending with the source and the date it was checked | e.g. "Tensio TS bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 122 kr, up to 5 kW 218 kr, up to 10 kW 371 kr, … Source: tensio.no, checked." |
 | Target | select: `automatic` (default) · each step with its fee · (Linear) number kW | `auto` |
-| Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0.5** when the preset has `per_day = max` (the free ride is costless by construction - INV-9, PLAN §7 dec. 18); 0 otherwise |
+| Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0** (strict) for every preset; PLAN §7 dec. 18). Until WP U.3 the code ships the earlier default: **0.5** when the preset has `per_day = max`, 0 otherwise |
 | Enter last 12 monthly peaks (rolling presets only) | 12 numbers, optional | empty |
 | Contracted power (ContractedPower presets) | per period: number kW / kVA dropdown | ES: 4.6 (P1) / 5.75 (P2); FR: 6 kVA; IT: 3 kW; NL: 3×25 A = 17.25 kW |
 
@@ -333,20 +349,40 @@ Preset file (excerpt):
 
 ```json
 {
-  "id": "no.tensio.household", "country": "NO", "operator": "Tensio", "name": "Tensio – privatkunde",
-  "currency": "NOK", "source_url": "https://tensio.no/...", "verified": "2026-02-19",
+  "id": "no.tensio-ts.household", "country": "NO", "operator": "Tensio TS", "name": "Tensio TS – privatkunde",
+  "currency": "NOK",
   "versions": [
-    {"valid_from": "2026-01-01",
+    {"valid_from": "<date>", "verified": "<date>",
+     "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/1b6338b71ee4ae225082a95a2d596bb1297664f4.pdf",
      "peak": {"window_min": 60, "per_day": "max", "per_period": "mean_top_n", "n": 3, "distinct_days": true,
               "period": "month",
-              "pricing": {"steps": [[2, 137, "0–2 kW"], [5, 244, "2–5 kW"], [10, 416, "5–10 kW"], [15, 613, "10–15 kW"], [20, 812, "15–20 kW"], [null, 1200, "over 20 kW"]]}},
-     "energy_components": {"tou_schedule": {"periods": [{"name": "dag", "price": 0.3604, "hours": [[360, 1320]]}, {"name": "natt", "price": 0.2294}]}}
+              "pricing": {"steps": [[2, 122, "0–2 kW"], [5, 218, "2–5 kW"], [10, 371, "5–10 kW"], [15, 547, "10–15 kW"],
+                                    [20, 724, "15–20 kW"], [25, 901, "20–25 kW"], [50, 1547, "25–50 kW"], [75, 2429, "50–75 kW"],
+                                    [100, 3312, "75–100 kW"], [150, 4782, "100–150 kW"], [200, 6545, "150–200 kW"],
+                                    [300, 9483, "200–300 kW"], [400, 13014, "300–400 kW"], [500, 16539, "400–500 kW"],
+                                    [null, 20068, "over 500 kW"]]}},
+     "energy_components": {"tou_schedule": {"periods": [{"name": "dag", "price": 0.3604, "hours": [[360, 1320]]}, {"name": "natt", "price": 0.2292}]}}
     }
   ]
 }
 ```
 
-`energy_components` is handed to D1 as a pre-filled modifier; D2 never uses it.
+`energy_components` is handed to D1 as a pre-filled modifier; D2 never uses it. The figures are Tensio TS's own H1 2026 sheet, VAT and levies included; the 2026-07-01 version follows in the same file.
+
+Template file (excerpt, `no/template.json`): the grammar and its source, no numbers - the tariff step asks for them.
+
+```json
+{
+  "id": "no.template", "template": true, "country": "NO", "currency": "NOK",
+  "name": "Norway – national capacity rules (your grid company's steps from your bill)",
+  "versions": [
+    {"valid_from": "<date>", "verified": "<date>",
+     "source_url": "https://lovdata.no/dokument/SF/forskrift/1999-03-11-302",
+     "peak": {"window_min": 60, "per_day": "max", "per_period": "mean_top_n", "n": 3, "distinct_days": true,
+              "period": "month", "pricing": {"steps": null}}}
+  ]
+}
+```
 
 ---
 
@@ -394,6 +430,9 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 17. `ceiling` re-clamps to the new target on the very next read after a target change (INV-12).
 18. `bill` on a counterfactual history: the same windows with one evening window raised from 5 kW to 9 kW moves the NO preset one step up; `bill(actual)` and `bill(counterfactual)` use the same version and the same `coarse` rules (never inflated when billing); `record_counterfactual` never touches `days` (INV-11 for the real history).
 19. The free ride survives the cap: NO preset, target 10 kW, today's max 15 kW (exact), risk 0.5 → `ceiling ≈ 15 kWh − eps_small`, `free_ride = True`; the same with today's max `estimated` → flat target; lowering the target to 5 kW mid-day yields `cap = 15` (today's entry stands) and the next day `cap = 5.5` (INV-9, INV-12).
+20. Provenance: every version of every shipped preset has a `source_url`, a `verified` date, no `assumed`, and `valid_from ≤ verified`; a file violating any of the four fails to load; `custom.json` and templates are the only shipped files without prices.
+21. Templates: a template refuses to evaluate until every `null` price is filled; the tariff step completed from a template yields a spec equal to the same grammar written by hand, with the household's numbers and `source_url = None`, `assumed = "from the household's bill"`.
+22. Tariff areas: `no/tensio-ts` and `no/tensio-tn` each classify the same synthetic month into the same step and bill it at their own sheet's fee; the golden cites the sheet.
 
 ---
 
@@ -403,7 +442,9 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 - Demand charges with *daily* periods (rare US pilots) - add `period = "day"` when needed; grammar allows it.
 - Cost-based trade-off in D6 using `marginal_cost` (v2; published from v1).
 - Automatic preset detection from the meter or address.
-- Presets beyond the v1 list; the community adds JSON files.
+- Presets beyond the v1 list; the community adds JSON files - under §2's provenance rule, which CI enforces on contributed files too.
+- Seasonal `pricing` and `eligible` inside one version (APS and SRP bill a lower winter demand rate; their presets ship summer only), a `day` price-period unit and a power factor on `PeakTariff` (Ausgrid bills c/kVA/day). Each is a grammar change, D2's call.
+- A published table before its `valid_from` (PLAN §7 dec. 21; steelman in §11).
 
 ---
 
@@ -418,5 +459,9 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 **A target the user types vs. `auto`.** *For manual:* explicit, the pyscript worked that way. *Against:* new users don't know their step, and a target above what the period already reached wastes headroom while one below is unreachable. **Decision:** `auto` by default, manual available.
 
 **ε as a percentage of the target.** *For:* scales across markets. *Against:* the guard band covers measurement and reaction latency, which are absolute (a meter's cadence, a Bluetooth round trip), not proportional, and "0.3 kWh" is something a user can reason about. **Decision:** absolute kWh, scaled by window length.
+
+**Ship representative national presets**. *For:* a household whose DSO is not listed gets a working bill at once, and the steering is right either way because the grammar is national. *Against:* the "representative" Norwegian fees were Tensio's, which were themselves wrong (PLAN §9 "Open items" 1); a confident-looking bill that is simply someone else's is worse than a question; and RME recommends 1 kW steps, so even the boundaries stop being national. **Decision:** templates with no prices, completed from the bill.
+
+**Admit a published table before its `valid_from`.** *For:* it's a fact, not a guess - winter tariffs are published ahead of their start, and without it a household runs last season's rate from the change until the next release. *Against:* the rule is explicit (PLAN §7 dec. 21), and prices change mid-year anyway (Tensio has published three tables in one year), so a release cadence is needed regardless, and the flow's override covers the days in between. **Decision:** `valid_from ≤ verified`, enforced by the loader.
 
 **Copy the rule into the store vs. reference it by id.** *For reference:* updates flow automatically. *Against:* an edit in a release would silently change a live site's ceiling. **Decision:** copy at setup, offer "update to the current rule" with a diff.

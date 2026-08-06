@@ -175,7 +175,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `switch.<site>_active` | switch | control | on | master; off = release every load on the edge (INV-26) and treat every load as `observe`: decisions still published (INV-44), calibration slots accrue (D11 §5.5; PLAN §7 dec. 20) |
 | `select.<site>_presence` | select | control | on | auto / home / away / vacation |
 | `select.<site>_target` | select | config | on | step or kW (D2) |
-| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default 0.5 for `per_day = max` presets, else 0) |
+| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**, from WP U.3, 0.5 for `per_day = max` presets until then) |
 | `number.<site>_margin_kwh` | number | config | off | ε |
 | `sensor.<site>_window_used` | sensor kWh | - | on | attrs: `t_rem_min`, `anchor_kind`, `confidence` |
 | `sensor.<site>_window_projected` | sensor kWh | - | on | |
@@ -191,7 +191,9 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<site>_price_forecast` | sensor (count) | diagnostic | on | attr `slots` - **recorder-excluded**, changes only with the curve (INV-61) |
 | `sensor.<site>_price_export`, `_price_<carrier>` | sensor | - | on if configured | |
 | `binary_sensor.<site>_prices_tomorrow` | binary | - | on | |
-| `sensor.<site>_plan` | sensor (planned kWh next 24 h) | diagnostic | on | attr `by_load` summary; **recorder-excluded** |
+| `sensor.<site>_plan` | sensor (planned kWh next 24 h) | diagnostic | on | attr `by_load` summary; **recorder-excluded**. *(D12 §5.6)* attr `slots`: per slot `start`, `end`, `ceiling_kwh`, `baseline_kwh`, `production_kwh` (Phase 7), `planned_kwh` by load - recorder-excluded, changes on adoption only |
+| `calendar.<site>_plan` *(D12)* | calendar | - | on | one event per contiguous active block of each adopted plan: "‹load›: ‹kWh› kWh", with estimated cost and reason; updated on adoption; past blocks drop off |
+| `sensor.<site>_metric` *(D12)* | sensor kW, `state_class: measurement` | - | on | the tariff period's metric so far (D2 §5.2) - what the dashboard's history graphs |
 | `sensor.<site>_production`, `_surplus` | sensor W | - | on if production | |
 | `binary_sensor.<site>_meter_stale`, `_degraded`, `_seam` | binary | diagnostic | stale on, others off | |
 | `sensor.<site>_meter_health` | sensor | diagnostic | off | attrs per D3 |
@@ -304,6 +306,8 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 
 ### 5.9 Repairs catalogue
 
+*(§5.13)* Every issue is created with `learn_more_url` = `docs/troubleshooting.md#<issue id>` on GitHub - a URL in code, never in a string.
+
 | issue id | severity | fixable | condition |
 |---|---|---|---|
 | `meter_stale` | warning | no | power stale > 10 min |
@@ -332,11 +336,93 @@ Config-entry diagnostics: entry data (bindings kept, names kept, `notify` servic
 
 ### 5.11 Translations
 
-`strings.json` with `config.step.*`, `config_subentries.load.step.*`, `options.*`, `entity.<platform>.<key>.name` + `state`/`state_attributes`, `selector.<type>_<question>.options.*`, `services.*`, `issues.*`, `exceptions.*`. `translations/en.json` and `translations/nb.json` shipped; all user-facing text goes through them (INV-50) - except the notification texts, which `notifications.py` carries in both languages because hassfest's schema has no section for them (**WP1.4**, D-0274). Entity names use `_attr_has_entity_name = True` with translation keys; icons via `icons.json` (**WP1.4**: every site entity and every service has one).
+ Every string also obeys §5.13's word budgets and carries no URL (hassfest refuses one); a link is a `{docs_*}` placeholder. `strings.json` with `config.step.*`, `config_subentries.load.step.*`, `options.*`, `entity.<platform>.<key>.name` + `state`/`state_attributes`, `selector.<type>_<question>.options.*`, `services.*`, `issues.*`, `exceptions.*`. `translations/en.json` and `translations/nb.json` shipped; all user-facing text goes through them (INV-50) - except the notification texts, which `notifications.py` carries in both languages because hassfest's schema has no section for them (**WP1.4**, D-0274). Entity names use `_attr_has_entity_name = True` with translation keys; icons via `icons.json` (**WP1.4**: every site entity and every service has one).
 
 ### 5.12 Manifest and packaging
 
-`manifest.json`: `domain: powerplan`, `integration_type: hub`, `iot_class: calculated`, `config_flow: true`, `dependencies: []`, `after_dependencies: ["recorder", "nordpool", "zwave_js"]` (+ `easee_ble` when the profile lands in WP2.2: hassfest run with `--integration-path` skips the dependency-existence check entirely for a custom integration, so a custom domain there is accepted - verified in WP0.1), `requirements: ["holidays>=0.84"]` - a **range**, not an exact pin: HA core's `workday` pins 0.84 at 2026.3.0 and 0.104 at 2026.8.0, so no single `==` satisfies both ends of the CI matrix, and whatever the running core installed satisfies the range, `version`, `codeowners`, `issue_tracker`. `hacs.json`: `{"name": "powerplan", "render_readme": true, "homeassistant": "2026.3.0"}`, at the **repository root** where HACS reads it, not beside `manifest.json`. `strings.json` validated by hassfest; `quality_scale.yaml` targeting silver rules that apply to a custom integration (config flow, tests, diagnostics, repairs, translations, unique ids, entity categories).
+*(UX review BR-1…BR-5, U.4)* `manifest.json` `name` is **"PowerPlan"** (the domain stays `powerplan`); the translation `title` too. **Brand images ship in the integration**: `custom_components/powerplan/brand/{icon,icon@2x,logo,logo@2x,dark_logo,dark_logo@2x}.png`, which HA serves itself since 2026.3 (HA developer blog, "Custom integrations can now ship their own brand images"; the brands repository no longer takes custom integrations), so no brands PR exists. HACS's store listing still shows a blank icon for local-only brands (hacs/integration#5171), documented in `limitations.md`. Device info: manufacturer "PowerPlan", model a translated type name ("Elbillader", "Varmtvannsbereder", …; the site's path in words), `sw_version` = the manifest version. `documentation` points at the public docs (§5.13); the version is bumped before anyone else installs it. *(D12 §5.5)* `async_setup` also serves `frontend/dist` at `/powerplan_static` and loads `powerplan.js` with `frontend.add_extra_js_url` (versioned by `manifest.version`); the file sits inside the integration directory, so HACS sees nothing new, and `dependencies` gains `frontend` and `http`, which hassfest requires of an integration that imports them. `manifest.json` *(the target of the flow dialog's help icon, §5.13)*: `domain: powerplan`, `integration_type: hub`, `iot_class: calculated`, `config_flow: true`, `dependencies: []`, `after_dependencies: ["recorder", "nordpool", "zwave_js"]` (+ `easee_ble` when the profile lands in WP2.2: hassfest run with `--integration-path` skips the dependency-existence check entirely for a custom integration, so a custom domain there is accepted - verified in WP0.1), `requirements: ["holidays>=0.84"]` - a **range**, not an exact pin: HA core's `workday` pins 0.84 at 2026.3.0 and 0.104 at 2026.8.0, so no single `==` satisfies both ends of the CI matrix, and whatever the running core installed satisfies the range, `version`, `codeowners`, `issue_tracker`. `hacs.json`: `{"name": "powerplan", "render_readme": true, "homeassistant": "2026.3.0"}`, at the **repository root** where HACS reads it, not beside `manifest.json`. `strings.json` validated by hassfest; `quality_scale.yaml` targeting silver rules that apply to a custom integration (config flow, tests, diagnostics, repairs, translations, unique ids, entity categories).
+
+### 5.13 Flow text and documentation links *(PLAN §7 dec. 23; 6.2b)*
+
+The flow says what to do; the user pages under `docs/` say why and how it works. A step never explains in place what a page can explain once, and a page is linked wherever the step needs it.
+
+**Budgets** (every `config` and `config_subentries` string, `en` and `nb`):
+
+| string | budget |
+|---|---|
+| step `description` | ≤ 2 sentences and ≤ 30 words, placeholders excluded |
+| field `data_description` | ≤ 1 sentence and ≤ 15 words, plus at most one link |
+| selector option label | ≤ 5 words |
+| review steps (`config.step.review`, each subentry's `review`, `reconfigure_review`) | exempt, because INV-67 needs them to explain; trimmed to what the household must check |
+
+Measured: 38 steps, 997 strings, 6 506 words, the longest step description 86 words (`config.step.user`); the strategy field said only "How this load is planned."
+
+**Where a link goes and how.** hassfest refuses a URL in any translation string (core PR #154224). The frontend renders a step `description` and a field `data_description` as markdown with the step's `description_placeholders`, and renders a section `description` as plain text. So a link is written `[How strategies work]({docs_strategies})` in a step or field description, never in a section description or an option label. The flow fills the placeholder from one helper over `const.DOCS_URL` (`https://github.com/jkaberg/hass-powerplan/blob/main/docs`), per step, including the load-type-specific page (`{docs_load}` → `loads/<type>.md`). Repairs link through `learn_more_url` (§5.9); service descriptions through their own `description_placeholders`; the dialog's help icon opens `manifest.documentation` (§5.12).
+
+**Link form.** `https://github.com/jkaberg/hass-powerplan/blob/main/docs/<page>.md#<key>`. The anchor is a **registry key** - a strategy, device type, preset id, format key, profile key or repair id - so every such key has a heading exactly equal to it on its page (GitHub's slug of `## deadline_fill` is `#deadline_fill`), with the plain-language title as the paragraph under it. Links point at `main`, not at a release tag: a dev build has no tag, and a page notes behaviour that changed with "since vX".
+
+**The pages** (English; `nb` strings link to the same pages), at the `docs/` root beside the design documents, which keep their paths: `README.md` (index), `install.md`, `setup.md`, `how-it-works.md`, `strategies.md`, `loads/<type>.md` (one per device-type key), `devices.md`, `tariffs.md`, `prices.md`, `groups-circuits-zones.md`, `daily-use.md`, `actions.md`, `savings.md`, `troubleshooting.md`, `limitations.md`, `examples.md`. Together they meet HA's fifteen `docs-*` rules.
+
+### 5.15 The household's screens *(PLAN §7 dec. 28)*
+
+The review (`design/reviews/ux-review.md`, item IDs below are its own) looked at every screen through the eyes of a household that knows its bill, roughly what a fuse is and which appliances draw a lot, and nothing about IT networks, cumulative tiers, carriers, COP or baselines. Its findings bind this section; where it and an earlier rule disagree, the resolution is stated.
+
+**Rules for every screen** (review §1, adding to HLD §7.9 and §5.13 here):
+
+| # | rule | how it is checked |
+|---|---|---|
+| 1 | one question per screen, titled as a question in the household's words | the budgets test (§9 15) also asserts every step `title` ends with "?" except the review step |
+| 2 | every field description says why it is asked and where to find the answer ("Står på nettleiefakturaen") - inside §5.13's 15 words; the longer explanation is the linked page | review |
+| 3 | detect first, then confirm: country, currency, time zone, price area, persons, the meter's power and register sensors and the likely grid company come from HA; the screen shows what was found | §9 16 |
+| 4 | "Vet ikke" / "Don't know" with a safe default wherever a household may not know | review |
+| 5 | show only what applies: a follow-up step, never a dead field (HUB-17) | §9 16 |
+| 6 | controls that prevent mistakes (the table below) | §9 17 |
+| 7 | the review's glossary (its §3) in every string, en and nb; the design's own words (site, load, zone, observe, shed, baseline, carrier, modifier) never reach a screen | §9 18 |
+| 8 | Avansert is optional, prefilled with the derived value, with one intro sentence and no "Avansert:" prefix on its fields (HUB-18, HUB-19) | §9 16 |
+| 9 | an entity's name and state read as a sentence ("Effekttrinn denne måneden: 2–5 kW"); a normal state is never "unknown" | §9 19 |
+
+**No text is built in Python, and no placeholder carries an internal key** (review §0 R1, R2). Every summary, option list and sentence the flow shows is assembled from translation keys. Numbers and money are formatted by one helper for the user's language: "1 200 kr" and "0,79" in nb, "1,200 kr" and "0.79" in en. Entity ids, service keys and registry keys stay out of the text; the friendly name or a translated label goes in their place. Every selector option and every enum state has a translation (R4), and every nb string differs from its en string except on an allow-list of names and units (R3).
+
+**The site flow for a household** (review §4.2, HUB-1…6). The steps of §5.1 are reordered around nine questions; every other step becomes a follow-up asked only when it applies.
+
+| # | question (nb title) | asks | detected or derived |
+|---|---|---|---|
+| 1 | Hva vil du at PowerPlan skal hjelpe deg med? | the path: save on energy and grid fee (recommended) · cheapest hours only · protect the main fuse only | - |
+| 2 | Hva vil du kalle dette hjemmet? | the name | HA's location name |
+| 3 | Hvor måler du strømforbruket? | the meter device, from devices that carry a power sensor | the roles, shown as found ("Effekt nå 1,2 kW ✓ · Målerstand 45 123 kWh ✓"); the role form only for what is missing |
+| 4 | Hvor stor er hovedsikringen? | fuse size and voltage, each with "Vet ikke" | country, phases, the limit in kW shown back |
+| 5 | Hvilken strømavtale har du? | spot · Norgespris · fixed; spot asks markup (øre/kWh) and fee (kr/mnd) | price area with its region name, Nord Pool, VAT from the country (D1 §6) |
+| 6 | Hvilket nettselskap har du? | the grid company, searchable, A–Å, "Finner ikke mitt" last | the likely company suggested |
+| 7 | Stemmer dette med nettleiefakturaen din? | yes · no, enter it myself (HA flows have no back) | the tariff as a translated table (D2 §6) |
+| 8 | Hvilket effekttrinn vil du holde deg i? | the target and the strictness | a suggestion from the last 30 days where history exists |
+| 9 | Klar til å starte | trial mode on or off | the summary, from translation keys |
+
+Follow-ups, each with "Hopp over" where skippable: solar or other production → export; other heat sources (belongs with the room flow); a special agreement → the price add-on toolkit; hard limits; presence; notifications (HUB-16's order). Country is asked once (HUB-2), the grid charge comes after the grid company (HUB-3), add-on steps follow the checkbox order and each has its own title and description (HUB-7, HUB-8). **Reconfigure** re-enters at step 2 as today (D-0330) but never shows step 9's trial-mode toggle for a running site (HUB-5).
+
+**Controls** (review §5):
+
+| field | control | where |
+|---|---|---|
+| main fuse, circuit fuse | `select` of standard sizes in A, "Annet…" and (main fuse) "Vet ikke"; never a free number with a clear button (CTL-1) | D3 §6, D6 §6 |
+| VAT, spot share, reserve, EV charge limits | `number` in %, slider 0–100 step 1 (CTL-2) | D1, D4 |
+| markup, energy charge, prices; monthly fees | `number` box in øre/kWh; kr/mnd (CTL-3) | D1 §6 |
+| hours per day | slider 1–24 h (CTL-4) | D4 §6 |
+| temperatures | slider in °C with a per-type range, `min ≤ comfort ≤ max` checked inline (CTL-5, CTL-16) | D4 §6 |
+| tiers, periods, day types, "applies to" | `object` selector with `fields` and `multiple` - a form list, never the YAML editor (CTL-6, HUB-9). HA's own fix for nested selectors in object fields landed on 2026-05-13 (core PR #170453), after the 2026.3 floor, so U.2 checks the forms on the floor line and keeps a fallback | D1 §6, D2 §6 |
+| quiet hours, ready-by, deadlines | a `select` of whole and half hours, since HA's `time` selector has no option to hide seconds (verified in `helpers/selector.py`, CTL-7) | D4 §6, §5.1 notifications |
+| intervals and durations | `duration` selector, `enable_second: false` (CTL-8) | D4 §6 |
+| country, currency, time zone, price area | taken from HA and hidden; shown only to correct, with region names (CTL-9) | D1, D3 |
+| meter and load roles | entity pickers filtered by `device_class`, unit and `state_class` - power W/kW, energy kWh `total_increasing`, temperature °C (CTL-10) | D3 §6, D4 §6 |
+| the device to add | a `select` built by the flow: HA devices with a switch, climate, water-heater or number entity, never PowerPlan's own, and those already added marked and refused *before* submit (CTL-11) | §5.2 |
+| strictness (`risk`) | radio with explanations: strict (recommended, the default), today's paid hours, flexible - D2 §6 | D2 §6 |
+| heat pump COP | `object` list {outdoor °C, COP} or a type preset (CTL-13) | D4 §6 |
+| power | kW everywhere, step 0.1 (CTL-15) | all |
+
+**The load flow** (review §6): a type-first entry ("Hva vil du styre?") beside the device-first one, detection confirming rather than deciding (LOAD-3); the match sentence in words with the friendly entity name, and a "check that this is the right appliance" warning below 0.6 confidence (LOAD-2); required roles shown, optional ones under Avansert with a one-line reason (LOAD-6); `last_step=False` on the first step (LOAD-4); "Om {name}" as the questions' title (LOAD-5); translated role labels (LOAD-1). Circuit, group and room flows: multi-selects sorted A–Å, the room flow offering heating appliances only, "never substitute" limited to the chosen members, "Annet forbruk på kursen" in kW (LOAD-7, LOAD-8).
+
+**Entities** (review §7). Names and state translations change and entity ids do not (INV-50). The advice sensor becomes an `enum` "Anbefaling" whose state is the most important advice, with "Alt ser bra ut" when there is none and the details in attributes (ENT-1). Every enum, select and event gets its translated states (ENT-2, ENT-4, ENT-11, ENT-13, ENT-23, ENT-31). Units become kW and øre/kWh or kr/kWh consistently, with display precision (ENT-8…10, ENT-14). A timestamp sensor with nothing due shows a translated "none" state rather than unknown (ENT-12, ENT-30, ENT-33). The period goes into cost and savings names, and trial mode shows "Beregnet besparelse" (ENT-15, ENT-35). A load without a power role gets no "power now" entity (ENT-29). Two items change the entity set, so each carries a repair naming the removed ids for one release: the three meter-health entities merged into one "Målerstatus" (ENT-17), and `price_forecast` becoming "Priser kjent til", a timestamp (ENT-19).
+
+**Messages** (review §8): errors name what to choose, never a service key (MSG-1, MSG-2); repair titles say what is wrong in calm words and every description ends with one next step (MSG-3); services get household names (MSG-4).
 
 ---
 
@@ -384,12 +470,18 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 
 **WP1.4** - 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11 and 12 are `tests/surface/`; 13 is the two CI jobs in `.github/workflows/ci.yml`; 14 is WP2.7's. **WP2.4** - 2, 3 and the load half of 4 are `tests/flows/test_load_flow.py`, driven through `hass.config_entries.subentries` on the Easee-shaped charger of `tests/e2e/fake_house.py`: the subentry's answers, derived values and version; the review from `explain()`; the reconfigure diff, the manual-edit flag and its reset on re-derive; every `ev` row of §5.5 under the load device with its category and default; a knob reaching the engine's load on the next tick; ids surviving a rename.
 14. Accounting sensors: `energy` is `total_increasing` with `device_class: energy` and never decreases across a device register reset; `cost` and `savings` are `device_class: monetary`, `state_class: total`, unit = currency code, `last_reset` = local month start (DST-correct); a negative savings state is published unclamped; long-term statistics `sum` across a rollover equals the two months' sum; the sensors change only on a slot close (one recorder row per 15 min, not per tick).
+15. *(§5.13)* Docs links: every `{docs_*}` placeholder a string uses is supplied by that step's `description_placeholders`; every URL the flow, the repairs and the services build resolves offline to a file under `docs/` and a heading with that GitHub slug; every registry key (strategies, device types, presets, price formats, profiles, repair ids) has its heading; every string meets §5.13's budgets; no string contains a URL.
+16. *(§5.15)* Detection and branching: on a site whose HA config has country, currency, time zone and home location, the flow asks none of them; a site with no production never sees the export step; Avansert fields carry their derived values; reconfigure never shows the trial-mode toggle.
+17. *(§5.15)* Controls: no field of the site, load, circuit, group or room flows uses the YAML/object editor without `fields`, a free-number fuse, a time selector or a fraction where §5.15's table names a control; entity pickers carry the role's filter; the device list excludes PowerPlan's own devices and marks those already added.
+18. *(§5.15, review R1–R4)* Text: every nb string differs from its en string outside an allow-list; every selector option, enum state and event type has a translation in en and nb; a rendered flow (every step, both languages, the reference house's registry) has no placeholder value matching `^[a-z_]+(:\d+)?$`, no entity id, no English word in nb outside the allow-list, and numbers formatted for the language; no string uses the design's own words (§5.15 rule 7).
+19. *(§5.15)* Entities: every entity of the reference site in its normal state has a translated, non-unknown state; entity ids are unchanged from before U.4 except the two named removals, each raising its repair.
+20. *(§5.12, B.1)* Brand: the six PNGs exist at their documented pixel sizes; `manifest.json` `name` is "PowerPlan"; device info carries manufacturer, a translated model and `sw_version`.
 
 ---
 
 ## 10. Deliberately deferred
 
-- A custom Lovelace card (a starter YAML dashboard ships instead).
+- ~~A custom Lovelace card (a starter YAML dashboard ships instead).~~ Superseded by D12: a dashboard strategy with two custom cards.
 - Built-in weekly schedule editor (§10 decision 6).
 - Energy dashboard price sensor (v1.x); cost and savings sensors are v1 (D11).
 - External DSO limit configuration UI (`ExternalLimit` v1.x). The engine-level bridge - `Inputs.events` → `ExternalLimit`, no UI or provider involved - is built (`design/DECISIONS.md` D-0327); nothing populates an `EventStore` in `runtime.py` yet, for this or any of D1's other event kinds.
@@ -398,6 +490,14 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Keep the site flow's order and fix only the words**. *For:* the order follows the domains (electrical, meter, prices, tariff), every step already works, and a reorder touches every flow test and D-0330's reconfigure. *Against:* the review found the household meeting IT networks, meter roles and price modifiers before seeing any value, and a country asked twice; words alone do not fix an order that asks the wrong person the wrong question first. **Decision:** nine questions, the rest as follow-ups (§5.15).
+
+**Device first or type first when adding an appliance**. *For device first:* one list, and detection does the work. *Against:* the review saw an access point's LED offered as a load at 40 %; a household knows what it wants to control before it knows which HA device that is. **Decision:** type first by default, device first kept for those who know the device; detection confirms.
+
+**Explain in the flow instead of linking**. *For:* a household never leaves the dialog, the text is translated with the flow, and a link can rot. *Against:* the flows had grown to 6 506 words and still could not explain a strategy in a field description; explanation in place is read once and in the way every time after; and the link test (§9 15) keeps links from rotting. **Decision:** terse strings, linked pages (§5.13).
+
+**A documentation site (MkDocs on GitHub Pages) instead of markdown in the repository**. *For:* search, navigation, versioned docs. *Against:* the link asked for is github.com/jkaberg/hass-powerplan/docs; plain markdown needs no build or deploy, and the link test reads files. **Decision:** markdown under `docs/`.
 
 **One long form per load instead of a multi-step questionnaire.** *For:* fewer clicks for experts; HA options flows are often single-page. *Against:* dynamic defaults (room from area, sensor mode from the device) need earlier answers; and a single page with forty fields is the "overwhelming" the user warned about. **Decision:** device → match → questions → review, four steps, each short.
 

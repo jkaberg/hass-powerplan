@@ -59,6 +59,25 @@ What the table can't say:
 - The two rows whose price is the sensor's **state** (`nordpool_core`, `comed`) price the slot the entity was last written in: `last_reported`, snapped back to a `slot_minutes` grid. Two slots in a row can carry the same price, and `last_changed` would then be stale (D-0102).
 - Rows keyed by **hour name** (`pvpc`, `hourly_attributes`) take the local date from `dt_util.now()`, HA's own zone, and build naive local times that §5.2 localises. `_d` is the fold-1 repeat on the 25-hour day (D-0104).
 
+**Every row has to work through the flow.** `_price_source` calling `formats.build(key)` without options makes the rows that need `currency` (`tibber_action`, `generic_list`, `hourly_attributes`) or `config_entry` (`energyzero_action`, `easyenergy_action`) raise at setup, and an `ACTION` row wrapped in an `EntitySource` doesn't work at all. So **a row ships only when the site flow can configure it end to end**, and §9 18 tests that for every registered key:
+
+- The prices step builds the source by the row's kind, `ATTRIBUTES` → `EntitySource` and `ACTION` → `ActionSource` (§3), each with the options stored for that row.
+- An `ACTION` row's `config_entry` is the **picked entity's own** entry from the entity registry, so it's never asked. Tibber's `home` is only asked when the account has more than one.
+- A row whose `schema` still has fields without a default after detection gets a **format options** sub-step rendered from the schema, same as the modifiers (§6).
+- A row publishing tomorrow on a **second entity** (`octopus_energy`'s `next_day_rates`) takes it as a second entity of the same source, found on the same device and pre-filled.
+- `generic_list` has a dotted `value_key` path (`price_tax_included.amount`), a `scale` multiplier (default 1) and an optional `tomorrow_attribute`, so it reaches nested, scaled and two-attribute payloads.
+
+Rows to add, in order of Home Assistant installs (HA analytics). Each moves into the table above when its adapter and a fixture written from the integration's own source (D-0081) land; this table is deliberately not the one §9 1 parses.
+
+| planned key | platform | where prices live (from the integration's source) | resolution | installs |
+|---|---|---|---|---|
+| `epex_spot` | `epex_spot` | attribute `data: [{start_time, end_time, price_per_kwh}]`, EUR/kWh (GBP for GB) | 60/15 | 3 732 |
+| `zonneplan_one` | `zonneplan_one` | attribute `forecast: [{start_date, end_date, price_tax_included: {amount}}]`, amount in 1e-7 EUR | 60/15 | 2 111 |
+| `frank_energie` | `frank_energie` | attributes `prices` and `tomorrow_prices`: `[{from, till, price}]`, EUR/kWh | 15 | 1 262 |
+| `cz_energy_spot_prices` | `cz_energy_spot_prices` | payload read in WP4.7 | - | 1 060 |
+| `tibber_prices` | `tibber_prices` (HACS) | payload read in WP4.7 | - | 996 |
+| `stromligning` | `stromligning` | payload read in WP4.7; its price already includes the Danish grid tariff, so the DK preset's `tou_schedule` is not stacked on it (D2 §6) | - | 575 |
+
 An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, energy, magnitude)`, where `Interval(start, end | None, value)` is the triple before normalisation, and `providers/prices/base.normalise` is called once by `EntitySource` for every row (D-0088). The unit comes back *with* the intervals and not from config, since several rows carry it in an attribute the user can change - the HACS sensor's `price_type` is `kWh`, `MWh` or `Wh`, and a `Wh` sensor is refused instead of guessed. In `raw_today` / `raw_tomorrow` a `value` of `None` is an hour the sensor couldn't price (upstream `_calc_price` returns `None` for `None` or infinity), so it's a hole, never a zero price. `registry.py`'s `for_platform(platform)` is what the prices step pre-selects from.
 
 **Month-to-date consumption without a circular dependency.** D1 never imports D3. The runtime (D7) builds a `PriceContext` every planning cycle from what it already has - D3's month-to-date import (register delta since local month start, persisted by D3 as `month_anchor_kwh`), D10's projected consumption per slot if there is one, else a linear extrapolation of the month's daily mean - and passes it in. Modifiers see `ctx.mtd_kwh_at(t)` as a function of the slot start: actual for the past, projected for the future.
@@ -295,6 +314,8 @@ A local day has 23, 24 or 25 hours, so 92/96/100 quarter slots. Slot arithmetic 
 
 `modifiers.build(key, options)` decodes what `entry.data` holds. A `MONEY` field's decimal string becomes a `Decimal`, a `LIST` field a tuple, and a modifier whose list holds records (`tou_schedule`'s periods, `day_type`'s rates, `cumulative_tier`'s tiers) declares `from_options` and types them itself - a preset's `{"hours": [[360, 1320]], "price": 0.3604}` and a stored `{"when": {…}, "price": "…"}` both become a `TouPeriod` (D-0270). A `NUMBER` field is stored as text too (the flow writes every scalar through `jsonable`) and decoded to the type the modifier's dataclass declares - `Decimal` for `vat.rate`, `spot_scale.mult`, a `share`, `float` for `fixed_price.cap_kwh_per_month` and `levy.applies_above_mtd_kwh` - read off the dataclass's own annotations, so a new modifier needs no registry change. Without it `Vat(rate="0.25")` multiplies a string on a flow-made site (D-0279).
 
+*(D8 §5.15)* The household sees one question, **"Hvilken strømavtale har du?"** - spot · Norgespris · fixed - and only what that answer needs: spot asks the markup in **øre/kWh** and the monthly fee in **kr/mnd**; Norgespris asks nothing it can take from the scheme (its price is required and validated - the review found an empty one accepted); fixed asks the price in øre/kWh. The price area is derived from HA's home location and shown with its region name ("NO3 – Midt-Norge"); Nord Pool is detected; VAT comes from the country with an override under Avansert (CTL-2, CTL-3, CTL-9). The add-on toolkit below - tiers, time of use, day types, levies - is a follow-up behind "Er strømavtalen din spesiell?", each add-on with its own translated title and description (HUB-7, HUB-8), in the order it was ticked, and its lists are `object`-selector forms (CTL-6). The grid energy charge comes with the grid company (D2 §6), so its add-on is not offered before the tariff step (HUB-3). The table below stays the data model.
+
 Site flow, step **prices** (skipped on the *fuse only* path):
 
 | Field | Selector | Default / derivation |
@@ -302,13 +323,15 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 | Where do your electricity prices come from? | select: **Nord Pool (built in)** · **A price sensor I already have** · **Fixed price / I'll type it** | by country: Nordics/Baltics → Nord Pool; if a known price integration is installed → that sensor, pre-selected; else fixed |
 | *(Nord Pool)* Area | select NO1…NO5, SE1–4, FI, DK1–2, EE, LV, LT, NL, BE, DE-LU, FR, AT | from HA's location (lat/long → area map) |
 | *(Sensor)* Entity | entity selector filtered to platforms in the format table | the detected one |
-| *(Sensor)* Format | read-only: detected format name; Advanced: override, `generic_list` paths | detected |
+| *(Sensor)* Format | read-only: detected format name; Advanced: override | detected |
+| *(Sensor)* Format options | a sub-step rendered from the format's `schema`, shown only when a field is left without a default - `currency` for `generic_list`/`hourly_attributes`/`tge`, the paths and scale for `generic_list`, Tibber's `home` when there are two | from the picked entity (its unit, its config entry, its device) |
+| *(Sensor)* Tomorrow's entity | entity selector, pre-filled from the same device | only for rows that publish tomorrow separately (`octopus_energy`) |
 | Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"); Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
 | *(Fixed)* Price per kWh | number in site currency | - |
 | What is added on top? | multi-select with plain labels: **VAT** · **Grid energy charge (day/night or time-of-use)** · **Taxes / levies** · **State scheme (Norgespris)** · **State subsidy (strømstøtte)** · **Supplier markup** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** | pre-ticked from the D2 preset's `energy_components` and the country (NO: VAT + grid + levy + Norgespris; DK: VAT + grid + levy; ES/IT/FR/UK: VAT + grid; US: none) |
 | *(per ticked item)* sub-form | VAT %; grid periods editor pre-filled from preset or "day 06–22 / night" template; levy per kWh; Norgespris price + cap; subsidy threshold + share; markup; tiers; day-type entity + mapping | preset / country defaults with a "source: <DSO>" hint |
 | Export | select: **I don't export** · **fixed** · **spot minus** · **spot × share** · **from a sensor** | none |
-| Other carriers | repeatable: gas / district heat / oil / pellets → **fixed** or **daily from a sensor** | none |
+| Other carriers | repeatable: gas / district heat / oil / pellets → **fixed** or **daily from a sensor** | none. A follow-up behind "Varmer du også med ved, pellets, olje eller fjernvarme?", and in the household's word "varmekilde" |
 
 Review text (INV-67): "Tomorrow's prices come from Nord Pool NO3 at about 13:00. Your price is spot + 25 % VAT + Tensio's grid charge (0.36 kr day, 0.23 kr night) + 1 øre levy, or 50 øre fixed while you are under 5 000 kWh this month. If Nord Pool is unreachable, powerplan keeps planning with yesterday's shape and the grid charge."
 
@@ -362,6 +385,7 @@ Entities (rendered by D8): `sensor.<site>_price` (state = current import total, 
 15. Gas carrier with daily slots coexists with electricity 15-min slots.
 16. Event upsert/replace/revoke/expiry.
 17. `spread`, `is_flat`, `coverage_h` on flat (Norgespris) and volatile days.
+18. Every registered format key, parametrised over `formats.keys()`: the site flow with a fixture entity of that platform reaches a stored source, `_price_source` builds it without error, and the first fetch yields a parsed curve; an `ACTION` row takes its config entry from the picked entity; `octopus_energy` with both entities covers today and tomorrow.
 
 ---
 
@@ -376,6 +400,8 @@ Entities (rendered by D8): `sensor.<site>_price` (state = current import total, 
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**`generic_list` for every integration without a row.** *For:* no code per integration, and nobody waits on a release. *Against:* the household has to read attribute names and keys out of developer tools and type four to seven fields, and payloads like a nested amount in 1e-7 € or a second attribute for tomorrow don't fit it at all. **Decision:** a row per integration with enough installs, and a `generic_list` that reaches nested, scaled and two-attribute payloads for the rest.
 
 **Only read HA price entities, no own fetching.** *For:* zero API code, every market covered by existing integrations, no publication logic. *Against:* each integration's attribute format is undocumented and changes without notice, most only keep today/tomorrow so weekly planning is impossible, and their persistence isn't ours - a restart at 23:50 can leave the planner blind until the integration refetches. **Decision:** both, `nordpool_action` first since the core action is stable and it's what I run.
 

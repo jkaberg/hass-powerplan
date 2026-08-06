@@ -155,22 +155,33 @@ run_tick(trigger):
     coordinator.async_set_updated_data(snapshot)          # publish even when off/observe (INV-44)
     record duration; if > 50 ms: WARNING once per hour with the per-stage breakdown (INV-46)
 
-engine.tick(state, inputs):                               # the sacred order
+engine.tick(state, inputs):                               # the order that matters
   1 site enabled? (site switch, safe_mode) → if not: mark all loads "site_off"; still compute and publish
   2 meter = WindowMeter.sample(...); LoadMeter.sample per load   (D3)  → if stale or seam: frozen (load meters still integrate)
-      WP0.10: `LoadMeter(LoadMeterConfig(load_id, nameplate_w), previous).sample(now, view, energy=ENERGY reading, slot_minutes)` per load, slot length from the curve in force (15 min without one); the two site meters sample the grid reading the same way. A frozen tick still samples them (the ledger wants what was drawn).
-  3 closed windows → tariff.record_window; period rollover       (D2) - the counterfactual window is recorded by D11 inside plan(), never here (INV-68)
+      per load `LoadMeter(LoadMeterConfig(load_id, nameplate_w), previous).sample(now, view, energy=ENERGY reading, slot_minutes)`,
+      slot length from the curve in force (15 min without one); the two site meters sample the grid reading the same way,
+      and a frozen tick still samples them (the ledger wants what was drawn)
+  3 closed windows → tariff.record_window; period rollover       (D2)  the counterfactual window is recorded by D11 inside plan(), never here (INV-68)
   4 ceiling = tariff.ceiling_kwh(...)                     (D2)
   5 budget = budget(ceiling, meter, hard limits, pi, baseline, controlled_planned_kwh)   (D6)
-  6 ladder.update(projection, P_total, hard limits, …)    (D6) - this tick's stage from the smoothed projection (INV-38); frozen → unchanged, no escalation
-  7 demands, comfort = [load.observe(reads)]              (D4) - per-load try/except (INV-45)
-  8 grants, report, alloc_state = allocate(…, stage, blunt)   (D6) - stage actions and the trim run inside; frozen → previous grants
-  9 commands = [load.apply(grant)] as Effects.commands    (D4) - computed here, executed by runtime
+  6 ladder.update(projection, P_total, hard limits, …)    (D6)  this tick's stage from the smoothed projection (INV-38); frozen → unchanged, no escalation
+  7 demands, comfort = [load.observe(reads)]              (D4)  per-load try/except (INV-45)
+  8 grants, report, alloc_state = allocate(…, stage, blunt)   (D6)  stage actions and the trim run inside; frozen → previous grants
+  9 commands = [load.apply(grant)] as Effects.commands    (D4)  computed here, executed by the runtime
     # the quantiser handed to D6 reads a temperature kind's `effective_w = None` as the element's nameplate when the grant covers it or comfort is violated, else 0 W (D-0250)
  10 warnings = peak_warning(...) (5.4) + deadline/comfort warnings
  11 snapshot, ha_events (edge-detected against state.runtime.last_edges), store_dirty
 ```
-Steps 1–11 are pure; the reads happened in `assemble()`, the writes happen in `execute()`. The ladder runs before the allocator because `allocate()` takes the stage as an input (D6 §3) and escalation is immediate (D6 §5.4). This is what makes the scenario runner (D9) able to drive a whole house through `engine.tick` with fake inputs.
+**The incremental tick** (D9 §5.13). The order above, the types and their immutability don't change. What changes is that a tick stops recomputing what can't have changed since the last one:
+
+- A per-tick memo in the tariff evaluator: the active version, period key and peak rows computed once per tick, not 60+ times.
+- Change-stamped snapshot sections: the tariff history, the adopted plans and the curves carry an increasing stamp, and a section (tariff status, level events, warnings, price and plan status) is only rebuilt when a stamp it reads has moved, otherwise the previous section object is reused.
+- A no-change fast path in each load's `observe`/`apply`: equal reads, grant and knobs return the previous `LoadState` object.
+- One `TickClock` per tick - UTC instant, epoch seconds, local datetime, local date, month key - computed once and passed down, datetimes stay tz-aware.
+
+The rule every one of these obeys: the `Snapshot`, the `Effects` and the new `EngineState` are **equal** to what the non-incremental tick returns. That is tested by running both on every scenario of D9 §5.3, and by every benchmark digest staying byte-identical (D9 §9 13). A memo keyed on something weaker than the stamps it reads is a bug, not an optimisation.
+
+Steps 1–11 are pure: the reads happened in `assemble()`, the writes happen in `execute()`. The ladder runs before the allocator since `allocate()` takes the stage as an input (D6 §3) and escalation is immediate (D6 §5.4). That's what lets the scenario runner (D9) drive a whole house through `engine.tick` with fake inputs.
 
 ### 5.2 Planning cycle
 
@@ -189,6 +200,8 @@ run_plan(trigger):  I/O first WITHOUT the lock, then the lock for the pure part 
   accounting: for every price slot the LoadMeters closed since the last cycle (oldest first): Accounting.close_slot(ClosedSlot, CloseCtx) (D11), never in the tick (INV-46, INV-68); month_closed → event; store dirty "accounting"; ack the LoadMeters
 triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the register report, never :00 sharp), demand change (plug-in, knob, presence, force edge), forecast update, replan action, startup (after the first tick)
 ```
+
+Three things the cycle owes, each in its `[no lock]` half: **the daily fits**, at the first cycle after 03:xx local (+ jitter) `fit_all` over each load's 60-day `LoadHistory` from the recorder as an executor job, stored in `forecasts` and applied from the next plan (D10 §5.6); **the PV forecast**, `energy_solar` refreshed hourly and when the Energy preferences change (D10 §5.5); **the event store**, events past `valid_until` pruned before `Inputs.events` is built.
 
 `ForecastHook`/`ForecastsAdapter` sits next to `AccountingHook`/`AccountingAdapter`, called from the same `_close_slots` loop off the same `SlotClose`, which is the "baseline per closed window" above. Weather and the baseline's recorder seed are the pseudocode's `[no lock]` executor jobs: `_fetch_weather_if_due` runs there (hourly, and on the bound entity's own change, the `forecast update` trigger), and `async_seed` runs once at startup as its own background task, never blocking the first tick or plan - no baseline yet means a reserve on σ alone, not a block (D10 §8). `Inputs.forecast_confidence`/`.forecast_ready`, computed by the runtime from the same `HourOfWeekBaseline` the hook updates, are what `_forecast_status` republishes into the snapshot (§4.1, D-0313…D-0318).
 
@@ -212,6 +225,8 @@ triggers: prices received (D1), quarter-hour (HH:00/15/30/45 + 20 s, after the r
 | load entity state changed (charger status, program state, door) | state tracking per bound role flagged `reactive` | tick |
 | `desired_state_reconcile` / `powerplan.replan` | event / service | tick / plan |
 | HA start | `EVENT_HOMEASSISTANT_STARTED` | lifecycle §5.5 |
+| event entity changed | `async_track_state_change_event` on each configured entity event source (today the `day_type` modifier's entity, D1 §6) | `EventStore.upsert` from the source's mapping, then plan |
+| Energy preferences changed *(Phase 7)* | the `energy` manager's update listener | refresh `energy_solar`, then plan |
 
 Grid power and production power share one 10 s debounce with the loads' entities: a charger's power sensor changes every second, and each burst is one tick after the quiet period, never one per change. The register report is an immediate tick (INV-13), and one landing while the lock is held is remembered and run as a trailing tick, never dropped (§9 4). The heartbeat is `async_track_time_interval(30 s)`, and a wall-clock trigger due within 5 s of a window boundary runs 5 s after it instead (INV-43). The window fallback fires at boundary + 5 min and checks whether the register **reported** since the boundary (`WindowState.last_register_at`), not whether the window rolled - D3 closes a window on the integral after its grace, so "rolled" is always true, and only a missing report earns the tick. The quarter-hour plan runs at `HH:00/15/30/45 + 20 s`. Presence `person` entities are a tick and a plan. Price sources with a publication get one timer per source at `next_fetch_at` (re-armed for the next day after each fire), retries at `next_retry_at` per failed source, and every site gets the `HH:07/22/37/52` hole check. An entity-backed source is re-read on its entity's change. Every subscription is kept on the runtime and released by one `entry.async_on_unload` hook and by `stop()`, whichever comes first (D-0271). A production reading 30 % or more off its forecast for 15 min replans once per episode, in the runtime after the tick (D-0655).
 
@@ -260,6 +275,8 @@ async_migrate_entry: config-entry version migrations (entry data), separate from
 `async_setup_entry` is `Runtime(hass, entry, build_site(hass, entry))` then `start()`. 1: the store is loaded and `EngineState.from_sections` restores it (an empty store is a fresh state). 2: the engine is built over the restored `WindowState` and the D11 adapter over the `accounting` section, and every load's release plan is tracked on the gate. A stale `engine_failing` repair is deleted, since a restart clears safe mode (§2). 3–10 run at once when HA is running, and on `EVENT_HOMEASSISTANT_STARTED` otherwise: hydrate schedules, `release_all` (the gate's pure `release()` per load), `restore_all` (D4 `restore()`, a correction), provisions (D4's, per device), the first tick (`trigger = "startup"`), the platforms, the triggers, and the first price fetch as a task that plans when it lands - so the planning cycle starts after the first tick and its I/O never holds the lock (INV-46). `stop(reason)` releases the subscriptions, runs `release_all`, cancels the gate's read-backs, flushes and closes the store. `async_unload_entry` and `homeassistant_stop` both call it, once (D-0271).
 
 `Runtime._hydrate_schedules` walks `self.build.loads`, and for each one whose `config.params["schedule_entity"]` is bound it awaits `providers.schedules.fetch_windows(hass, entity_id)` and, only on success (`windows is not None`), replaces its `TargetProfile.schedule` with an `HaScheduleEntity(entity_id, zone=build.cfg.tz, on_value=comfort_c, off_value=vacation_c, windows)` (D-0300). `on_value`/`off_value` reuse the two numbers `profile_from_params` already derives from the type's questionnaire, so nothing new is asked to say what "on" and "off" mean (D-0301). A load without `schedule_entity`, or whose fetch fails, keeps its `ConstantSchedule`, the safe fallback and never an always-off schedule. `_rebuild_engine()` (§2) pushes the hydrated set into the engine before `release_all`/`restore_all`, so the very first restore sees the schedule-bound target. The add path (§2's `_add_load`) calls `_hydrate_schedule` on the new load before it joins `self.build.loads`. Nothing refreshes a bound schedule after this - a live edit needs a reload to be seen, and live pickup is v1.x.
+
+ **The runtime builds the `EventStore`.** WP5.5 found that `runtime.py` never built one, so all five D1 event kinds (`day_type`, `price_override`, `price_spike`, `reward`, `load_limit`) were inert outside the tests. At startup - after the price sources, before the first plan - the runtime creates one `EventStore` per site from the store section `prices.events` (D1 §7), builds an `entity` event source (`providers/events/entity.py`) for every configured event entity with its mapping, reads each once, and tracks it (§5.3). `Inputs.events` is `EventStore.active(now)` for the tick and the whole store for the plan. In v1 the only configured event entity is the `day_type` modifier's (Tempo and critical-peak days, D1 §6); a source for the other kinds is one registration here plus its flow field (D8 §10's DSO limit UI stays v1.x).
 
 ### 5.6 Effects execution and the single writer (INV-3)
 
@@ -334,6 +351,9 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 **WP1.1** - 4 (the boundary guard, the fallback's two cases, the trailing tick), 6, 7, 8, 14 and 17 (INV-46: the fetch runs before the lock) are `tests/runtime/test_runtime.py`; 10 and 11 are WP1.1a's; the two scenario rows are `tests/scenarios/test_phase1.py`. 9 (subentry hot paths) is `tests/flows/test_subentry_hot_paths.py`, 12 WP1.5's, 13 the perf tier's.
 16. Accounting close runs in `plan()` once per closed price slot and never in `tick()` (INV-68); a planning cycle skipped for an hour closes the four-slot backlog on the next one, oldest first; `month_closed` is emitted exactly once per rollover; a frozen tick (stale meter) still lets the load meters integrate.
 17. Planning I/O never holds the tick lock: a 3 s executor job inside `run_plan` does not skip a heartbeat tick; the lock is held for < 500 ms per cycle (INV-46).
+18. A `day_type` entity changing to a mapped state upserts one event, reaches `Inputs.events` on the next tick and the `day_type` modifier on the next plan; a restart restores the store with zero re-reads beyond one read per source; an expired event is pruned in the planning cycle (D1 §9 8, 16 through the runtime).
+19. The fits run once a day in the planning cycle's unlocked half, never in the tick, and a stored fit survives a restart (D10 §9 19).
+20. *(Phase 7)* The PV forecast refreshes hourly and on an Energy-preferences change, outside the lock; a site without solar sources performs no energy-platform call.
 
 ---
 

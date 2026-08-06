@@ -50,6 +50,7 @@ tests/
 │   ├── metering/ tariffs/ pricing/ loads/ strategies/ allocation/ forecasts/ engine/     one file per D-LLD §9 item group
 │   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py
 ├── property/                      hypothesis: greedy_vs_bruteforce, window_sums, normalise_roundtrip, gate_matrix
+├── fixtures/presets/               labelled synthetic tariff versions the benchmark needs and no operator has published (the Tensio 2027 switch, INV-52) - never shipped (D2 §2)
 ├── golden/                        presets/<id>.json (history → expected level/fee); questionnaires/<type>.json; snapshot_schema.json
 ├── scenarios/                     runner.py + scenarios/*.yaml (a day in the house; a month; DST day; restart mid-window; BLE flaps; price outage)
 ├── benchmark/                     houses/<name>.py (BenchmarkHouse specs), year.py (SyntheticYear generators), baselines/<house>.json, test_benchmark.py (tiers)
@@ -62,7 +63,9 @@ tools/
 ├── benchmark.py                   run a house × year at a tier; compare with the baseline; emit the PR table; update the baseline
 ├── capture_fixture.py             dump a device's entities/attributes from a live HA into tests/fixtures/captured/
 ├── price_replay.py                curve regimes through the planner (from effektstyring)
-└── inv_report.py                  which INV has which tests (feeds the traceability test)
+├── inv_report.py                  which INV has which tests (feeds the traceability test)
+├── dk_presets.py                   Energinet DatahubPricelist → dk/<company>.json, rows with ValidFrom ≤ the run date only (D2 §2)
+└── preset_age.py                  lists shipped preset versions verified more than 6 months ago - a CI step that warns, never fails (PLAN R12)
 ```
 
 ---
@@ -185,7 +188,13 @@ Uncontrolled load traces come from the builders (evening oven, weekend noise, a 
 | `fi_deductible` | peak kept ≤ 8 kW when cheap to do so |
 | `es_contracted_p1_p2` | never trips; P2 limit used at night |
 | `us_srp_demand_cooling` | pre-cooling before 15:00; 30-min on-peak demand ≤ target |
-| `au_solar_soak` (v1.x) | surplus consumed before grid |
+| `au_solar_soak` (Phase 7, v1.0) | surplus consumed before grid |
+| `zaptec_slow_trim` | a charger that accepts one change per 15 min (D4 §5.9): `over_target` = 0 through the winter week, the ceiling held by other loads and by urgent sheds, never more than one non-urgent write per 900 s |
+| `pv_no_battery_ev_waits` (Phase 7) | panels, no battery, EV due 07:00 next day: charges from midday surplus whenever the export price is below the night import price; `deadline_misses` = 0 |
+| `pv_battery_self_consumption` (Phase 7) | panels and a battery, low export price: charges from surplus, discharges into the evening import, no grid charge while surplus is forecast (D5 §5.8) |
+| `pv_battery_peak_shave_winter` (Phase 7) | panels and a battery in a dark month: `peak_shave`'s reserve holds the capacity window first; `over_target` = 0 |
+| `negative_price_soak` (Phase 7) | export price below zero: soaking loads and the battery take the surplus first; nothing curtailed |
+| `nl_saldering_end` (Phase 7) | `nl_pv` across 2027-01-01: no incentive to shift while net metering holds (export valued at the import price); self-consumption rises from 1 January |
 | `circuit_garage_32a` | EV + sauna never exceed 32 A; circuit breach sheds EV only. **As asserted (`tests/scenarios/test_phase2.py`, D-0284, D-0285):** the winter week's Saturday from 18:17, the car at 15 % under `force`, a 25 kW ceiling so the circuit is what binds, the garage `CircuitSpec` (32 A, three phases, the charger and the sauna, a clamp on the feed - `tests/builders/houses.py::GARAGE_CIRCUIT`). Before 19:00 the charger draws the whole fuse, capped by the garage; when the household lights the sauna the circuit is over its fuse for at most three ticks while the charger yields, then the two share it for the session and the sauna is never shed. From 20:47 for fifteen minutes an `unmetered_load` of 11 kW (a guest's car on the dumb socket and the fan heater) sits on the clamp: one `breach` event with `breach = "circuit"`; the charger at stage 4 at its floor (its stop vetoed by the plan horizon), capped by the garage, the fuse over by no more than that floor; the sauna off; the site's ladder where it was and the tank's and the loops' grants on the breach tick equal to the tick before; the charger back above its floor within five minutes of the guest leaving; `over_target`, `sessions_dropped` and `zero_amp_writes` 0 |
 | `floor_group_rotation` | no site breach; the group rations only under real scarcity; a loop held back past `starve_seconds` is eventually admitted. **As asserted (`tests/scenarios/test_phase3.py`, D-0292…D-0294):** a cold January evening (18 °C slabs) with every one of the five floor loops wanting heat at once - ~5 kW of nameplate against `FLOOR_GROUP`'s 2 kW cap (`tests/builders/houses.py::FLOOR_GROUP`) - under an 8 kW site ceiling tight enough that the ladder rations too. `over_target`, `sessions_dropped` and `engine_failures` 0; the group is inactive whenever the site is not tight (D6 §5.6's "below that threshold the group makes no decision at all") and active at least once through the evening; every loop whose clock (`sensor.<load>_starved_s`'s data source) reaches `starve_seconds` is admitted afterwards and sorts first in the following tick's queue, never left waiting past the timeout; a load no group names (`ev`, `tank`) carries no clock at all |
 | `hybrid_gas_switch` | gas chosen at COP < ratio; hysteresis prevents flapping |
@@ -245,7 +254,7 @@ One fictional house, one synthetic year, one metric set, one committed baseline 
 
 | element | spec | source |
 |---|---|---|
-| site | 230 V IT 3φ, 63 A main fuse; NO preset `no/tensio` with **both** versions (2026) so the year straddles the switch (INV-52) | D3 §5.1 table; the preset golden files |
+| site | 230 V IT 3φ, 63 A main fuse; NO preset `no/tensio` with **both** versions (2026) so the year straddles the switch (INV-52). The preset becomes `no/tensio-ts` with its verified versions, and the 2027-01-01 version a labelled synthetic fixture in `tests/fixtures/presets/` (D2 §2) - the switch stays in the year, the guess leaves the shipped files | D3 §5.1 table; the preset golden files |
 | EV | 3φ 32 A charger with BLE quirks (10-min drops, 6 A cliff), 60 kWh battery, weekday departure 07:30 ± 10 min, arrival 16:30 ± 30 min, energy per session lognormal around a commute (`assumed`; replaced by recorder sessions), plugged in on arrival 90 % of weekdays, weekend trips | `sim/ev.py`, `sim/charger_ble.py`, `sim/household.py` |
 | floor heating | 5 loops (2 bathrooms, hall, kitchen, living), cable in screed, areas 4–30 m², comfort per D4 §6.1 defaults, **two-node RC** slab + room model with a loss coefficient from area × U-value assumptions (`assumed`) and window solar gain | `sim/slab.py`; D4 §6.1 as the questionnaire *answers*, not the model |
 | water heater | 300 L, 3 kW, thermostat 75 °C, stratified two-layer tank, draw-off 45 L/person/day at 55 °C for 3 persons, morning/evening weighted, legionella weekly | `sim/tank.py`; D4 §5.7 draw-off profile |
@@ -268,7 +277,9 @@ The house is `tests/builders/houses.py::nordic_detached()` - all twelve loads th
 
 **As measured**, `smoke` runs at 187–194 ticks/s (646 s wall), under the 500 ticks/s floor by more than 2×. Memoising `_planned_kwh` and the accounting `Money` decode - both re-derived every tick for an answer that hadn't changed - buys ≈ 8 %. The dominant cost is `dataclasses.replace()` across 40+ call sites in the load kinds' `observe`/`apply` (D-0321). For the **suite's** wall time: `tests/scenarios/`'s module-scoped fixtures need `pytest-xdist` with `--dist=loadgroup` and an explicit `xdist_group` per fixture, or xdist either recomputes them per worker or serialises a whole file onto one - `test_phase0.py` runs in 67 s standalone once grouped - and `test_accounting.py`'s thirty-day `controlled`/`twin` pair (29 of the file's 30 minutes) runs as two OS processes instead of one after the other (D-0322). The floor is §9 8's open item.
 
-**Other houses** (phase 4, same generators, one baseline each): `nl_pv` (EPEX 15-min, PV 6 kWp, `ContractedPower`, negative midday), `be_quarter` (15-min windows, rolling-12, no free ride), `fi_linear` (`Linear(free_kw=8)`), `es_contracted` (P1/P2 trip), `us_demand` (SRP 30-min on-peak, pre-cooling), `au_solar` (solar soak, v1.x), `fr_tempo` (day-type events).
+**Other houses** (same generators, one baseline each): `nl_pv` (EPEX 15-min, PV 6 kWp, `ContractedPower`, negative midday), `be_quarter` (15-min windows, rolling-12, no free ride), `fi_linear` (`Linear(free_kw=8)`), `es_contracted` (P1/P2 trip), `us_demand` (SRP 30-min on-peak, pre-cooling), `au_solar` (solar soak), `fr_tempo` (day-type events).
+
+*(Phase 7 in v1.0)* `au_solar@1` - panels and a battery - is built in WP7.4 with its own baseline, as is the metric `self_consumption` (self-consumed production ÷ production, per month and total). `nl_pv` gains the Dutch net-metering end on 2027-01-01, inside `y2026_27`: before it, export is valued at the import price (net metering); from it, at 50 % of the bare supply price, the legal floor to 2030 (Rijksoverheid). A version bump of the house (`nl_pv@2`) with a `design/benchmarks/CHANGELOG.md` line. `fi_linear` keeps its grammar as a benchmark house even though WP4.6 retires the national FI preset: the house tests the shape, not a shipped bill.
 
 ### 5.10 HA-level end-to-end (`e2e`)
 
@@ -292,6 +303,86 @@ Baselines live in `tests/benchmark/baselines/<house>.json` with the build hash a
 
 What the reference house contributes, whenever a build happens to be running there: captured fixtures (`capture_fixture.py`), recorder history for the backtest (§5.4) and for re-fitting the fiction (§2), observe-mode calibration days for D11's shadows, and the human checks no simulator can do ("a newcomer adds a floor loop in under two minutes"). Each is a checklist under `design/benchmarks/house/<date>.md` with the build hash and the numbers; a failed house check opens an issue and, where it exposes a gap in the simulator, a change to the house spec - it never blocks a phase.
 
+**The observe-mode audit** is the first structured house check (PLAN WP H.1): the build running in the reference house, read without writing anything, checked against what the design says it should be doing.
+
+| area | what is read | what "healthy" means |
+|---|---|---|
+| deployment | the installed version and commit, the entry and its subentries, `diagnostics` | the build is a known commit; every load's subentry has `answers`, `derived` and `derivation_version` (INV-66) |
+| logs | HA's log since the last restart, filtered to `custom_components.powerplan` | no ERROR; each WARNING explained or turned into an issue |
+| repairs | the issue registry for `powerplan` | every open issue has a condition that is true, and none is stale |
+| metering | `meter_stale`, `_degraded`, `_seam`, `meter_health`, `window_used` against the import register's hourly deltas from the recorder | projection within ±0.3 kWh at p95 (the phase-1 gate's own number), no unexplained seam |
+| prices | `price_source_health`, `price_forecast` coverage, `prices_tomorrow` | a full horizon every day; tomorrow by the market's publication time |
+| planning | `plan` and each load's `plan_next`, the `reasons` trail, the observe log's would-be writes | plans adopted without churn; the would-be writes are what the plan says |
+| peaks | `peak_warning` and `next_peak_warning` against the windows that actually crossed | every crossing warned ≥ 20 min before (the phase-1 gate's number) |
+| calibration | each load's `savings_confidence`, `calibration_error`, `baseline_confidence`, the learned fits | ≥ 3 observe days per load; `calibration_error` < 0.10 (D11 §5.5) |
+| cost | `cost` and `savings` against the meter's kWh × the curve | the site identity (D11 §9 10) within rounding |
+| performance | `tick_ms`, the planning cycle's duration | tick P95 < 50 ms, plan < 500 ms (D9 §9 6) |
+
+Each finding becomes an issue and, where it can, a captured fixture or a scenario, so it stays found (PLAN §7 dec. 13).
+
+### 5.13 Speed: the same tests, a lot faster
+
+**The rule.** Nothing here removes, narrows, coarsens or re-baselines a test. Every scenario keeps its days and its 10 s step (§8), every benchmark tier its spans, every tolerance its value, every assertion its number. A speed change is only accepted if every benchmark digest (§9 8) and every `ScenarioResult` the suite asserts on is **byte-identical** before and after. The determinism the suite already proves is what makes that check mechanical, and it's the exit criterion of every WP below. The goal: the whole suite in atmost 5 minutes, without touching quality.
+
+**Where the time goes** (measured on a 6-core, 14 GB dev box; CI's runners have 4 cores):
+
+| what | measured | share of test time |
+|---|---|---|
+| the whole PR command (`-m "not perf and not backtest" -n auto --dist=loadgroup`) | **24 min 20 s** wall, 72.5 CPU-minutes, 2 197 tests | - |
+| `test_smoke_runs_byte_identically_twice`: smoke twice in a row, each two 7-day spans of the 12-load house run one after the other | 1 347 s | 35 %, **the critical path** |
+| the 30-day controlled/twin pair (`test_accounting.py`, already two processes) | 1 175 s | 31 %, the next critical path |
+| the other simulations: legionella week 257 s, observe days 174 s, e2e day 123 s, quarter-hour week 122 s, price outage 84 s, the rest ≈ 390 s | ≈ 1 150 s | 30 % |
+| every other test (`core`, `flows`, `surface`, `providers`, `runtime`, `property`, `sim`, `backtest`: ≈ 2 150 tests) | ≈ 165 s | 4 % |
+
+In CI the same pytest run happens on both HA fixture lines, followed on `ha-latest` by `benchmark.py --tier smoke` (662 s) and, on a `core` PR, `--tier month` (31 days of the 12-load house at 183 ticks/s ≈ 24 min), one after the other, so a core PR waits roughly an hour.
+
+The wall clock is set by the longest **sequential** simulation, not by the total: pytest-xdist spreads 2 000 short tests over six workers, but a 30-day scenario or a 14-day benchmark is one process ticking 8 640 times per simulated day. Inside one simulated day (`reference_winter_day`, cProfile, 51 s): the engine's tick 35.6 s (70 %), planning 6.3 s (12 %), simulators and the runner 9 s (18 %). Inside the tick the cost is flat - no function above 4 % of self time - but it falls into five groups that recompute, every 10 s, values that change far less often:
+
+| group | share of the day | what changes it |
+|---|---|---|
+| tariff evaluation (`version_at` 571 k calls, `_peak` 528 k, `_period_key` 210 k, `month_key` 341 k per day - 60+ per tick) | 12.5 % self | a closed window, a period rollover, a target change |
+| snapshot sections: `_tariff_status`, `_level_events`, `_warnings`, `_price_status`, `_plan_statuses`, `_level_notification` | ≈ 24 % of the tick | the same, plus an adopted plan or a rebuilt curve |
+| per-load `observe` / `apply` (`dataclasses.replace` 325 k calls, 9.6 %) | ≈ 32 % of the tick | the load's own reads, its grant, a knob |
+| datetime conversions (`astimezone` 820 k, `timestamp` 646 k, `total_seconds` 1.8 M) | 5.6 % self | the tick's own `now`, once |
+| simulator RNG (`derive_rng`, a fresh `random.Random` per drawn value - D-0328) | 2.5 % self | - (load-bearing for determinism; left alone) |
+
+D-0328 found the cost diffuse and declined a rewrite of the three conventions behind it: immutable dataclasses, tz-aware datetimes and per-value RNG streams. The levers below keep all three. They remove **repetition**, not conventions.
+
+**Lever 1: waste out of the pipeline (T.1a).** Every item leaves every test and every result as it is.
+
+| # | change | why it is the same test |
+|---|---|---|
+| 1 | `run_benchmark` runs a tier's **spans in parallel** (one process per span, `spawn`, D-0322's precedent) and folds the results in span order | each span starts from its own fresh house and year; the fold is order-stable |
+| 2 | `test_smoke_runs_byte_identically_twice` compares **one** smoke run's digest with the committed baseline's digest instead of running smoke twice in a row; the second identical run moves to the nightly job | byte-identical to the baseline proves determinism across runs *and* machines, a stronger check than two runs in one process |
+| 3 | CI's `bench smoke` step and that test share one run: the step writes the result, and the test reads it when it exists | the same simulation, computed once |
+| 4 | the HA-agnostic suites (`tests/core`, `property`, `sim`, `scenarios`, `benchmark`, `backtest`) run once per CI run, not on both HA fixture lines; the HA-facing suites (`flows`, `surface`, `runtime`, `providers`, `e2e`) keep both lines | the agnostic suites import no `homeassistant` (INV-2 and the purity test prove it), so the second line re-ran identical code |
+| 5 | CI splits into parallel jobs - unit, scenarios, benchmark - and the scenario job orders xdist groups **longest first** from a committed `tests/durations.json` (refreshed by a tool, never hand-edited) | scheduling only |
+| 6 | a **simulation result cache**: `run_scenario` and each benchmark span are keyed by a SHA-256 over the scenario or span spec, every file under `custom_components/powerplan/core/`, `tests/sim/`, `tests/builders/`, `tests/scenarios/{runner,catalogue}.py`, `tests/benchmark/`, `uv.lock` and the Python version. A hit returns the stored result, a miss runs and stores it, and a file lock makes parallel workers compute each key once. CI restores the cache from `main`; `POWERPLAN_SIM_CACHE=off` bypasses it; the nightly run is always uncached | a hit is the result a run would produce - determinism is asserted (§9 8) - and any change to an input changes the key; a PR that touches `core/` recomputes everything |
+
+**Lever 2: the incremental tick (T.1b).** The engine stops recomputing, every tick, what didn't change since the last one. Same types, same immutability, same tz-aware datetimes, same order of steps (D7 §5.1):
+
+| # | change | expected share |
+|---|---|---|
+| 1 | a per-tick memo inside the tariff evaluator: the active version, the period key and the peak rows are computed once per tick, not 60+ times | most of the 12.5 % |
+| 2 | change-stamped snapshot sections: the tariff history, the plans and the curves carry a version stamp; a section is rebuilt only when a stamp it reads has moved, else the previous section object is reused | ≈ 24 % |
+| 3 | no-change fast paths in `observe` / `apply`: when a load's reads, grant and knobs equal the previous tick's, the previous `LoadState` object is returned rather than rebuilt (an unchanged check costs 0.2 µs against 9.5 µs for `replace`, measured on `LoadState`) | a large part of ≈ 32 % |
+| 4 | one `TickClock` per tick - the UTC instant, epoch seconds, local datetime, local date, month key - computed once in `tick()` and passed down | most of 5.6 % |
+| 5 | planning: `deadline_fill.free_blocks` (1.6 s in 838 calls per day) cached per plan call | part of the 12 % planning share |
+
+Target: **≥ 500 ticks/s on `nordic_detached` smoke**, §9 8's own floor, measured at 183.
+
+**Lever 3 - compiled core for the simulation tiers (T.1c, a spike).** `core/` is `mypy --strict` clean, which is what mypyc compiles. A first attempt (mypy 2.3.1, a scratch copy) compiled 127 of 130 modules. Two needed a one-line change: a class decorated with `@register` becomes non-native, so it is registered after its definition instead; an exception subclass is marked `native_class=False`. One (`pricing/forecasters/same_weekday.py`) hit an internal mypyc error and stays interpreted. The C build as one `-O3` unit took 19 minutes, and the resulting 129 modules **crash the interpreter on import** (a segmentation fault loading the first compiled module, before any test ran). The cause is not yet known - a mypyc and CPython 3.14 interaction, or the mixed compiled/interpreted package - so compiling is a risk to be proved, not a gain to be counted. The spike's first task is a clean import and a byte-identical day; then it measures `MYPYC_OPT_LEVEL`, multi-file builds and a build cache keyed by the source hash. The same day's pure-Python baseline to beat: `reference_winter_day` at **347 ticks/s** (24.9 s per simulated day, 4-load house, unloaded machine). The spike compiles `core/` in CI for the scenario and benchmark jobs only. It is adopted only if every digest and scenario result is byte-identical to pure Python, and the tiers run at least 2× faster than after lever 2. Pure Python stays the shipped artifact and runs nightly and on every release tag, so the compiled path can never be the only thing tested. Shipping compiled code to households (a `powerplan-core` wheel, HLD §5) is out of scope.
+
+**Targets:**
+
+| | today (measured / estimated) | after T.1a | after T.1b | after T.1c - the target |
+|---|---|---|---|---|
+| the local PR command, 6-core box | 24 min 20 s (measured) | ≈ 20 min: the 30-day pair becomes the critical path | ≈ 8–10 min | **≤ 5 min** |
+| CI, a PR touching `core/` or the simulators | ≈ 1 h: pytest, then smoke, then month, in sequence (estimated) | ≈ 24 min: the month tier, now a parallel job | ≈ 10 min | **≤ 5 min per job** |
+| CI or local, a PR touching neither | as above | ≤ 3 min: the simulation cache hits | same | same |
+| smoke on its own | 662 s | ≈ 330 s: two spans in parallel | ≈ 130 s | ≤ 60 s (§5.9's own budget) |
+
+The arithmetic behind "≤ 5 min": after T.1a removes the second smoke run, the simulations are ≈ 3 000 CPU-seconds, which six cores can clear in five minutes only if they fall to ≈ 1 500; and the longest single simulation - one 30-day run, 1 175 s under load - must fall to ≈ 270 s. That is **≈ 4.3× on the sequential path**, for the engine *and* the simulators and runner, which are 18 % of a simulated day (Amdahl caps a core-only speedup at ≈ 5.5×). Hence T.1c compiles `tests/sim/` and the runner beside `core/` if the spike adopts compilation at all. If T.1b and T.1c together fall short, the WP reports the measured gap; no test is narrowed to meet the number.
 ---
 
 ## 6. Configuration schema
@@ -335,6 +426,8 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 9. Baseline machinery: a metric outside tolerance fails `--compare` with the offending row; `zero` tolerances are enforced; a baseline update without a `design/benchmarks/CHANGELOG.md` line fails a lint check.
 10. `e2e` day: the integration set up through its real flows against `fake_house`; every entity in D8 §5.5 exists; writes arrive with `blocking=True` (the executor's test until WP2.4 binds a load; the day itself writes nothing in phase 1); the pure runner's same day agrees - closed windows one for one, `over_target` and the capacity fee equal, writes both zero; the phase-1 gate's projection p95 and warning leads as §5.10 defines them (`tests/e2e/test_e2e_day.py`).
 11. Uncontrolled loads in the house spec (types not yet implemented) run on their own logic and are metered into `uncontrolled`; the baseline's `controlled_share` matches the build.
+12. `tools/dk_presets.py` on a captured DatahubPricelist page emits one version per season with `ValidFrom` ≤ the run date and nothing later; `tools/preset_age.py` lists exactly the versions verified more than 6 months before a given date.
+13. *(§5.13)* Speed without change: CI records every benchmark digest and every scenario result's digest on `main`; a PR whose speed change alters any of them fails, whatever it gains; the test count and the tolerance files are unchanged by T.1; the PR description carries the before/after wall times of the PR command and each CI job.
 
 ---
 
@@ -349,6 +442,14 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Speed by doing less: long scenarios and the smoke tier nightly, a fast PR subset.** *For:* the PR run drops to the ≈ 165 CPU-seconds of non-simulation tests at once, with no engine work, and many projects gate PRs on unit tests and run the heavy suite nightly. *Against:* the point is the same tests, only faster - the simulations are the gate (PLAN §7 dec. 7, 13), and a regression found overnight is a regression merged. **Decision:** every test stays on the PR, the pipeline stops repeating work and the engine stops recomputing (§5.13).
+
+**A coarser step (30 s or 60 s ticks) for the long scenarios.** *For:* 3–6× in one go. *Against:* §8 forbids it - the 10 s step is the runtime's own debounce, and the 6 A cliff, the BLE flaps and the seam show up at that grain. **Decision:** the step never changes.
+
+**Bigger machines instead of faster code.** *For:* larger CI runners cost money, not engineering. *Against:* the critical path is one sequential 30-day run, more cores don't shorten it and a faster core does. **Decision:** code first, runner size revisited after T.1c's numbers.
+
+**PyPy for the simulation tiers.** *For:* a JIT usually gives several times on this kind of object-heavy Python, with no code change. *Against:* the code uses Python 3.12+ syntax (PEP 695 generics) and pins 3.14 (PLAN §7 dec. 1), and PyPy tracks 3.11. **Decision:** not possible today, mypyc is the compile path the strict typing already pays for.
 
 **Test through Home Assistant only (integration tests), skip the pure layer.** *For:* tests what users run, one harness. *Against:* slow, flaky, and can't run a month of ticks in seconds, and the most valuable tests (the ten-starts ratchet) are pure. **Decision:** pure core first, the HA harness for the surface.
 

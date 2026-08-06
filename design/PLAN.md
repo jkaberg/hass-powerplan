@@ -6,7 +6,7 @@ How the design in [HLD.md](HLD.md) and [lld/](lld/) becomes a released integrati
 
 ## 1. Definition of done
 
-**v1.0** is HLD §9's phases 0-6: every LLD §9 test exists and passes, every safety invariant (HLD §7.5) has a marked test, the scenario catalogue (D9 §5.3) is green, the **reference benchmark** (D9 §5.9) meets its baseline with every load under control, the Norwegian backtest lands every window under target on 12 months of history, and the integration passes hassfest and HACS validation with `en` and `nb` translations.
+**v1.0** is HLD §9's phases 0-6, plus this plan's Phase 7 (solar and the battery together, dec. 25), released last: every LLD §9 test exists and passes, every safety invariant (HLD §7.5) has a marked test, the scenario catalogue (D9 §5.3) is green, the **reference benchmark** (D9 §5.9) meets its baseline with every load under control, the Norwegian backtest lands every window under target on 12 months of history, and the integration passes hassfest and HACS validation with `en` and `nb` translations. Every shipped tariff version is read from its operator's own document (dec. 21), every registered price format is configurable through the flow (dec. 22), every non-review flow step links to its section of the user pages (dec. 23, 40), and the site has its dashboard (dec. 26).
 
 **v0.x pre-release** ships after phase 3 as a HACS beta for Norway: a second house before breadth is built on assumptions one house can't test (dec. 3).
 
@@ -40,6 +40,36 @@ Every work package (WP) is one PR with the LLD sections it implements, what it p
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **0.0 Prerequisites** | read-only access to the ancestor controller's source and the recorder history; captured fixtures of the reference house's meter, charger, floor thermostat and Nord Pool entity; the GitHub repository | - | the fixtures in `tests/fixtures/captured/` | - |
+
+### 3.0a Test speed
+
+The same tests and benchmarks, a lot faster: nothing removed, narrowed, coarsened or re-baselined, and every change proved by byte-identical benchmark digests and scenario results (D9 §5.13, dec. 27).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **T.1a Test speed: waste out of the pipeline** | benchmark spans in parallel processes; the determinism check as two concurrent runs; HA-agnostic suites run once per CI run; CI split into parallel jobs; longest-first scheduling; a content-hashed simulation cache | D9 §5.13 lever 1 | D9 §9 13; every digest and scenario result byte-identical; the test count unchanged | - |
+| **T.1b Test speed: the incremental tick** | memos keyed on identity and stamps in the evaluator, the loads and the strategies; `tools/digests.py` and the `speed`-labelled digest job | D9 §5.13 lever 2; D7 §5.1 | D9 §9 13; ≥ 500 ticks/s on `nordic_detached` smoke; `tests/perf/` budgets green | T.1a |
+| **T.1c Test speed: compiled core for the simulation tiers** | a mypyc spike over `core/`, the simulators and the runner, adopted only if byte-identical and it closes the gap | D9 §5.13 lever 3 | D9 §9 13; the spike's table (build time, ticks/s, digest equality) in DECISIONS | T.1b |
+
+### 3.0b The household's screens and the brand
+
+A review of every screen as a household sees it, someone who knows their bill and not the grid, found the flows speaking the design's language: English and raw keys in the nb UI, a YAML editor for tariff periods, a free-number fuse, an access point's LED offered as a load ([ux-review](reviews/ux-review.md); item ids are its own). Design: D8 §5.15, §5.12; D1-D4 and D6 §6; HLD §2, §7.9 (9); dec. 28, 29.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **B.1 The brand** | `custom_components/powerplan/brand/` (icon, logo, dark logo at 1× and 2×); the SVG masters and `tools/brand/`; manifest and `hacs.json` named PowerPlan; HACS's blank store icon documented | D8 §5.12; review BR-1, BR-2, BR-4, BR-5; dec. 29 | D8 §9 20; hassfest green | - |
+| **U.1 Text that is never raw or English** | every word from translations and every number from `flow/text.py`; D2's `TariffSummary`; one step id per add-on; translated options, states, event types and error codes; the advice sensor as an enum | D8 §5.15, §5.11, §3 `flow/text.py`; review R1-R4 | D8 §9 18, §9 22 (target half); the text guardrails green on every step in both languages | T.1c |
+| **U.2 Controls that prevent mistakes** | fuse sizes to pick; percent sliders; minor-unit prices; per-type temperature ranges with min ≤ comfort ≤ max; form lists for periods; filtered role pickers; one Advanced intro with derived values; the hard-limit step removed | D8 §5.15 (controls); D1-D4, D6 §6; review CTL-1…16 | D8 §9 17, 21; D4 §9 16 with an access-point view | U.1 |
+| **U.3 A setup a household finishes** | the site flow as nine questions with detection first; the load flow type-first over all eight types with its own device list; strict by default for new sites (dec. 28); the glossary across flows, entities, repairs and notifications | D8 §5.15, §5.1, §5.2; D1-D4 §6; HLD §2 | D8 §9 1, 2, 16, 18, 21, 22 | U.2, A.3 |
+| **U.4 Entities that read as sentences** | names and translated states for every site entity; window names by `window_min`; kW display; `stage` numeric and diagnostic; the peak warning's next window; no entity removed | D8 §5.15 (site entities), §5.5, §5.12; INV-50 | D8 §9 19 (site rows), 4, 5, 22 | U.1 |
+
+### 3.0c The running build, read end to end
+
+The build has run in `observe` since phase 1. A read-only audit of it comes before the other streams, because what it finds may change them.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **H.1 The running build, read end to end** | a read-only audit of the live build: diagnostics, logs, repairs, metering against the recorder, prices, plans and would-be writes, warnings, calibration, cost, timings; each finding fixed, placed or explained | D9 §5.12; D7 §8; D8 §5.9-5.10 | all ten areas answered; nothing written to the live install | - |
 
 ### Phase 0 - Pure core and the backtest gate
 
@@ -116,6 +146,11 @@ HLD §9 phase 4. **Gate (simulated):** golden tests per market; one benchmark ho
 | **4.3a Tariff presets** | the market presets with a golden each | D2 §6 | D2 §9 1, 12 | 0.3 |
 | **4.3b Market houses: FI, ES, FR** | `fi_linear`, `es_contracted`, `fr_tempo` on one builder | D9 §5.9 | their scenarios and baselines | 4.3a, 4.9 |
 | **4.4 Entity format table** | price sensors from any market | D1 §2 | D1 §9 1 | 1.2 |
+| **4.6 Tariffs: verified facts only** | every shipped version read from its operator's own document; templates where the household's numbers are the bill's; retired files mapped | D2 §2, §3, §6, §9 20-22; dec. 21 | D2 §9 1, 10, 12, 20-22 | 0.3, 4.3a |
+| **4.7 Price sources: every row through the flow** | every format configurable from the prices step; new rows with fixtures from their sources | D1 §2, §6, §9 18; dec. 22 | D1 §9 1; a flow test over every registered format | 4.4, 1.3 |
+| **4.8a Charger profiles: Zaptec, Easee cloud** | `zaptec`, `easee_cloud`; device-addressed calls; `zaptec_slow_trim` | D4 §5.9, §5.10, §9 16, 22-24; dec. 24 | D4 §9 5, 6, 16, 22-24; D9 §9 7 | 2.2, 2.3 |
+| **4.8b Charger profiles: OCPP and vocabulary rows** | `ocpp`, `wallbox`, `peblar`, `v2c`, `goecharger_api2` | D4 §5.9, §9 16, 24; dec. 24 | D4 §9 16 | 4.8a |
+| **4.9 Event sources in the runtime** | the runtime's `EventStore`, so day types, overrides, spikes, rewards and load limits reach the tick | D1 §5.6; D7 §5.2, §5.3, §5.5 | D1 §9 8, 16; D6 §9 17 | 1.2, 5.5 |
 
 ### Phase 5 - Forecasts, zones, battery, external limits, delegated
 
@@ -129,6 +164,8 @@ HLD §9 phase 5. **Gate (simulated):** on the benchmark year the reserve shrinks
 | **5.3 Zones** | hybrid heating | D6 `constraints/zone.py` | D6 §9 13; `hybrid_gas_switch` | 3.4 |
 | **5.4 `battery`, `arbitrage`, `peak_shave`** | the battery in simulation | D4; D5 `battery.py`; D6 | the battery tests; `battery_arbitrage` | 4.1 |
 | **5.5 External limits and `delegated`** | §14a and Octopus postures | D6 `ExternalLimit`; D4 `delegated` | D6 §9 17; D4 §9 17 | 4.2 |
+| **5.6 The remaining shadows** | tank, schedule and idle shadows | D11 §5.3 | D11 §9 6, 8, 9 | 3.3, 4.1, 5.4 |
+| **5.7 Fits wired** | the daily fit reaching D4 and D11 | D10 §5.6, §9 19; D7 §5.2 | D10 §9 7, 8, 9, 11, 13 through the runtime | 5.1 |
 
 ### Phase 6 - Quality, dashboard, release preparation
 
@@ -138,7 +175,22 @@ HLD §9 phase 6.
 |---|---|---|---|---|
 | **6.1 Quality and performance gates** | CI that refuses regressions | D9 §2, §5.1; `quality_scale.yaml` | D9 §9 1, 2, 4, 5, 6; perf green | all |
 | **6.1a Suite speed** | the tick's cheap memos; the suite on `pytest-xdist` | D9 §5.1 | the suite unchanged | 6.1 |
-| **6.2 Documentation** | user pages (split into 6.2a and 6.2b, then into the documentation stream) | D8 §5.13 | - | - |
+| **6.2a User pages** | moved into the documentation stream (dec. 40) | D8 §5.13 | - | - |
+| **6.2b Flow links** | moved into the documentation stream (dec. 40) | D8 §5.13 | - | - |
+| **6.4a Dashboard: layout, entities, built-in cards** | the strategy dashboard built from the registry; `calendar.<site>_planned_runs`, `sensor.<site>_plan` | D12 §2-§6, §9 1-6, 8; dec. 26 | D12 §9 1-6, 8 | 6.1 |
+| **6.4b Dashboard: timeline and window gauge** | `frontend/` in TypeScript with esbuild; the two custom cards | D12 §3, §5.2, §5.3, §9 7 | D12 §9 7 | 6.4a |
+
+### Phase 7 - Solar and the battery together
+
+The solar-and-battery part of HLD §9 phase 7, inside v1.0 (dec. 25). **Gate (simulated):** a benchmark house with panels and a battery (`au_solar`, and `nl_pv` across the end of net metering) where `self_consumption` rises and `cost_energy` falls with `over_target` 0 and `nordic_detached` byte-identical; the Phase 7 scenarios green.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **7.1 PV forecast through the energy platform** | the site's solar forecast from its Energy dashboard's sources; the export limit | D10 §5.5; D3 `export_limit_w`; D7 §5.2 | D10 §9 17-18; D3 §9 21 | 5.1 |
+| **7.2 `surplus` and the surplus-aware battery** | the effective price per slot; `surplus`; the battery on that curve | D5 §2, §5.8, §5.9; D6 §5.3 | D5 §9 17-21; D6 §9 24-25; the Phase 7 scenarios | 7.1, 5.4 |
+| **7.3 Surplus in the ledger** | a load's surplus priced at the export price | D11 §5.2, §5.3 | D11 §9 18-20 | 7.2, 5.6 |
+| **7.4 Solar houses** | `self_consumption`; `au_solar`; `nl_pv` across net metering's end | D9 §5.3, §5.9 | the phase gate | 7.2 |
+| **7.5 Battery hardware survey** | which battery integrations take a power, a mode or an output limit | D4 §5.9 | D4 §5.9's battery table and WP rows | - |
 
 ### Release
 
@@ -204,6 +256,9 @@ Contributor notes are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 | R9 | **Real-market surprises**: intraday corrections, a price-format change, a DSO announcement. | medium / low | Format adapters on captured fixtures; a surprise becomes a fixture and a regime parameter. |
 | R10 | **The savings number is a model, and it's the number people quote.** | medium / medium | INV-69; observe-mode calibration gating `savings_confidence` (D11 §5.5); `savings_vs_twin`; later the settled reference (dec. 41). |
 | R11 | **The pure tick is too slow** for the year-long benchmark and the PR suite. | medium / medium | ≥ 500 ticks/s with `full` nightly and a `month` tier on `core/` PRs (dec. 19); the step is never coarsened (D9 §8); the test-speed stream (dec. 27). |
+| R12 | **Verified tariffs go stale between releases** (dec. 21). DSOs change prices more than once a year. | high / medium | Tariffs fetched from the operators' data where a source exists (dec. 39); the review shows each tariff's source and date; the flow lets the household override. |
+| R13 | **Third-party integrations drift** under the charger, battery and price rows. | medium / medium | Match by role tokens and platform, never full entity ids (D4 §5.9); fixtures written from each integration's source; a role that stops binding is named in the flow and as a repair (INV-53). |
+| R14 | **HA's frontend drifts under the dashboard** (dec. 26). | medium / medium | The layout is data generated in Python and tested against a golden; `layout.py` degrades by HA version; the cards bundle their own chart library; the bundle is rebuilt and diffed in CI. |
 
 ---
 
@@ -231,6 +286,15 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 18. **The free ride is never capped below today's paid peak (INV-9);** the cap is `max(T + margin, today_max)`. *Rejected:* a tight cap - under `per_day = max` the slack is costless by construction.
 19. **Benchmark tiers are `smoke`, `month`, `full` and `e2e`; the tick gate is ≥ 500 ticks/s.** `month` (≤ 5 min) gates a `core/` PR, `full` (≤ 2 h) runs nightly, 2 000 ticks/s is the target. *Rejected:* 2 000/s as a hard gate - unproven in CPython, and a miss would block every phase-0 PR.
 20. **Site `active = off` means every load in `observe`.** It releases every load on the edge (INV-26), keeps computing and publishing decisions (INV-44), logs would-be writes and accrues calibration. *Rejected:* a three-way site select - HA already has "disable the entry" for off.
+21. **Shipped tariffs carry verified facts only.** Every shipped version cites its operator's or regulator's own document, has a verified date, nothing assumed, and `valid_from` no later than that date. A national preset whose numbers belong to each DSO isn't shipped: the template asks the numbers from the bill. *Rejected:* shipping a published future table - a fact, but the rule is simpler kept strict, and the flow's override covers the gap.
+22. **A price format ships only when the flow can configure it end to end,** checked by a flow test over every registered key. *Rejected:* fixing the most common format alone - one missing options call broke five.
+23. **Flow text says little; the explanation lives in `docs/` and is linked.** A step description ≤ 2 sentences and 30 words, a field ≤ 1 sentence and 15 words, an option ≤ 5 words; review steps exempt. Links go through `description_placeholders`, since hassfest refuses URLs in strings, and point at `main`. *Rejected:* tag-pinned links - a dev build has no tag. A docs site - plain markdown needs no build or deploy.
+24. **Charger profiles follow installs and market share.** Zaptec, Easee cloud and OCPP get product profiles; chargers whose integration exposes an amp number get vocabulary rows; chargers without amp control and car-side control wait for v1.x. Fixtures come from each integration's source. *Rejected:* OCPP alone - households run the vendors' integrations.
+25. **Solar and the battery are Phase 7, inside v1.0, on one effective price per slot.** A slot's first `surplus_w` costs the export price and the rest the import price; `surplus` and the battery strategies rank against it, with peak shave before surplus before arbitrage (INV-1). The PV forecast comes through HA's energy platform. *Rejected:* v1.x - most home batteries sit beside panels, and a PV-blind battery is the wrong battery to call 1.0.
+26. **A dashboard of its own, in the Energy dashboard's shape, built-in cards first.** A strategy dashboard registered from the integration's module, its layout generated in Python from the registry; the future drawn by a timeline card and the current window by a gauge. *Rejected:* a starter YAML dashboard - built-in cards can't draw the future, and YAML names entity ids that go stale.
+27. **Test speed, and speed never costs a test.** Nothing is removed, narrowed, coarsened or re-baselined; every change leaves every digest byte-identical; cheapest first: stop repeating work, then stop recomputing, then compile. *Rejected:* moving long simulations to nightly - the simulations are the gate.
+28. **The screens are written for someone who knows their bill, not the grid** (D8 §5.15). One question per screen, detection first, a safe default for "don't know", controls that make a wrong answer hard, the glossary everywhere, and never a raw key or an "unknown" normal state. New sites start strict (`risk` 0). *Rejected:* fixing words only - an order that asks the wrong question first can't be fixed with words.
+29. **The brand ships inside the integration.** Since HA 2026.3, the floor, `custom_components/powerplan/brand/` is served by HA itself, and the brands repository no longer takes custom integrations. HACS's blank store icon is documented as a limitation.
 
 ---
 
@@ -252,6 +316,8 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 
 **One "capacity" WP for D3, D2 and D6.** *For:* the budget chain only makes sense whole. *Against:* a 2 000-line PR nobody can review. **Decision:** three WPs with self-contained tests.
 
+**Ship first, then do the research items.** *For:* a released beta finds real problems faster. *Against:* a beta that mis-bills its own market's capacity steps teaches its first users not to trust the one number it exists to defend. **Decision:** verified Norwegian tariffs, every price source and the Nordic chargers before v0.x; the rest before v1.0.
+
 ---
 
 ## 9. Checklist
@@ -261,6 +327,15 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | WP | Name | Status |
 |---|---|---|
 | 0.0 | Prerequisites | in progress |
+| T.1a | Test speed: waste out of the pipeline | todo |
+| T.1b | Test speed: the incremental tick | todo |
+| T.1c | Test speed: compiled core for the simulation tiers | todo |
+| B.1 | The brand | todo |
+| U.1 | Text that is never raw or English | todo |
+| U.2 | Controls that prevent mistakes | todo |
+| U.3 | A setup a household finishes | todo |
+| U.4 | Entities that read as sentences | todo |
+| H.1 | The running build, read end to end | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -302,15 +377,30 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3a | Tariff presets | done |
 | 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
+| 4.6 | Tariffs: verified facts only | todo |
+| 4.7 | Price sources: every row through the flow | todo |
+| 4.8a | Charger profiles: Zaptec, Easee cloud | todo |
+| 4.8b | Charger profiles: OCPP and vocabulary rows | todo |
+| 4.9 | Event sources in the runtime | todo |
 | 5.1 | D10 core and providers | done |
 | 5.1a | D10 core | done |
 | 5.2 | Baseline-aware reserve and warning | done |
 | 5.3 | Zones | done |
 | 5.4 | `battery`, `arbitrage`, `peak_shave` | done |
 | 5.5 | External limits and `delegated` | done |
+| 5.6 | The remaining shadows | todo |
+| 5.7 | Fits wired | todo |
 | 6.1 | Quality and performance gates | done |
 | 6.1a | Suite speed | done |
-| 6.2 | Documentation | todo |
+| 6.2a | User pages | todo |
+| 6.2b | Flow links | todo |
+| 6.4a | Dashboard: layout, entities, built-in cards | todo |
+| 6.4b | Dashboard: timeline and window gauge | todo |
+| 7.1 | PV forecast through the energy platform | todo |
+| 7.2 | `surplus` and the surplus-aware battery | todo |
+| 7.3 | Surplus in the ledger | todo |
+| 7.4 | Solar houses | todo |
+| 7.5 | Battery hardware survey | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
