@@ -22,6 +22,7 @@ import pytest
 
 from tests.builders.houses import be_quarter, nl_pv
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import run_scenario
 
 if TYPE_CHECKING:
@@ -42,7 +43,9 @@ NL_WINDOW_MARGIN = 1.10
 @pytest.fixture(scope="module")
 def negative_midday() -> ScenarioResult:
     """Run `nl_pv_negative_midday` once for the module."""
-    return run_scenario(catalogue.nl_pv_negative_midday())
+    return cached(
+        __file__, "negative_midday", lambda: run_scenario(catalogue.nl_pv_negative_midday())
+    )
 
 
 def test_the_scenario_s_own_day_really_does_go_negative_at_midday() -> None:
@@ -71,7 +74,9 @@ def test_the_day_runs_clean_and_never_averages_over_the_trip_limit(
 @pytest.fixture(scope="module")
 def quarter_hour_week() -> ScenarioResult:
     """Run `be_quarter_hour_rolling` once for the module."""
-    return run_scenario(catalogue.be_quarter_hour_rolling())
+    return cached(
+        __file__, "quarter_hour_week", lambda: run_scenario(catalogue.be_quarter_hour_rolling())
+    )
 
 
 @pytest.mark.xdist_group(name="phase4_quarter_hour_week")

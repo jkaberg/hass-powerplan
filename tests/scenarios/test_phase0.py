@@ -17,6 +17,7 @@ import pytest
 
 from custom_components.powerplan.core.loads.types.water_heater import READY_BAND_K
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import run_scenario
 from tests.sim.tank import THERMOSTAT_HYSTERESIS_K
 
@@ -40,31 +41,31 @@ ZWAVE_MAX_PER_10_MIN = 1
 @pytest.fixture(scope="module")
 def winter() -> ScenarioResult:
     """Run `reference_winter_day` once for the module."""
-    return run_scenario(catalogue.reference_winter_day())
+    return cached(__file__, "winter", lambda: run_scenario(catalogue.reference_winter_day()))
 
 
 @pytest.fixture(scope="module")
 def flat() -> ScenarioResult:
     """Run `flat_price_night` once for the module."""
-    return run_scenario(catalogue.flat_price_night())
+    return cached(__file__, "flat", lambda: run_scenario(catalogue.flat_price_night()))
 
 
 @pytest.fixture(scope="module")
 def autumn() -> ScenarioResult:
     """Run `dst_autumn` once for the module."""
-    return run_scenario(catalogue.dst_autumn())
+    return cached(__file__, "autumn", lambda: run_scenario(catalogue.dst_autumn()))
 
 
 @pytest.fixture(scope="module")
 def spring() -> ScenarioResult:
     """Run `dst_spring` once for the module."""
-    return run_scenario(catalogue.dst_spring())
+    return cached(__file__, "spring", lambda: run_scenario(catalogue.dst_spring()))
 
 
 @pytest.fixture(scope="module")
 def outage() -> ScenarioResult:
     """Run `price_outage_48h` once for the module."""
-    return run_scenario(catalogue.price_outage_48h())
+    return cached(__file__, "outage", lambda: run_scenario(catalogue.price_outage_48h()))
 
 
 def _windows_on(result: ScenarioResult, day: date, tz: object) -> list[datetime]:

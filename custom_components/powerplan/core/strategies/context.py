@@ -358,32 +358,52 @@ class LoadView:
         load's `KindCtx`, which only the engine has. Without one the view
         quantises on the demand's floor alone.
         """
-        params = dict(load.config.strategy_params)
-        materialised = load.config.params
+        static, params = _static_fields(load)
         return cls(
-            load_id=load.config.load_id,
-            priority=load.config.priority,
-            strategy=load.config.strategy,
             demand=demand,
             mode=mode,
-            nameplate_w=load.config.nameplate_w,
-            kind=load.kind.key,
-            carrier=load.config.carrier,
-            min_block_min=int(params.get("min_block_min", 0)),
-            participates_in_events=bool(params.get("participate_in_events", False)),
-            params=params,
-            store=load.store,
-            target=load.config.target,
             level_now=level_now,
-            thermostatic=bool(
-                materialised.get("thermostatic", materialised.get("kind") in ("setpoint", "mode"))
-            ),
-            sheddable=bool(materialised.get("sheddable", True)),
-            min_on_s=load.kind.dwell_s()[0],
-            phase_names=load.config.phase_names,
-            phases=load.config.phases,
             quantiser=quantiser,
+            params=dict(params),
+            **static,
         )
+
+
+#: The fields of a `LoadView` that depend on the load alone, per load object -
+#: the planner and the allocator ask for a view of every load every tick, and
+#: none of these can change without a new `Load`. The load itself is
+#: kept in the entry, so its `id` cannot be reused while the entry lives.
+_STATIC: dict[int, tuple[Load, dict[str, Any], dict[str, Any]]] = {}
+
+
+def _static_fields(load: Load) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return the view's load-only fields and, apart, the params each view copies."""
+    hit = _STATIC.get(id(load))
+    if hit is not None and hit[0] is load:
+        return hit[1], hit[2]
+    params = dict(load.config.strategy_params)
+    materialised = load.config.params
+    static: dict[str, Any] = {
+        "load_id": load.config.load_id,
+        "priority": load.config.priority,
+        "strategy": load.config.strategy,
+        "nameplate_w": load.config.nameplate_w,
+        "kind": load.kind.key,
+        "carrier": load.config.carrier,
+        "min_block_min": int(params.get("min_block_min", 0)),
+        "participates_in_events": bool(params.get("participate_in_events", False)),
+        "store": load.store,
+        "target": load.config.target,
+        "thermostatic": bool(
+            materialised.get("thermostatic", materialised.get("kind") in ("setpoint", "mode"))
+        ),
+        "sheddable": bool(materialised.get("sheddable", True)),
+        "min_on_s": load.kind.dwell_s()[0],
+        "phase_names": load.config.phase_names,
+        "phases": load.config.phases,
+    }
+    _STATIC[id(load)] = (load, static, params)
+    return static, params
 
 
 @dataclass(frozen=True, slots=True)

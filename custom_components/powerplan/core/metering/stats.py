@@ -8,7 +8,6 @@ time-weighted because meter samples arrive at irregular intervals.
 
 import math
 from collections import deque
-from itertools import pairwise
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,19 +63,30 @@ class RollingStd:
     before an outage.
     """
 
-    __slots__ = ("_points", "_window_s")
+    __slots__ = ("_intervals", "_points", "_stamps", "_window_s")
 
     def __init__(self, window_s: float) -> None:
         """Start a buffer holding `window_s` seconds of samples."""
         self._window_s = window_s
         self._points: deque[tuple[datetime, float]] = deque()
+        # Kept beside the points so a tick does not recompute them: each
+        # sample's epoch seconds, and each interval between neighbours, computed
+        # exactly as before - `timestamp()` and `(b - a).total_seconds()` - once.
+        self._stamps: deque[float] = deque()
+        self._intervals: deque[float] = deque()
 
     def push(self, at: datetime, value: float) -> None:
         """Record a sample and drop everything older than the window."""
+        if self._points:
+            self._intervals.append((at - self._points[-1][0]).total_seconds())
         self._points.append((at, value))
-        cutoff = at.timestamp() - self._window_s
-        while self._points and self._points[0][0].timestamp() < cutoff:
+        self._stamps.append(at.timestamp())
+        cutoff = self._stamps[-1] - self._window_s
+        while self._points and self._stamps[0] < cutoff:
             self._points.popleft()
+            self._stamps.popleft()
+            if self._intervals:
+                self._intervals.popleft()
 
     @property
     def samples(self) -> int:
@@ -84,10 +94,9 @@ class RollingStd:
         return len(self._points)
 
     def _weights(self) -> list[float]:
-        points = list(self._points)
-        intervals = [(b[0] - a[0]).total_seconds() for a, b in pairwise(points)]
+        intervals = list(self._intervals)
         if not intervals or sum(intervals) <= 0.0:
-            return [1.0] * len(points)
+            return [1.0] * len(self._points)
         # The oldest sample carries no interval of its own; give it the mean of
         # the others so every value in the window participates.
         return [sum(intervals) / len(intervals), *intervals]
@@ -103,8 +112,7 @@ class RollingStd:
             return None
         weights = self._weights()
         total = sum(weights)
-        mu = sum(w * v for w, (_, v) in zip(weights, self._points, strict=True)) / total
-        var = (
-            sum(w * (v - mu) ** 2 for w, (_, v) in zip(weights, self._points, strict=True)) / total
-        )
+        values = [v for _, v in self._points]
+        mu = sum([w * v for w, v in zip(weights, values, strict=True)]) / total
+        var = sum([w * (v - mu) ** 2 for w, v in zip(weights, values, strict=True)]) / total
         return math.sqrt(var * n / (n - 1))

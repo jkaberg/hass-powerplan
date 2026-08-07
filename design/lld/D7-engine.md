@@ -179,7 +179,18 @@ engine.tick(state, inputs):                               # the order that matte
 - A no-change fast path in each load's `observe`/`apply`: equal reads, grant and knobs return the previous `LoadState` object.
 - One `TickClock` per tick - UTC instant, epoch seconds, local datetime, local date, month key - computed once and passed down, datetimes stay tz-aware.
 
-The rule every one of these obeys: the `Snapshot`, the `Effects` and the new `EngineState` are **equal** to what the non-incremental tick returns. That is tested by running both on every scenario of D9 §5.3, and by every benchmark digest staying byte-identical (D9 §9 13). A memo keyed on something weaker than the stamps it reads is a bug, not an optimisation.
+The rule every one of these obeys: the `Snapshot`, the `Effects` and the new `EngineState` are **equal** to what the non-incremental tick returns. That's tested by running both - this tree and the revision before it, `tools/digests.py` - on every scenario of D9 §5.3 and the smoke benchmark, comparing every digest byte for byte (D9 §9 13). A memo keyed on something weaker than the stamps it reads is a bug, not an optimisation.
+
+What the profile allowed, each one proved byte-identical (D-0333):
+
+| design line | built |
+|---|---|
+| per-tick tariff memo | `TariffEvaluator.level()` and `.state()` kept until the history's revision, period or object moves; `projected_level()` answered once per tick from a one-entry memo compared by identity (the engine asks two or three times); the `LoadCtx` per load per tick built once and `replace`d only where budget, setpoint delta or desired differ; the quantiser's `KindCtx` built on first use |
+| change-stamped snapshot sections | the tariff section only, through the memo above. The load, plan and price sections read what moves every tick (`measured_w`, `starved_s`, the next active slot), so a stamp would never hold |
+| no-change fast path in `observe`/`apply` | per field set, not per load: `now` moves every tick and the dwell clocks read it, so "equal reads, grant and knobs" never happens. Where a step would `replace` a `LoadState`, `KindCtx` or `PlanSlot` with values it already holds - compared by identity, a float by value *and* sign - the object itself is returned |
+| one `TickClock` per tick | `model.epoch()`, a one-entry cache of `datetime.timestamp()` for the object asked last, since every curve and plan lookup in a tick asks about the same `now`. Threading a clock through every signature wasn't worth its ≈ 1 % |
+| `deadline_fill.free_blocks` cached per plan call | each call filters the previous answer (`used` only grows while blocks are chosen) with `isdisjoint`, instead of building a set per block per call |
+| - | `RollingStd` keeps its intervals as it pushes; `LoadView.of` copies only the params, not a filtered dict per view |
 
 Steps 1–11 are pure: the reads happened in `assemble()`, the writes happen in `execute()`. The ladder runs before the allocator since `allocate()` takes the stage as an input (D6 §3) and escalation is immediate (D6 §5.4). That's what lets the scenario runner (D9) drive a whole house through `engine.tick` with fake inputs.
 

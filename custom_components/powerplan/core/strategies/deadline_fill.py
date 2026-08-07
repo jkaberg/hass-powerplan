@@ -190,14 +190,20 @@ def _fill_blocks(
     def capacity_of(indices: set[int]) -> float:
         return sum(by_index[index].cap_kwh for index in indices)
 
+    # `used` only grows while blocks are chosen, so a block taken off the table
+    # never comes back: each call filters the last answer (D9 §5.13).
+    free: list[_Block] = list(blocks)
+
     def free_blocks() -> list[_Block]:
-        return [block for block in blocks if not (set(range(block.start, block.stop)) & used)]
+        nonlocal free
+        free = [block for block in free if used.isdisjoint(range(block.start, block.stop))]
+        return free
 
     while capacity_of(used) + _EPS_KWH < required:
-        free = free_blocks()
-        if not free:
+        open_blocks = free_blocks()
+        if not open_blocks:
             break
-        block = min(free, key=lambda item: (item.mean, item.start, item.stop))
+        block = min(open_blocks, key=lambda item: (item.mean, item.start, item.stop))
         used.update(range(block.start, block.stop))
 
         # Not yet covered: extend the run while the adjacent slot beats the best

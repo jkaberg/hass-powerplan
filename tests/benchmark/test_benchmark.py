@@ -7,6 +7,7 @@ runs byte-identical - is marked `bench` and runs where the tier does.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
 import pytest
@@ -16,6 +17,7 @@ from tests.benchmark.houses import nordic_detached as house_spec
 from tests.benchmark.run import TIERS, run_benchmark
 from tests.benchmark.year import YEAR_DAYS, SyntheticYear, y2026_27
 from tests.builders.houses import ALL_LOADS, nordic_detached
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import Scenario, run_scenario
 from tests.sim.base import quarter_slots
 
@@ -190,7 +192,24 @@ def test_uncontrolled_loads_are_metered_and_the_share_matches_the_build(
 
 @pytest.mark.bench
 def test_smoke_runs_byte_identically_twice() -> None:
-    """Two runs, same seed → the same `BenchmarkResult` (D9 §9 8)."""
-    first = run_benchmark("nordic_detached", y2026_27(), tier="smoke")
-    second = run_benchmark("nordic_detached", y2026_27(), tier="smoke")
+    """Two runs, same seed → the same `BenchmarkResult` (D9 §9 8).
+
+    The two runs go at once rather than one after the other (D9 §5.13, T.1a):
+    each span of each run is its own `spawn`ed process, so the threads here only
+    wait, and every span runs in a fresh interpreter with its own hash seed - a
+    set iterated in hash order would show. The first run comes from the
+    simulation cache when the sources are unchanged (T.1b): it was produced by
+    an earlier process from byte-identical inputs, so comparing it with a fresh
+    run is the same check across time as well as across processes. The second
+    run is never cached.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stored = pool.submit(
+            cached,
+            __file__,
+            "smoke",
+            lambda: run_benchmark("nordic_detached", y2026_27(), tier="smoke"),
+        )
+        fresh = pool.submit(run_benchmark, "nordic_detached", y2026_27(), tier="smoke")
+        first, second = stored.result(), fresh.result()
     assert first.digest == second.digest

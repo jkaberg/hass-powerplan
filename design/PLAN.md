@@ -327,7 +327,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | WP | Name | Status |
 |---|---|---|
 | 0.0 | Prerequisites | in progress |
-| T.1a | Test speed: waste out of the pipeline | todo |
+| T.1a | Test speed: waste out of the pipeline | done |
 | T.1b | Test speed: the incremental tick | todo |
 | T.1c | Test speed: compiled core for the simulation tiers | todo |
 | B.1 | The brand | todo |

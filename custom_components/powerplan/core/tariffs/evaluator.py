@@ -355,6 +355,19 @@ class Evaluator:
         self._memo: dict[tuple[Any, ...], _Metric] = {}
         self._previous: dict[tuple[Any, ...], tuple[float, ...]] = {}
         self._memo_stamp: tuple[int, datetime, int] | None = None
+        #: `level()` and `state()`, kept while the history is unchanged:
+        #: both are pure functions of the history, the version, the target and the
+        #: risk, and the engine asks for them every tick.
+        self._derived: dict[tuple[Any, ...], Any] = {}
+        self._derived_stamp: tuple[int, datetime, int] | None = None
+
+    def _derived_cache(self) -> dict[tuple[Any, ...], Any]:
+        """Return the cache of history-derived values, emptied when the history moves."""
+        stamp = (self.history.revision, self.history.period_start, id(self.history))
+        if stamp != self._derived_stamp:
+            self._derived.clear()
+            self._derived_stamp = stamp
+        return self._derived
 
     # ------------------------------------------------------------- versions
 
@@ -816,7 +829,13 @@ class Evaluator:
         tariff = self._peak()
         if tariff is None:
             return Level("none", None, "none", None, None, "exact", 0)
-        return self._classify(self._evaluate(tariff, self._period_key()), tariff)
+        cache = self._derived_cache()
+        key = ("level", id(tariff))
+        found: Level | None = cache.get(key)
+        if found is None:
+            found = self._classify(self._evaluate(tariff, self._period_key()), tariff)
+            cache[key] = found
+        return found
 
     def projected_level(self, today_projected_kwh: float | None) -> Level:
         """Return the level with this window's projection folded in (D2 §5.11).
@@ -827,6 +846,13 @@ class Evaluator:
         tariff = self._peak()
         if tariff is None or today_projected_kwh is None:
             return self.level()
+        # The engine asks two or three times a tick with the same objects; one
+        # entry, compared by identity, answers the repeats.
+        asked = (tariff, self._now, today_projected_kwh, self.target, self.risk)
+        cache = self._derived_cache()
+        hit: tuple[tuple[Any, ...], Level] | None = cache.get(("projected",))
+        if hit is not None and all(a is b for a, b in zip(hit[0], asked, strict=True)):
+            return hit[1]
         weight = self.weight_now(self._now)
         info = self._evaluate(
             tariff,
@@ -834,7 +860,9 @@ class Evaluator:
             extra_day=self._now.astimezone(self.tz).date(),
             extra_kw=today_projected_kwh / tariff.window_h * weight,
         )
-        return self._classify(info, tariff)
+        found = self._classify(info, tariff)
+        cache["projected",] = (asked, found)
+        return found
 
     # -------------------------------------------------------------- the bill
 
@@ -1201,7 +1229,19 @@ class Evaluator:
     # --------------------------------------------------------------- state
 
     def state(self) -> TariffState:
-        """Return the store section D7 persists (D2 §7)."""
+        """Return the store section D7 persists (D2 §7), the same object while nothing moved."""
+        version_id = self.active_version().version_id
+        cache = self._derived_cache()
+        # The bill itself rides in the cached value, so its `id` cannot be reused
+        # by another bill while the entry lives.
+        key = ("state", version_id, self.target, self.risk, id(self.last_bill))
+        hit: tuple[Bill | None, TariffState] | None = cache.get(key)
+        if hit is None:
+            hit = (self.last_bill, self._state_uncached())
+            cache[key] = hit
+        return hit[1]
+
+    def _state_uncached(self) -> TariffState:
         bill = self.last_bill
         return TariffState(
             schema=SCHEMA,

@@ -148,9 +148,7 @@ def build_plan(
     plan is read top to bottom.
     """
     horizon = now + timedelta(minutes=commit_min)
-    marked = tuple(
-        replace(slot, committed=_is_committed(slot, now, horizon, known_until)) for slot in slots
-    )
+    marked = tuple(_marked(slot, _is_committed(slot, now, horizon, known_until)) for slot in slots)
     planned = sum(slot.kwh for slot in marked)
     cost = sum((_dec(slot.kwh) * slot.price for slot in marked), Decimal(0))
     covered = required_kwh is None or planned + COVER_EPS_KWH >= required_kwh
@@ -173,6 +171,11 @@ def build_plan(
         deadline=deadline,
         inputs_hash=inputs_hash,
     )
+
+
+def _marked(slot: PlanSlot, committed: bool) -> PlanSlot:
+    """Return `slot` with `committed` set, the slot itself when it already is."""
+    return slot if slot.committed is committed else replace(slot, committed=committed)
 
 
 def _is_committed(

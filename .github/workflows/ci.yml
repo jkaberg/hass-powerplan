@@ -16,11 +16,41 @@ permissions:
 env:
   UV_FROZEN: "1"
 
+# D9 §5.8, §5.13 (WP T.1a): the same tests as before, in parallel jobs, and the
+# HA-agnostic ones once. Nothing is skipped: every test that ran in the single
+# job still runs in exactly one of the jobs below (the HA-facing ones on both
+# fixture lines). The slowest job - the scenarios, or the month tier on a core
+# PR - sets the wall clock, not the sum.
+#
+#   lint ─┐
+#   ha (floor, latest) ─┐
+#   core ───────────────┼─► coverage
+#   scenarios ──────────┘
+#   bench (smoke; month on a `core` PR)
+#   digests (a `speed` PR only: every result against the base)
 jobs:
-  # D9 §5.8: ruff → mypy → pytest, over the two fixture lines.
-  # PLAN §7 dec. 1: one Python (3.14), HA floor and latest stable.
-  quality:
-    name: ruff · mypy · pytest (${{ matrix.line }})
+  lint:
+    name: ruff · mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: ruff format
+        run: uv run ruff format --check .
+      - name: ruff check
+        run: uv run ruff check .
+      - name: mypy --strict on core/
+        run: uv run mypy custom_components/powerplan/core
+
+  # PLAN §7 dec. 1: one Python (3.14), HA floor and latest stable. Only the
+  # suites that load Home Assistant can differ between the two lines.
+  ha:
+    name: HA-facing tests (${{ matrix.line }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,59 +65,68 @@ jobs:
             phcc: "latest"
     steps:
       - uses: actions/checkout@v5
-
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           python-version: "3.14"
-
       - name: Sync the environment
         run: uv sync
-
       - name: Move to the HA floor fixture line
         if: matrix.line == 'ha-floor'
         # The sync resolves the latest line; the floor line is installed on top of it.
         # phcc pins homeassistant and its own test dependencies exactly, so this
         # replaces the whole HA stack.
         run: uv pip install "pytest-homeassistant-custom-component==${{ matrix.phcc }}"
-
       - name: Report the versions under test
         run: |
           uv run python -c "from homeassistant.const import __version__ as v; print('homeassistant', v)"
           uv run python -c "import sys; print('python', sys.version)"
+      - name: pytest (flows, surface, runtime, providers)
+        run: |
+          uv run pytest tests/flows tests/surface tests/runtime tests/providers \
+            -m "not perf and not backtest and not bench and not e2e" -q \
+            -n auto --dist=loadgroup --cov --cov-report=
+      - name: Name the coverage data for the combine
+        if: matrix.line == 'ha-latest'
+        run: mv .coverage .coverage.ha
+      - name: Keep the coverage data
+        if: matrix.line == 'ha-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-ha
+          path: .coverage.ha
+          include-hidden-files: true
 
-      - name: ruff format
-        run: uv run ruff format --check .
-
-      - name: ruff check
-        run: uv run ruff check .
-
-      - name: mypy --strict on core/
-        run: uv run mypy custom_components/powerplan/core
-
+  core:
+    name: core, property, sim, backtest, benchmark (fast half)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
       - name: pytest
         run: |
-          uv run pytest -m "not perf and not backtest and not bench and not e2e" -q \
-            -n auto --dist=loadgroup \
-            --cov --cov-report=term-missing --cov-report=xml --cov-report=json
-
-      - name: Coverage floors (D9 §2)
-        # Per-path floors (core/ 90 % lines / 85 % branches, providers/ 80 %,
-        # writegate.py 100 %, flow/ 80 %, overall 85 %) - one gate script since
-        # pytest-cov's own --cov-fail-under is a single overall number (WP6.1).
-        run: uv run python tools/coverage_gate.py
-
+          uv run pytest tests/core tests/property tests/sim tests/backtest tests/benchmark \
+            -m "not perf and not backtest and not bench and not e2e" -q \
+            -n auto --dist=loadgroup --cov --cov-report=
+      - name: Name the coverage data for the combine
+        run: mv .coverage .coverage.core
+      - name: Keep the coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-core
+          path: .coverage.core
+          include-hidden-files: true
       - name: Perf budgets (D9 §5.1)
-        # tick < 50 ms, planning < 500 ms, both at 20 loads - excluded from the
-        # main pytest run above (marker perf) so a slow CI runner never fails
-        # correctness; this step's own failure is a timing regression only.
-        # Named explicitly: tick_budget.py/plan_budget.py are D9's own module
-        # names, not test_*.py, so `pytest tests/perf` alone silently collects
-        # nothing.
+        # tick < 50 ms, planning < 500 ms, both at 20 loads. Named explicitly:
+        # tick_budget.py/plan_budget.py are D9's own module names, not test_*.py,
+        # so `pytest tests/perf` alone silently collects nothing.
         run: uv run pytest tests/perf/tick_budget.py tests/perf/plan_budget.py -m perf -q
-
       - name: INV → tests matrix (D9 §5.6)
-        if: matrix.line == 'ha-latest'
         run: |
           {
             echo '### INV → tests'
@@ -95,9 +134,73 @@ jobs:
             uv run python tools/inv_report.py
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # --- Reference benchmark (D9 §5.9–5.11) --------------------------------
-      - name: bench smoke (every PR, ≤ 1 min budget; table posted to the PR)
-        if: matrix.line == 'ha-latest'
+  scenarios:
+    name: scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: Restore the simulation cache (D9 §5.13)
+        # The cache is content-addressed inside (tests/scenarios/cache.py): an
+        # entry from an older commit is simply never hit, so restoring the
+        # nearest one is always safe.
+        uses: actions/cache@v4
+        with:
+          path: .cache/powerplan-sims
+          key: sims-${{ hashFiles('custom_components/powerplan/core/**', 'tests/**/*.py', 'uv.lock', 'pyproject.toml') }}
+          restore-keys: sims-
+      - name: pytest tests/scenarios
+        run: |
+          uv run pytest tests/scenarios \
+            -m "not perf and not backtest and not bench and not e2e" -q \
+            -n auto --dist=loadgroup
+
+  coverage:
+    name: coverage floors
+    needs: [ha, core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+      - name: Coverage floors (D9 §2)
+        # Per-path floors (core/ 90 % lines / 85 % branches, providers/ 80 %,
+        # writegate.py 100 %, flow/ 80 %, overall 85 %). The scenarios are not
+        # counted: a cached scenario executes nothing, so its lines would
+        # appear and vanish with the cache (D9 §5.13).
+        run: |
+          uv run coverage combine
+          uv run coverage json -o coverage.json
+          uv run python tools/coverage_gate.py
+
+  # --- Reference benchmark (D9 §5.9–5.11) ------------------------------------
+  bench:
+    name: benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: bench smoke (every PR; table posted to the PR)
+        # The tier's two spans run in parallel processes (T.1a); the result is
+        # byte-identical to running them in turn.
         run: |
           {
             echo '### Benchmark: nordic_detached × y2026_27, smoke'
@@ -107,7 +210,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: bench month (required before merge for a PR touching core/)
-        if: matrix.line == 'ha-latest' && contains(github.event.pull_request.labels.*.name, 'core')
+        if: contains(github.event.pull_request.labels.*.name, 'core')
         run: |
           {
             echo '### Benchmark: nordic_detached × y2026_27, month'
@@ -116,8 +219,36 @@ jobs:
             uv run python tools/benchmark.py --tier month --compare
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      # `bench full` runs nightly on main and on a PR labelled `bench-full`;
-      # the `e2e` day runs weekly in `e2e.yml` (D9 §5.10, WP1.7).
+      # `bench full` runs on workflow_dispatch; the uncached suite and the
+      # determinism test run nightly in `nightly.yml`; the `e2e` day weekly in
+      # `e2e.yml` (D9 §5.10, WP1.7).
+
+  # D9 §9 13 (WP T.1b): a PR labelled `speed` claims to change how long things
+  # take and nothing else. Every scenario result and the smoke benchmark are
+  # computed on the PR and on its base, and one moved digest fails the PR,
+  # whatever it gains. Unlabelled PRs are not compared: a behaviour change is
+  # judged by the tests and the benchmark tolerances, not by byte identity.
+  digests:
+    name: speed PR - results byte-identical to the base
+    if: contains(github.event.pull_request.labels.*.name, 'speed')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: Restore the base's simulations (D9 §5.13)
+        uses: actions/cache@v4
+        with:
+          path: .cache/digests/${{ github.event.pull_request.base.sha }}/.cache
+          key: digests-${{ github.event.pull_request.base.sha }}
+      - name: tools/digests.py against the base
+        run: uv run python tools/digests.py --against ${{ github.event.pull_request.base.sha }}
 
   hassfest:
     name: hassfest

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import run_scenario
 
 if TYPE_CHECKING:
@@ -40,8 +41,12 @@ class _Trail:
 @pytest.fixture(scope="module")
 def flapped() -> tuple[ScenarioResult, _Trail]:
     """Run the evening once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.ble_flaps(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.ble_flaps(), trail), trail
+
+    return cached(__file__, "flapped", run)
 
 
 #: How long after the link is back the load may still say unhealthy: the next
@@ -140,8 +145,12 @@ GUEST_TO = GUEST_FROM + timedelta(seconds=catalogue.GARAGE_GUEST_S)
 @pytest.fixture(scope="module")
 def garage() -> tuple[ScenarioResult, _Trail]:
     """Run the sauna evening with the garage circuit once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.circuit_garage_32a(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.circuit_garage_32a(), trail), trail
+
+    return cached(__file__, "garage", run)
 
 
 def _garage_rows(trail: _Trail) -> list[tuple[Any, Snapshot, Any]]:

@@ -16,6 +16,7 @@ import pytest
 
 from custom_components.powerplan.core.engine import EngineHealth
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import TICK_S, run_scenario
 
 if TYPE_CHECKING:
@@ -54,21 +55,29 @@ class _Trail:
 @pytest.fixture(scope="module")
 def restarted() -> tuple[ScenarioResult, _Trail]:
     """Run the restart evening once for the module, keeping the snapshots around it."""
-    trail = _Trail(catalogue.RESTART_AT)
-    return run_scenario(catalogue.restart_mid_window(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail(catalogue.RESTART_AT)
+        return run_scenario(catalogue.restart_mid_window(), trail), trail
+
+    return cached(__file__, "restarted", run)
 
 
 @pytest.fixture(scope="module")
 def control() -> ScenarioResult:
     """Run the same evening without the restart."""
-    return run_scenario(catalogue.restart_mid_window_control())
+    return cached(__file__, "control", lambda: run_scenario(catalogue.restart_mid_window_control()))
 
 
 @pytest.fixture(scope="module")
 def failing() -> tuple[ScenarioResult, _Trail]:
     """Run the evening with three engine failures, keeping every snapshot."""
-    trail = _Trail(catalogue.EXCEPTION_AT, span=timedelta(hours=12))
-    return run_scenario(catalogue.engine_exception_x3(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail(catalogue.EXCEPTION_AT, span=timedelta(hours=12))
+        return run_scenario(catalogue.engine_exception_x3(), trail), trail
+
+    return cached(__file__, "failing", run)
 
 
 # --------------------------------------------------------------------------- #
@@ -192,8 +201,12 @@ ROAST_LEAD = timedelta(minutes=20)
 @pytest.fixture(scope="module")
 def roast() -> tuple[ScenarioResult, _Trail]:
     """Run the Sunday afternoon once, keeping every snapshot."""
-    trail = _Trail(catalogue.ROAST_START, span=timedelta(hours=12))
-    return run_scenario(catalogue.oven_sunday_roast(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail(catalogue.ROAST_START, span=timedelta(hours=12))
+        return run_scenario(catalogue.oven_sunday_roast(), trail), trail
+
+    return cached(__file__, "roast", run)
 
 
 def _roast_window_start(result: ScenarioResult) -> datetime:

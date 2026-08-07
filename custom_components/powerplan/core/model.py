@@ -53,6 +53,24 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------- #
 
 
+#: The last `datetime` turned into epoch seconds, and its value. A tick
+#: asks the plans and the curves about the same `now` object thousands of times;
+#: the pair is one tuple, swapped in one assignment, so a reader never sees a
+#: date from one call beside the seconds of another.
+_LAST_EPOCH: tuple[datetime, float] | None = None
+
+
+def epoch(at: datetime) -> float:
+    """Return `at.timestamp()`, reusing the answer for the object asked last."""
+    global _LAST_EPOCH  # noqa: PLW0603 - a one-entry cache, replaced whole
+    last = _LAST_EPOCH
+    if last is not None and last[0] is at:
+        return last[1]
+    seconds = at.timestamp()
+    _LAST_EPOCH = (at, seconds)
+    return seconds
+
+
 class Carrier(StrEnum):
     """What a price curve prices and a load consumes (HLD §2, D1 §4)."""
 
@@ -301,7 +319,7 @@ class PriceCurve:
 
     def price_at(self, t: datetime) -> Slot | None:
         """Return the slot containing `t`, or `None` outside the curve (D1 §5.8)."""
-        index = bisect_right(self._starts, t.timestamp()) - 1
+        index = bisect_right(self._starts, epoch(t)) - 1
         if index < 0:
             return None
         slot = self.slots[index]
@@ -309,8 +327,8 @@ class PriceCurve:
 
     def slots_between(self, a: datetime, b: datetime) -> tuple[Slot, ...]:
         """Return the slots overlapping `[a, b)` at their native lengths (INV-7)."""
-        low = max(0, bisect_right(self._starts, a.timestamp()) - 1)
-        high = bisect_left(self._starts, b.timestamp())
+        low = max(0, bisect_right(self._starts, epoch(a)) - 1)
+        high = bisect_left(self._starts, epoch(b))
         return tuple(slot for slot in self.slots[low:high] if slot.end > a)
 
     def spread(self, day: date, zone: tzinfo) -> Decimal:
@@ -340,7 +358,7 @@ class PriceCurve:
         """Return whether a `KNOWN` slot starts at or after `t` (D7 §4.1 `tomorrow_available`)."""
         if not self.slots:
             return False
-        index = bisect_left(self._starts, t.timestamp())
+        index = bisect_left(self._starts, epoch(t))
         before = self._known_h[index - 1] if index > 0 else 0.0
         return self._known_h[-1] - before > 0.0
 
@@ -352,7 +370,7 @@ class PriceCurve:
         """
         if not self.slots:
             return 0.0
-        index = bisect_right(self._starts, from_.timestamp()) - 1
+        index = bisect_right(self._starts, epoch(from_)) - 1
         hours = self._known_h[-1] - (self._known_h[index] if index >= 0 else 0.0)
         if index >= 0:
             slot = self.slots[index]
@@ -527,13 +545,13 @@ class Plan:
 
     def slots_between(self, a: datetime, b: datetime) -> tuple[PlanSlot, ...]:
         """Return the slots overlapping `[a, b)`."""
-        low = max(0, bisect_right(self._starts, a.timestamp()) - 1)
-        high = bisect_left(self._starts, b.timestamp())
+        low = max(0, bisect_right(self._starts, epoch(a)) - 1)
+        high = bisect_left(self._starts, epoch(b))
         return tuple(slot for slot in self.slots[low:high] if slot.end > a)
 
     def slot_at(self, now: datetime) -> PlanSlot | None:
         """Return the slot containing `now`, or `None` outside the plan."""
-        index = bisect_right(self._starts, now.timestamp()) - 1
+        index = bisect_right(self._starts, epoch(now)) - 1
         if index < 0:
             return None
         slot = self.slots[index]
@@ -567,7 +585,7 @@ class Plan:
         when the plan draws no more, or has nothing to say - then the caller
         decides on other grounds.
         """
-        index = bisect_right(self._active_ends, now.timestamp())
+        index = bisect_right(self._active_ends, epoch(now))
         if index >= len(self._active_starts):
             return horizon_s
         start = self._active_starts[index]
@@ -581,7 +599,7 @@ class Plan:
         D6 combines it with the window's remaining time for a *budget* stop's
         horizon - undone by the window turning or by the plan (INV-39).
         """
-        index = bisect_right(self._active_ends, now.timestamp())
+        index = bisect_right(self._active_ends, epoch(now))
         if index >= len(self._active_starts):
             return None
         return max(self._active_starts[index], now)

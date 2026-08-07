@@ -40,7 +40,7 @@ import logging
 import math
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from enum import StrEnum
@@ -90,6 +90,7 @@ from .loads import (
     ComfortState,
     Demand,
     Health,
+    KindCtx,
     Load,
     LoadCtx,
     LoadState,
@@ -1050,6 +1051,10 @@ class Engine:
         self._planned_kwh_cache: dict[
             str, tuple[datetime, dict[tuple[datetime, datetime], float]]
         ] = {}
+        #: One base `LoadCtx` per load for the tick in progress, keyed against that
+        #: tick's own `Inputs` (`_ctx`).
+        self._ctx_inputs: Inputs | None = None
+        self._ctx_bases: dict[tuple[str, bool], LoadCtx] = {}
         self.set_loads(loads)
         self.set_constraints(constraints)
 
@@ -1579,17 +1584,41 @@ class Engine:
         setpoint_delta: float = 0.0,
         desired: Any = None,
     ) -> LoadCtx:
-        """Return one load's context for this tick (D4 §5.1)."""
+        """Return one load's context for this tick (D4 §5.1).
+
+        The base context - no transport budget of the load's own, no plan delta,
+        no desired option - is the same for every step of one tick, so it is built
+        once per load and kept against this tick's own `Inputs` object (held, so its
+        `id` cannot be reused while the entry lives); the apply step's context is
+        that base with its three fields replaced.
+        """
+        if self._ctx_inputs is not inputs:
+            self._ctx_inputs = inputs
+            self._ctx_bases = {}
+        base = self._ctx_bases.get((load.load_id, active))
+        if base is None:
+            base = self._build_ctx(load, inputs, active=active)
+            self._ctx_bases[(load.load_id, active)] = base
+        if budget is None and setpoint_delta == 0.0 and desired is None:
+            return base
+        return replace(
+            base,
+            budget=inputs.transport if budget is None else budget,
+            setpoint_delta=setpoint_delta,
+            desired=desired,
+        )
+
+    def _build_ctx(self, load: Load, inputs: Inputs, *, active: bool) -> LoadCtx:
         row = inputs.loads.get(load.load_id)
         return LoadCtx(
             now=inputs.now,
             reads=row.reads if row is not None else Reads(at=inputs.now),
             electrical=inputs.site.electrical,
-            budget=inputs.transport if budget is None else budget,
+            budget=inputs.transport,
             site_active=active,
             presence=_presence_now(inputs),
-            setpoint_delta=setpoint_delta,
-            desired=desired,
+            setpoint_delta=0.0,
+            desired=None,
             calendar=row.calendar if row is not None else (),
             outdoor_c=inputs.outdoor_c,
             indoor_c=inputs.indoor_c,
@@ -1733,14 +1762,15 @@ class Engine:
                 continue
             plan = plans.get(load.load_id)
             before = out_states.get(load.load_id, LoadState())
+            wanted = None if plan is None else plan.desired_state_at(inputs.now)
             ctx = self._ctx(
                 load,
                 inputs,
                 active=active,
                 budget=budget,
                 stage=ladder.stage,
-                setpoint_delta=_setpoint_delta(plan, inputs.now),
-                desired=_desired(plan, inputs.now),
+                setpoint_delta=_setpoint_delta_of(wanted),
+                desired=_desired_of(wanted),
             )
             try:
                 after, result = load.apply(grant, before, ctx)
@@ -3159,13 +3189,20 @@ def _command_of(
     )
 
 
+#: A load context's own default presence, read once rather than by building a
+#: throwaway `LoadCtx` per load per tick.
+_DEFAULT_PRESENCE: Final[PresenceMode] = next(
+    f.default
+    for f in fields(LoadCtx)
+    if f.name == "presence" and isinstance(f.default, PresenceMode)
+)
+
+
 def _presence_now(inputs: Inputs) -> PresenceMode:
     """Return the presence mode in force: the knob, else a load context's default."""
     if inputs.knobs.presence is not None:
         return inputs.knobs.presence
-    return LoadCtx(
-        now=inputs.now, reads=Reads(at=inputs.now), electrical=inputs.site.electrical
-    ).presence
+    return _DEFAULT_PRESENCE
 
 
 def _window_end(window: ClosedWindow) -> datetime:
@@ -3221,10 +3258,20 @@ def _quantiser(load: Load, state: LoadState, ctx: LoadCtx, mode: Mode) -> Any:
     when a stop is vetoed - and only the engine can build the `KindCtx` the kind
     needs (D5 §4's `Quantiser`, `design/DECISIONS.md` D-0160).
     """
-    base = load.device_type.kind_ctx(load, state, ctx, grant=None, mode=mode)
+    # Built on first use (D9 §5.13): the allocator asks about a quarter
+    # of the loads it is handed a quantiser for, and `kind_ctx` is a pure function
+    # of its arguments, so building it later changes nothing but the cost.
+    built: list[KindCtx] = []
 
     def quantise(w: float, *, stop_ok: bool, session_active: bool) -> float:
-        kind_ctx = replace(base, stop_ok=stop_ok, session_active=session_active)
+        if not built:
+            built.append(load.device_type.kind_ctx(load, state, ctx, grant=None, mode=mode))
+        base = built[0]
+        kind_ctx = (
+            base
+            if base.stop_ok is stop_ok and base.session_active is session_active
+            else replace(base, stop_ok=stop_ok, session_active=session_active)
+        )
         quantised = load.kind.quantise(w, kind_ctx)
         if quantised.effective_w is not None:
             return quantised.effective_w
@@ -3247,19 +3294,13 @@ def _view_of(load_id: str, observations: Mapping[str, Any], demand: Demand, load
     return LoadView.of(load, demand, mode=Mode.AUTO)
 
 
-def _setpoint_delta(plan: Plan | None, now: datetime) -> float:
-    """Return the plan's setpoint delta for this slot, 0 with no plan (D5 §2)."""
-    if plan is None:
-        return 0.0
-    desired = plan.desired_state_at(now)
+def _setpoint_delta_of(desired: Any) -> float:
+    """Return a slot's setpoint delta, 0 with none (D5 §2)."""
     return float(desired) if isinstance(desired, float | int) else 0.0
 
 
-def _desired(plan: Plan | None, now: datetime) -> Any:
-    """Return the plan's desired option for this slot, `None` with no plan (D5 §2)."""
-    if plan is None:
-        return None
-    desired = plan.desired_state_at(now)
+def _desired_of(desired: Any) -> Any:
+    """Return a slot's desired option, `None` for a delta or no slot (D5 §2)."""
     return None if isinstance(desired, float | int) else desired
 
 

@@ -10,10 +10,13 @@ enter the digest.
 from __future__ import annotations
 
 import json
+import os
 import time as _time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from importlib import import_module
+from multiprocessing import get_context
 from typing import Any
 
 from custom_components.powerplan.core.tariffs.evaluator import Period
@@ -113,6 +116,68 @@ def house_module(name: str) -> Any:
     return import_module(f"tests.benchmark.houses.{name}")
 
 
+def span_processes(spans: int) -> int:
+    """How many processes run a tier's spans at once (D9 §5.13, T.1a).
+
+    Each span starts from its own fresh house and year, so the spans are
+    independent and the fold below is in span order either way: the result is
+    byte-identical to running them one after another. `POWERPLAN_BENCH_PROCESSES=1`
+    runs them in this process, which is what a profiler wants.
+    """
+    raw = os.environ.get("POWERPLAN_BENCH_PROCESSES")
+    if raw:
+        return max(1, int(raw))
+    return max(1, min(spans, os.cpu_count() or 1))
+
+
+@dataclass(frozen=True)
+class SpanSpec:
+    """One span of a tier: everything a `spawn`ed process needs to run it."""
+
+    house: str
+    year: SyntheticYear
+    tier: str
+    first_day: date
+    days: int
+    seed: int
+    target_kw: float
+
+    def scenario(self) -> Scenario:
+        """Return the scenario this span runs."""
+        module = house_module(self.house)
+        start = datetime.combine(self.first_day, datetime.min.time(), tzinfo=self.year.tz)
+        start += SPAN_OFFSET
+        end = start + timedelta(days=self.days)
+        return Scenario(
+            name=f"{self.house}:{self.tier}:{self.first_day.isoformat()}",
+            house=lambda: module.build(self.year, self.first_day, seed=self.seed),
+            start=start,
+            days=float(self.days),
+            target_kw=self.target_kw,
+            faults=self.year.faults_between(start, end),
+        )
+
+
+def _run_span(spec: SpanSpec) -> ScenarioResult:
+    """Run one span. Top-level, so a `spawn` process can be handed it by reference."""
+    return run_scenario(spec.scenario())
+
+
+def _run_spans(specs: list[SpanSpec]) -> list[ScenarioResult]:
+    """Run every span, in parallel processes when there is more than one.
+
+    `spawn`, not `fork` or `forkserver`, for the reasons D-0322 found: `fork`
+    from a multi-threaded xdist worker can deadlock, and `pytest-socket` blocks
+    the `forkserver`'s control socket.
+    """
+    workers = span_processes(len(specs))
+    if workers <= 1:
+        return [_run_span(spec) for spec in specs]
+    with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(_run_span, spec) for spec in specs]
+        return [future.result() for future in futures]
+
+
 def run_benchmark(
     house: str = "nordic_detached",
     year: SyntheticYear | None = None,
@@ -125,7 +190,6 @@ def run_benchmark(
     """Run every span of `tier` and fold the months (D9 §5.11)."""
     year = year or y2026_27()
     seed = year.seed if seed is None else seed
-    module = house_module(house)
     started = _time.perf_counter()
     months: dict[str, dict[str, Any]] = {}
     bills: dict[str, tuple[str | None, str | None, float | None]] = {}
@@ -135,18 +199,12 @@ def run_benchmark(
     plan_ms: list[float] = []
     ticks = 0
     controlled_share = 1.0
-    for first_day, days in TIERS[tier]:
-        start = datetime.combine(first_day, datetime.min.time(), tzinfo=year.tz) + SPAN_OFFSET
-        end = start + timedelta(days=days)
-        scenario = Scenario(
-            name=f"{house}:{tier}:{first_day.isoformat()}",
-            house=lambda: module.build(year, first_day, seed=seed),  # noqa: B023 - consumed at once
-            start=start,
-            days=float(days),
-            target_kw=target_kw,
-            faults=year.faults_between(start, end),
-        )
-        result = run_scenario(scenario)
+    specs = [
+        SpanSpec(house, year, tier, first_day, days, seed, target_kw)
+        for first_day, days in TIERS[tier]
+    ]
+    for spec, result in zip(specs, _run_spans(specs), strict=True):
+        scenario = spec.scenario()
         _fold_months(months, result)
         bills.update(_price_months(result, year))
         money.update(result.accounting_months)

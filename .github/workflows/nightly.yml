@@ -1,0 +1,56 @@
+name: nightly
+
+# D9 §5.13 (WP T.1a): the PR suite with the simulation cache off, so every
+# scenario is computed from scratch at least once a day, plus the smoke
+# determinism test and the month tier. The cache can save time on a PR; it can
+# never be the only thing that ran.
+on:
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+  POWERPLAN_SIM_CACHE: "off"
+
+jobs:
+  uncached:
+    name: the whole PR suite, uncached, with the determinism test
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: pytest (bench included, e2e excluded - it has its own weekly job)
+        run: |
+          uv run pytest -m "not perf and not backtest and not e2e" -q \
+            -n auto --dist=loadgroup --junitxml=nightly.xml
+      - name: Keep the timings (tools/durations.py refreshes tests/durations.json from them)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-junit
+          path: nightly.xml
+
+  month:
+    name: bench month
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: bench month
+        run: uv run python tools/benchmark.py --tier month --compare

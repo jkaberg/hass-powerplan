@@ -49,6 +49,7 @@ from custom_components.powerplan.core.allocation.constraints.group import DEFAUL
 from custom_components.powerplan.core.loads import PresenceMode
 from tests.builders.houses import FLOOR_GROUP
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import run_scenario
 
 if TYPE_CHECKING:
@@ -74,8 +75,12 @@ class _Trail:
 @pytest.fixture(scope="module")
 def cold_evening() -> tuple[ScenarioResult, _Trail]:
     """Run the evening once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.floor_group_rotation(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.floor_group_rotation(), trail), trail
+
+    return cached(__file__, "cold_evening", run)
 
 
 def _rotation_rows(trail: _Trail) -> list[tuple[object, Snapshot, object]]:
@@ -174,8 +179,12 @@ def test_a_load_outside_the_group_carries_no_starvation_clock(
 @pytest.fixture(scope="module")
 def expensive_week() -> tuple[ScenarioResult, _Trail]:
     """Run the week once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.legionella_expensive_week(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.legionella_expensive_week(), trail), trail
+
+    return cached(__file__, "expensive_week", run)
 
 
 def _due_at_transitions(trail: _Trail) -> list[tuple[object, object]]:
@@ -233,8 +242,12 @@ DEFROST_MIN_S = 300.0
 @pytest.fixture(scope="module")
 def cold_night() -> tuple[ScenarioResult, _Trail]:
     """Run the evening once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.heat_pump_defrost_evening(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.heat_pump_defrost_evening(), trail), trail
+
+    return cached(__file__, "cold_night", run)
 
 
 def _near_rated_runs(trail: _Trail) -> list[list[object]]:
@@ -305,8 +318,12 @@ AWAY_DELTA_K = 3.0
 @pytest.fixture(scope="module")
 def away_day() -> tuple[ScenarioResult, _Trail]:
     """Run the weekday once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.presence_away_day(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.presence_away_day(), trail), trail
+
+    return cached(__file__, "away_day", run)
 
 
 def _hall_targets(trail: _Trail) -> list[tuple[object, PresenceMode, float]]:
@@ -371,8 +388,12 @@ DISHWASHER_READY_BY = datetime(2027, 1, 21, 7, 0, tzinfo=catalogue.OSLO)
 @pytest.fixture(scope="module")
 def weeknight() -> tuple[ScenarioResult, _Trail]:
     """Run the evening once for the module."""
-    trail = _Trail()
-    return run_scenario(catalogue.dishwasher_weeknight(), trail), trail
+
+    def run() -> tuple[ScenarioResult, _Trail]:
+        trail = _Trail()
+        return run_scenario(catalogue.dishwasher_weeknight(), trail), trail
+
+    return cached(__file__, "weeknight", run)
 
 
 def _dishwasher_runs(trail: _Trail) -> list[list[object]]:

@@ -6,9 +6,15 @@ created for a core test. `tests/providers/`, `tests/flows/` and `tests/e2e/`
 request `hass` and therefore get `enable_custom_integrations`.
 """
 
+import json
+from pathlib import Path
+
 import pytest
 
 pytest_plugins = ("pytest_homeassistant_custom_component",)
+
+#: Measured seconds per xdist group and per slow ungrouped test (`tools/durations.py`).
+DURATIONS = Path(__file__).with_name("durations.json")
 
 
 @pytest.fixture(autouse=True)
@@ -16,3 +22,38 @@ def auto_enable_custom_integrations(request: pytest.FixtureRequest) -> None:
     """Load `custom_components/powerplan` for every test that starts HA."""
     if "hass" in request.fixturenames:
         request.getfixturevalue("enable_custom_integrations")
+
+
+def _group(item: pytest.Item) -> str | None:
+    marker = item.get_closest_marker("xdist_group")
+    if marker is None:
+        return None
+    return str(marker.args[0] if marker.args else marker.kwargs.get("name"))
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Start the longest work first (D9 §5.13).
+
+    The wall clock of a parallel run is bounded below by its longest sequential
+    piece - a thirty-day scenario, the smoke benchmark - and pytest-xdist hands
+    out work in collection order. So the xdist groups and the slow ungrouped
+    tests `tests/durations.json` names move to the front, longest first; every
+    other test keeps its place after them. Which tests run, and what they
+    assert, does not change. Within a group the collection order is kept, so a
+    group's module-scoped fixture is still built once.
+    """
+    if not DURATIONS.exists():
+        return
+    known = json.loads(DURATIONS.read_text(encoding="utf-8"))
+    groups: dict[str, float] = known.get("groups", {})
+    tests: dict[str, float] = known.get("tests", {})
+
+    def weight(item: pytest.Item) -> float:
+        group = _group(item)
+        if group is not None:
+            return groups.get(group, 0.0)
+        return tests.get(item.nodeid, 0.0)
+
+    order = {id(item): position for position, item in enumerate(items)}
+    items.sort(key=lambda item: (-weight(item), order[id(item)]))

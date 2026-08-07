@@ -24,6 +24,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, tzinfo
 from enum import StrEnum
+from math import copysign
 from typing import Any, Literal, Protocol
 
 from ..metering import ControlledView, ElectricalProfile
@@ -640,7 +641,9 @@ class Load:
         outcome = self.kind.command(quantised, grant, kind_ctx)
         if isinstance(outcome, Hold):
             return (
-                replace(state, commanded_w=quantised.effective_w),
+                state
+                if _same_w(state.commanded_w, quantised.effective_w)
+                else replace(state, commanded_w=quantised.effective_w),
                 ApplyResult(
                     action=outcome.action,
                     value=quantised.value,
@@ -775,12 +778,21 @@ class Load:
         if decision.written:
             shed_active = sheds
             shed_since = ctx.now if sheds else None
-        updated = replace(
-            state,
-            gate=decision.gate,
-            shed_active=shed_active,
-            shed_since=shed_since,
-            commanded_w=effective_w,
+        # Most ticks change none of these; skipping the copy then is the no-change
+        # fast path of D7 §5.1 - the state is equal either way.
+        updated = (
+            state
+            if decision.gate is state.gate
+            and shed_active is state.shed_active
+            and shed_since is state.shed_since
+            and _same_w(state.commanded_w, effective_w)
+            else replace(
+                state,
+                gate=decision.gate,
+                shed_active=shed_active,
+                shed_since=shed_since,
+                commanded_w=effective_w,
+            )
         )
         return updated, ApplyResult(
             action=decision.action,
@@ -809,3 +821,10 @@ def gate_config(
         command_min_interval_s=config.command_min_interval_s,
         transient_grace_s=transient_grace_s,
     )
+
+
+def _same_w(old: float | None, new: float | None) -> bool:
+    """Return whether storing `new` would leave `old` exactly as it is - -0.0 is not 0.0."""
+    if old is None or new is None:
+        return old is new
+    return old == new and copysign(1.0, old) == copysign(1.0, new)

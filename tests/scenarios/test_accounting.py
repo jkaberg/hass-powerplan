@@ -22,6 +22,7 @@ from custom_components.powerplan.core.accounting_hook import params_of, store_ki
 from custom_components.powerplan.core.tariffs.evaluator import Period
 from tests.builders.houses import tensio
 from tests.scenarios import catalogue
+from tests.scenarios.cache import cached
 from tests.scenarios.runner import ScenarioResult, run_scenario
 
 pytestmark = pytest.mark.scenario
@@ -40,7 +41,7 @@ def _run_named(name: str) -> ScenarioResult:
     A plain top-level function so `ProcessPoolExecutor` can pickle a reference
     to it (perf, D-0321/WP6.1a).
     """
-    return run_scenario(getattr(catalogue, name)())
+    return cached(__file__, name, lambda: run_scenario(getattr(catalogue, name)()))
 
 
 @pytest.fixture(scope="module")
@@ -79,7 +80,7 @@ def twin(_twin_pair: tuple[ScenarioResult, ScenarioResult]) -> ScenarioResult:
 @pytest.fixture(scope="module")
 def observed() -> ScenarioResult:
     """Run the five observe days once for the module."""
-    return run_scenario(catalogue.observe_calibration())
+    return cached(__file__, "observed", lambda: run_scenario(catalogue.observe_calibration()))
 
 
 def _money(text: str | None) -> Decimal:
