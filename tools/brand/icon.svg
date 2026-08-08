@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12B3A8"/>
+      <stop offset="1" stop-color="#0A5FA8"/>
+    </linearGradient>
+    <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFC53D"/>
+      <stop offset="1" stop-color="#F29D0B"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#g)"/>
+  <line x1="37" y1="56" x2="219" y2="56" stroke="#FFFFFF" stroke-width="8"
+        stroke-linecap="round" stroke-dasharray="14 14" stroke-opacity="0.95"/>
+  <rect x="34" y="150" width="22" height="58" rx="7" fill="#FFFFFF" fill-opacity="0.92"/><rect x="64" y="112" width="22" height="96" rx="7" fill="#FFFFFF" fill-opacity="0.92"/><rect x="170" y="126" width="22" height="82" rx="7" fill="#FFFFFF" fill-opacity="0.92"/><rect x="200" y="82" width="22" height="126" rx="7" fill="#FFFFFF" fill-opacity="0.92"/>
+  <path d="M134.7 76 L93.2 151.5 L121.3 151.5 L111 212.2 L162.8 130.8 L133.2 130.8 L149.5 76 Z" fill="url(#gb)" stroke="url(#gb)" stroke-width="10"
+        stroke-linejoin="round"/>
+</svg>

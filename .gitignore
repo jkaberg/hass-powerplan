@@ -24,3 +24,7 @@ coverage.json
 htmlcov/
 
 .cache/
+
+# brand generator (tools/brand/README.md): the unpacked Inter package and the output
+tools/brand/fonts/
+tools/brand/out/

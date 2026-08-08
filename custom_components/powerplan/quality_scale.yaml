@@ -20,7 +20,13 @@ rules:
       No device is polled. The coordinator runs in push mode: the engine ticks
       on meter updates (debounced ~10 s) and a 30 s heartbeat, and publishes
       with async_set_updated_data (HLD §4, D7 §5.1).
-  brands: todo
+  brands:
+    status: done
+    comment: >-
+      brand/ ships icon, logo and dark_logo at 1× and 2×, which HA 2026.3+
+      (the floor) serves itself; the brands repository no longer takes custom
+      integrations (D8 §5.12, PLAN §7 dec. 29, WP B.1). HACS's store listing
+      still shows a blank icon (hacs/integration#5171).
   common-modules:
     status: done
     comment: >-
