@@ -648,7 +648,34 @@ Common in the Nordics: an air-to-water or ground-source heat pump feeds a manifo
 
 ## 6. Configuration schema - questionnaires and derivations
 
-*(D8 §5.15)* The flow opens with **"Hva vil du styre?"** - Elbillader · Varmtvannsbereder · Gulvvarme eller panelovn · Varmepumpe · Annet apparat - then a device list filtered to plausible devices for that type, never PowerPlan's own, with those already added marked (LOAD-3, CTL-11). §5.9's matching then confirms rather than decides. Below 0.6 confidence the match sentence warns in words, and it never shows a profile key or an entity id (LOAD-2). Role labels are translated (LOAD-1); required roles are shown, optional ones under Avansert, each with a one-line reason (LOAD-6). Question controls follow D8 §5.15's table: temperature sliders with per-type ranges (floor 15–30 °C, water heater 40–85 °C) and `min ≤ comfort ≤ max` checked inline; hours per day 1–24 as a slider; durations as `duration`; deadlines and ready-by as half-hour selects; the COP curve as an `object` list or a type preset (CTL-4, CTL-5, CTL-7, CTL-8, CTL-13); power in kW (CTL-15). Two review findings are §5.9's to fix: an access point's LED was offered as a switchable load at 0.40, so `generic_switch` no longer claims a `light` entity without a power sensor; and a single-option field (Profil) is not shown (CTL-14).
+*(D8 §5.15.)* The flow opens with **"Hva vil du styre?"** and offers every one of the eight types; the review listed five (D8 §5.15 S9):
+
+| choice (nb) | type |
+|---|---|
+| Elbillader | `ev` |
+| Varmtvannsbereder | `water_heater` |
+| Gulvvarme | `floor_heating` |
+| Panelovn eller annen ovn | `radiator` |
+| Varmepumpe | `heat_pump` |
+| Oppvaskmaskin, vaskemaskin eller tørketrommel | `appliance_cycle` |
+| Hjemmebatteri | `battery` |
+| Annet apparat med av/på | `generic_switch` |
+
+These labels replace today's type vocabulary, where `appliance_cycle` is "Apparat" - the glossary's word for every load - and `generic_switch` "Bryterstyrt last" (`nb.json` `selector.load_type`). A device list follows, built by the flow because HA's `DeviceSelector` cannot exclude an integration or mark a device (D8 §5.15 H8): devices with a switch, climate, water-heater, number, select or button entity plausible for that type, never PowerPlan's own, those already added marked and refused before submit (LOAD-3, CTL-11; today a bare `DeviceSelector` and a refusal after submit, `flow/load.py:648-669`). §5.9's matching then confirms rather than decides. Below 0.6 confidence the match sentence warns in words, and it never shows a profile key, an English reason or an entity id (LOAD-2; today `flow/load.py:691-693` and the profiles' English `reasons`, `providers/profiles/generic_switch.py:140-161`).
+
+| part | design | evidence today |
+|---|---|---|
+| the LED (review §10) | two §5.9 rules: `generic_switch` claims a `light` only when the device also has a power sensor, and no profile takes an entity whose `entity_category` is config or diagnostic for a control role - a network device's LED or PoE switch is configuration, not a load. `EntityView` gains `entity_category` from the registry | an on/off `light` is a relay (`generic_switch.py:83-88`) at 0.40 (`:58`) with or without a power sensor; `EntityView` has no category (`providers/profiles/base.py:216-228`) |
+| roles | required roles shown, optional ones under Avansert with a one-line reason (LOAD-6); role labels translated (LOAD-1: 32 `role_*` labels are English in nb); pickers filtered by device class, unit and state class (CTL-10) | every role in one list with an unfiltered `EntitySelector` (`flow/load.py:558-574`) |
+| single-option fields | not shown: Profil with one match, phases on a single-phase site (CTL-14) | `flow/load.py:549-556` |
+| temperatures | a slider over the type's own question range (the tables below), for the flow and for the knobs `number.<load>_comfort_c`/`_min_c`/`_max_c`, which today are one 5–80 °C box for every type (`load_entities.py:240-270, 319`); `min ≤ comfort ≤ max` checked in `Questionnaire.validate`, which checks no pair today (`core/loads/questionnaire.py:208-240`) (CTL-5, CTL-16) | the flow already slides °C (`flow/load.py:185`) |
+| hours per day, SoC limits | sliders, flow and knobs (CTL-2, CTL-4) | `h` renders a box (`flow/load.py:105`); knobs are boxes |
+| durations | `duration` without seconds - every `*_s` default in these tables is a whole minute - stored in seconds (CTL-8) | boxes in seconds |
+| ready-by, departures | half-hour selects in the flow (CTL-7); `time.<load>_ready_by`/`_deadline` stay `time` entities (INV-50) | `TimeSelector` (`flow/load.py:199-200, 249`) |
+| the COP curve | an `object` list {outdoor °C, COP} pre-filled from the type's curve (§6.4); refused unless COP rises with outdoor temperature (CTL-13, CTL-16) | a text DSL (`flow/load.py:209-210, 265-280`); only `y > 0` checked (`core/loads/questionnaire.py:259-272`) |
+| power | kW in the form, step 0.1; stored in W (CTL-15) | `power_w` in W for `generic_switch`, `radiator`, `appliance_cycle` |
+| errors | every `AnswerError` code translated - `water_heater`'s `unsafe_switch` has no translation today (`core/loads/types/water_heater.py:421`) | - |
+| labels | the heat pump's "Forvarm opp til" names the outdoor limit it is; no "Tomt bruker …" on a slider that cannot be empty (LOAD-9) | `nb.json` `config_subentries.load.step.questions` |
 
 Common to every load: pick the HA device → suggested type + bindings (§5.9) → the type's questions → review. Common derived: `priority` (type default, room adjusted), `carrier` (electricity unless the profile says gas/district heat), `phases` (profile or question), `group` (type default: floor loops → `floor_heating`, radiators → `radiators`).
 

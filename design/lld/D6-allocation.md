@@ -347,7 +347,16 @@ Group subentry: name, members, `max_concurrent_w` (default: the two largest memb
 Zone subentry: name, member loads (demand and sources both, electric substitution pairs, §5.7), carrier + efficiency read from D4 instead of asked, `never_substitute` (a multi-select over the members, `Zone`'s own `frozenset[str]`), `min_cop` 2.0, `switch_hysteresis` 15 %, `min_dwell_min` 30, `switch_confirm_s` 1800, `capacity_penalty` 1.00 under Advanced.
 Circuit subentry: name, fuse A, phases, members, an optional sub-meter power entity, `unmetered_w` 0. `flow/circuit.py`, one questionnaire step and a review (D8 §5.3). Members are the site's load subentries picked by title and stored by id, the circuit subentry is the relation's one owner, the sub-meter a `sensor` with `device_class: power`, `unmetered_w` under Advanced. The subentry's key is its id, which `Grant.capped_by`, the report and the `breach` event name the circuit by (D-0285).
 
-*(D8 §5.15)* In the household's words the flows are "Legg til sikringskurs", "Legg til gruppe" and "Legg til rom med flere varmekilder" (LOAD-8). Members are multi-selects sorted A–Å; the room flow offers heating appliances only, and "never substitute" becomes "Apparater som alltid skal bruke egen varme", limited to the members chosen (LOAD-7). A circuit's fuse is a `select` of sizes (CTL-1, LOAD-10), its `unmetered_w` is "Annet forbruk på kursen (ikke styrt)" in kW, and a group's shared cap is computed after its members are chosen, in kW (CTL-15).
+In the household's words the flows are "Legg til sikringskurs", "Legg til gruppe" and "Legg til rom med flere varmekilder" (D8 §5.15, LOAD-8).
+
+| part | design |
+|---|---|
+| members | multi-selects sorted A–Å by the frontend (`sort: true`, the viewer's collation) (LOAD-7) |
+| the room's members | heating types only: `floor_heating`, `radiator`, `heat_pump` (LOAD-7) |
+| "never substitute" | "Apparater som alltid skal bruke egen varme", asked in a second step limited to the members chosen - an HA form can't narrow one field by another's answer in the same form (D8 §5.15 rule 5) |
+| the group's shared cap | computed from the chosen members' nameplates (the default above) and shown, editable, on the review step in kW, stored in W |
+| the circuit | fuse a `select` of sizes like D3 §6's main fuse (CTL-1, LOAD-10), phases the same control as the site's (CTL-14), `unmetered_w` asked as "Annet forbruk på kursen (ikke styrt)" in kW and stored in W (LOAD-8, CTL-15) |
+| review sentences | the members joined with the language's own conjunction (a translation) |
 
 Review texts: group - "Six floor loops share 2 kW when the hour gets tight; the coldest gets it first." zone - "The living-room slab and the first-floor heat pump heat the same space; powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk." circuit - "The garage circuit is fused at 32 A: the charger and the sauna will never exceed it together."
 

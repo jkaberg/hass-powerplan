@@ -50,7 +50,7 @@
 custom_components/powerplan/
 ├── manifest.json  hacs.json  strings.json  translations/{en,nb}.json  icons.json
 ├── config_flow.py         SiteConfigFlow, OptionsFlow, subentry flows (LoadSubentryFlow, GroupSubentryFlow, ZoneSubentryFlow, CircuitSubentryFlow)
-├── flow/                  steps.py (site steps), questionnaire.py (a registry `Field` and D4's `Question` → selector/schema), review.py (explain rendering), device_pick.py (DeviceSelector + role pre-fill + profile match)
+├── flow/                  steps.py (site steps), questionnaire.py (a registry `Field` and D4's `Question` → selector/schema), review.py (explain rendering), device_pick.py (DeviceSelector + role pre-fill + profile match), text.py (§5.15, WP U.1*: numbers, money and units per language; labels assembled from translations)
 ├── entity.py              PowerplanEntity(CoordinatorEntity) base: device info, unique id, category, availability from Snapshot
 ├── sensor.py  binary_sensor.py  number.py  switch.py  select.py  button.py  time.py  event.py
 ├── services.py            registration + schemas
@@ -109,7 +109,7 @@ meter           → D3 §6 (skipped on price_only) - device pick …
 prices          → D1 §6 (skipped on fuse_only) - source menu → per-source step → modifiers multi-select → per-modifier sub-steps → export → carriers
 tariff          → D2 §6 (skipped on fuse_only AND on price_only, which has no metric to bill → NoPeak; D-0127)
                   country → preset select → rendered description → target/risk → (rolling) bills → (contracted) limits
-hard_limits     → contracted power (if not in preset), external DSO limit toggle (v1.x)
+hard_limits     → contracted power (if not in preset), external DSO limit toggle (v1.x). *(WP U.2: the step goes - its answer is read by nothing; §5.15 S2)*
 presence        → auto (pick person entities) / manual
 notifications   → per category transport (defaults: persistent for peak & comfort & unhealthy, off for the rest); quiet hours.
                   The eight categories that default to off sit in the step's collapsed `advanced` section (D-0129)
@@ -175,7 +175,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `switch.<site>_active` | switch | control | on | master; off = release every load on the edge (INV-26) and treat every load as `observe`: decisions still published (INV-44), calibration slots accrue (D11 §5.5; PLAN §7 dec. 20) |
 | `select.<site>_presence` | select | control | on | auto / home / away / vacation |
 | `select.<site>_target` | select | config | on | step or kW (D2) |
-| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**, from WP U.3, 0.5 for `per_day = max` presets until then) |
+| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**, from WP U.3, 0.5 for `per_day = max` presets until then; an existing site keeps its materialised value, INV-66) |
 | `number.<site>_margin_kwh` | number | config | off | ε |
 | `sensor.<site>_window_used` | sensor kWh | - | on | attrs: `t_rem_min`, `anchor_kind`, `confidence` |
 | `sensor.<site>_window_projected` | sensor kWh | - | on | |
@@ -340,7 +340,7 @@ Config-entry diagnostics: entry data (bindings kept, names kept, `notify` servic
 
 ### 5.12 Manifest and packaging
 
-*(UX review BR-1…BR-5, U.4)* `manifest.json` `name` is **"PowerPlan"** (the domain stays `powerplan`); the translation `title` too. **Brand images ship in the integration**: `custom_components/powerplan/brand/{icon,icon@2x,logo,logo@2x,dark_logo,dark_logo@2x}.png`, which HA serves itself since 2026.3 (HA developer blog, "Custom integrations can now ship their own brand images"; the brands repository no longer takes custom integrations), so no brands PR exists. HACS's store listing still shows a blank icon for local-only brands (hacs/integration#5171), documented in `limitations.md`. Device info: manufacturer "PowerPlan", model a translated type name ("Elbillader", "Varmtvannsbereder", …; the site's path in words), `sw_version` = the manifest version. `documentation` points at the public docs (§5.13); the version is bumped before anyone else installs it. *(D12 §5.5)* `async_setup` also serves `frontend/dist` at `/powerplan_static` and loads `powerplan.js` with `frontend.add_extra_js_url` (versioned by `manifest.version`); the file sits inside the integration directory, so HACS sees nothing new, and `dependencies` gains `frontend` and `http`, which hassfest requires of an integration that imports them. `manifest.json` *(the target of the flow dialog's help icon, §5.13)*: `domain: powerplan`, `integration_type: hub`, `iot_class: calculated`, `config_flow: true`, `dependencies: []`, `after_dependencies: ["recorder", "nordpool", "zwave_js"]` (+ `easee_ble` when the profile lands in WP2.2: hassfest run with `--integration-path` skips the dependency-existence check entirely for a custom integration, so a custom domain there is accepted - verified in WP0.1), `requirements: ["holidays>=0.84"]` - a **range**, not an exact pin: HA core's `workday` pins 0.84 at 2026.3.0 and 0.104 at 2026.8.0, so no single `==` satisfies both ends of the CI matrix, and whatever the running core installed satisfies the range, `version`, `codeowners`, `issue_tracker`. `hacs.json`: `{"name": "powerplan", "render_readme": true, "homeassistant": "2026.3.0"}`, at the **repository root** where HACS reads it, not beside `manifest.json`. `strings.json` validated by hassfest; `quality_scale.yaml` targeting silver rules that apply to a custom integration (config flow, tests, diagnostics, repairs, translations, unique ids, entity categories).
+*(UX review BR-1…BR-5, U.4)* `manifest.json` `name` is **"PowerPlan"** (the domain stays `powerplan`); the translation `title` and `hacs.json` `name` too. **Brand images ship in the integration**: `custom_components/powerplan/brand/{icon,icon@2x,logo,logo@2x,dark_logo,dark_logo@2x}.png`, which HA serves itself since 2026.3 (HA developer blog, "Custom integrations can now ship their own brand images"; the brands repository no longer takes custom integrations), so no brands PR exists. HACS's store listing still shows a blank icon for local-only brands (hacs/integration#5171), documented in `limitations.md`. Device info: manufacturer "PowerPlan", model a translated type name ("Elbillader", "Varmtvannsbereder", …; the site's path in words) - assembled from the translations at setup, since `DeviceInfo.model` has no translation key (§5.15 H4) - `model_id` the type key, `sw_version` = the manifest version. `documentation` points at the public docs (§5.13); the version is bumped before anyone else installs it. *(D12 §5.5)* `async_setup` also serves `frontend/dist` at `/powerplan_static` and loads `powerplan.js` with `frontend.add_extra_js_url` (versioned by `manifest.version`); the file sits inside the integration directory, so HACS sees nothing new, and `dependencies` gains `frontend` and `http`, which hassfest requires of an integration that imports them. `manifest.json` *(the target of the flow dialog's help icon, §5.13)*: `domain: powerplan`, `integration_type: hub`, `iot_class: calculated`, `config_flow: true`, `dependencies: []`, `after_dependencies: ["recorder", "nordpool", "zwave_js"]` (+ `easee_ble` when the profile lands in WP2.2: hassfest run with `--integration-path` skips the dependency-existence check entirely for a custom integration, so a custom domain there is accepted - verified in WP0.1), `requirements: ["holidays>=0.84"]` - a **range**, not an exact pin: HA core's `workday` pins 0.84 at 2026.3.0 and 0.104 at 2026.8.0, so no single `==` satisfies both ends of the CI matrix, and whatever the running core installed satisfies the range, `version`, `codeowners`, `issue_tracker`. `hacs.json`: `{"name": "powerplan", "render_readme": true, "homeassistant": "2026.3.0"}`, at the **repository root** where HACS reads it, not beside `manifest.json`. `strings.json` validated by hassfest; `quality_scale.yaml` targeting silver rules that apply to a custom integration (config flow, tests, diagnostics, repairs, translations, unique ids, entity categories).
 
 ### 5.13 Flow text and documentation links *(PLAN §7 dec. 23; 6.2b)*
 
@@ -365,64 +365,224 @@ Measured: 38 steps, 997 strings, 6 506 words, the longest step description 86 wo
 
 ### 5.15 The household's screens *(PLAN §7 dec. 28)*
 
-The review (`design/reviews/ux-review.md`, item IDs below are its own) looked at every screen through the eyes of a household that knows its bill, roughly what a fuse is and which appliances draw a lot, and nothing about IT networks, cumulative tiers, carriers, COP or baselines. Its findings bind this section; where it and an earlier rule disagree, the resolution is stated.
+The review (`design/reviews/ux-review.md`, item IDs below are its own) looked at every screen through the eyes of a household that knows its bill, roughly what a fuse is and which appliances draw a lot, and nothing about IT networks, cumulative tiers, carriers, COP or baselines. Its findings bind this section; where it and an earlier rule disagree, the resolution is stated. A scoping pass checked every item against the code and against Home Assistant 2026.8.0 in `.venv`; the item map at the end is the result, and the text below is corrected where the first cut was wrong or HA cannot do what it asked.
 
 **Rules for every screen** (review §1, adding to HLD §7.9 and §5.13 here):
 
 | # | rule | how it is checked |
 |---|---|---|
-| 1 | one question per screen, titled as a question in the household's words | the budgets test (§9 15) also asserts every step `title` ends with "?" except the review step |
+| 1 | one question per screen, titled as a question in the household's words - the add-on follow-ups too ("Hvor stor er merverdiavgiften?", not HUB-7's noun titles) | the budgets test (§9 15) also asserts every step `title` ends with "?" except the review steps |
 | 2 | every field description says why it is asked and where to find the answer ("Står på nettleiefakturaen") - inside §5.13's 15 words; the longer explanation is the linked page | review |
-| 3 | detect first, then confirm: country, currency, time zone, price area, persons, the meter's power and register sensors and the likely grid company come from HA; the screen shows what was found | §9 16 |
-| 4 | "Vet ikke" / "Don't know" with a safe default wherever a household may not know | review |
-| 5 | show only what applies: a follow-up step, never a dead field (HUB-17) | §9 16 |
+| 3 | detect first, then confirm: country, currency, time zone, price area, persons and the meter's sensors come from HA, and the screen shows what was found - a sensor with its current value, read through a provider (INV-3 keeps `hass.states` in `runtime.py` and `providers/`). The grid company is **not** detectable: nothing in the repository maps a location to a grid company (S6) | §9 16 |
+| 4 | "Vet ikke" / "Don't know" with a safe default wherever a household may not know; the summary names every value that was assumed | review |
+| 5 | show only what applies: a follow-up step, never a dead field (HUB-17) - HA forms have no conditional fields, so a field that depends on an answer in the same form moves to the next step | §9 16 |
 | 6 | controls that prevent mistakes (the table below) | §9 17 |
-| 7 | the review's glossary (its §3) in every string, en and nb; the design's own words (site, load, zone, observe, shed, baseline, carrier, modifier) never reach a screen | §9 18 |
-| 8 | Avansert is optional, prefilled with the derived value, with one intro sentence and no "Avansert:" prefix on its fields (HUB-18, HUB-19) | §9 16 |
-| 9 | an entity's name and state read as a sentence ("Effekttrinn denne måneden: 2–5 kW"); a normal state is never "unknown" | §9 19 |
+| 7 | the review's glossary (its §3, HLD §2) in every string, en and nb - flows, entities, repairs, services and the notification texts in `notifications.py`; the design's own words (site, load, zone, observe, shed, baseline, carrier, modifier) never reach a screen | §9 18 |
+| 8 | Avansert is optional, prefilled with the derived value (`suggested_value` where the value is derived at run time), with one intro sentence and no "Avansert:" prefix on its fields (HUB-18, HUB-19) | §9 16 |
+| 9 | an entity's name and state read as a sentence ("Effekttrinn denne måneden: 2–5 kW"); a normal state is never "unknown" where HA lets us say otherwise - a `timestamp` sensor and a `time` entity cannot (H2), so the household reads that value from a sibling that can | §9 19 |
+| 10 | an option label is ≤ 5 words (PLAN §7 dec. 23); where the review's label is longer (CTL-12, §4.2 steps 1 and 8), the short label stays and the rest goes in the field description (S7) | §9 15 |
 
-**No text is built in Python, and no placeholder carries an internal key** (review §0 R1, R2). Every summary, option list and sentence the flow shows is assembled from translation keys. Numbers and money are formatted by one helper for the user's language: "1 200 kr" and "0,79" in nb, "1,200 kr" and "0.79" in en. Entity ids, service keys and registry keys stay out of the text; the friendly name or a translated label goes in their place. Every selector option and every enum state has a translation (R4), and every nb string differs from its en string except on an allow-list of names and units (R3).
+**Words live in the translation files; Python supplies data** (review §0 R1, R2). Every word a screen shows is a translation string. Python fills placeholders with data only - numbers, units, money, and the household's own names for its devices, persons and loads - formatted by one helper per language, `flow/text.py` (the one module this section adds to §3): "1 200 kr", "0,79", "25,1 kW" in nb; "1,200 kr", "0.79", "25.1 kW" in en. Where a label mixes words and numbers - a target option, the tariff table's header, a list joined with "og" - the words are a translation read with `async_get_translations` in `hass.config.language` (`flow/review.py:66-68` is the precedent) and the helper assembles them (H7). `core/` returns data, never a sentence: the tariff summary becomes a structured value (D2 §6), the decision trail's state a reason code (ENT-21; `core/engine.py:3128` writes English today), advice a key (ENT-1). Entity ids, service keys, registry keys and error codes never fill a placeholder. Every selector option, enum state, event type and flow error code has a translation (R4; the water heater's `unsafe_switch` has none today), and every nb string differs from its en string except on an allow-list of names, units and numbers (R3: 83 keys are equal today, about 50 of them English; nb also writes "1.5 kW" with a point).
 
 **The site flow for a household** (review §4.2, HUB-1…6). The steps of §5.1 are reordered around nine questions; every other step becomes a follow-up asked only when it applies.
 
 | # | question (nb title) | asks | detected or derived |
 |---|---|---|---|
-| 1 | Hva vil du at PowerPlan skal hjelpe deg med? | the path: save on energy and grid fee (recommended) · cheapest hours only · protect the main fuse only | - |
+| 1 | Hva vil du at PowerPlan skal hjelpe deg med? | the path: save on energy and grid fee (recommended) · cheapest hours only · protect the main fuse only - labels ≤ 5 words, the rest in the description | - |
 | 2 | Hva vil du kalle dette hjemmet? | the name | HA's location name |
-| 3 | Hvor måler du strømforbruket? | the meter device, from devices that carry a power sensor | the roles, shown as found ("Effekt nå 1,2 kW ✓ · Målerstand 45 123 kWh ✓"); the role form only for what is missing |
-| 4 | Hvor stor er hovedsikringen? | fuse size and voltage, each with "Vet ikke" | country, phases, the limit in kW shown back |
-| 5 | Hvilken strømavtale har du? | spot · Norgespris · fixed; spot asks markup (øre/kWh) and fee (kr/mnd) | price area with its region name, Nord Pool, VAT from the country (D1 §6) |
-| 6 | Hvilket nettselskap har du? | the grid company, searchable, A–Å, "Finner ikke mitt" last | the likely company suggested |
+| 3 | Hvor måler du strømforbruket? | the meter device: a `DeviceSelector` limited to devices with a `sensor` of `device_class: power` (native, H8) | the roles pre-filled (`flow/device_pick.py:120-156`) and shown back with their values through a meter provider: "Effekt nå 1,2 kW ✓ · Målerstand 45 123 kWh ✓ · Eksport 0 kWh ✓"; the role form only for what is missing or on "Endre" |
+| 4 | Hvor stor er hovedsikringen? | fuse size (sizes in A, "Annet…", "Vet ikke") and, in Norway, voltage (230 V · 400 V · "Vet ikke"); elsewhere D3's system select | country and phases from HA and the country; the limit shown back ("Det gir deg inntil ca. 25 kW"); "Vet ikke" takes D3's country default, stored as assumed and named in the summary |
+| 5 | Hvilken strømavtale har du? | spot · Norgespris · fixed; spot asks markup and fee in the currency's minor unit per kWh and kr/mnd | the price area from the Nord Pool entry's own entities (`flow/steps.py:419-439`, as today) with its region name; Nord Pool detected; VAT from the country (D1 §6) |
+| 6 | Hvilket nettselskap har du? | the grid company, searchable, A–Å, "Finner ikke mitt" and "Legg inn selv" last | nothing (S6) |
 | 7 | Stemmer dette med nettleiefakturaen din? | yes · no, enter it myself (HA flows have no back) | the tariff as a translated table (D2 §6) |
-| 8 | Hvilket effekttrinn vil du holde deg i? | the target and the strictness | a suggestion from the last 30 days where history exists |
-| 9 | Klar til å starte | trial mode on or off | the summary, from translation keys |
+| 8 | Hvilket effekttrinn vil du holde deg i? | the target ("Automatisk" first) and the strictness | on a reconfigure the running site's own level; on a first setup nothing (S6) |
+| 9 | Klar til å starte | trial mode on or off - first setup only | the summary, from translation keys and friendly names |
 
-Follow-ups, each with "Hopp over" where skippable: solar or other production → export; other heat sources (belongs with the room flow); a special agreement → the price add-on toolkit; hard limits; presence; notifications (HUB-16's order). Country is asked once (HUB-2), the grid charge comes after the grid company (HUB-3), add-on steps follow the checkbox order and each has its own title and description (HUB-7, HUB-8). **Reconfigure** re-enters at step 2 as today (D-0330) but never shows step 9's trial-mode toggle for a running site (HUB-5).
+Follow-ups, each with "Hopp over" where skippable: solar or other production → export; other heat sources (belongs with the room flow); a special agreement → the price add-on toolkit; presence; notifications (HUB-16's order). Country is asked once (HUB-2); the grid charge comes after the grid company (HUB-3); each add-on is its own step id `modifier_<key>` with its own title, description and field help - one shared `modifier_options` step is why titles are keys and help is shared today (`config_flow.py:502-512`; HUB-7, HUB-8, HUB-21) - and the add-ons follow the order the options are listed, not the order they were ticked (`config_flow.py:492`; HUB-3). **The hard-limit step goes** (S2): `entry.data.hard_limits` is written (`config_flow.py:684`) and shown in the summary (`flow/review.py:162`) but read by nothing - the engine takes the fuse from D3 and a contracted limit from the tariff (`runtime.py:440-480`, `core/engine.py:1781-1800`); the grense is D3's fuse, a lower one is D3's per-phase limit under Avansert, and an old entry's key is ignored. **Reconfigure** re-enters at step 2 as today (D-0330), pre-fills the meter device (`config_flow.py:205` restores the roles but not `_meter_device`, HUB-22) and every add-on's options (D-0330 left them out, HUB-9), and never shows step 9's toggle; it writes back the entry's own `active` (`config_flow.py:807` takes it from the toggle today; HUB-5).
 
 **Controls** (review §5):
 
 | field | control | where |
 |---|---|---|
-| main fuse, circuit fuse | `select` of standard sizes in A, "Annet…" and (main fuse) "Vet ikke"; never a free number with a clear button (CTL-1) | D3 §6, D6 §6 |
-| VAT, spot share, reserve, EV charge limits | `number` in %, slider 0–100 step 1 (CTL-2) | D1, D4 |
-| markup, energy charge, prices; monthly fees | `number` box in øre/kWh; kr/mnd (CTL-3) | D1 §6 |
-| hours per day | slider 1–24 h (CTL-4) | D4 §6 |
-| temperatures | slider in °C with a per-type range, `min ≤ comfort ≤ max` checked inline (CTL-5, CTL-16) | D4 §6 |
-| tiers, periods, day types, "applies to" | `object` selector with `fields` and `multiple` - a form list, never the YAML editor (CTL-6, HUB-9). HA's own fix for nested selectors in object fields landed on 2026-05-13 (core PR #170453), after the 2026.3 floor, so U.2 checks the forms on the floor line and keeps a fallback | D1 §6, D2 §6 |
-| quiet hours, ready-by, deadlines | a `select` of whole and half hours, since HA's `time` selector has no option to hide seconds (verified in `helpers/selector.py`, CTL-7) | D4 §6, §5.1 notifications |
-| intervals and durations | `duration` selector, `enable_second: false` (CTL-8) | D4 §6 |
-| country, currency, time zone, price area | taken from HA and hidden; shown only to correct, with region names (CTL-9) | D1, D3 |
-| meter and load roles | entity pickers filtered by `device_class`, unit and `state_class` - power W/kW, energy kWh `total_increasing`, temperature °C (CTL-10) | D3 §6, D4 §6 |
-| the device to add | a `select` built by the flow: HA devices with a switch, climate, water-heater or number entity, never PowerPlan's own, and those already added marked and refused *before* submit (CTL-11) | §5.2 |
-| strictness (`risk`) | radio with explanations: strict (recommended, the default), today's paid hours, flexible - D2 §6 | D2 §6 |
-| heat pump COP | `object` list {outdoor °C, COP} or a type preset (CTL-13) | D4 §6 |
-| power | kW everywhere, step 0.1 (CTL-15) | all |
+| main fuse, circuit fuse | `select` of standard sizes labelled "63 A", "Annet…" through `custom_value` (6–400 A, D3 §6), and (main fuse) "Vet ikke"; `vol.Required` with its default, so HA draws no clear button. The main fuse is already a `select`, without unit, "Vet ikke" or `Required` (`flow/steps.py:238-242`); the circuit fuse is a free number (`flow/circuit.py:69-78`) (CTL-1, LOAD-10) | D3 §6, D6 §6 |
+| shares, SoC limits, reserve | slider 0–100 % step 1 in the flow and on the knobs; the load flow already slides % (`flow/load.py:185`), the knobs are boxes (`load_entities.py:319`) (CTL-2) | D1, D4 |
+| VAT | a box in %, not a slider (a rate need not be a whole percent); stored as the fraction `vat.rate` declares, so `entry.data` is unchanged (CTL-2) | D1 §6 |
+| markup, energy charge, prices; monthly fees | a box in the currency's minor unit per kWh - øre (NOK, DKK), öre (SEK), cent (EUR) - and kr/mnd; stored in major units as a decimal string (D-0123) (CTL-3) | D1 §6 |
+| hours per day | slider 1–24 h, flow and knob (CTL-4) | D4 §6 |
+| temperatures | slider in °C with the type's own question range, flow and knob alike - the knobs use one 5–80 °C box for every type (`load_entities.py:240-270`); `min ≤ comfort ≤ max` checked in `Questionnaire.validate` (CTL-5, CTL-16) | D4 §6 |
+| tiers, periods, day types, "applies to" | `object` selector with `fields`, `multiple`, `label_field` and `translation_key` - a form list, never the YAML editor (CTL-6, HUB-9). Each row is converted to the stored shape by the modifier's `from_options` (D1 §6), so `entry.data` does not change. HA's fix for nested selectors in object fields landed on 2026-05-13 (core PR #170453), after the 2026.3 floor: U.2 checks the form on the floor line and falls back to one `text` field per row value there | D1 §6, D2 §6 |
+| quiet hours, ready-by, departures | in the flows, a `select` of whole and half hours, since HA's `time` selector has no options at all (H8; CTL-7). `time.<load>_ready_by` and `_deadline` stay `time` entities (INV-50) | D4 §6, §5.1 notifications |
+| intervals and durations | `duration` selector, `enable_second: false` (every `*_s` default in D4 §6 is a whole minute), stored in seconds as today (CTL-8) | D4 §6 |
+| country, currency, time zone, price area | taken from HA and hidden; the area from the Nord Pool entry (no lat/long → area map exists in the repository); shown only to correct, with region names as `selector.nordpool_area` translations (CTL-9) | D1, D3 |
+| meter and load roles | entity pickers filtered by `device_class`, unit and `state_class` - power W/kW, energy kWh `total_increasing`, temperature °C (CTL-10). The meter roles filter by device class only (`flow/steps.py:349-351`), the load roles by nothing (`flow/load.py:574`) | D3 §6, D4 §6 |
+| the device to add | a `select` built by the flow - HA's `DeviceSelector` cannot exclude an integration or mark a device (H8): devices with a switch, climate, water-heater, number, select or button entity, never PowerPlan's own, those already added marked and refused *before* submit (CTL-11) | §5.2, D4 §6 |
+| strictness (`risk`) | radio, three short labels (Streng (anbefalt) · Bruk betalte timer · Fleksibel), the default strict for a new site; the explanation in the field description, with the grammar's own numbers as placeholders ("dine tre høyeste timer") since a label cannot hold them for every preset (CTL-12) | D2 §6 |
+| heat pump COP | `object` list {outdoor °C, COP} or the type's preset; a curve must rise with outdoor temperature (CTL-13, CTL-16) | D4 §6 |
+| power | kW in every form, step 0.1; stored in W as today (`max_concurrent_w`, `unmetered_w`), so `entry.data` is unchanged (CTL-15) | D4 §6, D6 §6 |
+| a registry field that is required and has no default | `vol.Required` with no default: `render()` makes every field optional (`flow/questionnaire.py:127-134`), which is how Norgespris took an empty price (review §10) | D1 §6 |
 
-**The load flow** (review §6): a type-first entry ("Hva vil du styre?") beside the device-first one, detection confirming rather than deciding (LOAD-3); the match sentence in words with the friendly entity name, and a "check that this is the right appliance" warning below 0.6 confidence (LOAD-2); required roles shown, optional ones under Avansert with a one-line reason (LOAD-6); `last_step=False` on the first step (LOAD-4); "Om {name}" as the questions' title (LOAD-5); translated role labels (LOAD-1). Circuit, group and room flows: multi-selects sorted A–Å, the room flow offering heating appliances only, "never substitute" limited to the chosen members, "Annet forbruk på kursen" in kW (LOAD-7, LOAD-8).
+**The load flow** (review §6): type first - "Hva vil du styre?" offering all eight D4 types in the household's words (S9) - then the flow's own device list for that type, detection confirming rather than deciding (LOAD-3, CTL-11); the match sentence in words with the friendly entity name, a warning below 0.6 confidence, never a profile key or an entity id (LOAD-2); required roles shown, optional ones under Avansert with a one-line reason (LOAD-6); `last_step=False` on every step before the review (LOAD-4); "Om {name}" as the questions' title (LOAD-5); translated role labels (LOAD-1). The review's own text goes to translations too: the shadow sentence, "yes"/"no", the type name and the strategy are English or raw keys today (`flow/load.py:351-398, 769-772, 866`). Circuit, group and room flows: members sorted A–Å by the frontend (`sort: true`, the viewer's collation), the room flow offering heating types only, "never substitute" and the group's shared cap asked after the members are known (a follow-up and the review step, rule 5), "Annet forbruk på kursen" in kW, the review's list joined with the language's own "og"/"and" (`flow/circuit.py:139-143`, `group.py:156-160`, `zone.py:196-200`) (LOAD-7, LOAD-8).
 
-**Entities** (review §7). Names and state translations change and entity ids do not (INV-50). The advice sensor becomes an `enum` "Anbefaling" whose state is the most important advice, with "Alt ser bra ut" when there is none and the details in attributes (ENT-1). Every enum, select and event gets its translated states (ENT-2, ENT-4, ENT-11, ENT-13, ENT-23, ENT-31). Units become kW and øre/kWh or kr/kWh consistently, with display precision (ENT-8…10, ENT-14). A timestamp sensor with nothing due shows a translated "none" state rather than unknown (ENT-12, ENT-30, ENT-33). The period goes into cost and savings names, and trial mode shows "Beregnet besparelse" (ENT-15, ENT-35). A load without a power role gets no "power now" entity (ENT-29). Two items change the entity set, so each carries a repair naming the removed ids for one release: the three meter-health entities merged into one "Målerstatus" (ENT-17), and `price_forecast` becoming "Priser kjent til", a timestamp (ENT-19).
+**Entities** (review §7). Names and states change; an upgraded site's entity ids do not (INV-50; a fresh site's ids follow the new English names, H5, and nothing in powerplan resolves an entity by its id - D12 maps keys through the registry). **No entity is removed** (S1): the first cut merged three meter entities and replaced `price_forecast`, each with a repair, which INV-50 does not allow. Instead `sensor.<site>_meter_health` becomes "Målerstatus" (OK · Treg · Mangler data), enabled and out of the diagnostic category for new sites, and `binary_sensor.<site>_meter_stale`/`_degraded` stay for automations, disabled by default for new sites (ENT-17); `sensor.<site>_price_forecast` keeps its id and `slots` and becomes a `timestamp` - "Priser kjent til" - which it may, having no `state_class` (ENT-19).
 
-**Messages** (review §8): errors name what to choose, never a service key (MSG-1, MSG-2); repair titles say what is wrong in calm words and every description ends with one next step (MSG-3); services get household names (MSG-4).
+| change | how | items |
+|---|---|---|
+| advice | `enum` "Anbefaling": options D2's advice keys plus `all_good`; the state is the most severe item and never `top_entries`, which is data and today always first (`core/tariffs/evaluator.py:1098`, `sensor.py:269-281`); attributes stay English (`count`, not the review's `antall`; INV-50) | ENT-1 |
+| translated states | selects, enums, binary sensors (`state.on`/`off` per key) and the event entity (`translation_key` with event-type states). A select's options must be translation keys: `step_<i>`, not `step:<i>` (`runtime.py:786`); a restored or stored `step:<i>` reads as `step_<i>`. A state translation takes no placeholders (H1), so the target reads "Trinn 2" and the range and fee are attributes | ENT-2, 4, 11, 13, 23, 28, 31 |
+| units and precision | kW with one decimal through `suggested_unit_of_measurement` (new sites, H6); window energy two decimals; the price keeps its ISO-code unit with two decimals - "kr/kWh" or "øre/kWh" would start a new statistics series (H9) and fail the Energy dashboard's `<currency>/kWh` check (`components/energy/validate.py:82-92`) | ENT-8, 9, 10, 14 |
+| window length | names that say "denne timen" are chosen at setup by `window_min` (`window_used_60`, `_30`, `_15` translation keys; "dette kvarteret" in a 15-min market) - a key, not a new entity; the translation key is decoupled from the unique-id key, which stays `window_used` (`entity.py:65-66` sets both from one key today, INV-50) | ENT-8, 9 |
+| stage | stays numeric: an enum drops its `state_class` and raises the recorder's `state_class_removed` (H9); renamed "Styringsnivå", diagnostic | ENT-7 |
+| nothing due | a `timestamp` sensor or `time` entity cannot say "Ingen i dag" (H2): the next risky window moves into `binary_sensor.<site>_peak_warning` ("Under grensen" · "Nærmer seg grensen", attribute `next_window_start`) and `sensor.<site>_next_peak_warning` becomes diagnostic; `sensor.<load>_plan_next` and the `time` knobs keep HA's unknown under names that read as a time (S5) | ENT-12, 30, 33 |
+| money | savings are always an estimate against a counterfactual and a name cannot follow trial mode (H3): "Kostnad denne måneden" and "Beregnet besparelse denne måneden", always | ENT-15, 35 |
+| what exists | no "Effekt nå" without a power role (`load_entities.py:630-637` builds it for every load); the load `plan` state becomes planned kWh like the site's (`load_entities.py:655-664` counts slots) | ENT-22, 29 |
+| device info | manufacturer "PowerPlan"; `model` the type's name assembled from translations in the system language at setup (H4: only `name` has a translation key), `model_id` the type key; `sw_version` the manifest version | BR-3 |
+
+**Messages** (review §8): errors name what to choose, never a service key (MSG-1, MSG-2); repair titles say what is wrong in calm words and every description ends with one next step (MSG-3); services get household names (MSG-4); the notification texts in `notifications.py` (D-0274) say "taket", "sikker modus" and "powerplan" today (`notifications.py:116, 139, 168`) and follow rule 7.
+
+**HA limits** (HA 2026.8.0):
+
+| # | limit | evidence | consequence |
+|---|---|---|---|
+| H1 | an entity's name takes `translation_placeholders`; its states do not - `entity.<platform>.<key>.state.<value>` is a fixed string | `helpers/entity.py:671-717` (`name.format(**self.translation_placeholders)` at:700) | ENT-2's "Trinn 2 · 2–5 kW" cannot be a state; CTL-12's labels cannot hold a preset's numbers |
+| H2 | a `timestamp` sensor's state is a datetime or unknown, and HA's frontend renders unknown with its own string before any entity translation | `components/sensor/__init__.py:657-681`; the frontend (not in this repository) | ENT-12, ENT-30, ENT-33 as proposed; rule 9 |
+| H3 | `Entity.name` is a `cached_property` | `helpers/entity.py:770-771` | a name cannot switch with trial mode (ENT-15) |
+| H4 | `DeviceInfo` translates `name` only; `model` is a plain string | `helpers/device_registry.py:128-145` | BR-3's translated model is assembled at setup |
+| H5 | a new entity's object id comes from its English name; an existing entity keeps its id in the registry | `helpers/entity_platform.py:221-253`, `helpers/entity.py:748-768` | U.4's renames change a fresh site's ids only (§9 22) |
+| H6 | `suggested_unit_of_measurement` applies when an entity is registered | `components/sensor/__init__.py:448-456` | ENT-10's kW reaches new sites; an existing one keeps W until changed in its settings |
+| H7 | a flow is given no user language; the precedent reads translations in `hass.config.language` | `flow/review.py:66-68` | assembled labels and number formats follow the system language |
+| H8 | `TimeSelector` has no options; `DurationSelector` has `enable_second`; `ObjectSelector` has `fields`, `multiple`, `label_field`, `translation_key`; `SelectSelector` has `custom_value` and `sort`; `DeviceSelector` filters on integration, manufacturer, model and required entities, and never excludes | `helpers/selector.py:2204-2223, 1021-1048, 1736-1812, 1883-1937, 978-1005` | CTL-1, 6, 7, 8, 11; step 3's device filter is native |
+| H9 | the recorder raises `units_changed` for a unit it cannot convert and `state_class_removed` when a state class goes | `components/sensor/recorder.py:101-102` | ENT-14 keeps its unit; ENT-7 stays numeric |
+
+**Decisions:**
+
+| # | decision | why |
+|---|---|---|
+| S1 | no entity is removed; the meter merge and "Priser kjent til" reuse existing ids (INV-50; the first cut removed two with repairs) | INV-50: "Entity ids … stable across versions" |
+| S2 | the hard-limit step goes; D3's fuse and per-phase limit are the grense, D2's contracted limits the tariff's | the answer is never read (NEW-1) |
+| S3 | `sensor.<site>_stage` stays numeric | H9 |
+| S4 | savings are always "Beregnet besparelse" | H3 |
+| S5 | ENT-12's value moves to the binary sensor; ENT-30 and ENT-33 keep HA's unknown (review rule 10 cannot hold on these entity types) | H2 |
+| S6 | no grid-company suggestion (step 6) and no 30-day target suggestion on a first setup (step 8) | no location → grid-company data in the repository; the 30-day suggestion needs D2's recorder seed, which no WP builds (§5.7 `rebuild_peak_history`) |
+| S7 | option labels ≤ 5 words (dec. 23) win over the review's longer labels; the explanation goes in the field description | PLAN §7 dec. 23 |
+| S8 | CTL-9, CTL-11 and CTL-12 move from U.2 to U.3 | each rebuilds a step U.3 rebuilds anyway (the detection, the load flow's first step, the target step with the default change) |
+| S9 | type first offers all eight D4 types (the review listed five: EV, water heater, floor or panel heater, heat pump, other) | "every device type" is the eight in D4 (D4 §1) |
+
+**Item map**. *Holds?*: yes, partly, no (not reproducible in the code) or wrong, with the evidence; paths are under `custom_components/powerplan/` unless they start with `tests/`; `nb.json` is `translations/nb.json` and a dotted key is its path. Counts: 101 review items (R1–R4, BR-1…5, HUB-1…23, CTL-1…16, LOAD-1…10, ENT-1…35, MSG-1…4, §10-1…4), plus §0's guardrail, §9 (not ours) and nine found in passing (NEW-1…9). Of the 101: 92 hold, 7 hold in part (HUB-2, HUB-22, CTL-1, CTL-2, CTL-5, CTL-9, and MSG-4, whose missing period is already fixed), 1 is not reproducible in the code (§10-3), 1 is wrong (§10-1); none is fixed outright. Five are partly or wholly impossible as proposed (ENT-2, ENT-12, ENT-15, ENT-30, ENT-33); two keep a proposal HA cannot do and follow the first cut's workaround (CTL-7, CTL-11).
+
+| ID | holds? - evidence | change | section | WP | test |
+|---|---|---|---|---|---|
+| R1 | yes - `flow/review.py:56-148`; `flow/steps.py:652-653, 683-692`; `core/tariffs/presets/loader.py:409-441`; `flow/load.py:351-398`; `providers/profiles/generic_switch.py:140-161` | words from translations, data from `flow/text.py`; core returns data | §5.15, D2 §6 | U.1 | 18 |
+| R2 | yes - titles `{modifier}`/`{carrier}` filled with keys (`config_flow.py:511, 563`); `flow/load.py:691, 738, 772, 866`; `step:<i>` (`runtime.py:786`); `top_entries` (`sensor.py:271`); `no car` (`load_entities.py:593-594`); `event.py:39, 44` | no key in a placeholder or a state; states from closed, translated sets | §5.15 | U.1 | 18 |
+| R3 | yes - 83 nb values equal to en, about 50 English (32 `config_subentries.load.step.match.data.role_*`, `Element`, `Reserve`, `COP`, `Minimum COP`, `Boost`, `Margin`, `Format`, `Type`); `selector.water_heater_element_kw` "1.5 kW" | translate; allow-list of names, units and numbers; nb decimals with a comma | §5.11, §5.15 | U.1 | 18 |
+| R4 | yes - no `entity.event`, no `state` for `sensor.advice`, `sensor.session` or any binary sensor; `select.target` has `auto`/`kw` only (`strings.json`) | every option, state, event type and error code translated | §5.15 | U.1 | 18 |
+| §0 guardrail | yes - no such check exists; §9 12 covers keys named in code only, which is how `unsafe_switch` slipped (NEW-2) | the three checks in §9 18, run on the rendered flow in tests rather than as a runtime warning | §9 18 | U.1 | 18 |
+| BR-1 | yes - `manifest.json:3`, `hacs.json:2`; no `title` in `strings.json`; 57 nb strings say "powerplan" | "PowerPlan" in both files and every string; a translation `title` | §5.12 | B.1 (files), U.1 (strings) | 20, 18 |
+| BR-2 | yes - no `brand/`; `powerplan-brand.zip` is untracked, in the main checkout only | the six PNGs (dec. 29); the zip's contents committed before anything else | §5.12 | B.1 | 20 |
+| BR-3 | yes - `entity.py:32, 47-48, 111-112`; no `sw_version` | as the entities table; the model assembled (H4) | §5.12, §5.15 | U.4 | 20 |
+| BR-4 | yes - `manifest.json:8` | `…/tree/main/docs` (§5.12); resolves only once the GitHub repository is public (PLAN §3.0, open) | §5.12, §5.13 | B.1 | 15, 20 |
+| BR-5 | yes - `manifest.json:13` "0.0.1" | 0.1.0, the v0.x line (PLAN §1) | §5.12 | B.1 | 20 |
+| HUB-1 | yes - `config_flow.py:307-718`: name → electrical (IT/TN) → meter → roles → prices → modifiers → export → carriers → tariff | the nine questions | §5.15 | U.3 | 16, 1 |
+| HUB-2 | partly - country twice (`flow/steps.py:222, 657`); currency in the Nord Pool step (`nb.json` `config.step.prices_nordpool.data.currency`); the time zone only when HA has none (`config_flow.py:313-316`) | country once; currency hidden | §5.15, D1 §6, D2 §6 | U.3 | 16 |
+| HUB-3 | yes - modifiers before the tariff (`config_flow.py:435-580`); follow-ups in submission order (`config_flow.py:492`) under a list sorted by key (`core/pricing/modifiers/registry.py:43-45`) | grid charge after the grid company; listed order | D1 §6 | U.3 | 16 |
+| HUB-4 | yes - `nb.json` `config.step.tariff_preset.description` "gå tilbake"; empty schema (`config_flow.py:613`) | yes/no radio | D2 §6 | U.3 | 16 |
+| HUB-5 | yes - `config_flow.py:803`, `flow/steps.py:987-996` | no toggle on reconfigure; `active` kept | §5.15 | U.3 | 16 |
+| HUB-6 | yes - `nb.json` `config.step.name.title` "Gi anlegget et navn", `electrical.title` "Nettilknytningen din", `hard_limits.title` "Den harde grensen" | questions (rule 1) | §5.15 | U.3 | 15 |
+| HUB-7 | yes - one `modifier_options` step (`config_flow.py:502-512`) | `modifier_<key>` steps with question titles | D1 §6 | U.1 | 18 |
+| HUB-8 | yes - one shared `config.step.modifier_options.description` | a description per add-on | D1 §6 | U.1 | 18, 15 |
+| HUB-9 | yes - bare `ObjectSelector` (`flow/questionnaire.py:96`); no values on reconfigure (`config_flow.py:510`, D-0330) | form lists, pre-filled | D1 §6 | U.2 | 17 |
+| HUB-10 | yes - `render()` asks `selector.modifier_cumulative_tier_basis` (`flow/questionnaire.py:164`), which no translation file has | every `render()` key translated | D1 §6 | U.1 | 18 |
+| HUB-11 | yes - English escape hatches (`flow/steps.py:652-653`); names from preset files (`:643`); nb help names "Egendefinert" (`config.step.tariff.data_description.preset`) | operator names as data; translated "Finner ikke mitt"/"Legg inn selv" pinned last; sorted by the language's alphabet (Æ Ø Å, which code-point order is not) | D2 §6 | U.1 (the list's content with WP4.6) | 18 |
+| HUB-12 | yes - English sentence (`core/tariffs/presets/loader.py:409-441`), materialised in `entry.data` (`config_flow.py:602`, `flow/steps.py:840`) | core `TariffSummary`; a translated table; nothing stored | D2 §6 | U.1 | 18, 22 |
+| HUB-13 | yes - `flow/steps.py:683, 692` | "Automatisk" + "Trinn N · range · fee", assembled (H7) | D2 §6 | U.1 | 18 |
+| HUB-14 | yes - `flow/review.py:56-63, 79-85, 95, 105-109, 129-135, 140, 145-148` | the summary from translations and friendly names | §5.15 | U.1 | 18 |
+| HUB-15 | yes - raw `notify` service names (`flow/steps.py:963-968`) | labelled with the app's device name | §5.15 | U.1 | 18 |
+| HUB-16 | yes - the section sits before `notify_service` and `quiet_*` (`flow/steps.py:944-971`) | section last; question title; plain category names | §5.15 | U.3 | 16 |
+| HUB-17 | yes - export fields always (`flow/steps.py:540-555`), persons under manual (`:879-892`), preheat pair in one form (`core/loads/types/heat_pump.py:214-227`) | a follow-up step (rule 5) | §5.15, D1, D4 §6 | U.2 | 16 |
+| HUB-18 | yes - 111 nb field helps start "Avansert:"; seven section intros, two of them "Allerede utfylt"/"Allerede fylt ut" | one intro; no prefix | §5.15 | U.2 | 15, 16 |
+| HUB-19 | yes - `nb.json` `config.step.prices_nordpool.sections.advanced.data_description.publication_tz` "la stå tomt" over an empty field | derived value as `suggested_value` | §5.15 | U.2 | 16 |
+| HUB-20 | yes - `nb.json` `selector.price_source.options.nordpool_action` | "Nord Pool (via Nord Pool-integrasjonen)" | D1 §6 | U.3 | 18 |
+| HUB-21 | yes - shared `config.step.modifier_options.data_description.fallback` | per-add-on steps (HUB-7) | D1 §6 | U.1 | 18 |
+| HUB-22 | partly - L2 and L3 have a shorter help of their own; the device is not restored (`config_flow.py:205, 367`) | "Per fase" section; device restored | D3 §6 | U.3 | 16 |
+| HUB-23 | yes - the six phrases in `nb.json` (`modifiers`, `force_expired`, circuit `sub_meter`, `prices_nordpool.currency`, load `questions` and `user` descriptions); "Varsling", "manuell" in `notify_service` and `mode` helps | rewritten | §5.15 | U.3 | 18 |
+| CTL-1 | partly - main fuse already a `select`, no "A", no "Vet ikke", optional (`flow/steps.py:238-242`); circuit fuse a free number (`flow/circuit.py:69-78`) | as the controls table | D3 §6, D6 §6 | U.2 | 17 |
+| CTL-2 | partly - fractions with the unit dropped (`flow/questionnaire.py:83-87`); the load flow already slides % (`flow/load.py:185`); knobs are boxes (`load_entities.py:319`) | sliders; VAT a % box | D1 §6, D4 §6 | U.2 | 17 |
+| CTL-3 | yes - no unit (`flow/questionnaire.py:85`) or `<CUR>/kWh` (`flow/steps.py:481, 594`) | minor unit per kWh; kr/mnd | D1 §6 | U.2 | 17 |
+| CTL-4 | yes - `h` is a box (`flow/load.py:105, 185`); knob 0–24 step 0.25 (`load_entities.py:301-310`) | slider 1–24 | D4 §6 | U.2 | 17 |
+| CTL-5 | partly - flow sliders with wide ranges (floor comfort 5–35, `core/loads/types/floor_heating.py:176-181`); knobs a 5–80 box (`load_entities.py:240-270`); no cross-field check (`core/loads/questionnaire.py:208-240`) | the type's range; `min ≤ comfort ≤ max` | D4 §6 | U.2 | 17, 21 |
+| CTL-6 | yes - `flow/questionnaire.py:96` | form lists via `from_options`; floor-line fallback | D1 §6, D2 §6 | U.2 | 17 |
+| CTL-7 | yes - `flow/steps.py:970-971`, `flow/load.py:199-200, 249`; no seconds option (H8) | half-hour selects in flows | D4 §6, §5.15 | U.2 | 17 |
+| CTL-8 | yes - `*_s` boxes (e.g. `core/loads/types/heat_pump.py:192-210`) | `duration`, no seconds | D4 §6 | U.2 | 17 |
+| CTL-9 | partly - country and currency asked (HUB-2), time zone not; raw area codes, no `selector.nordpool_area` (`flow/steps.py:442-453`) | hidden, detected, region names | D1 §6, D3 §6 | U.3 (from U.2, S8) | 16 |
+| CTL-10 | yes - meter roles by device class only (`flow/steps.py:349-351`); load roles unfiltered (`flow/load.py:574`) | class, unit, state class | D3 §6, D4 §6 | U.2 | 17 |
+| CTL-11 | yes - bare `DeviceSelector`, refused after submit (`flow/load.py:648-669`); HA cannot exclude (H8) | the flow's own list | §5.2, D4 §6 | U.3 (from U.2, S8) | 17 |
+| CTL-12 | yes - `nb.json` `selector.risk.options.full` "Sats på periodesnittet"; default 0.5 under `per_day = max` (`core/tariffs/target.py:76-85`) | radio, short labels (S7), strict for new sites | D2 §6 | U.3 (from U.2, S8) | 16, 22 |
+| CTL-13 | yes - text DSL (`flow/load.py:209-210, 265-280`) | object list; rising curve | D4 §6 | U.2 | 17, 21 |
+| CTL-14 | yes - profile select always shown (`flow/load.py:549-556`); phases LIST in the site flow (`flow/steps.py:233-237`), DROPDOWN in the circuit (`flow/circuit.py:81-88`) | hide single-option fields; one control | D4 §6, D6 §6 | U.2 | 17 |
+| CTL-15 | yes - W in the group cap (`flow/group.py:101-109`), `unmetered_w` (`flow/circuit.py:108-120`), `power_w` of three types | kW in forms, W in data | D4 §6, D6 §6 | U.2 | 17 |
+| CTL-16 | yes - only ε is checked (`flow/steps.py:756-762`) | target step above the fuse, comfort outside min/max, curve not rising (the "hard limit below target" check goes with the step, S2) | D2 §6, D4 §6 | U.2 | 17, 21 |
+| LOAD-1 | yes - 32 `role_*` labels equal in nb | translated | D4 §6 | U.1 | 18 |
+| LOAD-2 | yes - profile key, "40%" and English reasons with entity ids (`flow/load.py:691-693`; `providers/profiles/generic_switch.py:140, 155, 161`) | a sentence in words; warning below 0.6 | D4 §6 | U.1 | 18 |
+| LOAD-3 | yes - device first (`flow/load.py:648-669`) | type first, eight types (S9) | D4 §6 | U.3 | 16, 2 |
+| LOAD-4 | yes - no `last_step` on `user`, `match`, `questions` (`flow/load.py:665-669, 694-699, 732-739`) | `last_step=False` | §5.2 | U.3 | 16 |
+| LOAD-5 | yes - `nb.json` `config_subentries.load.step.questions.title` "Noen spørsmål" for both | "Om {name}" | §5.2 | U.3 | 18 |
+| LOAD-6 | yes - every bound or missing role in one list (`flow/load.py:558-574`) | optional roles under Avansert | D4 §6 | U.2 | 17 |
+| LOAD-7 | yes - `sort=False` (`flow/circuit.py:91-100`, `group.py:88-99`, `zone.py:88-110`); room offers every load; "never substitute" every load | `sort: true`; heating types; after members | D6 §6 | U.2 | 17 |
+| LOAD-8 | yes - `nb.json` `config_subentries.*.initiate_flow.user` "Legg til last/kurs/sone"; `unmetered_w` in W | household names; kW | D6 §6 | U.3 | 18 |
+| LOAD-9 | yes - "Forvarm opp til" vs its help; "Tomt bruker…" on sliders (`nb.json` `config_subentries.load.step.questions.data_description.comfort_c`) | labels fixed | D4 §6 | U.2 | 18 |
+| LOAD-10 | yes - `flow/circuit.py:69-78` | CTL-1's select | D6 §6 | U.2 | 17 |
+| ENT-1 | yes - `sensor.py:269-281`; `top_entries` always first (`core/tariffs/evaluator.py:1098`) | enum (entities table) | §5.15 | U.1 | 19 |
+| ENT-2 | yes; "Trinn 2 · 2–5 kW" impossible as a state (H1) - `runtime.py:786`, `select.py:100` | `step_<i>`, "Trinn N", range and fee as attributes | §5.15, D2 §6 | U.1 | 19, 22 |
+| ENT-3 | yes - `nb.json` `entity.select.risk` | "Hvor stramt", the flow's three labels | §5.15 | U.4 | 19 |
+| ENT-4 | yes - `event.py:39, 44` | `translation_key`, event-type states, name "Hendelser" | §5.15 | U.1 | 19 |
+| ENT-5 | yes - `nb.json` `entity.sensor.level.name` | "Effekttrinn denne måneden" | §5.15 | U.4 | 19 |
+| ENT-6 | yes - `entity.sensor.projected_level.name` | "Forventet effekttrinn" | §5.15 | U.4 | 19 |
+| ENT-7 | yes - numeric, `measurement` (`sensor.py:230-238`) | numeric kept (S3), renamed, diagnostic | §5.15 | U.4 | 19 |
+| ENT-8 | yes - precision 3 (`sensor.py:176, 192`) | two decimals; window-length names | §5.15 | U.4 | 19 |
+| ENT-9 | yes - precision 3 (`sensor.py:197-200`); the review's "Grense denne timen" collides with its own glossary, where grense is the main fuse | "Mål denne timen", one decimal | §5.15, HLD §2 | U.4 | 19 |
+| ENT-10 | yes - W, precision 0 (`sensor.py:213-217`) | kW (H6) | §5.15 | U.4 | 19 |
+| ENT-11 | yes - `PROBLEM`, no state translation (`binary_sensor.py:45-46`) | translated on/off | §5.15 | U.4 | 19 |
+| ENT-12 | yes; "Ingen i dag" impossible on a `timestamp` (H2) | value on the binary sensor (S5) | §5.15 | U.4 | 19 |
+| ENT-13 | yes - `binary_sensor.py:63-68` | translated on/off | §5.15 | U.4 | 19 |
+| ENT-14 | yes - `<CUR>/kWh`, precision 4 (`sensor.py:299-302, 489`) | precision 2; unit kept (H9) | §5.15 | U.4 | 19 |
+| ENT-15 | yes; a trial-mode-only name impossible (H3) | period in the name; always "Beregnet" (S4) | §5.15 | U.4 | 19 |
+| ENT-16 | yes - `nb.json` `entity.switch.active.name` "Aktiv" | "Automatisk styring" | §5.15 | U.4 | 19 |
+| ENT-17 | yes - `binary_sensor.py:70-83`, `sensor.py:385-387` | no removal (S1) | §5.15 | U.4 | 19, 22 |
+| ENT-18 | yes - `nb.json` `entity.sensor.price_source_health.state.dead` "Død" | "Priskilde": OK · Mangler priser · Feil | §5.15 | U.4 | 19 |
+| ENT-19 | yes - a slot count (`sensor.py:319-331`) | same id, a `timestamp` (S1) | §5.15 | U.4 | 19, 22 |
+| ENT-20 | yes - `entity.sensor.baseline_confidence.name` "Grunnlastsikkerhet" | "Innlæring" | §5.15 | U.4 | 19 |
+| ENT-21 | yes - last trail line (`sensor.py:433-440`), English from core (`core/engine.py:3128`) | enum of reason codes; `trail` unchanged | §5.15, D7 | U.4 | 19 |
+| ENT-22 | yes - load `plan` counts slots (`load_entities.py:655-664`), the site's is kWh (`sensor.py:342-346`) | kWh | §5.15 | U.4 | 19 |
+| ENT-23 | yes - free-form `demand.reason` (`load_entities.py:593-594`) | enum no car · waiting · charging · done from the snapshot; reason as attribute | §5.15 | U.1 | 19 |
+| ENT-24 | yes - no `entity.sensor.next_legionella` | name translated | §5.15 | U.1 | 19 |
+| ENT-25 | yes - "Komfort" on both (`entity.number.comfort_c`, `entity.sensor.comfort_state`) | "Ønsket temperatur" / "Komfortstatus"; three states (no "over mål": core has no such field) | §5.15 | U.4 | 19 |
+| ENT-26 | yes - `entity.number.comfort_min_c`/`_max_c` | renamed | §5.15 | U.4 | 19 |
+| ENT-27 | yes - `min_soc_now` without a category (`load_entities.py:290-296`) | renamed; config category | §5.15 | U.4 | 19, 4 |
+| ENT-28 | yes - no state translation (`load_entities.py:942-949`) | "Nei" / "Ja, av PowerPlan" | §5.15 | U.4 | 19 |
+| ENT-29 | yes - `load_entities.py:630-637` | only with a power role | §5.15 | U.4 | 19, 4 |
+| ENT-30 | yes; "Ingen planlagt" impossible (H2) | S5 | §5.15 | U.4 | 19 |
+| ENT-31 | yes - `entity.sensor.health.state.unhealthy` "Usunn" | "Status": OK · Midlertidig feil · Svarer ikke | §5.15 | U.4 | 19 |
+| ENT-32 | yes - `entity.switch.force`, `entity.number.force_max_hours` | "Kjør nå" / "Maks varighet for Kjør nå", device class duration | §5.15 | U.4 | 19 |
+| ENT-33 | yes; "Ikke satt" impossible on a `time` entity (H2) | one name, "Ferdig til kl." | §5.15 | U.4 | 19 |
+| ENT-34 | yes - `entity.switch.follow_presence` | "Spar når ingen er hjemme" | §5.15 | U.4 | 19 |
+| ENT-35 | yes - `entity.sensor.energy`/`cost`/`savings` | period in the name | §5.15 | U.4 | 19 |
+| MSG-1 | yes - `nb.json` `exceptions.set_peak_needs_a_day_or_a_month` | "Velg enten en dato eller en måned" | §5.7 | U.1 | 18 |
+| MSG-2 | yes - `exceptions.unknown_site` | rewritten | §5.7 | U.1 | 18 |
+| MSG-3 | yes - `issues.*.title` | calm titles; one next step; `learn_more_url` (§5.9) | §5.9 | U.3 | 10, 18 |
+| MSG-4 | partly - the names hold (`services.boost.name` …); `rebuild_baseline`'s description already ends with a period in en and nb | household names | §5.7 | U.3 | 18 |
+| §10-1 | wrong - the captured meter's `sensor.…_produced_energy` *is* the export register, renamed "Strømmåler Energi" by its household (`tests/fixtures/captured/ams_datek_eva_han.json`), found by its object id (`flow/device_pick.py:50, 142`); CTL-10's filter would pass it too | step 3 shows each role with its value | D3 §6 | U.3 | 21 |
+| §10-2 | yes - `fixed_price.price` required with no default (`core/pricing/modifiers/fixed_price.py:35`); `render()` makes it optional (`flow/questionnaire.py:127-134`) | required fields `vol.Required` | D1 §6 | U.2 | 21 |
+| §10-3 | no - the default is the fuse (`flow/steps.py:857-859`); a reconfigure pre-fills the stored answer (`config_flow.py:682`), which was 10 kW; the answer is never read (NEW-1) | the step goes (S2) | D3 §6, §5.1 | U.2 | 21 |
+| §10-4 | yes - an on/off `light` is a relay (`providers/profiles/generic_switch.py:83-88`) at 0.40 (`:58`) with or without a power sensor | a `light` only with a power sensor; a config or diagnostic entity is never a control role | D4 §6 | U.2 | 21; D4 §9 16 |
+| §9 | not ours - HA core's nb strings | none; may be reported upstream | - | - | - |
+| NEW-1 | the hard-limit answer is written (`config_flow.py:684`) and shown (`flow/review.py:162`), read by nothing (`runtime.py:440-480`, `core/engine.py:1781-1800`) | the step and its summary line go (S2) | §5.15, §5.1, D3 §6 | U.2 | 21, 22 |
+| NEW-2 | `core/loads/types/water_heater.py:421` raises `unsafe_switch`; no translation file has it | every `AnswerError` code translated | D4 §6 | U.1 | 18 |
+| NEW-3 | the load review: English shadow sentence and "yes"/"no" (`flow/load.py:351-398`), no `__type__` label so the type key leads (`:769`), `{strategy}` and `{manual}` keys (`:772, 866`) | translations and `flow/text.py` | §5.15 | U.1 | 18 |
+| NEW-4 | "and" in `flow/circuit.py:139-143`, `group.py:156-160`, `zone.py:196-200` | the language's conjunction | D6 §6 | U.1 | 18 |
+| NEW-5 | `notifications.py:116, 139, 168` - "powerplan", "taket", "sikker modus" | glossary and "PowerPlan" in both dictionaries | §5.8, §5.15 | U.3 | 18 |
+| NEW-6 | `nb.json` `entity.select.mode.state` "Tvang", "Observer", "Delegert" - no review item | Kjør nå · Prøvemodus · Styres av noe annet | §5.15, HLD §2 | U.4 | 19 |
+| NEW-7 | no `entity.sensor.starved_s` translation (grouped loads, `load_entities.py:906-918`) | "Venter på tur" | §5.15 | U.4 | 19 |
+| NEW-8 | `selector.load_type.options.appliance_cycle` "Apparat" is the glossary's word for every load; `generic_switch` "Bryterstyrt last" | type labels from S9's list | HLD §2, D4 §6 | U.3 | 18 |
+| NEW-9 | "denne timen" names are wrong for 15- and 30-minute windows (HLD §8's markets) | a translation key by `window_min` | §5.15 | U.4 | 19 |
 
 ---
 
@@ -471,11 +631,13 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 **WP1.4** - 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11 and 12 are `tests/surface/`; 13 is the two CI jobs in `.github/workflows/ci.yml`; 14 is WP2.7's. **WP2.4** - 2, 3 and the load half of 4 are `tests/flows/test_load_flow.py`, driven through `hass.config_entries.subentries` on the Easee-shaped charger of `tests/e2e/fake_house.py`: the subentry's answers, derived values and version; the review from `explain()`; the reconfigure diff, the manual-edit flag and its reset on re-derive; every `ev` row of §5.5 under the load device with its category and default; a knob reaching the engine's load on the next tick; ids surviving a rename.
 14. Accounting sensors: `energy` is `total_increasing` with `device_class: energy` and never decreases across a device register reset; `cost` and `savings` are `device_class: monetary`, `state_class: total`, unit = currency code, `last_reset` = local month start (DST-correct); a negative savings state is published unclamped; long-term statistics `sum` across a rollover equals the two months' sum; the sensors change only on a slot close (one recorder row per 15 min, not per tick).
 15. *(§5.13)* Docs links: every `{docs_*}` placeholder a string uses is supplied by that step's `description_placeholders`; every URL the flow, the repairs and the services build resolves offline to a file under `docs/` and a heading with that GitHub slug; every registry key (strategies, device types, presets, price formats, profiles, repair ids) has its heading; every string meets §5.13's budgets; no string contains a URL.
-16. *(§5.15)* Detection and branching: on a site whose HA config has country, currency, time zone and home location, the flow asks none of them; a site with no production never sees the export step; Avansert fields carry their derived values; reconfigure never shows the trial-mode toggle.
-17. *(§5.15)* Controls: no field of the site, load, circuit, group or room flows uses the YAML/object editor without `fields`, a free-number fuse, a time selector or a fraction where §5.15's table names a control; entity pickers carry the role's filter; the device list excludes PowerPlan's own devices and marks those already added.
-18. *(§5.15, review R1–R4)* Text: every nb string differs from its en string outside an allow-list; every selector option, enum state and event type has a translation in en and nb; a rendered flow (every step, both languages, the reference house's registry) has no placeholder value matching `^[a-z_]+(:\d+)?$`, no entity id, no English word in nb outside the allow-list, and numbers formatted for the language; no string uses the design's own words (§5.15 rule 7).
-19. *(§5.15)* Entities: every entity of the reference site in its normal state has a translated, non-unknown state; entity ids are unchanged from before U.4 except the two named removals, each raising its repair.
-20. *(§5.12, B.1)* Brand: the six PNGs exist at their documented pixel sizes; `manifest.json` `name` is "PowerPlan"; device info carries manufacturer, a translated model and `sw_version`.
+16. *(§5.15)* Detection and branching: on a site whose HA config has country, currency, time zone and home location, the flow asks none of them; a site with no production never sees the export step, a manual presence never sees the persons, preheat off never sees its temperature; add-on steps come in listed order, each under its own step id; Avansert fields carry their derived values; reconfigure never shows the trial-mode toggle, keeps the entry's `active` and pre-fills the meter device and every add-on's options.
+17. *(§5.15)* Controls: no field of the site, load, circuit, group or room flows uses the YAML/object editor without `fields`, a free-number fuse, a time selector or a fraction where §5.15's table names a control; the fuse selects are `vol.Required`; entity pickers carry the role's filter; the device list excludes PowerPlan's own devices and marks those already added; an object-selector row round-trips to the stored shape unchanged; the knobs (`number.<load>_*`) use the type's range and a slider.
+18. *(§5.15, review R1–R4)* Text: every nb string differs from its en string outside an allow-list; every selector option, enum state, event type and `AnswerError`/`StepError` code has a translation in en and nb; a rendered flow (every step, both languages, the reference house's registry) has no placeholder value matching `^[a-z_]+(:\d+)?$`, no entity id, no English word in nb outside the allow-list, and numbers formatted for the language; no string uses the design's own words (§5.15 rule 7); the same word scan runs over `notifications.py`'s two dictionaries, and `core/` returns no user-facing sentence (`render_plain_language` and the decision trail's state are data).
+19. *(§5.15)* Entities: every entity of the reference site in its normal state has a translated, non-unknown state, except the `timestamp` and `time` entities §5.15 names (H2); no entity is removed and an upgraded site keeps every entity id (S1); names that mention the window follow `window_min`.
+20. *(§5.12, B.1)* Brand: the six PNGs exist at their documented pixel sizes; `manifest.json` and `hacs.json` `name` are "PowerPlan"; device info carries manufacturer, a translated model, `model_id` and `sw_version`.
+21. *(§5.15, review §10)* Logic findings: (a) a registry field that is required and has no default renders `vol.Required` and an empty submit is refused - Norgespris's price among them; (b) no site step writes `hard_limits`, and the engine's `HardLimits` are the same for an entry that still carries one; (c) `generic_switch` claims neither an on/off `light` without a power sensor nor an entity whose `entity_category` is config or diagnostic (D4 §9 16's captured views plus an access-point shape); (d) the captured AMS meter pre-fills `export_register` with `…_produced_energy`, and step 3 shows every found role with its value, read through a provider; (e) cross-field errors reach the field: a target step above the fuse, a comfort outside min/max, a COP curve that does not rise.
+22. Compatibility: an entry made before U.1–U.4 loads unchanged - a stored `tariff.target` and a restored `select.<site>_target` state `step:<i>` both read as `step_<i>`; its materialised `risk` is kept while a new entry defaults to 0 (INV-66); a stored `tariff.description` and `hard_limits` are ignored; every entity keeps its unique id and entity id across the upgrade, and a fresh site's ids follow the new English names (H5).
 
 ---
 
@@ -490,6 +652,10 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Merge the meter entities and replace `price_forecast`, each with a repair (the first cut of §5.15)**. *For:* one "Målerstatus" is what a household reads, three entities that say the same thing are the clutter the review found, and a repair naming the removed ids gives an automation a release to move. *Against:* INV-50 says entity ids are stable across versions, and the same screen comes without breaking it - `meter_health` renamed and enabled, the two binary sensors disabled by default for new sites, and `price_forecast` turned into a timestamp in place, which it may because it has no state class. **Decision:** keep every id (§5.15 S1).
+
+**Wire the hard limit into the engine instead of dropping the step**. *For:* a house can have a limit below its fuse - an old service cable, a grid company's connection agreement - the step exists, and `min(fuse, grense)` in `HardLimits` is a small change. *Against:* D3's per-phase limit already says "lower than the fuse", D2's contracted limits say "per period, by contract", and a third number that defaults to the fuse is the dead field the review met at 10 kW; the nine questions have no room for it. **Decision:** the step goes (§5.15 S2).
 
 **Keep the site flow's order and fix only the words**. *For:* the order follows the domains (electrical, meter, prices, tariff), every step already works, and a reorder touches every flow test and D-0330's reconfigure. *Against:* the review found the household meeting IT networks, meter roles and price modifiers before seeing any value, and a country asked twice; words alone do not fix an order that asks the wrong person the wrong question first. **Decision:** nine questions, the rest as follow-ups (§5.15).
 

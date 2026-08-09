@@ -397,7 +397,18 @@ Site flow, step **meter** (skipped on the *price only* path, INV-53 handles a si
 | Phase currents L1 / L2 / L3 | entity ×3, optional, `device_class: current` | same device, matched by the suffix `l1/l2/l3`, `_1/_2/_3` |
 | Meter window value | entity, optional | DSMR "current average demand" / Tibber "accumulated consumption last hour" when present |
 
-*(D8 §5.15)* Two household questions replace the step: **"Hvor måler du strømforbruket?"** - a device picker limited to devices with a power sensor, the roles mapped and shown back as found, the role form only for what is missing, L1–L3 under one optional "Per fase" section (HUB-22) - and **"Hvor stor er hovedsikringen?"** - a `select` of standard sizes in A with "Vet ikke", and voltage as a radio "230 V (vanligst i eldre boliger)" / "400 V (vanligst i nyere boliger)" / "Vet ikke" (CTL-1). "Vet ikke" takes the country's most common value from the table below and says so in the review. Country, phases and the limit in kW are derived and shown. Role pickers are filtered by `device_class`, unit and `state_class` (CTL-10): the review found the export register auto-mapped to a sensor merely named "Energi", which the filter forbids. The **hard limit's default is the main fuse** (§5.1's `fuse_w`); the review found 10 kW offered, which is a bug.
+For the household the step is two questions (D8 §5.15):
+
+| question | design |
+|---|---|
+| **Hvor måler du strømforbruket?** | a `DeviceSelector` limited to devices with a `sensor` of `device_class: power` (HA's own `entity` filter, D8 §5.15 H8). The roles pre-filled and **shown back with their current values**, read through the meter provider since INV-3 keeps `hass.states` out of the flow: "Effekt nå 1,2 kW ✓ · Målerstand 45 123 kWh ✓ · Eksport 0 kWh ✓". The role form only for what's missing or on "Endre", with L1–L3 in one optional "Per fase" section (HUB-22). On reconfigure the device is restored |
+| **Hvor stor er hovedsikringen?** | a `select` of standard sizes labelled "63 A", "Annet…" through `custom_value` (6–400 A, validated below) and "Vet ikke", `vol.Required` with its default so HA draws no clear button (CTL-1). In Norway the voltage as a radio "230 V (vanligst i eldre boliger)" → `it_230` / "400 V (vanligst i nyere boliger)" → `tn_400` / "Vet ikke", elsewhere the system select below |
+
+"Vet ikke" takes the country's default from the table below, stores the answer as assumed and names it in the review. The direction matters: a fuse set higher than the real one lets the house pass its own fuse, so the review says the limit was assumed and where to read the real one ("Står på hovedsikringen i sikringsskapet"). Country and phases are derived and the limit in kW is shown back.
+
+Role pickers are filtered by `device_class`, unit and `state_class` (CTL-10). A filter alone doesn't catch an entity its household renamed - an export register reading 0 kWh and renamed "Strømmåler Energi" passes any filter (`tests/fixtures/captured/ams_datek_eva_han.json`). Showing each role's value next to its name is what lets a household judge it (D8 §9 21).
+
+**No separate hard limit step** (D8 §5.15 S2). The household's limit is this LLD's main fuse, a lower limit set by the grid company is `per_phase_limit_a` under Avansert (the table below), and a contracted limit per period is D2's. A stored `hard_limits` from an old entry is ignored (D8 §9 22).
 
 Site flow, step **electrical** (always):
 

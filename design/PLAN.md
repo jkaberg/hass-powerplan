@@ -70,6 +70,8 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **H.1 The running build, read end to end** | a read-only audit of the live build: diagnostics, logs, repairs, metering against the recorder, prices, plans and would-be writes, warnings, calibration, cost, timings; each finding fixed, placed or explained | D9 §5.12; D7 §8; D8 §5.9-5.10 | all ten areas answered; nothing written to the live install | - |
+| **H.2 Observe writes nothing; the gate reads what it wrote** | release and restore undo only powerplan's own recorded writes, nothing while the site is off; observe logs on change only; the read-back reads the binding's attribute; stale roles carry their `since`; a subentry update keeps its entities | HLD INV-26, INV-27; D4 §5; D7 §2, §5.5, §8 (dec. 30) | an `e2e` observe day through a restart and a reload with zero device calls; unload and stop with no ERROR | H.1 |
+| **H.3 The period and the baseline from the recorder** | the open period seeded from the register's recorder rows at setup and from the rebuild button; the baseline's startup seed on a fresh site | D2 §2, §5.12; D3 §5.11; D10 §5.2 | D2 §9 16 and D10 §9 5 through the runtime; a site created mid-month reports the month's level | H.1 |
 
 ### Phase 0 - Pure core and the backtest gate
 
@@ -335,7 +337,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | U.2 | Controls that prevent mistakes | todo |
 | U.3 | A setup a household finishes | todo |
 | U.4 | Entities that read as sentences | todo |
-| H.1 | The running build, read end to end | todo |
+| H.1 | The running build, read end to end | done |
+| H.2 | Observe writes nothing; the gate reads what it wrote | todo |
+| H.3 | The period and the baseline from the recorder | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |

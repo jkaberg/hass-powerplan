@@ -87,6 +87,14 @@ powerplan is a Home Assistant custom integration that steers flexible loads - EV
 | carrier | heat source / varmekilde |
 | modifier | price add-on / pristillegg |
 | COP | efficiency (COP) / virkningsgrad (COP) |
+| window (60 / 30 / 15 min) | this hour / half-hour / quarter-hour - denne timen / halvtimen / dette kvarteret, chosen by the tariff's window |
+| ceiling | target this hour / mål denne timen - never "grense", which is the fuse |
+| allowance | power available now / tilgjengelig effekt nå |
+| stage | control level / styringsnivå |
+| risk | strictness / hvor stramt |
+| advice | recommendation / anbefaling |
+| delegated (mode) | controlled by something else / styres av noe annet |
+| cycle (`appliance_cycle`) | dishwasher, washer or dryer / oppvaskmaskin, vaskemaskin eller tørketrommel - never "apparat", which is every load |
 
 The mapping and the checks are in D8 §5.15.
 
