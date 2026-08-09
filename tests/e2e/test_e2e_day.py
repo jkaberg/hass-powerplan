@@ -81,9 +81,9 @@ SEED = 20260919
 DAY_START = datetime.combine(DAY, time(0, 0, 17), tzinfo=OSLO)
 STEPS = int(86400 / TICK_S) - 1
 #: The ceiling both sides defend: the runner's 10 kW is Tensio's 5–10 kW step
-#: (`step:2` in the flow's target select).
+#: (`step_2` in the flow's target select).
 TARGET_KW = 10.0
-TARGET_OPTION = "step:2"
+TARGET_OPTION = "step_2"
 #: The meter goes silent at 10:05 for twenty minutes; the repair needs ten (D8 §5.9).
 OUTAGE_AT = DAY_START.replace(hour=10, minute=5)
 OUTAGE_S = 1200.0

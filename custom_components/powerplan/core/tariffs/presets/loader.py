@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -46,7 +47,15 @@ if TYPE_CHECKING:
 
     from ..grammar import Grammar
 
-__all__ = ["PresetError", "load", "render_plain_language", "validate"]
+__all__ = [
+    "EnergyRate",
+    "PresetError",
+    "SummaryBand",
+    "TariffSummary",
+    "load",
+    "summarize",
+    "validate",
+]
 
 HERE = Path(__file__).parent
 SCHEMA_PATH = HERE / "schema.json"
@@ -400,128 +409,152 @@ def _require_filter(raw: Mapping[str, Any]) -> TimeFilter:
 
 
 # --------------------------------------------------------------------------- #
-# Plain language (D2 §6)
+# The summary a household checks against its bill (D2 §6, INV-67)
 # --------------------------------------------------------------------------- #
 
-_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+@dataclass(frozen=True, slots=True)
+class SummaryBand:
+    """One row of the capacity table: a kW band and what it costs.
+
+    For a `StepTable` the price is the step's fee per period; for `Tiers` it is
+    the marginal price per kW inside the band. `upper_kw = None` is the open top.
+    """
+
+    lower_kw: float
+    upper_kw: float | None
+    price: Money
 
 
-def render_plain_language(spec: TariffSpec, at: date | None = None) -> str:
-    """Describe a preset in a sentence the flow shows before it saves (INV-67).
+@dataclass(frozen=True, slots=True)
+class EnergyRate:
+    """One period of the grid's energy charge, in major units per kWh.
 
-    The household should be able to recognise its own bill in this text; if it
-    cannot, the preset is wrong and no amount of correct arithmetic will help.
+    `hours = None` is the rate for every hour no other period covers.
+    """
+
+    price: Decimal
+    hours: tuple[tuple[int, int], ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class TariffSummary:
+    """What a preset bills, as data (D2 §6; UX review R1, HUB-12).
+
+    Core says *what* the tariff is and D8 says it in the household's language
+    (`flow/text.py`), so nothing here is a sentence and nothing of it is stored
+    in `entry.data`. `operator` is the grid company's own name, which is data.
+    """
+
+    operator: str
+    currency: str
+    peak: bool
+    window_min: int = 60
+    per_day: str = "max"
+    per_period: str = "max"
+    n: int = 1
+    distinct_days: bool = True
+    period: str = "month"
+    rolling_months: int = 12
+    price_period_unit: str = "month"
+    #: `steps`, `linear` or `tiers`; `None` without a capacity component.
+    pricing: str | None = None
+    bands: tuple[SummaryBand, ...] = ()
+    price_per_kw: Money | None = None
+    free_kw: float = 0.0
+    min_kw: float = 0.0
+    eligible: TimeFilter | None = None
+    weights: tuple[WeightRule, ...] = ()
+    contracted_kw: tuple[float, ...] = ()
+    contracted_unit: str = "kw"
+    trips: bool = False
+    energy: tuple[EnergyRate, ...] = ()
+    source_url: str | None = None
+    verified: str | None = None
+    assumed: bool = False
+
+
+def summarize(spec: TariffSpec, at: date | None = None) -> TariffSummary:
+    """Return what the flow shows before it saves, as data (D2 §6, INV-67).
+
+    The household should be able to recognise its own bill in the table D8
+    renders from this; if it cannot, the preset is wrong and no amount of
+    correct arithmetic will help.
     """
     version = spec.version_at(at) if at is not None else spec.versions[-1]
-    who = spec.operator or spec.name
-    peak = version.peak
-    parts: list[str] = []
-    if peak is None:
-        parts.append(f"{who} has no capacity component: only the energy price matters here.")
-    else:
-        parts.append(f"{who} bills {_metric_sentence(peak)}{_period_sentence(peak)}")
-        parts.append(_pricing_sentence(peak, spec.currency))
-        if peak.eligible is not None:
-            parts.append(f"Only {_filter_sentence(peak.eligible)} count.")
-        parts.extend(
-            f"A window {_filter_sentence(rule.when)} counts {rule.weight:g}×."
-            for rule in peak.weights
-        )
     contracted = version.contracted
-    if contracted is not None:
-        limits = ", ".join(f"{limit.limit_kw:g} kW" for limit in contracted.limits)
-        consequence = (
-            "exceeding it trips the supply"
-            if contracted.on_exceed == "trip"
-            else "exceeding it is surcharged"
-        )
-        parts.append(f"Your connection is limited to {limits}, and {consequence}.")
-    if version.assumed:
-        parts.append(f"Assumed, not verified: {version.assumed}")
-    return " ".join(parts)
-
-
-def _metric_sentence(peak: PeakTariff) -> str:
-    unit = {15: "quarter-hour", 30: "half-hour", 60: "hour"}[peak.window_min]
-    if peak.per_period == "max":
-        which = "your single highest" if peak.per_day == "all" else "your highest daily"
-        return f"{which} {unit}"
-    days = "on the same number of different days" if peak.distinct_days else ""
-    spelled = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}.get(peak.n, str(peak.n))
-    if peak.distinct_days:
-        days = f"{spelled} different days"
-        return f"the average of your {spelled} highest {unit}s on {days}"
-    return f"the average of your {spelled} highest {unit}s"
-
-
-def _period_sentence(peak: PeakTariff) -> str:
-    if peak.period == "rolling_months":
-        return f", averaged over the last {peak.rolling_months} months."
-    if peak.period == "year":
-        return " each year."
-    return " each month."
-
-
-def _pricing_sentence(peak: PeakTariff, currency: str) -> str:
+    common: dict[str, Any] = {
+        "operator": spec.operator or spec.name,
+        "currency": spec.currency,
+        "contracted_kw": ()
+        if contracted is None
+        else tuple(limit.limit_kw for limit in contracted.limits),
+        "contracted_unit": "kw" if contracted is None else contracted.unit,
+        "trips": contracted is not None and contracted.on_exceed == "trip",
+        "energy": _energy_rates(version.energy_components),
+        "source_url": version.source_url or spec.source_url,
+        "verified": version.verified or spec.verified,
+        "assumed": bool(version.assumed),
+    }
+    peak = version.peak
+    if peak is None:
+        return TariffSummary(peak=False, **common)
     pricing = peak.pricing
-    per = "year" if peak.price_period_unit == "year" else "month"
+    bands: tuple[SummaryBand, ...] = ()
+    price_per_kw: Money | None = None
+    free_kw = min_kw = 0.0
     if isinstance(pricing, StepTable):
-        bands = ", ".join(
-            (
-                f"over {_previous_upper(pricing, index):g} kW "
-                f"{_amount(step.fee_per_period.amount)} {step.fee_per_period.currency}"
-                if step.upper_kw is None
-                else f"up to {step.upper_kw:g} kW "
-                f"{_amount(step.fee_per_period.amount)} {step.fee_per_period.currency}"
+        kind = "steps"
+        bands = tuple(
+            SummaryBand(
+                lower_kw=0.0 if index == 0 else pricing.upper_kw(index - 1),
+                upper_kw=step.upper_kw,
+                price=step.fee_per_period,
             )
             for index, step in enumerate(pricing.steps)
         )
-        return f"The fee per {per} is in steps: {bands}."
-    if isinstance(pricing, Linear):
-        text = (
-            f"The fee is {_amount(pricing.price_per_kw.amount)} "
-            f"{pricing.price_per_kw.currency} per kW per {per}"
-        )
-        if pricing.free_kw:
-            text += f", with the first {pricing.free_kw:g} kW free"
-        if pricing.min_kw:
-            text += f", and never less than {pricing.min_kw:g} kW"
-        return text + "."
-    bands = ", ".join(
-        f"{'above' if upto is None else 'up to'} "
-        f"{'' if upto is None else f'{upto:g} kW '}"
-        f"{_amount(price.amount)} {price.currency or currency} per kW"
-        for upto, price in pricing.bands
+    elif isinstance(pricing, Linear):
+        kind = "linear"
+        price_per_kw = pricing.price_per_kw
+        free_kw, min_kw = pricing.free_kw, pricing.min_kw
+    else:
+        kind = "tiers"
+        lower = 0.0
+        rows: list[SummaryBand] = []
+        for upper, price in pricing.bands:
+            rows.append(SummaryBand(lower_kw=lower, upper_kw=upper, price=price))
+            lower = lower if upper is None else upper
+        bands = tuple(rows)
+    return TariffSummary(
+        peak=True,
+        window_min=peak.window_min,
+        per_day=peak.per_day,
+        per_period=peak.per_period,
+        n=peak.n,
+        distinct_days=peak.distinct_days,
+        period=peak.period,
+        rolling_months=peak.rolling_months,
+        price_period_unit=peak.price_period_unit,
+        pricing=kind,
+        bands=bands,
+        price_per_kw=price_per_kw,
+        free_kw=free_kw,
+        min_kw=min_kw,
+        eligible=peak.eligible,
+        weights=peak.weights,
+        **common,
     )
-    return f"The fee per {per} is marginal by band: {bands}."
 
 
-def _previous_upper(pricing: StepTable, index: int) -> float:
-    if index == 0:
-        return 0.0
-    return pricing.upper_kw(index - 1)
-
-
-def _amount(value: Decimal) -> str:
-    """Render money at the scale the preset wrote it: 2.50, not 2.5."""
-    return f"{value:f}"
-
-
-def _filter_sentence(filter_: TimeFilter) -> str:
-    parts: list[str] = []
-    if filter_.hours is not None:
-        parts.append(
-            " and ".join(
-                f"between {start // 60:02d}:{start % 60:02d} and {end // 60:02d}:{end % 60:02d}"
-                for start, end in filter_.hours
-            )
+def _energy_rates(components: Mapping[str, Any]) -> tuple[EnergyRate, ...]:
+    """Return the grid energy charge a preset carries for D1 (`tou_schedule`), if any."""
+    periods = (components.get("tou_schedule") or {}).get("periods") or ()
+    return tuple(
+        EnergyRate(
+            price=Decimal(str(period["price"])),
+            hours=None
+            if period.get("hours") is None
+            else tuple((int(start), int(end)) for start, end in period["hours"]),
         )
-    if filter_.weekdays is not None:
-        parts.append("on " + ", ".join(_WEEKDAYS[day] for day in sorted(filter_.weekdays)))
-    if filter_.months is not None:
-        parts.append("in months " + ", ".join(str(month) for month in sorted(filter_.months)))
-    if filter_.holidays is HolidayMode.EXCLUDE:
-        parts.append("never on a public holiday")
-    elif filter_.holidays is HolidayMode.AS_SUNDAY:
-        parts.append("with public holidays counted as Sundays")
-    return " ".join(parts) if parts else "all windows"
+        for period in periods
+    )

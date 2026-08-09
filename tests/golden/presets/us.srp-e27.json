@@ -52,10 +52,10 @@
     "why": "14:00-20:00 in half hours is twelve windows"
   },
   "describes": [
-    "single highest half-hour",
-    "marginal by band",
+    "your highest half-hour",
+    "Price per kW",
     "11.90",
     "19.97",
-    "between 14:00 and 20:00"
+    "14:00–20:00"
   ]
 }

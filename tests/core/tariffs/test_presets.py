@@ -386,20 +386,30 @@ def test_changing_the_period_needs_a_history_policy() -> None:
         loader.validate(raw, source="test")
 
 
-def test_render_plain_language_describes_the_norwegian_rule() -> None:
-    """The flow shows this before it saves (D2 §6, INV-67)."""
-    text = loader.render_plain_language(loader.load("no/tensio"), at=date(2026, 9, 19))
-    assert "three highest hours" in text
-    assert "three different days" in text
-    assert "up to 2 kW 137 NOK" in text
-    assert "over 20 kW 1200 NOK" in text
-    assert "Tensio" in text
+def test_the_summary_describes_the_norwegian_rule_as_data() -> None:
+    """The flow renders this before it saves (D2 §6, INV-67); core says no sentence (D8 §9 18)."""
+    summary = loader.summarize(loader.load("no/tensio"), at=date(2026, 9, 19))
+    assert summary.operator == "Tensio"
+    assert summary.peak
+    assert (summary.n, summary.distinct_days, summary.window_min) == (3, True, 60)
+    assert (summary.per_period, summary.period, summary.pricing) == ("mean_top_n", "month", "steps")
+    first, *_, top = summary.bands
+    assert (first.lower_kw, first.upper_kw, first.price) == (0.0, 2.0, Money(Decimal(137), "NOK"))
+    assert (top.lower_kw, top.upper_kw, top.price) == (20.0, None, Money(Decimal(1200), "NOK"))
+    assert [rate.hours for rate in summary.energy] == [((360, 1320),), None]
+    assert summary.energy[0].price == Decimal("0.3604")
+    assert summary.source_url
+    # D8 §9 18: `render_plain_language` is gone - core returns data, never a sentence.
+    assert not hasattr(loader, "render_plain_language")
 
 
-def test_render_plain_language_describes_a_no_peak_site() -> None:
-    """A `NoPeak` preset says so in one sentence rather than rendering an empty table."""
-    text = loader.render_plain_language(loader.load("custom"))
-    assert "no capacity" in text
+def test_the_summary_of_a_no_peak_site_has_no_capacity_rows() -> None:
+    """A `NoPeak` preset says so as data rather than as an empty table."""
+    summary = loader.summarize(loader.load("custom"))
+    assert not summary.peak
+    assert summary.bands == ()
+    assert summary.pricing is None
+    assert summary.assumed
 
 
 _MINIMAL: dict[str, Any] = {
@@ -432,9 +442,9 @@ def test_target_below_the_reached_step_is_still_honoured() -> None:
     assert ceiling.kwh == pytest.approx(4.7)
 
 
-def test_render_plain_language_describes_the_other_shapes() -> None:
-    """Every grammar root renders, not only the Norwegian one (D2 §6, INV-67)."""
-    finnish = loader.render_plain_language(
+def test_the_summary_describes_the_other_shapes() -> None:
+    """Every grammar root summarises, not only the Norwegian one (D2 §6, INV-67)."""
+    finnish = loader.summarize(
         spec(
             PeakTariff(
                 window_min=60,
@@ -448,11 +458,11 @@ def test_render_plain_language_describes_the_other_shapes() -> None:
             currency="EUR",
         )
     )
-    assert "single highest hour" in finnish
-    assert "2.50 EUR per kW per month" in finnish
-    assert "first 8 kW free" in finnish
+    assert (finnish.per_period, finnish.window_min, finnish.pricing) == ("max", 60, "linear")
+    assert finnish.price_per_kw == Money(Decimal("2.50"), "EUR")
+    assert finnish.free_kw == 8.0
 
-    tiered = loader.render_plain_language(
+    tiered = loader.summarize(
         spec(
             PeakTariff(
                 window_min=30,
@@ -468,12 +478,14 @@ def test_render_plain_language_describes_the_other_shapes() -> None:
             currency="USD",
         )
     )
-    assert "highest daily half-hour each year" in tiered
-    assert "marginal by band" in tiered
-    assert "between 14:00 and 19:00" in tiered
-    assert "counts 0.5×" in tiered
+    assert (tiered.per_day, tiered.window_min, tiered.period) == ("max", 30, "year")
+    assert tiered.pricing == "tiers"
+    assert [(band.lower_kw, band.upper_kw) for band in tiered.bands] == [(0.0, 10.0), (10.0, None)]
+    assert tiered.eligible is not None
+    assert tiered.eligible.hours == ((14 * 60, 19 * 60),)
+    assert [rule.weight for rule in tiered.weights] == [0.5]
 
-    spanish = loader.render_plain_language(
+    spanish = loader.summarize(
         spec(
             ContractedPower(
                 limits=(PeriodLimit(when=None, limit_kw=4.6),), on_exceed="trip", tolerance_pct=0.1
@@ -481,9 +493,9 @@ def test_render_plain_language_describes_the_other_shapes() -> None:
             currency="EUR",
         )
     )
-    assert "no capacity component" in spanish
-    assert "limited to 4.6 kW" in spanish
-    assert "trips the supply" in spanish
+    assert not spanish.peak
+    assert spanish.contracted_kw == (4.6,)
+    assert spanish.trips
 
 
 @pytest.mark.parametrize(
@@ -603,11 +615,13 @@ def test_1_every_market_golden_bills_what_its_level_names(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", MARKETS)
-def test_every_market_renders_a_description_the_household_can_recognise(name: str) -> None:
-    """D2 §6, INV-67: the metric and the first two bands, or the contracted limits.
+def test_every_market_summarises_what_the_household_can_recognise(name: str) -> None:
+    """D2 §6, INV-67: the metric and every band, or the contracted limits, as data.
 
-    The flow shows this sentence before it saves. A preset whose own description
-    does not name what it bills is a preset nobody can check against a bill.
+    The flow renders this before it saves (`flow/text.py`; the golden's `describes`
+    fragments are checked against that rendering in `tests/flows/test_text.py`). A
+    preset whose summary does not carry what it bills is a preset nobody can check
+    against a bill.
     """
     data = market_golden(name)
     assert data is not None
@@ -615,25 +629,34 @@ def test_every_market_renders_a_description_the_household_can_recognise(name: st
     # The version the golden bills, not the newest: a preset whose 2027 prices are
     # already in the file would otherwise be described on numbers no golden checks.
     at = date.fromisoformat(f"{data['period_key']}-15")
-    text = loader.render_plain_language(spec_, at=at)
-
-    for fragment in data["describes"]:
-        assert fragment in text, f"{name}: {fragment!r} missing from {text!r}"
+    summary = loader.summarize(spec_, at=at)
 
     version = spec_.version_at(at)
     peak = version.peak
+    assert summary.peak is (peak is not None)
     if peak is not None:
+        assert (summary.window_min, summary.n, summary.period) == (
+            peak.window_min,
+            peak.n,
+            peak.period,
+        )
         if isinstance(peak.pricing, StepTable):
-            for step in peak.pricing.steps[:2]:
-                assert step.name.split()[0] in text or f"{step.upper_kw:g} kW" in text
+            assert [band.price for band in summary.bands] == [
+                step.fee_per_period for step in peak.pricing.steps
+            ]
+            assert [band.upper_kw for band in summary.bands] == [
+                step.upper_kw for step in peak.pricing.steps
+            ]
         elif isinstance(peak.pricing, Tiers):
-            for _upto, price in peak.pricing.bands[:2]:
-                assert f"{price.amount:f}" in text
+            assert [(band.upper_kw, band.price) for band in summary.bands] == list(
+                peak.pricing.bands
+            )
         else:
-            assert f"{peak.pricing.price_per_kw.amount:f}" in text
-    if version.contracted is not None:
-        for limit in version.contracted.limits:
-            assert f"{limit.limit_kw:g} kW" in text
+            assert summary.price_per_kw == peak.pricing.price_per_kw
+    contracted = version.contracted
+    assert summary.contracted_kw == (
+        () if contracted is None else tuple(limit.limit_kw for limit in contracted.limits)
+    )
 
 
 @pytest.mark.parametrize("name", MARKETS)

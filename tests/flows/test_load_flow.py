@@ -84,6 +84,13 @@ async def _add_charger(
     result = await _answer(hass, result, device=device_id)
 
     assert result["step_id"] == "match", result
+    # LOAD-2: the match in words - the type by its name, the control by the
+    # household's own name for it; no profile key, entity id or confidence.
+    words = result["description_placeholders"]
+    assert words["kind"] == "Car charger"
+    assert words["control"] == "ev dynamic charger current", "the entity's own name, not its id"
+    assert words["warning"] == "", "a confident match carries no warning"
+    assert "profile" not in words
     suggested = result["data_schema"]({})
     assert suggested["type"] == "ev"
     assert suggested["profile"] == "easee_ble"
@@ -105,7 +112,7 @@ async def _add_charger(
     assert "60" in explanation, explanation
     assert "80" in explanation, explanation
     assert "ev_review" not in explanation, "the review shows words, never a key (INV-67)"
-    assert "Without powerplan this car would charge at its full rate" in explanation, (
+    assert "Without PowerPlan this car would charge at its full rate" in explanation, (
         "D11 §6's shadow sentence"
     )
     return result
@@ -213,7 +220,7 @@ async def test_03_reconfigure_re_derives_shows_the_diff_and_keeps_manual_edits(
     diff = result["description_placeholders"]["diff"]
     assert "60" in diff, diff
     assert "77" in diff, diff
-    assert result["description_placeholders"]["manual"] == "min_a"
+    assert result["description_placeholders"]["manual"] == "Minimum current", "a label, not a key"
     review = result["data_schema"]({})
     result = await _answer(hass, result, **{**review, "rederive": True})
     await hass.async_block_till_done()

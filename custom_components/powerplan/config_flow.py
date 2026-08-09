@@ -60,24 +60,31 @@ from .const import (
     TIMEZONE_FROM_USER,
     OnboardingPath,
 )
-from .core.pricing import modifiers
+from .core.pricing import Carrier, modifiers
 from .core.tariffs.presets import loader
 from .flow import device_pick, review, steps
 from .flow.circuit import CircuitSubentryFlow
 from .flow.group import GroupSubentryFlow
 from .flow.load import LoadSubentryFlow
 from .flow.questionnaire import store_value, value_of
+from .flow.text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, target_label, tariff_table
 from .flow.zone import ZoneSubentryFlow
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
+from .runtime import step_index
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Coroutine, Mapping
 
     from homeassistant.config_entries import ConfigEntry, ConfigSubentryFlow
 
     from .core.metering.profile import ElectricalProfile
     from .core.tariffs.grammar import TariffSpec, TariffVersion
+    from .core.tariffs.presets.loader import TariffSummary
+
+    type _Step = Callable[
+        [PowerplanConfigFlow, dict[str, Any] | None], Coroutine[Any, Any, ConfigFlowResult]
+    ]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,9 +121,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._carriers: list[dict[str, Any]] = []
         self._presets: list[tuple[str, str]] = []
         self._preset_file: str | None = None
+        #: The tariff step's own answer - a preset, `unknown` or `custom` -
+        #: which names the tariff on the screens that follow (HUB-11).
+        self._preset_choice: str | None = None
         self._spec: TariffSpec | None = None
         self._version: TariffVersion | None = None
-        self._description = ""
+        self._summary: TariffSummary | None = None
         self._target: dict[str, Any] = {}
         self._bills: dict[str, Any] = {}
         self._limits: dict[str, Any] = {}
@@ -231,9 +241,15 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             self._spec = await self.hass.async_add_executor_job(loader.load, preset_file)
             today = await self._local_today()
             self._version = self._spec.version_at(today)
-            self._description = tariff.get("description", "")
+            self._summary = loader.summarize(self._spec, today)
+            self._preset_choice = steps.preset_choice(preset_file, self._country)
+            # An entry from before WP U.1 holds `step:<i>` and an English
+            # `description`; the first reads as `step_<i>` and the second is
+            # never read again (D8 §9 22).
+            target = str(tariff.get("target", "auto"))
+            index = step_index(target)
             self._target = {
-                "target": tariff.get("target", "auto"),
+                "target": target if index is None else f"step_{index}",
                 "target_kw": tariff.get("target_kw"),
                 "risk": steps.risk_key(tariff.get("risk", steps.RISK_LABELS["flat"])),
                 "eps_kwh": tariff.get("eps_kwh"),
@@ -496,20 +512,19 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _next_modifier(self) -> ConfigFlowResult:
         if self._modifier_index < len(self._modifier_keys):
-            return await self.async_step_modifier_options()
+            key = self._modifier_keys[self._modifier_index]
+            step: _Step = getattr(type(self), f"async_step_modifier_{key}")
+            return await step(self, None)
         return await self.async_step_export()
 
-    async def async_step_modifier_options(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """One sub-step per chosen modifier, rendered from its schema (D1 §6)."""
-        key = self._modifier_keys[self._modifier_index]
+    async def _modifier_step(self, key: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
+        """One step per add-on, `modifier_<key>`, rendered from its schema (D1 §6).
+
+        Each has its own title, description and field help (review HUB-7, 8,
+        21): a shared step could only be titled with the add-on's key.
+        """
         if user_input is None:
-            return self._form(
-                "modifier_options",
-                steps.modifier_options_schema(key),
-                placeholders={"modifier": key},
-            )
+            return self._form(f"modifier_{key}", steps.modifier_options_schema(key))
         self._modifiers.append(
             {
                 "key": key,
@@ -548,20 +563,21 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _next_carrier(self) -> ConfigFlowResult:
         if self._carrier_index < len(self._carrier_keys):
-            return await self.async_step_carrier_options()
+            carrier = self._carrier_keys[self._carrier_index]
+            step: _Step = getattr(type(self), f"async_step_carrier_{carrier}")
+            return await step(self, None)
         return await self._after_prices()
 
-    async def async_step_carrier_options(
-        self, user_input: dict[str, Any] | None = None
+    async def _carrier_step(
+        self, carrier: str, user_input: dict[str, Any] | None
     ) -> ConfigFlowResult:
-        """One carrier's price: fixed, or read daily from a sensor (D1 §6)."""
-        carrier = self._carrier_keys[self._carrier_index]
+        """One carrier's price, `carrier_<key>`: fixed, or read daily from a sensor (D1 §6).
+
+        A step of its own per carrier for the same reason as the add-ons: a
+        shared one was titled with the carrier's key (review R2).
+        """
         if user_input is None:
-            return self._form(
-                "carrier_options",
-                steps.carrier_options_schema(self._currency),
-                placeholders={"carrier": carrier},
-            )
+            return self._form(f"carrier_{carrier}", steps.carrier_options_schema(self._currency))
         self._carriers.append(
             {
                 "carrier": carrier,
@@ -590,31 +606,46 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._form(
                 "tariff",
                 steps.tariff_schema(
-                    country=self._country, presets=self._presets, chosen=self._preset_file
+                    country=self._country,
+                    presets=self._presets,
+                    chosen=self._preset_file,
+                    text=await Text.load(self.hass),
                 ),
             )
         country = user_input.get("country") or self._country
         self._electrical["country"] = country
-        self._preset_file = steps.preset_file(user_input["preset"], country)
+        self._preset_choice = str(user_input["preset"])
+        self._preset_file = steps.preset_file(self._preset_choice, country)
         self._spec = await self.hass.async_add_executor_job(loader.load, self._preset_file)
         today = await self._local_today()
         self._version = self._spec.version_at(today)
-        self._description = loader.render_plain_language(self._spec, today)
+        self._summary = loader.summarize(self._spec, today)
         return await self.async_step_tariff_preset()
+
+    def _tariff_name(self, text: Text) -> str:
+        """Name the tariff as the household chose it: the operator's own name, or the escape hatch."""
+        assert self._spec is not None
+        if self._preset_choice == PRESET_UNKNOWN:
+            return text.word("text", "preset_unknown")
+        if PRESET_CUSTOM in (self._preset_choice, self._preset_file):
+            return text.word("text", "preset_custom")
+        return self._spec.name
 
     async def async_step_tariff_preset(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show what that preset means, in the household's own words (INV-67)."""
         assert self._spec is not None
+        assert self._summary is not None
         if user_input is None:
+            text = await Text.load(self.hass)
             return self._form(
                 "tariff_preset",
                 vol.Schema({}),
                 placeholders={
-                    "description": self._description,
-                    "name": self._spec.name,
-                    "source": self._spec.source_url or "",
+                    "name": self._tariff_name(text),
+                    "table": tariff_table(text, self._summary),
+                    "source": self._summary.source_url or text.word("text", "none"),
                 },
             )
         return await self.async_step_tariff_target()
@@ -624,10 +655,11 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Set what the site defends and how much it gambles (D2 §6, dec. 18)."""
         assert self._version is not None
+        text = await Text.load(self.hass)
         if user_input is None:
             return self._form(
                 "tariff_target",
-                steps.tariff_target_schema(self._version, values=self._target),
+                steps.tariff_target_schema(self._version, text=text, values=self._target),
             )
         answers = self._flat(user_input)
         try:
@@ -635,7 +667,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         except steps.StepError as err:
             return self._form(
                 "tariff_target",
-                steps.tariff_target_schema(self._version, values=self._target),
+                steps.tariff_target_schema(self._version, text=text, values=self._target),
                 errors={err.field: err.key},
             )
         self._target = answers
@@ -706,7 +738,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._form(
                 "notifications",
                 steps.notifications_schema(
-                    self.hass, values=self._notifications, quiet=self._quiet
+                    self.hass,
+                    text=await Text.load(self.hass),
+                    values=self._notifications,
+                    quiet=self._quiet,
                 ),
             )
         answers = self._flat(user_input)
@@ -742,7 +777,6 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 answers=self._target,
                 bills=self._bills,
                 limits=self._limits,
-                description=self._description,
             )
         elif self._path is OnboardingPath.PRICE_ONLY:
             tariff = dict(steps.NO_PEAK_TARIFF)
@@ -801,7 +835,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._form(
                 "review",
                 steps.review_schema(default_observe=not self._active),
-                placeholders=await review.placeholders(self.hass, data),
+                placeholders=await review.placeholders(
+                    self.hass, data, tariff=await self._tariff_line()
+                ),
                 last_step=True,
             )
         data[CONF_ACTIVE] = not user_input.get("start_in_observe", True)
@@ -837,6 +873,14 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             not data[CONF_ACTIVE],
         )
         return self.async_create_entry(title=self._name, data=data)
+
+    async def _tariff_line(self) -> str | None:
+        """Return the review's grid tariff: the company and the target, in words (HUB-14)."""
+        if self._path is not OnboardingPath.FULL or self._spec is None:
+            return None
+        text = await Text.load(self.hass)
+        target = target_label(text, self._version, str(self._target.get("target", "auto")))
+        return f"{self._tariff_name(text)} · {target}"
 
     def _unique_id(self) -> str:
         """Identify the site by something the household cannot rename (INV-50).
@@ -876,5 +920,38 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             SUBENTRY_ZONE: ZoneSubentryFlow,
         }
 
+
+def _modifier_step_for(key: str) -> _Step:
+    async def step(
+        self: PowerplanConfigFlow, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._modifier_step(key, user_input)
+
+    step.__name__ = f"async_step_modifier_{key}"
+    step.__doc__ = f"The `{key}` price add-on's own step (D1 §6, review HUB-7)."
+    return step
+
+
+def _carrier_step_for(carrier: str) -> _Step:
+    async def step(
+        self: PowerplanConfigFlow, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._carrier_step(carrier, user_input)
+
+    step.__name__ = f"async_step_carrier_{carrier}"
+    step.__doc__ = f"The `{carrier}` carrier's own price step (D1 §6)."
+    return step
+
+
+# One step id per registered add-on and per carrier, from the registries: a new
+# modifier is one module and gets its own step, with its own strings (D1 §6).
+for _key in modifiers.keys():  # noqa: SIM118 - the registry's function
+    if _key != "export_price":
+        setattr(PowerplanConfigFlow, f"async_step_modifier_{_key}", _modifier_step_for(_key))
+for _carrier in Carrier:
+    if _carrier is not Carrier.ELECTRICITY:
+        setattr(
+            PowerplanConfigFlow, f"async_step_carrier_{_carrier}", _carrier_step_for(str(_carrier))
+        )
 
 __all__ = ["PowerplanConfigFlow"]

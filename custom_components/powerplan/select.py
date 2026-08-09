@@ -14,8 +14,10 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .core.tariffs.grammar import StepTable
 from .entity import PowerplanEntity
 from .load_entities import load_selects
+from .runtime import step_index
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -49,12 +51,17 @@ class _RestoringSelect(PowerplanEntity, SelectEntity, RestoreEntity):
         """Restore the last option (INV-47)."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
+        restored = None if last is None else self._restored(last.state)
         if (
-            last is not None
-            and last.state in (self.options or ())
-            and last.state != self.current_option
+            restored is not None
+            and restored in (self.options or ())
+            and restored != self.current_option
         ):
-            await self.async_select_option(last.state)
+            await self.async_select_option(restored)
+
+    def _restored(self, state: str) -> str:
+        """Return the option a restored state means; an old spelling reads as the new one."""
+        return state
 
 
 class PresenceSelect(_RestoringSelect):
@@ -106,9 +113,36 @@ class TargetSelect(_RestoringSelect):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """What the choice means in kW, when the tariff can say."""
+        """What the choice means: its kW, and a step's range and fee (review ENT-2).
+
+        A state translation takes no placeholders (D8 §5.15 H1), so the state
+        reads "Trinn 2" and the numbers a household would want beside it are
+        attributes here.
+        """
         snapshot = self.snapshot
-        return {"target_kw": None if snapshot is None else snapshot.site.target_kw}
+        attributes: dict[str, Any] = {
+            "target_kw": None if snapshot is None else snapshot.site.target_kw
+        }
+        index = step_index(self.current_option)
+        peak = self.runtime.build.tariff.active_version().peak
+        if index is not None and peak is not None and isinstance(peak.pricing, StepTable):
+            steps = peak.pricing.steps
+            if index < len(steps):
+                fee = steps[index].fee_per_period
+                attributes.update(
+                    {
+                        "lower_kw": 0.0 if index == 0 else peak.pricing.upper_kw(index - 1),
+                        "upper_kw": steps[index].upper_kw,
+                        "fee": str(fee.amount),
+                        "currency": fee.currency,
+                    }
+                )
+        return attributes
+
+    def _restored(self, state: str) -> str:
+        """Read a `step:<i>` saved before WP U.1 as the option `step_<i>` (D8 §9 22)."""
+        index = step_index(state)
+        return state if index is None else f"step_{index}"
 
     async def async_select_option(self, option: str) -> None:
         """Set the ceiling's target."""

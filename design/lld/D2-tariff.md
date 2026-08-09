@@ -55,7 +55,7 @@ custom_components/powerplan/core/tariffs/
 ├── contracted.py    limit_now(), trip model
 ├── presets/
 │   ├── schema.json
-│   ├── loader.py    load(), validate(), render_plain_language()
+│   ├── loader.py    load(), validate(), summarize() → TariffSummary (data; D8 renders it)
 │   └── <cc>/*.json  no/tensio-ts.json, no/tensio-tn.json, no/elvia.json, no/template.json, se/ellevio.json,
 │                    fi/template.json (+ fi/helen.json if its own list verifies), be/fluvius-<area>.json (one per VREG sheet),
 │                    dk/<company>.json (generated from DatahubPricelist by tools/, D9), nl/connection.json, uk/nopeak.json,
@@ -298,7 +298,7 @@ The freezing (`_freeze`, `_touch`) is D2's own, run every tick from `ceiling_kwh
 
 ### 5.11 Projected level and advice
 
-`projected_level(today_projected_kwh)` inserts today's projected window (from D6's projection) into the history copy and classifies. Advice is generated from the same evaluation, as keys with parameters (D8 translates):
+`projected_level(today_projected_kwh)` inserts today's projected window (from D6's projection) into a copy of the history and classifies. Advice comes from the same evaluation, as keys with parameters for D8 to translate. The closed set is `evaluator.ADVICE_KEYS`, and `sensor.<site>_advice` states the most severe one other than `top_entries` (D-0343):
 
 | key | when |
 |---|---|
@@ -335,7 +335,7 @@ Site flow, step **tariff** (skipped on the *fuse only* path):
 | Country | select | site country (from the electrical step) |
 | Grid company / tariff | select of presets for the country (one entry per tariff area) + "Not listed - start from the national rules" (the country's template, where one exists) + "Custom" | the only preset when the country has one; else none (the household picks) |
 | *Template prices* (template only) | the template's `null` numbers as a form - for a step table, the step boundaries and fees from the bill | none: every field required, each with "from your bill" as its description |
-| *Rendered description* | read-only text from `render_plain_language(preset)`, ending with the source and the date it was checked | e.g. "Tensio TS bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 122 kr, up to 5 kW 218 kr, up to 10 kW 371 kr, … Source: tensio.no, checked." |
+| *Rendered description* | *(D-0341)* the `TariffSummary` as D8's translated table (`flow/text.py`), then the source; the example below is the retired English sentence | e.g. "Tensio TS bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 122 kr, up to 5 kW 218 kr, up to 10 kW 371 kr, … Source: tensio.no, checked." |
 | Target | select: `automatic` (default) · each step with its fee · (Linear) number kW | `auto` |
 | Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0** (strict) for every preset; PLAN §7 dec. 18). Until WP U.3 the code ships the earlier default: **0.5** when the preset has `per_day = max`, 0 otherwise |
 | Enter last 12 monthly peaks (rolling presets only) | 12 numbers, optional | empty |

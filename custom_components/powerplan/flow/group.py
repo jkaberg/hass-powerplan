@@ -42,6 +42,7 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.allocation import default_max_concurrent_w
 from custom_components.powerplan.flow.questionnaire import advanced_section
+from custom_components.powerplan.flow.text import Text
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -153,13 +154,6 @@ def group_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _join(titles: list[str]) -> str:
-    """Join titles as `a`, `a and b`, `a, b and c` for the review line."""
-    if len(titles) <= 1:
-        return "".join(titles)
-    return f"{', '.join(titles[:-1])} and {titles[-1]}"
-
-
 class GroupSubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure one group (D8 §5.3)."""
 
@@ -218,19 +212,24 @@ class GroupSubentryFlow(ConfigSubentryFlow):
             errors=errors or None,
         )
 
-    def _placeholders(self) -> dict[str, str]:
-        """Return the review line's words: D6 §6's sentence with this group's numbers."""
+    async def _placeholders(self) -> dict[str, str]:
+        """Return the review line's data: D6 §6's sentence with this group's numbers.
+
+        The members joined with the language's own "og"/"and" (review NEW-4);
+        numbers for the language.
+        """
         assert self._answers is not None
+        text = await Text.load(self.hass)
         members = self._members()
         answers = self._answers
         titles = [members[member] for member in answers[GROUP_MEMBERS] if member in members]
         return {
             "name": str(self._name),
-            "members": _join(titles),
-            "max_concurrent_kw": f"{answers[GROUP_MAX_CONCURRENT_W] / 1000.0:g}",
+            "members": text.join(titles),
+            "max_concurrent_kw": text.number(answers[GROUP_MAX_CONCURRENT_W] / 1000.0),
             "from_stage": str(answers[GROUP_FROM_STAGE]),
-            "ceiling_fraction": f"{answers[GROUP_CEILING_FRACTION] * 100.0:g}",
-            "starve_min": f"{answers[GROUP_STARVE_SECONDS] / 60.0:g}",
+            "ceiling_fraction": text.number(answers[GROUP_CEILING_FRACTION] * 100.0),
+            "starve_min": text.number(answers[GROUP_STARVE_SECONDS] / 60.0),
         }
 
     # ------------------------------------------------------------------- steps
@@ -256,7 +255,7 @@ class GroupSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="review",
             data_schema=vol.Schema({}),
-            description_placeholders=self._placeholders(),
+            description_placeholders=await self._placeholders(),
             last_step=True,
         )
 

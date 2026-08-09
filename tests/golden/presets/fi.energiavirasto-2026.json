@@ -36,5 +36,5 @@
     {"kwh": 8.0, "billable_kw": 0.0, "fee": 0.0, "why": "exactly at the threshold: the deductible is subtracted, not a trigger"},
     {"kwh": 9.0, "billable_kw": 1.0, "fee": 2.5, "why": "one kW over, one kW billed"}
   ],
-  "describes": ["single highest hour", "2.50 EUR per kW per month", "first 8 kW free"]
+  "describes": ["your highest hour", "2.50 € per kW per month", "first 8 kW are free"]
 }

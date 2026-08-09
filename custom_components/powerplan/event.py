@@ -33,15 +33,17 @@ async def async_setup_entry(
 
 
 class SiteEventEntity(PowerplanEntity, EventEntity):
-    """Every `powerplan_*` event the site fires, as an event entity."""
+    """Every `powerplan_*` event the site fires, as an event entity.
 
-    #: Named after the device: `event.<site>`.
-    _attr_name = None
+    Named by its translation key ("Hendelser"), with every event type translated
+    under `entity.event.events.state_attributes.event_type` (review ENT-4). An
+    upgraded site keeps its `event.<site>` id; a new one is named after the key
+    (INV-50, D8 §5.15 H5).
+    """
 
     def __init__(self, runtime: Runtime) -> None:
         """Bind to the site."""
         super().__init__(runtime, "events")
-        self._attr_translation_key = None
         self._attr_event_types = list(EVENT_TYPES)
 
     async def async_added_to_hass(self) -> None:

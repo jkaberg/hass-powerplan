@@ -7,7 +7,7 @@
   "window_min": 60,
   "period_key": "2026-09",
   "at_local": "2026-09-15T12:00:00",
-  "describes": ["three highest hours", "three different days", "up to 2 kW 137 NOK", "over 20 kW 1200 NOK"],
+  "describes": ["3 highest hours on 3 different days", "| 0–2 kW | 137 kr |", "| Above 20 kW | 1,200 kr |"],
   "version_valid_from": "2026-01-01",
   "sources": {
     "steps": "D2 §6 preset excerpt, verified 2026-09-19 against tensio.no: up to 2 kW 137, 5 kW 244, 10 kW 416, 15 kW 613, 20 kW 812, over 20 kW 1200 NOK/month",

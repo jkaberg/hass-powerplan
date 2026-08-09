@@ -1,9 +1,10 @@
 {
+  "title": "PowerPlan",
   "config": {
     "step": {
       "user": {
-        "title": "Hva skal powerplan hjelpe med?",
-        "description": "Tre måter å kjøre på, og du kan ombestemme deg senere.\n\n**Pris og effekt** — flytt forbruk til billige timer *og* hold hver time under nettselskapets effekttrinn. Dette er det de fleste norske hus vil ha.\n\n**Bare pris** — følg prisen og se bort fra effekt. Velg dette hvis nettselskapet ikke har et effektledd, eller hvis du ikke har en måleravlesning powerplan kan bruke.\n\n**Bare sikring** — ingen priser, ingen nettleie: bare aldri slå ut hovedsikringen når flere store laster kjører samtidig.",
+        "title": "Hva skal PowerPlan hjelpe med?",
+        "description": "Tre måter å kjøre på, og du kan ombestemme deg senere.\n\n**Pris og effekt** — flytt forbruk til billige timer *og* hold hver time under nettselskapets effekttrinn. Dette er det de fleste norske hus vil ha.\n\n**Bare pris** — følg prisen og se bort fra effekt. Velg dette hvis nettselskapet ikke har et effektledd, eller hvis du ikke har en måleravlesning PowerPlan kan bruke.\n\n**Bare sikring** — ingen priser, ingen nettleie: bare aldri slå ut hovedsikringen når flere store laster kjører samtidig.",
         "menu_options": {
           "full": "Pris og effekt",
           "price_only": "Bare pris",
@@ -22,7 +23,7 @@
       },
       "timezone": {
         "title": "Hvilken tidssone ligger huset i?",
-        "description": "powerplan henter dette normalt fra Home Assistant-innstillingene dine, men der er ingen tidssone satt. Alt som har en tid i seg — vindusgrenser, dag og natt, frister, når morgendagens priser skal komme — avhenger av dette svaret.",
+        "description": "PowerPlan henter dette normalt fra Home Assistant-innstillingene dine, men der er ingen tidssone satt. Alt som har en tid i seg — vindusgrenser, dag og natt, frister, når morgendagens priser skal komme — avhenger av dette svaret.",
         "data": {
           "timezone": "Tidssone"
         },
@@ -60,7 +61,7 @@
       },
       "meter": {
         "title": "Hvilken enhet er måleren din?",
-        "description": "Velg enheten som leser strømmåleren din — en AMS/HAN-leser, en P1-dongle, en Tibber Pulse — og powerplan fyller ut sensorene den finner på den. La den stå tom for å velge sensorene selv.",
+        "description": "Velg enheten som leser strømmåleren din — en AMS/HAN-leser, en P1-dongle, en Tibber Pulse — og PowerPlan fyller ut sensorene den finner på den. La den stå tom for å velge sensorene selv.",
         "data": {
           "device": "Målerenhet"
         },
@@ -70,7 +71,7 @@
       },
       "meter_roles": {
         "title": "Hva hver målersensor er",
-        "description": "Kontroller det powerplan fant. Effekt fra nettet og importregisteret er de to som betyr noe: effekten er hvor fort huset trekker, registeret er det som avslutter hvert effektvindu eksakt. Alt annet er valgfritt.",
+        "description": "Kontroller det PowerPlan fant. Effekt fra nettet og importregisteret er de to som betyr noe: effekten er hvor fort huset trekker, registeret er det som avslutter hvert effektvindu eksakt. Alt annet er valgfritt.",
         "data": {
           "grid_power": "Effekt fra nettet",
           "import_register": "Importregister",
@@ -94,7 +95,7 @@
       },
       "prices": {
         "title": "Hvor kommer prisene dine fra?",
-        "description": "powerplan trenger morgendagens priser for å planlegge i natt. Velg det du allerede har.",
+        "description": "PowerPlan trenger morgendagens priser for å planlegge i natt. Velg det du allerede har.",
         "data": {
           "source": "Priskilde"
         },
@@ -104,7 +105,7 @@
       },
       "prices_nordpool": {
         "title": "Nord Pool",
-        "description": "powerplan spør Nord Pool-integrasjonen om prisene for hver dag; den kontakter aldri markedet selv. Morgendagens auksjonsresultat kommer vanligvis tidlig på ettermiddagen, markedstid.",
+        "description": "PowerPlan spør Nord Pool-integrasjonen om prisene for hver dag; den kontakter aldri markedet selv. Morgendagens auksjonsresultat kommer vanligvis tidlig på ettermiddagen, markedstid.",
         "data": {
           "config_entry": "Nord Pool-integrasjon",
           "area": "Prisområde",
@@ -132,10 +133,10 @@
       },
       "prices_entity": {
         "title": "Prissensoren din",
-        "description": "Velg sensoren som allerede bærer en priskurve. powerplan kjenner igjen de vanlige formatene og forteller hvilket den oppdaget.",
+        "description": "Velg sensoren som allerede bærer en priskurve. PowerPlan kjenner igjen de vanlige formatene og forteller hvilket den oppdaget.",
         "data": {
           "entity_id": "Prissensor",
-          "format": "Format"
+          "format": "Prisformat"
         },
         "data_description": {
           "entity_id": "Sensoren som har timene og prisene i attributtene sine.",
@@ -144,7 +145,7 @@
       },
       "prices_fixed": {
         "title": "Fastprisen din",
-        "description": "Uten en kurve å følge kan powerplan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og forsvarer effektmålet ditt.",
+        "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og forsvarer effektmålet ditt.",
         "data": {
           "price": "Pris per kWh"
         },
@@ -159,64 +160,142 @@
           "modifiers": "Legges på toppen"
         },
         "data_description": {
-          "modifiers": "Alt powerplan kan legge til en råpris. Utelater du noe, er det bare ikke en del av prisen din."
+          "modifiers": "Alt PowerPlan kan legge til en råpris. Utelater du noe, er det bare ikke en del av prisen din."
         }
       },
-      "modifier_options": {
-        "title": "{modifier}",
-        "description": "Tallene for denne. Hvert felt har et forvalg; endre det du vet.",
+      "modifier_vat": {
+        "title": "Hvor stor er merverdiavgiften?",
+        "description": "Merverdiavgiften legges på det du betaler per kWh. Satsen står på strømregningen.",
         "data": {
-          "rate": "Merverdiavgift",
-          "amount": "Beløp per kWh",
-          "periods": "Perioder",
-          "fallback": "Reserveverdi",
-          "price": "Pris per kWh",
-          "cap_kwh_per_month": "Tak per måned",
-          "threshold": "Terskel",
-          "share": "Andel",
-          "mult": "Faktor",
-          "offset": "Påslag per kWh",
-          "tiers": "Trinn",
-          "basis": "Regnes over",
-          "rates": "Dagtyper"
+          "rate": "Merverdiavgift"
         },
         "data_description": {
-          "rate": "Som brøk: 0,25 er 25 %.",
-          "amount": "I din valuta, per kWh. Negative beløp er tillatt.",
-          "periods": "Dag- og nattperiodene og prisene deres. Nettleie-forvalget fyller dette ut for deg.",
-          "fallback": "Hva som brukes for en time ingen periode dekker.",
-          "price": "I din valuta, per kWh.",
-          "cap_kwh_per_month": "Hvor mange kWh i måneden fastprisen dekker; over det gjelder spot.",
-          "threshold": "Prisen per kWh der staten begynner å dekke en andel.",
-          "share": "Som brøk: 0,9 er 90 %.",
-          "mult": "Strømleverandørens faktor på spotprisen. 1 er ingen endring.",
-          "offset": "Legges til hver kWh, i din valuta.",
-          "tiers": "Forbrukstrinnene per måned og prisene deres.",
-          "basis": "Om trinnene teller forbruket i en måned eller et år.",
-          "rates": "De varslede dagtypene og hva hver av dem koster."
+          "rate": "Som brøk: 0,25 er 25 %."
         },
         "sections": {
           "advanced": {
             "name": "Avansert",
             "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
             "data": {
-              "applies_to": "Gjelder for",
+              "applies_to": "Gjelder for"
+            },
+            "data_description": {
+              "applies_to": "Hvilke deler av prisen avgiften beregnes av. Tom betyr alle."
+            }
+          }
+        }
+      },
+      "modifier_spot_scale": {
+        "title": "Tar strømleverandøren et påslag?",
+        "description": "Påslaget står på strømregningen eller i avtalen din.",
+        "data": {
+          "mult": "Faktor",
+          "offset": "Påslag per kWh"
+        },
+        "data_description": {
+          "mult": "Leverandørens faktor på spotprisen. 1 er ingen endring.",
+          "offset": "Legges på hver kWh, i din valuta."
+        }
+      },
+      "modifier_levy": {
+        "title": "Hvilken avgift legges på per kWh?",
+        "description": "En avgift på hver kWh, som elavgiften. Den står på nettleiefakturaen.",
+        "data": {
+          "amount": "Beløp per kWh"
+        },
+        "data_description": {
+          "amount": "I din valuta, per kWh. Et negativt beløp er tillatt."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
               "months": "Måneder",
-              "applies_above_mtd_kwh": "Bare over månedens forbruk",
+              "applies_above_mtd_kwh": "Bare over månedens forbruk"
+            },
+            "data_description": {
+              "months": "Månedsnumrene den gjelder i. Tom betyr hele året.",
+              "applies_above_mtd_kwh": "Antall kWh denne kalendermåneden før avgiften begynner. Tom betyr alltid."
+            }
+          }
+        }
+      },
+      "modifier_fixed_price": {
+        "title": "Hva er fastprisen din?",
+        "description": "En statlig ordning som Norgespris erstatter spotprisen opp til et tak per måned. Prisen står i avtalen din.",
+        "data": {
+          "price": "Pris per kWh",
+          "cap_kwh_per_month": "Tak per måned"
+        },
+        "data_description": {
+          "price": "I din valuta, per kWh.",
+          "cap_kwh_per_month": "Hvor mange kWh i måneden fastprisen dekker; over det gjelder spotpris."
+        }
+      },
+      "modifier_subsidy_threshold": {
+        "title": "Hvor begynner strømstøtten?",
+        "description": "Staten dekker en andel av prisen over en terskel. Myndighetene publiserer begge tallene.",
+        "data": {
+          "threshold": "Terskel",
+          "share": "Andel"
+        },
+        "data_description": {
+          "threshold": "Prisen per kWh der staten begynner å dekke en andel.",
+          "share": "Som brøk: 0,9 er 90 %."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "data": {
               "negative_rule": "Negative priser"
             },
             "data_description": {
-              "applies_to": "Hvilke priskomponenter avgiften beregnes av. Tom betyr alle.",
-              "months": "Månedsnumrene dette gjelder i. Tom betyr hele året.",
-              "applies_above_mtd_kwh": "Antall kWh denne kalendermåneden før avgiften begynner. Tom betyr alltid.",
               "negative_rule": "Hva ordningen gjør når spotprisen er under null."
             }
           }
         }
       },
+      "modifier_tou_schedule": {
+        "title": "Hva tar nettselskapet per kWh?",
+        "description": "Energileddet i nettleien, ofte en dag- og en nattpris. Det står på nettleiefakturaen, og nettleien du velger senere fyller det ut.",
+        "data": {
+          "periods": "Perioder",
+          "fallback": "Pris for andre timer"
+        },
+        "data_description": {
+          "periods": "Periodene og prisene deres per kWh.",
+          "fallback": "Brukes for en time ingen periode dekker."
+        }
+      },
+      "modifier_day_type": {
+        "title": "Hva koster de spesielle dagene?",
+        "description": "Noen tariffer priser varslede dager, som kritiske toppdager, annerledes. Prisene står i avtalen din.",
+        "data": {
+          "rates": "Dagtyper",
+          "fallback": "Vanlig dagtype"
+        },
+        "data_description": {
+          "rates": "De varslede dagtypene og hva hver av dem koster.",
+          "fallback": "Dagtypen som brukes når ingenting er varslet."
+        }
+      },
+      "modifier_cumulative_tier": {
+        "title": "Hvordan øker prisen med forbruket?",
+        "description": "Noen avtaler tar mer per kWh når forbruket går over et trinn. Trinnene står i avtalen din.",
+        "data": {
+          "tiers": "Trinn",
+          "basis": "Regnes over"
+        },
+        "data_description": {
+          "tiers": "Forbrukstrinnene og prisene deres.",
+          "basis": "Om trinnene teller forbruket i en måned eller et år."
+        }
+      },
       "export": {
         "title": "Selger du strøm tilbake?",
-        "description": "Hvis du eksporterer, avgjør det du får betalt om lading av batteriet slår salg. En negativ eksportpris er mulig, og powerplan skjuler den ikke.",
+        "description": "Hvis du eksporterer, avgjør det du får betalt om lading av batteriet slår salg. En negativ eksportpris er mulig, og PowerPlan skjuler den ikke.",
         "data": {
           "mode": "Eksportpris",
           "amount": "Beløp per kWh",
@@ -238,39 +317,81 @@
           "carriers": "Hver av dem spør om prisen sin etterpå."
         }
       },
-      "carrier_options": {
-        "title": "{carrier}",
-        "description": "Hva denne energibæreren koster.",
+      "carrier_gas": {
+        "title": "Hva koster gassen?",
+        "description": "Prisen per kWh levert varme, fra regningen eller avtalen din.",
         "data": {
           "mode": "Priskilde",
           "price": "Pris per kWh",
           "entity_id": "Prissensor"
         },
         "data_description": {
-          "mode": "Et tall du skriver, eller en sensor som leses én gang om dagen.",
+          "mode": "Et tall du skriver inn, eller en sensor som leses én gang om dagen.",
           "price": "I din valuta, per kWh levert energi.",
-          "entity_id": "Sensoren som har dagens pris, hvis du valgte sensor."
+          "entity_id": "Sensoren med dagens pris, hvis du valgte sensor."
+        }
+      },
+      "carrier_district_heat": {
+        "title": "Hva koster fjernvarmen?",
+        "description": "Prisen per kWh levert varme, fra regningen eller avtalen din.",
+        "data": {
+          "mode": "Priskilde",
+          "price": "Pris per kWh",
+          "entity_id": "Prissensor"
+        },
+        "data_description": {
+          "mode": "Et tall du skriver inn, eller en sensor som leses én gang om dagen.",
+          "price": "I din valuta, per kWh levert energi.",
+          "entity_id": "Sensoren med dagens pris, hvis du valgte sensor."
+        }
+      },
+      "carrier_oil": {
+        "title": "Hva koster fyringsoljen?",
+        "description": "Prisen per kWh levert varme, fra regningen eller avtalen din.",
+        "data": {
+          "mode": "Priskilde",
+          "price": "Pris per kWh",
+          "entity_id": "Prissensor"
+        },
+        "data_description": {
+          "mode": "Et tall du skriver inn, eller en sensor som leses én gang om dagen.",
+          "price": "I din valuta, per kWh levert energi.",
+          "entity_id": "Sensoren med dagens pris, hvis du valgte sensor."
+        }
+      },
+      "carrier_pellets": {
+        "title": "Hva koster pelletsen?",
+        "description": "Prisen per kWh levert varme, fra regningen eller avtalen din.",
+        "data": {
+          "mode": "Priskilde",
+          "price": "Pris per kWh",
+          "entity_id": "Prissensor"
+        },
+        "data_description": {
+          "mode": "Et tall du skriver inn, eller en sensor som leses én gang om dagen.",
+          "price": "I din valuta, per kWh levert energi.",
+          "entity_id": "Sensoren med dagens pris, hvis du valgte sensor."
         }
       },
       "tariff": {
         "title": "Hvem er nettselskapet ditt?",
-        "description": "Effektdelen av nettleien er det powerplan først og fremst er til for. Velg nettselskapet ditt, og neste steg viser med vanlige ord hva powerplan tror de fakturerer deg — kontroller det mot din egen faktura.",
+        "description": "Effektdelen av nettleien er det PowerPlan først og fremst er til for. Velg nettselskapet ditt, og neste steg viser med vanlige ord hva PowerPlan tror de fakturerer deg — kontroller det mot din egen faktura.",
         "data": {
           "country": "Land",
           "preset": "Nettselskap"
         },
         "data_description": {
           "country": "Hvilket lands tariffer som skal listes.",
-          "preset": "Velg ditt, eller Egendefinert for å beskrive tariffen selv. Er du usikker, er det generiske valget en trygg start, og du kan endre det senere."
+          "preset": "Velg ditt; mangler det, velg Finner ikke mitt nettselskap eller Legg inn selv."
         }
       },
       "tariff_preset": {
         "title": "Er dette regningen din?",
-        "description": "**{name}**\n\n{description}\n\nKjenner du ikke igjen dette, gå tilbake og velg et annet nettselskap, eller Egendefinert. Feil her betyr at powerplan forsvarer feil tall hele måneden.\n\nKilde: {source}"
+        "description": "**{name}**\n\n{table}\n\nKjenner du ikke igjen dette, gå tilbake og velg et annet nettselskap, eller Legg inn selv. Feil her betyr at PowerPlan forsvarer feil tall hele måneden.\n\nKilde: {source}"
       },
       "tariff_target": {
-        "title": "Hva skal powerplan forsvare?",
-        "description": "Målet er taket powerplan holder hver time under. Automatisk forsvarer trinnet du allerede er i denne måneden, som er det riktige svaret til du kjenner ditt eget mønster.",
+        "title": "Hva skal PowerPlan forsvare?",
+        "description": "Målet er taket PowerPlan holder hver time under. Automatisk forsvarer trinnet du allerede er i denne måneden, som er det riktige svaret til du kjenner ditt eget mønster.",
         "data": {
           "target": "Mål",
           "risk": "Hvor mye som skal satses",
@@ -298,7 +419,7 @@
       },
       "tariff_bills": {
         "title": "De siste tolv månedene dine",
-        "description": "Denne tariffen snitter over et rullende år, så powerplan trenger det du allerede har brukt. Fyll inn det du finner på fakturaene; hvert felt er valgfritt, og powerplan sier fra når den vet for lite.",
+        "description": "Denne tariffen snitter over et rullende år, så PowerPlan trenger det du allerede har brukt. Fyll inn det du finner på fakturaene; hvert felt er valgfritt, og PowerPlan sier fra når den vet for lite.",
         "data": {
           "month_1": "Måned 1",
           "month_2": "Måned 2",
@@ -346,7 +467,7 @@
       },
       "hard_limits": {
         "title": "Den harde grensen",
-        "description": "Grensen powerplan aldri krysser, uansett hva prisen eller tariffen sier. Forvalget er det hovedsikringen kan levere.",
+        "description": "Grensen PowerPlan aldri krysser, uansett hva prisen eller tariffen sier. Forvalget er det hovedsikringen kan levere.",
         "data": {
           "contracted_kw": "Hard grense"
         },
@@ -356,7 +477,7 @@
       },
       "presence": {
         "title": "Er noen hjemme?",
-        "description": "Komfort betyr mindre i et tomt hus. powerplan kan følge personene i Home Assistant, eller overlate tilstedeværelse til deg og automasjonene dine.",
+        "description": "Komfort betyr mindre i et tomt hus. PowerPlan kan følge personene i Home Assistant, eller overlate tilstedeværelse til deg og automasjonene dine.",
         "data": {
           "mode": "Tilstedeværelse",
           "persons": "Personer"
@@ -379,7 +500,7 @@
         }
       },
       "notifications": {
-        "title": "Hva skal powerplan si fra om?",
+        "title": "Hva skal PowerPlan si fra om?",
         "description": "Tre ting er verdt en avbrytelse; alt annet er en entitet du kan legge på et dashbord. Et vedvarende varsel virker alltid, også før du har satt opp en varslingstjeneste.",
         "data": {
           "peak_warning": "Effektvarsel",
@@ -412,7 +533,7 @@
               "prices_daily_summary": "Daglig prissammendrag"
             },
             "data_description": {
-              "peak_uncontrolled": "Effekttoppen kommer fra noe powerplan ikke styrer.",
+              "peak_uncontrolled": "Effekttoppen kommer fra noe PowerPlan ikke styrer.",
               "deadline_at_risk": "En lading eller et program blir ikke ferdig i tid.",
               "level_up": "Måneden er i ferd med å gå opp i et dyrere trinn.",
               "price_source_dead": "Ingen priser har kommet inn på et døgn.",
@@ -425,13 +546,13 @@
         }
       },
       "review": {
-        "title": "Før powerplan starter",
-        "description": "Dette er hva powerplan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}. powerplan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. Den harde grensen din er {hard_limit_kw} kW.\n\n**Måler** — {meter}\n\n**Priser** — {prices}, i {currency}.\n\n**Nettleie** — {tariff}\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}\n\n**Varsler** — {notifications}\n\n**Tider** — alt powerplan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. powerplan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
+        "title": "Før PowerPlan starter",
+        "description": "Dette er hva PowerPlan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}, omtrent {fuse_kw} kW. PowerPlan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. Den harde grensen din er {hard_limit_kw} kW.\n\n**Måler** — {meter}.\n\n**Priser** — {prices}.\n\n**Nettleie** — {tariff}.\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}.\n\n**Varsler** — {notifications}.\n\n**Tider** — alt PowerPlan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. PowerPlan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
         "data": {
           "start_in_observe": "Start i observasjon"
         },
         "data_description": {
-          "start_in_observe": "Anbefales sterkt. powerplan beslutter og forklarer, men skriver ikke noe sted, så du kan se hva den ville gjort før den gjør det."
+          "start_in_observe": "Anbefales sterkt. PowerPlan beslutter og forklarer, men skriver ikke noe sted, så du kan se hva den ville gjort før den gjør det."
         }
       }
     },
@@ -443,7 +564,7 @@
       "eps_not_positive": "Sikkerhetsmarginen må være større enn null."
     },
     "abort": {
-      "already_configured": "Denne måleren er allerede satt opp som et powerplan-anlegg.",
+      "already_configured": "Denne måleren er allerede satt opp som et PowerPlan-anlegg.",
       "reconfigure_successful": "Lagret — anlegget laster på nytt med de nye svarene."
     }
   },
@@ -470,7 +591,16 @@
     },
     "sensor": {
       "advice": {
-        "name": "Råd"
+        "name": "Anbefaling",
+        "state": {
+          "all_good": "Alt ser bra ut",
+          "step_headroom": "Litt rom før neste effekttrinn",
+          "days_that_matter": "Flere høye dager kan gi høyere effekttrinn",
+          "free_ride_today": "Dagens topp er allerede betalt",
+          "rolling_drag": "En gammel måned faller ut av snittet",
+          "coarse_history": "Noe av historikken er anslått",
+          "contracted_close": "Nær den avtalte effekten"
+        }
       },
       "allowance": {
         "name": "Tillatt effekt"
@@ -565,7 +695,13 @@
         "name": "Besparelse"
       },
       "session": {
-        "name": "Økt"
+        "name": "Økt",
+        "state": {
+          "no_car": "Ingen bil tilkoblet",
+          "waiting": "Venter på billig strøm",
+          "charging": "Lader",
+          "done": "Ferdig"
+        }
       },
       "stage": {
         "name": "Trinn"
@@ -581,6 +717,9 @@
       },
       "window_used": {
         "name": "Brukt i timen"
+      },
+      "next_legionella": {
+        "name": "Neste legionellakjøring"
       }
     },
     "select": {
@@ -597,7 +736,27 @@
         "name": "Kapasitetsmål",
         "state": {
           "auto": "Automatisk",
-          "kw": "Konfigurert kW"
+          "kw": "Konfigurert kW",
+          "step_0": "Trinn 1",
+          "step_1": "Trinn 2",
+          "step_2": "Trinn 3",
+          "step_3": "Trinn 4",
+          "step_4": "Trinn 5",
+          "step_5": "Trinn 6",
+          "step_6": "Trinn 7",
+          "step_7": "Trinn 8",
+          "step_8": "Trinn 9",
+          "step_9": "Trinn 10",
+          "step_10": "Trinn 11",
+          "step_11": "Trinn 12",
+          "step_12": "Trinn 13",
+          "step_13": "Trinn 14",
+          "step_14": "Trinn 15",
+          "step_15": "Trinn 16",
+          "step_16": "Trinn 17",
+          "step_17": "Trinn 18",
+          "step_18": "Trinn 19",
+          "step_19": "Trinn 20"
         }
       },
       "risk": {
@@ -621,7 +780,7 @@
     },
     "number": {
       "margin_kwh": {
-        "name": "Margin"
+        "name": "Sikkerhetsmargin"
       },
       "force_max_hours": {
         "name": "Tvang varer maks"
@@ -674,22 +833,51 @@
       "deadline": {
         "name": "Frist i dag"
       }
+    },
+    "event": {
+      "events": {
+        "name": "Hendelser",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "stage_changed": "Styringsnivå endret",
+              "breach": "Grensen ble overskredet",
+              "comfort_violation": "Komforten ble ikke holdt",
+              "peak_warning": "Effektvarsel",
+              "deadline_at_risk": "Frist i fare",
+              "plan_adopted": "Ny plan tatt i bruk",
+              "device_unhealthy": "Apparat svarer ikke",
+              "month_closed": "Måneden er avsluttet",
+              "safe_mode": "Nødmodus",
+              "prices_received": "Priser mottatt",
+              "level_changed": "Effekttrinn endret",
+              "period_closed": "Faktureringsperioden er avsluttet",
+              "legionella": "Legionellakjøring",
+              "cycle": "Apparatprogram",
+              "force": "Kjør nå",
+              "presence_changed": "Tilstedeværelse endret",
+              "ev_connected": "Bil koblet til eller fra",
+              "baseline_ready": "Vanlig forbruk er lært"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {
     "unknown_site": {
-      "message": "Ingen lastet powerplan-anlegg passer til {site}."
+      "message": "Fant ikke hjemmet {site}. Sjekk at PowerPlan er satt opp og kjører."
     },
     "unknown_load": {
       "message": "Ingen last med id {load} på dette anlegget."
     },
     "set_peak_needs_a_day_or_a_month": {
-      "message": "set_peak trenger en dato eller en måned."
+      "message": "Velg enten en dato eller en måned."
     }
   },
   "issues": {
     "engine_failing": {
-      "title": "powerplan er i sikker modus",
+      "title": "PowerPlan er i sikker modus",
       "description": "Motoren feilet {failures} ganger på rad ({error}). Alle laster er sluppet og anlegget bare observerer. En omstart opphever sikker modus; kommer den tilbake, meld inn loggen."
     },
     "load_error": {
@@ -726,7 +914,7 @@
     },
     "provision_refused": {
       "title": "En enhet avviser oppsettet",
-      "description": "{site}: en enhet avviser stadig innstillingene powerplan trenger."
+      "description": "{site}: en enhet avviser stadig innstillingene PowerPlan trenger."
     },
     "legionella_at_risk": {
       "title": "Legionellasyklusen er i fare",
@@ -836,7 +1024,20 @@
     },
     "review": {
       "options": {
-        "absent": "ikke satt opp"
+        "absent": "ikke satt opp",
+        "system_it_230": "230 V IT (uten nøytralleder)",
+        "system_tn_400": "400 V TN (med nøytralleder)",
+        "system_tt_400": "400 V TT (jordelektrode)",
+        "system_split_240": "120/240 V splittfase",
+        "system_single_230": "230 V enfase",
+        "system_single_120": "120 V enfase",
+        "weather_found": "Temperatur fra {weather}.",
+        "weather_none": "Fant ingen værmelding i Home Assistant.",
+        "usage_meter": "Vanlig forbruk læres fra måleren og tas i bruk etter omtrent to uker.",
+        "usage_none": "Ingen måler, så det er ikke noe vanlig forbruk å lære.",
+        "quiet": "stille {hours}",
+        "notifications_none": "ingen",
+        "export": "eksport: {mode}"
       }
     },
     "appliance_cycle_appliance": {
@@ -973,10 +1174,10 @@
     },
     "water_heater_element_kw": {
       "options": {
-        "1.5": "1.5 kW",
+        "1.5": "1,5 kW",
         "2": "2 kW",
         "3": "3 kW",
-        "4.5": "4.5 kW",
+        "4.5": "4,5 kW",
         "6": "6 kW",
         "9": "9 kW"
       }
@@ -990,7 +1191,7 @@
     "water_heater_legionella": {
       "options": {
         "built_in": "Tanken selv",
-        "powerplan": "powerplan",
+        "powerplan": "PowerPlan",
         "dont_know": "Vet ikke"
       }
     },
@@ -1026,6 +1227,143 @@
         "opportunistic": "Bare når det er billig",
         "peak_shave": "Kapp toppene",
         "run_once": "Én kjøring før klartid"
+      }
+    },
+    "text": {
+      "options": {
+        "and": "og",
+        "yes": "ja",
+        "no": "nei",
+        "none": "—",
+        "more": "{names} og {count} til",
+        "preset_unknown": "Finner ikke mitt nettselskap",
+        "preset_custom": "Legg inn selv",
+        "target_auto": "Automatisk",
+        "target_step": "Trinn {n} · {range} · {fee}",
+        "per_month": "{fee}/mnd",
+        "per_year": "{fee}/år",
+        "notify_notify": "Alle varslingstjenester",
+        "notify_persistent_notification": "Et varsel i Home Assistant"
+      }
+    },
+    "tariff_text": {
+      "options": {
+        "no_peak": "Ingen effektledd: bare energiprisen teller.",
+        "metric_max_15": "Du betaler for ditt høyeste kvarter {period}.",
+        "metric_max_30": "Du betaler for din høyeste halvtime {period}.",
+        "metric_max_60": "Du betaler for din høyeste time {period}.",
+        "metric_top_n": "Du betaler for snittet av dine {n} høyeste {windows}, {period}.",
+        "metric_top_n_days": "Du betaler for snittet av dine {n} høyeste {windows} på {n} ulike dager, {period}.",
+        "windows_15": "kvarter",
+        "windows_30": "halvtimer",
+        "windows_60": "timer",
+        "period_month": "hver måned",
+        "period_year": "hvert år",
+        "period_rolling": "som snitt over de siste {months} månedene",
+        "header_step": "Effekttrinn",
+        "header_fee_month": "Pris per måned",
+        "header_fee_year": "Pris per år",
+        "header_power": "Effekt",
+        "header_price_per_kw_month": "Pris per kW per måned",
+        "header_price_per_kw_year": "Pris per kW per år",
+        "band_over": "Over {kw}",
+        "linear_month": "Prisen er {price} per kW per måned.",
+        "linear_year": "Prisen er {price} per kW per år.",
+        "linear_free": "De første {kw} er gratis.",
+        "linear_min": "Du betaler for minst {kw}.",
+        "eligible": "Bare timer {when} teller.",
+        "weight": "Timer {when} teller {weight}×.",
+        "when_hours": "kl. {hours}",
+        "when_days": "på {days}",
+        "when_months": "i {months}",
+        "when_no_holidays": "unntatt helligdager",
+        "when_holidays_sunday": "med helligdager som søndag",
+        "when_always": "når som helst",
+        "contracted_trip": "Tilknytningen er begrenset til {limits}; over det kobles strømmen ut.",
+        "contracted_surcharge": "Tilknytningen er begrenset til {limits}; over det koster det ekstra.",
+        "energy": "Energiledd: {rates}.",
+        "energy_hours": "{price} (kl. {hours})",
+        "energy_other": "{price} (andre timer)",
+        "assumed": "Noen av tallene er antatt, ikke bekreftet: sjekk dem mot fakturaen.",
+        "weekday_0": "mandag",
+        "weekday_1": "tirsdag",
+        "weekday_2": "onsdag",
+        "weekday_3": "torsdag",
+        "weekday_4": "fredag",
+        "weekday_5": "lørdag",
+        "weekday_6": "søndag",
+        "month_1": "januar",
+        "month_2": "februar",
+        "month_3": "mars",
+        "month_4": "april",
+        "month_5": "mai",
+        "month_6": "juni",
+        "month_7": "juli",
+        "month_8": "august",
+        "month_9": "september",
+        "month_10": "oktober",
+        "month_11": "november",
+        "month_12": "desember"
+      }
+    },
+    "load_text": {
+      "options": {
+        "unsure": "Vi er usikre – sjekk at dette er riktig apparat.",
+        "its_target": "måltemperaturen",
+        "shadow_generic_switch": "Uten PowerPlan ville dette apparatet gått jevnt fordelt gjennom døgnet; besparelsen er det planen sparer mot det.",
+        "shadow_generic_switch_none": "Besparelsen vises ikke: PowerPlan kan bare sette dette apparatet på pause og slå det på igjen, ikke si hva det ellers ville kostet.",
+        "shadow_floor_heating": "Uten PowerPlan ville dette gulvet holdt {target} på sin egen termostat; besparelsen er det planen sparer mot det.",
+        "shadow_radiator": "Uten PowerPlan ville dette rommet holdt {target} på sin egen termostat; besparelsen er det planen sparer mot det.",
+        "shadow_heat_pump": "Uten PowerPlan ville denne varmepumpen holdt {target} på sin egen termostat; besparelsen er det planen sparer mot det.",
+        "shadow_water_heater": "Uten PowerPlan ville denne tanken varmet opp igjen med en gang den kom under innstilt temperatur; besparelsen er det planen sparer mot det.",
+        "shadow_ev": "Uten PowerPlan ville denne bilen ladet med full effekt fra den ble koblet til og til den nådde målet ditt; besparelsen er det planen sparer mot det.",
+        "shadow_appliance_cycle": "Uten PowerPlan ville dette apparatet startet med en gang det ble bedt om det; besparelsen er det planen sparer mot det.",
+        "shadow_battery": "Uten PowerPlan ville dette batteriet verken ladet eller utladet; besparelsen er det planen sparer mot det.",
+        "label_store": "Varmelager",
+        "label_kind": "Styring",
+        "label_strategy": "Planlegging",
+        "label_usable_kwh": "Brukbar kapasitet",
+        "label_heat_loss_w_per_k": "Varmetap (W/K)",
+        "label_cop_at_minus_seven": "Virkningsgrad (COP) ved −7 °C",
+        "label_shiftable_kwh": "Energi som kan flyttes",
+        "label_sensorless": "Uten temperatursensor",
+        "label_threshold_pct": "Spareterskel (%)",
+        "label_max_off_min": "Lengste pause (min)",
+        "store_slab": "Gulvstøp",
+        "store_room": "Romluft",
+        "store_hydronic": "Vannbåren",
+        "kind_setpoint": "Termostat",
+        "kind_switch": "Av og på"
+      }
+    },
+    "modifier_cumulative_tier_basis": {
+      "options": {
+        "month": "Måned",
+        "year": "År"
+      }
+    },
+    "modifier_subsidy_threshold_negative_rule": {
+      "options": {
+        "none": "Støtten stopper",
+        "threshold": "Avregnes til terskelen"
+      }
+    },
+    "price_format": {
+      "options": {
+        "amber": "Amber Electric",
+        "comed": "ComEd",
+        "easyenergy_action": "easyEnergy",
+        "energidataservice": "Energi Data Service",
+        "energyzero_action": "EnergyZero",
+        "entsoe": "ENTSO-e",
+        "generic_list": "En prisliste i et attributt",
+        "hourly_attributes": "Ett attributt per time",
+        "nordpool_core": "Nord Pool",
+        "nordpool_hacs": "Nord Pool (HACS)",
+        "octopus_energy": "Octopus Energy",
+        "pvpc": "PVPC",
+        "tge": "TGE",
+        "tibber_action": "Tibber"
       }
     }
   },
@@ -1065,7 +1403,7 @@
       }
     },
     "boost": {
-      "name": "Boost",
+      "name": "Kjør nå i en periode",
       "description": "Sett en last i tvunget modus en stund.",
       "fields": {
         "load": {
@@ -1171,7 +1509,7 @@
       "step": {
         "user": {
           "title": "Legg til en last",
-          "description": "Velg enheten powerplan skal styre. Alle integrasjoner går: powerplan ser på enhetens entiteter og sier hva den tror den er.",
+          "description": "Velg enheten PowerPlan skal styre. Alle integrasjoner går: PowerPlan ser på enhetens entiteter og sier hva den tror den er.",
           "data": {
             "device": "Enhet"
           },
@@ -1180,47 +1518,47 @@
           }
         },
         "match": {
-          "title": "Det powerplan ser",
-          "description": "**{device}** ser ut som en **{profile}** ({confidence} sikker: {reasons}). Endre typen eller profilen om det er feil, og sjekk hvilken entitet som spiller hvilken rolle. En påkrevd rolle uten entitet kan ikke fortsette.",
+          "title": "Det PowerPlan ser",
+          "description": "**{device}** ser ut som **{kind}**. PowerPlan vil styre det med **{control}**. Endre typen hvis det er feil, og sjekk hvilken entitet som har hvilken rolle.\n\n{warning}",
           "data": {
-            "type": "Type",
+            "type": "Apparattype",
             "profile": "Profil",
-            "role_power": "Power",
-            "role_energy": "Energy",
-            "role_temp": "Temp",
-            "role_temp_floor": "Temp floor",
-            "role_setpoint": "Setpoint",
-            "role_mode_select": "Mode select",
-            "role_eco_setpoint": "Eco setpoint",
-            "role_floor_min_limit": "Floor min limit",
-            "role_hysteresis": "Hysteresis",
-            "role_switch": "Switch",
-            "role_current_number": "Current number",
-            "role_max_current_number": "Max current number",
-            "role_enable_switch": "Enable switch",
+            "role_power": "Effektmåling",
+            "role_energy": "Energimåler",
+            "role_temp": "Temperatur",
+            "role_temp_floor": "Gulvtemperatur",
+            "role_setpoint": "Ønsket temperatur",
+            "role_mode_select": "Modusvalg",
+            "role_eco_setpoint": "Sparetemperatur",
+            "role_floor_min_limit": "Laveste gulvtemperatur",
+            "role_hysteresis": "Temperaturslingring",
+            "role_switch": "Av/på-bryter",
+            "role_current_number": "Ladestrøm",
+            "role_max_current_number": "Maks ladestrøm",
+            "role_enable_switch": "Lading tillatt",
             "role_status": "Status",
-            "role_blocked_by": "Blocked by",
-            "role_cable_rating": "Cable rating",
-            "role_circuit_max": "Circuit max",
-            "role_session_energy": "Session energy",
-            "role_current_l1": "Current l1",
-            "role_current_l2": "Current l2",
-            "role_current_l3": "Current l3",
-            "role_soc": "Soc",
-            "role_connected": "Connected",
-            "role_outdoor_temp": "Outdoor temp",
-            "role_outlet_temp": "Outlet temp",
-            "role_start": "Start",
-            "role_program_state": "Program state",
-            "role_door": "Door",
-            "role_battery_power_set": "Battery power set",
-            "role_battery_mode": "Battery mode",
-            "role_sg_a": "Sg a",
-            "role_sg_b": "Sg b"
+            "role_blocked_by": "Blokkert av",
+            "role_cable_rating": "Kabelens tåleevne",
+            "role_circuit_max": "Kursens maks",
+            "role_session_energy": "Energi denne økten",
+            "role_current_l1": "Strøm L1",
+            "role_current_l2": "Strøm L2",
+            "role_current_l3": "Strøm L3",
+            "role_soc": "Ladenivå",
+            "role_connected": "Bil tilkoblet",
+            "role_outdoor_temp": "Utetemperatur",
+            "role_outlet_temp": "Turtemperatur",
+            "role_start": "Start program",
+            "role_program_state": "Programstatus",
+            "role_door": "Dør",
+            "role_battery_power_set": "Batterieffekt (innstilling)",
+            "role_battery_mode": "Batterimodus",
+            "role_sg_a": "SG Ready-inngang A",
+            "role_sg_b": "SG Ready-inngang B"
           },
           "data_description": {
             "type": "Hva slags last dette er; spørsmålene som følger avhenger av det.",
-            "profile": "Hvordan powerplan snakker med enheten.",
+            "profile": "Hvordan PowerPlan snakker med enheten.",
             "role_power": "Entiteten for denne rollen.",
             "role_energy": "Entiteten for denne rollen.",
             "role_temp": "Entiteten for denne rollen.",
@@ -1257,7 +1595,7 @@
         },
         "questions": {
           "title": "Noen spørsmål",
-          "description": "Spørsmål i klartekst om enheten. powerplan utleder alle parametre fra dem; den avanserte delen er allerede fylt ut.",
+          "description": "Spørsmål i klartekst om enheten. PowerPlan utleder alle parametre fra dem; den avanserte delen er allerede fylt ut.",
           "data": {
             "allow_grid_charge": "Lad fra nettet",
             "appliance": "Apparat",
@@ -1275,7 +1613,7 @@
             "departures_4": "Fredag",
             "departures_5": "Lørdag",
             "departures_6": "Søndag",
-            "element_kw": "Element",
+            "element_kw": "Varmeelement",
             "heater_type": "Ovnstype",
             "heating_type": "Varmetype",
             "hours_per_day": "Timer per dag",
@@ -1296,7 +1634,7 @@
             "rated_kw": "Merkeeffekt",
             "ready_by": "Klar til",
             "ready_by_2": "Andre klartid",
-            "reserve_pct": "Reserve",
+            "reserve_pct": "Batterireserve",
             "room": "Rom",
             "sensor": "Føler",
             "soc_entity": "Ladenivåsensor",
@@ -1312,7 +1650,7 @@
             "capacity_kwh": "Bilens batteri, i kWh. Det står i spesifikasjonen; planleggeren dimensjonerer hver økt etter det.",
             "chemistry": "Cellekjemien.",
             "comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
-            "control": "Om powerplan styrer en plugg eller en termostat.",
+            "control": "Om PowerPlan styrer en plugg eller en termostat.",
             "covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
             "departures_0": "Avreise på mandager.",
             "departures_1": "Avreise på tirsdager.",
@@ -1332,8 +1670,8 @@
             "max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
             "max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
             "max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
-            "mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
-            "min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+            "mechanical_thermostat": "Tanken har sin egen termostat som PowerPlan ikke kan stille.",
+            "min_c": "Gulvet PowerPlan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
             "min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
             "persons": "Hvor mange som bruker varmtvannet.",
             "phases": "Hvor mange faser laderen bruker.",
@@ -1398,7 +1736,7 @@
                 "band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
                 "charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
-                "comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "comfort_min_c": "Avansert: tanktemperaturen PowerPlan varmer opp igjen under med en gang.",
                 "command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
                 "cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
                 "duration_min": "Avansert: minutter ett program går.",
@@ -1416,7 +1754,7 @@
                 "min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
                 "min_off_s": "Avansert: sekunder en bryter er av minst.",
                 "min_on_s": "Avansert: sekunder en bryter er på minst.",
-                "never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "never_switch": "Avansert: enheter som, når de er på, hindrer PowerPlan i å endre denne enheten.",
                 "outdoor_entity": "Avansert: en utetemperatursensor.",
                 "outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
                 "power_w": "Apparatets effekt, i watt.",
@@ -1437,7 +1775,7 @@
         },
         "review": {
           "title": "Før denne lasten legges til",
-          "description": "Slik forsto powerplan det:\n\n{explanation}\n\nDen planlegger med **{strategy}**. De utledede tallene ligger under Avansert, alle kan endres.",
+          "description": "Slik forsto PowerPlan det:\n\n{explanation}\n\nDen planlegger med **{strategy}**. De utledede tallene ligger under Avansert, alle kan endres.",
           "data": {
             "name": "Navn",
             "strategy": "Strategi",
@@ -1467,13 +1805,13 @@
                 "param_comfort_min_c": "Komfortminimum",
                 "param_command_interval_s": "Kommandointervall",
                 "param_control": "Styring",
-                "param_cop": "COP",
+                "param_cop": "Virkningsgrad (COP)",
                 "param_cop_curve": "COP-kurve",
                 "param_covering": "Gulvbelegg",
                 "param_departures": "Vanlig avreise",
                 "param_duration_min": "Varighet",
                 "param_dwell_s": "Hviletid",
-                "param_element_kw": "Element",
+                "param_element_kw": "Varmeelement",
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
@@ -1517,7 +1855,7 @@
                 "param_ready_by": "Klar til",
                 "param_ready_by_2": "Andre klartid",
                 "param_ready_temp_c": "Klartemperatur",
-                "param_reserve_pct": "Reserve",
+                "param_reserve_pct": "Batterireserve",
                 "param_room": "Rom",
                 "param_schedule_entity": "Tidsplan",
                 "param_screed_depth_mm": "Støpedybde",
@@ -1549,9 +1887,9 @@
                 "param_charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
                 "param_chemistry": "Cellekjemien.",
                 "param_comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
-                "param_comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "param_comfort_min_c": "Avansert: tanktemperaturen PowerPlan varmer opp igjen under med en gang.",
                 "param_command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
-                "param_control": "Om powerplan styrer en plugg eller en termostat.",
+                "param_control": "Om PowerPlan styrer en plugg eller en termostat.",
                 "param_cop": "Utledet.",
                 "param_cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
                 "param_covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
@@ -1581,14 +1919,14 @@
                 "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
                 "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
                 "param_max_w": "Utledet.",
-                "param_mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
+                "param_mechanical_thermostat": "Tanken har sin egen termostat som PowerPlan ikke kan stille.",
                 "param_min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
-                "param_min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+                "param_min_c": "Gulvet PowerPlan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
                 "param_min_off_s": "Avansert: sekunder en bryter er av minst.",
                 "param_min_on_s": "Avansert: sekunder en bryter er på minst.",
                 "param_min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
                 "param_nameplate_w": "Utledet.",
-                "param_never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "param_never_switch": "Avansert: enheter som, når de er på, hindrer PowerPlan i å endre denne enheten.",
                 "param_outdoor_entity": "Avansert: en utetemperatursensor.",
                 "param_outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
                 "param_persons": "Hvor mange som bruker varmtvannet.",
@@ -1659,13 +1997,13 @@
                 "param_comfort_min_c": "Komfortminimum",
                 "param_command_interval_s": "Kommandointervall",
                 "param_control": "Styring",
-                "param_cop": "COP",
+                "param_cop": "Virkningsgrad (COP)",
                 "param_cop_curve": "COP-kurve",
                 "param_covering": "Gulvbelegg",
                 "param_departures": "Vanlig avreise",
                 "param_duration_min": "Varighet",
                 "param_dwell_s": "Hviletid",
-                "param_element_kw": "Element",
+                "param_element_kw": "Varmeelement",
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
@@ -1709,7 +2047,7 @@
                 "param_ready_by": "Klar til",
                 "param_ready_by_2": "Andre klartid",
                 "param_ready_temp_c": "Klartemperatur",
-                "param_reserve_pct": "Reserve",
+                "param_reserve_pct": "Batterireserve",
                 "param_room": "Rom",
                 "param_schedule_entity": "Tidsplan",
                 "param_screed_depth_mm": "Støpedybde",
@@ -1741,9 +2079,9 @@
                 "param_charge_eff": "Avansert: andelen av strømmen som ender i batteriet.",
                 "param_chemistry": "Cellekjemien.",
                 "param_comfort_c": "Temperaturen du vil ha når du er hjemme. Tomt bruker rommets vanlige.",
-                "param_comfort_min_c": "Avansert: tanktemperaturen powerplan varmer opp igjen under med en gang.",
+                "param_comfort_min_c": "Avansert: tanktemperaturen PowerPlan varmer opp igjen under med en gang.",
                 "param_command_interval_s": "Avansert: sekunder mellom to skrivinger til enheten.",
-                "param_control": "Om powerplan styrer en plugg eller en termostat.",
+                "param_control": "Om PowerPlan styrer en plugg eller en termostat.",
                 "param_cop": "Utledet.",
                 "param_cop_curve": "Avansert: utetemperatur til COP, som `-10:2.1, 7:3.8`.",
                 "param_covering": "Hva som ligger på gulvet. Det bestemmer hvordan gulvet lagrer og avgir varme.",
@@ -1773,14 +2111,14 @@
                 "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
                 "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
                 "param_max_w": "Utledet.",
-                "param_mechanical_thermostat": "Tanken har sin egen termostat som powerplan ikke kan stille.",
+                "param_mechanical_thermostat": "Tanken har sin egen termostat som PowerPlan ikke kan stille.",
                 "param_min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
-                "param_min_c": "Gulvet powerplan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
+                "param_min_c": "Gulvet PowerPlan aldri går under, uansett pris. Tomt bruker rommets vanlige.",
                 "param_min_off_s": "Avansert: sekunder en bryter er av minst.",
                 "param_min_on_s": "Avansert: sekunder en bryter er på minst.",
                 "param_min_soc_now": "Under dette lader bilen med en gang, uansett pris.",
                 "param_nameplate_w": "Utledet.",
-                "param_never_switch": "Avansert: enheter som, når de er på, hindrer powerplan i å endre denne enheten.",
+                "param_never_switch": "Avansert: enheter som, når de er på, hindrer PowerPlan i å endre denne enheten.",
                 "param_outdoor_entity": "Avansert: en utetemperatursensor.",
                 "param_outlet_entity": "Avansert: varmepumpens utløpstemperatursensor.",
                 "param_persons": "Hvor mange som bruker varmtvannet.",
@@ -1819,7 +2157,7 @@
         }
       },
       "error": {
-        "no_profile": "powerplan kan ikke se hva denne enheten er. Velg entitetene for hånd fra en enhet den kjenner igjen, eller legg til en profil.",
+        "no_profile": "PowerPlan kan ikke se hva denne enheten er. Velg entitetene for hånd fra en enhet den kjenner igjen, eller legg til en profil.",
         "already_configured": "Denne enheten er allerede en last.",
         "role_missing": "Ingen entitet for: {roles}. Hver påkrevd rolle trenger én.",
         "unknown": "Ikke et spørsmål for denne typen.",
@@ -1828,7 +2166,8 @@
         "too_large": "Over den største verdien som gir mening for denne enheten.",
         "not_an_option": "Ikke et av valgene.",
         "not_a_time": "Ikke et klokkeslett.",
-        "not_a_curve": "Ikke en kurve: bruk `-10:2.1, 7:3.8`."
+        "not_a_curve": "Ikke en kurve: bruk `-10:2.1, 7:3.8`.",
+        "unsafe_switch": "En tank som slås av og på trenger en mekanisk termostat eller en temperatursensor, så det alltid er trygt å slå den av."
       },
       "abort": {
         "already_configured": "Denne enheten er allerede en last.",
@@ -1844,7 +2183,7 @@
       "step": {
         "user": {
           "title": "Legg til en kurs",
-          "description": "En sikring og lastene bak den — garasjens 32 A med laderen og badstuen. powerplan holder lastene på kursen under sikringen sammen, før anleggets egen grense vurderes.",
+          "description": "En sikring og lastene bak den — garasjens 32 A med laderen og badstuen. PowerPlan holder lastene på kursen under sikringen sammen, før anleggets egen grense vurderes.",
           "data": {
             "name": "Navn",
             "fuse_a": "Sikring",
@@ -1856,7 +2195,7 @@
             "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
             "fuse_a": "Kursens egen sikring, i ampere.",
             "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
-            "members": "Lastene powerplan styrer som sitter bak denne sikringen.",
+            "members": "Lastene PowerPlan styrer som sitter bak denne sikringen.",
             "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
           },
           "sections": {
@@ -1867,7 +2206,7 @@
                 "unmetered_w": "Umålt last"
               },
               "data_description": {
-                "unmetered_w": "Watt å holde ledig for ting på kursen som powerplan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+                "unmetered_w": "Watt å holde ledig for ting på kursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
               }
             }
           }
@@ -1886,7 +2225,7 @@
             "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
             "fuse_a": "Kursens egen sikring, i ampere.",
             "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
-            "members": "Lastene powerplan styrer som sitter bak denne sikringen.",
+            "members": "Lastene PowerPlan styrer som sitter bak denne sikringen.",
             "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
           },
           "sections": {
@@ -1897,7 +2236,7 @@
                 "unmetered_w": "Umålt last"
               },
               "data_description": {
-                "unmetered_w": "Watt å holde ledig for ting på kursen som powerplan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+                "unmetered_w": "Watt å holde ledig for ting på kursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
               }
             }
           }
@@ -1926,7 +2265,7 @@
       "step": {
         "user": {
           "title": "Legg til en gruppe",
-          "description": "Laster som deler en felles ramme og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. powerplan gir den til den kaldeste først, og roterer slik at ingen blir hengende.",
+          "description": "Laster som deler en felles ramme og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den til den kaldeste først, og roterer slik at ingen blir hengende.",
           "data": {
             "name": "Navn",
             "members": "Laster i denne gruppen",
@@ -2008,7 +2347,7 @@
       "step": {
         "user": {
           "title": "Legg til en sone",
-          "description": "To eller flere laster som kan varme det samme rommet — en varmepumpe og en resistiv gulvflate, en varmepumpe og en kjel. powerplan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.",
+          "description": "To eller flere laster som kan varme det samme rommet — en varmepumpe og en resistiv gulvflate, en varmepumpe og en kjel. PowerPlan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.",
           "data": {
             "name": "Navn",
             "members": "Laster i denne sonen",
@@ -2024,7 +2363,7 @@
               "name": "Avansert",
               "description": "Sperrene som hindrer et jevnt valg fra å hoppe mellom kilder.",
               "data": {
-                "min_cop": "Minimum COP",
+                "min_cop": "Laveste virkningsgrad (COP)",
                 "switch_hysteresis": "Byttemargin",
                 "min_dwell_min": "Minimum opphold",
                 "switch_confirm_s": "Byttebekreftelse",
@@ -2058,7 +2397,7 @@
               "name": "Avansert",
               "description": "Sperrene som hindrer et jevnt valg fra å hoppe mellom kilder.",
               "data": {
-                "min_cop": "Minimum COP",
+                "min_cop": "Laveste virkningsgrad (COP)",
                 "switch_hysteresis": "Byttemargin",
                 "min_dwell_min": "Minimum opphold",
                 "switch_confirm_s": "Byttebekreftelse",
@@ -2076,7 +2415,7 @@
         },
         "review": {
           "title": "Før denne sonen legges til",
-          "description": "**{name}** deler {members}: powerplan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.\n\nAldri erstattet: {never_substitute}. En varmepumpe under COP {min_cop} kobles aldri inn."
+          "description": "**{name}** deler {members}: PowerPlan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.\n\nAldri erstattet: {never_substitute}. En varmepumpe under COP {min_cop} kobles aldri inn."
         }
       },
       "error": {

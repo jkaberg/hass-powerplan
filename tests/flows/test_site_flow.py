@@ -127,8 +127,9 @@ async def _through_prices(
     assert result["data_schema"]({})["modifiers"] == ["vat"]
     result = await _answer(hass, result, modifiers=["vat"])
 
-    assert result["step_id"] == "modifier_options"
-    assert result["description_placeholders"]["modifier"] == "vat"
+    # HUB-7: every add-on its own step, titled by its own strings - never by its key.
+    assert result["step_id"] == "modifier_vat"
+    assert not result["description_placeholders"]
     result = await _answer(hass, result, rate=0.25)
 
     assert result["step_id"] == "export"
@@ -145,8 +146,11 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
     result = await _answer(hass, result, country="NO", preset="no/tensio")
 
     assert result["step_id"] == "tariff_preset"
-    described = result["description_placeholders"]["description"]
-    assert "Tensio bills the average of your three highest hours" in described
+    # HUB-12: D2's `TariffSummary` rendered as a translated table, nothing stored.
+    table = result["description_placeholders"]["table"]
+    assert "3 highest hours on 3 different days" in table
+    assert "| Above 20 kW | 1,200 kr |" in table
+    assert result["description_placeholders"]["name"] == "Tensio – privatkunde"
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -424,16 +428,19 @@ async def test_the_review_explains_what_was_derived(
     result = await _tail(hass, result)
 
     placeholders = result["description_placeholders"]
-    assert "Tensio bills the average of your three highest hours" in placeholders["tariff"]
+    assert placeholders["tariff"] == "Tensio – privatkunde · Automatic"
     assert placeholders["timezone"] == SITE_TZ
     assert "Home Assistant" in placeholders["timezone_source"]
     assert "63" in placeholders["connection"]
-    assert "sensor.dataskap_strommaler_energy" in placeholders["meter"]
+    # HUB-14: the household's own names for its sensors and persons, never their ids.
+    assert "sensor." not in placeholders["meter"]
+    assert placeholders["meter"].startswith("Strømmåler Effekt and ")
+    assert placeholders["meter"].endswith(" and 2 more")
     assert "NO3" in placeholders["prices"]
-    assert "person.joel" in placeholders["presence"]
+    assert placeholders["presence"] == "Joel and Kari"
     # D10 §6: nothing to ask, so the review says what was found - a meter is
     # bound in this flow, so the baseline half is offered, not "not configured".
-    assert "usual load" in placeholders["forecasts"]
+    assert "Normal usage is learned from the meter" in placeholders["forecasts"]
     assert result["last_step"] is True
 
 

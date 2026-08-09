@@ -7,7 +7,7 @@
   "window_min": 60,
   "period_key": "2026-09",
   "at_local": "2026-09-15T12:00:00",
-  "describes": ["three highest hours", "three different days", "up to 2 kW 150 NOK", "over 20 kW 925 NOK"],
+  "describes": ["3 highest hours on 3 different days", "| 0–2 kW | 150 kr |", "| Above 20 kW | 925 kr |"],
   "version_valid_from": "2026-07-01",
   "sources": {
     "steps": "elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/, fetched 2026-09-19, prices valid from 2026-07-01, NOK/month incl. VAT: 0-2 kW 150, 2-5 kW 250, 5-10 kW 420, 10-15 kW 585, 15-20 kW 755",

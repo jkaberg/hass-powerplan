@@ -333,7 +333,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | T.1b | Test speed: the incremental tick | todo |
 | T.1c | Test speed: compiled core for the simulation tiers | todo |
 | B.1 | The brand | done |
-| U.1 | Text that is never raw or English | todo |
+| U.1 | Text that is never raw or English | done |
 | U.2 | Controls that prevent mistakes | todo |
 | U.3 | A setup a household finishes | todo |
 | U.4 | Entities that read as sentences | todo |

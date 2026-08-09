@@ -33,5 +33,5 @@
   "tolerance_pct": 0.0,
   "tolerance_s": 0,
   "ceiling_is_infinite_at": ["2026-01-07T19:00:00"],
-  "describes": ["no capacity component", "limited to 17.25 kW", "trips the supply"]
+  "describes": ["No capacity charge", "limited to 17.25 kW", "the supply trips"]
 }

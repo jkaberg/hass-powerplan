@@ -9,7 +9,7 @@ keep that attribute out of the recorder (INV-61, §9 6).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -23,6 +23,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 from .core.model import Carrier, Snapshot
+from .core.tariffs.evaluator import ADVICE_KEYS
 from .entity import PowerplanEntity, digest_of
 from .load_entities import load_sensors
 from .runtime import Runtime
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 
     from . import PowerplanConfigEntry
     from .core.model import PriceCurve
+    from .core.tariffs.evaluator import Advice
 
 #: `sensor.<site>_reasons` states the last reason, cut to the recorder's limit.
 STATE_MAX_LEN = 255
@@ -151,6 +153,25 @@ def _first_peak(snapshot: Snapshot) -> Any:
     return None
 
 
+#: `sensor.<site>_advice`'s closed set (D8 §5.15, review ENT-1): D2 §5.11's keys
+#: except `top_entries`, which is data and always first, plus `all_good` - so the
+#: normal state is a sentence and never unknown.
+ADVICE_STATES: tuple[str, ...] = (
+    "all_good",
+    *(key for key in ADVICE_KEYS if key != "top_entries"),
+)
+
+
+def advice_state(advice: Sequence[Advice] | None) -> str:
+    """Return the most severe advice - a warning before any info - else `all_good`."""
+    items = [row for row in advice or () if row.key != "top_entries"]
+    for severity in ("warn", "info"):
+        for row in items:
+            if row.severity == severity:
+                return row.key
+    return "all_good"
+
+
 def _meter_health_state(snapshot: Snapshot) -> str | None:
     meter = snapshot.meter
     if meter is None:
@@ -267,9 +288,9 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     ),
     SiteSensorDescription(
         key="advice",
-        value=lambda s, _r: (
-            "none" if s.tariff is None or not s.tariff.advice else s.tariff.advice[0].key
-        ),
+        device_class=SensorDeviceClass.ENUM,
+        options=list(ADVICE_STATES),
+        value=lambda s, _r: advice_state(None if s.tariff is None else s.tariff.advice),
         attributes=lambda s, _r: {
             "items": []
             if s.tariff is None

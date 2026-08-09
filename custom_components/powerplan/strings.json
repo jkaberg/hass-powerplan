@@ -1,9 +1,10 @@
 {
+  "title": "PowerPlan",
   "config": {
     "step": {
       "user": {
-        "title": "How should powerplan help?",
-        "description": "Three ways to run, and you can change your mind later.\n\n**Price and capacity** — shift load to cheap hours *and* keep every hour under your grid company's capacity step. This is what most Norwegian houses want.\n\n**Price only** — follow the price and ignore capacity. Choose this if your grid company has no capacity component, or if you have no meter reading powerplan can use.\n\n**Fuse only** — no prices, no tariff: just never trip the main fuse while several big loads run at once.",
+        "title": "How should PowerPlan help?",
+        "description": "Three ways to run, and you can change your mind later.\n\n**Price and capacity** — shift load to cheap hours *and* keep every hour under your grid company's capacity step. This is what most Norwegian houses want.\n\n**Price only** — follow the price and ignore capacity. Choose this if your grid company has no capacity component, or if you have no meter reading PowerPlan can use.\n\n**Fuse only** — no prices, no tariff: just never trip the main fuse while several big loads run at once.",
         "menu_options": {
           "full": "Price and capacity",
           "price_only": "Price only",
@@ -22,7 +23,7 @@
       },
       "timezone": {
         "title": "Which timezone is the house in?",
-        "description": "powerplan normally takes this from your Home Assistant settings, but yours has no timezone set. Everything with a time in it — window boundaries, day and night, deadlines, when tomorrow's prices are due — depends on this answer.",
+        "description": "PowerPlan normally takes this from your Home Assistant settings, but yours has no timezone set. Everything with a time in it — window boundaries, day and night, deadlines, when tomorrow's prices are due — depends on this answer.",
         "data": {
           "timezone": "Timezone"
         },
@@ -60,7 +61,7 @@
       },
       "meter": {
         "title": "Which device is your meter?",
-        "description": "Pick the device that reads your grid meter — an AMS/HAN reader, a P1 dongle, a Tibber Pulse — and powerplan fills in the sensors it finds on it. Leave it empty to pick the sensors yourself.",
+        "description": "Pick the device that reads your grid meter — an AMS/HAN reader, a P1 dongle, a Tibber Pulse — and PowerPlan fills in the sensors it finds on it. Leave it empty to pick the sensors yourself.",
         "data": {
           "device": "Meter device"
         },
@@ -70,7 +71,7 @@
       },
       "meter_roles": {
         "title": "What each meter sensor is",
-        "description": "Check what powerplan found. Grid power and the import register are the two that matter: power is how fast the house is drawing, the register is what closes each capacity window exactly. Everything else is optional.",
+        "description": "Check what PowerPlan found. Grid power and the import register are the two that matter: power is how fast the house is drawing, the register is what closes each capacity window exactly. Everything else is optional.",
         "data": {
           "grid_power": "Grid power",
           "import_register": "Import register",
@@ -94,7 +95,7 @@
       },
       "prices": {
         "title": "Where do your prices come from?",
-        "description": "powerplan needs tomorrow's prices to plan tonight. Pick whichever you already have.",
+        "description": "PowerPlan needs tomorrow's prices to plan tonight. Pick whichever you already have.",
         "data": {
           "source": "Price source"
         },
@@ -104,7 +105,7 @@
       },
       "prices_nordpool": {
         "title": "Nord Pool",
-        "description": "powerplan asks the Nord Pool integration for each day's prices; it never calls the market itself. Tomorrow's auction result usually lands early in the afternoon, market time.",
+        "description": "PowerPlan asks the Nord Pool integration for each day's prices; it never calls the market itself. Tomorrow's auction result usually lands early in the afternoon, market time.",
         "data": {
           "config_entry": "Nord Pool integration",
           "area": "Price area",
@@ -132,7 +133,7 @@
       },
       "prices_entity": {
         "title": "Your price sensor",
-        "description": "Pick the sensor that already carries a price curve. powerplan recognises the common formats and tells you which one it detected.",
+        "description": "Pick the sensor that already carries a price curve. PowerPlan recognises the common formats and tells you which one it detected.",
         "data": {
           "entity_id": "Price sensor",
           "format": "Format"
@@ -144,7 +145,7 @@
       },
       "prices_fixed": {
         "title": "Your fixed price",
-        "description": "With no curve to follow, powerplan cannot move load to a cheaper hour — but it still costs your energy and defends your capacity target.",
+        "description": "With no curve to follow, PowerPlan cannot move load to a cheaper hour — but it still costs your energy and defends your capacity target.",
         "data": {
           "price": "Price per kWh"
         },
@@ -159,64 +160,142 @@
           "modifiers": "Added on top"
         },
         "data_description": {
-          "modifiers": "Everything powerplan can add to a raw price. Leave one out and it is simply not part of your price."
+          "modifiers": "Everything PowerPlan can add to a raw price. Leave one out and it is simply not part of your price."
         }
       },
-      "modifier_options": {
-        "title": "{modifier}",
-        "description": "The numbers for this one. Every field has a default; change what you know.",
+      "modifier_vat": {
+        "title": "What is the VAT rate on electricity?",
+        "description": "VAT is added to what you pay per kWh. The rate is on your electricity bill.",
         "data": {
-          "rate": "VAT rate",
-          "amount": "Amount per kWh",
-          "periods": "Periods",
-          "fallback": "Fallback",
-          "price": "Price per kWh",
-          "cap_kwh_per_month": "Cap per month",
-          "threshold": "Threshold",
-          "share": "Share",
-          "mult": "Multiplier",
-          "offset": "Markup per kWh",
-          "tiers": "Tiers",
-          "basis": "Counted over",
-          "rates": "Day types"
+          "rate": "VAT rate"
         },
         "data_description": {
-          "rate": "As a fraction: 0.25 is 25 %.",
-          "amount": "In your currency, per kWh. A negative amount is allowed.",
-          "periods": "The day and night periods and their prices. The tariff preset fills these in for you.",
-          "fallback": "What to use for an hour no period covers.",
-          "price": "In your currency, per kWh.",
-          "cap_kwh_per_month": "How many kWh a month the fixed price covers; spot applies above it.",
-          "threshold": "The price per kWh above which the state pays a share.",
-          "share": "As a fraction: 0.9 is 90 %.",
-          "mult": "Your supplier's factor on the spot price. 1 is no change.",
-          "offset": "Added to every kWh, in your currency.",
-          "tiers": "The monthly use bands and their prices.",
-          "basis": "Whether the tiers count a month's use or a year's.",
-          "rates": "The announced day types and what each one costs."
+          "rate": "As a fraction: 0.25 is 25 %."
         },
         "sections": {
           "advanced": {
             "name": "Advanced",
             "description": "Already filled in. Open it only if you know you want something else.",
             "data": {
-              "applies_to": "Applies to",
+              "applies_to": "Applies to"
+            },
+            "data_description": {
+              "applies_to": "Which parts of the price VAT is charged on. Empty means all."
+            }
+          }
+        }
+      },
+      "modifier_spot_scale": {
+        "title": "Does your supplier add a markup?",
+        "description": "The markup is on your electricity bill or in your contract.",
+        "data": {
+          "mult": "Multiplier",
+          "offset": "Markup per kWh"
+        },
+        "data_description": {
+          "mult": "Your supplier's factor on the spot price. 1 is no change.",
+          "offset": "Added to every kWh, in your currency."
+        }
+      },
+      "modifier_levy": {
+        "title": "Which tax is added per kWh?",
+        "description": "A tax charged on every kWh, such as the electricity tax. It is on your grid bill.",
+        "data": {
+          "amount": "Amount per kWh"
+        },
+        "data_description": {
+          "amount": "In your currency, per kWh. A negative amount is allowed."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
               "months": "Months",
-              "applies_above_mtd_kwh": "Only above this month's use",
+              "applies_above_mtd_kwh": "Only above this month's use"
+            },
+            "data_description": {
+              "months": "The month numbers it applies in. Empty means the whole year.",
+              "applies_above_mtd_kwh": "kWh this calendar month before the tax starts. Empty means always."
+            }
+          }
+        }
+      },
+      "modifier_fixed_price": {
+        "title": "What is your fixed price?",
+        "description": "A state scheme such as Norgespris replaces the spot price up to a monthly cap. The price is in your agreement.",
+        "data": {
+          "price": "Price per kWh",
+          "cap_kwh_per_month": "Cap per month"
+        },
+        "data_description": {
+          "price": "In your currency, per kWh.",
+          "cap_kwh_per_month": "How many kWh a month the fixed price covers; spot applies above it."
+        }
+      },
+      "modifier_subsidy_threshold": {
+        "title": "Where does electricity support start?",
+        "description": "The state pays a share of the price above a threshold. The government publishes both numbers.",
+        "data": {
+          "threshold": "Threshold",
+          "share": "Share"
+        },
+        "data_description": {
+          "threshold": "The price per kWh above which the state pays a share.",
+          "share": "As a fraction: 0.9 is 90 %."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
               "negative_rule": "Negative prices"
             },
             "data_description": {
-              "applies_to": "Which price components VAT is charged on. Leave empty for all of them.",
-              "months": "The month numbers this applies in. Leave empty for the whole year.",
-              "applies_above_mtd_kwh": "kWh this calendar month before the charge starts. Leave empty for always.",
               "negative_rule": "What the scheme does when the spot price is below zero."
             }
           }
         }
       },
+      "modifier_tou_schedule": {
+        "title": "What does your grid company charge per kWh?",
+        "description": "The grid energy charge, often a day and a night price. It is on your grid bill, and the tariff you choose later fills it in.",
+        "data": {
+          "periods": "Periods",
+          "fallback": "Price for other hours"
+        },
+        "data_description": {
+          "periods": "The periods and their prices per kWh.",
+          "fallback": "Used for an hour no period covers."
+        }
+      },
+      "modifier_day_type": {
+        "title": "What do the special days cost?",
+        "description": "Some tariffs price announced days, such as critical peak days, differently. The prices are in your agreement.",
+        "data": {
+          "rates": "Day types",
+          "fallback": "Normal day type"
+        },
+        "data_description": {
+          "rates": "The announced day types and what each costs.",
+          "fallback": "The day type used when nothing is announced."
+        }
+      },
+      "modifier_cumulative_tier": {
+        "title": "How does the price rise with use?",
+        "description": "Some agreements charge more per kWh once your use passes a band. The bands are in your agreement.",
+        "data": {
+          "tiers": "Tiers",
+          "basis": "Counted over"
+        },
+        "data_description": {
+          "tiers": "The use bands and their prices.",
+          "basis": "Whether the bands count a month's use or a year's."
+        }
+      },
       "export": {
         "title": "Do you sell electricity back?",
-        "description": "If you export, what you are paid for it decides whether charging the battery beats selling. A negative export price is possible and powerplan does not hide it.",
+        "description": "If you export, what you are paid for it decides whether charging the battery beats selling. A negative export price is possible and PowerPlan does not hide it.",
         "data": {
           "mode": "Export price",
           "amount": "Amount per kWh",
@@ -238,9 +317,9 @@
           "carriers": "Each one asks for its price next."
         }
       },
-      "carrier_options": {
-        "title": "{carrier}",
-        "description": "What this carrier costs.",
+      "carrier_gas": {
+        "title": "What does gas cost?",
+        "description": "The price per kWh of heat delivered, from your bill or agreement.",
         "data": {
           "mode": "Price source",
           "price": "Price per kWh",
@@ -249,28 +328,70 @@
         "data_description": {
           "mode": "A number you type, or a sensor read once a day.",
           "price": "In your currency, per kWh of delivered energy.",
-          "entity_id": "The sensor holding today's price, if you chose a sensor."
+          "entity_id": "The sensor with today's price, if you chose a sensor."
+        }
+      },
+      "carrier_district_heat": {
+        "title": "What does district heating cost?",
+        "description": "The price per kWh of heat delivered, from your bill or agreement.",
+        "data": {
+          "mode": "Price source",
+          "price": "Price per kWh",
+          "entity_id": "Price sensor"
+        },
+        "data_description": {
+          "mode": "A number you type, or a sensor read once a day.",
+          "price": "In your currency, per kWh of delivered energy.",
+          "entity_id": "The sensor with today's price, if you chose a sensor."
+        }
+      },
+      "carrier_oil": {
+        "title": "What does heating oil cost?",
+        "description": "The price per kWh of heat delivered, from your bill or agreement.",
+        "data": {
+          "mode": "Price source",
+          "price": "Price per kWh",
+          "entity_id": "Price sensor"
+        },
+        "data_description": {
+          "mode": "A number you type, or a sensor read once a day.",
+          "price": "In your currency, per kWh of delivered energy.",
+          "entity_id": "The sensor with today's price, if you chose a sensor."
+        }
+      },
+      "carrier_pellets": {
+        "title": "What do pellets cost?",
+        "description": "The price per kWh of heat delivered, from your bill or agreement.",
+        "data": {
+          "mode": "Price source",
+          "price": "Price per kWh",
+          "entity_id": "Price sensor"
+        },
+        "data_description": {
+          "mode": "A number you type, or a sensor read once a day.",
+          "price": "In your currency, per kWh of delivered energy.",
+          "entity_id": "The sensor with today's price, if you chose a sensor."
         }
       },
       "tariff": {
         "title": "Who is your grid company?",
-        "description": "The capacity part of your grid bill is what powerplan is mostly for. Pick your grid company and the next step shows, in plain words, what powerplan thinks they bill you — check it against your own invoice.",
+        "description": "The capacity part of your grid bill is what PowerPlan is mostly for. Pick your grid company and the next step shows, in plain words, what PowerPlan thinks they bill you — check it against your own invoice.",
         "data": {
           "country": "Country",
           "preset": "Grid company"
         },
         "data_description": {
           "country": "Which country's tariffs to list.",
-          "preset": "Pick yours, or Custom to describe the tariff yourself. If you are not sure, the generic choice is a safe start and you can change it later."
+          "preset": "Pick yours; if it is missing, pick Grid company not listed or Enter it myself."
         }
       },
       "tariff_preset": {
         "title": "Is this your bill?",
-        "description": "**{name}**\n\n{description}\n\nIf you do not recognise this, go back and pick another grid company, or Custom. Getting it wrong here means powerplan defends the wrong number all month.\n\nSource: {source}"
+        "description": "**{name}**\n\n{table}\n\nIf you do not recognise this, go back and pick another grid company, or Enter it myself. Getting it wrong here means PowerPlan defends the wrong number all month.\n\nSource: {source}"
       },
       "tariff_target": {
-        "title": "What should powerplan defend?",
-        "description": "The target is the ceiling powerplan keeps each hour under. Automatic defends the step you are already in this month, which is the right answer until you know your own pattern.",
+        "title": "What should PowerPlan defend?",
+        "description": "The target is the ceiling PowerPlan keeps each hour under. Automatic defends the step you are already in this month, which is the right answer until you know your own pattern.",
         "data": {
           "target": "Target",
           "risk": "How much to gamble",
@@ -298,7 +419,7 @@
       },
       "tariff_bills": {
         "title": "Your last twelve months",
-        "description": "This tariff averages over a rolling year, so powerplan needs what you have already used. Fill in what you can find on your invoices; every field is optional and powerplan says when it knows too little.",
+        "description": "This tariff averages over a rolling year, so PowerPlan needs what you have already used. Fill in what you can find on your invoices; every field is optional and PowerPlan says when it knows too little.",
         "data": {
           "month_1": "Month 1",
           "month_2": "Month 2",
@@ -346,7 +467,7 @@
       },
       "hard_limits": {
         "title": "The hard limit",
-        "description": "The line powerplan never crosses, whatever the price or the tariff says. It defaults to what your main fuse can deliver.",
+        "description": "The line PowerPlan never crosses, whatever the price or the tariff says. It defaults to what your main fuse can deliver.",
         "data": {
           "contracted_kw": "Hard limit"
         },
@@ -356,7 +477,7 @@
       },
       "presence": {
         "title": "Is anyone home?",
-        "description": "Comfort matters less in an empty house. powerplan can follow your Home Assistant people, or leave presence to you and your automations.",
+        "description": "Comfort matters less in an empty house. PowerPlan can follow your Home Assistant people, or leave presence to you and your automations.",
         "data": {
           "mode": "Presence",
           "persons": "People"
@@ -379,7 +500,7 @@
         }
       },
       "notifications": {
-        "title": "What should powerplan tell you?",
+        "title": "What should PowerPlan tell you?",
         "description": "Three things are worth an interruption; everything else is an entity you can put on a dashboard. A persistent notification always works, even before you have set up a notifier.",
         "data": {
           "peak_warning": "Peak warning",
@@ -412,7 +533,7 @@
               "prices_daily_summary": "Daily price summary"
             },
             "data_description": {
-              "peak_uncontrolled": "The peak is coming from something powerplan does not steer.",
+              "peak_uncontrolled": "The peak is coming from something PowerPlan does not steer.",
               "deadline_at_risk": "A charge or a cycle will not finish in time.",
               "level_up": "The month is about to move into a more expensive step.",
               "price_source_dead": "No prices have arrived for a day.",
@@ -425,13 +546,13 @@
         }
       },
       "review": {
-        "title": "Before powerplan starts",
-        "description": "Here is what powerplan understood. Nothing has been saved yet.\n\n**Connection** — {connection}. powerplan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}\n\n**Prices** — {prices}, in {currency}.\n\n**Grid tariff** — {tariff}\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}\n\n**Notifications** — {notifications}\n\n**Times** — everything powerplan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. powerplan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
+        "title": "Before PowerPlan starts",
+        "description": "Here is what PowerPlan understood. Nothing has been saved yet.\n\n**Connection** — {connection}, about {fuse_kw} kW. PowerPlan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}.\n\n**Prices** — {prices}.\n\n**Grid tariff** — {tariff}.\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}.\n\n**Notifications** — {notifications}.\n\n**Times** — everything PowerPlan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. PowerPlan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
         "data": {
           "start_in_observe": "Start in observe"
         },
         "data_description": {
-          "start_in_observe": "Strongly recommended. powerplan decides and explains but writes to nothing, so you can see what it would do before it does it."
+          "start_in_observe": "Strongly recommended. PowerPlan decides and explains but writes to nothing, so you can see what it would do before it does it."
         }
       }
     },
@@ -443,7 +564,7 @@
       "eps_not_positive": "The guard band has to be more than zero."
     },
     "abort": {
-      "already_configured": "This meter is already set up as a powerplan site.",
+      "already_configured": "This meter is already set up as a PowerPlan site.",
       "reconfigure_successful": "Saved — the site reloads with the new answers."
     }
   },
@@ -470,7 +591,16 @@
     },
     "sensor": {
       "advice": {
-        "name": "Advice"
+        "name": "Recommendation",
+        "state": {
+          "all_good": "All good",
+          "step_headroom": "Room below the next capacity step",
+          "days_that_matter": "More high days would raise the step",
+          "free_ride_today": "Today's peak is already paid for",
+          "rolling_drag": "An old month is leaving the average",
+          "coarse_history": "Some history is estimated",
+          "contracted_close": "Close to your contracted power"
+        }
       },
       "allowance": {
         "name": "Allowance"
@@ -565,7 +695,13 @@
         "name": "Savings"
       },
       "session": {
-        "name": "Session"
+        "name": "Session",
+        "state": {
+          "no_car": "No car connected",
+          "waiting": "Waiting for cheap power",
+          "charging": "Charging",
+          "done": "Done"
+        }
       },
       "stage": {
         "name": "Stage"
@@ -581,6 +717,9 @@
       },
       "window_used": {
         "name": "Window used"
+      },
+      "next_legionella": {
+        "name": "Next legionella cycle"
       }
     },
     "select": {
@@ -597,7 +736,27 @@
         "name": "Capacity target",
         "state": {
           "auto": "Automatic",
-          "kw": "Configured kW"
+          "kw": "Configured kW",
+          "step_0": "Step 1",
+          "step_1": "Step 2",
+          "step_2": "Step 3",
+          "step_3": "Step 4",
+          "step_4": "Step 5",
+          "step_5": "Step 6",
+          "step_6": "Step 7",
+          "step_7": "Step 8",
+          "step_8": "Step 9",
+          "step_9": "Step 10",
+          "step_10": "Step 11",
+          "step_11": "Step 12",
+          "step_12": "Step 13",
+          "step_13": "Step 14",
+          "step_14": "Step 15",
+          "step_15": "Step 16",
+          "step_16": "Step 17",
+          "step_17": "Step 18",
+          "step_18": "Step 19",
+          "step_19": "Step 20"
         }
       },
       "risk": {
@@ -674,22 +833,51 @@
       "deadline": {
         "name": "Deadline today"
       }
+    },
+    "event": {
+      "events": {
+        "name": "Events",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "stage_changed": "Control level changed",
+              "breach": "Limit exceeded",
+              "comfort_violation": "Comfort missed",
+              "peak_warning": "Peak warning",
+              "deadline_at_risk": "Deadline at risk",
+              "plan_adopted": "New plan adopted",
+              "device_unhealthy": "Appliance not responding",
+              "month_closed": "Month closed",
+              "safe_mode": "Fallback mode",
+              "prices_received": "Prices received",
+              "level_changed": "Capacity step changed",
+              "period_closed": "Billing period closed",
+              "legionella": "Legionella cycle",
+              "cycle": "Appliance programme",
+              "force": "Run now",
+              "presence_changed": "Presence changed",
+              "ev_connected": "Car connected or disconnected",
+              "baseline_ready": "Normal usage learned"
+            }
+          }
+        }
+      }
     }
   },
   "exceptions": {
     "unknown_site": {
-      "message": "No loaded powerplan site matches {site}."
+      "message": "Could not find the home {site}. Check that PowerPlan is set up and running."
     },
     "unknown_load": {
       "message": "No load with id {load} on this site."
     },
     "set_peak_needs_a_day_or_a_month": {
-      "message": "set_peak needs a date or a month."
+      "message": "Choose either a date or a month."
     }
   },
   "issues": {
     "engine_failing": {
-      "title": "powerplan is in safe mode",
+      "title": "PowerPlan is in safe mode",
       "description": "The engine failed {failures} times in a row ({error}). Every load has been released and the site is observing only. A restart clears safe mode; if it returns, please report the log."
     },
     "load_error": {
@@ -726,7 +914,7 @@
     },
     "provision_refused": {
       "title": "A device refuses its provisioning",
-      "description": "{site}: a device keeps refusing the settings powerplan needs."
+      "description": "{site}: a device keeps refusing the settings PowerPlan needs."
     },
     "legionella_at_risk": {
       "title": "Legionella cycle at risk",
@@ -836,7 +1024,20 @@
     },
     "review": {
       "options": {
-        "absent": "not configured"
+        "absent": "not configured",
+        "system_it_230": "230 V IT (no neutral)",
+        "system_tn_400": "400 V TN (with neutral)",
+        "system_tt_400": "400 V TT (earth electrode)",
+        "system_split_240": "120/240 V split phase",
+        "system_single_230": "230 V single phase",
+        "system_single_120": "120 V single phase",
+        "weather_found": "Temperature from {weather}.",
+        "weather_none": "No weather forecast found in Home Assistant.",
+        "usage_meter": "Normal usage is learned from the meter and offered after about two weeks.",
+        "usage_none": "No meter, so no normal usage to learn.",
+        "quiet": "quiet {hours}",
+        "notifications_none": "none",
+        "export": "export: {mode}"
       }
     },
     "appliance_cycle_appliance": {
@@ -990,7 +1191,7 @@
     "water_heater_legionella": {
       "options": {
         "built_in": "The tank itself",
-        "powerplan": "powerplan",
+        "powerplan": "PowerPlan",
         "dont_know": "Don't know"
       }
     },
@@ -1026,6 +1227,143 @@
         "opportunistic": "Only when cheap",
         "peak_shave": "Shave the peaks",
         "run_once": "One run before ready-by"
+      }
+    },
+    "text": {
+      "options": {
+        "and": "and",
+        "yes": "yes",
+        "no": "no",
+        "none": "—",
+        "more": "{names} and {count} more",
+        "preset_unknown": "Grid company not listed",
+        "preset_custom": "Enter it myself",
+        "target_auto": "Automatic",
+        "target_step": "Step {n} · {range} · {fee}",
+        "per_month": "{fee}/month",
+        "per_year": "{fee}/year",
+        "notify_notify": "Every notify service",
+        "notify_persistent_notification": "A notification in Home Assistant"
+      }
+    },
+    "tariff_text": {
+      "options": {
+        "no_peak": "No capacity charge: only the energy price matters.",
+        "metric_max_15": "You pay for your highest quarter-hour {period}.",
+        "metric_max_30": "You pay for your highest half-hour {period}.",
+        "metric_max_60": "You pay for your highest hour {period}.",
+        "metric_top_n": "You pay for the average of your {n} highest {windows}, {period}.",
+        "metric_top_n_days": "You pay for the average of your {n} highest {windows} on {n} different days, {period}.",
+        "windows_15": "quarter-hours",
+        "windows_30": "half-hours",
+        "windows_60": "hours",
+        "period_month": "each month",
+        "period_year": "each year",
+        "period_rolling": "averaged over the last {months} months",
+        "header_step": "Capacity step",
+        "header_fee_month": "Price per month",
+        "header_fee_year": "Price per year",
+        "header_power": "Power",
+        "header_price_per_kw_month": "Price per kW per month",
+        "header_price_per_kw_year": "Price per kW per year",
+        "band_over": "Above {kw}",
+        "linear_month": "The fee is {price} per kW per month.",
+        "linear_year": "The fee is {price} per kW per year.",
+        "linear_free": "The first {kw} are free.",
+        "linear_min": "You pay for at least {kw}.",
+        "eligible": "Only hours {when} count.",
+        "weight": "Hours {when} count {weight}×.",
+        "when_hours": "{hours}",
+        "when_days": "on {days}",
+        "when_months": "in {months}",
+        "when_no_holidays": "except public holidays",
+        "when_holidays_sunday": "with public holidays as Sundays",
+        "when_always": "at any time",
+        "contracted_trip": "Your connection is limited to {limits}; above that the supply trips.",
+        "contracted_surcharge": "Your connection is limited to {limits}; above that costs extra.",
+        "energy": "Energy charge: {rates}.",
+        "energy_hours": "{price} ({hours})",
+        "energy_other": "{price} (other hours)",
+        "assumed": "Some numbers here are assumed, not verified: check them against your bill.",
+        "weekday_0": "Monday",
+        "weekday_1": "Tuesday",
+        "weekday_2": "Wednesday",
+        "weekday_3": "Thursday",
+        "weekday_4": "Friday",
+        "weekday_5": "Saturday",
+        "weekday_6": "Sunday",
+        "month_1": "January",
+        "month_2": "February",
+        "month_3": "March",
+        "month_4": "April",
+        "month_5": "May",
+        "month_6": "June",
+        "month_7": "July",
+        "month_8": "August",
+        "month_9": "September",
+        "month_10": "October",
+        "month_11": "November",
+        "month_12": "December"
+      }
+    },
+    "load_text": {
+      "options": {
+        "unsure": "We are not sure — check that this is the right appliance.",
+        "its_target": "its target",
+        "shadow_generic_switch": "Without PowerPlan this appliance would run spread evenly through the day; savings are what the plan saves against that.",
+        "shadow_generic_switch_none": "Its savings are not shown: PowerPlan can only pause and restore this appliance, not say what running it would otherwise have cost.",
+        "shadow_floor_heating": "Without PowerPlan this floor would hold {target} on its own thermostat; savings are what the plan saves against that.",
+        "shadow_radiator": "Without PowerPlan this room would hold {target} on its own thermostat; savings are what the plan saves against that.",
+        "shadow_heat_pump": "Without PowerPlan this heat pump would hold {target} on its own thermostat; savings are what the plan saves against that.",
+        "shadow_water_heater": "Without PowerPlan this tank would reheat to its setpoint the moment it drew below it; savings are what the plan saves against that.",
+        "shadow_ev": "Without PowerPlan this car would charge at its full rate from plug-in until it reached your target; savings are what the plan saves against that.",
+        "shadow_appliance_cycle": "Without PowerPlan this appliance would run as soon as it was asked; savings are what the plan saves against that.",
+        "shadow_battery": "Without PowerPlan this battery would neither charge nor discharge; savings are what the plan saves against that.",
+        "label_store": "Heat store",
+        "label_kind": "Control",
+        "label_strategy": "Planning",
+        "label_usable_kwh": "Usable capacity",
+        "label_heat_loss_w_per_k": "Heat loss (W/K)",
+        "label_cop_at_minus_seven": "Efficiency (COP) at −7 °C",
+        "label_shiftable_kwh": "Energy that can be moved",
+        "label_sensorless": "Without a temperature sensor",
+        "label_threshold_pct": "Saving threshold (%)",
+        "label_max_off_min": "Longest pause (min)",
+        "store_slab": "Floor slab",
+        "store_room": "Room air",
+        "store_hydronic": "Water-borne",
+        "kind_setpoint": "Thermostat",
+        "kind_switch": "On and off"
+      }
+    },
+    "modifier_cumulative_tier_basis": {
+      "options": {
+        "month": "Month",
+        "year": "Year"
+      }
+    },
+    "modifier_subsidy_threshold_negative_rule": {
+      "options": {
+        "none": "The support stops",
+        "threshold": "Settled at the threshold"
+      }
+    },
+    "price_format": {
+      "options": {
+        "amber": "Amber Electric",
+        "comed": "ComEd",
+        "easyenergy_action": "easyEnergy",
+        "energidataservice": "Energi Data Service",
+        "energyzero_action": "EnergyZero",
+        "entsoe": "ENTSO-e",
+        "generic_list": "A list of prices in an attribute",
+        "hourly_attributes": "One attribute per hour",
+        "nordpool_core": "Nord Pool",
+        "nordpool_hacs": "Nord Pool (HACS)",
+        "octopus_energy": "Octopus Energy",
+        "pvpc": "PVPC",
+        "tge": "TGE",
+        "tibber_action": "Tibber"
       }
     }
   },
@@ -1171,7 +1509,7 @@
       "step": {
         "user": {
           "title": "Add a load",
-          "description": "Pick the device powerplan should steer. Any integration will do: powerplan looks at the device's entities and says what it thinks it is.",
+          "description": "Pick the device PowerPlan should steer. Any integration will do: PowerPlan looks at the device's entities and says what it thinks it is.",
           "data": {
             "device": "Device"
           },
@@ -1180,47 +1518,47 @@
           }
         },
         "match": {
-          "title": "What powerplan sees",
-          "description": "**{device}** looks like a **{profile}** ({confidence} sure: {reasons}). Change the type or the profile if that is wrong, and check which entity plays which role. A required role without an entity cannot continue.",
+          "title": "What PowerPlan sees",
+          "description": "**{device}** looks like **{kind}**. PowerPlan will control it with **{control}**. Change the type if that is wrong, and check which entity plays which role.\n\n{warning}",
           "data": {
             "type": "Type",
             "profile": "Profile",
             "role_power": "Power",
             "role_energy": "Energy",
-            "role_temp": "Temp",
-            "role_temp_floor": "Temp floor",
+            "role_temp": "Temperature",
+            "role_temp_floor": "Floor temperature",
             "role_setpoint": "Setpoint",
             "role_mode_select": "Mode select",
             "role_eco_setpoint": "Eco setpoint",
-            "role_floor_min_limit": "Floor min limit",
+            "role_floor_min_limit": "Lowest floor temperature",
             "role_hysteresis": "Hysteresis",
-            "role_switch": "Switch",
-            "role_current_number": "Current number",
-            "role_max_current_number": "Max current number",
-            "role_enable_switch": "Enable switch",
+            "role_switch": "On/off switch",
+            "role_current_number": "Charging current",
+            "role_max_current_number": "Maximum charging current",
+            "role_enable_switch": "Charging allowed",
             "role_status": "Status",
             "role_blocked_by": "Blocked by",
             "role_cable_rating": "Cable rating",
-            "role_circuit_max": "Circuit max",
-            "role_session_energy": "Session energy",
-            "role_current_l1": "Current l1",
-            "role_current_l2": "Current l2",
-            "role_current_l3": "Current l3",
-            "role_soc": "Soc",
-            "role_connected": "Connected",
-            "role_outdoor_temp": "Outdoor temp",
-            "role_outlet_temp": "Outlet temp",
-            "role_start": "Start",
-            "role_program_state": "Program state",
+            "role_circuit_max": "Circuit maximum",
+            "role_session_energy": "Energy this session",
+            "role_current_l1": "Current L1",
+            "role_current_l2": "Current L2",
+            "role_current_l3": "Current L3",
+            "role_soc": "State of charge",
+            "role_connected": "Car connected",
+            "role_outdoor_temp": "Outdoor temperature",
+            "role_outlet_temp": "Outlet temperature",
+            "role_start": "Start programme",
+            "role_program_state": "Programme state",
             "role_door": "Door",
-            "role_battery_power_set": "Battery power set",
+            "role_battery_power_set": "Battery power (setting)",
             "role_battery_mode": "Battery mode",
-            "role_sg_a": "Sg a",
-            "role_sg_b": "Sg b"
+            "role_sg_a": "SG Ready input A",
+            "role_sg_b": "SG Ready input B"
           },
           "data_description": {
             "type": "What kind of load this is; the questions that follow depend on it.",
-            "profile": "How powerplan talks to the device.",
+            "profile": "How PowerPlan talks to the device.",
             "role_power": "The entity for this role.",
             "role_energy": "The entity for this role.",
             "role_temp": "The entity for this role.",
@@ -1257,7 +1595,7 @@
         },
         "questions": {
           "title": "A few questions",
-          "description": "Plain-language questions about the device. powerplan derives every parameter from them; the advanced section is already filled in.",
+          "description": "Plain-language questions about the device. PowerPlan derives every parameter from them; the advanced section is already filled in.",
           "data": {
             "allow_grid_charge": "Charge from the grid",
             "appliance": "Appliance",
@@ -1312,7 +1650,7 @@
             "capacity_kwh": "The car's battery, in kWh. It is on the spec sheet; the planner sizes every session from it.",
             "chemistry": "The cell chemistry.",
             "comfort_c": "The temperature you want when home. Blank uses the room's usual.",
-            "control": "Whether powerplan controls a plug or a thermostat.",
+            "control": "Whether PowerPlan controls a plug or a thermostat.",
             "covering": "What is on the floor. It sets how the floor stores and gives off heat.",
             "departures_0": "Departure on Mondays.",
             "departures_1": "Departure on Tuesdays.",
@@ -1332,8 +1670,8 @@
             "max_c": "The ceiling when banking heat in cheap hours. Blank uses the room's usual.",
             "max_charge_kw": "The battery's maximum charging power, in kW.",
             "max_discharge_kw": "The battery's maximum discharging power, in kW.",
-            "mechanical_thermostat": "The tank has its own thermostat that powerplan cannot set.",
-            "min_c": "The floor powerplan never goes under, whatever the price. Blank uses the room's usual.",
+            "mechanical_thermostat": "The tank has its own thermostat that PowerPlan cannot set.",
+            "min_c": "The floor PowerPlan never goes under, whatever the price. Blank uses the room's usual.",
             "min_soc_now": "Under this the car charges at once whatever the price says.",
             "persons": "How many people use the hot water.",
             "phases": "How many phases the charger uses.",
@@ -1398,7 +1736,7 @@
                 "band_k": "Advanced: the kelvin the room may swing around the target.",
                 "calendar_entity": "Advanced: a calendar whose next event is a departure, earlier than the weekday table.",
                 "charge_eff": "Advanced: the share of grid energy that ends up in the battery.",
-                "comfort_min_c": "Advanced: the tank temperature below which powerplan reheats at once.",
+                "comfort_min_c": "Advanced: the tank temperature below which PowerPlan reheats at once.",
                 "command_interval_s": "Advanced: seconds between two writes to the device.",
                 "cop_curve": "Advanced: outdoor temperature to COP, as `-10:2.1, 7:3.8`.",
                 "duration_min": "Advanced: minutes one programme runs.",
@@ -1416,7 +1754,7 @@
                 "min_a": "Advanced: the lowest current the car keeps charging at. Below it the car ends the session.",
                 "min_off_s": "Advanced: seconds a switch stays off at least.",
                 "min_on_s": "Advanced: seconds a switch stays on at least.",
-                "never_switch": "Advanced: entities that, when on, stop powerplan changing this device.",
+                "never_switch": "Advanced: entities that, when on, stop PowerPlan changing this device.",
                 "outdoor_entity": "Advanced: an outdoor temperature sensor.",
                 "outlet_entity": "Advanced: the heat pump's outlet temperature sensor.",
                 "power_w": "The appliance's power draw, in watts.",
@@ -1437,7 +1775,7 @@
         },
         "review": {
           "title": "Before this load is added",
-          "description": "Here is what powerplan understood:\n\n{explanation}\n\nIt will plan with **{strategy}**. The derived numbers are under Advanced, all of them editable.",
+          "description": "Here is what PowerPlan understood:\n\n{explanation}\n\nIt will plan with **{strategy}**. The derived numbers are under Advanced, all of them editable.",
           "data": {
             "name": "Name",
             "strategy": "Strategy",
@@ -1467,7 +1805,7 @@
                 "param_comfort_min_c": "Comfort minimum",
                 "param_command_interval_s": "Command interval",
                 "param_control": "Control",
-                "param_cop": "COP",
+                "param_cop": "Efficiency (COP)",
                 "param_cop_curve": "COP curve",
                 "param_covering": "Floor covering",
                 "param_departures": "Usual departure",
@@ -1549,9 +1887,9 @@
                 "param_charge_eff": "Advanced: the share of grid energy that ends up in the battery.",
                 "param_chemistry": "The cell chemistry.",
                 "param_comfort_c": "The temperature you want when home. Blank uses the room's usual.",
-                "param_comfort_min_c": "Advanced: the tank temperature below which powerplan reheats at once.",
+                "param_comfort_min_c": "Advanced: the tank temperature below which PowerPlan reheats at once.",
                 "param_command_interval_s": "Advanced: seconds between two writes to the device.",
-                "param_control": "Whether powerplan controls a plug or a thermostat.",
+                "param_control": "Whether PowerPlan controls a plug or a thermostat.",
                 "param_cop": "Derived.",
                 "param_cop_curve": "Advanced: outdoor temperature to COP, as `-10:2.1, 7:3.8`.",
                 "param_covering": "What is on the floor. It sets how the floor stores and gives off heat.",
@@ -1581,14 +1919,14 @@
                 "param_max_discharge_kw": "The battery's maximum discharging power, in kW.",
                 "param_max_soc": "Advanced: the state of charge the battery is charged to at most.",
                 "param_max_w": "Derived.",
-                "param_mechanical_thermostat": "The tank has its own thermostat that powerplan cannot set.",
+                "param_mechanical_thermostat": "The tank has its own thermostat that PowerPlan cannot set.",
                 "param_min_a": "Advanced: the lowest current the car keeps charging at. Below it the car ends the session.",
-                "param_min_c": "The floor powerplan never goes under, whatever the price. Blank uses the room's usual.",
+                "param_min_c": "The floor PowerPlan never goes under, whatever the price. Blank uses the room's usual.",
                 "param_min_off_s": "Advanced: seconds a switch stays off at least.",
                 "param_min_on_s": "Advanced: seconds a switch stays on at least.",
                 "param_min_soc_now": "Under this the car charges at once whatever the price says.",
                 "param_nameplate_w": "Derived.",
-                "param_never_switch": "Advanced: entities that, when on, stop powerplan changing this device.",
+                "param_never_switch": "Advanced: entities that, when on, stop PowerPlan changing this device.",
                 "param_outdoor_entity": "Advanced: an outdoor temperature sensor.",
                 "param_outlet_entity": "Advanced: the heat pump's outlet temperature sensor.",
                 "param_persons": "How many people use the hot water.",
@@ -1659,7 +1997,7 @@
                 "param_comfort_min_c": "Comfort minimum",
                 "param_command_interval_s": "Command interval",
                 "param_control": "Control",
-                "param_cop": "COP",
+                "param_cop": "Efficiency (COP)",
                 "param_cop_curve": "COP curve",
                 "param_covering": "Floor covering",
                 "param_departures": "Usual departure",
@@ -1741,9 +2079,9 @@
                 "param_charge_eff": "Advanced: the share of grid energy that ends up in the battery.",
                 "param_chemistry": "The cell chemistry.",
                 "param_comfort_c": "The temperature you want when home. Blank uses the room's usual.",
-                "param_comfort_min_c": "Advanced: the tank temperature below which powerplan reheats at once.",
+                "param_comfort_min_c": "Advanced: the tank temperature below which PowerPlan reheats at once.",
                 "param_command_interval_s": "Advanced: seconds between two writes to the device.",
-                "param_control": "Whether powerplan controls a plug or a thermostat.",
+                "param_control": "Whether PowerPlan controls a plug or a thermostat.",
                 "param_cop": "Derived.",
                 "param_cop_curve": "Advanced: outdoor temperature to COP, as `-10:2.1, 7:3.8`.",
                 "param_covering": "What is on the floor. It sets how the floor stores and gives off heat.",
@@ -1773,14 +2111,14 @@
                 "param_max_discharge_kw": "The battery's maximum discharging power, in kW.",
                 "param_max_soc": "Advanced: the state of charge the battery is charged to at most.",
                 "param_max_w": "Derived.",
-                "param_mechanical_thermostat": "The tank has its own thermostat that powerplan cannot set.",
+                "param_mechanical_thermostat": "The tank has its own thermostat that PowerPlan cannot set.",
                 "param_min_a": "Advanced: the lowest current the car keeps charging at. Below it the car ends the session.",
-                "param_min_c": "The floor powerplan never goes under, whatever the price. Blank uses the room's usual.",
+                "param_min_c": "The floor PowerPlan never goes under, whatever the price. Blank uses the room's usual.",
                 "param_min_off_s": "Advanced: seconds a switch stays off at least.",
                 "param_min_on_s": "Advanced: seconds a switch stays on at least.",
                 "param_min_soc_now": "Under this the car charges at once whatever the price says.",
                 "param_nameplate_w": "Derived.",
-                "param_never_switch": "Advanced: entities that, when on, stop powerplan changing this device.",
+                "param_never_switch": "Advanced: entities that, when on, stop PowerPlan changing this device.",
                 "param_outdoor_entity": "Advanced: an outdoor temperature sensor.",
                 "param_outlet_entity": "Advanced: the heat pump's outlet temperature sensor.",
                 "param_persons": "How many people use the hot water.",
@@ -1819,7 +2157,7 @@
         }
       },
       "error": {
-        "no_profile": "powerplan cannot tell what this device is. Pick the entities by hand from a device it recognises, or add a profile.",
+        "no_profile": "PowerPlan cannot tell what this device is. Pick the entities by hand from a device it recognises, or add a profile.",
         "already_configured": "This device is already a load.",
         "role_missing": "No entity for: {roles}. Every required role needs one.",
         "unknown": "Not a question of this type.",
@@ -1828,7 +2166,8 @@
         "too_large": "Above the largest value that makes sense for this device.",
         "not_an_option": "Not one of the options.",
         "not_a_time": "Not a time of day.",
-        "not_a_curve": "Not a curve: use `-10:2.1, 7:3.8`."
+        "not_a_curve": "Not a curve: use `-10:2.1, 7:3.8`.",
+        "unsafe_switch": "A tank switched on and off needs a mechanical thermostat or a temperature sensor, so that off is always safe."
       },
       "abort": {
         "already_configured": "This device is already a load.",
@@ -1844,7 +2183,7 @@
       "step": {
         "user": {
           "title": "Add a circuit",
-          "description": "A sub-fuse and the loads behind it — the garage's 32 A with the charger and the sauna. powerplan keeps the loads on it under the fuse together, before the site's own limit is considered.",
+          "description": "A sub-fuse and the loads behind it — the garage's 32 A with the charger and the sauna. PowerPlan keeps the loads on it under the fuse together, before the site's own limit is considered.",
           "data": {
             "name": "Name",
             "fuse_a": "Fuse",
@@ -1856,7 +2195,7 @@
             "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
             "fuse_a": "The circuit's own fuse, in amps.",
             "phases": "How many phases the circuit is wired on; the fuse is per phase.",
-            "members": "The loads powerplan steers that sit behind this fuse.",
+            "members": "The loads PowerPlan steers that sit behind this fuse.",
             "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
           },
           "sections": {
@@ -1867,7 +2206,7 @@
                 "unmetered_w": "Unmetered load"
               },
               "data_description": {
-                "unmetered_w": "Watts to keep clear for things on the circuit that powerplan neither steers nor measures — a freezer, the lights. Usually 0."
+                "unmetered_w": "Watts to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
               }
             }
           }
@@ -1886,7 +2225,7 @@
             "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
             "fuse_a": "The circuit's own fuse, in amps.",
             "phases": "How many phases the circuit is wired on; the fuse is per phase.",
-            "members": "The loads powerplan steers that sit behind this fuse.",
+            "members": "The loads PowerPlan steers that sit behind this fuse.",
             "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
           },
           "sections": {
@@ -1897,7 +2236,7 @@
                 "unmetered_w": "Unmetered load"
               },
               "data_description": {
-                "unmetered_w": "Watts to keep clear for things on the circuit that powerplan neither steers nor measures — a freezer, the lights. Usually 0."
+                "unmetered_w": "Watts to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
               }
             }
           }
@@ -1926,7 +2265,7 @@
       "step": {
         "user": {
           "title": "Add a group",
-          "description": "Loads that take turns for a shared allowance — six floor loops sharing 2 kW when the hour gets tight. powerplan gives it to whichever is coldest first, and rotates so none is left behind.",
+          "description": "Loads that take turns for a shared allowance — six floor loops sharing 2 kW when the hour gets tight. PowerPlan gives it to whichever is coldest first, and rotates so none is left behind.",
           "data": {
             "name": "Name",
             "members": "Loads in this group",
@@ -2008,7 +2347,7 @@
       "step": {
         "user": {
           "title": "Add a zone",
-          "description": "Two or more loads that can heat the same space — a heat pump and a resistive slab, a heat pump and a boiler. powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.",
+          "description": "Two or more loads that can heat the same space — a heat pump and a resistive slab, a heat pump and a boiler. PowerPlan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.",
           "data": {
             "name": "Name",
             "members": "Loads in this zone",
@@ -2024,7 +2363,7 @@
               "name": "Advanced",
               "description": "The guards that stop a close call flapping between sources.",
               "data": {
-                "min_cop": "Minimum COP",
+                "min_cop": "Lowest efficiency (COP)",
                 "switch_hysteresis": "Switch margin",
                 "min_dwell_min": "Minimum dwell",
                 "switch_confirm_s": "Switch confirmation",
@@ -2058,7 +2397,7 @@
               "name": "Advanced",
               "description": "The guards that stop a close call flapping between sources.",
               "data": {
-                "min_cop": "Minimum COP",
+                "min_cop": "Lowest efficiency (COP)",
                 "switch_hysteresis": "Switch margin",
                 "min_dwell_min": "Minimum dwell",
                 "switch_confirm_s": "Switch confirmation",
@@ -2076,7 +2415,7 @@
         },
         "review": {
           "title": "Before this zone is added",
-          "description": "**{name}** shares {members}: powerplan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.\n\nNever substituted: {never_substitute}. A heat pump below COP {min_cop} is never engaged."
+          "description": "**{name}** shares {members}: PowerPlan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.\n\nNever substituted: {never_substitute}. A heat pump below COP {min_cop} is never engaged."
         }
       },
       "error": {

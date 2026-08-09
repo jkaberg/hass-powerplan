@@ -46,6 +46,10 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     )
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
     assert result["step_id"] == "match", result
+    # LOAD-2: a plug is `generic_switch` at 0.4 - below 0.6 the step warns in words.
+    assert result["description_placeholders"]["warning"] == (
+        "We are not sure — check that this is the right appliance."
+    )
     suggested = result["data_schema"]({})
     assert suggested["type"] == "generic_switch"
     result = await _answer(hass, result, **suggested)
@@ -135,7 +139,8 @@ async def test_the_circuit_flow_reviews_the_sentence_and_builds_the_constraint(
     assert words["name"] == "Garage"
     assert words["fuse_a"] == "32"
     assert words["members"] == "Charger and Sauna", "titles, never ids (INV-67)"
-    assert words["sub_meter"] == GARAGE_POWER
+    # R2: the sub-meter by its name, never its entity id.
+    assert words["sub_meter"] == "Garage feed power"
     assert words["unmetered_w"] == "200"
 
     result = await _answer(hass, result)

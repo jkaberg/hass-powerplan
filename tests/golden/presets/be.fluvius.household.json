@@ -85,9 +85,9 @@
     }
   },
   "describes": [
-    "single highest quarter-hour",
+    "your highest quarter-hour",
     "averaged over the last 12 months",
-    "53.39 EUR per kW per year",
-    "never less than 2.5 kW"
+    "53.39 € per kW per year",
+    "at least 2.5 kW"
   ]
 }

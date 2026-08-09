@@ -6,6 +6,22 @@ Norwegian set and `custom`; the other markets in D2 §3's list are WP4.3 and the
 schema and loader take them unchanged.
 """
 
-from .loader import PresetError, load, render_plain_language, validate
+from .loader import (
+    EnergyRate,
+    PresetError,
+    SummaryBand,
+    TariffSummary,
+    load,
+    summarize,
+    validate,
+)
 
-__all__ = ["PresetError", "load", "render_plain_language", "validate"]
+__all__ = [
+    "EnergyRate",
+    "PresetError",
+    "SummaryBand",
+    "TariffSummary",
+    "load",
+    "summarize",
+    "validate",
+]

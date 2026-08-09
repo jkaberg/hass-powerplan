@@ -129,7 +129,7 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_hard_limits(
     assert result["step_id"] == "modifiers"
     assert result["data_schema"]({})["modifiers"] == ["vat"]
     result = await _answer(hass, result, modifiers=["vat"])
-    assert result["step_id"] == "modifier_options"
+    assert result["step_id"] == "modifier_vat"
     result = await _answer(hass, result, rate=0.25)
     assert result["step_id"] == "export"
     result = await _answer(hass, result, mode="none")

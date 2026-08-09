@@ -18,6 +18,7 @@ Two rules carry the money:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -99,10 +100,24 @@ _PLAIN: Mapping[FieldKind, Callable[[], Selector[Any]]] = {
 }
 
 
+#: What a translation key may be (hassfest's own rule): an option value outside it -
+#: a market area such as `NO3` - is a code shown as itself, not a word to translate.
+_TRANSLATABLE = re.compile(r"(?![_-])[a-z0-9_-]+(?<![_-])")
+
+
 def _selector(field: Field, translation_key: str | None) -> Selector[Any]:
-    """Return the selector one registry field renders as (D8 §5.4)."""
+    """Return the selector one registry field renders as (D8 §5.4).
+
+    Every option of a `SELECT` field is translated under
+    `selector.<prefix>_<field>` (review HUB-10), unless its values are codes
+    that no translation key can spell - a Nord Pool area is `NO3` in every
+    language.
+    """
     if field.kind is FieldKind.SELECT:
-        return _select(tuple(str(option) for option in field.options), translation_key)
+        options = tuple(str(option) for option in field.options)
+        if not all(_TRANSLATABLE.fullmatch(option) for option in options):
+            translation_key = None
+        return _select(options, translation_key)
     plain = _PLAIN.get(field.kind)
     return plain() if plain is not None else _number(field)
 

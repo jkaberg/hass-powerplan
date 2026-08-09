@@ -509,6 +509,8 @@ class LoadSensorRow:
     unrecorded: frozenset[str] = frozenset()
     digest_gated: bool = False
     applies: Callable[[Load], bool] = lambda _load: True
+    #: The closed set of an `enum` row, translated under `entity.sensor.<key>.state`.
+    options: tuple[str, ...] | None = None
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -590,8 +592,28 @@ def _health(status: LoadStatus, _runtime: Runtime) -> str:
     return "ok"
 
 
-def _session(status: LoadStatus, _runtime: Runtime) -> str | None:
-    return status.demand.reason if status.demand is not None else None
+#: `sensor.<load>_session`'s closed set (D8 §5.15, review ENT-23): the car's
+#: charge in the household's words, translated; the engine's own reason, which is
+#: free text, stays an attribute.
+SESSION_STATES: tuple[str, ...] = ("no_car", "waiting", "charging", "done")
+
+
+def session_state(status: LoadStatus, runtime: Runtime) -> str:
+    """Return the session as one of `SESSION_STATES`, read from the snapshot.
+
+    `connected` is the engine's own plug edge (`ev_connected`, D4 §5.11), the
+    last one it observed: a link that drops keeps the car's last known state
+    rather than inventing "no car". Charging is what the car draws where a power
+    role says so, else what it was granted.
+    """
+    if status.latches.session_done:
+        return "done"
+    if runtime.state.events.edges.get(f"connected:{status.load_id}") != "1":
+        return "no_car"
+    if not status.demand.wants:
+        return "done"
+    drawn = status.granted_w if status.measured_w is None else status.measured_w
+    return "charging" if drawn > 0.0 else "waiting"
 
 
 def _next_legionella(status: LoadStatus, _runtime: Runtime) -> datetime | None:
@@ -601,6 +623,7 @@ def _next_legionella(status: LoadStatus, _runtime: Runtime) -> datetime | None:
 def _session_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     state = runtime.state.loads.get(status.load_id)
     return {
+        "reason": status.demand.reason,
         "session_done": status.latches.session_done,
         "session_done_reason": status.latches.session_done_reason,
         "force_reason": "on" if status.mode is Mode.FORCE else None,
@@ -683,8 +706,10 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
     ),
     LoadSensorRow(
         key="session",
-        value=_session,
+        value=session_state,
         attributes=_session_attributes,
+        device_class=SensorDeviceClass.ENUM,
+        options=SESSION_STATES,
         icon="mdi:ev-station",
         applies=lambda load: load.config.type_key == "ev",
     ),
@@ -713,6 +738,8 @@ class LoadSensor(LoadEntity, SensorEntity):
         if row.icon is not None:
             self._attr_icon = row.icon
         self._unrecorded_attributes = row.unrecorded
+        if row.options is not None:
+            self._attr_options = list(row.options)
 
     @property
     def native_value(self) -> Any:

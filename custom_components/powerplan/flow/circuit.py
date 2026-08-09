@@ -42,6 +42,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.flow.questionnaire import advanced_section
+from custom_components.powerplan.flow.text import Text, entity_name
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -136,13 +137,6 @@ def circuit_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _join(titles: list[str]) -> str:
-    """Join titles as `a`, `a and b`, `a, b and c` for the review line."""
-    if len(titles) <= 1:
-        return "".join(titles)
-    return f"{', '.join(titles[:-1])} and {titles[-1]}"
-
-
 class CircuitSubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure one circuit (D8 §5.3)."""
 
@@ -195,20 +189,27 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
             errors=errors or None,
         )
 
-    def _placeholders(self) -> dict[str, str]:
-        """Return the review line's words: D6 §6's sentence with this circuit's numbers."""
+    async def _placeholders(self) -> dict[str, str]:
+        """Return the review line's data: D6 §6's sentence with this circuit's numbers.
+
+        The members joined with the language's own "og"/"and" and the sub-meter
+        by its name, never its id (review NEW-4, R2); numbers for the language.
+        """
         assert self._answers is not None
+        text = await Text.load(self.hass)
         members = self._members()
         answers = self._answers
         titles = [members[member] for member in answers[CIRCUIT_MEMBERS] if member in members]
         sub_meter = answers.get(CIRCUIT_SUB_METER)
         return {
             "name": str(self._name),
-            "fuse_a": f"{answers[CIRCUIT_FUSE_A]:g}",
+            "fuse_a": text.number(answers[CIRCUIT_FUSE_A]),
             "phases": str(answers[CIRCUIT_PHASES]),
-            "members": _join(titles),
-            "sub_meter": str(sub_meter) if sub_meter else "—",
-            "unmetered_w": f"{answers[CIRCUIT_UNMETERED_W]:g}",
+            "members": text.join(titles),
+            "sub_meter": entity_name(self.hass, sub_meter)
+            if sub_meter
+            else text.word("text", "none"),
+            "unmetered_w": text.number(answers[CIRCUIT_UNMETERED_W]),
         }
 
     # ------------------------------------------------------------------- steps
@@ -234,7 +235,7 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="review",
             data_schema=vol.Schema({}),
-            description_placeholders=self._placeholders(),
+            description_placeholders=await self._placeholders(),
             last_step=True,
         )
 

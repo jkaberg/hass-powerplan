@@ -7,7 +7,7 @@
   "window_min": 60,
   "period_key": "2026-09",
   "at_local": "2026-09-15T12:00:00",
-  "describes": ["three highest hours", "three different days", "up to 2 kW 137 NOK", "over 20 kW 1200 NOK"],
+  "describes": ["3 highest hours on 3 different days", "| 0–2 kW | 137 kr |", "| Above 20 kW | 1,200 kr |"],
   "version_valid_from": "2026-01-01",
   "sources": {
     "grammar": "Forskrift om nettregulering og energimarkedet kap. 14 as implemented by every Norwegian DSO since 2022-07-01: a monthly capacity fee (fastledd) in steps, set by the average of the three highest hours on three different days of the month. HLD §8, NO row.",

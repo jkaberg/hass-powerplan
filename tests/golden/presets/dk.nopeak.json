@@ -28,5 +28,5 @@
     "windows_priced": 0
   },
   "ceiling_is_infinite_at": ["2026-01-14T18:30:00", "2026-07-14T18:30:00"],
-  "describes": ["no capacity component", "only the energy price matters"]
+  "describes": ["No capacity charge", "only the energy price matters"]
 }

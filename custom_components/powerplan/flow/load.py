@@ -43,10 +43,8 @@ from homeassistant.helpers.selector import (
     TextSelector,
     TimeSelector,
 )
-from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import (
-    DOMAIN,
     LOAD_BINDINGS,
     LOAD_DEVICE_ID,
     LOAD_MANUAL_OVERRIDES,
@@ -71,6 +69,7 @@ from custom_components.powerplan.core.loads.questionnaire import (
 )
 from custom_components.powerplan.core.loads.types import base as device_types
 from custom_components.powerplan.flow.questionnaire import advanced_section, jsonable
+from custom_components.powerplan.flow.text import Text, device_name, entity_name
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.providers.profiles.base import (
     DeviceView,
@@ -158,10 +157,7 @@ def binding_from_data(row: Mapping[str, Any]) -> RoleBinding:
 
 def load_title(hass: HomeAssistant, device_id: str | None, fallback: str) -> str:
     """Return the device's own name, or `fallback`."""
-    device = dr.async_get(hass).async_get(device_id) if device_id else None
-    if device is None:
-        return fallback
-    return device.name_by_user or device.name or fallback
+    return device_name(hass, device_id, fallback)
 
 
 # --------------------------------------------------------------------------- #
@@ -323,79 +319,106 @@ def _hhmm(value: Any) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def explanation_text(
-    derived: Derived,
-    answers: Answers,
-    labels: Mapping[str, str],
-    type_name: str,
-    type_key: str = "",
-) -> str:
-    """Render `explain()` as one paragraph in the user's language.
+#: Where a derived parameter's label is found, in order: the question that asked
+#: it, the review's own field for it, and the load vocabulary for what no screen
+#: asks (NEW-3).
+_LABELS = (
+    "config_subentries.load.step.questions.data.{key}",
+    "config_subentries.load.step.questions.sections.advanced.data.{key}",
+    "config_subentries.load.step.review.sections.advanced.data.param_{key}",
+    "selector.load_text.options.label_{key}",
+)
+#: The types whose shadow holds a comfort target on its own thermostat (D11 §6).
+_THERMOSTATS = frozenset({"floor_heating", "radiator", "heat_pump"})
+#: Below this a match is a guess, and the match step says so (review LOAD-2).
+UNSURE_BELOW = 0.6
 
-    The key names the type; the values are what the derivation thought worth a
-    sentence, listed with the question labels as vocabulary. A derived value
-    that is a table (the departures) is spelled out; a number keeps at most two
-    decimals; nothing here is an internal key. `type_key` - the registry key,
-    never shown - picks D11 §6's shadow sentence; empty says nothing extra.
+
+def param_label(text: Text, key: str) -> str:
+    """Return a derived parameter's label in the language (never its key, NEW-3)."""
+    for path in _LABELS:
+        label = text.string(path.format(key=key))
+        if label:
+            return label
+    return key.replace("_", " ")
+
+
+def _value(text: Text, type_key: str, key: str, value: Any) -> str:  # noqa: PLR0911 - one form per kind
+    """Return one parameter's value in words: a choice by its label, a number for the language."""
+    if value is None:
+        return text.word("text", "none")
+    if isinstance(value, bool):
+        return text.yes_no(value)
+    if isinstance(value, int | float):
+        return text.number(value)
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, str):
+        for path in (
+            f"selector.{type_key}_{key}.options.{value}",
+            f"selector.{key}.options.{value}",
+            f"selector.load_text.options.{key}_{value}",
+        ):
+            label = text.string(path)
+            if label:
+                return label
+        return value
+    if isinstance(value, Mapping):
+        parts = [
+            f"{text.string(f'config_subentries.load.step.questions.data.{key}_{day}') or day} "
+            f"{_value(text, type_key, key, item)}"
+            for day, item in value.items()
+        ]
+        return ", ".join(parts) or text.word("text", "none")
+    if isinstance(value, list | tuple):
+        return ", ".join(_value(text, type_key, key, item) for item in value) or text.word(
+            "text", "none"
+        )
+    return str(value)
+
+
+def explanation_text(text: Text, derived: Derived, answers: Answers, type_key: str) -> str:
+    """Render `explain()` as one paragraph in the user's language (INV-67; review NEW-3).
+
+    The type by its name, then every value the derivation thought worth a
+    sentence, each under its own label and in words - a choice by its label, a
+    flag as yes or no, a number for the language - and D11 §6's shadow
+    sentence. Nothing here is an internal key; every word is a translation.
     """
     explanation = explain(answers, derived)
-    parts: list[str] = []
-    for key, value in explanation.params.items():
-        label = labels.get(key, key.replace("_", " "))
-        parts.append(f"{label}: {_pretty(value)}")
-    sentence = f"{type_name} — " + "; ".join(parts) + "."
-    shadow = _shadow_sentence(type_key, derived.params)
+    parts = [
+        f"{param_label(text, key)}: {_value(text, type_key, key, value)}"
+        for key, value in explanation.params.items()
+    ]
+    sentence = f"{text.word('load_type', type_key)} — " + "; ".join(parts) + "."
+    shadow = _shadow_sentence(text, type_key, derived.params)
     return f"{sentence} {shadow}" if shadow else sentence
 
 
-def _shadow_sentence(type_key: str, params: Mapping[str, Any]) -> str | None:
+def _shadow_sentence(text: Text, type_key: str, params: Mapping[str, Any]) -> str | None:
     """Say in plain words what D11's shadow bills savings against (D11 §6).
 
     One sentence per store kind, keyed by the type the way `store_kind_of`
-    settles it for every load this table names (the SLAB/ROOM split inside
-    `generic_climate` is one kind per type here, not per bound entity, which is
-    all the review step can know before the device is built). A relay with no
-    daily quota - an on-call appliance such as a sauna - has none: powerplan can
-    only shed and restore it, not say what it would otherwise have cost.
+    settles it for every load this table names. A relay with no daily quota - an
+    on-call appliance such as a sauna - has none: PowerPlan can only pause and
+    restore it, not say what it would otherwise have cost.
     """
-    comfort_c = params.get("comfort_c")
-    held = f"hold {comfort_c:g} °C" if isinstance(comfort_c, int | float) else "hold its target"
-    against = "savings are what the plan saves against that."
     if type_key == "generic_switch":
-        if params.get("hours_per_day") is not None:
-            return f"Without powerplan this appliance would run spread evenly through the day; {against}"
-        return (
-            "Its savings are not shown: powerplan can only shed and restore this appliance, "
-            "not say what running it would otherwise have cost."
+        key = (
+            "shadow_generic_switch"
+            if params.get("hours_per_day") is not None
+            else ("shadow_generic_switch_none")
         )
-    thermostat: dict[str, str] = {
-        "floor_heating": "floor",
-        "radiator": "room",
-        "heat_pump": "heat pump",
-    }
-    if type_key in thermostat:
-        return f"Without powerplan this {thermostat[type_key]} would {held} on its own thermostat; {against}"
-    other: dict[str, str] = {
-        "water_heater": "this tank would reheat to its setpoint the moment it drew below it",
-        "ev": "this car would charge at its full rate from plug-in until it reached your target",
-        "appliance_cycle": "this appliance would run as soon as it was asked",
-        "battery": "this battery would neither charge nor discharge",
-    }
-    if type_key in other:
-        return f"Without powerplan {other[type_key]}; {against}"
-    return None
-
-
-def _pretty(value: Any) -> str:
-    if isinstance(value, bool):
-        return "yes" if value else "no"
-    if isinstance(value, float):
-        return f"{value:.2f}".rstrip("0").rstrip(".")
-    if isinstance(value, Mapping):
-        return ", ".join(f"{k}: {_pretty(v)}" for k, v in value.items()) or "—"
-    if isinstance(value, list | tuple):
-        return ", ".join(_pretty(v) for v in value) or "—"
-    return str(value)
+        return text.word("load_text", key)
+    if type_key in _THERMOSTATS:
+        comfort_c = params.get("comfort_c")
+        target = (
+            f"{text.number(comfort_c)} °C"
+            if isinstance(comfort_c, int | float)
+            else text.word("load_text", "its_target")
+        )
+        return text.word("load_text", f"shadow_{type_key}", target=target)
+    return text.word("load_text", f"shadow_{type_key}") or None
 
 
 def _review_schema(
@@ -513,18 +536,6 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             phases=int(electrical.get("phases", 1)) if electrical else None,
             capabilities=best.capabilities if best is not None else frozenset(),
         )
-
-    async def _labels(self) -> dict[str, str]:
-        """Return the question labels in the user's language, for the review's vocabulary."""
-        translations = await async_get_translations(
-            self.hass, self.hass.config.language, "config_subentries", {DOMAIN}
-        )
-        prefix = f"component.{DOMAIN}.config_subentries.{SUBENTRY_LOAD}.step.questions.data."
-        return {
-            key[len(prefix) :]: value
-            for key, value in translations.items()
-            if key.startswith(prefix)
-        }
 
     def _match_schema(self, values: Mapping[str, Any] | None = None) -> vol.Schema:
         """Type, profile and the pre-bound roles, each an entity selector (§5.2)."""
@@ -673,30 +684,52 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Show what the device is: the suggested type, the profile, the roles (D4 §5.9)."""
         errors: dict[str, str] = {}
-        placeholders: dict[str, str] = {}
+        text = await Text.load(self.hass)
+        placeholders: dict[str, str] = {"roles": text.word("text", "none")}
         best = self._matches[0]
         if user_input is not None:
             bindings, missing = self._bindings_from_match(user_input)
             if missing:
                 errors["base"] = "role_missing"
-                placeholders["roles"] = ", ".join(role.value for role in missing)
+                placeholders["roles"] = text.join(
+                    text.string(
+                        f"config_subentries.{SUBENTRY_LOAD}.step.match.data.{_ROLE_PREFIX}{role.value}"
+                    )
+                    or role.value.replace("_", " ")
+                    for role in missing
+                )
             else:
                 self._profile = str(user_input["profile"])
                 self._type = str(user_input["type"])
                 self._bindings = bindings
                 return await self.async_step_questions()
-        placeholders.setdefault(
-            "device", load_title(self.hass, self._device_id, str(self._device_id))
-        )
-        placeholders.setdefault("profile", best.profile)
-        placeholders.setdefault("confidence", f"{best.confidence:.0%}")
-        placeholders.setdefault("reasons", "; ".join(best.reasons) or "—")
+        placeholders.update(self._match_sentence(text, best))
         return self.async_show_form(
             step_id="match",
             data_schema=self._match_schema(user_input),
             errors=errors or None,
             description_placeholders=placeholders,
         )
+
+    def _match_sentence(self, text: Text, best: MatchResult) -> dict[str, str]:
+        """Say what the device looks like and what PowerPlan controls it with, in words (LOAD-2).
+
+        Never the profile's key, an entity id or the profile's English reasons: the
+        type by its name, the control by the household's own name for it, and a
+        plain warning below `UNSURE_BELOW`.
+        """
+        device = load_title(self.hass, self._device_id, text.word("text", "none"))
+        profile = profiles.get(best.profile)
+        kind = best.suggested_type or next(iter(profile.types), None)
+        control = next((b for b in best.bindings if b.writable), None) or next(
+            iter(best.bindings), None
+        )
+        return {
+            "device": device,
+            "kind": text.word("load_type", kind) if kind else device,
+            "control": device if control is None else entity_name(self.hass, control.entity_id),
+            "warning": text.word("load_text", "unsure") if best.confidence < UNSURE_BELOW else "",
+        }
 
     async def async_step_questions(
         self, user_input: dict[str, Any] | None = None
@@ -710,11 +743,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             raw = answers_from_form(device_type.questionnaire, user_input)
             try:
                 self._answers = device_type.questionnaire.validate(raw, self._ctx)
+                # `derive()` refuses what no question alone can - a tank on a
+                # relay with nothing to keep it safe (`unsafe_switch`, INV-64) -
+                # and that refusal is an answer's error too (review NEW-2).
+                self._derived = device_type.derive(self._answers, self._ctx)
             except AnswerError as err:
                 errors[err.key] = err.code
                 values = raw
             else:
-                self._derived = device_type.derive(self._answers, self._ctx)
                 # Only a role this answer actually names is replaced - an
                 # unanswered `outdoor_entity` leaves the match step's own
                 # auto-detected outdoor_temp binding standing (D4 §5.14).
@@ -735,7 +771,9 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 device_type.questionnaire, str(self._type), self._ctx, values
             ),
             errors=errors or None,
-            description_placeholders={"type": str(self._type)},
+            description_placeholders={
+                "type": (await Text.load(self.hass)).word("load_type", str(self._type))
+            },
         )
 
     async def async_step_review(
@@ -753,23 +791,21 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 data=data,
                 unique_id=f"{SUBENTRY_LOAD}:{self._device_id}",
             )
-        labels = await self._labels()
+        text = await Text.load(self.hass)
         return self.async_show_form(
             step_id="review",
             data_schema=_review_schema(
                 self._derived,
                 device_type,
-                name=load_title(self.hass, self._device_id, str(self._type)),
+                name=load_title(
+                    self.hass, self._device_id, text.word("load_type", str(self._type))
+                ),
             ),
             description_placeholders={
                 "explanation": explanation_text(
-                    self._derived,
-                    self._answers,
-                    labels,
-                    labels.get("__type__", str(self._type)),
-                    str(self._type),
+                    text, self._derived, self._answers, str(self._type)
                 ),
-                "strategy": self._derived.strategy,
+                "strategy": text.word("strategy", self._derived.strategy) or self._derived.strategy,
             },
             last_step=True,
         )
@@ -838,9 +874,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 title=str(user_input["name"]),
                 data=data,
             )
-        labels = await self._labels()
+        text = await Text.load(self.hass)
+        type_key = str(self._type)
         diff_lines = [
-            f"{labels.get(key, key)}: {_pretty(old)} → {_pretty(new)}"
+            f"{param_label(text, key)}: {_value(text, type_key, key, old)} → "
+            f"{_value(text, type_key, key, new)}"
             for key, (old, new) in diff.items()
         ]
         subentry = self._get_reconfigure_subentry()
@@ -855,15 +893,10 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             step_id="reconfigure_review",
             data_schema=schema,
             description_placeholders={
-                "explanation": explanation_text(
-                    fresh,
-                    self._answers,
-                    labels,
-                    labels.get("__type__", str(self._type)),
-                    str(self._type),
-                ),
-                "diff": "\n".join(f"- {line}" for line in diff_lines) or "—",
-                "manual": ", ".join(previous_manual) or "—",
+                "explanation": explanation_text(text, fresh, self._answers, type_key),
+                "diff": "\n".join(f"- {line}" for line in diff_lines) or text.word("text", "none"),
+                "manual": text.join(param_label(text, key) for key in previous_manual)
+                or text.word("text", "none"),
             },
             last_step=True,
         )

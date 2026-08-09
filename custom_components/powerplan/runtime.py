@@ -779,11 +779,24 @@ def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDe
     return LiveDevice(hass, str(device_id), profile.bind(bindings))
 
 
+def step_index(choice: str) -> int | None:
+    """Return the step a target choice names, or `None` for `auto` and `kw`.
+
+    `step_<i>` since WP U.1, because a select's option is a translation key and a
+    colon is not one (review ENT-2); `step:<i>` is what an entry or a restored
+    state from before the upgrade holds, and reads the same (D8 §9 22).
+    """
+    for prefix in ("step_", "step:"):
+        if choice.startswith(prefix) and choice[len(prefix) :].isdigit():
+            return int(choice[len(prefix) :])
+    return None
+
+
 def _target_options(peak: Any, tariff: Mapping[str, Any]) -> tuple[str, ...]:
     """Return the target select's options: automatic, then the tariff's steps or the kW."""
     options = ["auto"]
     if peak is not None and isinstance(peak.pricing, StepTable):
-        options.extend(f"step:{index}" for index in range(len(peak.pricing.steps)))
+        options.extend(f"step_{index}" for index in range(len(peak.pricing.steps)))
     elif tariff.get("target_kw") is not None:
         options.append("kw")
     return tuple(options)
@@ -848,8 +861,8 @@ def _target_of(tariff: Mapping[str, Any]) -> tuple[Target, float | None, float |
     """Return the ceiling knobs the tariff step materialised (D2 §6)."""
     choice = str(tariff.get("target") or "auto")
     target = AUTO
-    if choice.startswith("step:"):
-        target = Target(kind="step", step_index=int(choice.split(":", 1)[1]))
+    if (index := step_index(choice)) is not None:
+        target = Target(kind="step", step_index=index)
     elif tariff.get("target_kw") is not None:
         target = Target(kind="kw", kw=float(tariff["target_kw"]))
     risk = tariff.get("risk")
@@ -2336,15 +2349,15 @@ class Runtime:
     def target_choice(self) -> str:
         """The target select's option in force."""
         if self.target.kind == "step" and self.target.step_index is not None:
-            return f"step:{self.target.step_index}"
+            return f"step_{self.target.step_index}"
         return "kw" if self.target.kind == "kw" else "auto"
 
     async def async_set_target_choice(self, option: str) -> None:
         """`select.<site>_target`: automatic, a step, or the configured kW."""
         if option == "auto":
             self.target = AUTO
-        elif option.startswith("step:"):
-            self.target = Target(kind="step", step_index=int(option.split(":", 1)[1]))
+        elif (index := step_index(option)) is not None:
+            self.target = Target(kind="step", step_index=index)
         elif option == "kw" and self.build.target_kw is not None:
             self.target = Target(kind="kw", kw=self.build.target_kw)
         else:

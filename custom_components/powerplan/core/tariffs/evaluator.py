@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from .history import Provenance
 
 __all__ = [
+    "ADVICE_KEYS",
     "Advice",
     "Bill",
     "BillRow",
@@ -78,6 +79,17 @@ SCHEMA = 1
 MONTHS = 12
 #: The length of a yearly period key, `YYYY`.
 YEAR_KEY_LEN = 4
+#: Every key `advice()` can emit, in the order it emits them (D2 §5.11). A closed
+#: vocabulary D8 translates - `sensor.<site>_advice` is an enum over it (ENT-1).
+ADVICE_KEYS: tuple[str, ...] = (
+    "top_entries",
+    "step_headroom",
+    "days_that_matter",
+    "free_ride_today",
+    "rolling_drag",
+    "coarse_history",
+    "contracted_close",
+)
 
 
 # --------------------------------------------------------------------------- #

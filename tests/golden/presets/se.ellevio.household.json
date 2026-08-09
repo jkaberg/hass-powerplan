@@ -79,9 +79,8 @@
     ]
   },
   "describes": [
-    "three highest hours",
-    "three different days",
-    "81.25 SEK per kW per month",
-    "counts 0.5×"
+    "3 highest hours on 3 different days",
+    "81.25 kr per kW per month",
+    "count 0.5×"
   ]
 }

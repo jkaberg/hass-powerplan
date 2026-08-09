@@ -52,9 +52,9 @@
     "why": "16:00-19:00 in whole hours is three windows, and that is what D5 may plan into"
   },
   "describes": [
-    "single highest hour",
-    "19.585 USD per kW per month",
-    "between 16:00 and 19:00",
-    "never on a public holiday"
+    "your highest hour",
+    "19.585 $ per kW per month",
+    "16:00–19:00",
+    "except public holidays"
   ]
 }

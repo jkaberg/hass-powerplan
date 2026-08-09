@@ -32,10 +32,10 @@ TRANSLATIONS = INTEGRATION / "translations"
 #: Steps that only route the menu choice on: they never render a form.
 ROUTING_STEPS = frozenset({"full", "price_only", "fuse_only"})
 
-#: Titles that are the same in both languages **by construction**: a proper noun,
-#: and two titles that are nothing but a placeholder the flow fills with the name
-#: of the modifier or carrier being asked about.
-SAME_TITLE_BY_DESIGN = frozenset({"prices_nordpool", "modifier_options", "carrier_options"})
+#: Titles that are the same in both languages **by construction**: a proper noun.
+#: The add-on and carrier steps are one step id each since WP U.1 (HUB-7), each
+#: with its own title, so none of them is a placeholder any more.
+SAME_TITLE_BY_DESIGN = frozenset({"prices_nordpool"})
 
 
 def _load(path: Path) -> dict[str, Any]:

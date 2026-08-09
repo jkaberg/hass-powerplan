@@ -115,3 +115,28 @@ async def test_a_load_never_asked_for_a_legionella_cycle_has_no_sensor(
         )
         is None
     )
+
+
+@pytest.mark.inv("INV-64")
+async def test_a_relay_tank_with_nothing_to_keep_it_safe_is_refused_on_its_field(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """Review NEW-2: `derive()`'s `unsafe_switch` is an error on the form, translated.
+
+    It was raised outside the flow's `try` and translated nowhere, so the step
+    failed instead of saying what to change.
+    """
+    result = dict(
+        await hass.config_entries.subentries.async_init(
+            (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
+        )
+    )
+    result = await _answer(hass, result, device=charger.loads["tank"].device_id)
+    result = await _answer(hass, result, **{**result["data_schema"]({}), "type": "water_heater"})
+    assert result["step_id"] == "questions", result
+    answers = {**result["data_schema"]({}), "control": "relay", "mechanical_thermostat": False}
+    answers.pop("temp_entity", None)
+    result = await _answer(hass, result, **answers)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "questions"
+    assert result["errors"] == {"control": "unsafe_switch"}

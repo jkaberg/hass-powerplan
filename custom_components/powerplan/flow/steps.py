@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import voluptuous as vol
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     BooleanSelector,
@@ -48,6 +49,7 @@ from homeassistant.helpers.selector import (
     TimeSelector,
 )
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from custom_components.powerplan.const import (
     METER_ROLES,
@@ -91,6 +93,7 @@ from custom_components.powerplan.providers.prices.nordpool_action import (
 )
 
 from .questionnaire import advanced_section, render
+from .text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, preset_options, target_options
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -121,9 +124,14 @@ async def resolve_timezone(hass: HomeAssistant) -> str | None:
 
 
 async def timezone_options(hass: HomeAssistant) -> list[str]:
-    """Return every zone this system knows, sorted (reads tzdata: executor)."""
+    """Return every zone this system knows, sorted (reads tzdata: executor).
+
+    tzdata also ships files that are not zones a household lives in -
+    `localtime`, `posixrules` - spelled in lower case like an internal key; they
+    are not offered (review R2).
+    """
     zones = await hass.async_add_executor_job(zoneinfo.available_timezones)
-    return sorted(zones)
+    return sorted(zone for zone in zones if zone != zone.lower())
 
 
 def timezone_schema(zones: Sequence[str], default: str | None) -> vol.Schema:
@@ -465,7 +473,10 @@ def price_entity_schema(*, default_entity: str | None, default_format: str | Non
             entity_marker: EntitySelector(EntitySelectorConfig(domain="sensor")),
             vol.Optional("format", default=default_format or formats.keys()[0]): SelectSelector(
                 SelectSelectorConfig(
-                    options=list(formats.keys()), mode=SelectSelectorMode.DROPDOWN, sort=False
+                    options=list(formats.keys()),
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="price_format",
+                    sort=False,
                 )
             ),
         }
@@ -603,9 +614,6 @@ def carrier_options_schema(currency: str) -> vol.Schema:
 # tariff (D2 §6)
 # --------------------------------------------------------------------------- #
 
-PRESET_UNKNOWN: Final = "unknown"
-PRESET_CUSTOM: Final = "custom"
-
 #: What "I don't know / not listed" falls back to, per country: the country's
 #: generic preset where one ships, and no capacity component where none does.
 _GENERIC_PRESET: Final = {"NO": "no/generic-top3"}
@@ -644,14 +652,35 @@ def discover_presets(country: str | None) -> list[tuple[str, str]]:
     return found
 
 
+def preset_choice(preset_file: str | None, country: str | None) -> str | None:
+    """Return the tariff step's answer a stored preset file means (the inverse of `preset_file`).
+
+    The country's generic grammar *is* "not listed" (D2 §6), so it is offered
+    under that label and not a second time under its file's own name.
+    """
+    if preset_file is None:
+        return None
+    if preset_file == _GENERIC_PRESET.get((country or "").upper()):
+        return PRESET_UNKNOWN
+    return preset_file
+
+
 def tariff_schema(
-    *, country: str | None, presets: Sequence[tuple[str, str]], chosen: str | None
+    *,
+    country: str | None,
+    presets: Sequence[tuple[str, str]],
+    chosen: str | None,
+    text: Text,
 ) -> vol.Schema:
-    """Country plus the preset select of D2 §6, with its two escape hatches."""
-    options = [SelectOptionDict(value=stem, label=name) for stem, name in presets]
-    options.append(SelectOptionDict(value=PRESET_UNKNOWN, label="I don't know / not listed"))
-    options.append(SelectOptionDict(value=PRESET_CUSTOM, label="Custom — I'll describe it"))
-    default = chosen or (presets[0][0] if len(presets) == 1 else PRESET_UNKNOWN)
+    """Country plus the preset select of D2 §6: the grid companies A–Å, the two escape hatches last.
+
+    Names are the operators' own (data); the escape hatches are translated and
+    pinned after the list, sorted by the language's own alphabet (HUB-11).
+    """
+    generic = _GENERIC_PRESET.get((country or "").upper())
+    named = [(stem, name) for stem, name in presets if stem != generic]
+    options = preset_options(text, named)
+    default = preset_choice(chosen, country) or (named[0][0] if len(named) == 1 else PRESET_UNKNOWN)
     return vol.Schema(
         {
             vol.Optional("country", default=country or ""): CountrySelector(
@@ -678,23 +707,6 @@ def peak_of(version: TariffVersion) -> PeakTariff | None:
     return version.peak
 
 
-def target_options(version: TariffVersion) -> list[SelectOptionDict]:
-    """`automatic`, then one option per step with its fee (D2 §6)."""
-    options = [SelectOptionDict(value="auto", label="Automatic — defend the step I am in")]
-    peak = peak_of(version)
-    if peak is None or not isinstance(peak.pricing, StepTable):
-        return options
-    for index, step in enumerate(peak.pricing.steps):
-        fee = step.fee_per_period
-        options.append(
-            SelectOptionDict(
-                value=f"step:{index}",
-                label=f"{step.name} — {fee.amount:f} {fee.currency} per month",
-            )
-        )
-    return options
-
-
 RISK_LABELS: Final = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE, "full": RISK_FULL}
 
 
@@ -707,16 +719,22 @@ def risk_key(risk: float) -> str:
 
 
 def tariff_target_schema(
-    version: TariffVersion, *, values: Mapping[str, Any] | None = None
+    version: TariffVersion, *, text: Text, values: Mapping[str, Any] | None = None
 ) -> vol.Schema:
-    """Target, risk, and the two advanced numbers of D2 §6."""
+    """Target, risk, and the two advanced numbers of D2 §6.
+
+    The target's labels are assembled in the system language (`flow/text.py`,
+    HUB-13); its values are `auto` and `step_<i>` (ENT-2).
+    """
     peak = peak_of(version)
     default = default_risk(version.grammar)
     values = values or {}
     fields: dict[Any, Any] = {
         vol.Optional("target", default=values.get("target", "auto")): SelectSelector(
             SelectSelectorConfig(
-                options=target_options(version), mode=SelectSelectorMode.DROPDOWN, sort=False
+                options=target_options(text, version),
+                mode=SelectSelectorMode.DROPDOWN,
+                sort=False,
             )
         ),
         vol.Optional("risk", default=values.get("risk", risk_key(default))): SelectSelector(
@@ -819,7 +837,6 @@ def tariff_data(
     answers: Mapping[str, Any],
     bills: Mapping[str, Any],
     limits: Mapping[str, Any],
-    description: str,
 ) -> dict[str, Any]:
     """Materialise the tariff choice, including the risk default (INV-66).
 
@@ -827,7 +844,9 @@ def tariff_data(
     **site store** at setup, which is what makes a preset edit in a later release
     unable to move a live ceiling. The entry holds the identity of what was
     chosen - preset, file and every version id - so that copy can be checked
-    against it and `preset_outdated` raised when they differ (D-0128).
+    against it and `preset_outdated` raised when they differ (D-0128). What the
+    preset bills is not stored in words: the flow renders D2's `TariffSummary`
+    whenever it is shown (HUB-12), and an older entry's `description` is ignored.
     """
     risk = RISK_LABELS[answers.get("risk", risk_key(default_risk(version.grammar)))]
     return {
@@ -837,7 +856,6 @@ def tariff_data(
         "version_ids": [item.version_id for item in spec.versions],
         "chosen_version_id": version.version_id,
         "currency": spec.currency,
-        "description": description,
         "target": answers.get("target", "auto"),
         "target_kw": answers.get("target_kw"),
         "risk": risk,
@@ -907,6 +925,32 @@ def notify_services(hass: HomeAssistant) -> list[str]:
     return sorted(hass.services.async_services().get("notify", {}))
 
 
+#: A companion app's notify service is `mobile_app_<its device name, slugified>`.
+_MOBILE_APP: Final = "mobile_app"
+
+
+def notify_label(hass: HomeAssistant, service: str, text: Text) -> str:
+    """Return a notify service as the household knows it (review HUB-15).
+
+    A phone's service is labelled with the phone's own device name; Home
+    Assistant's own two services with a translated label; anything else with the
+    service's name in words - never the raw key.
+    """
+    known = text.word("text", f"notify_{service}")
+    if known:
+        return known
+    if service.startswith(f"{_MOBILE_APP}_"):
+        slug = service.removeprefix(f"{_MOBILE_APP}_")
+        devices = dr.async_get(hass)
+        for entry in hass.config_entries.async_entries(_MOBILE_APP):
+            if slugify(str(entry.data.get("device_name") or entry.title)) != slug:
+                continue
+            for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+                return device.name_by_user or device.name or entry.title
+            return str(entry.data.get("device_name") or entry.title)
+    return service.replace("_", " ").capitalize()
+
+
 def _transport_field(category: str, default: str | None = None) -> tuple[Any, Any]:
     return (
         vol.Optional(category, default=default or NOTIFICATION_DEFAULTS[category]),
@@ -924,6 +968,7 @@ def _transport_field(category: str, default: str | None = None) -> tuple[Any, An
 def notifications_schema(
     hass: HomeAssistant,
     *,
+    text: Text,
     values: Mapping[str, Any] | None = None,
     quiet: Sequence[str] | None = None,
 ) -> vol.Schema:
@@ -961,9 +1006,13 @@ def notifications_schema(
         None,
     )
     if services:
+        labelled = [
+            SelectOptionDict(value=service, label=notify_label(hass, service, text))
+            for service in services
+        ]
         fields[vol.Optional("notify_service", default=stored_service or services[0])] = (
             SelectSelector(
-                SelectSelectorConfig(options=services, mode=SelectSelectorMode.DROPDOWN, sort=False)
+                SelectSelectorConfig(options=labelled, mode=SelectSelectorMode.DROPDOWN, sort=False)
             )
         )
     quiet_start, quiet_end = tuple(quiet) if quiet else (None, None)
@@ -1036,8 +1085,10 @@ __all__ = [
     "nordpool_schema",
     "notifications_data",
     "notifications_schema",
+    "notify_label",
     "peak_of",
     "presence_schema",
+    "preset_choice",
     "preset_file",
     "price_entity_schema",
     "price_source_schema",

@@ -1512,3 +1512,38 @@ No `core/` change, no test removed, no assertion changed (D9 §5.13). (1) Benchm
 
 HACS's blank store icon (hacs/integration#5171) goes in the root README's "Known limitations" until the docs tree exists, then moves. `tools/brand/make_brand.py` reads Inter from `tools/brand/fonts/` (from `npm pack @fontsource/inter`) and writes to `tools/brand/out/`, both git-ignored; copying the six PNGs into `brand/` is a manual step so a regeneration never replaces a shipped image unseen. `quality_scale.yaml` marks `brands: done`.
 **Rejected:** a one-line `docs/limitations.md` stub - ships before the docs tree has headings and link tests.
+
+### D-0340 · Assembled words live in four `selector` vocabularies; `flow/text.py` formats numbers per language
+
+Every word Python assembles into a label is a translation in `selector.text`, `selector.tariff_text`, `selector.review` or `selector.load_text`, since hassfest's schema has no free-text section. `flow/text.py::Text` reads them in `hass.config.language` (D8 §5.15 H7). `nb` groups thousands with a no-break space and uses a decimal comma; other languages get English numbers, as HA gives them English words. Money gets a symbol per shipped currency and its minor unit (øre, cent, p…); an unlisted currency shows its code. A price keeps its written scale: Tensio's 0.3604 is "36,04 øre/kWh". Affects D8 §5.11, §5.15.
+**Rejected:** a Python `{"nb", "en"}` table - words outside the translation files are how the English leaked in. `babel` - a new requirement for two languages.
+
+### D-0341 · `TariffSummary` covers every tariff root; the country's generic tariff shows only as "not listed"
+
+`loader.summarize(spec, at)` replaces `render_plain_language` with data: the metric's shape, bands, Linear's price and free kW, eligible filters and weights, contracted limits and whether they trip, the grid energy charge, source, verified date and whether anything is assumed. `flow/text.py::tariff_table` renders it, so every shipped market can be checked against a bill before saving (INV-67). The generic preset appears only as "Finner ikke mitt nettselskap". Affects D2 §3, §6.
+**Rejected:** summarising step tables only and saying "see your bill" otherwise.
+
+### D-0342 · `step_<i>` is read in both spellings; nothing is migrated
+
+`runtime.step_index()` reads `step_<i>` and the older `step:<i>`, used for the stored target, the restored select and reconfigure; an entry keeps the old spelling until the site is saved again. The select carries the chosen step's bounds, fee and currency as attributes, since a state translation takes no placeholders (H1). Affects D8 §5.15.
+**Rejected:** a config-entry migration - the restored recorder state needs the reader anyway.
+
+### D-0343 · The advice state is the first warning, else the first info; the charging session is read from the plug edge
+
+`sensor.advice` is an enum over `all_good` and D2's advice keys; its state is the first `warn` item in the evaluator's order, else the first `info`, else `all_good`, never unknown. `sensor.<load>_session` is `no_car · waiting · charging · done`: `done` on the latch, `no_car` unless the engine's last plug edge says connected (a dropped link keeps the last state), `charging` when the car draws. The engine's reason stays as an attribute. Affects D8 §5.15.
+**Rejected:** a `connected` field on core's `Demand` - a core field for a label.
+
+### D-0344 · Carriers get a step id each; `unsafe_switch` becomes reachable
+
+The carrier step's title was filled with the carrier's key; `carrier_<gas|district_heat|oil|pellets>` join `modifier_<key>`, both generated from their registries. In the load flow `derive()` now runs inside the `try` that catches `AnswerError`, so the water heater's `unsafe_switch` (INV-64) names the field instead of failing the step. Affects D8 §5.15.
+**Rejected:** one carrier step titled with the translated name - a lower-case name looks like a key.
+
+### D-0345 · Codes stay codes: Nord Pool areas, price formats, time zones
+
+A registry `SELECT` gets a translation key only when every option can be one (hassfest's `[a-z0-9_-]`), so `NO3` shows as itself. Price formats show the integrations' own brand names in both languages. The time-zone list drops tzdata's lower-case file entries (`localtime`, `posixrules`). Affects D8 §5.15.
+**Rejected:** naming the Nord Pool regions now - the step is rebuilt later, and a key can't be `NO3`.
+
+### D-0346 · What the text tests accept as "the same in both languages" and as "English"
+
+D8 §9 18a's allow-list: words identical in both languages by construction (PowerPlan, Nord Pool, OK, LFP, kW…), whole numbers with a unit, and brand-named price formats. 18c's "no English word in nb" is a list of about ninety English words that aren't Norwegian, scanned after removing the household's own names, grid companies, time zones, URLs and inline code. Numbers: no point decimal in `nb`, no comma decimal in `en`.
+**Rejected:** a dictionary-based language detector - a dependency, and a device named in English would be a false alarm.

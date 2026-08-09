@@ -97,15 +97,15 @@ async def test_12_a_peak_warning_is_one_notification_per_window_and_clears(
     await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_13_the_advice_sensor_states_the_first_key(
+async def test_13_the_advice_sensor_states_the_most_severe_advice(
     hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime
 ) -> None:
-    """D2 §5.11: `top_entries` is always there, so the sensor never reads `none` on a Tensio site."""
+    """D2 §5.11, ENT-1: `top_entries` is data, so the state is the most severe other advice."""
     registry = er.async_get(hass)
     entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id(site.entry_id, "advice"))
     assert entity_id is not None
     state = hass.states.get(entity_id)
     assert state is not None
-    assert state.state == "top_entries"
+    assert state.state == "step_headroom"
     assert isinstance(state.attributes["items"], list)
     assert state.attributes["items"][0]["key"] == "top_entries"

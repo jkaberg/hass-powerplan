@@ -55,6 +55,7 @@ from custom_components.powerplan.core.allocation.constraints.zone import (
     DEFAULT_SWITCH_HYSTERESIS,
 )
 from custom_components.powerplan.flow.questionnaire import advanced_section
+from custom_components.powerplan.flow.text import Text
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -193,13 +194,6 @@ def zone_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _join(titles: list[str]) -> str:
-    """Join titles as `a`, `a and b`, `a, b and c` for the review line."""
-    if len(titles) <= 1:
-        return "".join(titles)
-    return f"{', '.join(titles[:-1])} and {titles[-1]}"
-
-
 class ZoneSubentryFlow(ConfigSubentryFlow):
     """Add or reconfigure one zone (D8 §5.3)."""
 
@@ -251,9 +245,14 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             errors=errors or None,
         )
 
-    def _placeholders(self) -> dict[str, str]:
-        """Return the review line's words: D6 §6's sentence with this zone's numbers."""
+    async def _placeholders(self) -> dict[str, str]:
+        """Return the review line's data: D6 §6's sentence with this room's numbers.
+
+        The members joined with the language's own "og"/"and" (review NEW-4);
+        numbers for the language.
+        """
         assert self._answers is not None
+        text = await Text.load(self.hass)
         members = self._members()
         answers = self._answers
         titles = [members[member] for member in answers[ZONE_MEMBERS] if member in members]
@@ -262,9 +261,11 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         ]
         return {
             "name": str(self._name),
-            "members": _join(titles),
-            "never_substitute": _join(never_titles) if never_titles else "—",
-            "min_cop": f"{answers[ZONE_MIN_COP]:g}",
+            "members": text.join(titles),
+            "never_substitute": text.join(never_titles)
+            if never_titles
+            else text.word("text", "none"),
+            "min_cop": text.number(answers[ZONE_MIN_COP]),
         }
 
     # ------------------------------------------------------------------- steps
@@ -290,7 +291,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="review",
             data_schema=vol.Schema({}),
-            description_placeholders=self._placeholders(),
+            description_placeholders=await self._placeholders(),
             last_step=True,
         )
 
