@@ -86,12 +86,26 @@ class DeviceCall:
     Spelled `DeviceCall` and not `ServiceCall` because `homeassistant.core`
     already owns that name and WP2.2's profiles import both
     (`design/DECISIONS.md` D-0142).
+
+    `device_id` is the target of an integration driven only through an action
+    that takes a device - Easee cloud's `set_charger_dynamic_limit` (D4 §5.10,
+    WP4.8a). The call then addresses the device and nothing else; `entity_id` is
+    still the bound role's entity, because that is what the read-back reads
+    (INV-22).
     """
 
     domain: str
     service: str
     entity_id: str
     data: Mapping[str, Any] = field(default_factory=dict)
+    device_id: str | None = None
+
+    @property
+    def target(self) -> dict[str, str]:
+        """What the call is addressed to: the device when it has one, else the entity."""
+        if self.device_id is not None:
+            return {"device_id": self.device_id}
+        return {"entity_id": self.entity_id}
 
 
 class WriteTarget(Protocol):
@@ -249,7 +263,7 @@ class WriteGate:
                     call.service,
                     dict(call.data),
                     blocking=True,
-                    target={"entity_id": call.entity_id},
+                    target=call.target,
                 )
                 sent.append(call)
         except TimeoutError:

@@ -331,7 +331,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 0.0 | Prerequisites | in progress |
 | T.1a | Test speed: waste out of the pipeline | done |
 | T.1b | Test speed: the incremental tick | todo |
-| T.1c | Test speed: compiled core for the simulation tiers | todo |
+| T.1c | Test speed: compiled core for the simulation tiers | done |
 | B.1 | The brand | done |
 | U.1 | Text that is never raw or English | done |
 | U.2 | Controls that prevent mistakes | todo |
@@ -339,7 +339,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | U.4 | Entities that read as sentences | todo |
 | H.1 | The running build, read end to end | done |
 | H.2 | Observe writes nothing; the gate reads what it wrote | todo |
-| H.3 | The period and the baseline from the recorder | todo |
+| H.3 | The period and the baseline from the recorder | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -383,7 +383,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.4 | Entity format table | done |
 | 4.6 | Tariffs: verified facts only | todo |
 | 4.7 | Price sources: every row through the flow | todo |
-| 4.8a | Charger profiles: Zaptec, Easee cloud | todo |
+| 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | todo |
 | 4.9 | Event sources in the runtime | todo |
 | 5.1 | D10 core and providers | done |

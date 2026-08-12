@@ -1,0 +1,550 @@
+{
+  "name": "zaptec_charger",
+  "device": "Lader",
+  "device_id": "7c2f4a90d6e1b3a8f05e9d7c61b2a4e3",
+  "manufacturer": "Zaptec",
+  "model": "Zaptec Go",
+  "written_at": "2026-08-12",
+  "source": "Not captured: no house here owns a Zaptec (D4 §5.9, D-0081's precedent, D-0371). Written from custom-components/zaptec v0.8.7 (github.com/custom-components/zaptec, tag v0.8.7): the entity set and classes from sensor.py, number.py, switch.py, binary_sensor.py, button.py and update.py (CHARGER_ENTITIES on the charger, INSTALLATION_ENTITIES on the installation); the names from translations/en.json with _attr_has_entity_name = True (entity.py); the charger's via_device is its installation (manager.py, create_entities_from_zaptec); the Charger mode options are the API's ChargerOperationModes lower-cased (ZaptecSensorTranslate, README 'Changes from 0.7.x to 0.8.x'); Available current's max is the installation's MaxCurrent (number.py). The states are a car charging at 16 A on a 3-phase IT 230 V installation.",
+  "entity_count": 30,
+  "entities": [
+    {
+      "attributes": {
+        "device_class": "connectivity",
+        "friendly_name": "Charger",
+        "icon": "mdi:cloud",
+        "Name": "Lader",
+        "DeviceType": 4,
+        "Active": true
+      },
+      "entity_id": "binary_sensor.charger",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "device_class": "connectivity",
+        "friendly_name": "Lader Online",
+        "icon": "mdi:ev-station"
+      },
+      "entity_id": "binary_sensor.lader_online",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Authorization required",
+        "icon": "mdi:lock"
+      },
+      "entity_id": "binary_sensor.lader_authorization_required",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Resume charging"
+      },
+      "entity_id": "button.lader_resume_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Stop charging"
+      },
+      "entity_id": "button.lader_stop_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Authorize charging"
+      },
+      "entity_id": "button.lader_authorize_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Deauthorize charging"
+      },
+      "entity_id": "button.lader_deauthorize_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Restart charger"
+      },
+      "entity_id": "button.lader_restart_charger",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Upgrade firmware"
+      },
+      "entity_id": "button.lader_upgrade_firmware",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Charger min current",
+        "icon": "mdi:current-ac",
+        "max": 32,
+        "min": 0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "number.lader_charger_min_current",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "6.0"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Charger max current",
+        "icon": "mdi:current-ac",
+        "max": 32,
+        "min": 0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "number.lader_charger_max_current",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "32.0"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Status indicator brightness",
+        "icon": "mdi:brightness-6",
+        "max": 100.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "entity_id": "number.lader_status_indicator_brightness",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "40.0"
+    },
+    {
+      "attributes": {
+        "device_class": "enum",
+        "friendly_name": "Lader Charger mode",
+        "icon": "mdi:lightning-bolt",
+        "options": [
+          "unknown",
+          "disconnected",
+          "connected_requesting",
+          "connected_charging",
+          "connected_finished"
+        ]
+      },
+      "entity_id": "sensor.lader_charger_mode",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "connected_charging"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Current phase 1",
+        "icon": "mdi:current-ac",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.lader_current_phase_1",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "15.9"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Current phase 2",
+        "icon": "mdi:current-ac",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.lader_current_phase_2",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "15.8"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Current phase 3",
+        "icon": "mdi:current-ac",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.lader_current_phase_3",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "15.9"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Lader Voltage phase 1",
+        "icon": "mdi:sine-wave",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "entity_id": "sensor.lader_voltage_phase_1",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "231.0"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Lader Voltage phase 2",
+        "icon": "mdi:sine-wave",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "entity_id": "sensor.lader_voltage_phase_2",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "229.8"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Lader Voltage phase 3",
+        "icon": "mdi:sine-wave",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "entity_id": "sensor.lader_voltage_phase_3",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "230.4"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Lader Charge power",
+        "icon": "mdi:flash",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "entity_id": "sensor.lader_charge_power",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "6331.7"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Lader Session total charge",
+        "icon": "mdi:counter",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.lader_session_total_charge",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "4.217"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Lader Energy meter",
+        "icon": "mdi:counter",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.lader_energy_meter",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "3811.482"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Lader Completed session energy",
+        "icon": "mdi:counter",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "entity_id": "sensor.lader_completed_session_energy",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "18.94"
+    },
+    {
+      "attributes": {
+        "device_class": "humidity",
+        "friendly_name": "Lader Humidity",
+        "icon": "mdi:water-percent",
+        "state_class": "measurement",
+        "unit_of_measurement": "%"
+      },
+      "entity_id": "sensor.lader_humidity",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "41.2"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Lader Temperature (internal)",
+        "icon": "mdi:temperature-celsius",
+        "state_class": "measurement",
+        "unit_of_measurement": "°C"
+      },
+      "entity_id": "sensor.lader_temperature_internal",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "18.6"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Lader Allocated charge current",
+        "icon": "mdi:current-ac",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "entity_id": "sensor.lader_allocated_charge_current",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "16.0"
+    },
+    {
+      "attributes": {
+        "device_class": "enum",
+        "friendly_name": "Lader Device type",
+        "icon": "mdi:shape-outline",
+        "options": [
+          "unknown",
+          "pro",
+          "go",
+          "go2",
+          "sense"
+        ]
+      },
+      "entity_id": "sensor.lader_device_type",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "go"
+    },
+    {
+      "attributes": {
+        "device_class": "switch",
+        "friendly_name": "Lader Charging"
+      },
+      "entity_id": "switch.lader_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Lader Permanent cable lock"
+      },
+      "entity_id": "switch.lader_permanent_cable_lock",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "device_class": "firmware",
+        "friendly_name": "Lader Firmware update",
+        "installed_version": "2.4.1.0",
+        "latest_version": "2.4.1.0"
+      },
+      "entity_id": "update.lader_firmware_update",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    }
+  ],
+  "parent": {
+    "name": "Hjem",
+    "device": "Hjem",
+    "device_id": "3e9b1d7a52c84f06a1d2e7b9c4f08a61",
+    "manufacturer": "Zaptec",
+    "model": "Zaptec Installation",
+    "entity_count": 11,
+    "entities": [
+      {
+        "attributes": {
+          "device_class": "connectivity",
+          "friendly_name": "Installation",
+          "icon": "mdi:cloud",
+          "Name": "Hjem",
+          "Active": true
+        },
+        "entity_id": "binary_sensor.installation",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "on"
+      },
+      {
+        "attributes": {
+          "friendly_name": "Hjem Authorization required",
+          "icon": "mdi:lock"
+        },
+        "entity_id": "binary_sensor.hjem_authorization_required",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "off"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem Available current",
+          "icon": "mdi:waves",
+          "max": 32,
+          "min": 0,
+          "mode": "auto",
+          "step": 1.0,
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "number.hjem_available_current",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "16.0"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem 3 to 1-phase switch current",
+          "icon": "mdi:waves",
+          "max": 32,
+          "min": 0,
+          "mode": "auto",
+          "step": 1.0,
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "number.hjem_3_to_1_phase_switch_current",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "0.0"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem Available current phase 1",
+          "icon": "mdi:current-ac",
+          "state_class": "measurement",
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "sensor.hjem_available_current_phase_1",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "16.0"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem Available current phase 2",
+          "icon": "mdi:current-ac",
+          "state_class": "measurement",
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "sensor.hjem_available_current_phase_2",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "16.0"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem Available current phase 3",
+          "icon": "mdi:current-ac",
+          "state_class": "measurement",
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "sensor.hjem_available_current_phase_3",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "16.0"
+      },
+      {
+        "attributes": {
+          "device_class": "current",
+          "friendly_name": "Hjem Max current",
+          "icon": "mdi:current-ac",
+          "state_class": "measurement",
+          "unit_of_measurement": "A"
+        },
+        "entity_id": "sensor.hjem_max_current",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "32.0"
+      },
+      {
+        "attributes": {
+          "device_class": "enum",
+          "friendly_name": "Hjem Authentication type",
+          "icon": "mdi:key-change",
+          "options": [
+            "native",
+            "webhooks",
+            "ocpp"
+          ]
+        },
+        "entity_id": "sensor.hjem_authentication_type",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "native"
+      },
+      {
+        "attributes": {
+          "device_class": "enum",
+          "friendly_name": "Hjem Installation type",
+          "icon": "mdi:shape-outline",
+          "options": [
+            "Standard",
+            "Smart"
+          ]
+        },
+        "entity_id": "sensor.hjem_installation_type",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "Standard"
+      },
+      {
+        "attributes": {
+          "device_class": "enum",
+          "friendly_name": "Hjem Network type",
+          "icon": "mdi:waves-arrow-up",
+          "options": [
+            "unknown",
+            "it_1_phase",
+            "it_3_phase",
+            "tn_1_phase",
+            "tn_3_phase"
+          ]
+        },
+        "entity_id": "sensor.hjem_network_type",
+        "last_changed": "2026-09-23T18:41:07+00:00",
+        "last_updated": "2026-09-23T18:41:07+00:00",
+        "state": "it_3_phase"
+      }
+    ]
+  }
+}

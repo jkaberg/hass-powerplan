@@ -30,6 +30,7 @@ from custom_components.powerplan.core.tariffs import Evaluator, NoPeak
 from custom_components.powerplan.core.tariffs.presets import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
+from tests.sim.charger_zaptec import ZaptecChargerSim
 from tests.sim.cycle import CycleSim
 from tests.sim.ev import EvSim
 from tests.sim.heatpump import HeatPumpSim
@@ -409,6 +410,53 @@ FLOOR_GROUP = GroupCap(
     members=frozenset(load_id for load_id, *_rest in FLOOR_LOOPS),
     max_concurrent_w=2000.0,
 )
+
+
+#: The `zaptec` profile's row of D4 §5.10 - 1 A, 900 s, over the cloud - as the
+#: runtime raises the load's gate to it (`Quirks.raised`, D-0375). Written out here
+#: because the simulation cache keys on `tests/` and `core/`, not on the providers;
+#: `tests/scenarios/test_phase4.py` asserts the two agree.
+ZAPTEC_TOLERANCE_A = 1.0
+ZAPTEC_MIN_INTERVAL_S = 900.0
+
+
+def zaptec_house(**overrides: Any) -> House:
+    """Return `house()` with a Zaptec charger in place of the Bluetooth Easee.
+
+    The same car, the same household and the same 32 A three-phase charger; what
+    changes is how it is steered. The limit is the installation's *Available
+    current* and it is also the switch (`limit_pauses`, D-0372), the gate waits
+    Zaptec's fifteen minutes between non-urgent writes, and the charger may drop a
+    session when told too often (`tests/sim/charger_zaptec.py`).
+    """
+    built = house(**overrides)
+    ev = built.ev
+    assert ev is not None, "a Zaptec house needs its car"
+    old = built.load("ev")
+    load = ev_load(
+        params={**old.config.params, "limit_pauses": True},
+        phases=old.config.phases,
+        nameplate_w=old.config.nameplate_w,
+        transport=Transport.CLOUD,
+        strategy=old.config.strategy,
+    )
+    load = replace(
+        load,
+        gate=replace(
+            load.gate,
+            tolerance=max(load.gate.tolerance, ZAPTEC_TOLERANCE_A),
+            min_interval_s=max(load.gate.min_interval_s, ZAPTEC_MIN_INTERVAL_S),
+        ),
+    )
+    sims = dict(built.sims)
+    sims["ev"] = ZaptecChargerSim(ev=ev, seed=built.seed, available_a=ev.limit_a)
+    return replace(
+        built,
+        loads=tuple(load if each.load_id == "ev" else each for each in built.loads),
+        sims=sims,
+        charger=None,
+        notes=(*built.notes, "zaptec: the EV behind a Zaptec installation (WP4.8a)"),
+    )
 
 
 def _ev(seed: int, soc: float) -> tuple[Load, EvSim, BleChargerSim]:

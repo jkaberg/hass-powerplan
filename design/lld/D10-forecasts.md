@@ -72,13 +72,14 @@ class Forecasts:
     def baseline_w(self, t) -> tuple[float, Confidence] | None
     def baseline_kwh(self, a, b) -> tuple[float, Confidence] | None
     def residual_sigma_w(self, t) -> float | None
-    def for_planner(self) -> PlannerForecasts          # D5's protocol: bare floats, 0.0 when not offered (D-0217)
-    def for_budget(self, at: datetime) -> BudgetForecast   # D6's protocol: bound to one `at` (D-0320)
-class HourOfWeekBaseline:                              # mutable around a frozen BaselineState, as D3's WindowMeter is
-    state: BaselineState                               # property; what D7 persists
+    def for_planner(self) -> PlannerForecasts          # D5's protocol, bare floats, 0.0 when not offered (D-0217)
+    def for_budget(self, at: datetime) -> BudgetForecast   # D6's protocol, bound to one `at` (D-0320)
+class HourOfWeekBaseline:                              # mutable around a frozen BaselineState, like D3's WindowMeter
+    state: BaselineState                               # property, what D7 persists
     def update(self, window: ClosedWindow, uncontrolled_kwh: float, t_out: float | None = None) -> None
+    def seed(self, history: UncontrolledHistory) -> int      # update() per window plus the reconstruction mark
     def predict(self, t: datetime, t_out: float | None = None) -> tuple[float, float, float]   # mean_w, sigma_w, confidence
-    def confidence(self, t) -> float                   # min(bin, day) - D10 §2's two gates in one number (D-0211)
+    def confidence(self, t) -> float                   # min(bin, day), both of §2's gates in one number (D-0211)
     def n_eff(self, t) -> float                        # the bin's evidence, decayed to t
     def residual_sigma(self, t) -> float | None        # None from a single sample (INV-62)
     def kwh_between(self, a, b, t_out=None) -> tuple[float, float]
@@ -146,6 +147,8 @@ v1.x weather term: accumulate Σw·(T_ref−T_out)+, Σw·x·(…) per bin; β b
 ### 5.2 Seeding from the recorder
 
 D3's `reconstruct_windows` gives grid import, `reconstruct.uncontrolled_history` (§2) takes the controlled loads off it. 5-min short-term statistics for the last 10 days, hourly LTS beyond that, and outdoor temperature from the recorder if there is an weather or outdoor sensor. The seed runs once at setup in an executor job (it reads SQLite), and again on the `rebuild_baseline` action. It sets `reconstruction` per §2.
+
+**In code (D-0351).** "Once at setup" means a baseline that has folded no window: the guard is `state.last_update is None`. `not state.bins` was never true, because `HourOfWeekBaseline` holds 168 bins from construction. `HourOfWeekBaseline.seed(history)` folds every window through `update()` and records `history.reconstruction`. Every configured load is passed with no entity of its own, so nothing is subtracted and the mark reads `none`; a site with no loads reads `full`. Reading each load's own recorder power belongs with the per-load history WP5.7's fits assemble (D-0315). The register rows still come from `recorder_baseline`'s own reader, which places every statistics row at its start: right for a latched register, an hour early for a fast one (D3 §5.11, D-0352).
 
 ### 5.3 Prediction
 

@@ -104,6 +104,60 @@ def test_16_an_override_survives_a_re_seed() -> None:
     assert ev.history.days[date(2026, 9, 4)].max_weighted_kw == pytest.approx(9.15)
 
 
+def test_16b_a_setup_seed_fills_only_what_the_history_lacks() -> None:
+    """D2 §2's order: the live meter first, the recorder only where it left nothing."""
+    ev = evaluator(no_tariff())
+    ev.record_window(closed(datetime(2026, 9, 4, 18), 6.0))
+    windows = [
+        closed(datetime.fromisoformat(f"{day}T18:00:00"), kw) for day, kw in SEPTEMBER.items()
+    ]
+
+    assert seed_from_windows(ev, windows, replace=False) == 2
+    assert ev.history.days[date(2026, 9, 4)].max_weighted_kw == pytest.approx(6.0)
+    assert ev.history.days[date(2026, 9, 4)].source == "live"
+    assert ev.history.days[date(2026, 9, 9)].source == "recorder"
+    assert ev.metric() == pytest.approx((6.0 + 8.0 + 7.0) / 3)
+
+
+def test_16c_a_window_powerplan_never_lived_through_is_its_own_counterfactual() -> None:
+    """Nothing was steered before the site existed: a seeded window saves nothing (D11 §5.4).
+
+    Without it a site created mid-month bills the month's real peaks against a
+    counterfactual that only starts at creation, and reports the difference as
+    negative capacity savings. A window the site did live through keeps its shadow.
+    """
+    ev = evaluator(no_tariff())
+    ev.record_window(closed(datetime(2026, 9, 15, 18), 7.0))
+    ev.record_counterfactual(closed(datetime(2026, 9, 15, 18), 9.0))
+    windows = [
+        closed(datetime.fromisoformat(f"{day}T18:00:00"), kw) for day, kw in SEPTEMBER.items()
+    ]
+
+    seed_from_windows(ev, windows)
+    seed_from_windows(ev, windows)
+
+    shadow = ev.history.counterfactual_days
+    assert shadow[date(2026, 9, 4)].max_weighted_kw == pytest.approx(9.15)
+    assert shadow[date(2026, 9, 4)].entries == (pytest.approx(9.15),)
+    assert shadow[date(2026, 9, 9)].max_weighted_kw == pytest.approx(8.0)
+    assert shadow[date(2026, 9, 15)].max_weighted_kw == pytest.approx(9.0)
+    period = ev.period(local("2026-09-20T12:00:00"))
+    assert ev.bill(period).metric_kw == pytest.approx((9.15 + 8.0 + 7.0) / 3)
+    assert ev.bill(period, ev.history.counterfactual()).metric_kw == pytest.approx(
+        (9.15 + 9.0 + 8.0) / 3
+    )
+
+
+def test_16d_an_hour_seeded_into_a_quarter_hour_tariff_is_its_own_counterfactual_too() -> None:
+    """Hourly history splits into coarse quarters in both books, never four hours' kW in one."""
+    ev = evaluator(no_tariff(window_min=15))
+    seed_from_windows(ev, [closed(datetime(2026, 9, 4, 18), 8.0)])
+
+    assert ev.history.days[date(2026, 9, 4)].max_weighted_kw == pytest.approx(8.0)
+    assert ev.history.days[date(2026, 9, 4)].coarse
+    assert ev.history.counterfactual_days[date(2026, 9, 4)].max_weighted_kw == pytest.approx(8.0)
+
+
 def test_a_month_override_replaces_a_seeded_bill() -> None:
     """An override beats a `MonthRec`, and both are kept (D2 §8)."""
     ev = evaluator(no_tariff())

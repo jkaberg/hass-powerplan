@@ -72,11 +72,11 @@ custom_components/powerplan/core/metering/
 The import graph stays acyclic, leaves first and `window.py` last. `AnchorKind` sits with the `MeterHealth` that carries it, and `Trapezoid` with `loads.py`, the only thing that needs per-sample state (D-0020).
 
 ```
-
 custom_components/powerplan/providers/meters/
 ├── base.py           MeterSource protocol (async, HA side), entity→Reading adapters, unit scaling
 ├── ha_sensors.py     v1: power + import register (+ export register, production, L1/L2/L3 currents, meter window entity)
 ├── circuit.py        CircuitMeter: a power entity or a sum of loads
+├── recorder.py       the import register's hourly statistics for §5.11
 ├── dsmr.py           v1.x: DSMR/P1 entities incl. current average demand and monthly peak
 └── tibber_pulse.py   v1.x: realtime subscription incl. accumulated consumption last hour
 ```
@@ -349,6 +349,8 @@ uncontrolled_w = grid_w − Σ controlled_power(view_i)
 ### 5.11 History reconstruction (shared helper)
 
 `reconstruct_windows(rows, window_min, tz)` turns cumulative register rows (the recorder, or HA's long-term statistics `sum`/`state`) into `ClosedWindow`s: interpolate the register at each boundary, difference, and mark `confidence = estimated` where the nearest rows are further than 2 × cadence from the boundary. Used by D2's backfill and D10's baseline. Hourly LTS can never give exact 15-min windows, so the helper returns hourly windows with `window_min = 60` and the caller decides (D2 marks them `coarse`).
+
+`providers/meters/recorder.py::async_register_history` is the HA half for D2's seed. A statistics row is filed under its hour's start S, however its `sum` is the register at the last report inside the hour: S for a latched register (§5.5), S + 1 h − c for one reporting every c seconds. So each row is placed at `S + 1 h − min(c, 1 h)`, where `c` is the median gap between the register's recent *changes of value* - a value republished after `unavailable` isn't a report. With fewer than five gaps rows stay at S (§5.3's default). D10's own reader still places every row at S (D10 §5.2, D-0352).
 
 ### 5.12 Per-load energy per price slot (`LoadMeter`), for D11
 

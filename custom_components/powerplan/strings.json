@@ -822,6 +822,9 @@
       "rebuild_baseline": {
         "name": "Rebuild baseline"
       },
+      "rebuild_peak_history": {
+        "name": "Rebuild peak history"
+      },
       "run_now": {
         "name": "Run now"
       }
@@ -1210,9 +1213,11 @@
     "load_profile": {
       "options": {
         "easee_ble": "Easee (Bluetooth)",
+        "easee_cloud": "Easee (cloud)",
         "generic_climate": "Thermostat",
         "generic_number": "Number limit",
-        "generic_switch": "Switch"
+        "generic_switch": "Switch",
+        "zaptec": "Zaptec (cloud)"
       }
     },
     "strategy": {

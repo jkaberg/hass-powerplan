@@ -273,6 +273,8 @@ Why the anchoring is daily and the heat pump ignores defrost:
 
 Per tariff window (D3 `window_closed`), the counterfactual site energy replaces each controlled load's actual kWh with its counterfactual kWh, and uncontrolled load - everything the loads didn't draw - is identical in both worlds. D2 records it in `counterfactual_days` and prices both histories with the same evaluator and version (INV-52, INV-69). Under `per_day = max` the counterfactual's daily maximum is usually the evening plug-in hour powerplan moved to the night, and that difference *is* the capacity saving. D6's `AllocReport.unconstrained_ask_w` (the unconstrained ask under the actual policy) is a diagnostic and **not** the accounting counterfactual, that's why it doesn't carry the word.
 
+A window D2 seeds from the recorder (D2 §5.12) happened before powerplan steered anything, so its counterfactual is the window itself. The seed writes each window it adds to both books, and a site created mid-month shows no capacity savings for the days before it existed (D-0350).
+
 ### 5.5 Confidence and calibration
 
 ```

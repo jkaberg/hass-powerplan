@@ -70,6 +70,7 @@ from tests.core.loads.conftest import reads as core_reads
 from tests.sim.base import LIMIT_A, REGISTER_IMPORT_KWH, SETPOINT_C, SOC, TEMP_AIR, TEMP_FLOOR, Env
 from tests.sim.base import Command as SimCommand
 from tests.sim.base import Reads as SimReads
+from tests.sim.charger_zaptec import ZaptecChargerSim
 from tests.sim.household import AWAY, VACATION
 from tests.sim.switch import SESSION_S
 
@@ -98,6 +99,17 @@ PLAN_QUARTER_S = 900.0
 PLAN_AFTER_QUARTER_S = 20.0
 #: Ticks start 17 s past the minute: nothing ever lands on `HH:00:00` (INV-43).
 OFFSET_S = 17.0
+#: Zaptec's operation modes as the `zaptec` profile hands them to the `ev` type:
+#: each onto its `SessionState`'s word (D-0373). Written out rather than imported
+#: from the provider, which the simulation cache does not key on; the scenario's
+#: test asserts the two agree.
+ZAPTEC_WORDS: dict[str, str] = {
+    "disconnected": "disconnected",
+    "connected_requesting": "car_connected",
+    "connected_charging": "charging",
+    "connected_finished": "completed",
+    "unknown": "offline",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -294,6 +306,21 @@ def load_reads(  # noqa: PLR0911 - one branch per device type (D4's eight)
 ) -> LoadReads:
     """Translate one simulator's step into what the load's provider would read (D4 §4.5)."""
     kind = load.config.type_key
+    if kind == "ev" and isinstance(sim, ZaptecChargerSim):
+        # The `zaptec` profile's reads: the installation's Available current, no
+        # enable role at all, and the status in the word the type reads (D-0373).
+        return LoadReads(
+            reads=core_reads(
+                at,
+                numbers={
+                    Role.CURRENT_SET: step.values[LIMIT_A],
+                    Role.CURRENT_MAX: sim.ev.max_a,
+                    Role.POWER: step.power_w,
+                    Role.SOC: step.values.get(SOC, 100.0 * sim.ev.soc),
+                },
+                texts={Role.STATUS: ZAPTEC_WORDS.get(step.status or "", "offline")},
+            )
+        )
     if kind == "ev":
         if not step.available:
             return LoadReads(

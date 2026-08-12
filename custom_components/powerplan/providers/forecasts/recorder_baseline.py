@@ -185,9 +185,11 @@ async def async_seed(
     """Read the recorder and fold every historical window into `baseline` (D10 §5.2).
 
     Runs once at setup and again on the `rebuild_baseline` service - both
-    times through this same function, an executor-bound read followed by the
-    same pure `update()` the live planning loop calls per closed window, so a
-    seeded baseline and a lived-into one are built the identical way.
+    times through this same function, an executor-bound read followed by
+    `HourOfWeekBaseline.seed`, which is the same pure `update()` the live
+    planning loop calls per closed window plus D10 §2's `reconstruction` mark,
+    so a seeded baseline and a lived-into one are built the identical way. A
+    load with neither entity id is read not at all and marks the seed `none`.
     """
     start = now - timedelta(days=span_days)
     site_rows = await async_site_register_kwh(hass, register_entity_id, start, now)
@@ -218,11 +220,10 @@ async def async_seed(
     # §5.1's "4 updates/h" is for the *live* quarter-hour case), and hourly
     # long-term statistics beyond `RECENT_DAYS` could never yield a finer one.
     history = uncontrolled_history(site_rows, controlled, window_min=LONG_TERM_WINDOW_MIN, tz=tz)
-    for window in history.windows:
-        baseline.update(window.window, window.uncontrolled_kwh)
+    seeded = baseline.seed(history)
     _LOGGER.debug(
         "recorder_baseline: seeded %d window(s), reconstruction=%s",
-        len(history.windows),
+        seeded,
         history.reconstruction.value,
     )
 

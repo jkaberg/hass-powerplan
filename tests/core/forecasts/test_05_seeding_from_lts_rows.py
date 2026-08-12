@@ -21,8 +21,10 @@ from functools import cache
 import pytest
 
 from custom_components.powerplan.core.forecasts import (
+    ControlledHistory,
     Forecasts,
     HourOfWeekBaseline,
+    Reconstruction,
     uncontrolled_history,
 )
 from tests.builders import histories
@@ -133,6 +135,34 @@ def test_05d_an_hourly_site_is_still_warming_up_after_six_weeks() -> None:
 
     assert baseline.confidence(asked) < 0.6
     assert Forecasts(at=at, baseline=baseline).baseline_w(asked) is None
+
+
+def test_05f_a_seed_folds_every_window_and_says_how_it_was_separated() -> None:
+    """`seed()` is `update()` per window plus D10 §2's mark.
+
+    Nothing else ever wrote `reconstruction`, so a seeded baseline read `none`
+    exactly like one that never saw the recorder. A load the recorder holds
+    nothing for keeps the whole mark at `none` (D-0214).
+    """
+    rows = histories.cadence_reports(_trace(WARMUP_WEEKS), cadence_s=3600.0, start_kwh=10_000.0)
+    history = uncontrolled_history(rows, [], window_min=60, tz=OSLO)
+    looped = _seeded(WARMUP_WEEKS, cadence_s=3600.0, window_min=60)
+
+    baseline = HourOfWeekBaseline(tz=OSLO)
+    assert baseline.state.last_update is None
+    assert baseline.seed(history) == len(history.windows)
+    assert baseline.state.reconstruction is Reconstruction.FULL
+    assert baseline.state.bins == looped.state.bins
+    assert baseline.state.last_update == looped.state.last_update
+
+    unmetered = HourOfWeekBaseline(tz=OSLO)
+    unmetered.seed(
+        uncontrolled_history(
+            rows, [ControlledHistory(load_id="tank", nameplate_w=3000.0)], window_min=60, tz=OSLO
+        )
+    )
+    assert unmetered.state.reconstruction is Reconstruction.NONE
+    assert unmetered.state.bins == looped.state.bins
 
 
 def test_05e_a_seeded_bin_carries_its_residual_sigma() -> None:

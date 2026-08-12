@@ -1,0 +1,136 @@
+{
+  "fixture": "easee_cloud_charger",
+  "source": "tests/fixtures/captured/easee_cloud_charger.json — written from nordicopen/easee_hass v0.9.74 as installed, not captured (D-0371): an Easee Home charging at a 16 A dynamic limit.",
+  "note": "D9 §9 7, D4 §9 16. No platform in the dump, so `easee_cloud` matches at its SHAPE_CONFIDENCE on the dynamic-charger-limit sensor beside a status. `current_number` is that sensor, written through easee.set_charger_dynamic_limit by device (D4 §5.10); no switch and no flash limit is writable. `generic_switch` offers itself at 0.4 on the kW power sensor, below the product profile, with its `switch` missing: five switches, none it can tell is the load's.",
+  "matches": [
+    {
+      "profile": "easee_cloud",
+      "confidence": 0.8,
+      "suggested_type": "ev",
+      "reasons": [
+        "a dynamic-charger-limit sensor beside a charger status"
+      ],
+      "missing": [],
+      "suggested_kind": null,
+      "capabilities": [
+        "limit_pauses"
+      ],
+      "bindings": {
+        "blocked_by": {
+          "entity_id": "sensor.carport_reason_for_no_current",
+          "attribute": null,
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_number": {
+          "entity_id": "sensor.carport_dynamic_charger_limit",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "energy": {
+          "entity_id": "sensor.carport_lifetime_energy",
+          "attribute": null,
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "max_current_number": {
+          "entity_id": "sensor.carport_max_charger_limit",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "power": {
+          "entity_id": "sensor.carport_power",
+          "attribute": null,
+          "unit": "kW",
+          "scale": 1000.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "session_energy": {
+          "entity_id": "sensor.carport_session_energy",
+          "attribute": null,
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "status": {
+          "entity_id": "sensor.carport_status",
+          "attribute": null,
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": true,
+          "writable": false,
+          "options": []
+        }
+      }
+    },
+    {
+      "profile": "generic_switch",
+      "confidence": 0.4,
+      "suggested_type": "generic_switch",
+      "reasons": [
+        "a power sensor (sensor.carport_power)",
+        "no entity found for switch"
+      ],
+      "missing": [
+        "switch"
+      ],
+      "suggested_kind": "switch",
+      "capabilities": [
+        "power"
+      ],
+      "bindings": {
+        "power": {
+          "entity_id": "sensor.carport_power",
+          "attribute": null,
+          "unit": "kW",
+          "scale": 1000.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        }
+      }
+    }
+  ]
+}

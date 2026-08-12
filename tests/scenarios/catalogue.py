@@ -24,6 +24,7 @@ from tests.builders.houses import (
     no_peak,
     nordic_detached,
     tensio,
+    zaptec_house,
 )
 from tests.scenarios.runner import Fault, Scenario
 from tests.sim.prices import FLAT, SPOT_LIKE
@@ -493,6 +494,32 @@ def be_quarter_hour_rolling() -> Scenario:
     )
 
 
+#: WP4.8a, D9 §5.3 `zaptec_slow_trim`: `reference_winter_day`'s house for the
+#: whole winter week, the car behind a Zaptec installation instead of the
+#: Bluetooth Easee. Seven weekday arrivals and departures, the tank, the two
+#: bathrooms and the evening peaks all push against the 10 kW ceiling while the
+#: charger may be raised only once per 15 minutes (D4 §5.9, §5.10).
+ZAPTEC_WEEK_START = WINTER_START
+ZAPTEC_WEEK_DAYS = 7.0
+
+
+def zaptec_slow_trim() -> Scenario:
+    """Return the winter week with a charger that accepts one change per 15 min (D4 §5.9)."""
+    return Scenario(
+        name="zaptec_slow_trim",
+        house=lambda: zaptec_house(
+            day=ZAPTEC_WEEK_START.date(),
+            price_kind=SPOT_LIKE,
+            ev_soc=0.35,
+            slab_start_c=24.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=ZAPTEC_WEEK_START,
+        days=ZAPTEC_WEEK_DAYS,
+    )
+
+
 PHASE0 = (reference_winter_day, flat_price_night, dst_autumn, dst_spring, price_outage_48h)
 PHASE1 = (restart_mid_window, engine_exception_x3, oven_sunday_roast)
 PHASE2 = (ble_flaps, circuit_garage_32a)
@@ -503,7 +530,7 @@ PHASE3 = (
     presence_away_day,
     dishwasher_weeknight,
 )
-PHASE4 = (nl_pv_negative_midday, be_quarter_hour_rolling)
+PHASE4 = (nl_pv_negative_midday, be_quarter_hour_rolling, zaptec_slow_trim)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

@@ -201,7 +201,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<site>_baseline_confidence` | sensor % | diagnostic | off | D10 |
 | `sensor.<site>_tick_ms` | sensor | diagnostic | off | |
 | `sensor.<site>_reasons` | sensor text | diagnostic | off | attr `trail` - recorder-excluded |
-| `button.<site>_replan`, `_rebuild_baseline` | button | config | on/off | `_rebuild_peak_history` (D2's own recorder seed) is not built by any WP yet and is not on the device page |
+| `button.<site>_replan`, `_rebuild_baseline`, `_rebuild_peak_history` | button | config | on/off/off | `_rebuild_peak_history` re-seeds the open period from the import register's recorder rows, replacing the windows it has; `set_peak` overrides survive (D2 §5.12). Only where an import register is bound |
 | `event.<site>` | event | - | on | HA event entity mirroring the bus events (for the UI's logbook) |
 | `sensor.<site>_cost` | sensor `<CUR>`, `device_class: monetary`, `state_class: total`, `last_reset` = month start | - | on | month-to-date: energy cost − export credit + capacity fee (D11); attrs `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install`, `confidence`, `estimated_share` |
 | `sensor.<site>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date vs. no powerplan (D11); may be **negative**; attrs `energy_savings`, `capacity_savings`, `counterfactual_cost`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence` |
@@ -296,7 +296,7 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 
 **In code (D-0275).** `services.py::async_setup_services(hass)` registers `replan`, `release`, `boost`, `run_now`, `set_presence`, `reset_window_anchor`, `set_peak` and `dump_state` (response only) once, from `async_setup`; `services.yaml` carries the selectors. A call names a site by `site` (the entry id or title; every loaded site when omitted) and a load by `load` (its id); an unknown one is a `ServiceValidationError` with a translation key (`exceptions.unknown_site`, `unknown_load`). `set_peak` takes `date` or `month` (exclusive) and writes a D2 `Override`; `reset_window_anchor` reads the register through the meter provider and calls the engine's `reset_window_anchor` under the lock; `dump_state` answers with the last snapshot, the assembled inputs and the store sections.
 
-**In code (D-0317).** `rebuild_baseline` (site only, `SupportsResponse.NONE`) registers alongside `replan`, calling `Runtime.async_rebuild_baseline()` - a full reset of D10's `HourOfWeekBaseline`, then `async_seed()` again (D10 §5.2). `rebuild_peak_history` (D2's own, separate recorder seed) is still not registered by any WP; the table row above stays as a placeholder for whichever WP builds it.
+**In code (D-0317).** `rebuild_baseline` (site only, `SupportsResponse.NONE`) registers alongside `replan`, calling `Runtime.async_rebuild_baseline()` - a full reset of D10's `HourOfWeekBaseline`, then `async_seed()` again (D10 §5.2). `rebuild_peak_history` (D2's own, separate recorder seed) is still not registered by any WP; the table row above stays as a placeholder for whichever WP builds it. *(D-0350: the seed itself is built. It runs at setup and from `button.<site>_rebuild_peak_history`. The service and its `months` field are not.)*
 
 ### 5.8 Notification policy
 

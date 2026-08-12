@@ -211,9 +211,11 @@ def test_16k_the_registry_ranks_the_charger_first(easee: DeviceView) -> None:
     assert matches[0].confidence > matches[1].confidence
     assert registry.keys() == (
         "easee_ble",
+        "easee_cloud",
         "generic_climate",
         "generic_number",
         "generic_switch",
+        "zaptec",
     )
     assert registry.get("easee_ble") is easee_ble.PROFILE
 

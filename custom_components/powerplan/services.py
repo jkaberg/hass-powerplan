@@ -4,9 +4,10 @@ A service names a site by its config entry id (`site`), or none for every
 loaded site, and a load by its id (`load`). Each reaches one runtime call and
 nothing else; validation errors are `ServiceValidationError`s with a
 translation key. `rebuild_baseline` (WP5.1, folding in WP1.6's own deferred
-row) discards D10's learned baseline and re-seeds it from the recorder;
-`rebuild_peak_history` - D2's own, separate tariff-history seed - is not yet
-built anywhere and stays open.
+row) discards D10's learned baseline and re-seeds it from the recorder.
+D2's own recorder seed runs at setup and from `button.<site>_rebuild_peak_history`
+; its `powerplan.rebuild_peak_history` service (D8 §5.7, with `months`)
+is still not registered.
 """
 
 from __future__ import annotations

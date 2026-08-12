@@ -1,0 +1,167 @@
+{
+  "fixture": "zaptec_charger",
+  "source": "tests/fixtures/captured/zaptec_charger.json — written from custom-components/zaptec v0.8.7, not captured (D-0371): a Zaptec Go charging at 16 A with its installation as the parent device.",
+  "note": "D9 §9 7, D4 §9 16. No platform in the dump, so `zaptec` matches at its SHAPE_CONFIDENCE on the five operation modes (D4 §5.9). `current_number` binds on the parent device — the installation's Available current (WP4.8a) — and the Charging switch is not bound (D-0372). `generic_number` offers itself at 0.5, below the product profile, with `current_number` missing: the charger's own two A numbers (its min and max current) are ambiguous and bind neither (D4 §5.9).",
+  "matches": [
+    {
+      "profile": "zaptec",
+      "confidence": 0.8,
+      "suggested_type": "ev",
+      "reasons": [
+        "a status sensor offering all 5 Zaptec operation modes",
+        "the installation's Available current is shared by every charger on it; powerplan assumes this is the only one (v1)"
+      ],
+      "missing": [],
+      "suggested_kind": null,
+      "capabilities": [
+        "limit_pauses"
+      ],
+      "bindings": {
+        "current_l1": {
+          "entity_id": "sensor.lader_current_phase_1",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_l2": {
+          "entity_id": "sensor.lader_current_phase_2",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_l3": {
+          "entity_id": "sensor.lader_current_phase_3",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "current_number": {
+          "entity_id": "number.hjem_available_current",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": 1.0,
+          "min": 0.0,
+          "max": 32.0,
+          "required": true,
+          "writable": true,
+          "options": []
+        },
+        "energy": {
+          "entity_id": "sensor.lader_energy_meter",
+          "attribute": null,
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "max_current_number": {
+          "entity_id": "number.lader_charger_max_current",
+          "attribute": null,
+          "unit": "A",
+          "scale": 1.0,
+          "step": 1.0,
+          "min": 0.0,
+          "max": 32.0,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "power": {
+          "entity_id": "sensor.lader_charge_power",
+          "attribute": null,
+          "unit": "W",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "session_energy": {
+          "entity_id": "sensor.lader_session_total_charge",
+          "attribute": null,
+          "unit": "kWh",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        },
+        "status": {
+          "entity_id": "sensor.lader_charger_mode",
+          "attribute": null,
+          "unit": null,
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": true,
+          "writable": false,
+          "options": [
+            "unknown",
+            "disconnected",
+            "connected_requesting",
+            "connected_charging",
+            "connected_finished"
+          ]
+        }
+      }
+    },
+    {
+      "profile": "generic_number",
+      "confidence": 0.5,
+      "suggested_type": "ev",
+      "reasons": [
+        "a power sensor (sensor.lader_charge_power)",
+        "no entity found for current_number"
+      ],
+      "missing": [
+        "current_number"
+      ],
+      "suggested_kind": "modulate",
+      "capabilities": [
+        "power"
+      ],
+      "bindings": {
+        "power": {
+          "entity_id": "sensor.lader_charge_power",
+          "attribute": null,
+          "unit": "W",
+          "scale": 1.0,
+          "step": null,
+          "min": null,
+          "max": null,
+          "required": false,
+          "writable": false,
+          "options": []
+        }
+      }
+    }
+  ]
+}

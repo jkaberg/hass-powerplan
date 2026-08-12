@@ -40,6 +40,7 @@
         "4": "07:00"
       },
       "force_max_h": 6.0,
+      "limit_pauses": false,
       "max_a": 32.0,
       "min_a": 6.0,
       "min_soc_now": 20.0,

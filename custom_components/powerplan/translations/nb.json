@@ -822,6 +822,9 @@
       "rebuild_baseline": {
         "name": "Gjenoppbygg grunnlinje"
       },
+      "rebuild_peak_history": {
+        "name": "Gjenoppbygg topphistorikk"
+      },
       "run_now": {
         "name": "Kjør nå"
       }
@@ -1210,9 +1213,11 @@
     "load_profile": {
       "options": {
         "easee_ble": "Easee (Bluetooth)",
+        "easee_cloud": "Easee (skytjeneste)",
         "generic_climate": "Termostat",
         "generic_number": "Tallgrense",
-        "generic_switch": "Bryter"
+        "generic_switch": "Bryter",
+        "zaptec": "Zaptec (skytjeneste)"
       }
     },
     "strategy": {

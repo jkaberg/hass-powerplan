@@ -89,6 +89,7 @@ __all__ = [
     "ROLE_UNITS",
     "TEMPERATURE_C",
     "BoundDevice",
+    "ChargerDevice",
     "DeviceProfile",
     "DeviceView",
     "EntityView",
@@ -332,6 +333,15 @@ class DeviceView:
     device_id: str | None = None
     manufacturer: str | None = None
     model: str | None = None
+    parent: DeviceView | None = None
+    """The device this one hangs off (its `via_device`), one level up (WP4.8a).
+
+    A Zaptec charger's current is set on its *installation*: the number that
+    steers the charger belongs to the parent device, and a profile that looked
+    only at the device the household picked would find a charger it cannot
+    steer. `get()` looks here after the device's own entities; nothing else does,
+    so no other profile sees a parent's entities as its own (D4 §5.9).
+    """
 
     @property
     def platforms(self) -> frozenset[str]:
@@ -344,8 +354,11 @@ class DeviceView:
         return frozenset(entity.platform for entity in self.entities if entity.platform)
 
     def get(self, entity_id: str) -> EntityView | None:
-        """Return one entity of this device by id."""
-        return next((entity for entity in self.entities if entity.entity_id == entity_id), None)
+        """Return one entity of this device by id - or of its parent, where a role lives there."""
+        found = next((entity for entity in self.entities if entity.entity_id == entity_id), None)
+        if found is None and self.parent is not None:
+            return self.parent.get(entity_id)
+        return found
 
     def domain(self, domain: str) -> tuple[EntityView, ...]:
         """Every entity of this device in `domain`."""
@@ -390,9 +403,13 @@ class DeviceView:
 
         The dump carries no platform, because the REST API exposes states and not
         the entity registry; a `platform` key records it when a capture does know,
-        and the entity shapes are the evidence when it does not.
+        and the entity shapes are the evidence when it does not. A `device_id`
+        and a nested `parent` dump are what a fixture written from an
+        integration's source adds (D-0371): the device an action is
+        addressed to, and the device a charger's current lives on.
         """
         platform = _optional_str(document.get("platform"))
+        parent = document.get("parent")
         return cls(
             name=str(document.get("name") or document.get("device") or "capture"),
             entities=tuple(
@@ -405,12 +422,18 @@ class DeviceView:
                 )
                 for entity in document.get("entities", ())
             ),
+            device_id=_optional_str(document.get("device_id")),
             manufacturer=_optional_str(document.get("manufacturer")),
             model=_optional_str(document.get("model")),
+            parent=cls.from_dump({"platform": platform, **parent})
+            if isinstance(parent, Mapping)
+            else None,
         )
 
     @classmethod
-    def from_hass(cls, hass: HomeAssistant, device_id: str) -> DeviceView:
+    def from_hass(
+        cls, hass: HomeAssistant, device_id: str, *, with_parent: bool = True
+    ) -> DeviceView:
         """Build a view from the entity and device registries (INV-3).
 
         An entity the registry knows but the state machine does not is kept, as
@@ -418,6 +441,10 @@ class DeviceView:
         thermostat has an eco setpoint and it is not answering" is a different
         fact from "it has none", and a bound role that vanished must degrade
         explicitly (INV-53).
+
+        `with_parent` builds the `via_device`'s view too, one level up, for the
+        match; the tick's reads pass `False` and read the bound entities
+        themselves (`LiveDevice.reads`).
         """
         devices = dr.async_get(hass)
         entities = er.async_get(hass)
@@ -431,12 +458,14 @@ class DeviceView:
                 entities, device_id, include_disabled_entities=True
             )
         ]
+        via = full.via_device_id if full else None
         return cls(
             name=(device.name_by_user or device.name or device_id) if device else device_id,
             entities=tuple(views),
             device_id=device_id,
             manufacturer=full.manufacturer if full else None,
             model=full.model if full else None,
+            parent=cls.from_hass(hass, via, with_parent=False) if with_parent and via else None,
         )
 
     @classmethod
@@ -718,7 +747,19 @@ class Quirks:
         cannot be read back sooner than that, however eager the kind is - so each
         is the larger of the two (D4 §5.10, `design/DECISIONS.md` D-0065).
         """
-        cfg = config_for(kind, transport=self.transport, transient_grace_s=self.transient_grace_s)
+        return self.raised(
+            config_for(kind, transport=self.transport, transient_grace_s=self.transient_grace_s)
+        )
+
+    def raised(self, cfg: GateConfig) -> GateConfig:
+        """Return `cfg` with its tolerance, interval and settle raised to this row's floors.
+
+        What the runtime does to a load's own gate when it builds the load from a
+        subentry (D-0375): the kind's numbers and the load's own
+        `command_min_interval` stay, and a profile's stricter row - Zaptec's
+        900 s - binds over them. A generic profile's floors are zero, so its load
+        keeps the kind's row exactly (D-0184).
+        """
         return replace(
             cfg,
             tolerance=max(cfg.tolerance, self.tolerance),
@@ -735,15 +776,15 @@ class Quirks:
 class SessionState(StrEnum):
     """What a charger's status says about the car and about the link (D4 §5.11).
 
-    Five facts and an honest sixth. `LINK_DOWN` is "no contact with the charger"
-    and `DISCONNECTED` is "no car": `offline ≠ disconnected`, and folding the two
-    together would have the controller go quiet at exactly the moment it lost
-    sight of a 32 A load (the charger's README). `DONE` is a car still on
-    the cable that has finished, which is why it counts as connected and why it
-    needs a latch rather than a status test.
+    Five facts. `LINK_DOWN` is "no contact with the charger" and `DISCONNECTED`
+    is "no car": `offline ≠ disconnected`, and folding the two together would
+    have the controller go quiet at exactly the moment it lost sight of a 32 A
+    load (the charger's README). `DONE` is a car still on the cable that
+    has finished, which is why it counts as connected and why it needs a latch
+    rather than a status test.
 
-    `UNKNOWN` is for a status a device declares that D4's own sets do not claim -
-    reported verbatim, never guessed into a meaning.
+    A status no vocabulary maps is `LINK_DOWN` (D4 §9 24): a word nobody
+    can read is blindness, and blindness is never a car on the cable (INV-15).
     """
 
     LINK_DOWN = "link_down"
@@ -751,7 +792,6 @@ class SessionState(StrEnum):
     CONNECTED = "connected"
     CHARGING = "charging"
     DONE = "done"
-    UNKNOWN = "unknown"
 
     @property
     def connected(self) -> bool:
@@ -762,6 +802,28 @@ class SessionState(StrEnum):
     def link_down(self) -> bool:
         """Whether the transport has lost the device."""
         return self is SessionState.LINK_DOWN
+
+    @property
+    def status_word(self) -> str:
+        """The status `types/ev.py` reads for this state (D-0373).
+
+        How a vocabulary other than the core's own reaches the type: a Zaptec
+        charger's `connected_finished` arrives as `completed`, the word the
+        session-done latch is written against, and the type never learns a
+        second vocabulary. Each word is in the core's sets -
+        `OFFLINE_STATUSES`, `CONNECTED_STATUSES`, or neither for "no car".
+        """
+        return _STATUS_WORDS[self]
+
+
+#: `SessionState` → the word the core's `ev` type reads for it (D-0373).
+_STATUS_WORDS: Final[Mapping[SessionState, str]] = {
+    SessionState.LINK_DOWN: "offline",
+    SessionState.DISCONNECTED: "disconnected",
+    SessionState.CONNECTED: "car_connected",
+    SessionState.CHARGING: "charging",
+    SessionState.DONE: "completed",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -783,14 +845,16 @@ class StatusVocabulary:
 
         `None`, `unavailable` and `unknown` are the status entity failing to
         answer, and blindness never opens a gate (INV-15, INV-17) - it is
-        certainly not evidence that somebody unplugged the car.
+        certainly not evidence that somebody unplugged the car. A word this
+        vocabulary does not map is the same blindness (D4 §9 24): a firmware
+        that adds a status says nothing powerplan can act on until the map does.
         """
         if status is None:
             return SessionState.LINK_DOWN
         text = status.strip().lower()
         if text in _BLIND:
             return SessionState.LINK_DOWN
-        return self.states.get(text, SessionState.UNKNOWN)
+        return self.states.get(text, SessionState.LINK_DOWN)
 
 
 # --------------------------------------------------------------------------- #
@@ -828,6 +892,13 @@ class BoundDevice:
     profile: str
     bindings: Mapping[Role, RoleBinding]
     quirks: Quirks
+    device_id: str | None = None
+    """The load's own device, for an integration driven through a device action.
+
+    The subentry stores it and the runtime sets it (`device_from_subentry`): the
+    Easee cloud's dynamic limit is written by `device_id`, never by entity
+    (D4 §5.10, WP4.8a). An entity-addressed profile ignores it.
+    """
 
     @property
     def entity_ids(self) -> tuple[str, ...]:
@@ -927,6 +998,40 @@ class BoundDevice:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ChargerDevice(BoundDevice):
+    """A bound charger whose status is its own vocabulary (D4 §5.9, §5.11).
+
+    Two things every charger profile after `easee_ble` needs, and neither is a
+    binding:
+
+    * the status reaches the `ev` type as the word the type reads for its
+      `SessionState` - Zaptec's `connected_finished` as `completed` - so the core
+      keeps one vocabulary and a second charger is a second table (D-0373);
+    * while the status says the link is down, the limit and the power are not
+      read at all (`Quirks.forgets_limit_on_link_loss`, D4 §9 6): nobody can vouch
+      for them, and the reconnect re-arms from whatever the charger then says.
+    """
+
+    def reads(self, view: DeviceView, now: datetime) -> Reads:
+        """Return what the charger says, in the core's words, minus what a lost link voids."""
+        reads = super().reads(view, now)
+        statuses = self.quirks.statuses
+        if statuses is None:
+            return reads
+        roles = dict(reads.roles)
+        status = roles.get(Role.STATUS)
+        state = statuses.state(None if status is None else status.text)
+        if status is not None and status.available:
+            roles[Role.STATUS] = replace(status, text=state.status_word)
+        if state.link_down and self.quirks.forgets_limit_on_link_loss:
+            for role in (Role.CURRENT_SET, Role.POWER):
+                binding = self.bindings.get(role)
+                if binding is not None:
+                    roles[role] = RoleRead(role=role, options=binding.options, available=False)
+        return replace(reads, roles=roles)
+
+
 def _device_call(
     entity_id: str, value: Value, *, profile: str, binding: RoleBinding | None
 ) -> DeviceCall | None:
@@ -1023,8 +1128,22 @@ class LiveDevice:
         return self.bound.entity_ids
 
     def reads(self, now: datetime) -> Reads:
-        """Return what the device's entities say right now."""
-        return self.bound.reads(DeviceView.from_hass(self.hass, self.device_id), now)
+        """Return what the device's entities say right now.
+
+        The device's own entities, plus every bound entity that is not one of
+        them: a Zaptec charger's *Available current* lives on its installation
+        , and an answer's off-device sensor on whatever device it has
+        (D4 §5.14). Only those are read one by one; the rest come with the device.
+        """
+        view = DeviceView.from_hass(self.hass, self.device_id, with_parent=False)
+        own = {entity.entity_id for entity in view.entities}
+        elsewhere = [entity_id for entity_id in self.bound.entity_ids if entity_id not in own]
+        if elsewhere:
+            view = replace(
+                view,
+                entities=view.entities + DeviceView.from_states(self.hass, elsewhere).entities,
+            )
+        return self.bound.reads(view, now)
 
     def call_for(self, write: Write) -> DeviceCall | None:
         """Return the service call for `write`, or `None` when its role is unbound."""

@@ -453,9 +453,19 @@ def test_16q_a_kilowatt_setpoint_scales_to_watts() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_16r_the_four_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
-    """Extension is by registry: one module each, registered (D4 §3)."""
-    assert registry.keys() == ("easee_ble", "generic_climate", "generic_number", "generic_switch")
+def test_16r_the_six_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
+    """Extension is by registry: one module each, registered (D4 §3).
+
+    Six since WP4.8a added the two cloud chargers, `zaptec` and `easee_cloud`.
+    """
+    assert registry.keys() == (
+        "easee_ble",
+        "easee_cloud",
+        "generic_climate",
+        "generic_number",
+        "generic_switch",
+        "zaptec",
+    )
     assert registry.get("generic_climate") is CLIMATE_PROFILE
     assert registry.get("generic_switch") is SWITCH_PROFILE
     assert registry.get("generic_number") is NUMBER_PROFILE

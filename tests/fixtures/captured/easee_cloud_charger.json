@@ -1,0 +1,273 @@
+{
+  "name": "easee_cloud_charger",
+  "device": "Carport",
+  "device_id": "b40f1f45d28b0891fe8d4c2e6a1d9f07",
+  "manufacturer": "Easee",
+  "model": "Easee Home",
+  "written_at": "2026-08-12",
+  "source": "Not captured: the reference house runs Easee over Bluetooth, not the cloud (D4 §5.9, D-0081's precedent, D-0371). Written from nordicopen/easee_hass v0.9.74 as installed at /media/config/homeassistant/custom_components/easee: the entity set from const.py (MANDATORY_EASEE_ENTITIES, OPTIONAL_EASEE_ENTITIES — a master charger's, minus the entities that ship disabled, since GET /api/states does not list a disabled entity); the three powerplan asks the household to enable — Dynamic charger limit, Max charger limit and Reason for no current — are enabled here; the names from translations/en.json with _attr_has_entity_name = True (entity.py); the status words from EASEE_STATUS via map_charger_status (no options attribute: device_class None); the attributes from ChargerEntity.extra_state_attributes; power in kW (const.py). The states are a car charging at a 16 A dynamic limit.",
+  "entity_count": 20,
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Carport Status",
+        "icon": "mdi:ev-station",
+        "name": "Carport",
+        "id": "EH123456",
+        "config_phaseMode": 2,
+        "state_outputPhase": 30,
+        "state_ledMode": 22,
+        "state_cableRating": 32.0,
+        "config_authorizationRequired": false,
+        "config_localNodeType": 1,
+        "config_localAuthorizationRequired": false,
+        "site_id": 123456,
+        "site_name": "Hjemme",
+        "site_siteKey": "ABCD-1234",
+        "site_ratedCurrent": 40.0,
+        "circuit_id": 234567,
+        "circuit_ratedCurrent": 32.0
+      },
+      "entity_id": "sensor.carport_status",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "charging"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Carport Power",
+        "state_class": "measurement",
+        "unit_of_measurement": "kW",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_power",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "7.4"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Carport Session Energy",
+        "unit_of_measurement": "kWh",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_session_energy",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "3.2"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Carport Lifetime energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_lifetime_energy",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "5821.4"
+    },
+    {
+      "attributes": {
+        "device_class": "monetary",
+        "friendly_name": "Carport Cost day",
+        "unit_of_measurement": "NOK",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_cost_day",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "4.12"
+    },
+    {
+      "attributes": {
+        "device_class": "monetary",
+        "friendly_name": "Carport Cost month",
+        "unit_of_measurement": "NOK",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_cost_month",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "88.40"
+    },
+    {
+      "attributes": {
+        "device_class": "monetary",
+        "friendly_name": "Carport Cost year",
+        "unit_of_measurement": "NOK",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_cost_year",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "1402.77"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Carport Dynamic charger limit",
+        "unit_of_measurement": "A",
+        "name": "Carport",
+        "id": "EH123456",
+        "state_dynamicChargerCurrent": 16.0
+      },
+      "entity_id": "sensor.carport_dynamic_charger_limit",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "16"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Carport Max charger limit",
+        "unit_of_measurement": "A",
+        "name": "Carport",
+        "id": "EH123456",
+        "config_maxChargerCurrent": 32.0
+      },
+      "entity_id": "sensor.carport_max_charger_limit",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "32"
+    },
+    {
+      "attributes": {
+        "device_class": "easee__reason_no_current",
+        "friendly_name": "Carport Reason for no current",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_reason_for_no_current",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "limited_by_charger_dynamic_limit"
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Carport Internal temperature",
+        "unit_of_measurement": "°C",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "sensor.carport_internal_temperature",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "21"
+    },
+    {
+      "attributes": {
+        "device_class": "connectivity",
+        "friendly_name": "Carport Online",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "binary_sensor.carport_online",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "device_class": "lock",
+        "friendly_name": "Carport Cable lock",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "binary_sensor.carport_cable_lock",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Charger enabled",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "switch.carport_charger_enabled",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Smart charging",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "switch.carport_smart_charging",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Touch button enabled",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "switch.carport_touch_button_enabled",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Cable locked permanently",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "switch.carport_cable_locked_permanently",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Idle current",
+        "name": "Carport",
+        "id": "EH123456"
+      },
+      "entity_id": "switch.carport_idle_current",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "off"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Carport Override schedule"
+      },
+      "entity_id": "button.carport_override_schedule",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "unknown"
+    },
+    {
+      "attributes": {
+        "brightness": 191,
+        "color_mode": "brightness",
+        "friendly_name": "Carport LED strip",
+        "supported_color_modes": [
+          "brightness"
+        ],
+        "supported_features": 0
+      },
+      "entity_id": "light.carport_led_strip",
+      "last_changed": "2026-09-23T18:41:07+00:00",
+      "last_updated": "2026-09-23T18:41:07+00:00",
+      "state": "on"
+    }
+  ]
+}

@@ -1513,6 +1513,11 @@ No `core/` change, no test removed, no assertion changed (D9 §5.13). (1) Benchm
 HACS's blank store icon (hacs/integration#5171) goes in the root README's "Known limitations" until the docs tree exists, then moves. `tools/brand/make_brand.py` reads Inter from `tools/brand/fonts/` (from `npm pack @fontsource/inter`) and writes to `tools/brand/out/`, both git-ignored; copying the six PNGs into `brand/` is a manual step so a regeneration never replaces a shipped image unseen. `quality_scale.yaml` marks `brands: done`.
 **Rejected:** a one-line `docs/limitations.md` stub - ships before the docs tree has headings and link tests.
 
+### D-0334 · mypyc isn't adopted: byte-identical results, but 1.00-1.08× faster
+
+The whole `core/` (and then the simulators and runner) was compiled with mypyc on CPython 3.14 in scratch copies and compared side by side with pure Python. It needed seven patches to mypyc itself to be faithful: annotations as source text (mypyc builds them from type objects, which segfaults on `Snapshot`'s `TYPE_CHECKING` forward references and silently breaks `state_codec`'s `get_type_hints`), non-native exception subclasses, `Protocol` kept among bases, CPython's compensated `sum()`, a `Final` float tuple read, and pickling of native frozen dataclasses. Measured: 1.00-1.04× on three scenarios, 1.08× at best, one benchmark day 1.04×. `perf` shows 27 % of samples in the stdlib-generated dataclass `__init__`, 42 % in interpreted code called from compiled code, ~17 % allocation and GC; mypyc speeds up a small share of a tick built from frozen dataclasses, tz-aware datetimes and `Decimal`s. A mypyc compiling dataclass methods too would cap near 1.4×. Affects D9 §5.13.
+**Rejected:** adopting it for 4-8 % - seven compiler patches pinned to one release, a 5-8 minute build and a second artifact to keep equal, for a gain inside the machine's noise. Cython - meets the same dataclasses and datetimes.
+
 ### D-0340 · Assembled words live in four `selector` vocabularies; `flow/text.py` formats numbers per language
 
 Every word Python assembles into a label is a translation in `selector.text`, `selector.tariff_text`, `selector.review` or `selector.load_text`, since hassfest's schema has no free-text section. `flow/text.py::Text` reads them in `hass.config.language` (D8 §5.15 H7). `nb` groups thousands with a no-break space and uses a decimal comma; other languages get English numbers, as HA gives them English words. Money gets a symbol per shipped currency and its minor unit (øre, cent, p…); an unlisted currency shows its code. A price keeps its written scale: Tensio's 0.3604 is "36,04 øre/kWh". Affects D8 §5.11, §5.15.
@@ -1547,3 +1552,58 @@ A registry `SELECT` gets a translation key only when every option can be one (ha
 
 D8 §9 18a's allow-list: words identical in both languages by construction (PowerPlan, Nord Pool, OK, LFP, kW…), whole numbers with a unit, and brand-named price formats. 18c's "no English word in nb" is a list of about ninety English words that aren't Norwegian, scanned after removing the household's own names, grid companies, time zones, URLs and inline code. Numbers: no point decimal in `nb`, no comma decimal in `en`.
 **Rejected:** a dictionary-based language detector - a dependency, and a device named in English would be a false alarm.
+
+### D-0350 · The period seed: live windows first at setup, the recorder's on the rebuild button; a seeded window is its own counterfactual
+
+`_seed_peak_history` runs after the first tick of every setup and from `button.<site>_rebuild_peak_history`: the register's hourly statistics for the open period (D-0352) become windows at the tariff's length and fold in under the lock. Setup adds only windows the history lacks, so a live-closed window is never overwritten; the button replaces everything it has. Overrides survive both (D2 §9 16). Every window a seed adds also goes to the counterfactual book unchanged: nothing was steered then. Without that, a site created on the 22nd bills the month's real peaks against a counterfactual that starts on the 22nd and reports negative capacity savings. Affects D2 §5.12, D11 §5.4, D8 §5.5.
+**Rejected:** seeding once per period - the recorder can't fill a gap the live meter left either. Always replacing - a wrong row placement would overwrite good live windows.
+
+### D-0351 · A fresh baseline is one that has folded no window; `seed()` records its reconstruction
+
+The startup guard is `baseline.state.last_update is None`; `not baseline.state.bins` was never true, since the baseline materialises 168 empty bins, so a fresh site never seeded. `HourOfWeekBaseline.seed(history)` folds every window through `update()` and records `history.reconstruction`. The runtime passes every configured load as a `LoadSource` with no entity, so the mark says `none` (D-0214) where no loads would say `full`. Affects D10 §3, §5.2.
+**Rejected:** returning empty bins until the first update - changes the persisted shape of every restored baseline.
+
+### D-0352 · Hourly statistics only, each row placed by the register's own reporting cadence
+
+`async_register_history` reads the register's hourly `sum` rows and places each at `S + 1 h − min(c, 1 h)`, where `c` is the median gap between the last 50 state rows whose value changed; a value republished after `unavailable` isn't a report. With fewer than five gaps, rows sit at `S` (D3 §5.3). A statistics row is filed under its hour's start but holds the register at the last state inside it: for an AMS meter reporting once at HH:00:10 that's S, for a fast register S + 1 h. Counting republished values as reports put the reference month at 8.70 kW instead of 8.98. Affects D3 §3, §5.11; D2 §5.12.
+**Rejected:** scoring both placements against power statistics - needs a power role. The 5-minute table - two tables and a seam for no reported case.
+
+### D-0370 · A `DeviceCall` carries `device_id` beside its `entity_id`
+
+`DeviceCall.device_id` and a `target` property (`{"device_id": …}` when set, else `{"entity_id": …}`); `entity_id` stays as the read-back's witness (INV-22). `BoundDevice.device_id` comes from the subentry in `runtime.device_from_subentry`. `easee_cloud` writes `easee.set_charger_dynamic_limit` with whole amps and `time_to_live: 0`, and is unaddressable without a device id. Affects D4 §5.10.
+**Rejected:** `bind(bindings, device_id=…)` - every profile takes an argument one uses. An optional `entity_id` - a call with no witness.
+
+### D-0371 · Fixtures written from an integration's source live in `captured/`, in the capture format, and say so
+
+`zaptec_charger.json` and `easee_cloud_charger.json` are hand-written from the integrations' source (zaptec v0.8.7, easee_hass v0.9.74) in `tools/capture_fixture.py`'s format, with a `source` key and `written_at`, no `captured_at`, a `device_id` and, for Zaptec, the installation as a nested `parent`. The production loader has to read them (D9 §9 7), and the keys tell them apart from real dumps. The Easee dump includes the three disabled-by-default sensors the profile asks to enable. Affects D4 §5.9.
+**Rejected:** `tests/fixtures/formats/` - that's for format-adapter payloads.
+
+### D-0372 · Both cloud chargers stop and start on the limit alone, via a `limit_pauses` capability
+
+Neither profile binds `ENABLE`. Zaptec's *Charging* switch is unavailable whenever its command is invalid, and its off leaves `Connected_Finished`, which would park every pause as a finished session. Both sources say the limit is the switch (0 A holds, 6 A or more charges). Both matches declare `limit_pauses`; `ev.derive` materialises it, and the type builds `MODULATE` with no enable role, so a stop is one write at 0 A and "enabled" means the limit is at or above `min_a`. Affects D4 §5.9.
+**Rejected:** binding the switch and treating an available `connected_finished` as a pause - rests on an entity also unavailable when a poll fails. Inferring "no enable" from a missing read - a fixture could switch it off.
+
+### D-0373 · A charger's vocabulary reaches the core as the core's words; an unmapped status is a lost link
+
+`SessionState.status_word` maps states to `offline`, `disconnected`, `car_connected`, `charging` and `completed`, words `types/ev.py` already uses. `ChargerDevice(BoundDevice)` rewrites the status read to that word and applies the link-loss rule. `StatusVocabulary.state` returns `LINK_DOWN` for an unknown word (INV-15); `SessionState.UNKNOWN` goes. A second charger is a second table, not a conditional (D4 §5.11). Affects D4 §5.9.
+**Rejected:** adding each charger's words to the core's sets - every charger would edit `core/`, and words would collide.
+
+### D-0374 · The Easee cloud re-arm is the read-back
+
+After a plug-in or reboot the charger resets its dynamic limit, the sensor reports it, row 3 sees it differs from the grant, and the held limit is written again. The integration drops a call whose current equals its own record, which is the sensor's source, so a blind re-send can't reach the charger when the sensor is stale anyway. The reset value isn't documented; the test's fake uses the maximum, marked assumed. Affects D4 §5.9, §5.10.
+**Rejected:** marking the limit unknown for a tick after plug-in - edge memory in a stateless provider, ending in a call the integration drops.
+
+### D-0375 · The runtime raises each load's gate to its profile's row
+
+`Quirks.raised(cfg)` lifts tolerance, interval and settle to the profile's floors, and `runtime.load_from_subentry` applies it to the load's gate. The profile's row had only reached tests; no profile was stricter than its kind until Zaptec's 900 s. Existing loads get identical gates. Affects D4 §5.10.
+**Rejected:** three new `LoadConfig` fields for numbers that belong to the profile.
+
+### D-0376 · `DeviceView` knows its parent; the tick reads bound entities that live off the device
+
+`DeviceView.parent` is the `via_device`'s view. `get()` falls back to it; `find()` doesn't, so a parent's entities never answer another profile's heuristics. `LiveDevice.reads` appends a `from_states` view of bound entities the device doesn't own. Zaptec's *Available current* is on the installation device, and heat-pump sensors from other devices need the same. Affects D4 §5.9.
+**Rejected:** merging the parent's entities in - a Z-Wave controller's entities would join every thermostat's view.
+
+### D-0377 · `zaptec_slow_trim`: the cloud takes every write; a change inside 15 minutes may drop the session
+
+`ZaptecChargerSim` wraps `EvSim` behind the installation's *Available current*: every write lands, the read-back is prompt, 0 A pauses, 6 A or more resumes. A change less than 900 s after the last is counted and interrupts charging with a seeded probability of 0.25 (assumed), per Zaptec's note that frequent changes may interrupt a session. The scenario asserts `over_target == 0`, no raises inside 15 minutes, and at least one such trim.
+**Rejected:** a sim that ignores a second change inside the window - Zaptec doesn't refuse, and urgent sheds would be modelled as lost.

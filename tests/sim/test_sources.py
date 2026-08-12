@@ -19,6 +19,7 @@ MODULES = (
     "heatpump",
     "cycle",
     "charger_ble",
+    "charger_zaptec",
     "meter",
     "weather",
     "prices",

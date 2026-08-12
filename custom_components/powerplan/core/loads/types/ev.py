@@ -47,6 +47,7 @@ __all__ = [
     "CONNECTED_STATUSES",
     "DERIVATION_VERSION",
     "EV_DONE_SOC_HYST",
+    "LIMIT_PAUSES",
     "OFFLINE_STATUSES",
     "Ev",
 ]
@@ -84,6 +85,10 @@ BLOCKED_W: Final = 100.0
 
 #: No contact with the charger. Not "unplugged" (README).
 OFFLINE_STATUSES: frozenset[str] = frozenset({"offline", "unavailable", "unknown", "error"})
+
+#: The capability a charger profile declares when its limit is also its switch:
+#: below 6 A the charger pauses, at 6 A or more it resumes (D4 §5.9, D-0372).
+LIMIT_PAUSES: Final = "limit_pauses"
 
 #: The charger maxima a flow offers, in amps (D4 §6.2).
 _CHARGER_MAX_A = (10.0, 13.0, 16.0, 20.0, 25.0, 32.0, 40.0, 48.0, 63.0)
@@ -269,6 +274,9 @@ class Ev:
             "departures": dict(answers.get("departures") or {}),
             "soc_entity": answers.get("soc_entity"),
             "calendar_entity": answers.get("calendar_entity"),
+            # A charger whose limit is its switch - below 6 A it pauses, at 6 A
+            # or more it resumes - offers no enable to write (D4 §5.9, D-0372).
+            "limit_pauses": LIMIT_PAUSES in ctx.capabilities,
         }
         return Derived(
             params=params,
@@ -306,7 +314,11 @@ class Ev:
         )
 
     def _kind(self, cfg: LoadConfig) -> ControlKind:
-        """Return the `MODULATE` kind in amps, with the cliff (§5.3, INV-28)."""
+        """Return the `MODULATE` kind in amps, with the cliff (§5.3, INV-28).
+
+        A limit-only charger has no enable role: a stop is 0 A and a resume is a
+        limit at the floor or above (§5.9, D-0372).
+        """
         params = cfg.params
         return Modulate(
             ModulateCfg(
@@ -319,6 +331,7 @@ class Ev:
                 settle_s=float(params.get("settle_s", 60.0)),
                 suppress_delta=float(params.get("suppress_delta_a", 2.0)),
                 suppress_stale_s=float(params.get("suppress_stale_s", 60.0)),
+                enable_role=None if params.get("limit_pauses") else Role.ENABLE,
             )
         )
 
@@ -346,6 +359,19 @@ class Ev:
         if status is None or status in OFFLINE_STATUSES:
             return None
         return status in CONNECTED_STATUSES
+
+    def enabled(self, load: Load, ctx: LoadCtx) -> bool:
+        """Whether the charger may draw: its switch - or, where the limit is the switch, the limit.
+
+        A limit-only charger (Zaptec, the Easee cloud) is enabled while its limit
+        is at or above the floor: that is the charger's own rule for pausing
+        (§5.9, D-0372), so a running session is still floored at 6 A rather than
+        held where it stood.
+        """
+        if load.config.params.get("limit_pauses"):
+            held = ctx.reads.value(Role.CURRENT_SET)
+            return held is not None and held >= float(load.config.params.get("min_a", EV_MIN_A))
+        return _as_on(ctx.reads.current_of(Role.ENABLE))
 
     def soc(self, ctx: LoadCtx) -> float | None:
         """Return the car's state of charge, or `None` - never a pretended zero."""
@@ -425,7 +451,7 @@ class Ev:
         """
         params = load.config.params
         held = ctx.reads.value(Role.CURRENT_SET)
-        enabled = _as_on(ctx.reads.current_of(Role.ENABLE))
+        enabled = self.enabled(load, ctx)
         power = ctx.reads.value(Role.POWER)
         granted = (
             self.connected(ctx) is True
@@ -545,7 +571,7 @@ class Ev:
         """Return what only the type knows: the session, the enable state, the limits."""
         params = load.config.params
         held = ctx.reads.value(Role.CURRENT_SET)
-        enabled = _as_on(ctx.reads.current_of(Role.ENABLE))
+        enabled = self.enabled(load, ctx)
         status = self.status(ctx)
         min_a = float(params.get("min_a", EV_MIN_A))
         session_active = (

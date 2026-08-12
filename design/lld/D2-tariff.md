@@ -314,6 +314,8 @@ The freezing (`_freeze`, `_touch`) is D2's own, run every tick from `ceiling_kwh
 
 `seed_from_windows(closed: list[ClosedWindow])` runs `record_window` for each without emitting events and marks them `recorder`. `seed_from_bills(entries: list[(month, kw)])` writes `MonthRec`s marked `manual`. An `Override` from the `set_peak` action replaces a day or month entry and is kept in `overrides`, so a re-seed never silently undoes it.
 
+The runtime seeds the open period in the background after the first tick of every setup, and again from `button.<site>_rebuild_peak_history` (D8 §5.5): `providers/meters/recorder.py` reads the import register's hourly long-term statistics (D3 §5.11), `reconstruct_windows` makes windows at the tariff's length, `seed_from_windows` folds them under the runtime's lock and a tick publishes the level, fee and advice. `seed_from_windows(…, replace)`: setup passes `False` and only records windows the history doesn't hold, since the live meter is the first source; the button passes `True` and the recorder's version replaces every window it has. Every window a seed *adds* goes into the counterfactual book unchanged - nothing was steered before the site existed (D11 §5.4). Only hourly statistics are read. Exact for a 60-minute tariff, a 15-minute one gets them split and `coarse` (§2, §5.1). Exact quarter-hours from the 5-minute table's last ten days and the `rebuild_peak_history` action with `months` (D8 §5.7) aren't built, and `seed_from_bills` has no caller yet (D-0350, D-0352).
+
 ---
 
 ## 6. Configuration schema

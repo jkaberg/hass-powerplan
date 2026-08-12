@@ -38,6 +38,7 @@ from .reconstruct import Reconstruction
 if TYPE_CHECKING:
     from ..metering import ClosedWindow
     from ..pricing.context import HolidayCalendar
+    from .reconstruct import UncontrolledHistory
 
 __all__ = [
     "CONFIDENT_N_EFF",
@@ -109,7 +110,9 @@ class BaselineState:
 
     Frozen and made only of primitives, ISO-8601 datetimes, `StrEnum`s and tuples
     of those, exactly as D3's `WindowState` is: D7 writes it to the store as it
-    stands. `bins` is empty on a fresh install and 168 long ever after.
+    stands. A bare `BaselineState()` has no bins; one read off an
+    `HourOfWeekBaseline` always has 168, learned or not, so "nothing learned yet"
+    is `last_update is None`.
     """
 
     bins: tuple[Bin, ...] = ()
@@ -198,6 +201,18 @@ class HourOfWeekBaseline:
             samples=current.samples + 1,
         )
         self._last_update = end
+
+    def seed(self, history: UncontrolledHistory) -> int:
+        """Fold a reconstructed history in and mark how it was separated (D10 §5.2).
+
+        Every window goes through the same `update()` the planning loop calls, so
+        a seeded baseline and a lived-into one are built the same way; the mark is
+        D10 §2's `reconstruction`, which nothing else writes. Returns the count.
+        """
+        for row in history.windows:
+            self.update(row.window, row.uncontrolled_kwh)
+        self._reconstruction = history.reconstruction
+        return len(history.windows)
 
     def predict(self, t: datetime, t_out: float | None = None) -> tuple[float, float, float]:
         """Return `(mean_w, sigma_w, confidence)` for the bin containing `t` (§5.3).

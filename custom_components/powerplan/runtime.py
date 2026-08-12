@@ -123,6 +123,7 @@ from .core.metering import (
     VoltageSystem,
     WindowMeter,
     WindowMeterConfig,
+    reconstruct_windows,
     window_bounds,
 )
 from .core.model import Carrier, Direction, Mode
@@ -145,7 +146,15 @@ from .core.pricing.modifiers.base import PriceModifier
 from .core.pricing.modifiers.tou_schedule import TouSchedule
 from .core.state_codec import decode, encode
 from .core.strategies.context import Curves
-from .core.tariffs import AUTO, Evaluator, NoPeak, Target, TariffSpec, TariffVersion
+from .core.tariffs import (
+    AUTO,
+    Evaluator,
+    NoPeak,
+    Target,
+    TariffSpec,
+    TariffVersion,
+    seed_from_windows,
+)
 from .core.tariffs.grammar import StepTable
 from .core.tariffs.history import Override
 from .core.tariffs.presets import loader
@@ -156,10 +165,11 @@ from .events import event_name
 from .flow.load import binding_from_data
 from .notifications import NotificationPolicy, QuietHours
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
-from .providers.forecasts.recorder_baseline import async_seed
+from .providers.forecasts.recorder_baseline import LoadSource, async_seed
 from .providers.forecasts.weather_entity import WeatherEntitySource
 from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
+from .providers.meters.recorder import async_register_history, recorder_loaded
 from .providers.prices import (
     EntitySource,
     ManualSource,
@@ -743,11 +753,8 @@ def load_from_subentry(
     params = dict(data.get(LOAD_PARAMS) or {})
     device_type = device_types.get(str(data[LOAD_TYPE]))
     profile_key = str(data.get(LOAD_PROFILE) or "")
-    transport = (
-        profiles.get(profile_key).quirks().transport
-        if profile_key in profiles.entries()
-        else Transport.LOCAL
-    )
+    quirks = profiles.get(profile_key).quirks() if profile_key in profiles.entries() else None
+    transport = quirks.transport if quirks is not None else Transport.LOCAL
     phases = int(params.get("phases", 1))
     cfg = LoadConfig.from_materialised(
         data,
@@ -765,7 +772,10 @@ def load_from_subentry(
     if cfg.type_key == "ev" and "max_a" in params:
         # The charger's watts follow the site's own volts (D3 §5.1), not the derivation's 230/400 V guess.
         cfg = replace(cfg, nameplate_w=float(params["max_a"]) * electrical.w_per_amp(cfg.phases))
-    return device_type.build(cfg)
+    load = device_type.build(cfg)
+    # The profile's row of D4 §5.10 binds where it is stricter than the kind's -
+    # Zaptec's 900 s (D-0375); a generic profile's floors are zero.
+    return load if quirks is None else replace(load, gate=quirks.raised(load.gate))
 
 
 def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDevice:
@@ -776,7 +786,9 @@ def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDe
     if not device_id:
         msg = "the load has no device id"
         raise ValueError(msg)
-    return LiveDevice(hass, str(device_id), profile.bind(bindings))
+    # A profile driven through a device action addresses the load's own device (D4 §5.10).
+    bound = replace(profile.bind(bindings), device_id=str(device_id))
+    return LiveDevice(hass, str(device_id), bound)
 
 
 def step_index(choice: str) -> int | None:
@@ -1112,25 +1124,78 @@ class Runtime:
         # first fetch is I/O and runs outside the lock (INV-46).
         self.hass.async_create_task(self._fetch_then_plan("startup"))
         self._log_step("seed")
-        if self.forecasts_adapter is not None and not self.forecasts_adapter.baseline.state.bins:
-            # A fresh baseline (nothing restored from the store): seed it from
-            # the recorder in the background (D10 §5.2) - slow, and nothing
-            # the first tick or plan needs (D10 §8: no baseline yet is a
-            # graceful "reserve on σ alone", never a block on startup).
+        # The open period's windows from the recorder, where the history has
+        # none - the live meter's own windows come first (D2 §2, §5.12).
+        self.hass.async_create_task(self._seed_peak_history("startup", replace=False))
+        if (
+            self.forecasts_adapter is not None
+            and self.forecasts_adapter.baseline.state.last_update is None
+        ):
+            # A baseline that has never folded a window: seed it from the
+            # recorder in the background (D10 §5.2) - slow, and nothing the
+            # first tick or plan needs (D10 §8: no baseline yet is a graceful
+            # "reserve on σ alone", never a block on startup). Not `state.bins`:
+            # `HourOfWeekBaseline` holds 168 bins from construction.
             self.hass.async_create_task(self._seed_baseline("startup"))
+
+    async def _seed_peak_history(self, trigger: str, *, replace: bool) -> None:
+        """Seed the open period from the import register's recorder rows (D2 §2, §5.12).
+
+        The provider reads the recorder in its own executor, D3's
+        `reconstruct_windows` makes the windows and D2's `seed_from_windows`
+        folds them, so the level, the fee and the advice are the period's own
+        from the first day. `replace` is the rebuild button's: the recorder's
+        version of every window it has. A tick publishes the result and marks
+        the tariff section dirty.
+        """
+        register = self.build.meter_entities.get(ROLE_IMPORT_REGISTER)
+        tariff = self.build.tariff
+        now = dt_util.utcnow()
+        if (
+            not register
+            or not recorder_loaded(self.hass)
+            or tariff.spec.version_at(now).peak is None
+        ):
+            return
+        start, _ = tariff.period_bounds(now)
+        rows = await async_register_history(self.hass, register, start, now)
+        windows = [
+            window
+            for window in reconstruct_windows(rows, tariff.history.window_min, self.build.cfg.tz)
+            if window.start_utc >= start
+        ]
+        if self._stopped or not windows:
+            return
+        async with self.lock:
+            seeded = seed_from_windows(tariff, windows, replace=replace)
+        _LOGGER.info(
+            "site %s: peak history (%s): %d of %d window(s) since %s from %s",
+            self.site_name,
+            trigger,
+            seeded,
+            len(windows),
+            start.isoformat(),
+            register,
+        )
+        await self.run_tick("peak_history")
 
     async def _seed_baseline(self, trigger: str) -> None:
         """Seed the baseline from the recorder - at startup, and on `rebuild_baseline` (D10 §5.2)."""
         adapter = self.forecasts_adapter
         register = self.build.meter_entities.get(ROLE_IMPORT_REGISTER)
-        if adapter is None or not register:
+        if adapter is None or not register or not recorder_loaded(self.hass):
             return
         try:
             await async_seed(
                 self.hass,
                 adapter.baseline,
                 register_entity_id=register,
-                loads=(),
+                # Every load, none of its own history read yet (D-0315, D-0351):
+                # nothing is subtracted, and the seed's mark says so (`none`).
+                loads=tuple(
+                    LoadSource(load_id=load.load_id, nameplate_w=load.config.nameplate_w)
+                    for load in self.build.loads
+                ),
                 now=dt_util.utcnow(),
                 tz=self.build.cfg.tz,
                 span_days=BASELINE_SEED_DAYS,
@@ -2507,6 +2572,14 @@ class Runtime:
         # what the next tick and the next `close_slot` both see immediately.
         adapter.baseline = HourOfWeekBaseline(tz=self.build.cfg.tz, holidays=self.build.holidays)
         await self._seed_baseline("rebuild_baseline")
+
+    async def async_rebuild_peak_history(self) -> None:
+        """`button.<site>_rebuild_peak_history` (D8 §5.5): the open period again from the recorder.
+
+        The recorder's windows replace the ones the history holds; an override
+        from `set_peak` is kept apart and survives (D2 §5.12, §9 16).
+        """
+        await self._seed_peak_history("rebuild_peak_history", replace=True)
 
     @property
     def has_register(self) -> bool:
