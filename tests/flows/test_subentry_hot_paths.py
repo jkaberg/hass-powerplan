@@ -12,6 +12,7 @@ flow eventually will).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import pytest
@@ -24,7 +25,10 @@ from custom_components.powerplan.const import (
     CIRCUIT_PHASES,
     SUBENTRY_LOAD,
 )
+from custom_components.powerplan.core.loads import Role
+from custom_components.powerplan.core.model import Mode
 from tests.flows.test_circuit_flow import _start_circuit
+from tests.flows.test_heat_pump_flow import _add_heat_pump
 from tests.flows.test_load_flow import _add_charger, _answer
 
 if TYPE_CHECKING:
@@ -240,6 +244,71 @@ async def test_adding_and_removing_a_circuit_subentry_never_reloads(
     assert not any(c.key == circuit_id for c in runtime.engine._constraints)
     # The load the circuit named is entirely unaffected.
     assert {load.load_id for load in runtime.build.loads} == {ev_id}
+
+
+@pytest.mark.inv("INV-50")
+async def test_reconfiguring_a_load_keeps_its_entities_mode_knobs_and_state(
+    hass: HomeAssistant,
+    site: MockConfigEntry,
+    charger: FakeHouse,
+    no_reload: list[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A reconfigure swaps the load in place: no ERROR, same entities, mode and knobs kept (F-14).
+
+    Remove-then-add re-registered every entity the load already had - one "does
+    not generate unique IDs" ERROR per entity, 37 over three reconfigures in the
+    house - and dropped its mode and knob values until the next restart (H.1 F-14).
+    """
+    result = await _add_heat_pump(hass, site, charger)
+    result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Heat pump"})
+    await hass.async_block_till_done()
+    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
+    runtime: Runtime = site.runtime_data
+    await runtime.async_set_load_mode(sub.subentry_id, Mode.OBSERVE)
+    await runtime.async_set_load_param(sub.subentry_id, "comfort_c", 20.5)
+    state_before = runtime.state.loads[sub.subentry_id]
+    registry = er.async_get(hass)
+
+    def entities() -> dict[str, str | None]:
+        return {
+            entry.unique_id: entry.entity_id
+            for entry in registry.entities.get_entries_for_config_entry_id(site.entry_id)
+            if entry.config_subentry_id == sub.subentry_id
+        }
+
+    before = entities()
+    assert before
+
+    second_sensor = "sensor.dataskap_strommaler_temperature"
+    with caplog.at_level(logging.WARNING):
+        result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
+        defaults = result["data_schema"]({})
+        result = await _answer(
+            hass,
+            result,
+            **{**defaults, "advanced": {**defaults["advanced"], "outlet_entity": second_sensor}},
+        )
+        result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Heat pump"})
+        await hass.async_block_till_done()
+    assert result["reason"] == "reconfigure_successful"
+
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == [], errors
+    assert no_reload == []
+    assert entities() == before, "the same entities, never registered twice"
+    live = [
+        entry.entity_id
+        for entry in registry.entities.get_entries_for_config_entry_id(site.entry_id)
+        if entry.config_subentry_id == sub.subentry_id and entry.disabled_by is None
+    ]
+    assert live
+    assert all(hass.states.get(entity_id) is not None for entity_id in live)
+    assert runtime.load_mode(sub.subentry_id) is Mode.OBSERVE, "the mode survives"
+    assert runtime.load_param(sub.subentry_id, "comfort_c") == 20.5, "and the knob"
+    assert runtime.state.loads[sub.subentry_id] == state_before, "and the gate's record"
+    device = runtime.build.devices[sub.subentry_id]
+    assert device.bound.bindings[Role.OUTLET_TEMP].entity_id == second_sensor, "new config"
 
 
 async def test_the_sites_own_data_change_still_reloads(

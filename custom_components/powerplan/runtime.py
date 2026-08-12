@@ -112,7 +112,7 @@ from .core.engine import (
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
-from .core.loads import Load, LoadConfig, LoadCtx, Transport
+from .core.loads import Load, LoadConfig, LoadCtx, Transport, effective_mode
 from .core.loads.gate import Action, Decision
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
@@ -186,7 +186,7 @@ from .storage import Section, SiteStore
 from .writegate import Actuation, WriteGate
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Awaitable, Callable, Sequence
     from datetime import tzinfo
 
     from homeassistant.config_entries import ConfigEntry, ConfigSubentry
@@ -194,13 +194,14 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity import Entity
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
     from homeassistant.helpers.event import EventStateChangedData
+    from homeassistant.util.event_type import EventType
 
     from .core.allocation import Baseline
     from .core.forecasts.model import PlannerForecasts, Series
     from .core.loads import LoadState
     from .core.loads.base import ApplyResult
     from .core.loads.gate import TransportBudget
-    from .core.loads.kinds.base import Reads, Value
+    from .core.loads.kinds.base import Reads, Role, Value
     from .core.model import PriceCurve, Snapshot
     from .writegate import DeviceCall, Outcome
 
@@ -1005,6 +1006,10 @@ class Runtime:
         self._load_platforms: list[
             tuple[AddConfigEntryEntitiesCallback, Callable[[Runtime, Sequence[Load]], list[Entity]]]
         ] = []
+        #: The unique ids of the entities added per load, so a hot path adds only
+        #: the rows a load does not have yet - Home Assistant logs an ERROR for an
+        #: entity whose unique id is already live (H.1 F-14, D-0364).
+        self._load_entity_uids: dict[str, set[str]] = {}
         self._power_timer: CALLBACK_TYPE | None = None
         self._guard_timer: CALLBACK_TYPE | None = None
         self._pending_trigger: str | None = None
@@ -1029,6 +1034,13 @@ class Runtime:
         document = await self.store.load()
         self.state = EngineState.from_sections(document) if document else EngineState()
         self.raw = RawSlotStore(self.store.get(Section.PRICES))
+        # The site switch as the last tick saw it: its own entity restores only
+        # after the platforms load, which is after startup has released and
+        # restored - and a site that is off writes nothing, startup included
+        # (INV-26, D-0361).
+        switch = self.state.events.edges.get("site_active")
+        if switch is not None:
+            self.active = switch == "1"
         self.notifications.last_sent = dict(self.state.events.last_sent)
         build = self.build
         # Registered here, ahead of any platform, so every load device's own
@@ -1094,10 +1106,8 @@ class Runtime:
         if self.hass.state is CoreState.running:
             await self._start_after_ha()
         else:
-            self._track(
-                self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, self._on_ha_started)
-            )
-        self._track(self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_ha_stop))
+            self._track_once(EVENT_HOMEASSISTANT_STARTED, self._on_ha_started)
+        self._track_once(EVENT_HOMEASSISTANT_STOP, self._on_ha_stop)
 
     async def _on_ha_started(self, _event: Event) -> None:
         await self._start_after_ha()
@@ -1209,15 +1219,19 @@ class Runtime:
         self._persist_sections(frozenset({Section.FORECASTS}))
 
     async def stop(self, reason: str) -> None:
-        """D7 §5.5: unsubscribe, stop planning, release every load, flush the store."""
-        if self._stopped:
-            return
-        self._stopped = True
-        self._release_subscriptions()
-        await self.release_all(reason)
-        self.gate.cancel()
-        await self.store.flush()
-        await self.store.close()
+        """D7 §5.5: unsubscribe, stop planning, release every load, flush the store.
+
+        Once only - but an unload after `homeassistant_stop` has stopped the site
+        still unloads its platforms, or setting the entry up again would add
+        every entity a second time (D-0365).
+        """
+        if not self._stopped:
+            self._stopped = True
+            self._release_subscriptions()
+            await self.release_all(reason)
+            self.gate.cancel()
+            await self.store.flush()
+            await self.store.close()
         if reason == "unload" and self._platforms_forwarded:
             self._platforms_forwarded = False
             await self.hass.config_entries.async_unload_platforms(self.entry, PLATFORMS)
@@ -1230,6 +1244,26 @@ class Runtime:
         if not self._unsubs:
             self.entry.async_on_unload(self._release_subscriptions)
         self._unsubs.append(unsub)
+
+    def _track_once(
+        self, event_type: EventType[Any] | str, handler: Callable[[Event], Awaitable[None]]
+    ) -> None:
+        """Listen for one event once; a listener that fired is forgotten before it runs.
+
+        Home Assistant drops a one-time listener itself when it fires, and
+        unsubscribing it again logs "Unable to remove unknown job listener" at
+        ERROR - once per unload after `homeassistant_started`, once per stop
+        (H.1 F-15, D-0365).
+        """
+        unsub: CALLBACK_TYPE | None = None
+
+        async def fired(event: Event) -> None:
+            if unsub in self._unsubs:
+                self._unsubs.remove(unsub)
+            await handler(event)
+
+        unsub = self.hass.bus.async_listen_once(event_type, fired)
+        self._track(unsub)
 
     @callback
     def _release_subscriptions(self) -> None:
@@ -1304,10 +1338,24 @@ class Runtime:
             ),
         )
 
+    def _under_control(self, load_id: str) -> bool:
+        """Whether powerplan steers this load now: the site on and the load `auto` or `force`.
+
+        Only a load under control is released or restored by the lifecycle -
+        startup, unload, stop, a removed subentry, the `release` service. A site
+        that is off writes nothing at all, and neither does a load that is
+        observing, delegated or off: its own edge out of control was its last
+        write (INV-26, D-0360).
+        """
+        site_active = self.active and not self.state.runtime.safe_mode
+        return effective_mode(self.load_mode(load_id), site_active) in (Mode.AUTO, Mode.FORCE)
+
     def _release_plan(self, load_id: str) -> Callable[[TransportBudget], Actuation | None]:
         """Return the gate's `ReleasePlan`: what letting this load go means right now."""
 
         def plan(_budget: TransportBudget) -> Actuation | None:
+            if not self._under_control(load_id):
+                return None
             now = dt_util.utcnow()
             state, result = self._load(load_id).release(
                 self._load_state(load_id), self._load_ctx(load_id, now), reason="released"
@@ -1318,8 +1366,9 @@ class Runtime:
         return plan
 
     async def release_all(self, reason: str) -> tuple[Outcome, ...]:
-        """Let go of every load (INV-26); the pure `release()` decides each write."""
-        if not self.build.loads:
+        """Let go of every load under control (INV-26); `release()` undoes only our own writes."""
+        if not any(self._under_control(load.load_id) for load in self.build.loads):
+            _LOGGER.debug("site %s: nothing under control to release (%s)", self.site_name, reason)
             return ()
         _LOGGER.info("site %s: releasing every load (%s)", self.site_name, reason)
         outcomes = await self.gate.async_release_all()
@@ -1327,10 +1376,17 @@ class Runtime:
         return outcomes
 
     async def restore_all(self) -> tuple[Outcome, ...]:
-        """Write every comfort target back - a correction, never an adoption (INV-27, INV-29)."""
+        """Undo what powerplan wrote and has on record, as a start does (INV-27, INV-29).
+
+        Loads under control only: a site that is off writes nothing at startup
+        (INV-26), and `restore()` puts back only what a device held before
+        powerplan's own recorded writes - never adopting what it finds (D-0360).
+        """
         now = dt_util.utcnow()
         actuations: list[Actuation] = []
         for load in self.build.loads:
+            if not self._under_control(load.load_id):
+                continue
             state, result = load.restore(
                 self._load_state(load.load_id), self._load_ctx(load.load_id, now), reason="startup"
             )
@@ -1369,8 +1425,11 @@ class Runtime:
         async_add_entities: AddConfigEntryEntitiesCallback,
         builder: Callable[[Runtime, Sequence[Load]], list[Entity]],
     ) -> None:
-        entities = builder(self, (load,))
+        """Add the rows of `load` this platform builds and has not added yet (D-0364)."""
+        added = self._load_entity_uids.setdefault(load.load_id, set())
+        entities = [entity for entity in builder(self, (load,)) if entity.unique_id not in added]
         if entities:
+            added.update(entity.unique_id for entity in entities if entity.unique_id)
             async_add_entities(entities, config_subentry_id=load.load_id)
 
     def _add_load_entities(self, load: Load) -> None:
@@ -1522,6 +1581,7 @@ class Runtime:
         self.load_modes.pop(load_id, None)
         self.force_max_h.pop(load_id, None)
         self.load_params.pop(load_id, None)
+        self._load_entity_uids.pop(load_id, None)
         sections = {Section.LOADS, Section.METER, Section.PLANS}
         if self.adapter is not None:
             self.state = replace(self.state, accounting=self.adapter.section())
@@ -1530,6 +1590,49 @@ class Runtime:
         self._subscribe_loads()
         self._persist_sections(frozenset(sections))
         _LOGGER.info("site %s: load %s removed without a reload", self.site_name, load_id)
+
+    async def _update_load(self, subentry: ConfigSubentry) -> None:
+        """Swap one load's configuration in place; its state, mode, knobs and entities stay.
+
+        A reconfigure changes answers, parameters and bindings - never the
+        subentry id, the device or the type (D8 §5.2). So the load keeps its
+        `LoadState` (the mode, the latches, the gate's record of what powerplan
+        wrote), its knob values and its entities; only the `Load`, the bound
+        device and what follows from them are rebuilt. Removing and re-adding it
+        re-registered every entity it already had - an ERROR per entity - and
+        dropped its mode and knobs until a restart (H.1 F-14, D-0364).
+        """
+        load_id = subentry.subentry_id
+        if load_id not in self.build.devices:
+            await self._add_load(subentry)
+            return
+        try:
+            load = load_from_subentry(
+                load_id, subentry.title, subentry.data, self.build.cfg.electrical
+            )
+            device = device_from_subentry(self.hass, subentry.data)
+        except KeyError, ValueError:
+            _LOGGER.exception(
+                "load %s (%s) cannot be rebuilt and keeps its previous configuration",
+                subentry.title,
+                load_id,
+            )
+            return
+        load = await self._hydrate_schedule(load)
+        self.build.loads = tuple(
+            load if other.load_id == load_id else other for other in self.build.loads
+        )
+        self.build.devices = {**self.build.devices, load_id: device}
+        if self.adapter is not None:
+            self.adapter.add_load(load, dt_util.utcnow())
+            self.state = replace(self.state, accounting=self.adapter.section())
+            self._persist_sections(frozenset({Section.ACCOUNTING}))
+        self._rebuild_engine()
+        self._subscribe_loads()
+        self._add_load_entities(load)
+        _LOGGER.info(
+            "site %s: load %s (%s) updated in place", self.site_name, subentry.title, load_id
+        )
 
     def _reload_relations(self) -> None:
         """Rebuild the site's circuits, groups and zones from their subentries and the loads (D7 §2).
@@ -1550,8 +1653,9 @@ class Runtime:
         self.build.zones = build_zones(self.entry, self.build.loads)
         grouped_after = frozenset(member for group in self.build.groups for member in group.members)
         # A load named by a group for the first time gets `sensor.<load>_starved_s`
-        # without a reload - `_add_load_entities` re-adding its other rows too is
-        # harmless (Home Assistant ignores an already-registered unique id).
+        # without a reload - `_add_load_entities` adds only the rows it does not
+        # have yet: Home Assistant logs an ERROR for a unique id already live
+        # (D-0364, correcting D-0293).
         for load_id in grouped_after - grouped_before:
             load = next((load for load in self.build.loads if load.load_id == load_id), None)
             if load is not None:
@@ -1577,14 +1681,13 @@ class Runtime:
         """Apply one entry mutation in place where D7 §2's hot paths cover it.
 
         A `load`, `circuit` or `group` subentry add, remove or update patches
-        the engine, the store and the entities without a reload. An update is
-        a remove and an add under the same subentry id for a load - nothing in
-        a load's stored data is knob-level (knobs never touch the subentry,
-        D-0282), so there is no smaller in-place case to special-case; a
-        circuit or a group has no per-subentry case at all, only the walk's
-        own constraints, which `_reload_relations` always rebuilds from
-        scratch. Anything else - the site's own `entry.data` - still reloads:
-        `async_setup_entry` runs D7 §5.5's whole order (INV-48).
+        the engine, the store and the entities without a reload. A load's
+        update swaps it in place under the same subentry id, keeping its state,
+        mode, knobs and entities (`_update_load`, D-0364); a circuit or a group
+        has no per-subentry case at all, only the walk's own constraints, which
+        `_reload_relations` always rebuilds from scratch. Anything else - the
+        site's own `entry.data` - still reloads: `async_setup_entry` runs D7
+        §5.5's whole order (INV-48).
         """
         entry = self.entry
         if dict(entry.data) != self._known_data:
@@ -1605,9 +1708,10 @@ class Runtime:
             if old[subentry_id][0] == SUBENTRY_LOAD:
                 await self._remove_load(subentry_id)
         for subentry_id in updated_ids:
-            if old[subentry_id][0] == SUBENTRY_LOAD:
-                await self._remove_load(subentry_id)
-        for subentry_id in (*updated_ids, *added_ids):
+            subentry = entry.subentries[subentry_id]
+            if subentry.subentry_type == SUBENTRY_LOAD:
+                await self._update_load(subentry)
+        for subentry_id in added_ids:
             subentry = entry.subentries[subentry_id]
             if subentry.subentry_type == SUBENTRY_LOAD:
                 await self._add_load(subentry)
@@ -1637,15 +1741,19 @@ class Runtime:
             self._set_load_state(load_id, replace(current, gate=gate))
             self.store.mark_dirty(Section.LOADS)
 
-    def _read_state(self, entity_id: str) -> Value | None:
-        """Read an entity for the gate: its state as a number or a string."""
-        state = self.hass.states.get(entity_id)
-        if state is None or state.state in ("unknown", "unavailable"):
+    def _read_state(self, load_id: str, role: Role) -> Value | None:
+        """Read one load's role back for the gate, through its bindings (INV-22).
+
+        The read-back is the reading the next decision makes: the binding's
+        attribute and scale - a climate entity's target is its `temperature`
+        attribute, while its state is `heat` - and a profile's own quirks. Reading
+        the entity's state instead compared `heat` with 22.0 and would have
+        re-issued every setpoint write in control (H.1 F-17, D-0366).
+        """
+        device = self.build.devices.get(load_id)
+        if device is None:
             return None
-        try:
-            return float(state.state)
-        except ValueError:
-            return state.state
+        return device.reads(dt_util.utcnow()).current_of(role)
 
     # ------------------------------------------------------------ inputs #
 

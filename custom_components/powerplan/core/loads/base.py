@@ -325,6 +325,15 @@ class LoadState:
     #: when, and the reason its `blocked_by` sensor gave once it counted.
     blocked_since: datetime | None = None
     blocked_reason: str | None = None
+    #: Since when a bound role has been unreadable: what `Health.transient_since`
+    #: carries while the load is transient for a stale role rather than a
+    #: write (H.1 F-6, `design/DECISIONS.md` D-0362).
+    stale_since: datetime | None = None
+    #: The record `release()` and `restore()` undo: for every role powerplan has
+    #: written since it last let go, what the device held before that first
+    #: write (INV-26, INV-27, D-0360). Empty is a device
+    #: powerplan has nothing outstanding on; `None` is a value it could not read.
+    prior: Mapping[str, Value | None] = field(default_factory=dict)
     gate: GateState = field(default_factory=GateState)
 
     def __post_init__(self) -> None:
@@ -365,6 +374,9 @@ class ApplyResult:
     verify_at: datetime | None = None
     effective_w: float | None = None
     budget: TransportBudget = field(default_factory=TransportBudget.empty)
+    #: What the device held when the gate decided - the "old" of the executor's
+    #: "old → new" line, an observed decision's included (H.1 F-4, D-0363).
+    current: Value | None = None
 
     @property
     def written(self) -> bool:
@@ -519,10 +531,12 @@ class Transition:
 def transition(state: LoadState, to: Mode, now: datetime) -> Transition:
     """Move a load to `to` and say what the edge requires (D4 §5.2).
 
-    Every edge that lets go releases first - a shed never survives into `off`,
-    `observe` or `delegated` (INV-26) - and every edge that takes charge again
-    re-provisions and **restores** the comfort target rather than adopting what
-    it finds (INV-29).
+    Every edge that lets go releases first - nothing powerplan wrote survives
+    into `off`, `observe` or `delegated` (INV-26), and the edge is the last write
+    a site that is off will make - and every edge that takes charge again
+    re-provisions and **restores**, never adopting what it finds (INV-29). Both
+    undo only powerplan's own recorded writes (INV-27, `design/DECISIONS.md`
+    D-0360).
     """
     if to is state.mode:
         return Transition(state=state, reason="unchanged")
@@ -607,6 +621,9 @@ class Load:
         """
         state = expire_force(state, ctx.now)
         state = self.device_type.latch(self, state, ctx)
+        stale = bool(self._stale_roles(ctx))
+        if stale != (state.stale_since is not None):
+            state = replace(state, stale_since=ctx.now if stale else None)
         demand = self.device_type.demand(self, state, ctx)
         connected = getattr(self.device_type, "connected", None)
         soc = getattr(self.device_type, "soc", None)
@@ -669,31 +686,29 @@ class Load:
     def release(
         self, state: LoadState, ctx: LoadCtx, reason: str = "released"
     ) -> tuple[LoadState, ApplyResult]:
-        """Let go: undo the shed, hand the device back (INV-26).
+        """Let go: undo what powerplan wrote and has on record (INV-26).
 
+        The device goes back to what it held before powerplan's first write
+        (`LoadState.prior`); a device powerplan never wrote to is left alone.
         Ignores the dwell clocks, the interval, the budget and the mode rows,
         because letting go is not a control action - but never sends a value the
-        device already holds, and a load that never wrote has nothing to undo.
+        device already holds.
         """
-        if not state.shed_active:
-            return (
-                replace(state, shed_active=False, shed_since=None),
-                ApplyResult(
-                    action=Action.SAME,
-                    value=None,
-                    reason="nothing was shed, nothing to release",
-                    budget=ctx.budget,
-                ),
-            )
         return self._hand_back(state, ctx, reason=reason, restoring=False)
 
     def restore(
         self, state: LoadState, ctx: LoadCtx, reason: str = "startup"
     ) -> tuple[LoadState, ApplyResult]:
-        """Write the configured comfort value back (INV-27, INV-29).
+        """Undo what powerplan wrote and has on record, as a start does (INV-27, INV-29).
 
-        The first actuation after every start is a **correction**, never a push:
-        this is what stops a setpoint walking a band per restart.
+        The same undo as `release()`, plus the restore dwell (no upward move
+        within one dwell of it). Only powerplan's own recorded writes are undone
+        and the device returns to what it held before them: a device powerplan
+        never wrote to keeps whatever it holds, because that value is somebody
+        else's (H.1 F-1: a charger's 10 A watchdog
+        overridden to 32 A on every start, `design/DECISIONS.md` D-0360). The record
+        is never powerplan's own write, so a start cannot walk a setpoint a band
+        per restart.
         """
         return self._hand_back(state, ctx, reason=reason, restoring=True)
 
@@ -708,21 +723,31 @@ class Load:
         )
 
     def health(self, state: LoadState, ctx: LoadCtx) -> Health:
-        """Whether this load's bindings are answering (D4 §4.1, §8)."""
-        stale = tuple(
-            str(role)
-            for role, read in sorted(ctx.reads.roles.items())
-            if not read.available
-            or (read.reading is not None and read.reading.quality is not Quality.OK)
-        )
+        """Whether this load's bindings are answering (D4 §4.1, §8).
+
+        A transient always carries its `since`: the gate's own clock for a write,
+        the stale latch for a role that stopped answering (H.1 F-6, D-0362).
+        """
+        stale = self._stale_roles(ctx)
         gate = state.gate
+        since = [at for at in (gate.transient_since, state.stale_since) if at is not None]
         return Health(
             ok=not gate.unhealthy and not stale,
             unhealthy=gate.unhealthy,
             failures=gate.failures,
-            transient_since=gate.transient_since,
+            transient_since=min(since) if since else None,
             stale_roles=stale,
             last_error=gate.last_error,
+        )
+
+    @staticmethod
+    def _stale_roles(ctx: LoadCtx) -> tuple[str, ...]:
+        """Return the bound roles that cannot answer this tick, by name."""
+        return tuple(
+            str(role)
+            for role, read in sorted(ctx.reads.roles.items())
+            if not read.available
+            or (read.reading is not None and read.reading.quality is not Quality.OK)
         )
 
     # --------------------------------------------------------------- internals #
@@ -730,18 +755,31 @@ class Load:
     def _hand_back(
         self, state: LoadState, ctx: LoadCtx, *, reason: str, restoring: bool
     ) -> tuple[LoadState, ApplyResult]:
-        """Return the shared body of `release()` and `restore()`."""
-        kind_ctx = self.device_type.kind_ctx(
-            self, state, ctx, grant=None, mode=self.mode_now(state, ctx)
-        )
-        outcome = self.kind.restore_command(kind_ctx)
-        if isinstance(outcome, Hold):
+        """Return the shared body of `release()` and `restore()`: undo our record.
+
+        With nothing on record there is nothing to undo - except a shed a build
+        before the record left in the store (`shed_active`, no `prior`), which is
+        handed back as the kind hands a device back.
+        """
+        undo: Command | Hold | None = _undo(state.prior)
+        if undo is None and (state.prior or (state.shed_active and not restoring)):
+            kind_ctx = self.device_type.kind_ctx(
+                self, state, ctx, grant=None, mode=self.mode_now(state, ctx)
+            )
+            undo = self.kind.restore_command(kind_ctx)
+        if undo is None:
+            return replace(state, shed_active=False, shed_since=None), ApplyResult(
+                action=Action.SAME,
+                value=None,
+                reason=f"{reason}: nothing of ours to undo",
+                budget=ctx.budget,
+            )
+        if isinstance(undo, Hold):
             return (
                 replace(state, shed_active=False, shed_since=None),
-                ApplyResult(
-                    action=outcome.action, value=None, reason=outcome.reason, budget=ctx.budget
-                ),
+                ApplyResult(action=undo.action, value=None, reason=undo.reason, budget=ctx.budget),
             )
+        outcome = undo
 
         decision = decide(
             outcome,
@@ -754,11 +792,13 @@ class Load:
             available=ctx.reads.available(outcome.role),
             release=True,
         )
-        state, result = self._settle(state, decision, ctx, None, sheds=False)
+        state, result = self._settle(state, decision, ctx, None, sheds=False, undo=True)
+        undone = decision.action in (Action.WRITTEN, Action.SAME)
         state = replace(
             state,
             shed_active=False,
             shed_since=None,
+            prior={} if undone else state.prior,
             last_target_restore_at=ctx.now if restoring else state.last_target_restore_at,
         )
         return state, replace(result, reason=f"{reason}: {result.reason}")
@@ -771,13 +811,25 @@ class Load:
         effective_w: float | None,
         *,
         sheds: bool,
+        undo: bool = False,
     ) -> tuple[LoadState, ApplyResult]:
-        """Fold one decision into the load's state (D4 §4.1, §7)."""
+        """Fold one decision into the load's state (D4 §4.1, §7).
+
+        A write that is not an undo adds to the record what each role it writes
+        held just before, unless powerplan already wrote that role since it last
+        let go - the record is never powerplan's own value (D-0360).
+        """
         shed_active = state.shed_active
         shed_since = state.shed_since
+        prior = state.prior
         if decision.written:
             shed_active = sheds
             shed_since = ctx.now if sheds else None
+            if not undo and decision.command is not None:
+                recorded = dict(prior)
+                for write in decision.command.writes:
+                    recorded.setdefault(str(write.role), ctx.reads.current_of(write.role))
+                prior = recorded
         # Most ticks change none of these; skipping the copy then is the no-change
         # fast path of D7 §5.1 - the state is equal either way.
         updated = (
@@ -785,6 +837,7 @@ class Load:
             if decision.gate is state.gate
             and shed_active is state.shed_active
             and shed_since is state.shed_since
+            and prior is state.prior
             and _same_w(state.commanded_w, effective_w)
             else replace(
                 state,
@@ -792,6 +845,7 @@ class Load:
                 shed_active=shed_active,
                 shed_since=shed_since,
                 commanded_w=effective_w,
+                prior=prior,
             )
         )
         return updated, ApplyResult(
@@ -803,7 +857,24 @@ class Load:
             verify_at=decision.verify_at,
             effective_w=effective_w,
             budget=decision.budget,
+            current=decision.current,
         )
+
+
+def _undo(prior: Mapping[str, Value | None]) -> Command | None:
+    """Return the command that puts every recorded role back as it was (INV-26, D-0360).
+
+    `None` when there is nothing on record, or when a role's earlier value could
+    not be read - the caller then hands the device back as its kind does.
+    """
+    if not prior or any(value is None for value in prior.values()):
+        return None
+    writes = tuple(Write(Role(role), value) for role, value in prior.items() if value is not None)
+    return Command(
+        writes=writes,
+        reason=f"back to {writes[0].value}, as it was before powerplan wrote to it",
+        urgent=True,
+    )
 
 
 def gate_config(

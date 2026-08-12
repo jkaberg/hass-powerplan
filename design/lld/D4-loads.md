@@ -117,12 +117,13 @@ class ComfortState:
 @dataclass(frozen=True)
 class Demand:
     wants: bool                         # would draw power now if allowed
-    required_kwh: float | None          # to reach target by deadline; None = cannot be computed
+    required_kwh: float | None          # to reach target by deadline; None = can't be computed
     deadline: datetime | None
     min_w: float; max_w: float          # min_w < 0 for a battery / V2H
     urgency: Urgency
     comfort: ComfortState | None
     price_sensitive: bool               # False under force / min_soc / legionella / comfort violation
+    import_w: float | None              # the most it may draw from the grid; a battery's 0 outside force (D6 §5.3, D-0651)
     reason: str
 
 @dataclass(frozen=True)
@@ -130,29 +131,33 @@ class Grant:  w: float; shed: bool; shed_reason: str | None; stop_ok: bool; stag
 
 @dataclass(frozen=True)
 class ApplyResult:  action: Action     # StrEnum: written · same · held_interval · held_dwell · held_settling
-                                       #   · held_suppressed (D-0064: the kind's own deadband - not "same")
+                                       #   · held_suppressed (the kind's own deadband, not "same", D-0064)
                                        #   · held_budget · observe · delegated · failed · transient
                     value: Value | None; reason: str
-                    command: Command | None; blocking: bool; verify_at: datetime | None   # WP0.5: what the
-                    effective_w: float | None; budget: TransportBudget    # executor performs, and INV-18's watts
+                    command: Command | None; blocking: bool; verify_at: datetime | None   # what the executor performs,
+                    effective_w: float | None; budget: TransportBudget                  #   and INV-18's watts
+                    current: Value | None                                               # what the device held when decided
 
-@dataclass
+@dataclass(frozen=True)
 class LoadState:                        # persisted per load
-    schema: int = 1
     mode: Mode
     force_since: datetime | None; force_max_h: float
     shed_active: bool; shed_since: datetime | None
     session_done: SessionDone | None    # EV latch
-    provisioned: dict[str, bool]        # profile provision step → landed
-    legionella_last_completed: datetime | None; legionella_in_progress_since: datetime | None  # WP3.3
-    cycle: CycleState | None            # appliance - WP3.6
-    learned: dict[str, Learned]         # nameplate_w, cycle profile, efficiency…
+    provisioned: Mapping[str, bool]     # profile provision step → landed
+    legionella_last_completed: datetime | None; legionella_in_progress_since: datetime | None
+    cycle: CycleState | None            # appliance
+    learned: Mapping[str, Learned]      # nameplate_w, cycle profile, efficiency…
     last_target_restore_at: datetime | None
-    commanded_w: float | None           # WP0.5: what D3 counts while a write settles (INV-18)
+    commanded_w: float | None           # what D3 counts while a write settles (INV-18)
+    stale_since: datetime | None        # since when a bound role hasn't answered (D-0362)
+    prior: Mapping[str, Value | None]   # per role, what the device held before our first write since we let go (D-0360)
     gate: WriteGateState
+    schema: int = 1
 
 @dataclass(frozen=True)
 class Health:  ok: bool; unhealthy: bool; failures: int; transient_since: datetime | None; stale_roles: tuple[str, ...]; last_error: str | None
+                # a transient always carries its since: the gate's clock for a write, `stale_since` for a role (D-0362)
 ```
 
 ### 4.2 Control kinds
@@ -311,7 +316,7 @@ class DeviceType(TypeLogic, Protocol):
 load.observe(state, ctx)          → (LoadState, Observation: Demand, measured_w, health)  (pure reads + the latches)
 load.apply(grant, state, ctx)     → (LoadState, ApplyResult)                (the only writer, via the WriteGate)
 load.release(state, ctx, reason)  → (LoadState, ApplyResult)                (INV-26)
-load.restore(state, ctx, reason)  → (LoadState, ApplyResult)                (INV-27, INV-29 - restore, never adopt)
+load.restore(state, ctx, reason)  → (LoadState, ApplyResult)                (INV-27, INV-29 - undo our own recorded write, never adopt)
 load.view_for_meter(state, ctx)   → ControlledView (measured, commanded, settling, phases)  for D3 §5.8
 ```
 
@@ -321,14 +326,16 @@ The state is threaded, not held, because the `Load` is frozen and the engine has
 
 | from → to | action |
 |---|---|
-| any → `off` | `release()` first (undo our shed, restore comfort target if we lowered it), then stop writing. INV-26. |
-| `off` → `auto` | re-run provisions, `restore()` comfort target (INV-29 restore-not-adopt), first tick is a correction |
+| any → `off` | `release()` first, then stop writing (INV-26): every role powerplan wrote goes back to what it held before, on record only (§5.2 below, D-0360) |
+| `off` → `auto` | re-run provisions, `restore()` (INV-29: restore, never adopt), the first tick is a correction |
 | `auto` → `force` | `force_since = now`; `Demand.price_sensitive = False`; plan in time order (D5); clears itself at `force_since + force_max_h` (INV-57) or when the type says the goal is met (EV: target SoC / session done; tank: charge setpoint reached) |
-| any → `observe` | `release()` first (a shed never survives into observe - INV-26), then writes become shadow log lines (`ApplyResult.action = observe`); reads and publishing continue; the slots calibrate the counterfactual (D11 §5.5) |
+| any → `observe` | `release()` first (a shed never survives into observe, INV-26), then writes become shadow log lines (`ApplyResult.action = observe`); reads and publishing go on; the slots calibrate the counterfactual (D11 §5.5) |
 | any → `delegated` | `release()` once, then never write; reserve nameplate |
 | `delegated`/`observe` → `auto` | as `off → auto` |
 
 Site `active = off` behaves as every load **`observe`**: `release()` on the edge (INV-26), decisions still computed and published (INV-44), would-be writes logged, calibration slots accrue - without changing the loads' own mode (PLAN §7 dec. 20). A load's **effective mode** is `off` if the load is `off`, else `observe` if the site is inactive or the load is `observe`, else the load's own mode. D11 and the WriteGate read the effective mode.
+
+**What's on record, what's put back, and when anything is written** (INV-26, INV-27; PLAN §7 dec. 30). `LoadState.prior` holds, per role, what the device held before powerplan's first write since it last let go. A later write never replaces it, so it's never powerplan's own value. `release()` and `restore()` are one undo: they write those values back and clear the record, and with nothing on record they write nothing and start no restore dwell - a device powerplan never wrote to is left alone. (A shed stored before the record existed, or an earlier value that couldn't be read, is handed back by the kind's `restore_command`.) Every edge out of control (to `off`, `observe`, `delegated`, and the site switch to off) releases, which also undoes a plan's coast, not only a shed: it's the last write a site that's off makes. The edge back into control restores. The lifecycle - startup, unload, stop, a removed subentry, the `release` action - only releases and restores loads under control (site on, not in safe mode, the load `auto` or `force`). A site that's off writes nothing at all, whatever is on record (D-0360). The site switch's edge is read against the position the engine records every tick, which a start reads back before it may write (D7 §5.5, D-0361).
 
 ### 5.3 `MODULATE` (EV, `generic_number` battery) - INV-28
 
@@ -365,12 +372,12 @@ desired =
     radiator:   the same half band above the floor - the comfort target it wants power towards on a plug, the shed setpoint and the clamp on a dial (D-0265)
     thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor) - a comfort violation is served at `target` whatever the plan says
 gate: tolerance 0.05 °C (heat pump 0.25), min_interval, dwell, urgent (stage ≥ 2 shed = urgent: past interval, never past tolerance)
-restore(): write profile.target (a correction, never adoption); no upward move within one dwell of a restore
+restore(): write profile.target (a correction, never adoption) - now: undo our own recorded write, back to what the device held before it (§5.2); no upward move within one dwell of a restore
 ```
 
 ### 5.5 `MODE` (thermostats with an operation-mode select - e.g. Z-Wave floor thermostats)
 
-Available whenever `generic_climate` detects a `select` whose options contain an eco/energy-saving option and a heating option. `comfort_option`/`shed_option` matched against the entity's `options` - exact first, then fuzzy (eco = the option containing "energy saving" or "eco"; heat = the option starting with "heat" that is not the eco one - note "Energy saving heating mode" contains "heating"). Shed ⇒ `shed_option`; else the plan's `desired_state` (`comfort` | `shed` from `heat_capacitor`, D5 §2) when the slot carries one; else `comfort_option`. A comfort violation always yields `comfort_option`. One `select_option` per change, no setpoint writes on the hot path (setpoints are provisioned). `release()` restores `comfort_option` unconditionally. Without such a select the loop falls back to `SETPOINT` on the climate entity.
+Available whenever `generic_climate` detects a `select` whose options contain an eco/energy-saving option and a heating option. `comfort_option`/`shed_option` are matched against the entity's `options`, exact first, then fuzzy (eco = the option containing "energy saving" or "eco"; heat = the option starting with "heat" that isn't the eco one - note "Energy saving heating mode" contains "heating"). Shed ⇒ `shed_option`; else the plan's `desired_state` (`comfort` | `shed` from `heat_capacitor`, D5 §2) when the slot carries one; else `comfort_option`. A comfort violation always yields `comfort_option`. One `select_option` per change, no setpoint writes on the hot path (setpoints are provisioned). `release()` puts back the option the select held before powerplan's first write, and only when there's one on record (§5.2, D-0360). Without such a select the loop falls back to `SETPOINT` on the climate entity.
 
 ### 5.6 `SWITCH`
 
@@ -519,7 +526,7 @@ Decision matrix, in order (first hit wins):
 
 | # | condition | result |
 |---|---|---|
-| 1 | mode ∈ {observe} | `observe` - log the would-be write with old/new/why |
+| 1 | mode ∈ {observe} | `observe` - log the would-be write with old/new/why. Row 3 first: a device already at the value is `same`. The gate notes the value (`GateState.observed`, cleared by a write) and the engine hands an observed decision to the executor only when it changed, so the log is one line per changed would-be value, a restart included (D-0363) |
 | 2 | mode ∈ {delegated, off} | `delegated`/`same` - never write (off writes only through `release()`) |
 | 3 | `same(current, desired, tol)` | `same` - never send a value already held (INV-21), **even when `urgent`, even in mode `force`** |
 | 3b | desired equals the value last **sent** and either the verify is still due, or the read-back was taken before the write (within one more verify window) | `held_settling` - the value on its way is the value held; a read-back older than the write is no read-back (D-0251) |
@@ -544,7 +551,11 @@ Decision matrix, in order (first hit wins):
 | `budget` | the site's token buckets, read into the next tick's `LoadCtx` (INV-58) |
 
 Each call returns an `Outcome` carrying the `GateState` the runtime persists into
-`LoadState.gate` (`design/DECISIONS.md` D-0145). Five things the matrix left to the
+`LoadState.gate` (`design/DECISIONS.md` D-0145). The read-back reads the
+load's **role**, not an entity: `StateReader(load_id, role)`, which the runtime answers
+with `device.reads(now).current_of(role)` - the binding's attribute and scale, as the
+next decision reads it (a climate's target is its `temperature` attribute, never its
+`heat` state; D-0366). Five things the matrix left to the
 executor, all logged in `design/DECISIONS.md` D-0141…D-0148: the read-back reads
 through an injected `StateReader`, because reading `hass.states` is the runtime's
 (INV-3, D-0141); a profile's `write(role, value)` is spelled
@@ -558,6 +569,8 @@ asks for (D-0144); and a command stays atomic, so a role with nothing bound send
 nothing at all (D-0148).
 
 **A `DeviceCall` may address a device.** Some integrations are driven only through an action that takes a `device_id` (Easee cloud's `set_charger_dynamic_limit`, KEBA's `set_current`), so `DeviceCall` carries `entity_id` **or** `device_id` as its target and `writegate.py` passes whichever it has. Nothing else changes: the call is still the executor's alone (INV-3), still `blocking=True` (INV-24), and the read-back still reads the bound role's entity (INV-22). A device-addressed write with no entity to read back is refused at match time, not sent blind. In code (D-0370): `DeviceCall.device_id`, and `DeviceCall.target` is `{"device_id": …}` when it is set, else `{"entity_id": …}`; `entity_id` stays on every call as the read-back's witness. `BoundDevice.device_id` is the load's own device, set by `runtime.device_from_subentry` from the subentry, so `DeviceProfile.bind()` keeps its signature. *The profile's row binds (D-0375):* `runtime.load_from_subentry` raises the load's gate to the profile's floors (`Quirks.raised`), so a profile stricter than its kind is obeyed outside the tests too.
+
+**The tick reads bound entities by id.** `LiveDevice.reads` views exactly the entities the bindings name (`DeviceView.from_states`), on the device or not: the flow binds off-device entities on purpose (`_rebind`, `_extra_bindings`), and the house's tank, a template power sensor and an `integration` energy sensor on no device, would read as stale roles from its first tick under a device-scoped view (D-0362).
 
 **Transport budgets** (INV-58): a site-level `TokenBucket` per transport: `zwave 6/min`, `zigbee 10/min`, `ble 4/min`, `cloud 2/min`, `modbus 20/min`, `local 30/min`, `mqtt 30/min`. Blunt sheds are exempt (a breaker beats a budget); everything else waits its turn, highest priority first.
 
@@ -779,7 +792,7 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 
 ## 7. Persistence
 
-`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`, and `last_on_at`, `last_off_at` for row 7's dwell clocks plus `last_error` for `Health.last_error` and the repair issue. Migration by `schema`; a subentry removed → its state deleted after `release()`.
+`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`, and `last_on_at`, `last_off_at` for row 7's dwell clocks plus `last_error` for `Health.last_error` and the repair issue. `LoadState.prior` is the record `release()` and `restore()` undo (§5.2); `observed` is the would-be value `observe` last reported (§5.10 row 1); `LoadState.stale_since` is the stale-role clock. The store's `schema` stamp on the section is not a load (D-0365). Migration by `schema`; a subentry removed → its state deleted after `release()`.
 
 ---
 
@@ -834,6 +847,9 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 22. A device-addressed `DeviceCall` sends `device_id`, not `entity_id`, with `blocking=True`, and its read-back reads the bound entity; a profile whose `CURRENT_SET` is device-addressed with no readable entity is refused at match time (§5.10).
 23. `easee_cloud` re-arms: after a plug-in edge the held dynamic limit is sent again even though the gate last sent the same value (the charger has forgotten it); `time_to_live` is 0 on every call.
 24. `zaptec` holds `held_interval` for 900 s after a write unless the write is urgent or blunt; the vocabulary profiles map every status their fixture declares, and an unmapped status is `LINK_DOWN`, never `CONNECTED` (INV-15). *(WP4.8a: 22–24 in `tests/providers/profiles/test_22_*`, `test_23_*`, `test_24_*`; 5, 6 and 16 for both cloud rows in `test_05_06_cloud_chargers.py`, `test_16_zaptec_profile_match.py`, `test_16_easee_cloud_profile_match.py`; the `ev` type's limit-only half in `tests/core/loads/test_ev_limit_pauses.py`.)*
+25. Release and restore undo only our own recorded writes, back to what the device held before them: ten starts against a device nobody's record names write nothing (item 1), after our own write one start undoes it; a restart in control undoes our recorded shed and a charger another automation holds at 10 A is left alone; a site that is off writes nothing on the way out or back in; the edge to off undoes our coast (INV-26, INV-27).
+26. Observe decides against the device (`same` before `observe`) and reports each would-be value once, `old → new`, a restart included; a climate setpoint's read-back reads its `temperature` attribute (INV-22).
+27. A power sensor on no device holding 0 W for an hour is read, not stale; a role that stops answering is `transient` with its `since`, cleared when it answers again.
 ---
 
 ## 10. Deliberately deferred

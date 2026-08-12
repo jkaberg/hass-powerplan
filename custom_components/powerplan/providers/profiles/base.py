@@ -1128,22 +1128,18 @@ class LiveDevice:
         return self.bound.entity_ids
 
     def reads(self, now: datetime) -> Reads:
-        """Return what the device's entities say right now.
+        """Return what every bound entity says right now, on this device or not.
 
-        The device's own entities, plus every bound entity that is not one of
-        them: a Zaptec charger's *Available current* lives on its installation
-        , and an answer's off-device sensor on whatever device it has
-        (D4 §5.14). Only those are read one by one; the rest come with the device.
+        Read by entity id, not through the device's own entities: a role may be
+        bound off the device - a template power sensor, an integration's energy
+        helper, a heat pump's outlet sensor (the flow's `_rebind` and
+        `_extra_bindings`) - and a device-scoped view read those as missing, so a
+        tank whose power sensor held a valid 0 W was reported stale all day
+        (H.1 F-6, `design/DECISIONS.md` D-0362).
         """
-        view = DeviceView.from_hass(self.hass, self.device_id, with_parent=False)
-        own = {entity.entity_id for entity in view.entities}
-        elsewhere = [entity_id for entity_id in self.bound.entity_ids if entity_id not in own]
-        if elsewhere:
-            view = replace(
-                view,
-                entities=view.entities + DeviceView.from_states(self.hass, elsewhere).entities,
-            )
-        return self.bound.reads(view, now)
+        return self.bound.reads(
+            DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id), now
+        )
 
     def call_for(self, write: Write) -> DeviceCall | None:
         """Return the service call for `write`, or `None` when its role is unbound."""

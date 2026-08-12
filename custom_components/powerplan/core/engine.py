@@ -864,13 +864,24 @@ class EngineState:
             tariff=_decode(TariffState, section(Section.TARIFF)),
             prices=dict(data.get(Section.PRICES.value) or {}),
             plans=_decode(PlansState, section(Section.PLANS)) or PlansState(),
-            loads=_decode(Mapping[str, LoadState], data.get(Section.LOADS.value) or {}) or {},
+            loads=_decode(Mapping[str, LoadState], _load_rows(data.get(Section.LOADS.value))) or {},
             alloc=_decode(AllocState, section(Section.ALLOC)) or AllocState(),
             forecasts=dict(data.get(Section.FORECASTS.value) or {}),
             accounting=dict(data.get(Section.ACCOUNTING.value) or {}),
             events=_decode(EventsState, section(Section.EVENTS)) or EventsState(),
             runtime=_decode(RuntimeState, section(Section.RUNTIME)) or RuntimeState(),
         )
+
+
+def _load_rows(section: Any) -> Mapping[str, Any]:
+    """Return the `loads` section's rows by load id, without the store's `schema` stamp.
+
+    The store stamps every section it writes with its schema (D7 §2);
+    in a section keyed by load id the stamp is not a load, and decoding it as
+    one warned on every start (H.1 F-16).
+    """
+    rows: Mapping[str, Any] = section or {}
+    return {key: row for key, row in rows.items() if key != "schema"}
 
 
 # --------------------------------------------------------------------------- #
@@ -1223,6 +1234,9 @@ class Engine:
         # -- 1b. mode edges, read live (INV-47), released before anything else #
         load_states, edge_commands, edge_dirty = self._mode_edges(state, inputs, active, reasons)
         commands.extend(edge_commands)
+        # The switch's position as of this tick: the next tick's edge, and what a
+        # restart reads before it may write anything (D7 §5.5, D-0361).
+        edges["site_active"] = "1" if knobs.active else "0"
 
         # -- 2. the meter -------------------------------------------------- #
         views = self._views(load_states, inputs, active, failed)
@@ -1509,7 +1523,7 @@ class Engine:
                 before = load_states.get(load.load_id, LoadState())
                 after, result = load.release(before, ctx, reason="safe mode")
                 load_states[load.load_id] = after
-                command = _command_of(load.load_id, result, after.gate, ctx.reads)
+                command = _command_of(load.load_id, result, after.gate)
                 if command is not None:
                     commands.append(command)
             repairs.append(
@@ -1632,13 +1646,17 @@ class Engine:
 
         A mode edge releases or restores at once (D4 §5.2, INV-26, INV-29): a
         load never inherits the mode it was left in, and the site switch turning
-        off releases every load on the edge (PLAN §7 dec. 20).
+        off releases every load on the edge (PLAN §7 dec. 20). Both undo only
+        powerplan's own recorded writes, and the edge out of control is the last
+        write a site that is off makes (INV-26, INV-27, `design/DECISIONS.md`
+        D-0360). The switch's edge is the switch's own, read against the position
+        the last tick recorded - safe mode releases on its own path (D7 §2).
         """
         states = dict(state.loads)
         commands: list[LoadCommand] = []
         dirty: set[Section] = set()
         was_active = state.events.edges.get("site_active")
-        site_edge = was_active == "1" and not active
+        site_edge = was_active == "1" and not inputs.knobs.active
         for load in self._loads:
             before = states.get(load.load_id, LoadState())
             wanted = inputs.knobs.modes.get(load.load_id, before.mode)
@@ -1655,13 +1673,13 @@ class Engine:
             if (edge is not None and edge.release) or site_edge:
                 after, result = load.release(after, ctx, reason=edge.reason if edge else "site off")
                 reasons.append(f"{load.load_id}: released ({result.reason})")
-                command = _command_of(load.load_id, result, after.gate, ctx.reads)
+                command = _command_of(load.load_id, result, after.gate)
                 if command is not None:
                     commands.append(command)
             elif edge is not None and edge.restore:
                 after, result = load.restore(after, ctx, reason=edge.reason)
                 reasons.append(f"{load.load_id}: restored ({result.reason})")
-                command = _command_of(load.load_id, result, after.gate, ctx.reads)
+                command = _command_of(load.load_id, result, after.gate)
                 if command is not None:
                     commands.append(command)
             states[load.load_id] = after
@@ -1781,8 +1799,8 @@ class Engine:
             out_states[load.load_id] = after
             results[load.load_id] = result
             budget = result.budget
-            command = _command_of(load.load_id, result, after.gate, ctx.reads)
-            if command is not None:
+            command = _command_of(load.load_id, result, after.gate)
+            if command is not None and not _said_before(before.gate, result):
                 commands.append(command)
         return out_states, results, commands
 
@@ -3159,27 +3177,25 @@ def _grant_reasons(views: Sequence[LoadView], grants: Grants) -> list[str]:
     return lines
 
 
-def _command_of(
-    load_id: str, result: ApplyResult, gate: GateState, reads: Reads
-) -> LoadCommand | None:
+def _command_of(load_id: str, result: ApplyResult, gate: GateState) -> LoadCommand | None:
     """Return the executor's work for one load, or `None` when there is none.
 
     Only a written or observed decision reaches `writegate.py`: a held or
     unchanged one has nothing to send, and the gate state is already threaded
-    into the `LoadState` the engine returns. `current` is read here, because the
-    INFO line the executor logs is "old → new, why" and only the engine holds
-    the reads (D4 §5.10).
+    into the `LoadState` the engine returns. `current` is what the gate decided
+    against, carried on the result, because the INFO line the executor logs is
+    "old → new, why" - an observed decision's too, which has no command to name
+    a role by (H.1 F-4: every observe line read "from None", D-0363).
     """
     if result.action is not Action.WRITTEN and result.action is not Action.OBSERVE:
         return None
-    role = None if result.command is None else result.command.role
     return LoadCommand(
         load_id=load_id,
         decision=Decision(
             action=result.action,
             command=result.command,
             value=result.value,
-            current=None if role is None else reads.current_of(role),
+            current=result.current,
             reason=result.reason,
             gate=gate,
             budget=result.budget,
@@ -3196,6 +3212,16 @@ _DEFAULT_PRESENCE: Final[PresenceMode] = next(
     for f in fields(LoadCtx)
     if f.name == "presence" and isinstance(f.default, PresenceMode)
 )
+
+
+def _said_before(gate: GateState, result: ApplyResult) -> bool:
+    """Say whether an observed would-be write repeats the one last reported (H.1 F-4).
+
+    The executor logs every observed decision it is handed, so an unchanged one is
+    not handed over: a would-be value is reported once, however many ticks it
+    stands, and the gate's record of it is persisted with the load (D-0363).
+    """
+    return result.action is Action.OBSERVE and gate.observed == result.value
 
 
 def _presence_now(inputs: Inputs) -> PresenceMode:

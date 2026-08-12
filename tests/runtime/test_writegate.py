@@ -193,18 +193,20 @@ class Sent:
 
 @dataclass
 class Reader:
-    """The runtime's read of one entity - the executor never reaches for state itself.
+    """The runtime's read of one load's role - the executor never reaches for state itself.
 
     `hass.states.get` belongs to `runtime.py` and `providers/` (INV-3), so the
-    read-back reads through this callable. It records every read, which is how
+    read-back reads through this callable, by load and role as the runtime's
+    bindings do (D-0366). It records the entity every read reached, which is how
     "exactly one read per verify" is asserted.
     """
 
     hass: HomeAssistant
     reads: list[str] = field(default_factory=list)
 
-    def __call__(self, entity_id: str) -> Value | None:
-        """Return what `entity_id` says now, in the units a write to it uses."""
+    def __call__(self, load_id: str, role: Role) -> Value | None:
+        """Return what `role` says now, in the units a write to it uses."""
+        entity_id = {**CHARGER.entities, **FLOOR.entities}[role]
         self.reads.append(entity_id)
         state = self.hass.states.get(entity_id)
         if state is None or state.state in ("unknown", "unavailable"):
@@ -893,6 +895,29 @@ async def test_17a_observe_logs_the_would_be_write_and_calls_nothing(
     assert states == [("ev", outcome.gate)]
     assert "observe" in caplog.text
     assert "24" in caplog.text
+
+
+@pytest.mark.inv("INV-44")
+async def test_17c_an_observe_line_says_what_the_device_holds_and_what_would_be_written(
+    *,
+    gate: WriteGate,
+    device: FakeHaDevice,
+    calls: list[Sent],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The line reads old → new - `16.0 → 24.0`, never `None → 24.0` (H.1 F-4).
+
+    The house's observe log said `None` on every line, so it could not say whether
+    a write would happen at all. The engine hands the executor an observed decision
+    only when the would-be value changes (D-0363), and each one is one line.
+    """
+    with caplog.at_level(logging.INFO):
+        await gate.async_apply([actuation(limit(24.0), mode=Mode.OBSERVE)])
+
+    lines = [r.getMessage() for r in caplog.records if "observe —" in r.getMessage()]
+    assert lines == ["Car charger: observe — 16.0 → 24.0 (observe: would have written plan: 24 A)"]
+    assert not calls
+    assert device.values[LIMIT] == "16.0"
 
 
 @pytest.mark.inv("INV-3")

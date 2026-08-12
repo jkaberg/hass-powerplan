@@ -196,12 +196,18 @@ async def test_22f_the_executor_sends_the_device_blocking_and_reads_the_entity_b
     calls: list[Sent],
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """`target={"device_id": …}`, no `entity_id`, `blocking=True`; the read-back reads the sensor."""
-    asked: list[str] = []
+    """`target={"device_id": …}`, no `entity_id`, `blocking=True`; the read-back reads the sensor.
 
-    def read(entity_id: str) -> Value | None:
-        asked.append(entity_id)
-        state = hass.states.get(entity_id)
+    The gate asks the runtime for the load's written role (D-0366), and the runtime
+    reads it through the bindings; this reader does the same with the bound device.
+    """
+    asked: list[tuple[str, Role]] = []
+    device = bound()
+
+    def read(load_id: str, role: Role) -> Value | None:
+        asked.append((load_id, role))
+        binding = device.binding(role)
+        state = None if binding is None else hass.states.get(binding.entity_id)
         return None if state is None else float(state.state)
 
     gate = gate_factory(read)
@@ -218,7 +224,7 @@ async def test_22f_the_executor_sends_the_device_blocking_and_reads_the_entity_b
     assert decision.action is Action.WRITTEN
 
     outcomes = await gate.async_apply(
-        [Actuation(load_id="ev", name="Carport", target=bound(), cfg=cfg, decision=decision)]
+        [Actuation(load_id="ev", name="Carport", target=device, cfg=cfg, decision=decision)]
     )
 
     assert [outcome.action for outcome in outcomes] == [Action.WRITTEN]
@@ -234,8 +240,11 @@ async def test_22f_the_executor_sends_the_device_blocking_and_reads_the_entity_b
 
     await advance(hass, freezer, cfg.verify_after_s + 1.0)
 
-    assert asked == [DYNAMIC_LIMIT], "the read-back reads the bound entity, not the device"
-    assert read(DYNAMIC_LIMIT) == 16.0, "and it finds the limit the charger was given"
+    assert asked == [("ev", Role.CURRENT_SET)], "the read-back asks for the written role"
+    written = device.binding(Role.CURRENT_SET)
+    assert written is not None
+    assert written.entity_id == DYNAMIC_LIMIT, "the role reads the bound entity, not the device"
+    assert read("ev", Role.CURRENT_SET) == 16.0, "and it finds the limit the charger was given"
 
 
 async def test_22g_a_command_with_no_device_sends_nothing(

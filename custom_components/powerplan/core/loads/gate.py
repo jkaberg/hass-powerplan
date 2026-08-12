@@ -161,6 +161,10 @@ class GateState:
     last_on_at: datetime | None = None
     last_off_at: datetime | None = None
     last_error: str | None = None
+    #: The would-be value `observe` last reported: an observed decision for the
+    #: same value has nothing new to say, and the record outlives a restart
+    #: (H.1 F-4, `design/DECISIONS.md` D-0363). A write clears it.
+    observed: Value | None = None
 
     @property
     def unhealthy(self) -> bool:
@@ -338,7 +342,17 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     # Row 1 and row 2 - a mode that may not write.
     if not release:
         if mode is Mode.OBSERVE:
-            return decided(Action.OBSERVE, f"observe: would have written {command.reason}")
+            # Observe decides against what the device holds, as control would: a
+            # value it already has is no would-be write at all. Without this the
+            # house logged "would write 21.0" to a heat pump at 21.0 every tick
+            # (H.1 F-4, `design/DECISIONS.md` D-0363).
+            if same(current, command.value, cfg.tolerance):
+                return decided(Action.SAME, f"observe: already at {command.value}")
+            return decided(
+                Action.OBSERVE,
+                f"observe: would have written {command.reason}",
+                gate=replace(state, observed=command.value),
+            )
         if mode is Mode.DELEGATED:
             return decided(Action.DELEGATED, "delegated: someone else drives this device")
         if mode is Mode.OFF:
@@ -435,6 +449,7 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
         transient_since=None,
         last_on_at=on_at,
         last_off_at=off_at,
+        observed=None,
     )
     return decided(
         Action.WRITTEN,

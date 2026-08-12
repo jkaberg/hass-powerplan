@@ -3,13 +3,13 @@
 `tests/core/loads/test_01_setpoint_never_walks.py` asserts this against a pure
 thermostat. This file asserts it against the **captured** one, through
 `generic_climate`, `WriteGate` and Home Assistant's service bus - because the
-reference house's two defects both lived exactly there, in the seam between a
+ancestor controller's two defects both lived exactly there, in the seam between a
 driver and a device that remembers:
 
-* **the flipping tank** - a tank flipped 75 → 45 → 75 → 45 °C in 23 minutes, four
+* **The flipping tank** - a tank flipped 75 → 45 → 75 → 45 °C in 23 minutes, four
   reversals in one low-price window, none of which stored any useful energy,
   because `min_on_seconds` was configured and never consulted;
-* **the setpoint walk** - eight pyscript reloads in six minutes walked a heat pump
+* **The walking setpoint** - eight reloads in six minutes walked a heat pump
   22 → 23 → 24 → 25 → 26 °C, because start-up took its baseline *from the
   thermostat* and added its own offset on top. What it "remembered" was its own
   previous write, so start-up was not idempotent and the error compounded until the
@@ -23,10 +23,17 @@ direction: upward here, and sixteen hours stuck in eco for `gv_inngang` downward
 
 The device under test keeps what it is told between starts. That is the only way a
 walk can show at all.
+
+A restore
+undoes only a write powerplan itself made and has on record, so the store carries
+the load's state from one start to the next here, as it does in the house; ten
+starts against a device nobody's record names write nothing at all.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -55,7 +62,7 @@ if TYPE_CHECKING:
 
     from freezegun.api import FrozenDateTimeFactory
 
-    from custom_components.powerplan.core.loads import Load
+    from custom_components.powerplan.core.loads import Load, LoadState
     from custom_components.powerplan.writegate import StateReader, WriteGate
     from tests.providers.profiles.conftest import FakeHeatit, Sent
 
@@ -88,13 +95,15 @@ async def ten_starts(
     gate: WriteGate,
     thermostat: FakeHeatit,
     freezer: FrozenDateTimeFactory,
+    state: LoadState,
 ) -> list[Action]:
-    """Start the load ten times from nothing, and return what each start decided.
+    """Start the load ten times from `state`, and return what each start decided.
 
-    Every start begins with a **fresh** `LoadState`: Home Assistant restarted, the
-    store had nothing, and the only thing that survived is what the device holds.
-    Half an hour passes between starts, so nothing here is held by a clock - what
-    stops the ninth write is that there is nothing left to correct (INV-29).
+    The store carries the load's state from one start to the next - the gate's
+    record of what powerplan last wrote with it - and the device keeps what it
+    holds. Half an hour passes between starts, so nothing here is held by a clock:
+    what stops the second write is that nothing of ours is left to correct
+    (INV-27, INV-29).
     """
     device = PROFILE.bind(PROFILE.match(thermostat.view()).bindings)
     actions: list[Action] = []
@@ -102,7 +111,6 @@ async def ten_starts(
         await advance(thermostat.hass, freezer, 1800.0)
         view = thermostat.view()
         now = dt_util.utcnow()
-        state = load_state()
         ctx = load_ctx(now=now, reads=device.reads(view, now), electrical=REFERENCE_PROFILE)
 
         state, result = load.restore(state, ctx, reason=f"startup {start}")
@@ -122,7 +130,7 @@ async def ten_starts(
             release=True,
         )
         assert decision.action is result.action, "the load and the executor agree (D4 §5.10)"
-        await gate.async_apply(
+        (outcome,) = await gate.async_apply(
             [
                 Actuation(
                     load_id=load.config.load_id,
@@ -133,7 +141,19 @@ async def ten_starts(
                 )
             ]
         )
+        state = replace(state, gate=outcome.gate)  # what the runtime adopts and persists
     return actions
+
+
+def crashed_with(role: Role, before: str | float, wrote: str | float, *, shed: bool) -> LoadState:
+    """Return the state a crash leaves in the store: our write, and what it replaced."""
+    at = dt_util.utcnow() - timedelta(hours=1)
+    return load_state(
+        shed_active=shed,
+        shed_since=at if shed else None,
+        prior={str(role): before},
+        gate=GateState(last_write_at=at, last_value=wrote),
+    )
 
 
 @pytest.mark.inv("INV-27")
@@ -145,20 +165,21 @@ async def test_01_ten_starts_never_walk_a_mode_loops_setpoints(
     freezer: FrozenDateTimeFactory,
     now: datetime,
 ) -> None:
-    """A loop left in eco by a crash: one restore, nine silences, no setpoint touched.
+    """A loop our shed left in eco, then a crash: one restore, nine silences, no setpoint touched.
 
-    `release()` restores the comfort *option* unconditionally - once,
-    switching a bypass on simply froze four loops in "Energy saving heating mode" and
-    they had to be put back by hand - and it does it with one `select_option`. The
-    three provisioned numbers are not part of a restore: nothing on the hot *or* the
-    cold path of a start may move the eco setpoint, or ten restarts would walk it.
+    `release()` restores the comfort *option* unconditionally - on the ancestor
+    controller switching a bypass on simply froze four loops in "Energy saving heating
+    mode" and they had to be put back by hand - and it does it with one `select_option`.
+    The three provisioned numbers are not part of a restore: nothing on the hot *or* the
+    cold path of a start may move the eco setpoint, or ten restarts would walk it .
     """
     device = PROFILE.bind(PROFILE.match(thermostat.view()).bindings)
     gate = gate_factory(binding_reader(thermostat.hass, device))
     _move(thermostat, MODE_SELECT, ECO_MODE)
     load = a_loop(thermostat, kind="mode")
 
-    actions = await ten_starts(load, gate, thermostat, freezer)
+    crashed = crashed_with(Role.MODE_SELECT, COMFORT_MODE, ECO_MODE, shed=True)
+    actions = await ten_starts(load, gate, thermostat, freezer, crashed)
 
     assert actions[0] is Action.WRITTEN
     assert set(actions[1:]) == {Action.SAME}, "nine starts found comfort and said nothing"
@@ -179,19 +200,21 @@ async def test_01b_ten_starts_never_walk_a_setpoint_loops_setpoint(
     freezer: FrozenDateTimeFactory,
     now: datetime,
 ) -> None:
-    """The setpoint walk, through this profile: 22 °C found, 24 °C written, and there it stays.
+    """The setpoint walk, through this profile: our 22 °C found, 24 °C written back, and there it stays.
 
-    The first start is a **correction** - the configured comfort, written once - and
-    the nine after it find 24.0 °C and send nothing at all. A controller that adopted
-    the device's value and added its own band would have written 25, then 26, then 27:
-    ten starts, ten writes, each one the input to the next.
+    The first start is a **correction** - our coast to 22 °C undone, back to the 24.0 °C
+    the store recorded it replaced - and the nine after it find nothing of ours and
+    send nothing at all. A controller that adopted the device's value and added its
+    own band would have written 25, then 26, then 27: ten starts, ten writes, each
+    one the input to the next.
     """
     device = PROFILE.bind(PROFILE.match(thermostat.view()).bindings)
     gate = gate_factory(binding_reader(thermostat.hass, device))
     _set_target(thermostat, 22.0)
     load = a_loop(thermostat, kind="setpoint")
 
-    actions = await ten_starts(load, gate, thermostat, freezer)
+    crashed = crashed_with(Role.SETPOINT, COMFORT_C, 22.0, shed=False)
+    actions = await ten_starts(load, gate, thermostat, freezer, crashed)
 
     assert actions[0] is Action.WRITTEN
     assert set(actions[1:]) == {Action.SAME}
@@ -199,6 +222,36 @@ async def test_01b_ten_starts_never_walk_a_setpoint_loops_setpoint(
     assert [sent.data["temperature"] for sent in calls] == [COMFORT_C]
     assert thermostat.setpoint == COMFORT_C, "the configured comfort, not 22 and not 26"
     assert thermostat.setpoint_writes == 1, "one correction in ten starts"
+
+
+@pytest.mark.inv("INV-27")
+@pytest.mark.inv("INV-29")
+@pytest.mark.parametrize("kind", ["mode", "setpoint"])
+async def test_01d_ten_starts_leave_a_loop_nobody_recorded_where_it_is(
+    gate_factory: Callable[[StateReader], WriteGate],
+    thermostat: FakeHeatit,
+    calls: list[Sent],
+    freezer: FrozenDateTimeFactory,
+    kind: str,
+) -> None:
+    """In eco at 22 °C, with nothing of ours in the store: ten starts write nothing (INV-27).
+
+    A device powerplan never wrote to
+    keeps what it holds - somebody else put it there - and a first tick in control,
+    not a start, is what steers it.
+    """
+    device = PROFILE.bind(PROFILE.match(thermostat.view()).bindings)
+    gate = gate_factory(binding_reader(thermostat.hass, device))
+    _move(thermostat, MODE_SELECT, ECO_MODE)
+    _set_target(thermostat, 22.0)
+    load = a_loop(thermostat, kind=kind)
+
+    actions = await ten_starts(load, gate, thermostat, freezer, load_state())
+
+    assert set(actions) == {Action.SAME}
+    assert calls == []
+    assert thermostat.option() == ECO_MODE
+    assert thermostat.setpoint == 22.0
 
 
 @pytest.mark.inv("INV-27")

@@ -127,10 +127,18 @@ class LoadEntity(PowerplanEntity):
     def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
         """Bind to one load of the site."""
         super().__init__(runtime, key)
-        self.load = load
+        self._load = load
         self.load_id = load.load_id
         self._attr_unique_id = unique_id(runtime.entry.entry_id, key, load.load_id)
         self._attr_device_info = load_device_info(runtime, load)
+
+    @property
+    def load(self) -> Load:
+        """The load as the runtime holds it now: a reconfigure swaps it in place (D-0364)."""
+        return next(
+            (load for load in self.runtime.build.loads if load.load_id == self.load_id),
+            self._load,
+        )
 
     @property
     def status(self) -> LoadStatus | None:

@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed_exact
 
 from custom_components.powerplan.core.loads import Value
@@ -283,8 +284,18 @@ def calls(hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch) -> list[Sent]:
 
 @pytest.fixture
 def gate(hass: HomeAssistant) -> Generator[WriteGate]:
-    """Yield the executor, closed at teardown as `async_unload_entry` closes it."""
-    executor = WriteGate(hass, read_state=lambda entity_id: read_state(hass, entity_id))
+    """Yield the executor, closed at teardown as `async_unload_entry` closes it.
+
+    Its reader is never reached: a test that reads a write back builds its gate
+    with `gate_factory(binding_reader(...))`, which reads through the load's own
+    bindings as the runtime does (D-0366).
+    """
+
+    def unread(load_id: str, role: Role) -> Value | None:
+        msg = f"no read-back is expected here ({load_id}, {role})"
+        raise AssertionError(msg)
+
+    executor = WriteGate(hass, read_state=unread)
     yield executor
     executor.cancel()
 
@@ -315,53 +326,21 @@ async def advance(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: 
     await hass.async_block_till_done()
 
 
-def read_state(hass: HomeAssistant, entity_id: str) -> Value | None:
-    """Read one entity as the runtime does - the executor never reaches for state (INV-3)."""
-    state = hass.states.get(entity_id)
-    if state is None or state.state in ("unknown", "unavailable"):
-        return None
-    try:
-        return float(state.state)
-    except ValueError:
-        return state.state
+def binding_reader(hass: HomeAssistant, bound: BoundDevice) -> StateReader:
+    """Return the runtime's `StateReader` for one bound device (D-0182, D-0366).
 
-
-def binding_reader(hass: HomeAssistant, bound: BoundDevice) -> Callable[[str], Value | None]:
-    """Return a `StateReader` that answers in **powerplan's** units (D-0182).
-
-    The read-back compares what the entity says with the value the gate wrote, and
+    The read-back compares what the device says with the value the gate wrote, and
     the gate writes degrees while a `0.1 °C` entity counts tenths - so a reader that
     returned the raw state would report a deviation on every landed write (210 is
-    not 21.0). It reads through the load's own bindings: the scale, and the
-    attribute for a `climate` entity, whose state is `heat` whatever its target is.
-
-    The writable binding wins where two roles share an entity: a read-back always
-    verifies a write, and only a writable binding is ever written. The runtime owns
-    `hass.states` (INV-3); this is the test's stand-in for the reader it injects.
+    not 21.0), and a `climate` entity's state is `heat` whatever its target is. It
+    reads the role through the load's own bindings, which is exactly what
+    `Runtime._read_state` does through `LiveDevice.reads(now).current_of(role)`.
     """
-    by_entity: dict[str, RoleBinding] = {}
-    for binding in bound.bindings.values():
-        held = by_entity.get(binding.entity_id)
-        if held is None or (binding.writable and not held.writable):
-            by_entity[binding.entity_id] = binding
 
-    def read(entity_id: str) -> Value | None:
-        state = hass.states.get(entity_id)
-        if state is None or state.state in ("unknown", "unavailable"):
-            return None
-        binding = by_entity.get(entity_id)
-        raw: Any = (
-            state.state
-            if binding is None or binding.attribute is None
-            else (state.attributes.get(binding.attribute))
-        )
-        if raw is None:
-            return None
-        try:
-            number = float(raw)
-        except TypeError, ValueError:
-            return str(raw)
-        return number * (1.0 if binding is None else binding.scale)
+    def read(load_id: str, role: Role) -> Value | None:
+        del load_id
+        view = DeviceView.from_states(hass, bound.entity_ids)
+        return bound.reads(view, dt_util.utcnow()).current_of(role)
 
     return read
 

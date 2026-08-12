@@ -420,7 +420,7 @@ def loop_tick(
 
 @pytest.mark.inv("INV-27")
 async def test_03o_the_hot_path_writes_one_option_and_no_setpoint(
-    gate: WriteGate,
+    gate_factory: Callable[[StateReader], WriteGate],
     thermostat: FakeHeatit,
     calls: list[Sent],
     freezer: FrozenDateTimeFactory,
@@ -439,6 +439,7 @@ async def test_03o_the_hot_path_writes_one_option_and_no_setpoint(
     and the loop waits, which is the Z-Wave mesh's budget and not a shortcut here.
     """
     kind, device, cfg = mode_loop(thermostat.view())
+    gate = gate_factory(binding_reader(thermostat.hass, device))
     state = GateState()
 
     for shed, stage in ((False, 0), (True, 2), (False, 0)):

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -20,7 +21,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan import runtime as runtime_module
 from custom_components.powerplan.const import DOMAIN
-from custom_components.powerplan.core.engine import Engine, EngineHealth
+from custom_components.powerplan.core.engine import Engine, EngineHealth, EngineState
 from custom_components.powerplan.core.loads import LoadState
 from custom_components.powerplan.core.loads.gate import GateState
 from custom_components.powerplan.runtime import POWER_DEBOUNCE_S, Runtime, build_site
@@ -30,6 +31,7 @@ from tests.runtime.conftest import (
     SITE_ENTRY_ID,
     FakeFloor,
     FakeMeter,
+    _write_document,
     advance,
     restart_entry,
     site_entry,
@@ -97,12 +99,12 @@ async def _runtime_with_floor(
     return runtime
 
 
-def _shed_state(now: datetime) -> LoadState:
+def _shed_state(now: datetime, value: float = 21.0) -> LoadState:
     """Return a floor left shed by a previous run: setpoint at the shed value, gate remembering it."""
     return LoadState(
         shed_active=True,
         shed_since=now - timedelta(minutes=20),
-        gate=GateState(last_write_at=now - timedelta(minutes=20), last_value=21.0),
+        gate=GateState(last_write_at=now - timedelta(minutes=20), last_value=value),
     )
 
 
@@ -343,13 +345,42 @@ async def test_06_three_engine_failures_enter_safe_mode_release_and_a_restart_cl
 @pytest.mark.inv("INV-48")
 @pytest.mark.inv("INV-27")
 async def test_07_startup_restores_a_loop_left_in_eco_before_the_first_tick(
-    hass: HomeAssistant, meter: FakeMeter, ticks: list[tuple[datetime, str]]
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    ticks: list[tuple[datetime, str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Release → restore → provision → first tick → platforms; the eco loop is corrected first."""
+    """Release → restore → provision → first tick → platforms; our eco loop is corrected first.
+
+    The previous run's shed is in its store - powerplan's own write, on record,
+    which is the only thing a start restores (INV-27 as amended).
+    """
     floor = FakeFloor(hass, setpoint_c=22.0)
     floor.register()
+    await hass.async_add_executor_job(
+        _write_document,
+        Path(hass.config.path(".storage", STORE_KEY)),
+        {
+            "version": 1,
+            "minor_version": 1,
+            "key": STORE_KEY,
+            "data": EngineState(
+                loads={"loop_bath": _shed_state(datetime.now(UTC), value=22.0)}
+            ).to_sections(),
+        },
+    )
+    at_first_tick: list[list[tuple[str, float]]] = []
+    original = Engine.tick
+
+    def spy(self: Engine, state: Any, inputs: Any) -> Any:
+        if inputs.trigger == "startup":
+            at_first_tick.append(list(floor.seen))
+        return original(self, state, inputs)
+
+    monkeypatch.setattr(Engine, "tick", spy)
     entry = site_entry(hass)
     runtime = await _runtime_with_floor(hass, entry, floor)
+    assert at_first_tick == [[(FLOOR_CLIMATE, 24.0)]], "restored before the first tick"
     assert runtime.startup[:7] == [
         "store",
         "build",

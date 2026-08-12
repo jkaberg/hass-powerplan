@@ -28,8 +28,10 @@ pytestmark = pytest.mark.scenario
 #: The bathrooms' configured comfort and floor (D4 §6.1, `tests/builders/houses.py`).
 BATHROOM_COMFORT_C = 24.0
 BATHROOM_FLOOR_C = 21.0
-#: The tank's `comfort_min_c` (D9 §5.9, `tests/builders/houses.py`).
-TANK_COMFORT_MIN_C = 45.0
+#: What the tank's own thermostat and the charger held before powerplan wrote to
+#: them (`tests/builders/houses.py`, `tests/sim/ev.py`): what a release puts back.
+TANK_OWN_SETPOINT_C = 75.0
+CHARGER_OWN_LIMIT_A = 32.0
 #: How long after a restart no write may appear that the control run did not have.
 QUIET_AFTER_RESTART = timedelta(minutes=5)
 
@@ -167,23 +169,25 @@ def test_three_engine_failures_enter_safe_mode_and_release_every_load(
     assert all(not snapshot.site.active for snapshot in after)
     assert len(after) > 100, "the publish continued (INV-44)"
 
-    # Every load released: the charger at its own maximum; the loops out of any shed
-    # and inside their band - a coast setpoint a plan left is not a shed (D4 §5.4),
-    # and the restore on the next start corrects it (INV-27); the tank on its own.
+    # Every load released - every write of ours undone, each device back to what it
+    # held before powerplan wrote to it (INV-26, D-0360): the
+    # charger at its own 32 A; the loops out of any shed and inside their band; the
+    # tank on its own thermostat.
     house = result.house
     assert house is not None
     assert house.ev is not None
-    assert house.ev.limit_a == pytest.approx(32.0)
+    assert house.ev.limit_a == pytest.approx(CHARGER_OWN_LIMIT_A)
     last = after[-1]
     for load_id in ("loop_bath_1", "loop_bath_2"):
         assert not last.loads[load_id].shed
         assert house.sims[load_id].mode == "heat"
         assert BATHROOM_FLOOR_C <= house.sims[load_id].setpoint_c <= BATHROOM_COMFORT_C
-    # The tank released is the tank at the household's comfort minimum (D4 §6.3, INV-27):
-    # the 75 °C ready temperature is the plan's, and a plan is what safe mode has none of.
+    # The tank released is the tank back at its own 75 °C: the comfort minimum a shed
+    # left it at was powerplan's write, and releasing undoes it (until H.2 the release
+    # handed it the configured minimum instead, D4 §6.3).
     assert not last.loads["tank"].shed
     assert house.tank is not None
-    assert house.tank.setpoint_c == pytest.approx(TANK_COMFORT_MIN_C)
+    assert house.tank.setpoint_c == pytest.approx(TANK_OWN_SETPOINT_C)
 
     # And nothing is written afterwards: a released site observes (D7 §8).
     late = [at for at, _load in result.write_log if at > entered[0] + timedelta(minutes=2)]

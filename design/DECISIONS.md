@@ -1568,6 +1568,41 @@ The startup guard is `baseline.state.last_update is None`; `not baseline.state.b
 `async_register_history` reads the register's hourly `sum` rows and places each at `S + 1 h − min(c, 1 h)`, where `c` is the median gap between the last 50 state rows whose value changed; a value republished after `unavailable` isn't a report. With fewer than five gaps, rows sit at `S` (D3 §5.3). A statistics row is filed under its hour's start but holds the register at the last state inside it: for an AMS meter reporting once at HH:00:10 that's S, for a fast register S + 1 h. Counting republished values as reports put the reference month at 8.70 kW instead of 8.98. Affects D3 §3, §5.11; D2 §5.12.
 **Rejected:** scoring both placements against power statistics - needs a power role. The 5-minute table - two tables and a seam for no reported case.
 
+### D-0360 · "On record": what release and restore undo, and when the lifecycle writes
+
+INV-26 and INV-27 (PLAN §7 dec. 30) need a record and a value to put back. (1) `LoadState.prior` records, per role, what the device held just before powerplan's first write since it last let go; a later write never replaces it. (2) `release()` and `restore()` are one undo: with a record they write it back (urgent, past dwell and interval) and clear it once held; without one they do nothing. `restore()` adds the restore dwell (INV-29). A shed left in the store with no record is handed back the old way. (3) `release_all`/`restore_all` (startup, unload, stop, a removed subentry, the `release` service) act only on loads under control: site on, not in safe mode, load `auto` or `force`. A site that's off writes nothing. (4) Since release undoes every write of ours, a plan's coast is undone on the edge to off too. A start used to write every load's hand-back value in observe, whatever the device held and whoever set it. Affects HLD INV-26, 27, 29, 48; D4 §4.1, §5.1, §5.2, §5.4, §5.5, §7; D7 §5.5, §8.
+**Rejected:** the kinds' hand-back values gated on the last sent value - releasing a paced charger would still write 32 A over the household's 10 A. A stack of earlier values per role - an earlier write of ours never needs restoring.
+
+### D-0361 · The site switch's position is recorded every tick and read back before startup writes
+
+The tick records `edges["site_active"]` from the switch, and `_mode_edges` compares against it; `Runtime.start()` sets `active` from the record before step 4 of D7 §5.5. Nothing wrote `site_active`, so the site→off release (PLAN §7 dec. 20) never fired; and the switch entity restores only after platforms load, so startup read the entry's "start in observe" instead of what the household last set. Affects D7 §5.5.
+**Rejected:** reading the switch's restore state in `start()` - needs the entity id before the platform exists.
+
+### D-0362 · The tick reads every bound entity by id; a stale role carries its `since`
+
+`LiveDevice.reads` uses `DeviceView.from_states(hass, bound.entity_ids)`. The reference tank's power and energy sensors live on no device (a template and an `integration` sensor), so a device-scoped view read them as missing from the first tick; the flow binds off-device entities on purpose. `LoadState.stale_since` latches when a bound role stops answering, and `Health.transient_since` is the earlier of it and the gate's clock, so a stale load can escalate. Affects D4 §4.1, §5.9, §7.
+**Rejected:** a device view patched with the off-device bindings - two reads of one thing.
+
+### D-0363 · Observe decides against the device and reports each would-be value once
+
+Row 1 runs row 3 first in observe: a device already at the value is `same`. An observe decision stores its value in `GateState.observed` (persisted, cleared by a write), and the engine passes it to the executor only when it changed, so the log is one line per change, across restarts. `ApplyResult.current` puts the old value on the line: `old → new`. Observe was logging one line per load per tick (11 366 in three hours), including "would write 21.0" to a heat pump already at 21.0. Affects D4 §4.1, §5.10, §7.
+**Rejected:** de-duplicating in the executor - forgets at every restart, and the executor has no logic of its own.
+
+### D-0364 · A load subentry update swaps the load in place; entities are added once
+
+`_update_load` rebuilds the `Load` and its device and swaps them into `SiteBuild`, keeping the `LoadState`, knobs, meter rows, plan and entities; accounting refreshes the load's params and shadow. `_add_entities_for` adds only unique ids not already added, and `LoadEntity.load` reads the current `Load` by id. Remove-then-add logged an ERROR per re-registered entity and lost the load's mode, knobs and state. Affects D7 §2.
+**Rejected:** removing entities first - ids, dashboards and history would churn on every reconfigure.
+
+### D-0365 · A one-time listener forgets itself when it fires; the store's `schema` stamp isn't a load
+
+(1) `_track_once` wraps `homeassistant_started` and `homeassistant_stop` and removes its own unsubscribe before running, since HA drops a one-time listener on firing and unsubscribing again logs an ERROR. (2) `from_sections` decodes `loads` without its `schema` key. (3) `stop()` stays once-only, but an unload after `homeassistant_stop` still unloads the platforms, or a later setup added every entity twice. Affects D7 §5.5.
+**Rejected:** catching the error around the unsubscribe - the log line is HA's own.
+
+### D-0366 · The read-back reads a load's role through its bindings
+
+`StateReader` is `(load_id, role) → value`; `Runtime._read_state` answers with `device.reads(now).current_of(role)`, the same reading the next decision makes (attribute, scale, quirks). Amends D-0141. The entity-state reader compared a climate's `heat` with 22.0, so every setpoint write would have counted a deviation; the tests' own reader was already correct, which is why nothing caught it. Affects D4 §5.10.
+**Rejected:** resolving the binding in the runtime from an entity id - one entity can carry two roles.
+
 ### D-0370 · A `DeviceCall` carries `device_id` beside its `entity_id`
 
 `DeviceCall.device_id` and a `target` property (`{"device_id": …}` when set, else `{"entity_id": …}`); `entity_id` stays as the read-back's witness (INV-22). `BoundDevice.device_id` comes from the subentry in `runtime.device_from_subentry`. `easee_cloud` writes `easee.set_charger_dynamic_limit` with whole amps and `time_to_live: 0`, and is unaddressable without a device id. Affects D4 §5.10.

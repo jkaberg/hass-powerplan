@@ -53,9 +53,12 @@ def test_09_release_undoes_the_shed_and_ignores_the_dwell(thermostat: FakeThermo
     state, released = load.release(state, load_ctx(now=soon, reads=thermostat.reads_at(soon)))
     assert released.action is Action.WRITTEN
     thermostat.step(1.0, released.command, at=soon)
-    assert thermostat.setpoint == pytest.approx(24.0)
+    # Undone, not handed a new value: back to what it held before the shed
+    # (INV-26, D-0360).
+    assert thermostat.setpoint == pytest.approx(22.0)
     assert not state.shed_active
     assert state.shed_since is None
+    assert state.prior == {}
 
 
 @pytest.mark.inv("INV-26")

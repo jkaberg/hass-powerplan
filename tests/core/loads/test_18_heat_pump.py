@@ -367,18 +367,25 @@ def test_18l_the_first_write_after_a_restart_is_a_correction() -> None:
     walking a band per restart while still letting a shed through immediately.
     """
     load = pump()
-    sim = pump_sim(room_c=19.0, setpoint_c=24.0)
+    sim = pump_sim(room_c=19.0, setpoint_c=20.0)
     state = LoadState(mode=Mode.AUTO)
     state, ctx, _ = tick(load, state, sim, START, None)
 
-    state, restored = load.apply(grant(RATED_W), state, ctx)
-    assert restored.value == pytest.approx(21.0), "the configured target, not the 24 it found"
+    state, written = load.apply(grant(RATED_W), state, ctx)
+    assert written.value == pytest.approx(21.0), "the configured target, not the 20 it found"
+    assert state.prior == {"setpoint": 20.0}, "the 20 it found is what an undo returns to"
 
-    state, ctx, _ = tick(load, state, sim, START + timedelta(seconds=TICK_S), restored.command)
-    state, _ = load.restore(state, ctx, "startup")
+    # A restart: our write is undone (INV-26/27 as amended), and the
+    # start is a correction of our own write, never an adoption of 21.
+    state, ctx, _ = tick(load, state, sim, START + timedelta(seconds=TICK_S), written.command)
+    state, back = load.restore(state, ctx, "startup")
+    assert back.action is Action.WRITTEN
+    assert back.value == pytest.approx(20.0)
     assert state.last_target_restore_at is not None
 
     later = START + timedelta(seconds=TICK_S * 2)
-    state, ctx, _ = tick(load, state, sim, later, None, desired=Desired.COMFORT, setpoint_delta=1.0)
+    state, ctx, _ = tick(
+        load, state, sim, later, back.command, desired=Desired.COMFORT, setpoint_delta=1.0
+    )
     _, up = load.apply(grant(RATED_W), state, ctx)
     assert up.action is Action.HELD_DWELL, "no upward move within one dwell of a restore (INV-29)"

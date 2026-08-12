@@ -601,6 +601,112 @@ def test_the_site_switch_off_publishes_and_writes_nothing() -> None:
     )
 
 
+@pytest.mark.inv("INV-26")
+@pytest.mark.inv("INV-27")
+def test_the_switch_going_off_undoes_our_own_writes_on_the_edge_then_writes_nothing() -> None:
+    """The edge to off is the last write a site that is off makes (INV-26, D-0360, D-0361).
+
+    A coast of ours sits on record - the loop at 23 °C, where powerplan put it from
+    22 °C, which is not a shed - and the switch goes off. The edge undoes it, because
+    no start in observe will; the switch's position is recorded every tick, which is
+    what makes the edge an edge at all; and after it nothing is written.
+    """
+    cfg = site()
+    engine = engine_for(reference_loads(), cfg=cfg)
+    state, _snapshots, _effects = run(
+        engine,
+        EngineState(),
+        cfg,
+        start=START,
+        ticks=1,
+        grid_w=1_500.0,
+        loads=both,
+        curves_=curves(),
+    )
+    assert state.events.edges["site_active"] == "1", "the switch's position, on record"
+    state = replace(
+        state,
+        loads={
+            **state.loads,
+            "loop_bath": replace(state.loads["loop_bath"], prior={"setpoint": 22.0}),
+        },
+    )
+
+    at = START + timedelta(seconds=TICK_S)
+    state, _snapshot, effects = engine.tick(
+        state,
+        inputs_at(
+            cfg, at, grid_w=1_500.0, loads=both(at), knobs=Knobs(active=False), curves_=curves()
+        ),
+    )
+    loop = [
+        c
+        for c in effects.commands
+        if c.load_id == "loop_bath" and c.decision.action is Action.WRITTEN
+    ]
+    assert [c.decision.value for c in loop] == [22.0], "our coast undone, on the edge"
+    assert loop[0].decision.current == 23.0
+    assert state.events.edges["site_active"] == "0"
+
+    later = at + timedelta(seconds=TICK_S)
+    _state, _snapshot, effects = engine.tick(
+        state,
+        inputs_at(
+            cfg,
+            later,
+            grid_w=1_500.0,
+            loads=both(later),
+            knobs=Knobs(active=False),
+            curves_=curves(),
+        ),
+    )
+    assert all(c.decision.action is not Action.WRITTEN for c in effects.commands)
+
+
+@pytest.mark.inv("INV-44")
+def test_observe_hands_over_a_would_be_value_once_and_remembers_it_across_a_restart() -> None:
+    """Ten ticks, one restart, five more: one observed decision per load, with its `from` (F-4).
+
+    The house logged one line per load per tick - 11 366 in three hours. A would-be
+    value is reported when it changes; the record is the gate's, persisted, so a
+    restart does not report it again (D-0363).
+    """
+    cfg = site()
+    engine = engine_for(reference_loads(), cfg=cfg)
+    off = Knobs(active=False)
+    state, _snapshots, effects = run(
+        engine,
+        EngineState(),
+        cfg,
+        start=START,
+        ticks=10,
+        grid_w=1_500.0,
+        loads=both,
+        knobs=off,
+        curves_=curves(),
+    )
+    observed = [c for e in effects for c in e.commands if c.decision.action is Action.OBSERVE]
+    assert observed, "the loads have would-be writes"
+    assert len({c.load_id for c in observed}) == len(observed), "one per load"
+    assert all(c.decision.current is not None for c in observed), "old → new, never None"
+
+    restarted = EngineState.from_sections(json.loads(json.dumps(state.to_sections(), default=str)))
+    later = START + timedelta(seconds=TICK_S * 10)
+    _state, _snapshots, effects = run(
+        engine,
+        restarted,
+        cfg,
+        start=later,
+        ticks=5,
+        grid_w=1_500.0,
+        loads=both,
+        knobs=off,
+        curves_=curves(),
+    )
+    again = [c for e in effects for c in e.commands if c.decision.action is Action.OBSERVE]
+    assert again == [], "the same would-be values are not reported after a restart"
+
+
 @pytest.mark.inv("INV-47")
 def test_a_knob_lowered_by_hand_takes_effect_on_the_next_tick() -> None:
     """INV-47: knobs are read live - a target lowered now binds the very next tick."""

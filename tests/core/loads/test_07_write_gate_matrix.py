@@ -70,7 +70,40 @@ def test_07a_row_1_observe_never_writes() -> None:
     assert decision.action is Action.OBSERVE
     assert decision.command is None
     assert decision.value == 22.0
-    assert decision.gate == gate_state()
+    assert decision.gate == gate_state(observed=22.0), "no clock moved; the would-be value noted"
+
+
+@pytest.mark.inv("INV-21")
+@pytest.mark.inv("INV-22")
+def test_07a2_observe_decides_against_what_the_device_holds() -> None:
+    """Row 1 after row 3: a device already at the would-be value has no would-be write (F-4).
+
+    The house logged "would write 21.0" to a heat pump at 21.0 on every tick. An
+    observed decision carries the device's value, so its line reads old → new.
+    """
+    held = decide(
+        SETPOINT_22,
+        current=22.0,
+        mode=Mode.OBSERVE,
+        cfg=gate_config(),
+        state=gate_state(),
+        budget=budget(),
+        now=NOW,
+    )
+    assert held.action is Action.SAME
+    assert held.command is None
+
+    moved = decide(
+        SETPOINT_22,
+        current=21.0,
+        mode=Mode.OBSERVE,
+        cfg=gate_config(),
+        state=gate_state(),
+        budget=budget(),
+        now=NOW,
+    )
+    assert moved.action is Action.OBSERVE
+    assert moved.current == 21.0, "the old of the line's old → new"
 
 
 @pytest.mark.inv("INV-20")

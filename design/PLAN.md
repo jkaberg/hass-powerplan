@@ -297,6 +297,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 27. **Test speed, and speed never costs a test.** Nothing is removed, narrowed, coarsened or re-baselined; every change leaves every digest byte-identical; cheapest first: stop repeating work, then stop recomputing, then compile. *Rejected:* moving long simulations to nightly - the simulations are the gate.
 28. **The screens are written for someone who knows their bill, not the grid** (D8 §5.15). One question per screen, detection first, a safe default for "don't know", controls that make a wrong answer hard, the glossary everywhere, and never a raw key or an "unknown" normal state. New sites start strict (`risk` 0). *Rejected:* fixing words only - an order that asks the wrong question first can't be fixed with words.
 29. **The brand ships inside the integration.** Since HA 2026.3, the floor, `custom_components/powerplan/brand/` is served by HA itself, and the brands repository no longer takes custom integrations. HACS's blank store icon is documented as a limitation.
+30. **Observe writes nothing; release and restore undo only powerplan's own recorded writes** (INV-26, INV-27). Nothing is written while the site is off, startup included; in control, an undo puts back what the device held before powerplan's first write, and a device powerplan never wrote to is left alone (D-0360). *Rejected:* restoring every comfort target at every start - a start in observe wrote over devices powerplan had never steered.
 
 ---
 
@@ -338,7 +339,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | U.3 | A setup a household finishes | todo |
 | U.4 | Entities that read as sentences | todo |
 | H.1 | The running build, read end to end | done |
-| H.2 | Observe writes nothing; the gate reads what it wrote | todo |
+| H.2 | Observe writes nothing; the gate reads what it wrote | done |
 | H.3 | The period and the baseline from the recorder | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |

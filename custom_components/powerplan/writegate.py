@@ -32,7 +32,12 @@ What the executor does with a `Decision`:
 It reads no state of its own: reading `hass.states` belongs to `runtime.py` and
 `providers/` (INV-3) - the single-writer grep asserts as much about this file -
 so the read-back reads through the `StateReader` the runtime injects
-(`design/DECISIONS.md` D-0141).
+(`design/DECISIONS.md` D-0141), which reads a load's **role** through its
+bindings, as the next decision will (D-0366).
+
+An observed decision is logged with the device's value and the would-be one;
+the engine hands one over only when the would-be value changed (H.1 F-4,
+D-0363).
 """
 
 from __future__ import annotations
@@ -58,7 +63,7 @@ from .core.loads.gate import (
     transient,
     verify,
 )
-from .core.loads.kinds.base import Value, Write
+from .core.loads.kinds.base import Role, Value, Write
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -69,8 +74,13 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-type StateReader = Callable[[str], Value | None]
-"""Reads one entity's present value. The runtime owns `hass.states` (INV-3)."""
+type StateReader = Callable[[str, Role], Value | None]
+"""Reads one load's role as its bindings read it, `(load_id, role)`.
+
+The runtime owns `hass.states` (INV-3); reading through the bindings is what
+makes a climate's setpoint its `temperature` attribute rather than its `heat`
+state (D-0366).
+"""
 
 type GateStateSink = Callable[[str, GateState], None]
 """Takes the gate state of one load to be persisted (D4 §7)."""
@@ -279,7 +289,7 @@ class WriteGate:
             decision.value,
             decision.reason,
         )
-        self._schedule_verify(actuation, calls[0].entity_id)
+        self._schedule_verify(actuation, command.role, calls[0].entity_id)
         return self._report(actuation, Action.WRITTEN, succeeded(decision.gate), tuple(sent))
 
     def _unaddressable(self, actuation: Actuation, write: Write) -> Outcome:
@@ -381,9 +391,8 @@ class WriteGate:
         decision = actuation.decision
         if action is Action.OBSERVE:
             _LOGGER.info(
-                "%s: observe — %s %s → %s (%s)",
+                "%s: observe — %s → %s (%s)",
                 actuation.name,
-                decision.command.role if decision.command else "",
                 decision.current,
                 decision.value,
                 decision.reason,
@@ -407,8 +416,8 @@ class WriteGate:
         )
 
     @callback
-    def _schedule_verify(self, actuation: Actuation, entity_id: str) -> None:
-        """Read the write back after `verify_after_s` (INV-22).
+    def _schedule_verify(self, actuation: Actuation, role: Role, entity_id: str) -> None:
+        """Read the write back after `verify_after_s` (INV-22), through the role's binding.
 
         One timer per load: a newer write owns the read-back, because what the
         older one asked for is no longer what we want the device to hold. The
@@ -422,7 +431,7 @@ class WriteGate:
         def _read_back(_now: datetime) -> None:
             self._verify.pop(actuation.load_id, None)
             state = self._gate[actuation.load_id]
-            current = self._read_state(entity_id)
+            current = self._read_state(actuation.load_id, role)
             gate, deviated = verify(
                 state, current=current, tolerance=actuation.cfg.tolerance, now=dt_util.utcnow()
             )
