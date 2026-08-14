@@ -3481,23 +3481,67 @@ def _decode_money(amount: str, currency: str) -> Money:
     return Money(Decimal(amount), currency)
 
 
+#: `AccountingStatus`'s money beyond `cost` and `savings`: what the hook encodes
+#: under `status` and the tick decodes back.
+ACCOUNTING_MONEY_FIELDS: tuple[str, ...] = (
+    "energy_cost",
+    "export_credit",
+    "capacity_fee",
+    "energy_savings",
+    "capacity_savings",
+    "cf_cost",
+    "previous_cost",
+    "previous_savings",
+    "lifetime_cost",
+    "lifetime_savings",
+)
+
+
+@functools.lru_cache(maxsize=8)
+def _decode_moment(text: str) -> datetime:
+    """Return the instant an ISO string encodes, memoised like `_decode_money`."""
+    return datetime.fromisoformat(text)
+
+
+def _money_of(data: Mapping[str, Any] | None) -> Money | None:
+    return None if data is None else _decode_money(data["amount"], data["currency"])
+
+
 def _accounting_status(state: EngineState) -> AccountingStatus:
     """Return the ledger's section as of the last closed slot (D11, INV-68).
 
     The hook leaves its month-to-date figures under `status` in the opaque
     `accounting` section (D-0267); the tick republishes them and never computes
-    any (INV-68).
+    any (INV-68). Every figure the hook encodes comes back - the month's start
+    and the lifetime's too, which are the monetary sensors' `last_reset` and
+    `since_install` (the tick read four keys and published the rest
+    as `None`). A section written before WP U.4 has only those four until the
+    next slot closes.
     """
     status = state.accounting.get("status") or {}
-    cost = status.get("cost")
-    savings = status.get("savings")
+    month_start = status.get("month_start")
+    since = status.get("since")
     return AccountingStatus(
         slots_closed=state.runtime.slots_closed,
         closed_to=state.runtime.closed_to,
         month_key=state.accounting.get("month_key"),
-        cost=None if cost is None else _decode_money(cost["amount"], cost["currency"]),
-        savings=None if savings is None else _decode_money(savings["amount"], savings["currency"]),
+        month_start=None if month_start is None else _decode_moment(month_start),
+        since=None if since is None else _decode_moment(since),
+        cost=_money_of(status.get("cost")),
+        savings=_money_of(status.get("savings")),
         confidence=str(status.get("confidence", "none")),
+        pricing_confidence=str(status.get("pricing_confidence", "none")),
+        energy_cost=_money_of(status.get("energy_cost")),
+        export_credit=_money_of(status.get("export_credit")),
+        capacity_fee=_money_of(status.get("capacity_fee")),
+        energy_savings=_money_of(status.get("energy_savings")),
+        capacity_savings=_money_of(status.get("capacity_savings")),
+        cf_cost=_money_of(status.get("cf_cost")),
+        estimated_share=float(status.get("estimated_share", 0.0)),
+        previous_cost=_money_of(status.get("previous_cost")),
+        previous_savings=_money_of(status.get("previous_savings")),
+        lifetime_cost=_money_of(status.get("lifetime_cost")),
+        lifetime_savings=_money_of(status.get("lifetime_savings")),
         per_load=dict(status.get("per_load", {})),
     )
 

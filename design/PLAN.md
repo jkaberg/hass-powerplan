@@ -337,7 +337,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | U.1 | Text that is never raw or English | done |
 | U.2 | Controls that prevent mistakes | todo |
 | U.3 | A setup a household finishes | todo |
-| U.4 | Entities that read as sentences | todo |
+| U.4 | Entities that read as sentences | done |
 | H.1 | The running build, read end to end | done |
 | H.2 | Observe writes nothing; the gate reads what it wrote | done |
 | H.3 | The period and the baseline from the recorder | done |

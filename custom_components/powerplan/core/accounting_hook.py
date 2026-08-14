@@ -17,7 +17,13 @@ from .accounting.ledger import LoadMonthRec, SiteMonthRec, SlotConfidence
 from .accounting.pricing import CurvePair
 from .accounting.savings import site_savings
 from .accounting.shadow.base import LoadParams, ShadowCtx, StoreKind
-from .engine import AccountingClose, AccountingStatus, SlotClose, SlotLoad
+from .engine import (
+    ACCOUNTING_MONEY_FIELDS,
+    AccountingClose,
+    AccountingStatus,
+    SlotClose,
+    SlotLoad,
+)
 from .loads.stores import EnergyStore, RoomStore, SlabStore, TankStore
 from .loads.types.appliance_cycle import profile_of
 from .loads.types.heat_pump import curve_of
@@ -309,11 +315,17 @@ def _money_data(value: Money) -> str:
 
 
 def _status_data(status: AccountingStatus) -> dict[str, Any]:
+    """Encode every figure the tick republishes (`engine._accounting_status`)."""
     return {
         "cost": None if status.cost is None else encode(status.cost),
         "savings": None if status.savings is None else encode(status.savings),
         "confidence": status.confidence,
         "per_load": dict(status.per_load),
+        "month_start": encode(status.month_start),
+        "since": encode(status.since),
+        "pricing_confidence": status.pricing_confidence,
+        "estimated_share": status.estimated_share,
+        **{key: encode(getattr(status, key)) for key in ACCOUNTING_MONEY_FIELDS},
     }
 
 

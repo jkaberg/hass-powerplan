@@ -45,9 +45,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .core.accounting.shadow.base import StoreKind
 from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
-from .core.loads import Load
+from .core.loads import Load, Role
 from .core.model import Mode
-from .entity import LoadEntity, digest_of
+from .entity import LoadEntity, digest_of, money_text
 from .runtime import Runtime
 
 if TYPE_CHECKING:
@@ -504,10 +504,16 @@ class LoadSensorRow:
     device_class: SensorDeviceClass | None = None
     state_class: SensorStateClass | None = None
     category: EntityCategory | None = None
-    enabled: bool = True
+    #: The registry's default-enabled state - never existence (S1, INV-50): an
+    #: already-registered entity keeps whatever default it started with, so a
+    #: callable here only changes what a *new* load's row starts as (audit
+    #: ENT-29 - no always-unknown "Effekt nå" sensor without a power role).
+    enabled: Callable[[Load, Runtime], bool] = lambda _load, _runtime: True
     icon: str | None = None
     unrecorded: frozenset[str] = frozenset()
     digest_gated: bool = False
+    #: Attributes that never write a row by themselves.
+    volatile: frozenset[str] = frozenset()
     applies: Callable[[Load], bool] = lambda _load: True
     #: The closed set of an `enum` row, translated under `entity.sensor.<key>.state`.
     options: tuple[str, ...] | None = None
@@ -532,7 +538,7 @@ def _plan_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
         return {}
     return {
         "planned_kwh": round(plan.planned_kwh, 3),
-        "cost": f"{plan.cost.amount} {plan.cost.currency}",
+        "cost": money_text(plan.cost),
         "mode": plan.mode.value,
         "covered": plan.covered,
         "coverage": round(plan.coverage, 3),
@@ -635,16 +641,44 @@ def _session_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     }
 
 
+#: Below this many watts short of the ask, a grant is the whole ask.
+_CAP_EPS_W = 1.0
+
+
+def granted_attributes(status: LoadStatus, _runtime: Runtime) -> dict[str, Any]:
+    """`sensor.<load>_granted`'s attributes: `capped_by` only where a constraint bound.
+
+    The allocator's `capped_by` is the tightest constraint *on the table* - what
+    a shed is attributed to (`Allocator._binding_reason`) - whether or not it
+    held the load back. A load granted its whole ask was capped by nothing, so
+    the attribute says so (a floor granted its full 480 W read
+    "capped by phase").
+    """
+    bound = status.granted_w + _CAP_EPS_W < status.demand.max_w
+    return {
+        "capped_by": list(status.capped_by) if bound else [],
+        "reason": status.action_reason,
+        "stage": status.stage,
+        "held": status.held,
+    }
+
+
+def _has_power_role(load: Load, runtime: Runtime) -> bool:
+    """Whether the load's profile bound something to `Role.POWER` (review ENT-29).
+
+    Read from `runtime.build.devices` - the profile's bindings, fixed once the
+    load is provisioned, not `LoadStatus.measured_w`, which is `None` on a
+    reading gap even with a bound role.
+    """
+    device = runtime.build.devices.get(load.load_id)
+    return device is not None and device.bound.binding(Role.POWER) is not None
+
+
 LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
     LoadSensorRow(
         key="granted",
         value=lambda s, _r: round(s.granted_w),
-        attributes=lambda s, _r: {
-            "capped_by": list(s.capped_by),
-            "reason": s.action_reason,
-            "stage": s.stage,
-            "held": s.held,
-        },
+        attributes=granted_attributes,
         unit=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -656,6 +690,10 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         unit=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
+        # A load bound to no power role never has a value: default-disabled
+        # rather than an always-unknown row (audit ENT-29, "Effekt nå"). Only a
+        # *new* row starts this way (S1, INV-50) - see `LoadSensorRow.enabled`.
+        enabled=_has_power_role,
         icon="mdi:gauge",
     ),
     LoadSensorRow(
@@ -665,7 +703,7 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         category=EntityCategory.DIAGNOSTIC,
-        enabled=False,
+        enabled=lambda _load, _runtime: False,
         icon="mdi:bookmark-outline",
     ),
     LoadSensorRow(
@@ -680,7 +718,7 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         value=lambda s, r: len(_plan_slots(s, r)["slots"]),
         attributes=_plan_slots,
         category=EntityCategory.DIAGNOSTIC,
-        enabled=False,
+        enabled=lambda _load, _runtime: False,
         icon="mdi:calendar-text",
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
@@ -710,6 +748,9 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         attributes=_session_attributes,
         device_class=SensorDeviceClass.ENUM,
         options=SESSION_STATES,
+        # `required_kwh` counts down every tick while charging, on a state
+        # (`session_state`) that stays "charging" throughout.
+        volatile=frozenset({"required_kwh"}),
         icon="mdi:ev-station",
         applies=lambda load: load.config.type_key == "ev",
     ),
@@ -734,7 +775,7 @@ class LoadSensor(LoadEntity, SensorEntity):
         self._attr_device_class = row.device_class
         self._attr_state_class = row.state_class
         self._attr_entity_category = row.category
-        self._attr_entity_registry_enabled_default = row.enabled
+        self._attr_entity_registry_enabled_default = row.enabled(load, runtime)
         if row.icon is not None:
             self._attr_icon = row.icon
         self._unrecorded_attributes = row.unrecorded
@@ -761,9 +802,9 @@ class LoadSensor(LoadEntity, SensorEntity):
         return dict(self.row.attributes(status, self.runtime))
 
     def _digest(self) -> str | None:
-        if not self.row.digest_gated:
+        if not self.row.digest_gated and not self.row.volatile:
             return None
-        return digest_of(self.native_value, self.extra_state_attributes)
+        return digest_of(self.native_value, self.extra_state_attributes, self.row.volatile)
 
 
 def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
@@ -797,7 +838,13 @@ def _load_money(text: str | None) -> float | None:
 
 
 class LoadEnergySensor(LoadEntity, SensorEntity):
-    """`sensor.<load>_energy`: lifetime kWh since the load was added (D3 `LoadMeter`)."""
+    """`sensor.<load>_energy`: lifetime kWh since the load was added (D3 `LoadMeter`).
+
+    Written once per closed price slot, like the money beside it (D8 §9 14):
+    the counter accrues every tick, and a row per tick was 8 000–10 300 rows a
+    day per load in the reference house. The value written is the
+    counter as of the tick that saw the slot close.
+    """
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
@@ -807,6 +854,12 @@ class LoadEnergySensor(LoadEntity, SensorEntity):
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
         super().__init__(runtime, load, "energy")
+
+    def _digest(self) -> str | None:
+        """Write when a slot closes (`AccountingStatus.closed_to` moves) or the source changes."""
+        snapshot = self.snapshot
+        closed_to = None if snapshot is None else snapshot.accounting.closed_to
+        return digest_of([_iso(closed_to), self.status is None], self.extra_state_attributes)
 
     @property
     def native_value(self) -> float | None:

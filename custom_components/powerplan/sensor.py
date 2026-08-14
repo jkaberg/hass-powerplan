@@ -5,6 +5,14 @@ slots come from the runtime, which is the only place the curve lives. The
 entities that carry a large attribute - the price forecast's slots, the plan's
 by-load summary, the reasons trail - gate their writes on a content digest and
 keep that attribute out of the recorder (INV-61, §9 6).
+
+*WP U.4 (D8 §5.15).* Names and states read as sentences: a name that says "this
+hour" takes its translation key from the tariff's window (NEW-9), the allowance
+is kW on a new site (`suggested_unit_of_measurement`, H6), the price keeps its
+ISO unit at two decimals (H9), `stage` stays numeric and is diagnostic (S3),
+"Priser kjent til" is a timestamp on `price_forecast`'s own id (S1), the last
+decision is a code (ENT-21). A row's `volatile` attributes do not write a row
+by themselves.
 """
 
 from __future__ import annotations
@@ -22,9 +30,9 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
-from .core.model import Carrier, Snapshot
+from .core.model import Carrier, Confidence, Snapshot
 from .core.tariffs.evaluator import ADVICE_KEYS
-from .entity import PowerplanEntity, digest_of
+from .entity import PowerplanEntity, digest_of, money_text, window_translation_key
 from .load_entities import load_sensors
 from .runtime import Runtime
 
@@ -35,9 +43,6 @@ if TYPE_CHECKING:
     from . import PowerplanConfigEntry
     from .core.model import PriceCurve
     from .core.tariffs.evaluator import Advice
-
-#: `sensor.<site>_reasons` states the last reason, cut to the recorder's limit.
-STATE_MAX_LEN = 255
 
 #: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
 PARALLEL_UPDATES = 0
@@ -57,28 +62,18 @@ class SiteSensorDescription(SensorEntityDescription):
     enabled: Callable[[Runtime], bool] | None = None
     #: Write only when the content changes (large attributes).
     digest_gated: bool = False
+    #: Attributes that move every tick on a state that does not: they ride along
+    #: when the row writes for another reason and never write one by themselves
+    #:. Implies the digest gate.
+    volatile: frozenset[str] = frozenset()
+    #: The name says "this hour": its translation key follows the window (NEW-9).
+    window_named: bool = False
     #: The currency unit is the site's; set at construction.
     currency_unit: bool = False
 
 
-def _meter(snapshot: Snapshot) -> Any:
-    return snapshot.meter
-
-
-def _budget(snapshot: Snapshot) -> Any:
-    return snapshot.budget
-
-
-def _tariff(snapshot: Snapshot) -> Any:
-    return snapshot.tariff
-
-
 def _electricity(snapshot: Snapshot) -> Any:
     return snapshot.prices.carriers.get(Carrier.ELECTRICITY)
-
-
-def _money(value: Any) -> str | None:
-    return None if value is None else f"{value.amount} {value.currency}"
 
 
 def _decimal(value: Any) -> float | None:
@@ -114,6 +109,18 @@ def _slots(curve: PriceCurve | None, limit: int | None = None) -> list[dict[str,
 def _import_curve(runtime: Runtime) -> PriceCurve | None:
     curves = runtime.curves
     return None if curves is None else curves.import_.get(Carrier.ELECTRICITY)
+
+
+def known_until(curve: PriceCurve | None) -> datetime | None:
+    """Return the end of the last published slot - "Priser kjent til" (ENT-19).
+
+    A synthesised or estimated slot is the planner's floor, not a price anyone
+    has published, so it does not count.
+    """
+    if curve is None:
+        return None
+    known = [slot.end for slot in curve.slots if slot.confidence is Confidence.KNOWN]
+    return max(known) if known else None
 
 
 def _percentile(runtime: Runtime, now: datetime) -> float | None:
@@ -172,6 +179,34 @@ def advice_state(advice: Sequence[Advice] | None) -> str:
     return "all_good"
 
 
+#: `sensor.<site>_reasons`' closed set, "Siste beslutning" (D8 §5.15, review
+#: ENT-21): what the last tick decided for the home, most binding first. The
+#: trail, which names loads by id and is English (INV-50), stays an attribute.
+DECISION_STATES: tuple[str, ...] = (
+    "normal",
+    "limiting",
+    "pausing",
+    "meter_wait",
+    "site_off",
+    "safe_mode",
+)
+
+
+def decision_state(snapshot: Snapshot) -> str:
+    """Return the tick's decision as one of `DECISION_STATES`, read from the snapshot."""
+    if snapshot.site.safe_mode:
+        return "safe_mode"
+    if not snapshot.site.active:
+        return "site_off"
+    if snapshot.meter is not None and snapshot.meter.frozen_reason is not None:
+        return "meter_wait"
+    if any(status.shed for status in snapshot.loads.values()):
+        return "pausing"
+    if snapshot.ladder.stage > 0:
+        return "limiting"
+    return "normal"
+
+
 def _meter_health_state(snapshot: Snapshot) -> str | None:
     meter = snapshot.meter
     if meter is None:
@@ -194,7 +229,8 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         key="window_used",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=3,
+        suggested_display_precision=2,
+        window_named=True,
         value=lambda s, _r: None if s.meter is None else round(s.meter.used_kwh, 3),
         attributes=lambda s, _r: (
             {}
@@ -205,12 +241,14 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 "confidence": _name(s.meter.used_confidence),
             }
         ),
+        volatile=frozenset({"t_rem_min"}),
     ),
     SiteSensorDescription(
         key="window_projected",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=3,
+        suggested_display_precision=2,
+        window_named=True,
         value=lambda s, _r: None if s.budget is None else round(s.budget.projected_kwh, 3),
         attributes=lambda s, _r: {} if s.budget is None else {"source": s.budget.projection_source},
     ),
@@ -218,7 +256,8 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         key="ceiling",
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=3,
+        suggested_display_precision=1,
+        window_named=True,
         value=lambda s, _r: None if s.budget is None else round(s.budget.ceiling_kwh, 3),
         attributes=lambda s, _r: (
             {}
@@ -233,9 +272,10 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     SiteSensorDescription(
         key="allowance",
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=0,
+        suggested_display_precision=1,
         value=lambda s, _r: None if s.budget is None else round(s.budget.p_allow_w),
         attributes=lambda s, _r: (
             {}
@@ -250,6 +290,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     ),
     SiteSensorDescription(
         key="stage",
+        entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
         value=lambda s, _r: s.ladder.stage,
         attributes=lambda s, _r: {
@@ -257,6 +298,8 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
             "blunt": s.ladder.blunt,
             "since": _iso(s.ladder.since),
         },
+        # The ladder's reason is a sentence with this tick's numbers in it.
+        volatile=frozenset({"reason"}),
     ),
     SiteSensorDescription(
         key="level",
@@ -266,7 +309,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
             if s.tariff is None
             else {
                 "metric_kw": s.tariff.level.metric_kw,
-                "fee": _money(s.tariff.level.fee),
+                "fee": money_text(s.tariff.level.fee),
                 "confidence": s.tariff.level.confidence,
                 "top_entries": [
                     {
@@ -285,6 +328,8 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         attributes=lambda s, _r: (
             {} if s.tariff is None else {"metric_kw": s.tariff.projected_level.metric_kw}
         ),
+        # The projection moves every tick; the step it lands in does not.
+        volatile=frozenset({"metric_kw"}),
     ),
     SiteSensorDescription(
         key="advice",
@@ -305,6 +350,10 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     SiteSensorDescription(
         key="next_peak_warning",
         device_class=SensorDeviceClass.TIMESTAMP,
+        # ENT-12, S5: the household reads the next risky window on the peak
+        # warning, which can say "Under målet"; this timestamp cannot (H2).
+        entity_category=EntityCategory.DIAGNOSTIC,
+        window_named=True,
         value=lambda s, _r: None if (warning := _first_peak(s)) is None else warning.window_start,
         attributes=lambda s, _r: (
             {}
@@ -315,12 +364,13 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 "drivers": [{"load": load, "kwh": round(kwh, 3)} for load, kwh in warning.drivers],
             }
         ),
+        volatile=frozenset({"expected_kwh", "ceiling_kwh", "drivers"}),
     ),
     SiteSensorDescription(
         key="price",
         currency_unit=True,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=4,
+        suggested_display_precision=2,
         value=lambda s, _r: None if (row := _electricity(s)) is None else _decimal(row.now),
         attributes=lambda s, r: (
             {}
@@ -336,18 +386,17 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 "coverage_h": round(row.coverage_h, 2),
             }
         ),
+        # The horizon shrinks by the minute; the price moves by the slot.
+        volatile=frozenset({"coverage_h"}),
     ),
     SiteSensorDescription(
         key="price_forecast",
+        device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value=lambda _s, r: 0 if (curve := _import_curve(r)) is None else len(curve.slots),
+        value=lambda _s, r: known_until(_import_curve(r)),
         attributes=lambda _s, r: {
             "slots": _slots(_import_curve(r)),
-            "built_at": None
-            if r.curves is None
-            else _iso(_import_curve(r).built_at)
-            if _import_curve(r) is not None
-            else None,
+            "built_at": None if (curve := _import_curve(r)) is None else _iso(curve.built_at),
         },
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
@@ -356,12 +405,13 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         key="price_export",
         currency_unit=True,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=4,
+        suggested_display_precision=2,
         applies=lambda r: r.build.export_modifier is not None,
         value=lambda _s, r: _price_now(r, Carrier.ELECTRICITY, export=True),
     ),
     SiteSensorDescription(
         key="plan",
+        translation_key="site_plan",
         entity_category=EntityCategory.DIAGNOSTIC,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
@@ -373,7 +423,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                     "mode": plan.mode.value,
                     "planned_kwh": round(plan.planned_kwh, 3),
                     "next_start": _iso(plan.next_start),
-                    "cost": _money(plan.cost),
+                    "cost": money_text(plan.cost),
                     "covered": plan.covered,
                 }
                 for load_id, plan in sorted(s.plans.items())
@@ -385,9 +435,10 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     SiteSensorDescription(
         key="production",
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=0,
+        suggested_display_precision=1,
         enabled=lambda r: r.has_production,
         value=lambda s, _r: (
             None if s.meter is None or s.meter.production_w is None else round(s.meter.production_w)
@@ -396,16 +447,21 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     SiteSensorDescription(
         key="surplus",
         native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_unit_of_measurement=UnitOfPower.KILO_WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=0,
+        suggested_display_precision=1,
         enabled=lambda r: r.has_production,
         value=lambda s, _r: None if s.meter is None else round(s.meter.surplus_w),
     ),
     SiteSensorDescription(
+        # "Målerstatus" (ENT-17, S1): enabled and on the device page for a new
+        # site; the two binary sensors stay for automations.
         key="meter_health",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
+        device_class=SensorDeviceClass.ENUM,
+        options=["ok", "degraded", "stale"],
+        # A price-only site binds no meter: nothing to say, so not on its page.
+        enabled=lambda r: bool(r.build.meter_entities),
         value=lambda s, _r: _meter_health_state(s),
         attributes=lambda s, _r: (
             {}
@@ -420,9 +476,12 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 "unmetered_controlled": list(s.meter.health.unmetered_controlled),
             }
         ),
+        volatile=frozenset({"power_age_s", "register_age_s", "integral_bias_w"}),
     ),
     SiteSensorDescription(
         key="price_source_health",
+        device_class=SensorDeviceClass.ENUM,
+        options=["ok", "stale", "dead"],
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value=_price_health_state,
@@ -453,14 +512,22 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     ),
     SiteSensorDescription(
         key="reasons",
+        device_class=SensorDeviceClass.ENUM,
+        options=list(DECISION_STATES),
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value=lambda s, _r: s.reasons[-1][:STATE_MAX_LEN] if s.reasons else "none",
+        value=lambda s, _r: decision_state(s),
         attributes=lambda s, _r: {"trail": list(s.reasons)},
         unrecorded=frozenset({"trail"}),
         digest_gated=True,
+        # A new trail every tick: it rides along when the decision changes.
+        volatile=frozenset({"trail"}),
     ),
 )
+
+#: The rows whose name says "this hour" (NEW-9): their translation key is
+#: `<key>_<window_min>` while the unique id keeps `<key>` (INV-50).
+WINDOW_NAMED: frozenset[str] = frozenset(row.key for row in SENSORS if row.window_named)
 
 
 async def async_setup_entry(
@@ -479,11 +546,9 @@ async def async_setup_entry(
             runtime,
             SiteSensorDescription(
                 key=f"price_{carrier.value}",
-                translation_key="price_carrier",
-                translation_placeholders={"carrier": carrier.value},
                 currency_unit=True,
                 state_class=SensorStateClass.MEASUREMENT,
-                suggested_display_precision=4,
+                suggested_display_precision=2,
                 value=lambda _s, r, c=carrier: _price_now(r, c),
             ),
         )
@@ -502,7 +567,11 @@ class SiteSensor(PowerplanEntity, SensorEntity):
         """Bind the row to the site."""
         super().__init__(runtime, description.key)
         self.entity_description = description
-        if description.translation_key:
+        if description.window_named:
+            self._attr_translation_key = window_translation_key(
+                description.key, runtime.build.cfg.window_min
+            )
+        elif description.translation_key:
             self._attr_translation_key = description.translation_key
         if description.translation_placeholders:
             self._attr_translation_placeholders = dict(description.translation_placeholders)
@@ -530,9 +599,10 @@ class SiteSensor(PowerplanEntity, SensorEntity):
         return dict(self.entity_description.attributes(snapshot, self.runtime))
 
     def _digest(self) -> str | None:
-        if not self.entity_description.digest_gated:
+        description = self.entity_description
+        if not description.digest_gated and not description.volatile:
             return None
-        return digest_of(self.native_value, self.extra_state_attributes)
+        return digest_of(self.native_value, self.extra_state_attributes, description.volatile)
 
 
 # --------------------------------------------------------------------------- #
@@ -547,7 +617,9 @@ class _SiteMoneySensor(PowerplanEntity, SensorEntity):
     battery's arbitrage revenue makes a month go down, and HA's long-term
     statistics need the sensor to say so rather than clamp it (INV-51 in
     spirit). `last_reset` is the open month's start, read fresh every update -
-    a rollover moves it without restarting the entity.
+    a rollover moves it without restarting the entity. Named for the month and,
+    for savings, always "Beregnet" (D8 §5.15 S4): the translation keys are the
+    site's own, `site_cost`/`site_savings`, so a load's keep theirs.
     """
 
     _attr_device_class = SensorDeviceClass.MONETARY
@@ -557,6 +629,7 @@ class _SiteMoneySensor(PowerplanEntity, SensorEntity):
     def __init__(self, runtime: Runtime, key: str) -> None:
         """Bind to the site; the unit is the site's own currency."""
         super().__init__(runtime, key)
+        self._attr_translation_key = f"site_{key}"
         self._attr_native_unit_of_measurement = runtime.build.cfg.currency
 
     @property
@@ -591,10 +664,10 @@ class SiteCostSensor(_SiteMoneySensor):
         snapshot = self.snapshot
         status = None if snapshot is None else snapshot.accounting
         return {
-            "energy_cost": None if status is None else _money(status.energy_cost),
-            "export_credit": None if status is None else _money(status.export_credit),
-            "capacity_fee": None if status is None else _money(status.capacity_fee),
-            "previous_month": None if status is None else _money(status.previous_cost),
+            "energy_cost": None if status is None else money_text(status.energy_cost),
+            "export_credit": None if status is None else money_text(status.export_credit),
+            "capacity_fee": None if status is None else money_text(status.capacity_fee),
+            "previous_month": None if status is None else money_text(status.previous_cost),
             "since_install": self._since_install(),
             "confidence": None if status is None else status.pricing_confidence,
             "estimated_share": None if status is None else status.estimated_share,
@@ -622,14 +695,14 @@ class SiteSavingsSensor(_SiteMoneySensor):
         snapshot = self.snapshot
         status = None if snapshot is None else snapshot.accounting
         return {
-            "energy_savings": None if status is None else _money(status.energy_savings),
-            "capacity_savings": None if status is None else _money(status.capacity_savings),
-            "counterfactual_cost": None if status is None else _money(status.cf_cost),
+            "energy_savings": None if status is None else money_text(status.energy_savings),
+            "capacity_savings": None if status is None else money_text(status.capacity_savings),
+            "counterfactual_cost": None if status is None else money_text(status.cf_cost),
             # No site-wide figure in D11's `SiteFigures`; the sum of the loads' own.
             "kwh_shifted": None
             if status is None
             else round(sum(row.get("kwh_shifted") or 0.0 for row in status.per_load.values()), 3),
-            "previous_month": None if status is None else _money(status.previous_savings),
+            "previous_month": None if status is None else money_text(status.previous_savings),
             "since_install": self._since_install(),
             "savings_confidence": None if status is None else status.confidence,
         }

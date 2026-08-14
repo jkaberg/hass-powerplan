@@ -571,22 +571,56 @@
   "entity": {
     "binary_sensor": {
       "peak_warning": {
-        "name": "Effektvarsel"
+        "name": "Effektvarsel",
+        "state": {
+          "off": "Under målet",
+          "on": "Nærmer seg målet"
+        }
       },
       "prices_tomorrow": {
-        "name": "Morgendagens priser klare"
+        "name": "Morgendagens priser",
+        "state": {
+          "off": "Ikke klare ennå",
+          "on": "Klare"
+        }
       },
       "meter_stale": {
-        "name": "Måler utdatert"
+        "name": "Måleravlesning",
+        "state": {
+          "off": "OK",
+          "on": "Mangler"
+        }
       },
       "meter_degraded": {
-        "name": "Måler svekket"
-      },
-      "meter_seam": {
-        "name": "Timeskifte"
+        "name": "Målerdata",
+        "state": {
+          "off": "Komplette",
+          "on": "Ufullstendige"
+        }
       },
       "shed": {
         "name": "Kuttet"
+      },
+      "meter_seam_60": {
+        "name": "Timeskifte",
+        "state": {
+          "off": "Nei",
+          "on": "Pågår"
+        }
+      },
+      "meter_seam_30": {
+        "name": "Halvtimeskifte",
+        "state": {
+          "off": "Nei",
+          "on": "Pågår"
+        }
+      },
+      "meter_seam_15": {
+        "name": "Kvarterskifte",
+        "state": {
+          "off": "Nei",
+          "on": "Pågår"
+        }
       }
     },
     "sensor": {
@@ -603,13 +637,10 @@
         }
       },
       "allowance": {
-        "name": "Tillatt effekt"
+        "name": "Tilgjengelig effekt nå"
       },
       "baseline_confidence": {
-        "name": "Grunnlastsikkerhet"
-      },
-      "ceiling": {
-        "name": "Tak"
+        "name": "Innlæring"
       },
       "comfort_state": {
         "name": "Komfort",
@@ -637,21 +668,18 @@
         }
       },
       "level": {
-        "name": "Kapasitetstrinn"
+        "name": "Effekttrinn denne måneden"
       },
       "measured": {
         "name": "Målt"
       },
       "meter_health": {
-        "name": "Målerhelse",
+        "name": "Målerstatus",
         "state": {
           "ok": "OK",
-          "stale": "Utdatert",
-          "degraded": "Svekket"
+          "degraded": "Treg",
+          "stale": "Mangler data"
         }
-      },
-      "next_peak_warning": {
-        "name": "Neste effektvarsel"
       },
       "plan": {
         "name": "Plan"
@@ -660,33 +688,38 @@
         "name": "Neste i planen"
       },
       "price": {
-        "name": "Pris"
-      },
-      "price_carrier": {
-        "name": "Pris {carrier}"
+        "name": "Strømpris nå"
       },
       "price_export": {
-        "name": "Salgspris"
+        "name": "Salgspris nå"
       },
       "price_forecast": {
-        "name": "Prisprognose"
+        "name": "Priser kjent til"
       },
       "price_source_health": {
-        "name": "Priskildehelse",
+        "name": "Priskilde",
         "state": {
           "ok": "OK",
-          "stale": "Utdatert",
-          "dead": "Død"
+          "stale": "Mangler priser",
+          "dead": "Feil"
         }
       },
       "production": {
-        "name": "Produksjon"
+        "name": "Produksjon nå"
       },
       "projected_level": {
-        "name": "Forventet kapasitetstrinn"
+        "name": "Forventet effekttrinn"
       },
       "reasons": {
-        "name": "Begrunnelser"
+        "name": "Siste beslutning",
+        "state": {
+          "normal": "Alt går som planlagt",
+          "limiting": "Holder igjen for å nå målet",
+          "pausing": "Setter apparater på pause",
+          "meter_wait": "Venter på måleren",
+          "site_off": "Prøvemodus: styrer ingenting",
+          "safe_mode": "Nødmodus: styrer ingenting"
+        }
       },
       "reserved": {
         "name": "Reservert"
@@ -704,22 +737,73 @@
         }
       },
       "stage": {
-        "name": "Trinn"
+        "name": "Styringsnivå"
       },
       "surplus": {
-        "name": "Overskudd"
+        "name": "Overskudd nå"
       },
       "tick_ms": {
-        "name": "Tikketid"
-      },
-      "window_projected": {
-        "name": "Forventet i timen"
-      },
-      "window_used": {
-        "name": "Brukt i timen"
+        "name": "Beregningstid"
       },
       "next_legionella": {
         "name": "Neste legionellakjøring"
+      },
+      "site_cost": {
+        "name": "Kostnad denne måneden"
+      },
+      "site_savings": {
+        "name": "Beregnet besparelse denne måneden"
+      },
+      "site_plan": {
+        "name": "Planlagt forbruk"
+      },
+      "price_gas": {
+        "name": "Gasspris nå"
+      },
+      "price_district_heat": {
+        "name": "Fjernvarmepris nå"
+      },
+      "price_oil": {
+        "name": "Fyringsoljepris nå"
+      },
+      "price_pellets": {
+        "name": "Pelletspris nå"
+      },
+      "window_used_60": {
+        "name": "Forbruk denne timen"
+      },
+      "window_projected_60": {
+        "name": "Forventet forbruk denne timen"
+      },
+      "ceiling_60": {
+        "name": "Mål denne timen"
+      },
+      "next_peak_warning_60": {
+        "name": "Neste risikotime"
+      },
+      "window_used_30": {
+        "name": "Forbruk denne halvtimen"
+      },
+      "window_projected_30": {
+        "name": "Forventet forbruk denne halvtimen"
+      },
+      "ceiling_30": {
+        "name": "Mål denne halvtimen"
+      },
+      "next_peak_warning_30": {
+        "name": "Neste risikohalvtime"
+      },
+      "window_used_15": {
+        "name": "Forbruk dette kvarteret"
+      },
+      "window_projected_15": {
+        "name": "Forventet forbruk dette kvarteret"
+      },
+      "ceiling_15": {
+        "name": "Mål dette kvarteret"
+      },
+      "next_peak_warning_15": {
+        "name": "Neste risikokvarter"
       }
     },
     "select": {
@@ -733,7 +817,7 @@
         }
       },
       "target": {
-        "name": "Kapasitetsmål",
+        "name": "Mål for effekttrinn",
         "state": {
           "auto": "Automatisk",
           "kw": "Konfigurert kW",
@@ -760,11 +844,11 @@
         }
       },
       "risk": {
-        "name": "Risiko",
+        "name": "Hvor stramt",
         "state": {
-          "flat": "Aldri over målet",
-          "free_ride": "Bruk dagens betalte timer",
-          "full": "Sats på periodesnittet"
+          "flat": "Streng (anbefalt)",
+          "free_ride": "Bruk betalte timer",
+          "full": "Fleksibel"
         }
       },
       "mode": {
@@ -806,7 +890,11 @@
     },
     "switch": {
       "active": {
-        "name": "Aktiv"
+        "name": "Automatisk styring",
+        "state": {
+          "on": "På",
+          "off": "Av (prøvemodus)"
+        }
       },
       "force": {
         "name": "Tvang"
@@ -820,10 +908,10 @@
         "name": "Planlegg på nytt"
       },
       "rebuild_baseline": {
-        "name": "Gjenoppbygg grunnlinje"
+        "name": "Lær vanlig forbruk på nytt"
       },
       "rebuild_peak_history": {
-        "name": "Gjenoppbygg topphistorikk"
+        "name": "Hent månedens effekttopper på nytt"
       },
       "run_now": {
         "name": "Kjør nå"
@@ -865,6 +953,17 @@
           }
         }
       }
+    }
+  },
+  "device": {
+    "site_full": {
+      "name": "Pris og effekt"
+    },
+    "site_price_only": {
+      "name": "Bare pris"
+    },
+    "site_fuse_only": {
+      "name": "Bare sikring"
     }
   },
   "exceptions": {

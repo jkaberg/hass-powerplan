@@ -12,7 +12,8 @@ for a load with no shadow (`StoreKind.NONE`, D8 §5.5 "absent for kind none").
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -21,8 +22,10 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.powerplan.entity import unique_id
 from tests.flows.test_circuit_flow import _add_sauna
 from tests.flows.test_load_flow import _add_charger, _answer
+from tests.runtime.conftest import hass_config_dir, restart_entry  # noqa: F401 - real store I/O
 
 if TYPE_CHECKING:
+    from freezegun.api import FrozenDateTimeFactory
     from homeassistant.core import HomeAssistant
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -127,3 +130,52 @@ async def test_removing_the_load_removes_its_accounting_sensors_too(
 
     assert hass.states.get(cost_id) is None
     assert registry.async_get(cost_id) is None
+
+
+def _cost_state(hass: HomeAssistant, site: MockConfigEntry, key: str) -> Any:
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, unique_id(site.entry_id, key)
+    )
+    assert entity_id is not None, key
+    state = hass.states.get(entity_id)
+    assert state is not None, entity_id
+    return state
+
+
+def _assert_the_ledger_is_published(hass: HomeAssistant, site: MockConfigEntry) -> None:
+    cost = _cost_state(hass, site, "cost")
+    assert cost.state not in ("unknown", "unavailable"), cost
+    for attribute in ("energy_cost", "capacity_fee", "export_credit", "since_install"):
+        assert cost.attributes[attribute] is not None, (attribute, cost.attributes)
+    assert cost.attributes["confidence"] != "none", cost.attributes
+    savings = _cost_state(hass, site, "savings")
+    for attribute in ("energy_savings", "capacity_savings", "counterfactual_cost"):
+        assert savings.attributes[attribute] is not None, (attribute, savings.attributes)
+    for state in (cost, savings):
+        reset = datetime.fromisoformat(state.attributes["last_reset"])
+        local = reset.astimezone(site.runtime_data.build.cfg.tz)
+        assert (local.day, local.hour, local.minute) == (1, 0, 0), reset
+
+
+@pytest.mark.inv("INV-50")
+async def test_f10_the_cost_sensors_carry_the_ledger_and_last_reset_across_a_restart(
+    hass: HomeAssistant,
+    site: MockConfigEntry,
+    charger: FakeHouse,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """D8 §9 14 on a restored ledger: the tick republishes every figure it holds.
+
+    The house read `energy_cost`, `capacity_fee`, `export_credit`, `previous_month`
+    and `since_install` as null and no `last_reset`, while the ledger held
+    17.73 / 244 / 0: the tick rebuilt `Snapshot.accounting` from the store
+    section's four keys only.
+    """
+    await _add_charger_load(hass, site, charger)
+    for _ in range(40):  # 15:40:17 → 15:46:57: the 15:45 slot closes at 15:45:20
+        await charger.advance(freezer)
+    _assert_the_ledger_is_published(hass, site)
+
+    await restart_entry(hass, site, hass_storage)
+    _assert_the_ledger_is_published(hass, site)

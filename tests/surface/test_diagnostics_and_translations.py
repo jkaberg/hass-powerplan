@@ -13,13 +13,18 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.powerplan import repairs
 from custom_components.powerplan.binary_sensor import BINARY_SENSORS
 from custom_components.powerplan.const import DOMAIN
+from custom_components.powerplan.core.model import Carrier
 from custom_components.powerplan.diagnostics import (
     async_get_config_entry_diagnostics,
     async_get_device_diagnostics,
 )
+from custom_components.powerplan.entity import window_translation_key
 from custom_components.powerplan.sensor import SENSORS
 from custom_components.powerplan.services import SERVICES
 from tests.runtime.conftest import site_data
+
+#: The tariff windows HLD §8's markets measure (the preset schema's `window_min`).
+WINDOW_MINUTES = (15, 30, 60)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -69,12 +74,31 @@ def test_12_every_translation_key_the_code_uses_exists_in_both_languages() -> No
     for language in ("en", "nb"):
         strings = _strings(language)
         entity = strings["entity"]
+        # A name that says "this hour" has one key per window length (D8 §5.15 NEW-9).
         for description in SENSORS:
-            key = description.translation_key or description.key
-            assert key in entity["sensor"], (language, key)
-        for description in BINARY_SENSORS:
-            assert description.key in entity["binary_sensor"], (language, description.key)
+            keys = (
+                [window_translation_key(description.key, m) for m in WINDOW_MINUTES]
+                if description.window_named
+                else [description.translation_key or description.key]
+            )
+            for key in keys:
+                assert key in entity["sensor"], (language, key)
+        for binary in BINARY_SENSORS:
+            keys = (
+                [window_translation_key(binary.key, m) for m in WINDOW_MINUTES]
+                if binary.window_named
+                else [binary.key]
+            )
+            for key in keys:
+                assert key in entity["binary_sensor"], (language, key)
         for platform, key in (
+            ("sensor", "site_cost"),
+            ("sensor", "site_savings"),
+            *(
+                ("sensor", f"price_{carrier.value}")
+                for carrier in Carrier
+                if carrier is not Carrier.ELECTRICITY
+            ),
             ("switch", "active"),
             ("select", "presence"),
             ("select", "target"),

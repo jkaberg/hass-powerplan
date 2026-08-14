@@ -1642,3 +1642,23 @@ After a plug-in or reboot the charger resets its dynamic limit, the sensor repor
 
 `ZaptecChargerSim` wraps `EvSim` behind the installation's *Available current*: every write lands, the read-back is prompt, 0 A pauses, 6 A or more resumes. A change less than 900 s after the last is counted and interrupts charging with a seeded probability of 0.25 (assumed), per Zaptec's note that frequent changes may interrupt a session. The scenario asserts `over_target == 0`, no raises inside 15 minutes, and at least one such trim.
 **Rejected:** a sim that ignores a second change inside the window - Zaptec doesn't refuse, and urgent sheds would be modelled as lost.
+
+### D-0400 · The entity pass covers the site and home entities; per-appliance entities wait for device attachment
+
+The device-attachment spec moves per-load entities onto the appliance's own device with a smaller set, as separate work. This pass: site entities and translations, window names by `window_min`, kW display precision, `stage` numeric and diagnostic, the savings name, the peak warning's next window, `sensor.<load>_measured`'s default-enabled flag (D-0403), the home device's info, plus recorder and decoding fixes that touch any entity. Affects D8 §5.15.
+**Rejected:** building the full per-load map now - entities built in the old shape would have to be undone, and INV-50 guards removals.
+
+### D-0401 · `_accounting_status` decodes every field the hook encodes
+
+`AccountingStatus` had fifteen fields and the hook encoded them all, but the engine decoded four, so every money sensor's components and history read `None` and `last_reset` had no month start. Every key is decoded now; the hook also sends `month_start` and `since`. Affects D8 §5.5, §9 14.
+**Rejected:** backfilling old status blobs - the next slot close republishes the section.
+
+### D-0402 · The recorder-volume budget follows the state that changes; two exemptions, each with a reason
+
+`peak_warning`'s `next_window_start` re-sorted several times a tick with two windows over target, so it joins the volatile attributes. `sensor.<load>_session` exceeds budget because its state toggles near the simulated charger's 6 A cliff, a real state change; damping it is per-load state logic for the device-attachment work. `event.<site>_events` is one row per domain event by contract. Both exemptions are named in the test with their reasons (D8 §9 19).
+**Rejected:** fixing the session hysteresis here - it's appliance-entity state logic.
+
+### D-0403 · `measured`'s power-role rule is the registry default, never existence
+
+`LoadSensorRow.enabled` becomes `Callable[[Load, Runtime], bool]`, like `meter_health`, checked against a bound power role. HA reads the default only at first registration, so an existing `sensor.<load>_measured` keeps its state; only new loads without a power role start disabled. Gating existence would silently remove entities (INV-50).
+**Rejected:** reading `measured_w` at construction - no snapshot exists yet, and a transiently unavailable role would read as absent.

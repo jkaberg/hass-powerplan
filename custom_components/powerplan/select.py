@@ -133,7 +133,8 @@ class TargetSelect(_RestoringSelect):
                     {
                         "lower_kw": 0.0 if index == 0 else peak.pricing.upper_kw(index - 1),
                         "upper_kw": steps[index].upper_kw,
-                        "fee": str(fee.amount),
+                        # Two decimals, not the ledger's working precision.
+                        "fee": f"{fee.amount:.2f}",
                         "currency": fee.currency,
                     }
                 )

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
+from .entity import async_prepare_site_device
 from .runtime import Runtime, build_site
 from .services import async_setup_services
 
@@ -60,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     site = await hass.async_add_executor_job(build_site, hass, entry)
     runtime = Runtime(hass, entry, site)
     entry.runtime_data = runtime
+    await async_prepare_site_device(hass, runtime)
     await runtime.start()
     # A load or circuit subentry added, changed or removed patches the site in
     # place (D7 §2); the site's own `entry.data` still reloads it, which

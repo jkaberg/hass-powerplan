@@ -940,6 +940,10 @@ class Runtime:
         #: load device can carry `via_device_id` rather than the deprecated
         #: `via_device` (HA rule, 2027.8.0).
         self.site_device_id: str | None = None
+        #: The home device's model in words and its version, assembled before
+        #: `start()` registers it (`entity.async_prepare_site_device`).
+        self.site_model: str | None = None
+        self.sw_version: str | None = None
         self.store = SiteStore(hass, entry.entry_id)
         self.coordinator: DataUpdateCoordinator[Snapshot] = DataUpdateCoordinator(
             hass,

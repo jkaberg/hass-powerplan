@@ -4,10 +4,19 @@ Table-driven over D8 §5.5's site rows: every entity exists with the documented
 unique id, category and default-enabled flag; entity ids survive a restart and
 a rename (INV-50); the large-attribute entities write only when their content
 changes and keep that attribute out of the recorder (INV-61).
+
+*WP U.4 (D8 §5.15):* `stage` and `next_peak_warning` are diagnostic (ENT-7,
+ENT-12), "Målerstatus" (`meter_health`) is enabled and out of the diagnostic
+category and `meter_stale` is disabled - for a new site; an upgraded one keeps
+its registry flags (ENT-17, S1). One load-side check rides along: `sensor.<load>_measured`
+("Effekt nå") starts disabled for a load with nothing bound to `Role.POWER`,
+and enabled for one that has - a *new* load's row only (ENT-29, S1).
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -15,7 +24,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import DOMAIN
+from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.entity import unique_id
+from custom_components.powerplan.load_entities import LOAD_SENSORS, _has_power_role
 from custom_components.powerplan.sensor import SENSORS
 from tests.runtime.conftest import SITE_ENTRY_ID
 
@@ -41,11 +52,11 @@ SITE_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "window_projected", CONTROL, True),
     ("sensor", "ceiling", CONTROL, True),
     ("sensor", "allowance", CONTROL, True),
-    ("sensor", "stage", CONTROL, True),
+    ("sensor", "stage", DIAGNOSTIC, True),
     ("sensor", "level", CONTROL, True),
     ("sensor", "projected_level", CONTROL, True),
     ("sensor", "advice", CONTROL, True),
-    ("sensor", "next_peak_warning", CONTROL, True),
+    ("sensor", "next_peak_warning", DIAGNOSTIC, True),
     ("binary_sensor", "peak_warning", CONTROL, True),
     ("sensor", "price", CONTROL, True),
     ("sensor", "price_forecast", DIAGNOSTIC, True),
@@ -53,10 +64,10 @@ SITE_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "plan", DIAGNOSTIC, True),
     ("sensor", "production", CONTROL, False),
     ("sensor", "surplus", CONTROL, False),
-    ("binary_sensor", "meter_stale", DIAGNOSTIC, True),
+    ("binary_sensor", "meter_stale", DIAGNOSTIC, False),
     ("binary_sensor", "meter_degraded", DIAGNOSTIC, False),
     ("binary_sensor", "meter_seam", DIAGNOSTIC, False),
-    ("sensor", "meter_health", DIAGNOSTIC, False),
+    ("sensor", "meter_health", CONTROL, True),
     ("sensor", "price_source_health", DIAGNOSTIC, False),
     ("sensor", "baseline_confidence", DIAGNOSTIC, False),
     ("sensor", "tick_ms", DIAGNOSTIC, False),
@@ -129,8 +140,11 @@ def test_04c_the_entities_publish_the_snapshot(
     assert float(state_of("sensor", "allowance")) > 0.0
     assert state_of("sensor", "stage") == "0"
     assert state_of("sensor", "price") == "0.5", "the fixed 0.50 NOK/kWh source"
-    assert int(state_of("sensor", "price_forecast")) > 0
-    assert state_of("binary_sensor", "meter_stale") == "off"
+    # ENT-19: "Priser kjent til" is a timestamp, not a slot count (S1: the same id).
+    snapshot = runtime.snapshot
+    assert snapshot is not None
+    assert datetime.fromisoformat(state_of("sensor", "price_forecast")) > snapshot.at
+    assert state_of("sensor", "meter_health") == "ok"
 
 
 @pytest.mark.inv("INV-50")
@@ -193,3 +207,31 @@ async def test_06b_a_large_attribute_entity_writes_only_when_its_content_changes
     used = registry.async_get_entity_id("sensor", DOMAIN, unique_id(SITE_ENTRY_ID, "window_used"))
     assert used is not None
     assert hass.states.get(used) is not None
+
+
+def _fake_runtime(bound_roles: frozenset[Role]) -> SimpleNamespace:
+    """Return a `Runtime`-shaped stand-in whose only reachable part is `build.devices`."""
+    binding = lambda role: object() if role in bound_roles else None  # noqa: E731
+    device = SimpleNamespace(bound=SimpleNamespace(binding=binding))
+    return SimpleNamespace(build=SimpleNamespace(devices={"ev": device}))
+
+
+def test_29_measured_starts_disabled_without_a_bound_power_role() -> None:
+    """`sensor.<load>_measured` ("Effekt nå", ENT-29): the row exists either way.
+
+    Only its *default* differs - S1 forbids gating existence, since an already
+    registered entity must keep it (D8 §5.15 item map, `LoadSensorRow.enabled`
+    docstring) - and only a load with `Role.POWER` unbound starts disabled.
+    """
+    load = SimpleNamespace(load_id="ev")
+    assert _has_power_role(load, _fake_runtime(frozenset({Role.POWER}))) is True
+    assert _has_power_role(load, _fake_runtime(frozenset())) is False
+    missing = SimpleNamespace(load_id="no-such-load")
+    assert _has_power_role(missing, _fake_runtime(frozenset({Role.POWER}))) is False
+
+    measured = next(row for row in LOAD_SENSORS if row.key == "measured")
+    assert measured.enabled(load, _fake_runtime(frozenset({Role.POWER}))) is True
+    assert measured.enabled(load, _fake_runtime(frozenset())) is False
+    # Every other row keeps its own default regardless of the power role.
+    granted = next(row for row in LOAD_SENSORS if row.key == "granted")
+    assert granted.enabled(load, _fake_runtime(frozenset())) is True
