@@ -331,7 +331,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 |---|---|---|
 | 0.0 | Prerequisites | in progress |
 | T.1a | Test speed: waste out of the pipeline | done |
-| T.1b | Test speed: the incremental tick | todo |
+| T.1b | Test speed: the incremental tick | done |
 | T.1c | Test speed: compiled core for the simulation tiers | done |
 | B.1 | The brand | done |
 | U.1 | Text that is never raw or English | done |

@@ -371,16 +371,18 @@ D-0328 found the cost diffuse and declined a rewrite of the three conventions be
 
 Target: **≥ 500 ticks/s on `nordic_detached` smoke**, §9 8's own floor, measured at 183.
 
+Byte-identical on all 22 recorded results and **+11 %** (196 → 218 ticks/s on one `nordic_detached` day, side by side; planning −25 %). Rows 1–5 are D7 §5.1's built table. The 500 ticks/s floor isn't met, and garbage-collection tuning adds 1 % (D-0333).
+
 **Lever 3: compiled core for the simulation tiers (T.1c, a spike, not adopted, D-0334).** `core/` is `mypy --strict` clean, which is what mypyc compiles. The spike (mypy/mypyc 2.3.1, CPython 3.14.7) got all of `core/` but one module, then `tests/sim/` and the runner, importing and running with every `ScenarioResult` it compared and a benchmark day byte-identical to pure Python - and **1.00–1.08× faster**, far under the 2× adoption needs, so nothing changed. The import segfault was mypyc building a dataclass's annotations from type objects: `model.Snapshot` names `engine` classes imported only under `TYPE_CHECKING`, whose types don't exist yet while `model` runs, so a NULL went into a dict. A faithful run took seven patches to mypyc itself (annotations as source text, built-in subclasses and `Engine` as regular classes, `Protocol` kept as a base, CPython's `sum`, a `Final` float-tuple check, pickling), one source change and one module left interpreted, and one difference can't be patched - an `int` in a `float` field comes back as `0.0`, so the snapshot stream's `repr` differs even where every result agrees. The gain is small because only 11–14 % of a compiled run's CPU is in compiled code: a quarter is the dataclass `__init__` the standard library generates, which mypyc leaves interpreted, and most of the rest is `dataclasses.replace`, allocation, datetimes and dicts - the conventions D-0328 found load-bearing, which this section keeps. A mypyc that also compiled dataclass methods would be capped near 1.4×. The ≤ 5 min target therefore rests on lever 2 and, after it, the runner size §11 defers until these numbers. Shipping compiled code to households (a `powerplan-core` wheel, HLD §5) stays out of scope.
 
 **Targets:**
 
-| | today (measured / estimated) | after T.1a | after T.1b | after T.1c - the target |
+| | measured / estimated | after T.1a | after T.1b | after T.1c, the target |
 |---|---|---|---|---|
-| the local PR command, 6-core box | 24 min 20 s (measured) | **measured (D-0331): 20 min 22 s cold** - the 30-day pair (1 212 s) is the critical path; **8 min 25 s warm** (cache hits; the uncached determinism test and the `e2e` day remain) | ≈ 8–10 min | **≤ 5 min** |
-| CI, a PR touching `core/` or the simulators | ≈ 1 h: pytest, then smoke, then month, in sequence (estimated) | ≈ 24 min: the month tier, now a parallel job | ≈ 10 min | **≤ 5 min per job** |
+| the local PR command, 6-core box | 24 min 20 s (measured) | **20 min 22 s cold** (measured) - the 30-day pair (1 212 s) is the critical path; **8 min 25 s warm** (cache hits; the uncached determinism test and the `e2e` day remain) (D-0331) | ≈ 8–10 min | **≤ 5 min** |
+| CI, a PR touching `core/` or the simulators | ≈ 1 h: pytest, then smoke, then month, one after the other (estimated) | ≈ 24 min: the month tier as a parallel job | ≈ 10 min | **≤ 5 min per job** |
 | CI or local, a PR touching neither | as above | ≤ 3 min: the simulation cache hits | same | same |
-| smoke on its own | 662 s | ≈ 330 s: two spans in parallel | ≈ 130 s | ≤ 60 s (§5.9's own budget) |
+| smoke on its own | 662 s | ≈ 330 s: two spans in parallel | +11 % ticks/s measured (D-0333), so ≈ 300 s | ≤ 60 s (§5.9's own budget) |
 
 The arithmetic behind "≤ 5 min": after T.1a removes the second smoke run, the simulations are ≈ 3 000 CPU-seconds, which six cores can clear in five minutes only if they fall to ≈ 1 500; and the longest single simulation - one 30-day run, 1 175 s under load - must fall to ≈ 270 s. That is **≈ 4.3× on the sequential path**, for the engine *and* the simulators and runner, which are 18 % of a simulated day (Amdahl caps a core-only speedup at ≈ 5.5×). Hence T.1c compiles `tests/sim/` and the runner beside `core/` if the spike adopts compilation at all. If T.1b and T.1c together fall short, the WP reports the measured gap; no test is narrowed to meet the number.
 ---
