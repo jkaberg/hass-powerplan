@@ -337,6 +337,8 @@ Site `active = off` behaves as every load **`observe`**: `release()` on the edge
 
 **What's on record, what's put back, and when anything is written** (INV-26, INV-27; PLAN §7 dec. 30). `LoadState.prior` holds, per role, what the device held before powerplan's first write since it last let go. A later write never replaces it, so it's never powerplan's own value. `release()` and `restore()` are one undo: they write those values back and clear the record, and with nothing on record they write nothing and start no restore dwell - a device powerplan never wrote to is left alone. (A shed stored before the record existed, or an earlier value that couldn't be read, is handed back by the kind's `restore_command`.) Every edge out of control (to `off`, `observe`, `delegated`, and the site switch to off) releases, which also undoes a plan's coast, not only a shed: it's the last write a site that's off makes. The edge back into control restores. The lifecycle - startup, unload, stop, a removed subentry, the `release` action - only releases and restores loads under control (site on, not in safe mode, the load `auto` or `force`). A site that's off writes nothing at all, whatever is on record (D-0360). The site switch's edge is read against the position the engine records every tick, which a start reads back before it may write (D7 §5.5, D-0361).
 
+**`control`** (D8 §5.16). The household's entity over this same `Mode` - unique id, entity id and the mode machinery unchanged (INV-50) - keeps all five values, it isn't a narrower enum. A new load's picker defaults to showing `auto` ("Automatisk"), `force` ("Kjør nå") and `off` ("Ikke styr") as its three everyday options, with `observe` ("Prøvemodus") and `delegated` ("Styres av noe annet") reachable the same way (D-0413). The strategy `always` is a different thing from `control = off`: `always` is a *plan* - no price steering, the capacity axis still governs the load (HLD §3's corollary) - while `off` releases the load and stops writing to it entirely, capacity included. A load whose only sensible strategy is "no plan" (`generic_switch`'s on-call subtypes, §6.7) stays in `auto` with strategy `always`, it doesn't become `off` (D-0412).
+
 ### 5.3 `MODULATE` (EV, `generic_number` battery) - INV-28
 
 ```
@@ -361,8 +363,10 @@ A `generic_number` battery: `unit = w`, `signed = True`, `min_value = 0` (no cli
 ### 5.4 `SETPOINT` (tank, panel heater, heat pump, generic climate)
 
 ```
-target ← profile.target(now, presence)  (never the device's own setpoint - INV-27)
-shed   ← grant.shed (from the shed set, never inferred from w == 0 - INV-25)
+target ← profile.target(now, presence)  (configuration - or, for a type with a writable setpoint and no separate `comfort` entity, the
+                                          device's own setpoint once adopted; never a value powerplan wrote itself or one seen before its
+                                          write record has reconciled, INV-27, D8 §5.16, D-0414)
+shed   ← grant.shed (from the shed set, never inferred from w == 0, INV-25)
 delta  ← plan.desired_state_at(now).setpoint_delta or 0   (D5 §5.7: +Δ in cheap slots, −Δ in expensive ones. For SETPOINT and MODE loads the plan's
                                                            envelope_w is a reservation hint the allocator caps against (INV-30); the DELTA is the lever the device feels)
 desired =
@@ -370,9 +374,9 @@ desired =
     tank:       charge_setpoint if plan says charge and grant ≥ nameplate and not shed, else shed_setpoint (comfort min); hysteresis: a started charge holds min_on_s unless stage ≥ 2
     floor:      the lowest setpoint written - shed or plan delta - is floor + swing_k / 2: a thermostat holds setpoint ± half its swing, and the floor is a temperature, not a dial (D-0259)
     radiator:   the same half band above the floor - the comfort target it wants power towards on a plug, the shed setpoint and the clamp on a dial (D-0265)
-    thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor) - a comfort violation is served at `target` whatever the plan says
+    thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor)      - a comfort violation is served at `target` whatever the plan says
 gate: tolerance 0.05 °C (heat pump 0.25), min_interval, dwell, urgent (stage ≥ 2 shed = urgent: past interval, never past tolerance)
-restore(): write profile.target (a correction, never adoption) - now: undo our own recorded write, back to what the device held before it (§5.2); no upward move within one dwell of a restore
+restore(): undo our own recorded write, back to what the device held before it (§5.2); no upward move within one dwell of a restore
 ```
 
 ### 5.5 `MODE` (thermostats with an operation-mode select - e.g. Z-Wave floor thermostats)
@@ -703,6 +707,8 @@ These labels replace today's type vocabulary, where `appliance_cycle` is "Appara
 
 Common to every load: pick the HA device → suggested type + bindings (§5.9) → the type's questions → review. Common derived: `priority` (type default, room adjusted), `carrier` (electricity unless the profile says gas/district heat), `phases` (profile or question), `group` (type default: floor loops → `floor_heating`, radiators → `radiators`).
 
+**Priority as three fixed numbers (D8 §5.16, D-0411).** Every type's `priority` default above is a *number*, and the number is one of three literals a household-facing `select` (Lav · Normal · Høy) can hold: **15**, **30**, **45**. Every default in this section lands on one by construction: `ev` 10 → Lav; `generic_switch` 15–18 (pool pump, sauna, hot tub, other) → Lav, 25 (ventilation) → Normal; `appliance_cycle` 20 → Lav; `floor_heating`/`radiator` 30, bathroom 32 → Normal; `battery` 30 → Normal; `water_heater` 40 → Høy; `heat_pump` 50 → Høy. A load's `derive()` returns one of the three literals directly; migration of an existing free-numbered load rounds to the nearest at the midpoints 22.5 and 37.5. INV-1's precedence ("preference - priority order among loads that are all satisfiable") is unaffected by fewer distinct values: D5 §5's `sorted(loads, key=priority, reverse=True)` already breaks ties by `load_id`, so loads sharing a level are ordered exactly as two loads sharing a number would be.
+
 ### 6.1 `floor_heating`
 
 | Question | Options (default) | Drives | Source of the default |
@@ -778,6 +784,8 @@ kWh, max charge/discharge kW, reserve % (20), allow grid charging (yes), chemist
 
 What is it (pool pump · sauna · hot tub · ventilation · other) → nameplate default and strategy (`cheapest_hours` with "hours per day" for pool/ventilation; `always` + `force` for sauna/hot tub); power W (measured wins); min on/off. An appliance with no hours per day is **on call** (D-0263): it wants power when the household has it on, when a shed of ours left it wanting, or under `force` - the controller sheds and restores it and never lights it.
 
+**`always` is not "Ikke styr" here (D-0412).** For sauna, hot tub and other on-call appliances, `always` is the type's *only* applicable strategy - not a household opt-out of price steering, but the correct model for something started by hand: no plan, capacity axis still governs it (HLD §3's corollary). D8 §5.16 does not offer `PowerPlan-strategi` as a choice for these three (a single-option field is not rendered, matching the CTL-14 rule §6's own table already applies to profile and phase selects), and migration never turns one of these into `control = off`: it keeps `control = auto` and `strategy = always`, exactly as before the change. A sauna or hot tub the household explicitly wants powerplan to stay off remains one click away - `control = off` after the upgrade, same as for any load - but is never the migration's default here, because a silent loss of fuse protection on a 6 kW load is a worse failure than an unwanted one-click fix.
+
 ### 6.8 `appliance_cycle`
 
 | Type | default energy | default duration | peak draw (D-0207) | source |
@@ -792,7 +800,7 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 
 ## 7. Persistence
 
-`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`, and `last_on_at`, `last_off_at` for row 7's dwell clocks plus `last_error` for `Health.last_error` and the repair issue. `LoadState.prior` is the record `release()` and `restore()` undo (§5.2); `observed` is the would-be value `observe` last reported (§5.10 row 1); `LoadState.stale_since` is the stale-role clock. The store's `schema` stamp on the section is not a load (D-0365). Migration by `schema`; a subentry removed → its state deleted after `release()`.
+`LoadState` per subentry id inside the site store, section `loads`. Written on change (mode edges, latches, provisions, learned values, gate state after each write). `WriteGateState`: `last_write_at`, `last_value`, `verify_due`, `failures`, `transient_since`, `deviations`, and `last_on_at`, `last_off_at` for row 7's dwell clocks plus `last_error` for `Health.last_error` and the repair issue. `LoadState.prior` is the record `release()` and `restore()` undo (§5.2); `observed` is the would-be value `observe` last reported (§5.10 row 1); `LoadState.stale_since` is the stale-role clock. The store's `schema` stamp on the section is not a load (D-0365). *(D-0414)* `last_context_id: str | None` - the HA `Context.id` of the write the gate last sent, set alongside `last_value`; INV-27's override test reads it; INV-26's record of what to undo stays `LoadState.prior`. `reconciled: bool` starts `False` on load and becomes `True` the first time `verify()` (§5.10) confirms or corrects it against the device's own state - before that, an observed comfort-setpoint change is neither adopted as an override nor treated as our own; it is held, exactly as an unhealthy load's is (§8). Migration by `schema`; a subentry removed → its state deleted after `release()`.
 
 ---
 
@@ -850,6 +858,9 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 25. Release and restore undo only our own recorded writes, back to what the device held before them: ten starts against a device nobody's record names write nothing (item 1), after our own write one start undoes it; a restart in control undoes our recorded shed and a charger another automation holds at 10 A is left alone; a site that is off writes nothing on the way out or back in; the edge to off undoes our coast (INV-26, INV-27).
 26. Observe decides against the device (`same` before `observe`) and reports each would-be value once, `old → new`, a restart included; a climate setpoint's read-back reads its `temperature` attribute (INV-22).
 27. A power sensor on no device holding 0 W for an hour is read, not stale; a role that stops answering is `transient` with its `since`, cleared when it answers again.
+28. Comfort override: a device setpoint changed by the WriteGate's own last write (matching `last_context_id`) is never adopted as a new target; a setpoint changed by anything else, once `reconciled`, is; a setpoint observed before `reconciled` is held, not adopted, not treated as our own (INV-27).
+29. Priority migration: a free-numbered load at 22, 23, 37 and 38 rounds to Lav, Normal, Normal and Høy respectively (the D-0411 midpoints); every type's own default (§6) lands on the level this LLD states for it.
+30. `generic_switch`'s sauna/hot_tub/other keep `control = auto` and `strategy = always` through migration, never `control = off`, even though `strategy == "always"` is stored (§6.7, D-0412); a floor-heating or EV load with strategy `always` does migrate to `control = off` (the type has a real price-steering alternative).
 ---
 
 ## 10. Deliberately deferred
@@ -874,6 +885,8 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 **Ask raw parameters instead of a questionnaire.** *For:* transparent, no derivation tables to maintain, power users prefer it. *Against:* the target user does not know their slab's kWh/K, and a wrong guess is invisible until the bathroom is cold. **Decision:** questionnaire with Advanced pre-filled (INV-65).
 
 **Live derivation instead of materialised values.** *For:* one source of truth, defaults improve for everyone. *Against:* a release that changes a default silently changes a running house. **Decision:** materialise; offer re-derive with a diff (INV-66).
+
+**Migrate every `strategy = always` load to `control = off`, exactly as the device-attachment spec's decision #1 reads.** *For:* the spec's decision is unqualified, the spec's own acceptance checklist says "appliances that had strategy 'Alltid på' show PowerPlan-styring = Ikke styr" with no carve-out, and one migration rule is simpler than one-with-an-exception. *Against:* `strategy = always` and `control = off` are not the same thing in this design - HLD §3's own corollary says a load on `always` is "pure capacity management", while `off` releases the load and stops writing to it, capacity included (D4 §5.2) - and `generic_switch`'s on-call subtypes (sauna, hot tub, other) default to `always` *because* that is the correct model for something started by hand, not because a household opted out of price steering. A silent, unqualified migration would strip fuse protection from exactly the load class a 6 kW sauna or hot tub represents, on every existing install, on upgrade, with no warning. **Decision:** the literal reading applies wherever the type has a real price-steering alternative (an EV, a floor loop); `generic_switch`'s three on-call subtypes keep `control = auto`/`strategy = always` through migration, and the household can still choose `control = off` explicitly afterwards. (D-0412)
 
 **One OCPP profile instead of product profiles.** *For:* one module, a standard status vocabulary, local transport, and most brands speak OCPP. *Against:* households run the vendors' own integrations - Easee 3 616 and Zaptec 2 068 installs against 2 456 for OCPP across every brand (HA analytics) - and re-pointing a charger's backend is not setup powerplan should require. **Decision:** product profiles for the two Nordic leaders, OCPP for the long tail, vocabulary profiles for core integrations that already expose an amp `number`.
 

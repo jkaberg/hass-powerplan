@@ -229,15 +229,16 @@ Three things the cycle owes, each in its `[no lock]` half: **the daily fits**, a
 | grid power entity changed | `async_track_state_change_event` | debounced tick (10 s) |
 | import register changed | same | immediate tick (closes the window) |
 | heartbeat | `async_track_time_interval(30 s)` | tick |
-| window fallback | `async_track_utc_time_change(minute=window boundary + 5, second=0)`… **only** checks whether the register report arrived; if it did, no-op; if not, a tick with `wall_clock` anchoring | tick (fallback only) |
+| window fallback | `async_track_utc_time_change(minute=window boundary + 5, second=0)`, **only** checks whether the register report arrived: no-op if it did, a tick with `wall_clock` anchoring if not | tick (fallback only) |
 | knob entity changed (mode/force/target/…) | entity callbacks → `on_knob` | tick + plan |
 | price curve rebuilt | D1 callback | plan |
 | bound helper changed (`schedule.*`, `person.*`, `calendar.*`) | `async_track_state_change_event` | plan (+ tick for presence) |
 | load entity state changed (charger status, program state, door) | state tracking per bound role flagged `reactive` | tick |
-| `desired_state_reconcile` / `powerplan.replan` | event / service | tick / plan |
+| `desired_state_reconcile` / `powerplan.replan` | event / action | tick / plan |
 | HA start | `EVENT_HOMEASSISTANT_STARTED` | lifecycle §5.5 |
-| event entity changed | `async_track_state_change_event` on each configured entity event source (today the `day_type` modifier's entity, D1 §6) | `EventStore.upsert` from the source's mapping, then plan |
-| Energy preferences changed *(Phase 7)* | the `energy` manager's update listener | refresh `energy_solar`, then plan |
+| event entity changed | `async_track_state_change_event` on each configured event source's entity (the `day_type` modifier's, D1 §6) | `EventStore.upsert` from the source's mapping, then plan |
+| Energy preferences changed | the `energy` manager's update listener, registered once per site and a no-op after stop since the manager can't remove it | refresh `energy_solar`, then plan |
+| device registry updated | `hass.bus.async_listen(EVENT_DEVICE_REGISTRY_UPDATED, …)` | `remove` on a load's bound device: detach (D8 §5.16, D-0415), fall back, repair; `update` with a `name`/`name_by_user` change on a load's bound device: follow the sub-entry title unless the household renamed the sub-entry itself. Neither triggers a tick or a plan |
 
 Grid power and production power share one 10 s debounce with the loads' entities: a charger's power sensor changes every second, and each burst is one tick after the quiet period, never one per change. The register report is an immediate tick (INV-13), and one landing while the lock is held is remembered and run as a trailing tick, never dropped (§9 4). The heartbeat is `async_track_time_interval(30 s)`, and a wall-clock trigger due within 5 s of a window boundary runs 5 s after it instead (INV-43). The window fallback fires at boundary + 5 min and checks whether the register **reported** since the boundary (`WindowState.last_register_at`), not whether the window rolled - D3 closes a window on the integral after its grace, so "rolled" is always true, and only a missing report earns the tick. The quarter-hour plan runs at `HH:00/15/30/45 + 20 s`. Presence `person` entities are a tick and a plan. Price sources with a publication get one timer per source at `next_fetch_at` (re-armed for the next day after each fire), retries at `next_retry_at` per failed source, and every site gets the `HH:07/22/37/52` hole check. An entity-backed source is re-read on its entity's change. Every subscription is kept on the runtime and released by one `entry.async_on_unload` hook and by `stop()`, whichever comes first (D-0271). A production reading 30 % or more off its forecast for 15 min replans once per episode, in the runtime after the tick (D-0655).
 
@@ -267,16 +268,20 @@ edge-triggered per window; cleared when expected < 0.85 × ceiling; at most one 
 
 ```
 async_setup_entry:
-  1 load SiteStore; migrate sections; restore the tariff evaluator from `tariff` (history, target, risk - D2 §7, D-0280) before anything holds a reference to its history
+  1 load SiteStore; migrate sections; restore the tariff evaluator from `tariff` (history, target, risk, D2 §7, D-0280) before anything holds a reference to its history
   2 build domain objects from entry + subentries (site profile, meter source, price sources, tariff evaluator, loads, groups, zones, circuits, forecasts)
-  3 hydrate every load's bound `schedule.*` helper (D4 §4.4), read once, not live - the fetch is I/O and needs Home Assistant's entities, so it cannot run inside step 2
-  4 release_all("startup") - a load never inherits the mode it was left in (INV-26)
+  3 hydrate every load's bound `schedule.*` helper (D4 §4.4), read once and not live; the fetch is I/O and needs HA's entities, so it can't run inside step 2
+  4 release_all("startup")                                 a load never inherits the mode it was left in (INV-26)
   5 restore comfort targets (D4 restore(), a correction never an adoption)
-    4 and 5 undo only powerplan's own recorded writes - back to what each device held before them - and only for loads under control; a site that is off writes nothing (INV-26, INV-27, D-0360)
+    4 and 5 only undo powerplan's own recorded writes, back to what each device held before them, and only for loads under control; a site that's off writes nothing (INV-26, INV-27, D-0360)
+  5a device attachment migration, once per subentry (D8 §5.16, D-0417): re-point each appliance entity's `device_entry`, remove the old
+     powerplan appliance device, remove and repair-list entities merged away, fold strategy/priority into their entities, write the
+     stored comfort value once through the WriteGate if it differs; an ordinary step 5-adjacent write, so skipped entirely
+     while the site is off, same as step 5 (INV-26, INV-27)
   6 run provisions (D4), retried on their own schedule
   7 first tick (observe reads, no writes if the site is off) → coordinator has data before platforms load
   8 forward entry setups to platforms (sensor, binary_sensor, number, switch, select, button, time)
-  9 subscribe triggers; start the planning cycle after the first tick (services are registered once in `async_setup`, PLAN §7 dec. 8)
+  9 subscribe triggers; start the planning cycle after the first tick (actions are registered once in `async_setup`, PLAN §7 dec. 8)
   10 seed baseline/backfill in executor jobs (D2/D10) without blocking setup
 async_unload_entry / homeassistant_stop:
   1 unsubscribe triggers; stop planning; 2 release_all("unload"); 3 flush store; 4 unload platforms
@@ -370,6 +375,7 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 20. *(Phase 7)* The PV forecast refreshes hourly and on an Energy-preferences change, outside the lock; a site without solar sources performs no energy-platform call.
 21. An `e2e` observe day with a charger and a heat pump bound through the flows, through a Home Assistant restart and an entry reload, makes zero device service calls, leaves the household's values as it found them, logs each would-be value once and logs no ERROR; a site switched off writes nothing at unload, stop or start; the switch's edge to off undoes powerplan's own writes (INV-26, INV-27, INV-48).
 22. A load subentry reconfigure keeps its entities, mode, knobs and `LoadState` with no ERROR; unload after `homeassistant_started` and a `homeassistant_stop` log no ERROR; a restart restores a clean store with no WARNING (D-0364, D-0365).
+23. A device-registry `remove` for a load's bound device detaches (not deletes) its entities and raises the repair without a tick or a plan; a `rename` follows the sub-entry title unless the household renamed it separately; step 5a runs once, after release/restore and before the first tick, and is skipped entirely while the site is `off` (D8 §5.16 §9).
 
 ---
 

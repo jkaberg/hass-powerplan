@@ -73,6 +73,16 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | **H.2 Observe writes nothing; the gate reads what it wrote** | release and restore undo only powerplan's own recorded writes, nothing while the site is off; observe logs on change only; the read-back reads the binding's attribute; stale roles carry their `since`; a subentry update keeps its entities | HLD INV-26, INV-27; D4 §5; D7 §2, §5.5, §8 (dec. 30) | an `e2e` observe day through a restart and a reload with zero device calls; unload and stop with no ERROR | H.1 |
 | **H.3 The period and the baseline from the recorder** | the open period seeded from the register's recorder rows at setup and from the rebuild button; the baseline's startup seed on a fresh site | D2 §2, §5.12; D3 §5.11; D10 §5.2 | D2 §9 16 and D10 §9 5 through the runtime; a site created mid-month reports the month's level | H.1 |
 
+### 3.0d Device attachment
+
+[device-attachment](reviews/device-attachment.md): a load's entities move onto the appliance's own device (`Entity.device_entry`), 16-17 entities per appliance become 4-6 visible, the integration page lists one row per appliance, and every setting sits at one of three levels. Design: D8 §5.16; D4, D5, D7 alongside; HLD INV-26, INV-27, INV-50 (dec. 31-36). It comes after U.2, U.4 and H.2, whose machinery it reuses, and before U.3, which then builds its type-first flow once, against attached devices.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **A.1 Attach** | entities on the hardware device through `device_entry`; the fallback device; the device-registry listener (removal → fallback and repair); the brand icon instead of a name prefix; the context-based comfort override | D8 §5.16; D7 §5.3; D4 §4.1; HLD INV-26, 27, 50 | D8 §9 23, 26, 27; D7 §9 21 | U.2, U.4, H.2 |
+| **A.2 The entity set and `plan_status`** | the consolidated entity set for all eight types; `plan_status` derived from the snapshot with every merged attribute kept | D8 §5.16 (entity set, `plan_status`, icons) | D8 §9 24, 28; a per-type entity-count test | A.1 |
+| **A.3 Settings by level and the gear flow** | the gear flow asks level 3 only; re-derive never touches an entity; priority as Low/Normal/High; the integration page's labels | D8 §5.16 (setting levels, gear flow); INV-66 | D8 §9 29, 30, 31 | A.2 |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -298,6 +308,11 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 28. **The screens are written for someone who knows their bill, not the grid** (D8 §5.15). One question per screen, detection first, a safe default for "don't know", controls that make a wrong answer hard, the glossary everywhere, and never a raw key or an "unknown" normal state. New sites start strict (`risk` 0). *Rejected:* fixing words only - an order that asks the wrong question first can't be fixed with words.
 29. **The brand ships inside the integration.** Since HA 2026.3, the floor, `custom_components/powerplan/brand/` is served by HA itself, and the brands repository no longer takes custom integrations. HACS's blank store icon is documented as a limitation.
 30. **Observe writes nothing; release and restore undo only powerplan's own recorded writes** (INV-26, INV-27). Nothing is written while the site is off, startup included; in control, an undo puts back what the device held before powerplan's first write, and a device powerplan never wrote to is left alone (D-0360). *Rejected:* restoring every comfort target at every start - a start in observe wrote over devices powerplan had never steered.
+31. **Appliance entities attach to the appliance's own device** (D8 §5.16). "Always on" and "Don't control" are one choice except for on-call appliances, which keep capacity control (D-0412); priority is Low/Normal/High (D-0411); the comfort target may come from the device's own setpoint; cost and savings stay visible. *Rejected:* deferring to v1.x - the old device-linking pattern is past its cutoff on current HA.
+32. **INV-27's device-setpoint rule builds on the write record `LoadState.prior`,** adding only the gate's last `Context` id (D-0414, D-0420). *Rejected:* one combined record - two narrow fields read by two rules.
+33. **INV-50 permits one kind of removal: a documented merge with one repair.** *Rejected:* keep-and-hide - a hidden duplicate still invites an automation to write two controls for one thing.
+34. **Priority: three fixed numbers, 15/30/45, split at 22.5 and 37.5** (D-0411). *Rejected:* the free number with a select on top - the walk's tie-break makes more levels pointless.
+35. **Device attachment comes after U.2, U.4 and H.2 and before U.3,** so U.3 builds the load flow once against attached devices.
 
 ---
 
@@ -321,6 +336,8 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 
 **Ship first, then do the research items.** *For:* a released beta finds real problems faster. *Against:* a beta that mis-bills its own market's capacity steps teaches its first users not to trust the one number it exists to defend. **Decision:** verified Norwegian tariffs, every price source and the Nordic chargers before v0.x; the rest before v1.0.
 
+**Defer device attachment to v1.x.** *For:* v1.0 is already large and the current design works. *Against:* the old device-linking pattern is past its cutoff on current HA, and every appliance added meanwhile would migrate twice. **Decision:** now, before U.3 (dec. 35).
+
 ---
 
 ## 9. Checklist
@@ -341,6 +358,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | H.1 | The running build, read end to end | done |
 | H.2 | Observe writes nothing; the gate reads what it wrote | done |
 | H.3 | The period and the baseline from the recorder | done |
+| A.1 | Attach | todo |
+| A.2 | The entity set and `plan_status` | todo |
+| A.3 | Settings by level and the gear flow | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |

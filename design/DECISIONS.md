@@ -1667,3 +1667,43 @@ The device-attachment spec moves per-load entities onto the appliance's own devi
 
 `LoadSensorRow.enabled` becomes `Callable[[Load, Runtime], bool]`, like `meter_health`, checked against a bound power role. HA reads the default only at first registration, so an existing `sensor.<load>_measured` keeps its state; only new loads without a power role start disabled. Gating existence would silently remove entities (INV-50).
 **Rejected:** reading `measured_w` at construction - no snapshot exists yet, and a transiently unavailable role would read as absent.
+
+### D-0410 · An entity id without the device-name prefix comes from `suggested_object_id`
+
+A preset `self.entity_id` becomes `suggested_object_id` on registration, which the registry ranks after a user rename and before the translated name (which is device-prefixed when `has_entity_name=True`). HA's own collision handling adds `_2` as needed. Affects D8 §5.16.
+**Rejected:** another route to `suggested_object_id` - `self.entity_id` is the only hook before registration.
+
+### D-0411 · Priority becomes three fixed numbers, 15 / 30 / 45, split at the midpoints
+
+The `priority` select (Lav · Normal · Høy) maps to 15, 30, 45; a stored number rounds at 22.5 and 37.5. Every type's default lands where D4 §6 would lead a household to expect: EV, pool pump, sauna, cycles → Lav; ventilation, floors, radiators, battery → Normal; water heater, heat pump → Høy. Affects D4 §5, §6, §9.
+**Rejected:** five levels, or the free number with a select over it - the walk's `(priority, load_id)` tie-break already orders loads on one level.
+
+### D-0412 · `always` stays a strategy; it leaves the household's select only where the type has a real alternative
+
+The spec folds "Alltid på" into `control = Ikke styr` (`mode = off`), which is right where the type can be price-steered. For `generic_switch`'s on-call subtypes (sauna, hot tub, other), `always` is the right model for something started by hand: no plan, capacity still governs (HLD §3). Folding them into `off` would silently drop fuse protection from 6 kW loads. So `always` stays registered, the strategy select is hidden for those subtypes, and they keep `control = auto`. Migration moves `always` to `Ikke styr` only when the type has another strategy. Affects D4 §5.2, §6.7, §9; D5 §3, §6; D8 §5.16.
+**Rejected:** applying the spec literally everywhere - a silent regression on the loads where it matters most.
+
+### D-0413 · `control` keeps all five `Mode` values; three lead the list
+
+The merged `control` select keeps `auto`, `force`, `observe`, `delegated` and `off` (labelled Ikke styr), with `observe` as Prøvemodus and `delegated` as Styres av noe annet. `observe` still computes, logs would-be writes and calibrates; `delegated` still reserves nameplate for an outside controller. Affects D8 §5.16.
+**Rejected:** trimming to three - `select.<load>_mode` is the only per-load way into `observe` and `delegated`.
+
+### D-0414 · Comfort-override detection reuses the gate's record of its own writes via HA's `Context`
+
+`writegate.py` sends each command under an explicit `Context`, and `GateState.last_context_id` records it. A setpoint whose state carries that id is our write settling; one that doesn't is the household's, once the record is reconciled after a restart. Before that it's held, neither adopted nor ours. This is what INV-27's "user-originated only" needs, using H.2's existing record. Affects D4 §4.1, §5.4, §5.10; D8 §5.16.
+**Rejected:** comparing state against what we commanded - can't tell our eco setpoint from a hand-turned dial after a restart, which is the setpoint-walk incident.
+
+### D-0415 · A hardware device's removal detaches our entities; it never deletes them
+
+HA deletes an entity on device removal only when it belongs to the removing integration's own entry; ours are kept with `device_id = None`. So the runtime listens for device removal among its bound devices, creates the fallback device, re-points the load's entities to it and raises a repair. No entity id, history or statistic changes: the recorder tables carry no `device_id`. Affects D7 §5.3, D8 §5.16.
+**Rejected:** recreating the entities on the fallback device - removal and re-adding is what loses history.
+
+### D-0416 · The fallback device is the old `load_device_info`, now the exception
+
+The fallback device (the load's own identifiers, `via_device_id` = the site) is kept as is, used when a load has no hardware device and while a removed device awaits re-attachment. Its model becomes the translated type name. Affects D8 §5.16.
+**Rejected:** a new identity or icon for it - nothing asks for one.
+
+### D-0417 · The migration's writes are ordinary gate writes, after release and restore
+
+The one-time comfort write in the device-attachment migration runs in setup after `release_all` and `restore_all` and before the first tick, as a normal `SETPOINT` decision through the gate. While the site is off it's skipped, and the device's own setpoint becomes the target on the first `auto` tick; a migration write is exactly what puts a fresh `last_context_id` on record. Affects D7 §5.5, D8 §5.16.
+**Rejected:** writing at migration regardless of site state - a site left off must stay silent through an upgrade.

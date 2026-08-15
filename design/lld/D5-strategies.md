@@ -288,6 +288,8 @@ Strategies are pre-selected by D4's derivation. Their parameters are under **Adv
 | combinators | `threshold.off_above/on_below`, `opportunistic.below_price` (0), `merge` partner |
 | all | `participate_in_events` (False), `horizon_h` (48) |
 
+**`always` stays registered** (D8 §5.16, D-0412). The household's strategy select leaves out "Alltid på" for a type that also has a real price-steering strategy - a D8 rendering choice, the registry is asked which strategies a `DeviceType` supports and all but `always` are shown where more than one remains. `core/strategies/always.py` stays in the registry and is the only strategy `generic_switch`'s on-call subtypes use (D4 §6.7).
+
 Validation: `delta_k` above the store's swing refused, `hours_per_day` > 24 refused, `off_above ≤ on_below` refused.
 
 ---
