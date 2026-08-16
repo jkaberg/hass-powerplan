@@ -48,6 +48,7 @@ from ..kinds.switch import Switch, SwitchCfg
 from ..questionnaire import (
     AnswerError,
     Answers,
+    Bounds,
     Derived,
     Option,
     QCtx,
@@ -349,7 +350,11 @@ QUESTIONNAIRE = Questionnaire(
             advanced=True,
             help_key="water_heater_force_max_h",
         ),
-    )
+    ),
+    bounds=(
+        Bounds(value="ready_temp_c", low="comfort_min_c", high="max_c"),
+        Bounds(value="legionella_temp_c", high="max_c"),
+    ),
 )
 
 

@@ -45,7 +45,9 @@ async def _add_tank(
 
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
-    assert suggested["profile"] == "generic_climate"
+    # Only `generic_climate` claims a thermostat-shaped device, so the profile
+    # field is not asked at all (review CTL-14).
+    assert "profile" not in suggested
     result = await _answer(hass, result, **{**suggested, "type": "water_heater"})
 
     assert result["step_id"] == "questions", result

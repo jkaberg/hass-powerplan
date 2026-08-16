@@ -31,6 +31,8 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.allocation import default_max_concurrent_w
 from custom_components.powerplan.entity import unique_id
+from custom_components.powerplan.flow.group import GROUP_MAX_CONCURRENT_KW
+from custom_components.powerplan.flow.text import Text
 from tests.flows.test_circuit_flow import _two_loads
 from tests.flows.test_load_flow import _answer
 from tests.runtime.conftest import FakeMeter
@@ -60,7 +62,7 @@ async def test_a_group_needs_a_load_first(hass: HomeAssistant, site: MockConfigE
 
 @pytest.mark.inv("INV-41")
 @pytest.mark.inv("INV-67")
-async def test_the_group_flow_reviews_the_sentence_and_builds_the_constraint(
+async def test_the_group_flow_reviews_the_sentence_and_builds_the_constraint(  # noqa: PLR0915 - the whole round trip, in order
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
 ) -> None:
     """Name, members, cap → the D6 §6 sentence → subentry → the runtime's rotation."""
@@ -80,7 +82,6 @@ async def test_the_group_flow_reviews_the_sentence_and_builds_the_constraint(
     assert result["step_id"] == "user"
     defaults = result["data_schema"]({"name": "Floor loops"})
     assert defaults[GROUP_MEMBERS] == []
-    assert defaults[GROUP_MAX_CONCURRENT_W] == pytest.approx(default_max_concurrent_w(nameplates))
 
     # No member is a field error, never a subentry.
     result = await _answer(hass, result, **{**defaults, "name": "Floor loops"})
@@ -94,24 +95,34 @@ async def test_the_group_flow_reviews_the_sentence_and_builds_the_constraint(
             **defaults,
             "name": "Floor loops",
             GROUP_MEMBERS: [ev_id, sauna_id],
-            GROUP_MAX_CONCURRENT_W: 4000.0,
             "advanced": {
+                **defaults["advanced"],
                 GROUP_FROM_STAGE: 2,
-                GROUP_CEILING_FRACTION: 0.9,
-                GROUP_STARVE_SECONDS: 900.0,
+                GROUP_CEILING_FRACTION: 90,
+                GROUP_STARVE_SECONDS: {"hours": 0, "minutes": 15, "seconds": 0},
             },
         },
     )
+    # The shared cap is not part of the members step (D6 §6, review LOAD-7): it
+    # is a derivation over the members just chosen, shown editable on the
+    # review itself.
     assert result["step_id"] == "review", result
+    expected_cap_w = default_max_concurrent_w(nameplates)
+    review_defaults = result["data_schema"]({})
+    # `cap_schema`'s own default rounds to 3 decimals of kW.
+    assert review_defaults[GROUP_MAX_CONCURRENT_KW] == pytest.approx(
+        round(expected_cap_w / 1000.0, 3)
+    )
     words = result["description_placeholders"]
+    text = await Text.load(hass)
     assert words["name"] == "Floor loops"
     assert words["members"] == "Charger and Sauna", "titles, never ids (INV-67)"
-    assert words["max_concurrent_kw"] == "4"
+    assert words["max_concurrent_kw"] == text.number(expected_cap_w / 1000.0)
     assert words["from_stage"] == "2"
     assert words["ceiling_fraction"] == "90"
     assert words["starve_min"] == "15"
 
-    result = await _answer(hass, result)
+    result = await _answer(hass, result, **{**review_defaults, GROUP_MAX_CONCURRENT_KW: 4.0})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_GROUP)
@@ -170,10 +181,12 @@ async def test_reconfigure_pre_fills_and_updates_the_group(
             **result["data_schema"]({"name": "Floor loops"}),
             "name": "Floor loops",
             GROUP_MEMBERS: [ev_id, sauna_id],
-            GROUP_MAX_CONCURRENT_W: 4000.0,
         },
     )
-    result = await _answer(hass, result)
+    assert result["step_id"] == "review", result
+    result = await _answer(
+        hass, result, **{**result["data_schema"]({}), GROUP_MAX_CONCURRENT_KW: 4.0}
+    )
     await hass.async_block_till_done()
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_GROUP)
     assert site.supported_subentry_types[SUBENTRY_GROUP]["supports_reconfigure"] is True
@@ -183,7 +196,8 @@ async def test_reconfigure_pre_fills_and_updates_the_group(
     prefilled = result["data_schema"]({})
     assert prefilled["name"] == "Floor loops"
     assert prefilled[GROUP_MEMBERS] == [ev_id, sauna_id]
-    assert prefilled[GROUP_MAX_CONCURRENT_W] == 4000.0
+    # The cap is not part of the members step any more (D6 §6, review LOAD-7);
+    # it is re-derived over the members on the review that follows.
 
     result = await _answer(
         hass,
@@ -192,12 +206,13 @@ async def test_reconfigure_pre_fills_and_updates_the_group(
             **prefilled,
             "name": "Sauna only",
             GROUP_MEMBERS: [sauna_id],
-            GROUP_MAX_CONCURRENT_W: 6000.0,
         },
     )
     assert result["step_id"] == "review", result
     assert result["description_placeholders"]["members"] == "Sauna"
-    result = await _answer(hass, result)
+    result = await _answer(
+        hass, result, **{**result["data_schema"]({}), GROUP_MAX_CONCURRENT_KW: 6.0}
+    )
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"

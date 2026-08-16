@@ -21,9 +21,6 @@ from homeassistant.config_entries import ConfigSubentryFlow, SubentryFlowResult
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -41,7 +38,13 @@ from custom_components.powerplan.const import (
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
 )
-from custom_components.powerplan.flow.questionnaire import advanced_section
+from custom_components.powerplan.flow.questionnaire import (
+    CIRCUIT_FUSE_SIZES,
+    advanced_section,
+    amps_of,
+    fuse_selector,
+    kw_selector,
+)
 from custom_components.powerplan.flow.text import Text, entity_name
 
 if TYPE_CHECKING:
@@ -56,6 +59,8 @@ FUSE_A_MIN = 1.0
 FUSE_A_MAX = 200.0
 #: The unmetered allowance's range, in watts (D6 §6 `unmetered_w` 0).
 UNMETERED_W_MAX = 20_000.0
+#: The form's field for it: kW, stored as `unmetered_w` (CTL-15).
+CIRCUIT_UNMETERED_KW = "unmetered_kw"
 
 
 def circuit_schema(
@@ -63,26 +68,22 @@ def circuit_schema(
 ) -> vol.Schema:
     """Return the one questionnaire step (D6 §6), pre-filled from `values`."""
     given = values or {}
+    fuse = given.get(CIRCUIT_FUSE_A, DEFAULT_FUSE_A)
+    amps = amps_of(fuse)
     return vol.Schema(
         {
             vol.Required("name", default=given.get("name", vol.UNDEFINED)): TextSelector(),
+            # A pick of breaker sizes, "Annet…" typed in, no clear button (CTL-1, LOAD-10).
             vol.Required(
-                CIRCUIT_FUSE_A, default=float(given.get(CIRCUIT_FUSE_A, DEFAULT_FUSE_A))
-            ): NumberSelector(
-                NumberSelectorConfig(
-                    min=FUSE_A_MIN,
-                    max=FUSE_A_MAX,
-                    step=1,
-                    unit_of_measurement="A",
-                    mode=NumberSelectorMode.BOX,
-                )
-            ),
+                CIRCUIT_FUSE_A, default=f"{amps:g}" if amps is not None else str(fuse)
+            ): fuse_selector(CIRCUIT_FUSE_SIZES),
+            # The same control as the site's phases (CTL-14).
             vol.Required(
                 CIRCUIT_PHASES, default=str(given.get(CIRCUIT_PHASES, site_phases))
             ): SelectSelector(
                 SelectSelectorConfig(
                     options=["1", "3"],
-                    mode=SelectSelectorMode.DROPDOWN,
+                    mode=SelectSelectorMode.LIST,
                     translation_key="phases",
                     sort=False,
                 )
@@ -97,7 +98,7 @@ def circuit_schema(
                     ],
                     multiple=True,
                     mode=SelectSelectorMode.LIST,
-                    sort=False,
+                    sort=True,
                 )
             ),
             vol.Optional(
@@ -106,18 +107,11 @@ def circuit_schema(
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power")),
             vol.Optional(SECTION_ADVANCED, default={}): advanced_section(
                 {
+                    # "Annet forbruk på kursen" in kW; stored in W (LOAD-8, CTL-15).
                     vol.Optional(
-                        CIRCUIT_UNMETERED_W,
-                        default=float(given.get(CIRCUIT_UNMETERED_W, 0.0)),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=0,
-                            max=UNMETERED_W_MAX,
-                            step=10,
-                            unit_of_measurement="W",
-                            mode=NumberSelectorMode.BOX,
-                        )
-                    )
+                        CIRCUIT_UNMETERED_KW,
+                        default=float(given.get(CIRCUIT_UNMETERED_W, 0.0)) / 1000.0,
+                    ): kw_selector(0.0, UNMETERED_W_MAX)
                 }
             ),
         }
@@ -129,11 +123,11 @@ def circuit_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
     advanced = user_input.get(SECTION_ADVANCED) or {}
     sub_meter = user_input.get(CIRCUIT_SUB_METER)
     return {
-        CIRCUIT_FUSE_A: float(user_input[CIRCUIT_FUSE_A]),
+        CIRCUIT_FUSE_A: float(amps_of(user_input[CIRCUIT_FUSE_A]) or 0.0),
         CIRCUIT_PHASES: int(user_input[CIRCUIT_PHASES]),
         CIRCUIT_MEMBERS: [str(member) for member in user_input[CIRCUIT_MEMBERS]],
         CIRCUIT_SUB_METER: str(sub_meter) if sub_meter else None,
-        CIRCUIT_UNMETERED_W: float(advanced.get(CIRCUIT_UNMETERED_W, 0.0)),
+        CIRCUIT_UNMETERED_W: round(float(advanced.get(CIRCUIT_UNMETERED_KW, 0.0)) * 1000.0, 3),
     }
 
 
@@ -170,8 +164,11 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             chosen = [str(member) for member in user_input.get(CIRCUIT_MEMBERS) or ()]
             name = str(user_input.get("name") or "").strip()
+            amps = amps_of(user_input.get(CIRCUIT_FUSE_A))
             if not name:
                 errors["name"] = "no_name"
+            elif amps is None or not FUSE_A_MIN <= amps <= FUSE_A_MAX:
+                errors[CIRCUIT_FUSE_A] = "fuse_out_of_range"
             elif not chosen:
                 errors[CIRCUIT_MEMBERS] = "no_members"
             elif any(member not in members for member in chosen):

@@ -81,8 +81,9 @@ NOTIFICATIONS = {
     "peak_warning": "persistent",
     "comfort_violation": "persistent",
     "device_unhealthy": "persistent",
-    "quiet_start": "22:00:00",
-    "quiet_end": "07:00:00",
+    # A half-hour select now (CTL-7): no seconds.
+    "quiet_start": "22:00",
+    "quiet_end": "07:00",
 }
 
 
@@ -130,7 +131,8 @@ async def _through_prices(
     # HUB-7: every add-on its own step, titled by its own strings - never by its key.
     assert result["step_id"] == "modifier_vat"
     assert not result["description_placeholders"]
-    result = await _answer(hass, result, rate=0.25)
+    # A rate is a % box now, not a fraction box (CTL-2); stored as the fraction.
+    result = await _answer(hass, result, rate=25)
 
     assert result["step_id"] == "export"
     result = await _answer(hass, result, mode="none")
@@ -160,12 +162,16 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
 
 
 async def _tail(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
-    """Answer hard limits, presence and notifications; stop on the review."""
-    assert result["step_id"] == "hard_limits"
-    result = await _answer(hass, result)
+    """Answer presence and notifications; stop on the review.
 
+    The hard-limit step is gone (its answer was read by nothing, D8 §5.15 S2,
+    review NEW-1): the grense is D3's fuse and per-phase limit.
+    """
     assert result["step_id"] == "presence"
-    result = await _answer(hass, result, mode="auto", persons=["person.joel", "person.kari"])
+    result = await _answer(hass, result, mode="auto")
+
+    assert result["step_id"] == "presence_persons"
+    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
 
     assert result["step_id"] == "notifications"
     result = await _answer(hass, result, **NOTIFICATIONS)

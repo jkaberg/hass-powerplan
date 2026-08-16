@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any
 
 from custom_components.powerplan.const import (
     CONF_ELECTRICAL,
-    CONF_HARD_LIMITS,
     CONF_METER,
     CONF_NAME,
     CONF_NOTIFICATIONS,
@@ -144,14 +143,15 @@ async def placeholders(
     electrical = data[CONF_ELECTRICAL]
     derived = electrical["derived"]
     quiet = tuple(data[CONF_QUIET_HOURS])
-    hard_limits = data.get(CONF_HARD_LIMITS) or {}
-    contracted = hard_limits.get("contracted_kw")
+    # The hard-limit line is gone with its step (D8 §5.15 S2); a fuse taken from
+    # "Vet ikke" is named as assumed, with where the real one is (D3 §6).
+    assumed = "main_fuse_a" in (electrical.get("assumed") or ())
     return {
         "name": data[CONF_NAME],
         "connection": _connection(text, electrical),
         "fuse_kw": text.number(derived["fuse_w"] / 1000.0, 1),
         "plausible_kw": text.number(derived["plausible_w"][1] / 1000.0, 1),
-        "hard_limit_kw": absent if contracted is None else text.number(float(contracted)),
+        "fuse_assumed": text.word("review", "fuse_assumed") if assumed else "",
         "meter": _meter(hass, text, data[CONF_METER], absent),
         "prices": _prices(text, data[CONF_PRICES], absent),
         "tariff": tariff or absent,

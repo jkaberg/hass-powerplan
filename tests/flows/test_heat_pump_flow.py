@@ -52,7 +52,8 @@ async def _add_heat_pump(
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
     assert suggested["type"] == "heat_pump"
-    assert suggested["role_outdoor_temp"] == "sensor.heat_pump_outside_temperature", (
+    # An optional role sits under Avansert now (review LOAD-6).
+    assert suggested["advanced"]["role_outdoor_temp"] == "sensor.heat_pump_outside_temperature", (
         "generic_climate's own detection, not this WP's fix"
     )
     result = await _answer(hass, result, **suggested)

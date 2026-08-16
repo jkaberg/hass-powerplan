@@ -26,7 +26,16 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.mode import ModeCfg, ModeKind
 from ..kinds.setpoint import Setpoint, SetpointCfg
-from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
+from ..questionnaire import (
+    Answers,
+    Bounds,
+    Derived,
+    Option,
+    QCtx,
+    Question,
+    QuestionKind,
+    Questionnaire,
+)
 from ..stores.thermal import RoomStore, SlabStore
 from .base import register
 
@@ -281,7 +290,8 @@ QUESTIONNAIRE = Questionnaire(
             advanced=True,
             help_key="floor_heating_arrival_sources",
         ),
-    )
+    ),
+    bounds=(Bounds(value="comfort_c", low="min_c", high="max_c"),),
 )
 
 

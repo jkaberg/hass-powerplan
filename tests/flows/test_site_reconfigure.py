@@ -15,14 +15,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import pytest
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.powerplan.const import (
     CONF_ACTIVE,
     CONF_ELECTRICAL,
-    CONF_HARD_LIMITS,
     CONF_NAME,
     CONF_PRESENCE,
     CONF_PRICES,
@@ -111,10 +109,15 @@ async def test_reconfigure_pre_fills_electrical_meter_roles_and_the_price_source
     assert result["data_schema"]({})["area"] == "NO3"
 
 
-async def test_reconfigure_pre_fills_the_tariff_target_and_hard_limits(
+async def test_reconfigure_pre_fills_the_tariff_target(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
 ) -> None:
-    """The risk posture and the contracted power the household already confirmed."""
+    """The risk posture the household already confirmed comes back.
+
+    The hard-limit step is gone (D8 §5.15 S2, review NEW-1): its answer was
+    read by nothing, and the grense is D3's own fuse and per-phase limit - so
+    the tariff target step now leads straight to presence.
+    """
     _configure(hass)
     entry_id = await _full_site(hass, ams_meter, nordpool_entry, active=False)
 
@@ -130,7 +133,7 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_hard_limits(
     assert result["data_schema"]({})["modifiers"] == ["vat"]
     result = await _answer(hass, result, modifiers=["vat"])
     assert result["step_id"] == "modifier_vat"
-    result = await _answer(hass, result, rate=0.25)
+    result = await _answer(hass, result, rate=25)
     assert result["step_id"] == "export"
     result = await _answer(hass, result, mode="none")
     assert result["step_id"] == "carriers"
@@ -147,10 +150,7 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_hard_limits(
     assert result["data_schema"]({})["risk"] == "free_ride"
     result = await _answer(hass, result, target="auto", risk="free_ride")
 
-    assert result["step_id"] == "hard_limits"
-    assert result["data_schema"]({})["contracted_kw"] == pytest.approx(
-        63.0 * 3**0.5 * 230.0 / 1000.0, rel=1e-2
-    )
+    assert result["step_id"] == "presence"
 
 
 async def test_reconfigure_keeps_an_active_site_active_by_default(
@@ -171,15 +171,17 @@ async def test_reconfigure_keeps_an_active_site_active_by_default(
     result = await _answer(hass, result, source="nordpool_action")
     result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, modifiers=["vat"])
-    result = await _answer(hass, result, rate=0.25)
+    result = await _answer(hass, result, rate=25)
     result = await _answer(hass, result, mode="none")
     result = await _answer(hass, result, carriers=[])
     result = await _answer(hass, result, country="NO", preset="no/tensio")
     result = await _answer(hass, result)
     result = await _answer(hass, result, target="auto", risk="free_ride")
-    result = await _answer(hass, result)
+    # The hard-limit step is gone (D8 §5.15 S2): tariff_target leads to presence.
     assert result["step_id"] == "presence"
-    result = await _answer(hass, result, mode="auto", persons=["person.joel", "person.kari"])
+    result = await _answer(hass, result, mode="auto")
+    assert result["step_id"] == "presence_persons"
+    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
     assert result["step_id"] == "notifications"
     result = await _answer(hass, result, **NOTIFICATIONS)
 
@@ -206,14 +208,15 @@ async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
     result = await _answer(hass, result, source="nordpool_action")
     result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, modifiers=["vat"])
-    result = await _answer(hass, result, rate=0.25)
+    result = await _answer(hass, result, rate=25)
     result = await _answer(hass, result, mode="none")
     result = await _answer(hass, result, carriers=[])
     result = await _answer(hass, result, country="NO", preset="no/tensio")
     result = await _answer(hass, result)
     result = await _answer(hass, result, target="auto", risk="free_ride")
-    result = await _answer(hass, result)
-    result = await _answer(hass, result, mode="auto", persons=["person.joel", "person.kari"])
+    # The hard-limit step is gone (D8 §5.15 S2): tariff_target leads to presence.
+    result = await _answer(hass, result, mode="auto")
+    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
     result = await _answer(hass, result, **NOTIFICATIONS)
     assert result["step_id"] == "review"
     result = await _answer(hass, result, start_in_observe=True)
@@ -228,7 +231,7 @@ async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
     assert entry.entry_id == entry_id
     assert entry.unique_id == unique_id
     assert entry.data[CONF_ELECTRICAL]["main_fuse_a"] == 80.0
-    assert entry.data[CONF_HARD_LIMITS]
+    # The hard-limit step is gone; nothing writes `hard_limits` any more (S2).
     assert entry.data[CONF_PRICES]["sources"][0]["key"] == "nordpool_action"
     assert entry.data[CONF_TARIFF]["preset_file"] == "no/tensio"
     assert entry.data[CONF_PRESENCE]["persons"] == ["person.joel", "person.kari"]

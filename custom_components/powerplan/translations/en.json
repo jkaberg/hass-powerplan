@@ -295,16 +295,24 @@
       },
       "export": {
         "title": "Do you sell electricity back?",
-        "description": "If you export, what you are paid for it decides whether charging the battery beats selling. A negative export price is possible and PowerPlan does not hide it.",
+        "description": "If you export, what you are paid for it decides whether charging the battery beats selling. The amount follows on the next screen.",
         "data": {
-          "mode": "Export price",
+          "mode": "Export price"
+        },
+        "data_description": {
+          "mode": "How your supplier pays for what you send out."
+        }
+      },
+      "export_amounts": {
+        "title": "What do they pay you per kWh?",
+        "description": "A negative export price is possible and PowerPlan does not hide it.",
+        "data": {
           "amount": "Amount per kWh",
           "share": "Share of spot"
         },
         "data_description": {
-          "mode": "How your supplier pays for what you send out.",
           "amount": "The fixed price, or what is subtracted from spot.",
-          "share": "As a fraction: 0.9 is 90 % of spot."
+          "share": "As a percent: 90 is 90 % of spot."
         }
       },
       "carriers": {
@@ -465,26 +473,14 @@
           "limit_4": "The contracted power for this period."
         }
       },
-      "hard_limits": {
-        "title": "The hard limit",
-        "description": "The line PowerPlan never crosses, whatever the price or the tariff says. It defaults to what your main fuse can deliver.",
-        "data": {
-          "contracted_kw": "Hard limit"
-        },
-        "data_description": {
-          "contracted_kw": "kW the whole house may draw at once."
-        }
-      },
       "presence": {
         "title": "Is anyone home?",
         "description": "Comfort matters less in an empty house. PowerPlan can follow your Home Assistant people, or leave presence to you and your automations.",
         "data": {
-          "mode": "Presence",
-          "persons": "People"
+          "mode": "Presence"
         },
         "data_description": {
-          "mode": "Automatic follows the people below; manual leaves it to a service call or the presence entity.",
-          "persons": "Everyone whose being away makes the house away."
+          "mode": "Automatic follows the people you pick next; manual leaves it to a service call or the presence entity."
         },
         "sections": {
           "advanced": {
@@ -494,9 +490,19 @@
               "away_delay_min": "Away after"
             },
             "data_description": {
-              "away_delay_min": "Advanced: minutes before an empty house counts as away."
+              "away_delay_min": "Advanced: time before an empty house counts as away."
             }
           }
+        }
+      },
+      "presence_persons": {
+        "title": "Whose being away counts?",
+        "description": "Everyone whose being away makes the house away.",
+        "data": {
+          "persons": "People"
+        },
+        "data_description": {
+          "persons": "Everyone whose being away makes the house away."
         }
       },
       "notifications": {
@@ -547,7 +553,7 @@
       },
       "review": {
         "title": "Before PowerPlan starts",
-        "description": "Here is what PowerPlan understood. Nothing has been saved yet.\n\n**Connection** — {connection}, about {fuse_kw} kW. PowerPlan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. Your hard limit is {hard_limit_kw} kW.\n\n**Meter** — {meter}.\n\n**Prices** — {prices}.\n\n**Grid tariff** — {tariff}.\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}.\n\n**Notifications** — {notifications}.\n\n**Times** — everything PowerPlan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. PowerPlan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
+        "description": "Here is what PowerPlan understood. Nothing has been saved yet.\n\n**Connection** — {connection}, about {fuse_kw} kW. PowerPlan never lets the whole house go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. {fuse_assumed}\n\n**Meter** — {meter}.\n\n**Prices** — {prices}.\n\n**Grid tariff** — {tariff}.\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}.\n\n**Notifications** — {notifications}.\n\n**Times** — everything PowerPlan shows and schedules is in **{timezone}**, {timezone_source}.\n\n**What happens first** — {name} starts in observe. PowerPlan computes every decision, publishes it and logs what it would have done, and writes to no device at all until you turn the site on. Leave the box below ticked for the first few days: those days are also what calibrates the savings figures.",
         "data": {
           "start_in_observe": "Start in observe"
         },
@@ -560,8 +566,12 @@
       "fuse_out_of_range": "A main fuse is between 6 A and 400 A. Check the rating printed on the fuse.",
       "phases_not_available": "That phase count does not exist on this supply system.",
       "power_unit_not_watts": "A power sensor has to report watts or kilowatts.",
+      "energy_unit_not_kwh": "An energy sensor has to report watt-hours, kilowatt-hours or megawatt-hours.",
+      "current_unit_not_amps": "A current sensor has to report amps.",
+      "register_not_cumulative": "This is not a running total. Pick the sensor that only ever goes up.",
       "eps_looks_like_watts": "This looks like watts. The guard band is energy: 0.30 kWh is the default for an hour-long window.",
-      "eps_not_positive": "The guard band has to be more than zero."
+      "eps_not_positive": "The guard band has to be more than zero.",
+      "target_above_fuse": "This is above what the main fuse can ever deliver. Pick a lower step or target."
     },
     "abort": {
       "already_configured": "This meter is already set up as a PowerPlan site.",
@@ -1139,7 +1149,8 @@
         "usage_none": "No meter, so no normal usage to learn.",
         "quiet": "quiet {hours}",
         "notifications_none": "none",
-        "export": "export: {mode}"
+        "export": "export: {mode}",
+        "fuse_assumed": "The fuse size is assumed for your country."
       }
     },
     "appliance_cycle_appliance": {
@@ -1469,6 +1480,75 @@
         "tge": "TGE",
         "tibber_action": "Tibber"
       }
+    },
+    "fuse": {
+      "options": {
+        "6": "6 A",
+        "10": "10 A",
+        "13": "13 A",
+        "16": "16 A",
+        "20": "20 A",
+        "25": "25 A",
+        "32": "32 A",
+        "35": "35 A",
+        "40": "40 A",
+        "50": "50 A",
+        "63": "63 A",
+        "80": "80 A",
+        "100": "100 A",
+        "125": "125 A",
+        "150": "150 A",
+        "200": "200 A",
+        "250": "250 A",
+        "320": "320 A",
+        "400": "400 A",
+        "dont_know": "Don't know"
+      }
+    },
+    "price_component": {
+      "options": {
+        "spot": "Spot price",
+        "grid_energy": "Grid energy charge",
+        "levy": "Tax",
+        "supplier": "Supplier markup",
+        "subsidy": "Electricity support",
+        "tier": "Tier price",
+        "day_type": "Special-day price"
+      }
+    },
+    "month": {
+      "options": {
+        "1": "January",
+        "2": "February",
+        "3": "March",
+        "4": "April",
+        "5": "May",
+        "6": "June",
+        "7": "July",
+        "8": "August",
+        "9": "September",
+        "10": "October",
+        "11": "November",
+        "12": "December"
+      }
+    },
+    "weekday": {
+      "options": {
+        "0": "Monday",
+        "1": "Tuesday",
+        "2": "Wednesday",
+        "3": "Thursday",
+        "4": "Friday",
+        "5": "Saturday",
+        "6": "Sunday"
+      }
+    },
+    "holidays": {
+      "options": {
+        "ignore": "Not counted specially",
+        "as_sunday": "Counts as Sunday",
+        "exclude": "Excluded"
+      }
     }
   },
   "services": {
@@ -1695,6 +1775,80 @@
             "role_battery_mode": "The entity for this role.",
             "role_sg_a": "The entity for this role.",
             "role_sg_b": "The entity for this role."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "Roles PowerPlan does not need to control the device, but can use if you have them.",
+              "data": {
+                "role_power": "Power",
+                "role_energy": "Energy",
+                "role_temp": "Temperature",
+                "role_temp_floor": "Floor temperature",
+                "role_setpoint": "Setpoint",
+                "role_mode_select": "Mode select",
+                "role_eco_setpoint": "Eco setpoint",
+                "role_floor_min_limit": "Lowest floor temperature",
+                "role_hysteresis": "Hysteresis",
+                "role_switch": "On/off switch",
+                "role_current_number": "Charging current",
+                "role_max_current_number": "Maximum charging current",
+                "role_enable_switch": "Charging allowed",
+                "role_status": "Status",
+                "role_blocked_by": "Blocked by",
+                "role_cable_rating": "Cable rating",
+                "role_circuit_max": "Circuit maximum",
+                "role_session_energy": "Energy this session",
+                "role_current_l1": "Current L1",
+                "role_current_l2": "Current L2",
+                "role_current_l3": "Current L3",
+                "role_soc": "State of charge",
+                "role_connected": "Car connected",
+                "role_outdoor_temp": "Outdoor temperature",
+                "role_outlet_temp": "Outlet temperature",
+                "role_start": "Start programme",
+                "role_program_state": "Programme state",
+                "role_door": "Door",
+                "role_battery_power_set": "Battery power (setting)",
+                "role_battery_mode": "Battery mode",
+                "role_sg_a": "SG Ready input A",
+                "role_sg_b": "SG Ready input B"
+              },
+              "data_description": {
+                "role_power": "The entity for this role.",
+                "role_energy": "The entity for this role.",
+                "role_temp": "The entity for this role.",
+                "role_temp_floor": "The entity for this role.",
+                "role_setpoint": "The entity for this role.",
+                "role_mode_select": "The entity for this role.",
+                "role_eco_setpoint": "The entity for this role.",
+                "role_floor_min_limit": "The entity for this role.",
+                "role_hysteresis": "The entity for this role.",
+                "role_switch": "The entity for this role.",
+                "role_current_number": "The entity for this role.",
+                "role_max_current_number": "The entity for this role.",
+                "role_enable_switch": "The entity for this role.",
+                "role_status": "The entity for this role.",
+                "role_blocked_by": "The entity for this role.",
+                "role_cable_rating": "The entity for this role.",
+                "role_circuit_max": "The entity for this role.",
+                "role_session_energy": "The entity for this role.",
+                "role_current_l1": "The entity for this role.",
+                "role_current_l2": "The entity for this role.",
+                "role_current_l3": "The entity for this role.",
+                "role_soc": "The entity for this role.",
+                "role_connected": "The entity for this role.",
+                "role_outdoor_temp": "The entity for this role.",
+                "role_outlet_temp": "The entity for this role.",
+                "role_start": "The entity for this role.",
+                "role_program_state": "The entity for this role.",
+                "role_door": "The entity for this role.",
+                "role_battery_power_set": "The entity for this role.",
+                "role_battery_mode": "The entity for this role.",
+                "role_sg_a": "The entity for this role.",
+                "role_sg_b": "The entity for this role."
+              }
+            }
           }
         },
         "questions": {
@@ -1824,7 +1978,6 @@
                 "outlet_entity": "Outlet sensor",
                 "power_w": "Power",
                 "preheat": "Preheat",
-                "preheat_max_outdoor_c": "Preheat up to",
                 "ready_temp_c": "Ready temperature",
                 "schedule_entity": "Weekly schedule",
                 "screed_depth_mm": "Screed depth",
@@ -1863,7 +2016,6 @@
                 "outlet_entity": "Advanced: the heat pump's outlet temperature sensor.",
                 "power_w": "The appliance's power draw, in watts.",
                 "preheat": "Advanced: bank heat before an expensive hour.",
-                "preheat_max_outdoor_c": "Advanced: no preheat above this outdoor temperature.",
                 "ready_temp_c": "Advanced: the temperature the tank is heated to by the ready-by time.",
                 "schedule_entity": "Advanced: a schedule helper — on is comfort, off is the vacation level.",
                 "screed_depth_mm": "Advanced: millimetres of screed over the cable.",
@@ -2258,6 +2410,22 @@
               }
             }
           }
+        },
+        "questions_followup": {
+          "title": "How far should preheat go?",
+          "description": "You said PowerPlan may bank heat before an expensive hour. Set the outdoor temperature above which that stops being worth it.",
+          "sections": {
+            "advanced": {
+              "name": "Advanced",
+              "description": "Already filled in. Open it only if you know you want something else.",
+              "data": {
+                "preheat_max_outdoor_c": "Preheat up to"
+              },
+              "data_description": {
+                "preheat_max_outdoor_c": "Advanced: no preheat above this outdoor temperature."
+              }
+            }
+          }
         }
       },
       "error": {
@@ -2271,7 +2439,9 @@
         "not_an_option": "Not one of the options.",
         "not_a_time": "Not a time of day.",
         "not_a_curve": "Not a curve: use `-10:2.1, 7:3.8`.",
-        "unsafe_switch": "A tank switched on and off needs a mechanical thermostat or a temperature sensor, so that off is always safe."
+        "unsafe_switch": "A tank switched on and off needs a mechanical thermostat or a temperature sensor, so that off is always safe.",
+        "curve_not_rising": "A COP has to rise as it gets warmer outside. Check the two points nearest that temperature.",
+        "outside_bounds": "This has to stay between the minimum and the maximum you set."
       },
       "abort": {
         "already_configured": "This device is already a load.",
@@ -2307,10 +2477,10 @@
               "name": "Advanced",
               "description": "What no meter sees.",
               "data": {
-                "unmetered_w": "Unmetered load"
+                "unmetered_kw": "Unmetered load"
               },
               "data_description": {
-                "unmetered_w": "Watts to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
+                "unmetered_kw": "kW to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
               }
             }
           }
@@ -2337,10 +2507,10 @@
               "name": "Advanced",
               "description": "What no meter sees.",
               "data": {
-                "unmetered_w": "Unmetered load"
+                "unmetered_kw": "Unmetered load"
               },
               "data_description": {
-                "unmetered_w": "Watts to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
+                "unmetered_kw": "kW to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
               }
             }
           }
@@ -2352,6 +2522,7 @@
       },
       "error": {
         "no_name": "Give the circuit a name.",
+        "fuse_out_of_range": "A circuit fuse is between 1 A and 200 A. Check the rating printed on the breaker.",
         "no_members": "Pick at least one load; a circuit with nothing behind it limits nothing.",
         "unknown_member": "One of the loads is not on this site any more."
       },
@@ -2372,13 +2543,11 @@
           "description": "Loads that take turns for a shared allowance — six floor loops sharing 2 kW when the hour gets tight. PowerPlan gives it to whichever is coldest first, and rotates so none is left behind.",
           "data": {
             "name": "Name",
-            "members": "Loads in this group",
-            "max_concurrent_w": "Shared cap"
+            "members": "Loads in this group"
           },
           "data_description": {
             "name": "What the group is called: the floor loops, the bedroom radiators.",
-            "members": "The loads that share this cap and take turns for it.",
-            "max_concurrent_w": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+            "members": "The loads that share a cap and take turns for it."
           },
           "sections": {
             "advanced": {
@@ -2391,8 +2560,8 @@
               },
               "data_description": {
                 "from_stage": "The capacity ladder's stage at which the group starts rationing.",
-                "ceiling_fraction": "The window's projected use, as a fraction of the ceiling, at which the group rations even before that stage.",
-                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue, in seconds."
+                "ceiling_fraction": "The window's projected use, as a percent of the ceiling, at which the group rations even before that stage.",
+                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue."
               }
             }
           }
@@ -2402,13 +2571,11 @@
           "description": "The same questions, pre-filled with what the group has now.",
           "data": {
             "name": "Name",
-            "members": "Loads in this group",
-            "max_concurrent_w": "Shared cap"
+            "members": "Loads in this group"
           },
           "data_description": {
             "name": "What the group is called: the floor loops, the bedroom radiators.",
-            "members": "The loads that share this cap and take turns for it.",
-            "max_concurrent_w": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+            "members": "The loads that share a cap and take turns for it."
           },
           "sections": {
             "advanced": {
@@ -2421,15 +2588,21 @@
               },
               "data_description": {
                 "from_stage": "The capacity ladder's stage at which the group starts rationing.",
-                "ceiling_fraction": "The window's projected use, as a fraction of the ceiling, at which the group rations even before that stage.",
-                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue, in seconds."
+                "ceiling_fraction": "The window's projected use, as a percent of the ceiling, at which the group rations even before that stage.",
+                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue."
               }
             }
           }
         },
         "review": {
           "title": "Before this group is added",
-          "description": "**{name}** shares {max_concurrent_kw} kW between {members} when the hour gets tight: the coldest gets it first.\n\nRationing begins at ladder stage {from_stage} or {ceiling_fraction}% of the ceiling; a load held back more than {starve_min} minutes jumps the queue."
+          "description": "**{name}** shares {max_concurrent_kw} kW between {members} when the hour gets tight: the coldest gets it first.\n\nRationing begins at ladder stage {from_stage} or {ceiling_fraction}% of the ceiling; a load held back more than {starve_min} minutes jumps the queue.",
+          "data": {
+            "max_concurrent_kw": "Shared cap"
+          },
+          "data_description": {
+            "max_concurrent_kw": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+          }
         }
       },
       "error": {
@@ -2454,13 +2627,11 @@
           "description": "Two or more loads that can heat the same space — a heat pump and a resistive slab, a heat pump and a boiler. PowerPlan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.",
           "data": {
             "name": "Name",
-            "members": "Loads in this zone",
-            "never_substitute": "Never substitute"
+            "members": "Loads in this zone"
           },
           "data_description": {
             "name": "What the zone is called: the living room, the bathroom.",
-            "members": "The loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else.",
-            "never_substitute": "Loads that always keep their own source, whatever the ranking says — a bathroom floor, say."
+            "members": "The heating loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else."
           },
           "sections": {
             "advanced": {
@@ -2475,9 +2646,9 @@
               },
               "data_description": {
                 "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
-                "switch_hysteresis": "How much cheaper the alternative must be, as a fraction, before a switch is worth it.",
-                "min_dwell_min": "How long the source that is running keeps the zone before another may take over, in minutes.",
-                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken, in seconds.",
+                "switch_hysteresis": "How much cheaper the alternative must be, as a percent, before a switch is worth it.",
+                "min_dwell_min": "How long the source that is running keeps the zone before another may take over.",
+                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken.",
                 "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
               }
             }
@@ -2488,13 +2659,11 @@
           "description": "The same questions, pre-filled with what the zone has now.",
           "data": {
             "name": "Name",
-            "members": "Loads in this zone",
-            "never_substitute": "Never substitute"
+            "members": "Loads in this zone"
           },
           "data_description": {
             "name": "What the zone is called: the living room, the bathroom.",
-            "members": "The loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else.",
-            "never_substitute": "Loads that always keep their own source, whatever the ranking says — a bathroom floor, say."
+            "members": "The heating loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else."
           },
           "sections": {
             "advanced": {
@@ -2509,12 +2678,22 @@
               },
               "data_description": {
                 "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
-                "switch_hysteresis": "How much cheaper the alternative must be, as a fraction, before a switch is worth it.",
-                "min_dwell_min": "How long the source that is running keeps the zone before another may take over, in minutes.",
-                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken, in seconds.",
+                "switch_hysteresis": "How much cheaper the alternative must be, as a percent, before a switch is worth it.",
+                "min_dwell_min": "How long the source that is running keeps the zone before another may take over.",
+                "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken.",
                 "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
               }
             }
+          }
+        },
+        "never_substitute": {
+          "title": "Should any of these always keep their own source?",
+          "description": "Whatever the ranking says — a bathroom floor that should never wait on the heat pump, say.",
+          "data": {
+            "never_substitute": "Never substitute"
+          },
+          "data_description": {
+            "never_substitute": "Loads that always keep their own source."
           }
         },
         "review": {

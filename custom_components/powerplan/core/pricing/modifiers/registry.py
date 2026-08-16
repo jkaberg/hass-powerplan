@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 from ..model import Field, FieldKind, Schema
-from .base import PriceModifier
+from .base import SPOT, PriceModifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,5 +112,17 @@ def _number(value: str | int | float, annotation: str) -> Any:
 
 
 def chain_from(config: Sequence[tuple[str, Mapping[str, Any]]]) -> tuple[PriceModifier, ...]:
-    """Build the configured modifier chain, in the configured order (D1 §5.3)."""
-    return tuple(build(key, options) for key, options in config)
+    """Build the configured modifier chain (D1 §5.3).
+
+    A modifier that *replaces* the energy price - its component is `spot`,
+    Norgespris's `fixed_price` - runs before every other one, whatever position
+    it was stored in; the rest keep the configured order. Everything after it is
+    taken on the price the household actually pays: VAT stored before
+    `fixed_price` otherwise taxed the spot that the fixed price then replaced,
+    0.40 + 25 % × spot instead of a flat 0.50 (D-0390).
+    """
+    built = [build(key, options) for key, options in config]
+    return tuple(
+        [modifier for modifier in built if modifier.component == SPOT]
+        + [modifier for modifier in built if modifier.component != SPOT]
+    )

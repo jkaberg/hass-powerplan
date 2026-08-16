@@ -46,7 +46,6 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
-    TimeSelector,
 )
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
@@ -86,13 +85,26 @@ from custom_components.powerplan.core.tariffs.target import (
     default_risk,
 )
 from custom_components.powerplan.providers.prices.formats import registry as formats
+from custom_components.powerplan.providers.prices.markets import NORDPOOL_MARKETS
 from custom_components.powerplan.providers.prices.nordpool_action import (
     AREAS,
     NORDPOOL_DOMAIN,
     NordpoolActionSource,
 )
 
-from .questionnaire import advanced_section, render
+from .questionnaire import (
+    DONT_KNOW,
+    MAIN_FUSE_SIZES,
+    advanced_section,
+    amps_of,
+    as_duration,
+    duration_selector,
+    fuse_selector,
+    price_selector,
+    price_shown,
+    render,
+    time_selector,
+)
 from .text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, preset_options, target_options
 
 if TYPE_CHECKING:
@@ -165,13 +177,9 @@ def name_schema(default: str) -> vol.Schema:
 # electrical (D3 §6)
 # --------------------------------------------------------------------------- #
 
-#: D3 §6's list, extended upwards: a North-American service is rated 100–400 A
-#: and D3 §6's own default for US is 200 A, which its list stopped short of
-#: (`design/DECISIONS.md` D-0124).
-FUSE_RATINGS: Final = (
-    "16", "20", "25", "32", "35", "40", "50", "63",
-    "80", "100", "125", "150", "200", "250", "320", "400",
-)  # fmt: skip
+#: D3 §6's list, extended upwards (`design/DECISIONS.md` D-0124); the select is
+#: `flow/questionnaire.py`'s, shared with the circuit's fuse (review CTL-1).
+FUSE_RATINGS: Final = MAIN_FUSE_SIZES
 
 #: D3 §5.1 refuses anything outside this band as "not a grid connection".
 FUSE_MIN_A: Final = 6.0
@@ -221,11 +229,20 @@ def default_fuse_a(country: str | None) -> str:
 def electrical_schema(
     *, country: str | None, values: Mapping[str, Any] | None = None
 ) -> vol.Schema:
-    """Return D3 §6's four plain questions and the advanced per-phase limit."""
+    """Return D3 §6's four plain questions and the advanced per-phase limit.
+
+    The main fuse is a pick of sizes labelled "63 A", a size typed in, or "Vet
+    ikke", and `vol.Required` with its default so there is no clear button
+    (review CTL-1). The per-phase limit is the fuse unless the grid company set
+    a lower one, so the fuse is its suggestion rather than a stored default
+    (HUB-19): a household that changes the fuse is not left with the old one.
+    """
     given = values or {}
     system = given.get("system") or default_system(country)
     phases = str(given.get("phases") or default_phases(country))
     fuse = str(given.get("main_fuse_a") or default_fuse_a(country))
+    suggested_limit = phase_limit_suggestion(country, given)
+    limit = given.get("per_phase_limit_a")
     fields: dict[Any, Any] = {
         vol.Optional("country", default=given.get("country") or country or ""): CountrySelector(
             CountrySelectorConfig()
@@ -243,20 +260,40 @@ def electrical_schema(
                 options=["1", "3"], mode=SelectSelectorMode.LIST, translation_key="phases"
             )
         ),
-        vol.Optional("main_fuse_a", default=fuse): SelectSelector(
-            SelectSelectorConfig(
-                options=list(FUSE_RATINGS), mode=SelectSelectorMode.DROPDOWN, sort=False
-            )
-        ),
+        vol.Required("main_fuse_a", default=fuse): fuse_selector(FUSE_RATINGS, dont_know=True),
     }
+    limit_marker = (
+        vol.Optional("per_phase_limit_a", default=float(limit))
+        if limit is not None and float(limit) != suggested_limit
+        else vol.Optional("per_phase_limit_a", description={"suggested_value": suggested_limit})
+    )
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
         {
-            vol.Optional("per_phase_limit_a", default=float(fuse)): NumberSelector(
-                NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
+            limit_marker: NumberSelector(
+                NumberSelectorConfig(
+                    mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="A"
+                )
             )
         }
     )
     return vol.Schema(fields)
+
+
+def phase_limit_suggestion(country: str | None, values: Mapping[str, Any]) -> float:
+    """Return what the per-phase limit is when nothing lower was set: the fuse shown (HUB-19)."""
+    fuse = str(values.get("main_fuse_a") or default_fuse_a(country))
+    try:
+        return _amps(default_fuse_a(country) if fuse == DONT_KNOW else fuse)
+    except StepError:
+        return _amps(default_fuse_a(country))
+
+
+def _amps(value: Any) -> float:
+    """Return a fuse answer in amps: `"63"`, a typed `"45 A"` or `"45,5"` (CTL-1's "Annet…")."""
+    amps = amps_of(value)
+    if amps is None:
+        raise StepError("main_fuse_a", "fuse_out_of_range")
+    return amps
 
 
 class StepError(ValueError):
@@ -276,7 +313,8 @@ def electrical_profile(answers: Mapping[str, Any]) -> ElectricalProfile:
     grid connection, and a phase count the supply system has no conversion for is
     a configuration error the domain type itself refuses.
     """
-    fuse = float(answers["main_fuse_a"])
+    answer = answers["main_fuse_a"]
+    fuse = float(default_fuse_a(answers.get("country"))) if answer == DONT_KNOW else _amps(answer)
     limit = float(answers.get("per_phase_limit_a") or fuse)
     for field, value in (("main_fuse_a", fuse), ("per_phase_limit_a", limit)):
         if not FUSE_MIN_A <= value <= FUSE_MAX_A:
@@ -304,7 +342,7 @@ def electrical_data(answers: Mapping[str, Any], profile: ElectricalProfile) -> d
     its fuse in watts and its plausibility band are the ones it was set up with.
     """
     low, high = profile.plausible_w()
-    return {
+    data: dict[str, Any] = {
         "country": answers.get("country") or "",
         "system": str(profile.system),
         "phases": profile.phases,
@@ -320,6 +358,11 @@ def electrical_data(answers: Mapping[str, Any], profile: ElectricalProfile) -> d
             "plausible_factor": PLAUSIBLE_FACTOR,
         },
     }
+    if answers.get("main_fuse_a") == DONT_KNOW:
+        # "Vet ikke" took the country's default; the review names it as assumed,
+        # and a reconfigure shows "Vet ikke" again (D3 §6, D8 §5.15 rule 4).
+        data["assumed"] = ["main_fuse_a"]
+    return data
 
 
 # --------------------------------------------------------------------------- #
@@ -329,15 +372,29 @@ def electrical_data(answers: Mapping[str, Any], profile: ElectricalProfile) -> d
 #: v1 reads the meter from ordinary HA sensors (`providers/meters/ha_sensors.py`).
 METER_SOURCE: Final = "ha_sensors"
 
-_ROLE_FILTERS: Final = {
-    ROLE_GRID_POWER: ("power", None),
-    ROLE_IMPORT_REGISTER: ("energy", None),
-    ROLE_EXPORT_REGISTER: ("energy", None),
-    ROLE_PRODUCTION_POWER: ("power", None),
-    ROLE_METER_WINDOW: ("energy", None),
-    ROLE_PHASE_L1: ("current", None),
-    ROLE_PHASE_L2: ("current", None),
-    ROLE_PHASE_L3: ("current", None),
+#: Each role's device class, the units it may carry and - for a register - the
+#: state classes a cumulative reading has (D3 §6, review CTL-10). The picker is
+#: filtered by the device class, which both Home Assistant lines do; the unit and
+#: the state class are checked on submit, because the entity filter's unit is
+#: not on the 2026.3 floor line and no filter has a state class (D-0392).
+_POWER_UNITS: Final = ("W", "kW")
+_ENERGY_UNITS: Final = ("Wh", "kWh", "MWh")
+_CUMULATIVE: Final = ("total_increasing", "total")
+_ROLE_FILTERS: Final[Mapping[str, tuple[str, tuple[str, ...], tuple[str, ...] | None]]] = {
+    ROLE_GRID_POWER: ("power", _POWER_UNITS, None),
+    ROLE_IMPORT_REGISTER: ("energy", _ENERGY_UNITS, _CUMULATIVE),
+    ROLE_EXPORT_REGISTER: ("energy", _ENERGY_UNITS, _CUMULATIVE),
+    ROLE_PRODUCTION_POWER: ("power", _POWER_UNITS, None),
+    ROLE_METER_WINDOW: ("energy", _ENERGY_UNITS, None),
+    ROLE_PHASE_L1: ("current", ("A",), None),
+    ROLE_PHASE_L2: ("current", ("A",), None),
+    ROLE_PHASE_L3: ("current", ("A",), None),
+}
+#: The error a role's wrong unit reports, by device class.
+_UNIT_ERRORS: Final = {
+    "power": "power_unit_not_watts",
+    "energy": "energy_unit_not_kwh",
+    "current": "current_unit_not_amps",
 }
 
 
@@ -351,7 +408,7 @@ def meter_roles_schema(prefilled: Mapping[str, str]) -> vol.Schema:
     """Return the seven roles of D3 §6, pre-filled where the registry could tell."""
     fields: dict[Any, Any] = {}
     for role in METER_ROLES:
-        device_class, _ = _ROLE_FILTERS[role]
+        device_class = _ROLE_FILTERS[role][0]
         found = prefilled.get(role)
         marker = vol.Optional(role, default=found) if found else vol.Optional(role)
         fields[marker] = EntitySelector(
@@ -366,13 +423,16 @@ def meter_data(
     """Validate the bound roles and materialise the meter section (INV-49)."""
     bound = {role: roles[role] for role in METER_ROLES if roles.get(role)}
     registry = er.async_get(hass)
-    for role in (ROLE_GRID_POWER, ROLE_PRODUCTION_POWER):
-        entity_id = bound.get(role)
-        if entity_id is None:
-            continue
+    for role, entity_id in bound.items():
         entry = registry.async_get(entity_id)
-        if entry is not None and entry.unit_of_measurement not in (None, "W", "kW"):
-            raise StepError(role, "power_unit_not_watts")
+        if entry is None:
+            continue
+        device_class, units, state_classes = _ROLE_FILTERS[role]
+        if entry.unit_of_measurement not in (None, *units):
+            raise StepError(role, _UNIT_ERRORS[device_class])
+        state_class = (entry.capabilities or {}).get("state_class")
+        if state_classes is not None and state_class not in (None, *state_classes):
+            raise StepError(role, "register_not_cumulative")
     return {"source": METER_SOURCE, "device_id": device_id, "roles": bound}
 
 
@@ -447,6 +507,37 @@ def nordpool_defaults(hass: HomeAssistant, currency: str) -> dict[str, Any]:
     return defaults
 
 
+def nordpool_suggested(area: str | None) -> dict[str, str]:
+    """Return Nord Pool's publication clock for `area`, derived (review HUB-19).
+
+    Shown as the Advanced fields' suggested values, so the household sees what
+    "leave it" means; an answer equal to it is not an override and is not
+    stored (`drop_suggested`), which keeps the clock derived from the area.
+    """
+    clock = NORDPOOL_MARKETS.get(area or "")
+    if clock is None:
+        return {}
+    return {"publication_tz": clock.tz, "publication_time": clock.local_time.strftime("%H:%M")}
+
+
+def drop_suggested(answers: Mapping[str, Any], suggested: Mapping[str, Any]) -> dict[str, Any]:
+    """Return `answers` without a field left at the value it was suggested (HUB-19)."""
+    return {
+        key: value
+        for key, value in answers.items()
+        if not (key in suggested and same_value(value, suggested[key]))
+    }
+
+
+def same_value(answer: Any, suggestion: Any) -> bool:
+    """Whether an answer is the suggestion it was shown: `"13:00:00"` is `"13:00"`, `5` is `5.0`."""
+    if isinstance(answer, str) and isinstance(suggestion, str):
+        return answer[:5] == suggestion[:5] if ":" in suggestion else answer == suggestion
+    if isinstance(answer, int | float) and isinstance(suggestion, int | float):
+        return float(answer) == float(suggestion)
+    return bool(answer == suggestion)
+
+
 def nordpool_schema(*, values: Mapping[str, Any]) -> vol.Schema:
     """Render the Nord Pool source from its own registry schema (D1 §6)."""
     return render(
@@ -458,6 +549,7 @@ def nordpool_schema(*, values: Mapping[str, Any]) -> vol.Schema:
                 ConfigEntrySelectorConfig(integration=NORDPOOL_DOMAIN)
             )
         },
+        suggested=nordpool_suggested(values.get("area")),
     )
 
 
@@ -483,17 +575,16 @@ def price_entity_schema(*, default_entity: str | None, default_format: str | Non
     )
 
 
-def fixed_price_schema(currency: str, *, default: float = 0.0) -> vol.Schema:
-    """One number: what a kWh costs when nothing publishes a curve (D1 §6)."""
-    return vol.Schema(
-        {
-            vol.Optional("price", default=default): NumberSelector(
-                NumberSelectorConfig(
-                    mode=NumberSelectorMode.BOX, step="any", unit_of_measurement=f"{currency}/kWh"
-                )
-            )
-        }
-    )
+def fixed_price_schema(currency: str, *, default: Any = None) -> vol.Schema:
+    """One number: what a kWh costs when nothing publishes a curve (D1 §6).
+
+    In the currency's minor unit per kWh, as on the bill (CTL-3); `default` is
+    the stored price in major units. With nothing stored there is nothing to
+    default to, so the price is required (D8 §9 21 (a)).
+    """
+    shown = price_shown(default, currency)
+    marker = vol.Required("price") if shown is None else vol.Required("price", default=shown)
+    return vol.Schema({marker: price_selector(currency)})
 
 
 def pre_tickable(key: str) -> bool:
@@ -534,37 +625,66 @@ def modifiers_schema(country: str | None, chosen: Sequence[str] | None = None) -
     )
 
 
-def modifier_options_schema(key: str) -> vol.Schema:
-    """Render one modifier's options from its registry schema (D1 §6)."""
-    return render(modifiers.entry(key).schema, translation_prefix=f"modifier_{key}")
+def modifier_options_schema(
+    key: str, *, currency: str | None = None, values: Mapping[str, Any] | None = None
+) -> vol.Schema:
+    """Render one modifier's options from its registry schema (D1 §6).
+
+    `values` are the add-on's stored options, so a reconfigure shows them again -
+    lists as rows included (review HUB-9; D-0330 had left them out).
+    """
+    return render(
+        modifiers.entry(key).schema,
+        translation_prefix=f"modifier_{key}",
+        values=values,
+        currency=currency,
+    )
 
 
 EXPORT_NONE: Final = "none"
 
 
 def export_schema(*, values: Mapping[str, Any] | None = None) -> vol.Schema:
-    """Return D1 §6's export question, from `export_price`'s own schema."""
+    """Return D1 §6's export question - how an exported kWh is paid, or not at all.
+
+    Only the mode: the amounts follow on their own step when there is something
+    exported to price (D8 §5.15 rule 5, review HUB-17).
+    """
     schema = modifiers.entry("export_price").schema
     mode_field = next(field for field in schema if field.key == "mode")
     options = [EXPORT_NONE, *(str(option) for option in mode_field.options)]
     values = values or {}
-    rendered = render(
-        tuple(field for field in schema if field.key != "mode"),
-        translation_prefix="export",
-        values=values.get("options"),
-    )
-    fields: dict[Any, Any] = {
-        vol.Optional("mode", default=values.get("mode", EXPORT_NONE)): SelectSelector(
-            SelectSelectorConfig(
-                options=options,
-                mode=SelectSelectorMode.LIST,
-                translation_key="export_mode",
-                sort=False,
+    return vol.Schema(
+        {
+            vol.Optional("mode", default=values.get("mode", EXPORT_NONE)): SelectSelector(
+                SelectSelectorConfig(
+                    options=options,
+                    mode=SelectSelectorMode.LIST,
+                    translation_key="export_mode",
+                    sort=False,
+                )
             )
-        )
-    }
-    fields.update(rendered.schema)
-    return vol.Schema(fields)
+        }
+    )
+
+
+#: Which of `export_price`'s amounts each mode reads (D1 §5.4); the others would
+#: be dead fields (review HUB-17).
+EXPORT_FIELDS: Final = {
+    "fixed": ("amount",),
+    "spot_minus": ("amount",),
+    "spot_times": ("share",),
+    "from_source": (),
+}
+
+
+def export_amounts_schema(
+    mode: str, *, currency: str, values: Mapping[str, Any] | None = None
+) -> vol.Schema:
+    """Return the amounts the chosen export mode reads, rendered from its own schema."""
+    wanted = EXPORT_FIELDS.get(mode, ("amount", "share"))
+    schema = tuple(field for field in modifiers.entry("export_price").schema if field.key in wanted)
+    return render(schema, translation_prefix="export", values=values, currency=currency)
 
 
 CARRIER_FIXED: Final = "fixed"
@@ -590,7 +710,7 @@ def carriers_schema(chosen: Sequence[str] | None = None) -> vol.Schema:
 
 
 def carrier_options_schema(currency: str) -> vol.Schema:
-    """One carrier's price: a fixed number, or a sensor read daily (D1 §6)."""
+    """One carrier's price: fixed, in the minor unit per kWh, or a sensor read daily (D1 §6)."""
     return vol.Schema(
         {
             vol.Optional("mode", default=CARRIER_FIXED): SelectSelector(
@@ -600,12 +720,10 @@ def carrier_options_schema(currency: str) -> vol.Schema:
                     translation_key="carrier_mode",
                 )
             ),
-            vol.Optional("price", default=0.0): NumberSelector(
-                NumberSelectorConfig(
-                    mode=NumberSelectorMode.BOX, step="any", unit_of_measurement=f"{currency}/kWh"
-                )
+            vol.Optional("price", default=0.0): price_selector(currency),
+            vol.Optional("entity_id"): EntitySelector(
+                EntitySelectorConfig(domain="sensor", device_class="monetary")
             ),
-            vol.Optional("entity_id"): EntitySelector(EntitySelectorConfig(domain="sensor")),
         }
     )
 
@@ -771,13 +889,46 @@ def tariff_target_schema(
     return vol.Schema(fields)
 
 
-def validate_target(answers: Mapping[str, Any]) -> None:
-    """D2 §6: an ε above 2 kWh is watts wearing a kWh label (INV-49)."""
+def validate_target(
+    answers: Mapping[str, Any],
+    version: TariffVersion | None = None,
+    profile: ElectricalProfile | None = None,
+) -> None:
+    """D2 §6: an ε above 2 kWh is watts wearing a kWh label (INV-49).
+
+    And a target the connection can never reach is refused on its field: a step
+    whose lower bound is at or above what the main fuse delivers, or a Linear
+    target above it (review CTL-16, D8 §9 21 (e)).
+    """
+    if version is not None and profile is not None:
+        fuse_kw = profile.fuse_w() / 1000.0
+        if _target_floor_kw(answers, version) >= fuse_kw:
+            raise StepError("target", "target_above_fuse")
+        target_kw = answers.get("target_kw")
+        if target_kw is not None and float(target_kw) > fuse_kw:
+            raise StepError("target_kw", "target_above_fuse")
     eps = answers.get("eps_kwh")
     if eps is not None and float(eps) > EPS_MAX_KWH:
         raise StepError("eps_kwh", "eps_looks_like_watts")
     if eps is not None and float(eps) <= 0:
         raise StepError("eps_kwh", "eps_not_positive")
+
+
+def _target_floor_kw(answers: Mapping[str, Any], version: TariffVersion) -> float:
+    """Return the lower bound of the step a target names; 0 for `auto` or a Linear tariff."""
+    index = _step_of(str(answers.get("target", "auto")))
+    peak = version.peak
+    if index is None or index == 0 or peak is None or not isinstance(peak.pricing, StepTable):
+        return 0.0
+    return float(peak.pricing.upper_kw(index - 1))
+
+
+def _step_of(target: str) -> int | None:
+    """`step_<i>` (or a stored `step:<i>`) → `i`; anything else → `None`."""
+    for prefix in ("step_", "step:"):
+        if target.startswith(prefix) and target.removeprefix(prefix).isdigit():
+            return int(target.removeprefix(prefix))
+    return None
 
 
 def needs_bills(version: TariffVersion) -> bool:
@@ -868,35 +1019,30 @@ def tariff_data(
 
 
 # --------------------------------------------------------------------------- #
-# hard limits, presence, notifications (D8 §5.1)
+# presence, notifications (D8 §5.1) - the hard-limit step is gone (§5.15 S2)
 # --------------------------------------------------------------------------- #
 
 
-def hard_limits_schema(profile: ElectricalProfile, contracted: float | None) -> vol.Schema:
-    """Return the total the connection may draw, defaulted from the fuse."""
-    default = contracted if contracted is not None else round(profile.fuse_w() / 1000.0, 1)
-    return vol.Schema(
-        {
-            vol.Optional("contracted_kw", default=default): NumberSelector(
-                NumberSelectorConfig(
-                    mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW"
-                )
-            )
-        }
-    )
-
-
-def presence_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
-    """Auto from `person` entities, or manual (D8 §5.1)."""
-    people = sorted(
+def people(hass: HomeAssistant) -> list[str]:
+    """Return the house's `person` entities (from the registry, INV-3)."""
+    return sorted(
         entry.entity_id
         for entry in er.async_get(hass).entities.values()
         if entry.domain == "person"
     ) or sorted(hass.states.async_entity_ids("person"))
+
+
+def presence_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
+    """Auto from `person` entities, or manual (D8 §5.1); the persons follow on their own step.
+
+    Manual never sees the persons (D8 §5.15 rule 5, review HUB-17); the delay
+    before "away" is hours and minutes, not a box of minutes (CTL-8).
+    """
     values = values or {}
+    delay = as_duration(float(values.get("away_delay_min", 30)) * 60)
     fields: dict[Any, Any] = {
         vol.Optional(
-            "mode", default=values.get("mode", "auto" if people else "manual")
+            "mode", default=values.get("mode", "auto" if people(hass) else "manual")
         ): SelectSelector(
             SelectSelectorConfig(
                 options=["auto", "manual"],
@@ -904,20 +1050,23 @@ def presence_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = N
                 translation_key="presence_mode",
             )
         ),
-        vol.Optional("persons", default=values.get("persons", people)): EntitySelector(
-            EntitySelectorConfig(domain="person", multiple=True)
-        ),
     }
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+        {vol.Optional("away_delay_min", default=delay): duration_selector()}
+    )
+    return vol.Schema(fields)
+
+
+def persons_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
+    """Which persons automatic presence follows - asked only after "auto" (HUB-17)."""
+    values = values or {}
+    return vol.Schema(
         {
-            vol.Optional(
-                "away_delay_min", default=values.get("away_delay_min", 30)
-            ): NumberSelector(
-                NumberSelectorConfig(mode=NumberSelectorMode.BOX, step=1, unit_of_measurement="min")
+            vol.Optional("persons", default=values.get("persons") or people(hass)): EntitySelector(
+                EntitySelectorConfig(domain="person", multiple=True)
             )
         }
     )
-    return vol.Schema(fields)
 
 
 def notify_services(hass: HomeAssistant) -> list[str]:
@@ -1016,8 +1165,11 @@ def notifications_schema(
             )
         )
     quiet_start, quiet_end = tuple(quiet) if quiet else (None, None)
-    fields[vol.Optional("quiet_start", default=quiet_start or QUIET_START_DEFAULT)] = TimeSelector()
-    fields[vol.Optional("quiet_end", default=quiet_end or QUIET_END_DEFAULT)] = TimeSelector()
+    start = (quiet_start or QUIET_START_DEFAULT)[:5]
+    end = (quiet_end or QUIET_END_DEFAULT)[:5]
+    # Half-hour selects: a time selector cannot hide its seconds (CTL-7, H8).
+    fields[vol.Optional("quiet_start", default=start)] = time_selector(start)
+    fields[vol.Optional("quiet_end", default=end)] = time_selector(end)
     return vol.Schema(fields)
 
 
@@ -1066,12 +1218,13 @@ __all__ = [
     "carriers_schema",
     "default_price_source",
     "discover_presets",
+    "drop_suggested",
     "electrical_data",
     "electrical_profile",
     "electrical_schema",
+    "export_amounts_schema",
     "export_schema",
     "fixed_price_schema",
-    "hard_limits_schema",
     "limits_schema",
     "meter_data",
     "meter_device_schema",
@@ -1083,10 +1236,14 @@ __all__ = [
     "needs_limits",
     "nordpool_defaults",
     "nordpool_schema",
+    "nordpool_suggested",
     "notifications_data",
     "notifications_schema",
     "notify_label",
     "peak_of",
+    "people",
+    "persons_schema",
+    "phase_limit_suggestion",
     "presence_schema",
     "preset_choice",
     "preset_file",
@@ -1095,6 +1252,7 @@ __all__ = [
     "resolve_timezone",
     "review_schema",
     "risk_key",
+    "same_value",
     "tariff_data",
     "tariff_schema",
     "tariff_target_schema",

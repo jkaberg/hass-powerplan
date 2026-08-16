@@ -86,6 +86,10 @@ SAME_IN_BOTH = frozenset(
         "Status",  # the charger's status role (review LOAD-1)
         "kW",  # a unit
         "—",  # nothing
+        "April",  # months spelled the same in nb (`selector.month`)
+        "August",
+        "September",
+        "November",
     }
 )
 #: A number with or without a unit is the same in both languages (a whole number;
@@ -493,6 +497,14 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
             "modifiers": {"modifiers": [k for k in modifiers.keys() if k != "export_price"]},  # noqa: SIM118
+            # Every add-on ticked: the required fields with no default (D8 §9
+            # 21 (a)) each need one row or one number to get past their step.
+            "modifier_fixed_price": {"price": 40},
+            "modifier_levy": {"amount": 7},
+            "modifier_subsidy_threshold": {"threshold": 90},
+            "modifier_cumulative_tier": {"tiers": [{"price": 100}]},
+            "modifier_day_type": {"rates": [{"type": "weekday", "price": 50}]},
+            "modifier_tou_schedule": {"periods": [{"price": 60}]},
             "export": {"mode": "spot_minus"},
             "carriers": {"carriers": [str(c) for c in Carrier if c is not Carrier.ELECTRICITY]},
             "tariff": {"country": "NO", "preset": "no/tensio"},
@@ -527,6 +539,9 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
+            # ES has no Nord Pool area, so the default source is fixed - and its
+            # price is required, no default (D8 §9 21 (a)).
+            "prices_fixed": {"price": 100},
             "tariff": {"preset": "es/2_0td"},
         },
     ),
@@ -545,6 +560,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "user": {"next_step_id": "price_only"},
             "name": {"name": "Hjemme"},
             "prices": {"source": "fixed"},
+            # Required, no default (D8 §9 21 (a)): nothing to derive it from.
+            "prices_fixed": {"price": 100},
         },
     ),
     "fuse_only": (

@@ -16,7 +16,12 @@ Two rules earn their place here:
   them;
 * **a `light` counts only when it is switch-shaped.** A light that offers nothing
   but `onoff` is a relay with a different domain; one with brightness is a light,
-  and a light is not a flexible load.
+  and a light is not a flexible load. And an on/off light counts only when the
+  device also measures its power: an access point's status LED is on/off too, and
+  the review found it offered as a load at 40 % (D4 §6, review §10);
+* **configuration is not a load.** A `switch` or `light` the registry files under
+  `config` or `diagnostic` - an LED, a PoE port, a "child lock" - is never the
+  relay (D4 §6 as sharpened for WP U.2, D-0394).
 """
 
 from __future__ import annotations
@@ -79,14 +84,20 @@ REQUIRED: Final[tuple[Role, ...]] = (Role.SWITCH,)
 
 
 def _switchables(view: DeviceView) -> list[EntityView]:
-    """Return every entity on this device that is a relay, however it is spelled."""
+    """Return every entity on this device that is a relay, however it is spelled.
+
+    Never a configuration or diagnostic entity, and an on/off light only on a
+    device that also measures power - what separates a lamp on a smart plug from
+    a network device's LED (D4 §6, review §10).
+    """
     found = [entity for entity in view.entities if entity.domain in SWITCHABLE]
-    found += [
-        entity
-        for entity in view.domain("light")
-        if frozenset(_strings(entity.attribute("supported_color_modes"))) == ONOFF_ONLY
-    ]
-    return found
+    if view.find("sensor", device_class="power") is not None:
+        found += [
+            entity
+            for entity in view.domain("light")
+            if frozenset(_strings(entity.attribute("supported_color_modes"))) == ONOFF_ONLY
+        ]
+    return [entity for entity in found if not entity.configuration]
 
 
 def _steered_otherwise(view: DeviceView) -> str | None:

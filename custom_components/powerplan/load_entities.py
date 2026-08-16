@@ -46,6 +46,7 @@ from .core.accounting.shadow.base import StoreKind
 from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
 from .core.loads import Load, Role
+from .core.loads.types import base as device_types
 from .core.model import Mode
 from .entity import LoadEntity, digest_of, money_text
 from .runtime import Runtime
@@ -233,6 +234,23 @@ class ParamNumber:
     #: Visible by default unless the load makes it redundant - `comfort_c`
     #: hides once a `schedule_entity` drives the target instead (D8 §5.5).
     visible: Callable[[Load], bool] = lambda _load: True
+    #: The type's own questions whose range the knob takes, first found wins -
+    #: a floor loop's comfort is 5–35 °C, a tank's 35–70 °C, not one 5–80 °C box
+    #: for every type (D4 §6, review CTL-5). `min_value`/`max_value` are the
+    #: fallback when the type asks none of them.
+    questions: tuple[str, ...] = ()
+
+    def range_for(self, load: Load) -> tuple[float, float]:
+        """Return the knob's range for this load's type, from its questionnaire (CTL-5)."""
+        if load.config.type_key in device_types.keys():  # noqa: SIM118 - the registry's function
+            questionnaire = device_types.get(load.config.type_key).questionnaire
+            for key in self.questions:
+                if key not in questionnaire.keys():  # noqa: SIM118 - the questionnaire's own
+                    continue
+                question = questionnaire.get(key)
+                if question.min is not None and question.max is not None:
+                    return question.min, question.max
+        return self.min_value, self.max_value
 
 
 PARAM_NUMBERS: tuple[ParamNumber, ...] = (
@@ -242,6 +260,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
         max_value=80.0,
+        questions=("comfort_c", "comfort_min_c"),
         step=0.5,
         icon="mdi:thermometer",
         applies=lambda load: (
@@ -255,6 +274,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
         max_value=80.0,
+        questions=("min_c", "comfort_min_c", "comfort_c"),
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
@@ -269,6 +289,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
         max_value=80.0,
+        questions=("max_c", "comfort_c"),
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
@@ -283,6 +304,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         unit="%",
         min_value=10.0,
         max_value=100.0,
+        questions=("target_soc",),
         step=1.0,
         icon="mdi:battery-charging-80",
         applies=lambda load: load.config.type_key == "ev",
@@ -293,6 +315,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         unit="%",
         min_value=0.0,
         max_value=90.0,
+        questions=("min_soc_now",),
         step=1.0,
         icon="mdi:battery-alert",
         applies=lambda load: load.config.type_key == "ev",
@@ -301,9 +324,9 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         key="hours_per_day",
         param="hours_per_day",
         unit=UnitOfTime.HOURS,
-        min_value=0.0,
+        min_value=1.0,
         max_value=24.0,
-        step=0.25,
+        step=0.5,
         icon="mdi:timer-sand",
         applies=lambda load: (
             load.config.type_key == "generic_switch"
@@ -314,17 +337,19 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
 
 
 class LoadParamNumber(LoadEntity, RestoreNumber, NumberEntity):
-    """A knob over one of the load's parameters, restored by the entity (INV-47)."""
+    """A knob over one of the load's parameters, restored by the entity (INV-47).
 
-    _attr_mode = NumberMode.BOX
+    A slider over the type's own range, as the flow asks it (review CTL-2, 4, 5).
+    """
+
+    _attr_mode = NumberMode.SLIDER
 
     def __init__(self, runtime: Runtime, load: Load, description: ParamNumber) -> None:
         """Bind to the load and the parameter."""
         super().__init__(runtime, load, description.key)
         self.description = description
         self._attr_native_unit_of_measurement = description.unit
-        self._attr_native_min_value = description.min_value
-        self._attr_native_max_value = description.max_value
+        self._attr_native_min_value, self._attr_native_max_value = description.range_for(load)
         self._attr_native_step = description.step
         self._attr_entity_category = description.category
         self._attr_entity_registry_enabled_default = description.enabled

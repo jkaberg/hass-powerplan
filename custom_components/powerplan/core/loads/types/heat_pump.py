@@ -225,6 +225,7 @@ QUESTIONNAIRE = Questionnaire(
             max=20.0,
             advanced=True,
             help_key="heat_pump_preheat_max_outdoor",
+            asked_if="preheat",
         ),
         Question(
             key="never_switch",

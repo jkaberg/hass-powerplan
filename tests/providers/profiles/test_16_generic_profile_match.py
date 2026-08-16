@@ -26,8 +26,6 @@ is the rule the ceiling exists to keep.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
 
 from custom_components.powerplan.core.loads import Role
@@ -39,6 +37,7 @@ from custom_components.powerplan.providers.profiles import (
     generic_switch,
     registry,
 )
+from custom_components.powerplan.providers.profiles.base import DeviceView, EntityView
 from custom_components.powerplan.providers.profiles.easee_ble import SHAPE_CONFIDENCE
 from custom_components.powerplan.providers.profiles.generic_climate import (
     CAPABILITY_BONUS,
@@ -68,9 +67,6 @@ from tests.providers.profiles.conftest import (
     dump_view,
     entities_of,
 )
-
-if TYPE_CHECKING:
-    from custom_components.powerplan.providers.profiles import DeviceView
 
 CLIMATE_PROFILE = generic_climate.PROFILE
 SWITCH_PROFILE = generic_switch.PROFILE
@@ -478,3 +474,80 @@ def test_16s_every_thermal_capture_is_claimed_by_generic_climate_and_only_it(nam
 
     assert [found.profile for found in ranked] == ["generic_climate"]
     assert ranked[0].suggested_type in {"floor_heating", "heat_pump", "radiator"}
+
+
+# --------------------------------------------------------------------------- #
+# The access point (review §10, D4 §6: the LED offered as a load)
+# --------------------------------------------------------------------------- #
+
+
+def _ap_entity(
+    entity_id: str, state: str, category: str | None, **attributes: object
+) -> EntityView:
+    return EntityView(
+        entity_id=entity_id,
+        state=state,
+        attributes={"friendly_name": entity_id.split(".", 1)[1].replace("_", " "), **attributes},
+        platform="unifi",
+        entity_category=category,
+    )
+
+
+def an_access_point(*, categorised: bool = True, power: bool = False) -> DeviceView:
+    """Return a network access point as its integration publishes it.
+
+    An on/off status LED, a PoE port switch and a few diagnostics - the review's
+    "light.aksesspunkt_led" at 40 %. The integration files the LED and the port
+    under `config` and the counters under `diagnostic`; a REST dump carries no
+    category at all, which is the second shape (`categorised=False`).
+    """
+
+    def category(value: str) -> str | None:
+        return value if categorised else None
+
+    entities = [
+        _ap_entity(
+            "light.aksesspunkt_led", "on", category("config"), supported_color_modes=["onoff"]
+        ),
+        _ap_entity(
+            "sensor.aksesspunkt_uptime", "2026-09-01T00:00:00+00:00", category("diagnostic")
+        ),
+        _ap_entity("sensor.aksesspunkt_clients", "7", category("diagnostic")),
+        _ap_entity("button.aksesspunkt_restart", "unknown", category("config")),
+    ]
+    if categorised:
+        entities.append(_ap_entity("switch.aksesspunkt_poe_port_1", "on", "config"))
+    if power:
+        entities.append(
+            _ap_entity(
+                "sensor.aksesspunkt_power",
+                "4.2",
+                None,
+                device_class="power",
+                unit_of_measurement="W",
+            )
+        )
+    return DeviceView(
+        name="Aksesspunkt", entities=tuple(entities), manufacturer="Ubiquiti", model="U6 Lite"
+    )
+
+
+def test_16t_an_access_point_is_claimed_by_no_profile() -> None:
+    """Its LED and its PoE port are configuration, not a load (D4 §6, D-0394)."""
+    assert registry.match(an_access_point()) == ()
+    assert SWITCH_PROFILE.match(an_access_point(power=True)).confidence == 0.0
+
+
+def test_16u_an_onoff_light_without_a_power_sensor_is_not_a_relay() -> None:
+    """The dump has no category, so the second rule decides: a light needs a power sensor."""
+    assert SWITCH_PROFILE.match(an_access_point(categorised=False)).confidence == 0.0
+    assert registry.match(an_access_point(categorised=False)) == ()
+
+
+def test_16v_an_onoff_light_that_measures_its_power_is_still_a_relay() -> None:
+    """A lamp on a metering plug keeps its row: the rule narrows, it does not remove."""
+    match = SWITCH_PROFILE.match(an_access_point(categorised=False, power=True))
+
+    assert match.confidence == SWITCH_CONFIDENCE
+    assert entities_of(match)[str(Role.SWITCH)] == "light.aksesspunkt_led"
+    assert entities_of(match)[str(Role.POWER)] == "sensor.aksesspunkt_power"

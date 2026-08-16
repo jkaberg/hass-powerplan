@@ -146,6 +146,8 @@ ROLE_UNITS: Final[Mapping[Role, UnitTable]] = {
 
 #: The states that mean "I cannot answer" (INV-53), as D3 spells them.
 _BLIND: Final = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN, ""})
+#: The registry's two categories that mark an entity as not the device's purpose.
+_CONFIGURATION: Final = frozenset({"config", "diagnostic"})
 
 #: What a switch reads as on, whatever the entity spelled it.
 _TRUE: Final = frozenset({STATE_ON, "true", "yes", "1", "heat", "open"})
@@ -227,6 +229,15 @@ class EntityView:
     attributes: Mapping[str, Any] = field(default_factory=dict)
     platform: str | None = None
     last_reported: datetime | None = None
+    #: The registry's `entity_category` - `config`, `diagnostic` or `None`
+    #: (D4 §6 as sharpened for WP U.2). An access point's LED and a PoE port
+    #: are configuration of a network device, not a load to switch.
+    entity_category: str | None = None
+
+    @property
+    def configuration(self) -> bool:
+        """Whether the registry files this entity under configuration or diagnostics."""
+        return self.entity_category in _CONFIGURATION
 
     @property
     def domain(self) -> str:
@@ -419,6 +430,7 @@ class DeviceView:
                     attributes=dict(entity.get("attributes") or {}),
                     platform=_optional_str(entity.get("platform")) or platform,
                     last_reported=_parse_datetime(entity.get("last_updated")),
+                    entity_category=_optional_str(entity.get("entity_category")),
                 )
                 for entity in document.get("entities", ())
             ),
@@ -496,12 +508,14 @@ class DeviceView:
 def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
     """Return one registry entry as a view, with its state if it has one."""
     state = hass.states.get(entry.entity_id)
+    category = None if entry.entity_category is None else str(entry.entity_category)
     if state is None:
         return EntityView(
             entity_id=entry.entity_id,
             state=STATE_UNAVAILABLE,
             attributes=_registry_attributes(entry),
             platform=entry.platform,
+            entity_category=category,
         )
     return EntityView(
         entity_id=entry.entity_id,
@@ -509,6 +523,7 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
         attributes=dict(state.attributes),
         platform=entry.platform,
         last_reported=state.last_reported,
+        entity_category=category,
     )
 
 

@@ -1673,6 +1673,36 @@ After a plug-in or reboot the charger resets its dynamic limit, the sensor repor
 `DrawProfile.litres_at_55(t0, t1)` read the draws of the day before, `t0`'s day and `t1`'s day, and within one day that's the same day twice: 270 L a day for three persons instead of 135. It now reads each day once, with a tick-by-tick test. Found because `observe_calibration` with the new tank shadow read a calibration error of 0.455. Every scenario with a tank moves, and the smoke baseline is updated once with a changelog line.
 **Rejected:** dropping the tank from `observe_calibration` - narrows a test to make a change pass. Doubling D4's profile - the simulator was the one breaking its own spec.
 
+### D-0390 · A modifier that replaces the energy price runs first
+
+`chain_from` puts every modifier whose component is `spot` (`fixed_price`, `export_price`) ahead of the rest; the others keep their order. A site that ticked VAT before Norgespris composed VAT on spot and then replaced spot, pricing Norgespris at 0.40 + 25 % × spot instead of a flat 0.50 (it's VAT-inclusive by law). Stored order is tick order, not tax law, and sorting fixes every entry without a migration.
+**Rejected:** migrating stored entries - `chain_from` makes it moot.
+
+### D-0391 · A form list's nested selectors are plain mappings, for the 2026.3 floor
+
+`_period_fields`, `_tier_fields` and `_rate_fields` write each `ObjectSelector` field as a dict. HA 2026.3 validates nested fields with a function that takes only mappings; the fix accepting `Selector` instances (core PR #170453) came later. Tests importing current HA don't show it.
+**Rejected:** instances until the floor moves - the manifest promises the floor.
+
+### D-0392 · A meter role's unit and state class are checked on submit
+
+`_ROLE_FILTERS` carries each role's device class, units and, for a register, cumulative state classes, and `meter_data` raises `StepError` naming the field on a mismatch. The picker filters on device class only: the floor's entity selector has no unit filter, and no version filters state class.
+**Rejected:** a unit filter on newer lines only - a filter that changes shape between versions.
+
+### D-0393 · A cross-field bound is declared per questionnaire and checked after coercion
+
+`Questionnaire.bounds` names which answer must sit between which others (floor heating's comfort between min and max; the tank's temperatures against comfort min and max). `_check_bounds` raises `outside_bounds` on the value's field, only when the household answered both sides. Declarative, in the core, with no HA import (INV-49).
+**Rejected:** checking in `flow/load.py` - validation belongs with the schema.
+
+### D-0394 · `generic_switch` never claims a config or diagnostic entity, and a light needs a power sensor
+
+`EntityView.entity_category` carries the registry's category, and `generic_switch` drops `config` and `diagnostic` entities before matching; an on/off `light` counts only if its device has a power sensor. A network access point's status LED was being offered as a load. Affects D4 §9 16.
+**Rejected:** a manufacturer denylist - the registry already states each entity's purpose.
+
+### D-0395 · A derived default shows what `derive()` would make of it; leaving it isn't an override
+
+`suggestions()` runs `derive()` on the answers so far and shows a derived-default question's value as the suggestion. `answers_from_form` drops a field equal to its suggestion before validating, so the derivation keeps following the other answers (a floor's comfort follows its area). The same mechanism covers Nord Pool's publication clock and the per-phase limit. Affects D8 §5.15.
+**Rejected:** storing whatever is submitted and re-deriving only on reset - freezes values nobody chose.
+
 ### D-0400 · The entity pass covers the site and home entities; per-appliance entities wait for device attachment
 
 The device-attachment spec moves per-load entities onto the appliance's own device with a smaller set, as separate work. This pass: site entities and translations, window names by `window_min`, kW display precision, `stage` numeric and diagnostic, the savings name, the peak warning's next window, `sensor.<load>_measured`'s default-enabled flag (D-0403), the home device's info, plus recorder and decoding fixes that touch any entity. Affects D8 §5.15.

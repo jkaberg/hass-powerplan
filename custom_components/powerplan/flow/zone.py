@@ -37,6 +37,7 @@ from homeassistant.helpers.selector import (
 )
 
 from custom_components.powerplan.const import (
+    LOAD_TYPE,
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
     ZONE_CAPACITY_PENALTY,
@@ -54,11 +55,17 @@ from custom_components.powerplan.core.allocation.constraints.zone import (
     DEFAULT_SWITCH_CONFIRM_S,
     DEFAULT_SWITCH_HYSTERESIS,
 )
-from custom_components.powerplan.flow.questionnaire import advanced_section
+from custom_components.powerplan.flow.questionnaire import (
+    advanced_section,
+    as_duration,
+    duration_selector,
+    percent_selector,
+    seconds_of,
+)
 from custom_components.powerplan.flow.text import Text
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
 __all__ = ["ZoneSubentryFlow", "zone_data", "zone_schema"]
 
@@ -78,11 +85,46 @@ CAPACITY_PENALTY_MIN = 0.0
 CAPACITY_PENALTY_MAX = 10.0
 
 
+#: The loads a room can be heated by (D6 §6 as sharpened for WP U.2; review LOAD-7):
+#: the charger and the water tank are not room heaters.
+HEATING_TYPES = frozenset({"floor_heating", "radiator", "heat_pump"})
+
+
+def never_schema(
+    members: Mapping[str, str], chosen: Sequence[str], values: Sequence[str]
+) -> vol.Schema:
+    """Return the second step: which of the members chosen always use their own heat (LOAD-7)."""
+    return vol.Schema(
+        {
+            vol.Optional(
+                ZONE_NEVER_SUBSTITUTE, default=[m for m in values if m in chosen]
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(value=load_id, label=members[load_id])
+                        for load_id in chosen
+                        if load_id in members
+                    ],
+                    multiple=True,
+                    mode=SelectSelectorMode.LIST,
+                    sort=True,
+                )
+            ),
+        }
+    )
+
+
 def zone_schema(
     members: Mapping[str, str], *, values: Mapping[str, Any] | None = None
 ) -> vol.Schema:
-    """Return the one questionnaire step (D6 §6), pre-filled from `values`."""
+    """Return the members step (D6 §6), pre-filled from `values`.
+
+    "Never substitute" is asked next, over the members chosen: a form cannot
+    narrow one field by another's answer (D8 §5.15 rule 5, review LOAD-7).
+    """
     given = values or {}
+    dwell = as_duration(float(given.get(ZONE_MIN_DWELL_MIN, DEFAULT_MIN_DWELL_MIN)) * 60.0)
+    confirm = as_duration(float(given.get(ZONE_SWITCH_CONFIRM_S, DEFAULT_SWITCH_CONFIRM_S)))
     return vol.Schema(
         {
             vol.Required("name", default=given.get("name", vol.UNDEFINED)): TextSelector(),
@@ -94,20 +136,7 @@ def zone_schema(
                     ],
                     multiple=True,
                     mode=SelectSelectorMode.LIST,
-                    sort=False,
-                )
-            ),
-            vol.Optional(
-                ZONE_NEVER_SUBSTITUTE, default=list(given.get(ZONE_NEVER_SUBSTITUTE) or [])
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(value=load_id, label=title)
-                        for load_id, title in members.items()
-                    ],
-                    multiple=True,
-                    mode=SelectSelectorMode.LIST,
-                    sort=False,
+                    sort=True,
                 )
             ),
             vol.Optional(SECTION_ADVANCED, default={}): advanced_section(
@@ -120,41 +149,18 @@ def zone_schema(
                             min=MIN_COP_MIN, max=MIN_COP_MAX, step=0.1, mode=NumberSelectorMode.BOX
                         )
                     ),
+                    # A share as a percent (CTL-2); stored as the fraction.
                     vol.Optional(
                         ZONE_SWITCH_HYSTERESIS,
-                        default=float(given.get(ZONE_SWITCH_HYSTERESIS, DEFAULT_SWITCH_HYSTERESIS)),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=SWITCH_HYSTERESIS_MIN,
-                            max=SWITCH_HYSTERESIS_MAX,
-                            step=0.01,
-                            mode=NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        ZONE_MIN_DWELL_MIN,
-                        default=float(given.get(ZONE_MIN_DWELL_MIN, DEFAULT_MIN_DWELL_MIN)),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=MIN_DWELL_MIN_MIN,
-                            max=MIN_DWELL_MIN_MAX,
-                            step=5,
-                            unit_of_measurement="min",
-                            mode=NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        ZONE_SWITCH_CONFIRM_S,
-                        default=float(given.get(ZONE_SWITCH_CONFIRM_S, DEFAULT_SWITCH_CONFIRM_S)),
-                    ): NumberSelector(
-                        NumberSelectorConfig(
-                            min=SWITCH_CONFIRM_S_MIN,
-                            max=SWITCH_CONFIRM_S_MAX,
-                            step=60,
-                            unit_of_measurement="s",
-                            mode=NumberSelectorMode.BOX,
-                        )
-                    ),
+                        default=round(
+                            float(given.get(ZONE_SWITCH_HYSTERESIS, DEFAULT_SWITCH_HYSTERESIS))
+                            * 100.0,
+                            6,
+                        ),
+                    ): percent_selector(),
+                    # Hours and minutes; stored in minutes and seconds as before (CTL-8).
+                    vol.Optional(ZONE_MIN_DWELL_MIN, default=dwell): duration_selector(),
+                    vol.Optional(ZONE_SWITCH_CONFIRM_S, default=confirm): duration_selector(),
                     vol.Optional(
                         ZONE_CAPACITY_PENALTY,
                         default=float(
@@ -177,17 +183,22 @@ def zone_schema(
 def zone_data(user_input: Mapping[str, Any]) -> dict[str, Any]:
     """Return the subentry's data from the form (D6 §6 `ZoneSubentryData`)."""
     advanced = user_input.get(SECTION_ADVANCED) or {}
+    hysteresis = advanced.get(ZONE_SWITCH_HYSTERESIS)
+    dwell = seconds_of(advanced.get(ZONE_MIN_DWELL_MIN))
+    confirm = seconds_of(advanced.get(ZONE_SWITCH_CONFIRM_S))
     return {
         ZONE_MEMBERS: [str(member) for member in user_input[ZONE_MEMBERS]],
         ZONE_NEVER_SUBSTITUTE: [
             str(member) for member in user_input.get(ZONE_NEVER_SUBSTITUTE) or ()
         ],
         ZONE_MIN_COP: float(advanced.get(ZONE_MIN_COP, DEFAULT_MIN_COP)),
-        ZONE_SWITCH_HYSTERESIS: float(
-            advanced.get(ZONE_SWITCH_HYSTERESIS, DEFAULT_SWITCH_HYSTERESIS)
+        ZONE_SWITCH_HYSTERESIS: (
+            float(DEFAULT_SWITCH_HYSTERESIS)
+            if hysteresis is None
+            else round(float(hysteresis) / 100.0, 6)
         ),
-        ZONE_MIN_DWELL_MIN: float(advanced.get(ZONE_MIN_DWELL_MIN, DEFAULT_MIN_DWELL_MIN)),
-        ZONE_SWITCH_CONFIRM_S: float(advanced.get(ZONE_SWITCH_CONFIRM_S, DEFAULT_SWITCH_CONFIRM_S)),
+        ZONE_MIN_DWELL_MIN: float(DEFAULT_MIN_DWELL_MIN) if dwell is None else dwell / 60.0,
+        ZONE_SWITCH_CONFIRM_S: float(DEFAULT_SWITCH_CONFIRM_S) if confirm is None else confirm,
         ZONE_CAPACITY_PENALTY: float(
             advanced.get(ZONE_CAPACITY_PENALTY, float(DEFAULT_CAPACITY_PENALTY))
         ),
@@ -205,11 +216,12 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
     # ----------------------------------------------------------------- helpers
 
     def _members(self) -> dict[str, str]:
-        """Return the site's loads by subentry id, titled, for the members pick."""
+        """Return the site's heating loads by subentry id, titled, for the members pick (LOAD-7)."""
         return {
             subentry.subentry_id: subentry.title
             for subentry in self._get_entry().subentries.values()
             if subentry.subentry_type == SUBENTRY_LOAD
+            and subentry.data.get(LOAD_TYPE) in HEATING_TYPES
         }
 
     async def _ask(
@@ -222,7 +234,6 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             chosen = [str(member) for member in user_input.get(ZONE_MEMBERS) or ()]
-            never = [str(member) for member in user_input.get(ZONE_NEVER_SUBSTITUTE) or ()]
             name = str(user_input.get("name") or "").strip()
             if not name:
                 errors["name"] = "no_name"
@@ -230,12 +241,11 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                 errors[ZONE_MEMBERS] = "not_enough_members"
             elif any(member not in members for member in chosen):
                 errors[ZONE_MEMBERS] = "unknown_member"
-            elif any(member not in chosen for member in never):
-                errors[ZONE_NEVER_SUBSTITUTE] = "unknown_member"
             else:
                 self._name = name
-                self._answers = zone_data(user_input)
-                return await self.async_step_review()
+                never = list((stored or {}).get(ZONE_NEVER_SUBSTITUTE) or [])
+                self._answers = zone_data({**user_input, ZONE_NEVER_SUBSTITUTE: never})
+                return await self.async_step_never_substitute()
         values: Mapping[str, Any] | None = user_input
         if values is None and stored is not None:
             values = {**stored, "name": self._name}
@@ -269,6 +279,30 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         }
 
     # ------------------------------------------------------------------- steps
+
+    async def async_step_never_substitute(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Ask which of the members chosen always use their own heat (LOAD-7, rule 5)."""
+        assert self._answers is not None
+        members = self._members()
+        chosen = self._answers[ZONE_MEMBERS]
+        if user_input is not None:
+            never = [str(member) for member in user_input.get(ZONE_NEVER_SUBSTITUTE) or ()]
+            if any(member not in chosen for member in never):
+                return self.async_show_form(
+                    step_id="never_substitute",
+                    data_schema=never_schema(members, chosen, never),
+                    errors={ZONE_NEVER_SUBSTITUTE: "unknown_member"},
+                    last_step=False,
+                )
+            self._answers[ZONE_NEVER_SUBSTITUTE] = never
+            return await self.async_step_review()
+        return self.async_show_form(
+            step_id="never_substitute",
+            data_schema=never_schema(members, chosen, self._answers[ZONE_NEVER_SUBSTITUTE]),
+            last_step=False,
+        )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
         """Name, members and which of them are never substituted, in one step."""

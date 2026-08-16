@@ -20,6 +20,7 @@ labels as its vocabulary, so the flow never shows an internal key (§5.4).
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Mapping
 from datetime import time
 from typing import TYPE_CHECKING, Any
@@ -34,14 +35,16 @@ from homeassistant.helpers.selector import (
     DeviceSelector,
     EntitySelector,
     EntitySelectorConfig,
+    EntityWithDeviceFilterSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    ObjectSelector,
+    ObjectSelectorConfig,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
-    TimeSelector,
 )
 
 from custom_components.powerplan.const import (
@@ -68,7 +71,16 @@ from custom_components.powerplan.core.loads.questionnaire import (
     rederive,
 )
 from custom_components.powerplan.core.loads.types import base as device_types
-from custom_components.powerplan.flow.questionnaire import advanced_section, jsonable
+from custom_components.powerplan.flow.questionnaire import (
+    advanced_section,
+    as_duration,
+    duration_selector,
+    jsonable,
+    kw_selector,
+    percent_selector,
+    seconds_of,
+    time_selector,
+)
 from custom_components.powerplan.flow.text import Text, device_name, entity_name
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.providers.profiles.base import (
@@ -100,13 +112,69 @@ _ENTITY_DOMAINS: dict[str, tuple[str, ...]] = {
 _ENTITY_DEFAULT_DOMAINS: tuple[str, ...] = ("sensor",)
 #: `entity` questions whose answer is more than one entity (D4 §4.4).
 _MULTI_ENTITY_KEYS: frozenset[str] = frozenset({"arrival_sources", "never_switch"})
-#: Units rendered as a slider rather than a box (D8 §5.4).
-_SLIDER_UNITS = frozenset({"°C", "%"})
+#: A duration's unit, in seconds: rendered as hours and minutes (review CTL-8).
+_DURATION_UNITS: dict[str, float] = {"s": 1.0, "min": 60.0, "h": 3600.0}
+#: A number in hours that is a daily quota, not an interval: a slider 1–24 h (CTL-4).
+_QUOTA_KEYS: frozenset[str] = frozenset({"hours_per_day"})
+_QUOTA_RANGE = (1.0, 24.0)
+#: Where a derived-default question's value is found in `derive()`'s parameters,
+#: when it is not under its own key, and the factor from the parameter to the
+#: question's unit (HUB-19: the derived value shown as a suggestion).
+_DERIVED_PARAM: dict[str, tuple[str, float]] = {
+    "min_c": ("floor_c", 1.0),
+    "screed_depth_mm": ("screed_mm", 1.0),
+    "power_w": ("nameplate_w", 1.0),
+    "duration_min": ("duration_s", 1 / 60),
+}
+#: The site's phase count answers a load's own phases question on a single-phase
+#: site: one option is not a question (review CTL-14).
+_SITE_PHASES_KEY = "phases"
 #: The weekly-time question's seven day keys, Monday first (`Question.kind = weekly_time`).
 _WEEKDAYS = tuple(str(day) for day in range(7))
 #: The role-entity fields of the match step are prefixed so they never collide
 #: with `type` and `profile`.
 _ROLE_PREFIX = "role_"
+#: What each role's picker offers: its domains and device classes, as entity
+#: filters (review CTL-10). A `filter`, not the legacy `domain` key,
+#: so a binding the profile made on another domain is never refused on submit.
+_SENSOR = "sensor"
+_ROLE_FILTERS: dict[Role, list[EntityWithDeviceFilterSelectorConfig]] = {
+    Role.POWER: [{"domain": _SENSOR, "device_class": "power"}],
+    Role.ENERGY: [{"domain": _SENSOR, "device_class": "energy"}],
+    Role.SESSION_ENERGY: [{"domain": _SENSOR, "device_class": "energy"}],
+    Role.TEMP: [{"domain": _SENSOR, "device_class": "temperature"}, {"domain": "climate"}],
+    Role.TEMP_FLOOR: [{"domain": _SENSOR, "device_class": "temperature"}, {"domain": "climate"}],
+    Role.OUTDOOR_TEMP: [{"domain": _SENSOR, "device_class": "temperature"}, {"domain": "weather"}],
+    Role.OUTLET_TEMP: [{"domain": _SENSOR, "device_class": "temperature"}],
+    Role.SETPOINT: [{"domain": ["climate", "water_heater", "number"]}],
+    Role.ECO_SETPOINT: [{"domain": "number"}],
+    Role.FLOOR_MIN: [{"domain": "number"}],
+    Role.HYSTERESIS: [{"domain": "number"}],
+    Role.MODE_SELECT: [{"domain": ["select", "climate"]}],
+    Role.SWITCH: [{"domain": ["switch", "input_boolean", "light"]}],
+    Role.ENABLE: [{"domain": ["switch", "input_boolean"]}],
+    Role.CURRENT_SET: [{"domain": "number"}],
+    Role.CURRENT_MAX: [{"domain": ["number", _SENSOR]}],
+    Role.CIRCUIT_MAX: [{"domain": ["number", _SENSOR]}],
+    Role.CABLE_RATING: [{"domain": ["number", _SENSOR]}],
+    Role.CURRENT_L1: [{"domain": _SENSOR, "device_class": "current"}],
+    Role.CURRENT_L2: [{"domain": _SENSOR, "device_class": "current"}],
+    Role.CURRENT_L3: [{"domain": _SENSOR, "device_class": "current"}],
+    Role.SOC: [{"domain": _SENSOR, "device_class": "battery"}],
+    Role.CONNECTED: [{"domain": ["binary_sensor", _SENSOR]}],
+    Role.DOOR: [{"domain": "binary_sensor"}],
+    Role.STATUS: [{"domain": _SENSOR}],
+    Role.BLOCKED_BY: [{"domain": _SENSOR}],
+    Role.PROGRAM_STATE: [{"domain": _SENSOR}],
+    Role.START: [{"domain": ["button", "switch"]}],
+    Role.BATTERY_POWER_SET: [{"domain": "number"}],
+    Role.BATTERY_MODE: [{"domain": "select"}],
+    Role.SG_A: [{"domain": "switch"}],
+    Role.SG_B: [{"domain": "switch"}],
+}
+#: Measurements every load can use whichever device they are on - a Z-Wave meter
+#: on its own device measuring a heat pump: always offered, optional.
+_ALWAYS_OFFERED: tuple[Role, ...] = (Role.POWER, Role.ENERGY)
 #: A type's own questionnaire can ask for an optional entity the match step
 #: never sees - the heat pump's outdoor/outlet sensors (D4 §5.14), read off
 #: whatever device they happen to live on, unlike a match-step role's own
@@ -165,8 +233,65 @@ def load_title(hass: HomeAssistant, device_id: str | None, fallback: str) -> str
 # --------------------------------------------------------------------------- #
 
 
-def _selector(question: Question, type_key: str) -> Any:  # noqa: PLR0911 - one selector per kind, as D8 §5.4 tabulates them
-    """Return the selector D8 §5.4 gives for one question."""
+def _number_selector(question: Question) -> Any:
+    """Return the control a number question gets (D8 §5.15 controls).
+
+    °C a slider over the type's own range (CTL-5); % a slider step 1 (CTL-2);
+    a daily quota of hours a slider 1–24 (CTL-4); an interval hours and minutes
+    (CTL-8); watts in kW (CTL-15); everything else a box.
+    """
+    unit = question.unit
+    if question.key in _QUOTA_KEYS:
+        return NumberSelector(
+            NumberSelectorConfig(
+                min=_QUOTA_RANGE[0],
+                max=_QUOTA_RANGE[1],
+                step=0.5,
+                unit_of_measurement="h",
+                mode=NumberSelectorMode.SLIDER,
+            )
+        )
+    if unit in _DURATION_UNITS:
+        return duration_selector()
+    if unit == "W" and question.min is not None and question.max is not None:
+        return kw_selector(question.min, question.max)
+    if unit == "%" and question.min is not None and question.max is not None:
+        return percent_selector(low=question.min, high=question.max)
+    slider = unit == "°C" and question.min is not None
+    config = NumberSelectorConfig(
+        mode=NumberSelectorMode.SLIDER if slider else NumberSelectorMode.BOX,
+        step=0.5 if unit == "°C" else "any",
+    )
+    if question.min is not None:
+        config["min"] = question.min
+    if question.max is not None:
+        config["max"] = question.max
+    if unit is not None:
+        config["unit_of_measurement"] = unit
+    return NumberSelector(config)
+
+
+def _curve_selector() -> Any:
+    """Return a COP curve as a form list of {outdoor °C, COP} rows, never a text DSL (CTL-13)."""
+    number = {"number": {"mode": "box", "step": "any"}}
+    return ObjectSelector(
+        ObjectSelectorConfig(
+            fields={
+                "outdoor_c": {
+                    "selector": {"number": {**number["number"], "unit_of_measurement": "°C"}},
+                    "required": True,
+                },
+                "cop": {"selector": number, "required": True},
+            },
+            multiple=True,
+            label_field="outdoor_c",
+            translation_key="cop_curve",
+        )
+    )
+
+
+def _selector(question: Question, type_key: str, current: Any = None) -> Any:  # noqa: PLR0911 - one selector per kind, as D8 §5.4 tabulates them
+    """Return the selector D8 §5.4 gives for one question, with §5.15's controls."""
     match question.kind:
         case QuestionKind.CHOICE:
             return SelectSelector(
@@ -178,22 +303,11 @@ def _selector(question: Question, type_key: str) -> Any:  # noqa: PLR0911 - one 
                 )
             )
         case QuestionKind.NUMBER:
-            slider = question.unit in _SLIDER_UNITS and question.min is not None
-            config = NumberSelectorConfig(
-                mode=NumberSelectorMode.SLIDER if slider else NumberSelectorMode.BOX,
-                step=0.5 if question.unit == "°C" else "any",
-            )
-            if question.min is not None:
-                config["min"] = question.min
-            if question.max is not None:
-                config["max"] = question.max
-            if question.unit is not None:
-                config["unit_of_measurement"] = question.unit
-            return NumberSelector(config)
+            return _number_selector(question)
         case QuestionKind.BOOL:
             return BooleanSelector()
         case QuestionKind.TIME:
-            return TimeSelector()
+            return time_selector(current)
         case QuestionKind.ENTITY:
             multiple = question.key in _MULTI_ENTITY_KEYS
             return EntitySelector(
@@ -203,7 +317,7 @@ def _selector(question: Question, type_key: str) -> Any:  # noqa: PLR0911 - one 
                 )
             )
         case QuestionKind.CURVE:
-            return TextSelector()
+            return _curve_selector()
         case _:
             return TextSelector()
 
@@ -213,40 +327,122 @@ def _form_default(question: Question, value: Any) -> Any:  # noqa: PLR0911 - one
     if value is None:
         return None
     if question.kind is QuestionKind.TIME:
-        return value.strftime("%H:%M:%S") if isinstance(value, time) else str(value)
+        return value.strftime("%H:%M") if isinstance(value, time) else str(value)[:5]
     if question.kind is QuestionKind.CURVE:
         if isinstance(value, Mapping):
-            return ", ".join(f"{float(x):g}:{float(y):g}" for x, y in sorted(value.items()))
-        return str(value)
+            return [
+                {"outdoor_c": float(x), "cop": float(y)}
+                for x, y in sorted((float(x), float(y)) for x, y in value.items())
+            ]
+        return value
     if question.kind is QuestionKind.ENTITY and question.key in _MULTI_ENTITY_KEYS:
         return list(value) if isinstance(value, list | tuple) else [value]
     if question.kind is QuestionKind.NUMBER:
+        if question.key not in _QUOTA_KEYS and question.unit in _DURATION_UNITS:
+            return as_duration(float(value) * _DURATION_UNITS[question.unit])
+        if question.unit == "W" and question.min is not None and question.max is not None:
+            return float(value) / 1000.0
         return float(value)
     return value
+
+
+def _from_form(question: Question, value: Any) -> Any:
+    """Return one submitted value in the question's own unit - the inverse of `_form_default`."""
+    if value is None:
+        return None
+    if question.kind is QuestionKind.NUMBER:
+        if question.key not in _QUOTA_KEYS and question.unit in _DURATION_UNITS:
+            seconds = seconds_of(value)
+            return None if seconds is None else seconds / _DURATION_UNITS[question.unit]
+        if question.unit == "W" and question.min is not None and question.max is not None:
+            return float(value) * 1000.0
+    return value
+
+
+def _same(question: Question, answer: Any, suggestion: Any) -> bool:
+    """Whether a submitted value is the suggestion it was shown, in the question's own unit."""
+    mine, theirs = _from_form(question, answer), _from_form(question, suggestion)
+    if isinstance(mine, int | float) and isinstance(theirs, int | float):
+        return math.isclose(float(mine), float(theirs), rel_tol=1e-9, abs_tol=1e-9)
+    return bool(mine == theirs)
 
 
 def _marker(key: str, default: Any) -> Any:
     return vol.Optional(key) if default is None else vol.Optional(key, default=default)
 
 
+def suggestions(
+    questionnaire: Questionnaire, device_type: DeviceType, ctx: QCtx, values: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Return what `derive()` makes of a derived-default question left blank (review HUB-19).
+
+    The number the household would get, shown as the field's suggested value
+    rather than "leave empty to derive"; nothing when the answers so far do not
+    derive (the form then shows the fields empty, as before).
+    """
+    try:
+        derived = device_type.derive(questionnaire.validate(dict(values), ctx), ctx)
+    except AnswerError, KeyError, TypeError, ValueError:
+        return {}
+    found: dict[str, Any] = {}
+    for question in questionnaire.questions:
+        if not question.derived_default or values.get(question.key) is not None:
+            continue
+        param, factor = _DERIVED_PARAM.get(question.key, (question.key, 1.0))
+        value = derived.params.get(param)
+        if value is None:
+            continue
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            value = float(value) * factor
+        found[question.key] = _form_default(question, value)
+    return found
+
+
+def _asked(question: Question, ctx: QCtx, *, followups: bool) -> bool:
+    """Whether this form asks `question`: follow-ups on their own step, a single option never."""
+    if (question.asked_if is not None) != followups:
+        return False
+    return not (question.key == _SITE_PHASES_KEY and ctx.phases == 1)
+
+
 def question_schema(
-    questionnaire: Questionnaire, type_key: str, ctx: QCtx, values: Mapping[str, Any] | None = None
+    questionnaire: Questionnaire,
+    type_key: str,
+    ctx: QCtx,
+    values: Mapping[str, Any] | None = None,
+    *,
+    suggested: Mapping[str, Any] | None = None,
+    followups: bool = False,
 ) -> vol.Schema:
-    """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65)."""
+    """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65).
+
+    A question that follows a yes/no answer (`asked_if`) is on the follow-up
+    step, not here (`followups=True` renders that step; D8 §5.15 rule 5); a value
+    derived at run time is the field's suggested value (HUB-19).
+    """
     given = values or {}
+    hints = suggested or {}
     fields: dict[Any, Any] = {}
     hidden: dict[Any, Any] = {}
     for question in questionnaire.questions:
+        if not _asked(question, ctx, followups=followups):
+            continue
         current = given.get(question.key, question.default_for(ctx))
         target = hidden if question.advanced else fields
         if question.kind is QuestionKind.WEEKLY_TIME:
             table = dict(current or {})
             for day in _WEEKDAYS:
-                target[_marker(f"{question.key}_{day}", table.get(day))] = TimeSelector()
+                clock = table.get(day)
+                target[_marker(f"{question.key}_{day}", clock)] = time_selector(clock)
             continue
-        target[_marker(question.key, _form_default(question, current))] = _selector(
-            question, type_key
-        )
+        default = _form_default(question, current)
+        if default is None and question.key in hints:
+            marker: Any = vol.Optional(
+                question.key, description={"suggested_value": hints[question.key]}
+            )
+        else:
+            marker = _marker(question.key, default)
+        target[marker] = _selector(question, type_key, default)
     if hidden:
         fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
     return vol.Schema(fields)
@@ -259,30 +455,46 @@ def _flat(user_input: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _parse_curve(raw: Any) -> Any:
-    """`"-10:2.1, 7:3.8"` → `{-10.0: 2.1, 7.0: 3.8}`; anything else goes to the validator as is."""
-    if not isinstance(raw, str):
+    """Form rows `[{outdoor_c, cop}]` → `{-10.0: 2.1, 7.0: 3.8}`; a stored mapping passes.
+
+    A row the validator cannot read goes to it as is, so the error is its own
+    (`not_a_curve`), on the field.
+    """
+    if raw is None or isinstance(raw, Mapping):
         return raw
-    if not raw.strip():
+    if not isinstance(raw, list | tuple):
+        return raw
+    if not raw:
         return None
-    points: dict[float, float] = {}
-    for part in raw.split(","):
-        if ":" not in part:
+    points: dict[Any, Any] = {}
+    for row in raw:
+        if not isinstance(row, Mapping) or "outdoor_c" not in row or "cop" not in row:
             return raw
-        x, y = part.split(":", 1)
-        try:
-            points[float(x)] = float(y)
-        except ValueError:
-            return raw
+        points[row["outdoor_c"]] = row["cop"]
     return points
 
 
 def answers_from_form(
-    questionnaire: Questionnaire, user_input: Mapping[str, Any]
+    questionnaire: Questionnaire,
+    user_input: Mapping[str, Any],
+    suggested: Mapping[str, Any] | None = None,
+    *,
+    ctx: QCtx | None = None,
+    followups: bool = False,
 ) -> dict[str, Any]:
-    """Return the raw answers the questionnaire validates, out of the submitted form."""
+    """Return the raw answers the questionnaire validates, out of the submitted form.
+
+    Only the questions that form asked (`question_schema`'s own rule). A field
+    left at the value it was suggested is not an answer: the derivation runs
+    again from the other answers, so changing the room still changes the comfort
+    it suggested (HUB-19, D-0395).
+    """
     flat = _flat(user_input)
+    hints = suggested or {}
     raw: dict[str, Any] = {}
     for question in questionnaire.questions:
+        if not _asked(question, ctx or QCtx(), followups=followups):
+            continue
         if question.kind is QuestionKind.WEEKLY_TIME:
             table = {
                 day: _hhmm(flat[f"{question.key}_{day}"])
@@ -296,12 +508,16 @@ def answers_from_form(
         value = flat[question.key]
         if value in ("", []):
             value = None
+        if question.key in hints and _same(question, value, hints[question.key]):
+            continue
         if question.kind is QuestionKind.CURVE:
             value = _parse_curve(value)
         elif question.kind is QuestionKind.TIME and isinstance(value, str):
             value = _hhmm(value)
         elif question.kind is QuestionKind.ENTITY and question.key in _MULTI_ENTITY_KEYS:
             value = tuple(value or ())
+        else:
+            value = _from_form(question, value)
         raw[question.key] = value
     return raw
 
@@ -453,12 +669,37 @@ def _review_schema(
         if isinstance(value, bool):
             hidden[vol.Optional(f"param_{key}", default=value)] = BooleanSelector()
         elif isinstance(value, int | float):
-            hidden[vol.Optional(f"param_{key}", default=float(value))] = NumberSelector(
-                NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
-            )
+            shown, selector = _param_control(key, value)
+            hidden[vol.Optional(f"param_{key}", default=shown)] = selector
     if hidden:
         fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
     return vol.Schema(fields)
+
+
+def _param_control(key: str, value: float) -> tuple[Any, Any]:
+    """Return a derived number's shown value and control: watts in kW, seconds as a duration.
+
+    Stored as they were - W and seconds (CTL-8, CTL-15); the suffix is the
+    parameter's own unit, which D4 §6's tables keep in every key.
+    """
+    if key.endswith("_w"):
+        return float(value) / 1000.0, NumberSelector(
+            NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW")
+        )
+    if key.endswith("_s"):
+        return as_duration(float(value)), duration_selector()
+    return float(value), NumberSelector(
+        NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any")
+    )
+
+
+def _param_value(key: str, shown: Any) -> float:
+    """Return a review field's answer in the parameter's own unit (the inverse of `_param_control`)."""
+    if key.endswith("_w"):
+        return float(shown) * 1000.0
+    if key.endswith("_s"):
+        return float(seconds_of(shown) or 0.0)
+    return float(shown)
 
 
 def _params_from_review(
@@ -481,10 +722,12 @@ def _params_from_review(
         if isinstance(value, bool):
             new = bool(edited)
         elif isinstance(value, int):
-            new = int(edited)
+            new = round(_param_value(key, edited))
         elif isinstance(value, float):
-            new = float(edited)
+            new = _param_value(key, edited)
         else:
+            continue
+        if isinstance(new, float) and math.isclose(new, float(value), abs_tol=1e-9):
             continue
         if new != value:
             params[key] = new
@@ -512,6 +755,10 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._answers: Answers | None = None
         self._derived: Derived | None = None
         self._stored: Mapping[str, Any] | None = None
+        #: What the questions step suggested for its derived fields (HUB-19).
+        self._suggested: dict[str, Any] = {}
+        #: The questions step's answers while a follow-up is asked.
+        self._raw: dict[str, Any] = {}
 
     # ----------------------------------------------------------------- helpers
 
@@ -537,13 +784,35 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             capabilities=best.capabilities if best is not None else frozenset(),
         )
 
+    def _chosen(self, values: Mapping[str, Any]) -> MatchResult:
+        """Return the match the household is looking at: its pick, else the best."""
+        chosen = str(values.get("profile") or self._matches[0].profile)
+        return next((m for m in self._matches if m.profile == chosen), self._matches[0])
+
+    @staticmethod
+    def _roles(match: MatchResult) -> tuple[list[Role], list[Role]]:
+        """Return the required roles and the optional ones, the measurements always among them."""
+        bound = {binding.role: binding for binding in match.bindings}
+        required = [
+            role
+            for role in [*bound, *match.missing]
+            if role in match.missing or bound[role].required
+        ]
+        optional = [role for role in bound if role not in required]
+        optional += [role for role in _ALWAYS_OFFERED if role not in bound and role not in required]
+        return list(dict.fromkeys(required)), optional
+
     def _match_schema(self, values: Mapping[str, Any] | None = None) -> vol.Schema:
-        """Type, profile and the pre-bound roles, each an entity selector (§5.2)."""
-        given = values or {}
-        best = self._matches[0]
-        chosen_profile = str(given.get("profile") or best.profile)
-        match = next(m for m in self._matches if m.profile == chosen_profile)
-        profile = profiles.get(chosen_profile)
+        """Type, profile and the roles, each an entity picker filtered to fit (§5.2).
+
+        The required roles in the form, the optional ones under Avansert (review
+        LOAD-6) - the power and energy meters always among them, so a meter on
+        another device can be bound. The profile is asked only when
+        more than one claims the device (CTL-14).
+        """
+        given = _flat(values or {})
+        match = self._chosen(given)
+        profile = profiles.get(match.profile)
         type_options = [key for key in device_types.keys() if key in profile.types] or list(  # noqa: SIM118 - `keys()` is the registry's function
             device_types.keys()
         )
@@ -557,45 +826,45 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                     sort=False,
                 )
             ),
-            vol.Required("profile", default=chosen_profile): SelectSelector(
+        }
+        if len(self._matches) > 1:
+            fields[vol.Required("profile", default=match.profile)] = SelectSelector(
                 SelectSelectorConfig(
                     options=[m.profile for m in self._matches],
                     mode=SelectSelectorMode.DROPDOWN,
                     translation_key="load_profile",
                     sort=False,
                 )
-            ),
-        }
+            )
         bound = {binding.role: binding for binding in match.bindings}
-        roles = list(bound) + [role for role in match.missing if role not in bound]
-        for role in roles:
+        required, optional = self._roles(match)
+        hidden: dict[Any, Any] = {}
+        for role in [*required, *optional]:
             binding = bound.get(role)
             key = f"{_ROLE_PREFIX}{role.value}"
             default = given.get(key, binding.entity_id if binding is not None else None)
-            required = role in match.missing or (binding is not None and binding.required)
-            marker = (
-                vol.Required(key, default=default)
-                if required and default is not None
-                else vol.Required(key)
-                if required
-                else vol.Optional(key, default=default)
-                if default is not None
-                else vol.Optional(key)
-            )
-            fields[marker] = EntitySelector(EntitySelectorConfig())
+            if role in required:
+                marker: Any = vol.Required(key, default=default) if default else vol.Required(key)
+            else:
+                marker = _marker(key, default)
+            picker = EntitySelector(EntitySelectorConfig(filter=_ROLE_FILTERS.get(role, [{}])))
+            (fields if role in required else hidden)[marker] = picker
+        if hidden:
+            fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
         return vol.Schema(fields)
 
     def _bindings_from_match(
         self, user_input: Mapping[str, Any]
     ) -> tuple[tuple[RoleBinding, ...], tuple[Role, ...]]:
         """Return the bindings as the profile made them, with the household's entity changes."""
-        match = next(m for m in self._matches if m.profile == user_input["profile"])
+        answers = _flat(user_input)
+        match = self._chosen(answers)
         by_role = {binding.role: binding for binding in match.bindings}
         out: list[RoleBinding] = []
         missing: list[Role] = []
-        wanted = set(by_role) | set(match.missing)
+        wanted = set(by_role) | set(match.missing) | set(_ALWAYS_OFFERED)
         for role in wanted:
-            entity_id = user_input.get(f"{_ROLE_PREFIX}{role.value}")
+            entity_id = answers.get(f"{_ROLE_PREFIX}{role.value}")
             binding = by_role.get(role)
             if not entity_id:
                 if role in match.missing or (binding is not None and binding.required):
@@ -699,7 +968,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                     for role in missing
                 )
             else:
-                self._profile = str(user_input["profile"])
+                self._profile = self._chosen(_flat(user_input)).profile
                 self._type = str(user_input["type"])
                 self._bindings = bindings
                 return await self.async_step_questions()
@@ -731,49 +1000,116 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             "warning": text.word("load_text", "unsure") if best.confidence < UNSURE_BELOW else "",
         }
 
+    def _followups_asked(self, raw: Mapping[str, Any]) -> bool:
+        """Whether any follow-up question's yes/no was answered yes (D8 §5.15 rule 5)."""
+        questionnaire = self._device_type.questionnaire
+        return any(
+            question.asked_if is not None and bool(raw.get(question.asked_if))
+            for question in questionnaire.questions
+        )
+
+    async def _answered(self, raw: Mapping[str, Any]) -> SubentryFlowResult | None:
+        """Validate and derive; on success go on to the review, else return `None`."""
+        device_type = self._device_type
+        assert self._ctx is not None
+        self._answers = device_type.questionnaire.validate(raw, self._ctx)
+        # `derive()` refuses what no question alone can - a tank on a relay with
+        # nothing to keep it safe (`unsafe_switch`, INV-64) - and that refusal is
+        # an answer's error too (review NEW-2).
+        self._derived = device_type.derive(self._answers, self._ctx)
+        # Only a role this answer actually names is replaced - an unanswered
+        # `outdoor_entity` leaves the match step's own auto-detected
+        # outdoor_temp binding standing (D4 §5.14).
+        extra = self._extra_bindings(str(self._type), self._derived.params)
+        answered_roles = {binding.role for binding in extra}
+        self._bindings = (
+            *(b for b in self._bindings if b.role not in answered_roles),
+            *extra,
+        )
+        if self.source == "reconfigure":
+            return await self.async_step_reconfigure_review()
+        return await self.async_step_review()
+
+    def _stored_answers(self) -> dict[str, Any]:
+        return dict(self._stored.get("answers") or {}) if self._stored is not None else {}
+
     async def async_step_questions(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Ask the type's questionnaire, rendered dynamically (D8 §5.4)."""
+        """Ask the type's questionnaire, rendered dynamically (D8 §5.4).
+
+        A question that follows a yes/no (the heat pump's preheat limit) is
+        asked on `questions_followup`, and only after a yes (HUB-17).
+        """
         device_type = self._device_type
+        questionnaire = device_type.questionnaire
         self._ctx = self._ctx or self._qctx()
         errors: dict[str, str] = {}
-        values: Mapping[str, Any] | None = None
+        values: dict[str, Any] = self._stored_answers()
         if user_input is not None:
-            raw = answers_from_form(device_type.questionnaire, user_input)
+            raw = answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx)
+            # A follow-up keeps what it had until it is asked again.
+            self._raw = {
+                **{
+                    q.key: values[q.key]
+                    for q in questionnaire.questions
+                    if q.asked_if and q.key in values
+                },
+                **raw,
+            }
+            if self._followups_asked(self._raw):
+                return await self.async_step_questions_followup()
             try:
-                self._answers = device_type.questionnaire.validate(raw, self._ctx)
-                # `derive()` refuses what no question alone can - a tank on a
-                # relay with nothing to keep it safe (`unsafe_switch`, INV-64) -
-                # and that refusal is an answer's error too (review NEW-2).
-                self._derived = device_type.derive(self._answers, self._ctx)
+                done = await self._answered(self._raw)
             except AnswerError as err:
                 errors[err.key] = err.code
                 values = raw
             else:
-                # Only a role this answer actually names is replaced - an
-                # unanswered `outdoor_entity` leaves the match step's own
-                # auto-detected outdoor_temp binding standing (D4 §5.14).
-                extra = self._extra_bindings(str(self._type), self._derived.params)
-                answered_roles = {binding.role for binding in extra}
-                self._bindings = (
-                    *(b for b in self._bindings if b.role not in answered_roles),
-                    *extra,
-                )
-                if self.source == "reconfigure":
-                    return await self.async_step_reconfigure_review()
-                return await self.async_step_review()
-        elif self._stored is not None:
-            values = dict(self._stored.get("answers") or {})
+                assert done is not None
+                return done
+        self._suggested = suggestions(questionnaire, device_type, self._ctx, values)
         return self.async_show_form(
             step_id="questions",
             data_schema=question_schema(
-                device_type.questionnaire, str(self._type), self._ctx, values
+                questionnaire, str(self._type), self._ctx, values, suggested=self._suggested
             ),
             errors=errors or None,
             description_placeholders={
                 "type": (await Text.load(self.hass)).word("load_type", str(self._type))
             },
+            last_step=False,
+        )
+
+    async def async_step_questions_followup(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Ask what follows a yes - the preheat limit after "preheat" (D8 §5.15 rule 5)."""
+        device_type = self._device_type
+        questionnaire = device_type.questionnaire
+        assert self._ctx is not None
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            raw = {
+                **self._raw,
+                **answers_from_form(questionnaire, user_input, ctx=self._ctx, followups=True),
+            }
+            try:
+                done = await self._answered(raw)
+            except AnswerError as err:
+                errors[err.key] = err.code
+            else:
+                assert done is not None
+                return done
+        return self.async_show_form(
+            step_id="questions_followup",
+            data_schema=question_schema(
+                questionnaire, str(self._type), self._ctx, self._raw, followups=True
+            ),
+            errors=errors or None,
+            description_placeholders={
+                "type": (await Text.load(self.hass)).word("load_type", str(self._type))
+            },
+            last_step=False,
         )
 
     async def async_step_review(

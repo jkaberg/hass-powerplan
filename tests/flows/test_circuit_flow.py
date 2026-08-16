@@ -24,6 +24,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_CIRCUIT,
     SUBENTRY_LOAD,
 )
+from custom_components.powerplan.flow.circuit import CIRCUIT_UNMETERED_KW
 from tests.flows.test_load_flow import _add_charger, _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -55,7 +56,8 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})
-    result = await _answer(hass, result, **{**defaults, "power_w": 6000.0})
+    # The question is shown in kW now (CTL-15); 6 kW is the sauna's 6000 W.
+    result = await _answer(hass, result, **{**defaults, "power_w": 6.0})
     assert result["step_id"] == "review", result
     explanation = result["description_placeholders"]["explanation"]
     assert "Its savings are not shown" in explanation, (
@@ -113,7 +115,7 @@ async def test_the_circuit_flow_reviews_the_sentence_and_builds_the_constraint(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
     defaults = result["data_schema"]({"name": "Garage"})
-    assert defaults[CIRCUIT_FUSE_A] == 16.0
+    assert defaults[CIRCUIT_FUSE_A] == "16"
     assert defaults[CIRCUIT_PHASES] == "3", "the site's three phases are the default"
     assert defaults[CIRCUIT_MEMBERS] == []
 
@@ -128,10 +130,10 @@ async def test_the_circuit_flow_reviews_the_sentence_and_builds_the_constraint(
         **{
             **defaults,
             "name": "Garage",
-            CIRCUIT_FUSE_A: 32.0,
+            CIRCUIT_FUSE_A: "32",
             CIRCUIT_MEMBERS: [ev_id, sauna_id],
             CIRCUIT_SUB_METER: GARAGE_POWER,
-            "advanced": {CIRCUIT_UNMETERED_W: 200.0},
+            "advanced": {CIRCUIT_UNMETERED_KW: 0.2},
         },
     )
     assert result["step_id"] == "review", result
@@ -195,7 +197,7 @@ async def test_reconfigure_pre_fills_and_updates_the_circuit(
         **{
             **result["data_schema"]({"name": "Garage"}),
             "name": "Garage",
-            CIRCUIT_FUSE_A: 32.0,
+            CIRCUIT_FUSE_A: "32",
             CIRCUIT_MEMBERS: [ev_id, sauna_id],
         },
     )
@@ -209,14 +211,14 @@ async def test_reconfigure_pre_fills_and_updates_the_circuit(
     assert result["step_id"] == "reconfigure"
     prefilled = result["data_schema"]({})
     assert prefilled["name"] == "Garage"
-    assert prefilled[CIRCUIT_FUSE_A] == 32.0
+    assert prefilled[CIRCUIT_FUSE_A] == "32"
     assert prefilled[CIRCUIT_PHASES] == "3"
     assert prefilled[CIRCUIT_MEMBERS] == [ev_id, sauna_id]
 
     result = await _answer(
         hass,
         result,
-        **{**prefilled, "name": "Garage feed", CIRCUIT_FUSE_A: 25.0, CIRCUIT_MEMBERS: [ev_id]},
+        **{**prefilled, "name": "Garage feed", CIRCUIT_FUSE_A: "25", CIRCUIT_MEMBERS: [ev_id]},
     )
     assert result["step_id"] == "review", result
     assert result["description_placeholders"]["members"] == "Charger"

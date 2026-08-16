@@ -44,6 +44,7 @@ __all__ = [
     "band_range",
     "device_name",
     "entity_name",
+    "minor_unit",
     "preset_options",
     "target_label",
     "target_options",
@@ -167,6 +168,12 @@ class Text:
     def span(self, start: int, end: int) -> str:
         """Return a span of the day, `06:00–22:00`."""
         return f"{self.clock(start)}–{self.clock(end)}"
+
+
+def minor_unit(currency: str) -> str | None:
+    """Return a currency's minor unit - øre, öre, cent - or `None` for one not listed (CTL-3)."""
+    known = _CURRENCIES.get(currency)
+    return None if known is None else known[1]
 
 
 def entity_name(hass: HomeAssistant, entity_id: str) -> str:

@@ -23,7 +23,16 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import Setpoint, SetpointCfg
 from ..kinds.switch import Switch, SwitchCfg
-from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
+from ..questionnaire import (
+    Answers,
+    Bounds,
+    Derived,
+    Option,
+    QCtx,
+    Question,
+    QuestionKind,
+    Questionnaire,
+)
 from ..stores.thermal import RoomStore
 from .base import register
 from .floor_heating import ROOM_DEFAULTS, room_from_area
@@ -220,7 +229,8 @@ QUESTIONNAIRE = Questionnaire(
             advanced=True,
             help_key="radiator_force_max_h",
         ),
-    )
+    ),
+    bounds=(Bounds(value="comfort_c", low="min_c"),),
 )
 
 

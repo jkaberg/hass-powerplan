@@ -34,9 +34,15 @@ def _sha(text: str) -> str:
 
 @pytest.fixture
 def recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Record into a scratch file, with the simulation cache in a scratch folder."""
+    """Record into a scratch file, with the simulation cache on, in a scratch folder.
+
+    The cache is switched on here, not inherited: the nightly run sets
+    `POWERPLAN_SIM_CACHE=off` for the whole suite, and a cache-hit test must not
+    depend on that.
+    """
     out = tmp_path / "digests.json"
     monkeypatch.setenv("POWERPLAN_DIGESTS", str(out))
+    monkeypatch.setenv("POWERPLAN_SIM_CACHE", "on")
     monkeypatch.setenv("POWERPLAN_SIM_CACHE_DIR", str(tmp_path / "sims"))
     return out
 

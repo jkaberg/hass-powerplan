@@ -20,6 +20,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import time
 from enum import StrEnum
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 __all__ = [
     "AnswerError",
     "Answers",
+    "Bounds",
     "Derived",
     "Explanation",
     "Option",
@@ -119,6 +121,10 @@ class Question:
     help_key: str = ""
     advanced: bool = False
     derived_default: bool = False
+    #: The `BOOL` question this one follows: asked only when that answer is
+    #: true, and left at its default otherwise (D8 §5.15 rule 5, review
+    #: HUB-17 - "preheat off never sees its temperature").
+    asked_if: str | None = None
 
     def default_for(self, ctx: QCtx) -> Any:
         """Resolve the default, calling it when it is a function of the context."""
@@ -175,10 +181,25 @@ def _jsonable(value: Any) -> Any:
 
 
 @dataclass(frozen=True, slots=True)
+class Bounds:
+    """`low ≤ value ≤ high` across three answers - the comfort between its limits (D4 §6).
+
+    Checked on what the household answered; a derived neighbour is the type's
+    own table, not an answer to argue with (review CTL-16, D-0393). The error
+    lands on `value`, the field the household moves.
+    """
+
+    value: str
+    low: str | None = None
+    high: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Questionnaire:
     """A device type's questions, and the validation at its boundary (D4 §4.6)."""
 
     questions: tuple[Question, ...]
+    bounds: tuple[Bounds, ...] = ()
 
     def get(self, key: str) -> Question:
         """Return the question `key`, raising `KeyError` when there is none."""
@@ -213,7 +234,20 @@ class Questionnaire:
                 values[question.key] = _coerce(question, raw[question.key])
             else:
                 values[question.key] = question.default_for(ctx)
+        for bounds in self.bounds:
+            _check_bounds(bounds, raw, values)
         return Answers(values=values)
+
+
+def _check_bounds(bounds: Bounds, raw: Mapping[str, Any], values: Mapping[str, Any]) -> None:
+    """Refuse a comfort outside its own limits, where the household answered both (CTL-16)."""
+    value = values.get(bounds.value) if raw.get(bounds.value) is not None else None
+    if value is None:
+        return
+    low = values.get(bounds.low) if bounds.low and raw.get(bounds.low) is not None else None
+    high = values.get(bounds.high) if bounds.high and raw.get(bounds.high) is not None else None
+    if (low is not None and value < low) or (high is not None and value > high):
+        raise AnswerError(bounds.value, "outside_bounds", f"{value} is not within {low}–{high}")
 
 
 def _coerce(question: Question, value: Any) -> Any:  # noqa: PLR0911 - one return per kind
@@ -270,7 +304,12 @@ def _as_curve(key: str, value: Any) -> Mapping[float, float]:
         if y <= 0.0:
             raise AnswerError(key, "not_a_curve", f"{y} is not a physical efficiency at {x}")
         points[x] = y
-    return dict(sorted(points.items()))
+    ordered = dict(sorted(points.items()))
+    if any(later < earlier for earlier, later in pairwise(ordered.values())):
+        # A heat pump's COP rises with the outdoor temperature (D4 §6.4); a curve
+        # that falls is two points typed the wrong way round (review CTL-13, 16).
+        raise AnswerError(key, "curve_not_rising", f"{ordered} falls as it gets warmer")
+    return ordered
 
 
 def _as_time(key: str, value: Any) -> time:

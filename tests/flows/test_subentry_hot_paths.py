@@ -62,7 +62,8 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     )
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
     result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, **{**result["data_schema"]({}), "power_w": 6000.0})
+    # The question is shown in kW now (CTL-15); 6 kW is the sauna's 6000 W.
+    result = await _answer(hass, result, **{**result["data_schema"]({}), "power_w": 6.0})
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Sauna"})
     await hass.async_block_till_done()
     return next(
@@ -181,7 +182,7 @@ async def test_removing_a_loads_own_circuit_membership_shrinks_it_without_a_relo
         **{
             **defaults,
             "name": "Garage",
-            CIRCUIT_FUSE_A: 32.0,
+            CIRCUIT_FUSE_A: "32",
             CIRCUIT_PHASES: "3",
             CIRCUIT_MEMBERS: [ev_id, sauna_id],
         },
@@ -221,7 +222,7 @@ async def test_adding_and_removing_a_circuit_subentry_never_reloads(
         **{
             **defaults,
             "name": "Garage",
-            CIRCUIT_FUSE_A: 32.0,
+            CIRCUIT_FUSE_A: "32",
             CIRCUIT_PHASES: "3",
             CIRCUIT_MEMBERS: [ev_id],
         },
