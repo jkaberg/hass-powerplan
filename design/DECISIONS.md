@@ -1648,6 +1648,31 @@ After a plug-in or reboot the charger resets its dynamic limit, the sensor repor
 `ZaptecChargerSim` wraps `EvSim` behind the installation's *Available current*: every write lands, the read-back is prompt, 0 A pauses, 6 A or more resumes. A change less than 900 s after the last is counted and interrupts charging with a seeded probability of 0.25 (assumed), per Zaptec's note that frequent changes may interrupt a session. The scenario asserts `over_target == 0`, no raises inside 15 minutes, and at least one such trim.
 **Rejected:** a sim that ignores a second change inside the window - Zaptec doesn't refuse, and urgent sheds would be modelled as lost.
 
+### D-0380 · The tank shadow's dial is `anchor_c`; η paid on the way in
+
+`TankShadow` holds `anchor_c` (`min(ready_temp_c, max_c)`, D-0203) with a 2 K hysteresis, heats at nameplate over `C_tank` and loses standby and draw-off over `C_water = C_tank · η`, in one-minute steps (D-0177). `draw_off_of(params)` builds the draw-off profile in one place for the sensorless model and the shadow; the adapter fills `ShadowCtx.draw_off_kwh` per slot. One `C_tank` for both terms would understate every kWh by 2 %. An idle day: 1.469 kWh against the simulator's 1.443. Affects D11 §5.3.
+**Rejected:** `ready_temp_c` directly - `anchor_c` is already bounded and is the sensorless model's anchor. A per-tank hysteresis question - changes when reheats happen, not how much.
+
+### D-0381 · A tank shadow takes a measured level once and is never pulled onto a steered one
+
+`TankShadow.reanchor` adopts `level_now` only while it has none. A plain tank's thermostat keeps the shadow in its band, so there's no drift to correct, and the level powerplan steers the real tank to (45 °C most of the day) is the difference being measured; pulled onto it, the shadow would book a 10 kWh reheat no plain tank needed. `_first_level` falls back to what `init` would give (`None` for a tank). Note: `_blind_for_a_day` measures time since the last anchor, not time without a level, so thermal shadows are re-anchored daily in `auto`; fixing it moves the thermal loads' money columns and is left for its own change. Affects D11 §5.3.
+**Rejected:** re-anchoring as §5.3 says and letting the thermostat recover - the recovery is the spurious reheat.
+
+### D-0382 · `legionella_active` is the tank's in-progress latch; the shadow keeps its own trajectory through it
+
+`SlotLoad.legionella_active` comes from the tank's `legionella_in_progress_since` at the slot's close and fills `ShadowCtx.legionella_active`. While set, the shadow's kWh for the slot is the real slot's, so cost and counterfactual match; its level carries on under its own thermostat, leaving the cycle where a plain tank would be. The latch opens with the 24 h lead window, so up to a day in seven shows zero tank savings, the conservative direction. Affects D11 §4, §5.3.
+**Rejected:** passing through only the slots the element drives - needs a new load-state field for a savings figure, the wrong direction for INV-68.
+
+### D-0383 · The schedule shadow divides `hours_per_day` by 24 every day; the idle shadow carries an unused SoC
+
+`ScheduleShadow` draws `nameplate · hours_per_day / 24 · dt`, reading the same subentry key `store_kind_of` uses; a DST day runs 23/24 or 25/24 of the quota. `IdleShadow` draws nothing and carries the measured SoC so its state has the common shape. Affects D11 §5.3.
+**Rejected:** a per-day length - needs the site zone in the shadow for ±4 % on two days a year.
+
+### D-0384 · `tests/sim/tank.py` served every draw twice
+
+`DrawProfile.litres_at_55(t0, t1)` read the draws of the day before, `t0`'s day and `t1`'s day, and within one day that's the same day twice: 270 L a day for three persons instead of 135. It now reads each day once, with a tick-by-tick test. Found because `observe_calibration` with the new tank shadow read a calibration error of 0.455. Every scenario with a tank moves, and the smoke baseline is updated once with a changelog line.
+**Rejected:** dropping the tank from `observe_calibration` - narrows a test to make a change pass. Doubling D4's profile - the simulator was the one breaking its own spec.
+
 ### D-0400 · The entity pass covers the site and home entities; per-appliance entities wait for device attachment
 
 The device-attachment spec moves per-load entities onto the appliance's own device with a smaller set, as separate work. This pass: site entities and translations, window names by `window_min`, kW display precision, `stage` numeric and diagnostic, the savings name, the peak warning's next window, `sensor.<load>_measured`'s default-enabled flag (D-0403), the home device's info, plus recorder and decoding fixes that touch any entity. Affects D8 §5.15.

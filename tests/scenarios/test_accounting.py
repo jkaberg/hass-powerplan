@@ -215,17 +215,24 @@ def test_five_observe_days_calibrate_every_shadow_and_change_no_parameter(
 
 
 @pytest.mark.xdist_group(name="accounting_observed")
-def test_a_load_without_a_shadow_states_cost_and_no_savings(observed: ScenarioResult) -> None:
-    """The tank is `none` until WP3.3: its cost is shown, its savings are zero and unstated."""
+def test_the_tank_has_a_shadow_and_calibrates_like_every_other_load(
+    observed: ScenarioResult,
+) -> None:
+    """WP5.6: the tank is no longer `none` - its savings are stated, calibrated on its own days.
+
+    Until WP5.6 this test pinned the opposite (`shadow_for(TANK) is None`, the
+    savings zero and unstated), which is what a load with no counterfactual still
+    does - D11 §9 14's `test_14d` holds that half.
+    """
     assert observed.house is not None
     tank = observed.house.load("tank")
     assert store_kind_of(tank) is StoreKind.TANK
-    assert shadow_for(StoreKind.TANK) is None
+    assert shadow_for(StoreKind.TANK) is not None
+    assert "tank" in _with_shadow(observed)
     row = observed.accounting_per_load["tank"]
     assert _money(row["cost"]) > 0
-    assert _money(row["savings"]) == 0
-    assert row["savings_confidence"] == "none"
-    assert row["calibration_error"] is None
+    assert row["calibration_error"] is not None
+    assert row["savings_confidence"] == "ok"
 
 
 @pytest.mark.xdist_group(name="accounting_observed")

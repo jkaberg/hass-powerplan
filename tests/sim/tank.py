@@ -154,9 +154,17 @@ class DrawProfile:
         return out
 
     def litres_at_55(self, t0: datetime, t1: datetime) -> float:
-        """Litres at 55 °C demanded in [`t0`, `t1`) - the two adjacent days suffice."""
+        """Litres at 55 °C demanded in [`t0`, `t1`) - the two adjacent days suffice.
+
+        Each local day is read once: `t0` and `t1` almost always fall in the same
+        day, and reading it for both served every draw twice - 90 L per person
+        per day where D4 §5.7 says 45 (`design/DECISIONS.md` D-0384).
+        """
+        anchors = {
+            anchor.astimezone(self.tz).date(): anchor for anchor in (t0 - timedelta(days=1), t0, t1)
+        }
         total = 0.0
-        for anchor in (t0 - timedelta(days=1), t0, t1):
+        for anchor in anchors.values():
             for d in self.day(anchor):
                 end = d.start + timedelta(seconds=d.seconds)
                 overlap = (min(t1, end) - max(t0, d.start)).total_seconds()

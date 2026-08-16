@@ -908,6 +908,8 @@ class SlotLoad:
     `slot` is D3's energy for the load over the slot, `None` when its meter had
     not closed one (a load added mid-slot); the rest is what the shadow steps
     against - the effective mode, the demand and the measured level.
+    `legionella_active` is a tank's own cycle latch at the close (D4 §5.12): the
+    tank's shadow runs the cycle with it, so those slots net to zero (D11 §5.3).
     """
 
     load_id: str
@@ -915,6 +917,7 @@ class SlotLoad:
     demand: Demand | None
     level_now: float | None
     slot: LoadSlot | None
+    legionella_active: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -2469,6 +2472,7 @@ class Engine:
                 demand=views[load.load_id].demand if load.load_id in views else None,
                 level_now=views[load.load_id].level_now if load.load_id in views else None,
                 slot=_slot_of(state.load_meters.get(load.load_id), slot.start),
+                legionella_active=_legionella_running(state.loads.get(load.load_id)),
             )
             for load in self._loads
         }
@@ -3222,6 +3226,11 @@ def _said_before(gate: GateState, result: ApplyResult) -> bool:
     stands, and the gate's record of it is persisted with the load (D-0363).
     """
     return result.action is Action.OBSERVE and gate.observed == result.value
+
+
+def _legionella_running(load_state: LoadState | None) -> bool:
+    """Return whether a tank's legionella cycle is under way (D4 §5.12, D11 §5.3 `tank`)."""
+    return load_state is not None and load_state.legionella_in_progress_since is not None
 
 
 def _presence_now(inputs: Inputs) -> PresenceMode:

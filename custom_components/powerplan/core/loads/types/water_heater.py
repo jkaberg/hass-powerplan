@@ -83,6 +83,7 @@ __all__ = [
     "TANK_LITRES",
     "Legionella",
     "WaterHeater",
+    "draw_off_of",
 ]
 
 #: Bumped whenever a table below changes (INV-66).
@@ -577,12 +578,7 @@ class WaterHeater:
                 standby_loss_w=standby_loss_w,
                 anchor_c=float(params.get("anchor_c", 75.0)),
                 floor_c=comfort_min_c,
-                draw=DrawOffProfile(
-                    persons=int(params.get("persons", 2)),
-                    litres_per_person_day=float(
-                        params.get("draw_l_per_person_day", DRAW_L_PER_PERSON_DAY)
-                    ),
-                ),
+                draw=draw_off_of(params),
             )
         return TankStore(
             litres=litres,
@@ -947,6 +943,18 @@ class WaterHeater:
         zone = ctx.zone if ctx.zone is not None else ctx.now.tzinfo
         assert zone is not None  # every datetime in the core is tz-aware
         return zone
+
+
+def draw_off_of(params: Mapping[str, Any]) -> DrawOffProfile:
+    """Return the household's hot water as materialised (D4 §5.7, INV-66).
+
+    One reading for the two that need it: the sensorless model's integrator here,
+    and D11's tank shadow, which reheats what the same household draws.
+    """
+    return DrawOffProfile(
+        persons=int(params.get("persons", 2)),
+        litres_per_person_day=float(params.get("draw_l_per_person_day", DRAW_L_PER_PERSON_DAY)),
+    )
 
 
 def _hhmm(value: Any) -> str | None:

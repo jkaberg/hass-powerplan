@@ -47,6 +47,7 @@ import pytest
 
 from custom_components.powerplan.core.allocation.constraints.group import DEFAULT_STARVE_SECONDS
 from custom_components.powerplan.core.loads import PresenceMode
+from custom_components.powerplan.core.loads.types.water_heater import LEGIONELLA_LEAD_H
 from tests.builders.houses import FLOOR_GROUP
 from tests.scenarios import catalogue
 from tests.scenarios.cache import cached
@@ -223,6 +224,50 @@ def test_the_site_holds_and_the_cycle_completes_by_its_due_date(
     completed_at, _next_due_at = transitions[1]
     assert completed_at <= first_due_at, (completed_at, first_due_at)
     assert completed_at > first_now, "a real completion, not the adoption anchor itself"
+
+
+def _tank_row_at(trail: _Trail, at: object) -> dict[str, object]:
+    """Return the tank's ledger row as the last snapshot at or before `at` published it."""
+    row: dict[str, object] | None = None
+    for now, snapshot in trail.rows:
+        if now > at:  # type: ignore[operator]
+            break
+        row = snapshot.accounting.per_load.get("tank")
+    assert row is not None, at
+    return row
+
+
+@pytest.mark.xdist_group(name="phase3_expensive_week")
+def test_the_tank_states_savings_and_its_legionella_cycle_saves_nothing(
+    expensive_week: tuple[ScenarioResult, _Trail],
+) -> None:
+    """WP5.6, D11 §5.3: the tank has a counterfactual of its own, and the cycle nets to zero.
+
+    The cycle is owed with or without powerplan, so from the moment the lead
+    window opens (`due_at − 24 h`, when the tank's latch sets
+    `legionella_in_progress_since`) until the hold completes, the shadow's slot
+    is the real slot: the tank's savings do not move across the cycle, while its
+    cost does.
+    """
+    result, trail = expensive_week
+    row = result.accounting_per_load["tank"]
+    assert row["savings_confidence"] != "none", "the tank's savings are stated"
+    assert row["cf_kwh"] > 0.0
+    assert row["cf_cost"] != row["cost"], "a counterfactual of its own, not the actual"
+
+    transitions = _due_at_transitions(trail)
+    _first_now, due_at = transitions[0]
+    completed_at, _next_due_at = transitions[1]
+    lead_open = due_at - timedelta(hours=LEGIONELLA_LEAD_H)  # type: ignore[operator]
+    before = _tank_row_at(trail, lead_open)
+    after = _tank_row_at(trail, completed_at)
+    assert after["kwh"] > before["kwh"], "the cycle drew energy"  # type: ignore[operator]
+    assert after["cost"] != before["cost"], "and it cost money"
+    assert after["savings"] == before["savings"], (before, after)
+    assert after["cf_kwh"] - before["cf_kwh"] == pytest.approx(  # type: ignore[operator]
+        after["kwh"] - before["kwh"],  # type: ignore[operator]
+        abs=0.002,
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -2,12 +2,10 @@
 
 Importing this package registers every shadow that ships. WP0.10a ships the
 thermostat rows (`slab`, `room`, `heat_pump`) and the plug-in row (`energy`);
-WP3.6 ships `on_request` (`cycle`). `tank` and `schedule` and the
-battery's `idle` (phase 5) are each one module that calls `@register` and
-changes nothing else - `tank` needs `ShadowCtx.draw_off_kwh`/`.legionella_active`
-wired first (both dead fields today, `design/PLAN.md`'s WP3.3 row). A store model
-with no shadow answers `shadow_for(kind) is None`, and that load's cost is shown
-while its savings are not stated.
+WP3.6 ships `on_request` (`cycle`); WP5.6 ships `tank`, `schedule` and the
+battery's `idle`, each one module that calls `@register`. Every store kind but
+`none` now has a shadow; `none` answers `shadow_for(kind) is None`, and that
+load's cost is shown while its savings are not stated.
 """
 
 from .base import (
@@ -22,21 +20,27 @@ from .base import (
     register,
     shadow_for,
 )
+from .idle import IdleShadow
 from .on_request import OnRequestShadow
 from .plug_in import PlugInShadow
+from .schedule import ScheduleShadow
+from .tank import TankShadow
 from .thermostat import HeatPumpShadow, RoomThermostatShadow, ThermostatShadow
 
 __all__ = [
     "COUNTED_MODES",
     "HeatPumpShadow",
+    "IdleShadow",
     "LoadParams",
     "OnRequestShadow",
     "PlugInShadow",
     "RoomThermostatShadow",
+    "ScheduleShadow",
     "Shadow",
     "ShadowCtx",
     "ShadowState",
     "StoreKind",
+    "TankShadow",
     "ThermostatShadow",
     "clamp_level",
     "kinds",

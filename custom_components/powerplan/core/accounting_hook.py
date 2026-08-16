@@ -27,6 +27,7 @@ from .engine import (
 from .loads.stores import EnergyStore, RoomStore, SlabStore, TankStore
 from .loads.types.appliance_cycle import profile_of
 from .loads.types.heat_pump import curve_of
+from .loads.types.water_heater import draw_off_of
 from .model import Carrier, Money
 from .state_codec import decode, encode
 
@@ -82,6 +83,8 @@ def params_of(load: Load) -> LoadParams:
         raw = params.get("heat_loss_w_per_k")
         loss = None if raw is None else float(raw)
     band = params.get("band_k", params.get("swing_k", 1.0))
+    tank = store if kind is StoreKind.TANK and isinstance(store, TankStore) else None
+    hours_per_day = params.get("hours_per_day") if kind is StoreKind.SCHEDULE else None
     return LoadParams(
         kind=kind,
         nameplate_w=load.config.nameplate_w,
@@ -91,9 +94,16 @@ def params_of(load: Load) -> LoadParams:
         loss_coeff_w_per_k=loss,
         cop=curve_of(load) if kind is StoreKind.HEAT_PUMP else None,
         rated_w=load.config.nameplate_w if kind is StoreKind.HEAT_PUMP else None,
-        charge_eff=float(params.get("charge_eff", 0.9)),
+        charge_eff=tank.eta if tank is not None else float(params.get("charge_eff", 0.9)),
         max_w=load.config.nameplate_w,
         cycle_profile=profile_of(load) if kind is StoreKind.CYCLE else None,
+        # The tank's own dial (D-0203's `anchor_c`), its standing loss and its
+        # household's draw-off (D4 §5.7) - what a plain cylinder would do; its
+        # element's η rides in `charge_eff` (D-0380).
+        charge_setpoint=None if tank is None else float(params.get("anchor_c", tank.max_c)),
+        standby_loss_w=0.0 if tank is None else tank.standby_loss_w,
+        draw_off=None if tank is None else draw_off_of(params),
+        hours_per_day=None if hours_per_day is None else float(hours_per_day),
     )
 
 
@@ -186,6 +196,8 @@ class AccountingAdapter:
                     target=_target_of(self._profiles.get(load_id), row, close),
                     demand=row.demand,
                     level_now=row.level_now,
+                    draw_off_kwh=_draw_off_kwh(self._params[load_id], close, self.config),
+                    legionella_active=row.legionella_active,
                 )
                 for load_id, row in close.loads.items()
                 if load_id in self._params
@@ -293,6 +305,17 @@ def _target_of(profile: TargetProfile | None, row: SlotLoad, close: SlotClose) -
     if row.demand is None or row.demand.comfort is None:
         return None
     return row.demand.comfort.target
+
+
+def _draw_off_kwh(params: LoadParams, close: SlotClose, cfg: AccountingConfig) -> float:
+    """Return the household's hot water over the slot, kWh (D4 §5.7) - a tank's only.
+
+    The profile's windows are local wall-clock statements, so the slot is read in
+    the site's zone; a load with no draw-off profile has none.
+    """
+    if params.draw_off is None:
+        return 0.0
+    return params.draw_off.kwh_between(close.start, close.end, cfg.tz)
 
 
 def _site_row(site: SiteMonthRec, loads: Any) -> dict[str, Any]:

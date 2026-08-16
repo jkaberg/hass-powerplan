@@ -89,6 +89,19 @@ def test_the_daily_draw_matches_45_litres_per_person() -> None:
     assert any(17 <= h < 22 for h in local)
 
 
+def test_a_day_of_ticks_draws_the_days_litres_once() -> None:
+    """Integrated tick by tick, the household takes its 45 L a person once, not twice (D-0384)."""
+    profile = DrawProfile(persons=3, seed=11)
+    local = T0.astimezone(profile.tz)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    total = 0.0
+    t = midnight
+    while t < midnight + timedelta(days=1):
+        total += profile.litres_at_55(t, t + timedelta(seconds=10))
+        t += timedelta(seconds=10)
+    assert total == pytest.approx(sum(d.litres_at_55 for d in profile.day(midnight)))
+
+
 def test_a_cold_top_shortens_the_shower() -> None:
     """A tank below 55 °C cannot serve a 55 °C draw, and that is counted."""
     profile = DrawProfile(3, seed=11)

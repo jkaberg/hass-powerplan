@@ -707,13 +707,13 @@ def _first_level(
     D7 adds the loads at setup, before the first tick has read anything, so
     `init` had neither a level nor a target. A thermostat shadow without a level
     would draw nothing for ever; it takes the measured level when it arrives, or
-    the target until then, exactly as `init` would have.
+    until then whatever `init` would have given it - the target for a thermostat,
+    the dial for a tank, which does not hold the real load's comfort floor.
     """
     if ctx.level_now is not None:
         return replace(shadow.reanchor(state, ctx.level_now), anchored_at=slot.start_utc)
-    if ctx.target is not None:
-        return replace(state, level=ctx.target)
-    return state
+    level = shadow.init(None, slot.start_utc, ctx).level
+    return state if level is None else replace(state, level=level)
 
 
 def _blind_for_a_day(state: ShadowState, slot: ClosedSlot) -> bool:

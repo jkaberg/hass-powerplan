@@ -21,9 +21,8 @@ when the level comes back after a day of blindness; and it is clamped to the
 store's own bounds so it can never run away (D11 §5.3, §11).
 
 Extension is a registry row: a new store model registers its shadow here or is
-`NONE`, in which case cost is shown and savings are not stated. `tank`,
-`on_request` and `schedule` land with the device types that own them (WP3.3,
-WP3.6, WP4.1).
+`NONE`, in which case cost is shown and savings are not stated. Every kind but
+`NONE` has one since WP5.6 (`tank`, `schedule`, the battery's `idle`).
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from ...loads.base import CycleProfile
-from ...loads.stores import CopCurve, StoreModel
+from ...loads.stores import CopCurve, DrawOffProfile, StoreModel
 from ...model import Carrier, Demand, Mode
 
 if TYPE_CHECKING:
@@ -93,6 +92,8 @@ class LoadParams:
     loss_coeff_w_per_k: float | None = None
     cop: CopCurve | None = None
     rated_w: float | None = None
+    #: The store's charge efficiency: an EV charger's, or a tank element's η
+    #: (`TankStore.eta`, what the plug delivers that the water keeps - D-0380).
     charge_eff: float = 0.9
     max_w: float | None = None
     #: The cycle's own profile - duration, shape, energy - for `on_request`'s
@@ -100,6 +101,16 @@ class LoadParams:
     #: shadow chases a live-updating parameter today (INV-63's promise is
     #: D10's, not yet wired to accounting for any kind).
     cycle_profile: CycleProfile | None = None
+    #: The `tank` shadow's dial: the temperature a plain cylinder's own
+    #: thermostat holds (`water_heater`'s `anchor_c`, D-0203, D-0380).
+    charge_setpoint: float | None = None
+    #: The tank's standing loss, W - `TankStore.standby_loss_w` (D4 §4.3).
+    standby_loss_w: float = 0.0
+    #: The household's hot water (D4 §5.7). The adapter reads it to give each
+    #: slot its `ShadowCtx.draw_off_kwh`; the shadow reads only that.
+    draw_off: DrawOffProfile | None = None
+    #: The `schedule` shadow's daily quota: a relay load's own `hours_per_day`.
+    hours_per_day: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
