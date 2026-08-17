@@ -43,23 +43,23 @@ if TYPE_CHECKING:
 
 #: The `ev` rows of D8 §5.5's load table: (platform, key, category, enabled by default).
 EV_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
-    ("select", "mode", None, True),
-    ("switch", "force", None, True),
-    ("number", "force_max_hours", EntityCategory.CONFIG, False),
-    ("number", "target_soc", None, True),
-    ("number", "min_soc_now", None, True),
-    ("time", "deadline", None, True),
-    ("sensor", "granted", None, True),
-    ("sensor", "measured", None, True),
-    ("sensor", "reserved", EntityCategory.DIAGNOSTIC, False),
-    ("sensor", "plan_next", None, True),
-    ("sensor", "plan", EntityCategory.DIAGNOSTIC, False),
+    # D8 §5.16: daily use first, then tuning, then diagnostics off by default.
+    ("select", "control", None, True),
+    ("number", "charge_target", None, True),
+    ("time", "ready_by", None, True),
+    ("sensor", "plan_status", None, True),
+    ("sensor", "cost_month", None, True),
+    ("sensor", "savings_month", None, True),
+    ("select", "strategy", EntityCategory.CONFIG, True),
+    ("select", "priority", EntityCategory.CONFIG, True),
+    ("number", "run_now_max", EntityCategory.CONFIG, True),
+    ("number", "charge_min", EntityCategory.CONFIG, True),
     ("sensor", "health", EntityCategory.DIAGNOSTIC, True),
-    ("sensor", "session", None, True),
-    ("binary_sensor", "shed", None, True),
-    ("sensor", "energy", None, True),
-    ("sensor", "cost", None, True),
-    ("sensor", "savings", None, True),
+    ("sensor", "energy", EntityCategory.DIAGNOSTIC, True),
+    ("sensor", "energy_month", EntityCategory.DIAGNOSTIC, False),
+    ("sensor", "granted_power", EntityCategory.DIAGNOSTIC, False),
+    ("sensor", "reserved_power", EntityCategory.DIAGNOSTIC, False),
+    ("sensor", "planned_energy", EntityCategory.DIAGNOSTIC, False),
 )
 
 
@@ -282,20 +282,20 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(  # no
     # No thermal rows on a charger.
     assert (
         registry.async_get_entity_id(
-            "number", DOMAIN, unique_id(site.entry_id, "comfort_c", sub.subentry_id)
+            "number", DOMAIN, unique_id(site.entry_id, "comfort", sub.subentry_id)
         )
         is None
     )
     assert (
         registry.async_get_entity_id(
-            "sensor", DOMAIN, unique_id(site.entry_id, "comfort_state", sub.subentry_id)
+            "number", DOMAIN, unique_id(site.entry_id, "temp_min", sub.subentry_id)
         )
         is None
     )
 
-    # The knob: target_soc 80 → 90 reaches the engine's load on the next tick.
+    # The knob: charge to 80 → 90 % reaches the engine's load on the next tick.
     number_id = registry.async_get_entity_id(
-        "number", DOMAIN, unique_id(site.entry_id, "target_soc", sub.subentry_id)
+        "number", DOMAIN, unique_id(site.entry_id, "charge_target", sub.subentry_id)
     )
     assert number_id is not None
     await hass.services.async_call(
@@ -309,9 +309,9 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(  # no
     assert state is not None
     assert float(state.state) == 90.0
 
-    # The deadline time knob writes HH:MM into the load's parameters.
+    # "Ready by" writes HH:MM into the car's deadline for today.
     time_id = registry.async_get_entity_id(
-        "time", DOMAIN, unique_id(site.entry_id, "deadline", sub.subentry_id)
+        "time", DOMAIN, unique_id(site.entry_id, "ready_by", sub.subentry_id)
     )
     assert time_id is not None
     await hass.services.async_call(
@@ -320,9 +320,9 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(  # no
     await hass.async_block_till_done()
     assert runtime.load_params[sub.subentry_id]["deadline_today"] == "06:15"
 
-    # The mode select is the engine's mode knob.
+    # `control` is the engine's mode knob.
     select_id = registry.async_get_entity_id(
-        "select", DOMAIN, unique_id(site.entry_id, "mode", sub.subentry_id)
+        "select", DOMAIN, unique_id(site.entry_id, "control", sub.subentry_id)
     )
     assert select_id is not None
     await hass.services.async_call(

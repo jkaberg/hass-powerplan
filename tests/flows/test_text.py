@@ -54,7 +54,7 @@ from custom_components.powerplan.core.tariffs.presets import loader
 from custom_components.powerplan.flow import steps as site_steps
 from custom_components.powerplan.flow.load import explanation_text
 from custom_components.powerplan.flow.text import Text, preset_options, target_options, tariff_table
-from custom_components.powerplan.load_entities import SESSION_STATES
+from custom_components.powerplan.load_entities import CONTROL_OPTIONS, PLAN_STATES, PRIORITY_LEVELS
 from custom_components.powerplan.providers.prices.formats import registry as formats
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.select import PRESENCE_OPTIONS, RISK_OPTIONS
@@ -83,6 +83,7 @@ SAME_IN_BOTH = frozenset(
         "Vinyl",  # a floor covering, one word in both
         "Pellets",  # a fuel, one word in both
         "Plan",  # `sensor.<…>_plan`, renamed by U.4 (ENT-22)
+        "Normal",  # the middle priority (D-0411), one word in both
         "Status",  # the charger's status role (review LOAD-1)
         "kW",  # a unit
         "—",  # nothing
@@ -335,10 +336,12 @@ def _max_steps() -> int:
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_18b_every_entity_state_and_event_type_is_translated(language: str) -> None:
-    """R4: the advice, the target, the session and the event entity had no states."""
+    """R4: the advice, the target, an appliance's plan and control, and the event types."""
     states: dict[str, set[str]] = {
         "entity.sensor.advice.state": set(ADVICE_STATES),
-        "entity.sensor.session.state": set(SESSION_STATES),
+        "entity.sensor.plan_status.state": set(PLAN_STATES),
+        "entity.select.control.state": set(CONTROL_OPTIONS),
+        "entity.select.priority.state": set(PRIORITY_LEVELS),
         "entity.select.presence.state": set(PRESENCE_OPTIONS),
         "entity.select.risk.state": set(RISK_OPTIONS),
         "entity.select.target.state": {"auto", "kw"}

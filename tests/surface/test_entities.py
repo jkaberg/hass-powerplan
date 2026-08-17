@@ -26,7 +26,7 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.entity import unique_id
-from custom_components.powerplan.load_entities import LOAD_SENSORS, _has_power_role
+from custom_components.powerplan.load_entities import LOAD_SENSORS
 from custom_components.powerplan.sensor import SENSORS
 from tests.runtime.conftest import SITE_ENTRY_ID
 
@@ -209,29 +209,22 @@ async def test_06b_a_large_attribute_entity_writes_only_when_its_content_changes
     assert hass.states.get(used) is not None
 
 
-def _fake_runtime(bound_roles: frozenset[Role]) -> SimpleNamespace:
-    """Return a `Runtime`-shaped stand-in whose only reachable part is `build.devices`."""
-    binding = lambda role: object() if role in bound_roles else None  # noqa: E731
-    device = SimpleNamespace(bound=SimpleNamespace(binding=binding))
-    return SimpleNamespace(build=SimpleNamespace(devices={"ev": device}))
+def _fake_runtime(on_hardware: bool) -> SimpleNamespace:
+    """Return a `Runtime`-shaped stand-in answering where the power role is bound."""
+    return SimpleNamespace(
+        role_on_hardware=lambda _load_id, role: on_hardware and role is Role.POWER
+    )
 
 
-def test_29_measured_starts_disabled_without_a_bound_power_role() -> None:
-    """`sensor.<load>_measured` ("Effekt nå", ENT-29): the row exists either way.
+def test_29_measured_power_only_where_the_device_page_lacks_one() -> None:
+    """`measured_power` (ENT-29, D8 §5.16): diagnostic, off by default, only where needed.
 
-    Only its *default* differs - S1 forbids gating existence, since an already
-    registered entity must keep it (D8 §5.15 item map, `LoadSensorRow.enabled`
-    docstring) - and only a load with `Role.POWER` unbound starts disabled.
+    Absent where the appliance's own hardware already shows its power on its
+    device page.
     """
     load = SimpleNamespace(load_id="ev")
-    assert _has_power_role(load, _fake_runtime(frozenset({Role.POWER}))) is True
-    assert _has_power_role(load, _fake_runtime(frozenset())) is False
-    missing = SimpleNamespace(load_id="no-such-load")
-    assert _has_power_role(missing, _fake_runtime(frozenset({Role.POWER}))) is False
-
-    measured = next(row for row in LOAD_SENSORS if row.key == "measured")
-    assert measured.enabled(load, _fake_runtime(frozenset({Role.POWER}))) is True
-    assert measured.enabled(load, _fake_runtime(frozenset())) is False
-    # Every other row keeps its own default regardless of the power role.
-    granted = next(row for row in LOAD_SENSORS if row.key == "granted")
-    assert granted.enabled(load, _fake_runtime(frozenset())) is True
+    measured = next(row for row in LOAD_SENSORS if row.key == "measured_power")
+    assert measured.applies(load, _fake_runtime(on_hardware=True)) is False
+    assert measured.applies(load, _fake_runtime(on_hardware=False)) is True
+    assert measured.enabled(load, _fake_runtime(on_hardware=False)) is False
+    assert measured.category is EntityCategory.DIAGNOSTIC

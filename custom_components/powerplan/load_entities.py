@@ -1,18 +1,21 @@
-"""The load device's entities, one module per D8 §5.5's load table.
+"""An appliance's entities, the set D8 §5.16 draws.
 
-Every platform file adds the rows of this table that belong to its platform
-(`async_setup_entry` there calls `load_*` here), so each load subentry gets
-its own device with mode, force, comfort or deadline/SoC, granted, measured,
-plan next, shed, comfort state, health and session - the twelve or fewer of
-HLD §7.9 rule 6 - and everything else opt-in. Which rows a load gets follows
-its type (`types` in the table) and its questionnaire: a comfort knob only
-where the type derived a comfort target, a deadline only where it asked for
-one.
+Every platform file adds the rows of this set that belong to its platform
+(`async_setup_entry` there calls `load_*` here). They sit on the appliance's own
+hardware device (`entity.LoadEntity`), so the set is small and split by
+level: daily use in the Controls and Sensors cards - `control`, `plan_status`,
+the month's cost and savings, and the type's own knobs (charge to, ready by,
+hours per day, comfort where no device setpoint owns it); tuning under
+Configuration - strategy, priority, follow presence, run now at most, always
+charge to at least, never colder/warmer than; everything else Diagnostic and off
+by default. Setup stays in the gear flow (level 3).
 
 Knobs push into the runtime and are read live on the next tick (INV-47); the
 comfort, SoC and deadline knobs merge into the load's parameters for the tick
 (`Knobs.load_params`, D-0282) and are restored by the entity, never by the
-store. Sensors read the load's row of the coordinator's `Snapshot`.
+store. Strategy and priority are the subentry's own fields, written there, so a
+change applies in place and outlives a restart. Sensors read the load's row of
+the coordinator's `Snapshot`.
 """
 
 from __future__ import annotations
@@ -22,7 +25,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
 from homeassistant.components.select import SelectEntity
@@ -42,6 +44,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .const import LOAD_PRIORITY, LOAD_STRATEGY
 from .core.accounting.shadow.base import StoreKind
 from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
@@ -55,17 +58,32 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 __all__ = [
-    "load_binary_sensors",
+    "CONTROL_OPTIONS",
+    "PLAN_STATES",
+    "PRIORITY_LEVELS",
     "load_buttons",
     "load_numbers",
     "load_selects",
     "load_sensors",
     "load_switches",
     "load_times",
+    "plan_state",
+    "strategy_options",
 ]
 
-MODES: tuple[str, ...] = tuple(mode.value for mode in Mode)
-#: The types D8 §5.5 gives a force switch and its hours.
+#: `control`'s options: the three a household needs first, then the two a
+#: careful setup uses - all five of D4 §5.2's modes (D-0413).
+CONTROL_OPTIONS: tuple[str, ...] = (
+    Mode.AUTO.value,
+    Mode.FORCE.value,
+    Mode.OFF.value,
+    Mode.OBSERVE.value,
+    Mode.DELEGATED.value,
+)
+#: Low, normal, high - the numbers the allocator reads (D-0411). A derived
+#: priority keeps its own number until the household picks a level.
+PRIORITY_LEVELS: dict[str, int] = {"low": 15, "normal": 30, "high": 45}
+#: The types D8 §5.5 lets run now, and so give a "run now at most".
 FORCE_TYPES = frozenset({"ev", "water_heater", "generic_switch"})
 THERMAL_TYPES = frozenset({"floor_heating", "radiator", "heat_pump", "water_heater"})
 FORCE_MAX_H_MIN, FORCE_MAX_H_MAX = 0.5, 24.0
@@ -76,38 +94,51 @@ def _loads(runtime: Runtime, loads: Iterable[Load] | None = None) -> Iterable[Lo
     return runtime.build.loads if loads is None else loads
 
 
+def _thermal_target(load: Load) -> bool:
+    return load.config.type_key in THERMAL_TYPES and load.config.target is not None
+
+
 # --------------------------------------------------------------------------- #
-# select.<load>_mode
+# select.<appliance>_control, _strategy, _priority
 # --------------------------------------------------------------------------- #
 
 
-class LoadModeSelect(LoadEntity, SelectEntity, RestoreEntity):
-    """`select.<load>_mode`: auto / force / observe / delegated / off (D4 §5.2)."""
+class LoadControlSelect(LoadEntity, SelectEntity, RestoreEntity):
+    """`control`: automatic, run now, don't control - and watch only, device decides (D-0413).
 
-    _attr_options = list(MODES)  # noqa: RUF012 - HA's own convention for entity attributes
-    _attr_icon = "mdi:tune-variant"
+    Replaces `select.<load>_mode` and `switch.<load>_force`: run now is mode
+    `force`, which lasts at most `run_now_max` hours (INV-57).
+    """
+
+    _attr_options = list(CONTROL_OPTIONS)  # noqa: RUF012 - HA's own convention for entity attributes
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
-        super().__init__(runtime, load, "mode")
+        super().__init__(runtime, load, "control")
 
     async def async_added_to_hass(self) -> None:
-        """Restore the last mode and push it to the runtime (INV-47)."""
+        """Restore the last choice and push it to the runtime (INV-47)."""
         await super().async_added_to_hass()
         last = await self.async_get_last_state()
-        if last is not None and last.state in MODES and last.state != self.current_option:
+        if last is not None and last.state in CONTROL_OPTIONS and last.state != self.current_option:
             await self.async_select_option(last.state)
 
     @property
     def current_option(self) -> str:
-        """The configured mode; the effective one is an attribute."""
+        """The configured mode; the one in force is an attribute."""
         return self.runtime.load_mode(self.load_id).value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """The mode in force after the site switch and safe mode."""
+        """The mode in force after the site switch and safe mode, and run now's clock."""
         status = self.status
-        return {"effective": None if status is None else status.mode.value}
+        if status is None:
+            return {}
+        return {
+            "effective": status.mode.value,
+            "run_now_since": _iso(status.latches.force_since),
+            "run_now_max_h": status.latches.force_max_h,
+        }
 
     async def async_select_option(self, option: str) -> None:
         """Change the load's mode."""
@@ -115,73 +146,90 @@ class LoadModeSelect(LoadEntity, SelectEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-def load_selects(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SelectEntity]:
-    """One mode select per load."""
-    return [LoadModeSelect(runtime, load) for load in _loads(runtime, loads)]
+def strategy_options(load: Load) -> list[str]:
+    """Return the strategies a household chooses between: the type's, `always` left out (D-0412)."""
+    if load.config.type_key not in device_types.keys():  # noqa: SIM118 - the registry's function
+        return []
+    return [key for key in device_types.get(load.config.type_key).strategies if key != "always"]
 
 
-# --------------------------------------------------------------------------- #
-# switch.<load>_force
-# --------------------------------------------------------------------------- #
+class LoadStrategySelect(LoadEntity, SelectEntity):
+    """`strategy` (level 2): how the appliance is planned; written to the subentry."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load and its type's strategies."""
+        super().__init__(runtime, load, "strategy")
+        self._attr_options = strategy_options(load)
+
+    @property
+    def current_option(self) -> str | None:
+        """The configured strategy; `always` reads as none of the options."""
+        strategy = self.load.config.strategy
+        return strategy if strategy in self.options else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Store the strategy; the load is rebuilt in place (D7 §2)."""
+        self.runtime.async_update_load_data(self.load_id, {LOAD_STRATEGY: option})
 
 
-class LoadForceSwitch(LoadEntity, SwitchEntity):
-    """`switch.<load>_force`: a view on mode `force` (D8 §5.5)."""
+class LoadPrioritySelect(LoadEntity, SelectEntity):
+    """`priority` (level 2): low, normal, high (D-0411); written to the subentry."""
 
-    _attr_icon = "mdi:rocket-launch-outline"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = list(PRIORITY_LEVELS)  # noqa: RUF012 - HA's own convention for entity attributes
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
-        super().__init__(runtime, load, "force")
+        super().__init__(runtime, load, "priority")
 
     @property
-    def is_on(self) -> bool:
-        """Whether the load is forced."""
-        return self.runtime.load_mode(self.load_id) is Mode.FORCE
+    def current_option(self) -> str:
+        """The level nearest the configured number (thresholds 22.5 and 37.5)."""
+        return priority_level(self.load.config.priority)
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Since when, and for how long at most."""
-        status = self.status
-        if status is None:
-            return {}
-        return {
-            "force_since": None
-            if status.latches.force_since is None
-            else status.latches.force_since.isoformat(),
-            "force_max_h": status.latches.force_max_h,
-        }
+    async def async_select_option(self, option: str) -> None:
+        """Store the level's number; the load is rebuilt in place (D7 §2)."""
+        self.runtime.async_update_load_data(self.load_id, {LOAD_PRIORITY: PRIORITY_LEVELS[option]})
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        """Force the load on, for at most its configured hours."""
-        await self.runtime.async_set_load_mode(self.load_id, Mode.FORCE)
-        self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        """Back to automatic."""
-        await self.runtime.async_set_load_mode(self.load_id, Mode.AUTO)
-        self.async_write_ha_state()
+def priority_level(priority: int) -> str:
+    """Return the level a priority number reads as (D-0411)."""
+    return min(PRIORITY_LEVELS, key=lambda level: abs(PRIORITY_LEVELS[level] - priority))
+
+
+def load_selects(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SelectEntity]:
+    """`control` and `priority` for every appliance; `strategy` where there is a choice."""
+    out: list[SelectEntity] = []
+    for load in _loads(runtime, loads):
+        out.append(LoadControlSelect(runtime, load))
+        if len(strategy_options(load)) >= 2:  # noqa: PLR2004 - a choice needs two
+            out.append(LoadStrategySelect(runtime, load))
+        out.append(LoadPrioritySelect(runtime, load))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# switch.<appliance>_follow_presence
+# --------------------------------------------------------------------------- #
 
 
 class LoadFollowPresenceSwitch(LoadEntity, SwitchEntity):
-    """`switch.<load>_follow_presence`: a knob over `TargetProfile.follow_presence` (D8 §5.5, D4 §4.4).
+    """`follow_presence` (level 2): a knob over `TargetProfile.follow_presence` (D4 §4.4).
 
-    A boolean knob merges the same way `LoadParamNumber`'s numeric ones do -
-    `Runtime.async_set_load_param` into `Knobs.load_params`, which
-    `Engine._apply_load_knobs` (`_TARGET_KEYS`) turns back into a
-    `TargetProfile` through `profile_from_params` on the next tick (INV-47).
-    It is its own class rather than a row in `PARAM_NUMBERS` because it is the
-    only boolean knob so far - `ParamNumber`'s table exists for the six
-    numeric ones already sharing it.
+    A boolean knob merges the way the numeric ones do - `Runtime.async_set_load_param`
+    into `Knobs.load_params`, which `Engine._apply_load_knobs` turns back into a
+    `TargetProfile` on the next tick (INV-47). On for heating, off by default for
+    a water heater, whose tank is not a room (D8 §5.16).
     """
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False
-    _attr_icon = "mdi:home-account"
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
         super().__init__(runtime, load, "follow_presence")
+        self._attr_entity_registry_enabled_default = load.config.type_key != "water_heater"
 
     @property
     def is_on(self) -> bool:
@@ -200,26 +248,22 @@ class LoadFollowPresenceSwitch(LoadEntity, SwitchEntity):
 
 
 def load_switches(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SwitchEntity]:
-    """Return a force switch and a follow-presence switch for the types that take one."""
+    """Return `follow_presence` for the thermal types with a target profile (D-0300)."""
     return [
-        LoadForceSwitch(runtime, load)
-        for load in _loads(runtime, loads)
-        if load.config.type_key in FORCE_TYPES
-    ] + [
         LoadFollowPresenceSwitch(runtime, load)
         for load in _loads(runtime, loads)
-        if load.config.type_key in THERMAL_TYPES and load.config.target is not None
+        if _thermal_target(load)
     ]
 
 
 # --------------------------------------------------------------------------- #
-# number.<load>_*
+# number.<appliance>_*
 # --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True, kw_only=True)
 class ParamNumber:
-    """One numeric knob that merges into a load's parameters (D8 §5.5)."""
+    """One numeric knob that merges into a load's parameters (D8 §5.5, §5.16)."""
 
     key: str
     param: str
@@ -229,9 +273,8 @@ class ParamNumber:
     step: float
     category: EntityCategory | None = None
     enabled: bool = True
-    icon: str = "mdi:tune"
     applies: Callable[[Load], bool] = lambda _load: True
-    #: Visible by default unless the load makes it redundant - `comfort_c`
+    #: Visible by default unless the load makes it redundant - `comfort`
     #: hides once a `schedule_entity` drives the target instead (D8 §5.5).
     visible: Callable[[Load], bool] = lambda _load: True
     #: The type's own questions whose range the knob takes, first found wins -
@@ -255,21 +298,20 @@ class ParamNumber:
 
 PARAM_NUMBERS: tuple[ParamNumber, ...] = (
     ParamNumber(
-        key="comfort_c",
+        key="comfort",
         param="comfort_c",
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
         max_value=80.0,
         questions=("comfort_c", "comfort_min_c"),
         step=0.5,
-        icon="mdi:thermometer",
-        applies=lambda load: (
-            load.config.type_key in THERMAL_TYPES and load.config.target is not None
-        ),
+        # Only where no device setpoint owns the comfort target: a thermostat's
+        # own dial is the knob there (D8 §5.16, amended INV-27).
+        applies=lambda load: _thermal_target(load) and Runtime.shared_setpoint(load) is None,
         visible=lambda load: not load.config.params.get("schedule_entity"),
     ),
     ParamNumber(
-        key="comfort_min_c",
+        key="temp_min",
         param="floor_c",
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
@@ -278,13 +320,10 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
-        icon="mdi:thermometer-low",
-        applies=lambda load: (
-            load.config.type_key in THERMAL_TYPES and load.config.target is not None
-        ),
+        applies=_thermal_target,
     ),
     ParamNumber(
-        key="comfort_max_c",
+        key="temp_max",
         param="max_c",
         unit=UnitOfTemperature.CELSIUS,
         min_value=5.0,
@@ -293,31 +332,27 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
-        icon="mdi:thermometer-high",
-        applies=lambda load: (
-            load.config.type_key in THERMAL_TYPES and load.config.target is not None
-        ),
+        applies=_thermal_target,
     ),
     ParamNumber(
-        key="target_soc",
+        key="charge_target",
         param="target_soc",
         unit="%",
         min_value=10.0,
         max_value=100.0,
         questions=("target_soc",),
         step=1.0,
-        icon="mdi:battery-charging-80",
         applies=lambda load: load.config.type_key == "ev",
     ),
     ParamNumber(
-        key="min_soc_now",
+        key="charge_min",
         param="min_soc_now",
         unit="%",
         min_value=0.0,
         max_value=90.0,
         questions=("min_soc_now",),
         step=1.0,
-        icon="mdi:battery-alert",
+        category=EntityCategory.CONFIG,
         applies=lambda load: load.config.type_key == "ev",
     ),
     ParamNumber(
@@ -327,7 +362,6 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         min_value=1.0,
         max_value=24.0,
         step=0.5,
-        icon="mdi:timer-sand",
         applies=lambda load: (
             load.config.type_key == "generic_switch"
             and load.config.params.get("hours_per_day") is not None
@@ -354,7 +388,6 @@ class LoadParamNumber(LoadEntity, RestoreNumber, NumberEntity):
         self._attr_entity_category = description.category
         self._attr_entity_registry_enabled_default = description.enabled
         self._attr_entity_registry_visible_default = description.visible(load)
-        self._attr_icon = description.icon
 
     async def async_added_to_hass(self) -> None:
         """Restore the last value and push it to the runtime."""
@@ -377,21 +410,19 @@ class LoadParamNumber(LoadEntity, RestoreNumber, NumberEntity):
         self.async_write_ha_state()
 
 
-class LoadForceHoursNumber(LoadEntity, RestoreNumber, NumberEntity):
-    """`number.<load>_force_max_hours` (D8 §5.5, INV-57)."""
+class LoadRunNowMaxNumber(LoadEntity, RestoreNumber, NumberEntity):
+    """`run_now_max` (level 2): how long run now lasts at most (INV-57)."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False
     _attr_native_unit_of_measurement = UnitOfTime.HOURS
     _attr_native_min_value = FORCE_MAX_H_MIN
     _attr_native_max_value = FORCE_MAX_H_MAX
     _attr_native_step = 0.5
-    _attr_mode = NumberMode.BOX
-    _attr_icon = "mdi:timer-outline"
+    _attr_mode = NumberMode.SLIDER
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
-        super().__init__(runtime, load, "force_max_hours")
+        super().__init__(runtime, load, "run_now_max")
 
     async def async_added_to_hass(self) -> None:
         """Restore the last value (INV-47)."""
@@ -402,18 +433,18 @@ class LoadForceHoursNumber(LoadEntity, RestoreNumber, NumberEntity):
 
     @property
     def native_value(self) -> float:
-        """The hours a force lasts at most."""
+        """The hours a run now lasts at most."""
         configured = float(self.load.config.params.get("force_max_h", 6.0))
         return self.runtime.force_max_h.get(self.load_id, configured)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the hours; takes effect on the next force edge."""
+        """Set the hours; takes effect on the next run now."""
         self.runtime.force_max_h[self.load_id] = value
         self.async_write_ha_state()
 
 
 def load_numbers(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[NumberEntity]:
-    """Return the parameter knobs and the force hours, per load and type."""
+    """Return the parameter knobs and run now's hours, per load and type."""
     out: list[NumberEntity] = []
     for load in _loads(runtime, loads):
         out.extend(
@@ -422,19 +453,17 @@ def load_numbers(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
             if description.applies(load)
         )
         if load.config.type_key in FORCE_TYPES:
-            out.append(LoadForceHoursNumber(runtime, load))
+            out.append(LoadRunNowMaxNumber(runtime, load))
     return out
 
 
 # --------------------------------------------------------------------------- #
-# button.<load>_run_now
+# button.<appliance>_run_now
 # --------------------------------------------------------------------------- #
 
 
 class LoadRunNowButton(LoadEntity, ButtonEntity):
-    """`button.<load>_run_now` (appliance_cycle, D4 §5.13)."""
-
-    _attr_icon = "mdi:play-circle-outline"
+    """`run_now` (appliance_cycle, D4 §5.13): start the programme that is loaded."""
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
@@ -455,18 +484,20 @@ def load_buttons(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
 
 
 # --------------------------------------------------------------------------- #
-# time.<load>_ready_by, time.<load>_deadline
+# time.<appliance>_ready_by
 # --------------------------------------------------------------------------- #
 
 
 class LoadTimeKnob(LoadEntity, TimeEntity, RestoreEntity):
-    """A time-of-day knob over one of the load's parameters (`ready_by`, a one-off deadline)."""
+    """`ready_by` (level 1): a time of day over one of the load's parameters.
 
-    _attr_icon = "mdi:clock-outline"
+    One entity for what was a cycle's and a tank's `ready_by` and the car's
+    one-off deadline (D8 §5.16): the parameter differs by type, the knob does not.
+    """
 
-    def __init__(self, runtime: Runtime, load: Load, key: str, param: str) -> None:
+    def __init__(self, runtime: Runtime, load: Load, param: str) -> None:
         """Bind to the load and the parameter."""
-        super().__init__(runtime, load, key)
+        super().__init__(runtime, load, "ready_by")
         self.param = param
 
     async def async_added_to_hass(self) -> None:
@@ -502,25 +533,172 @@ class LoadTimeKnob(LoadEntity, TimeEntity, RestoreEntity):
 
 
 def load_times(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[TimeEntity]:
-    """`ready_by` for cycles and tanks; a one-off `deadline` for the car (D8 §5.5)."""
+    """`ready_by`: the car's deadline today, a cycle's or a tank's ready-by (D8 §5.16)."""
     out: list[TimeEntity] = []
     for load in _loads(runtime, loads):
         kind = load.config.type_key
         if kind in ("appliance_cycle", "water_heater") and "ready_by" in load.config.params:
-            out.append(LoadTimeKnob(runtime, load, "ready_by", "ready_by"))
+            out.append(LoadTimeKnob(runtime, load, "ready_by"))
         if kind == "ev":
-            out.append(LoadTimeKnob(runtime, load, "deadline", "deadline_today"))
+            out.append(LoadTimeKnob(runtime, load, "deadline_today"))
     return out
 
 
 # --------------------------------------------------------------------------- #
-# sensors
+# sensor.<appliance>_plan_status
+# --------------------------------------------------------------------------- #
+
+
+#: `plan_status`'s closed set, translated under `entity.sensor.plan_status.state`
+#: (D8 §5.16). The car's three session states stand in for the plan's own while
+#: it is plugged in or has none; `observing` and `idle` are the states the
+#: drafted table left no room for (D-0423).
+PLAN_STATES: tuple[str, ...] = (
+    "device_unavailable",
+    "manual_override",
+    "run_now",
+    "not_controlled",
+    "observing",
+    "no_car",
+    "charging",
+    "done",
+    "paused_peak",
+    "idle",
+    "running_plan",
+    "waiting",
+)
+
+
+def _iso(value: datetime | None) -> str | None:
+    return None if value is None else value.isoformat()
+
+
+def session_state(status: LoadStatus, runtime: Runtime) -> str:
+    """Return the car's session: `no_car`, `waiting`, `charging` or `done` (ENT-23).
+
+    `connected` is the engine's own plug edge (`ev_connected`, D4 §5.11), the
+    last one it observed: a link that drops keeps the car's last known state
+    rather than inventing "no car". Charging is what the car draws where a power
+    role says so, else what it was granted.
+    """
+    if status.latches.session_done:
+        return "done"
+    if runtime.state.events.edges.get(f"connected:{status.load_id}") != "1":
+        return "no_car"
+    if not status.demand.wants:
+        return "done"
+    drawn = status.granted_w if status.measured_w is None else status.measured_w
+    return "charging" if drawn > 0.0 else "waiting"
+
+
+def plan_state(status: LoadStatus, runtime: Runtime) -> str:  # noqa: PLR0911 - one return per state
+    """Return the one state that holds, in D8 §5.16's precedence - exclusive by construction.
+
+    The device first (nothing else is true of a device that does not answer),
+    then a hand on its dial since our last write, then the mode in force, then the
+    car's session, then the shed, then what the plan has it doing.
+    """
+    if status.health.unhealthy:
+        return "device_unavailable"
+    since = runtime.overridden_at.get(status.load_id)
+    state = runtime.state.loads.get(status.load_id)
+    last_write = None if state is None else state.gate.last_write_at
+    if since is not None and (last_write is None or last_write < since):
+        return "manual_override"
+    if status.mode is Mode.FORCE:
+        return "run_now"
+    if status.mode in (Mode.OFF, Mode.DELEGATED):
+        return "not_controlled"
+    if status.mode is Mode.OBSERVE:
+        return "observing"
+    if status.type_key == "ev":
+        session = session_state(status, runtime)
+        if session != "waiting":
+            return session
+    if status.shed:
+        return "paused_peak"
+    if not status.demand.wants:
+        return "idle"
+    drawn = status.granted_w if status.measured_w is None else status.measured_w
+    return "running_plan" if drawn > 0.0 else "waiting"
+
+
+def _comfort_state(status: LoadStatus) -> str | None:
+    comfort = status.comfort
+    if comfort is None:
+        return None
+    if comfort.violated:
+        return "violated"
+    if comfort.deficit > 0.0:
+        return "below_target"
+    return "at_target"
+
+
+def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
+    """Return what the merged rows said: the next slot, the plan, the shed, comfort, the session.
+
+    Every attribute of `sensor.<load>_plan_next`, `_comfort_state`, `_session` and
+    `binary_sensor.<load>_shed` is here under its old name, so nothing a
+    household or an automation read is lost with them (INV-50, D8 §5.16).
+    """
+    out: dict[str, Any] = {
+        "granted_power": round(status.granted_w),
+        "reason": status.action_reason,
+        "shed_reason": status.shed_reason if status.shed else None,
+        "shed_since": _iso(status.latches.shed_since),
+        "blunt": status.blunt,
+    }
+    snapshot = runtime.snapshot
+    plan = None if snapshot is None else snapshot.plans.get(status.load_id)
+    if plan is not None:
+        out.update(
+            {
+                "next_start": _iso(plan.next_start),
+                "planned_kwh": round(plan.planned_kwh, 3),
+                "cost": money_text(plan.cost),
+                "plan_mode": plan.mode.value,
+                "covered": plan.covered,
+                "coverage": round(plan.coverage, 3),
+                "deadline": _iso(plan.deadline),
+                "strategy": plan.strategy,
+                "confidence": plan.confidence.value,
+            }
+        )
+    comfort = status.comfort
+    if comfort is not None:
+        out.update(
+            {
+                "comfort_state": _comfort_state(status),
+                "current": comfort.current,
+                "target": comfort.target,
+                "floor": comfort.floor,
+                "deficit": round(comfort.deficit, 2),
+            }
+        )
+    if status.type_key == "ev":
+        state = runtime.state.loads.get(status.load_id)
+        out.update(
+            {
+                "session": session_state(status, runtime),
+                "session_done": status.latches.session_done,
+                "session_done_reason": status.latches.session_done_reason,
+                "blocked_by": None if state is None else state.blocked_reason,
+                "wants": status.demand.wants,
+                "required_kwh": status.demand.required_kwh,
+                "urgency": status.demand.urgency.name.lower(),
+            }
+        )
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# sensor rows
 # --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True, kw_only=True)
 class LoadSensorRow:
-    """One sensor row of the load table."""
+    """One sensor row of the appliance's set."""
 
     key: str
     value: Callable[[LoadStatus, Runtime], Any]
@@ -529,48 +707,15 @@ class LoadSensorRow:
     device_class: SensorDeviceClass | None = None
     state_class: SensorStateClass | None = None
     category: EntityCategory | None = None
-    #: The registry's default-enabled state - never existence (S1, INV-50): an
-    #: already-registered entity keeps whatever default it started with, so a
-    #: callable here only changes what a *new* load's row starts as (audit
-    #: ENT-29 - no always-unknown "Effekt nå" sensor without a power role).
+    #: The registry's default-enabled state for a new row.
     enabled: Callable[[Load, Runtime], bool] = lambda _load, _runtime: True
-    icon: str | None = None
     unrecorded: frozenset[str] = frozenset()
     digest_gated: bool = False
     #: Attributes that never write a row by themselves.
     volatile: frozenset[str] = frozenset()
-    applies: Callable[[Load], bool] = lambda _load: True
+    applies: Callable[[Load, Runtime], bool] = lambda _load, _runtime: True
     #: The closed set of an `enum` row, translated under `entity.sensor.<key>.state`.
     options: tuple[str, ...] | None = None
-
-
-def _iso(value: datetime | None) -> str | None:
-    return None if value is None else value.isoformat()
-
-
-def _plan_next(status: LoadStatus, runtime: Runtime) -> datetime | None:
-    snapshot = runtime.snapshot
-    if snapshot is None:
-        return None
-    plan = snapshot.plans.get(status.load_id)
-    return None if plan is None else plan.next_start
-
-
-def _plan_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
-    snapshot = runtime.snapshot
-    plan = None if snapshot is None else snapshot.plans.get(status.load_id)
-    if plan is None:
-        return {}
-    return {
-        "planned_kwh": round(plan.planned_kwh, 3),
-        "cost": money_text(plan.cost),
-        "mode": plan.mode.value,
-        "covered": plan.covered,
-        "coverage": round(plan.coverage, 3),
-        "deadline": _iso(plan.deadline),
-        "strategy": plan.strategy,
-        "confidence": plan.confidence.value,
-    }
 
 
 def _plan_slots(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
@@ -591,27 +736,9 @@ def _plan_slots(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     }
 
 
-def _comfort_state(status: LoadStatus, _runtime: Runtime) -> str | None:
-    comfort = status.comfort
-    if comfort is None:
-        return None
-    if comfort.violated:
-        return "violated"
-    if comfort.deficit > 0.0:
-        return "below_target"
-    return "at_target"
-
-
-def _comfort_attributes(status: LoadStatus, _runtime: Runtime) -> dict[str, Any]:
-    comfort = status.comfort
-    if comfort is None:
-        return {}
-    return {
-        "current": comfort.current,
-        "target": comfort.target,
-        "floor": comfort.floor,
-        "deficit": round(comfort.deficit, 2),
-    }
+def _planned_kwh(status: LoadStatus, runtime: Runtime) -> float | None:
+    plan = runtime.state.plans.plans.get(status.load_id)
+    return None if plan is None else round(plan.planned_kwh, 3)
 
 
 def _health(status: LoadStatus, _runtime: Runtime) -> str:
@@ -623,55 +750,12 @@ def _health(status: LoadStatus, _runtime: Runtime) -> str:
     return "ok"
 
 
-#: `sensor.<load>_session`'s closed set (D8 §5.15, review ENT-23): the car's
-#: charge in the household's words, translated; the engine's own reason, which is
-#: free text, stays an attribute.
-SESSION_STATES: tuple[str, ...] = ("no_car", "waiting", "charging", "done")
-
-
-def session_state(status: LoadStatus, runtime: Runtime) -> str:
-    """Return the session as one of `SESSION_STATES`, read from the snapshot.
-
-    `connected` is the engine's own plug edge (`ev_connected`, D4 §5.11), the
-    last one it observed: a link that drops keeps the car's last known state
-    rather than inventing "no car". Charging is what the car draws where a power
-    role says so, else what it was granted.
-    """
-    if status.latches.session_done:
-        return "done"
-    if runtime.state.events.edges.get(f"connected:{status.load_id}") != "1":
-        return "no_car"
-    if not status.demand.wants:
-        return "done"
-    drawn = status.granted_w if status.measured_w is None else status.measured_w
-    return "charging" if drawn > 0.0 else "waiting"
-
-
-def _next_legionella(status: LoadStatus, _runtime: Runtime) -> datetime | None:
-    return status.legionella_due_at
-
-
-def _session_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
-    state = runtime.state.loads.get(status.load_id)
-    return {
-        "reason": status.demand.reason,
-        "session_done": status.latches.session_done,
-        "session_done_reason": status.latches.session_done_reason,
-        "force_reason": "on" if status.mode is Mode.FORCE else None,
-        "blocked_by": None if state is None else state.blocked_reason,
-        "wants": status.demand.wants,
-        "deadline": _iso(status.demand.deadline),
-        "required_kwh": status.demand.required_kwh,
-        "urgency": status.demand.urgency.name.lower(),
-    }
-
-
 #: Below this many watts short of the ask, a grant is the whole ask.
 _CAP_EPS_W = 1.0
 
 
 def granted_attributes(status: LoadStatus, _runtime: Runtime) -> dict[str, Any]:
-    """`sensor.<load>_granted`'s attributes: `capped_by` only where a constraint bound.
+    """`granted_power`'s attributes: `capped_by` only where a constraint bound.
 
     The allocator's `capped_by` is the tightest constraint *on the table* - what
     a shed is attributed to (`Allocator._binding_reason`) - whether or not it
@@ -688,72 +772,69 @@ def granted_attributes(status: LoadStatus, _runtime: Runtime) -> dict[str, Any]:
     }
 
 
-def _has_power_role(load: Load, runtime: Runtime) -> bool:
-    """Whether the load's profile bound something to `Role.POWER` (review ENT-29).
+def _measured_is_ours(load: Load, runtime: Runtime) -> bool:
+    """Whether `measured_power` adds anything: not where the device page shows its own meter.
 
-    Read from `runtime.build.devices` - the profile's bindings, fixed once the
-    load is provisioned, not `LoadStatus.measured_w`, which is `None` on a
-    reading gap even with a bound role.
+    A power sensor on the appliance's own hardware device is already a row on
+    that device's page (D8 §5.16); one bound from elsewhere - a smart plug, a
+    template sensor - or none at all is ours to show.
     """
-    device = runtime.build.devices.get(load.load_id)
-    return device is not None and device.bound.binding(Role.POWER) is not None
+    return not runtime.role_on_hardware(load.load_id, Role.POWER)
 
 
 LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
     LoadSensorRow(
-        key="granted",
+        key="plan_status",
+        value=plan_state,
+        attributes=plan_status_attributes,
+        device_class=SensorDeviceClass.ENUM,
+        options=PLAN_STATES,
+        # The grant, the reason, the car's remaining kWh and its session (which
+        # flips with the 6 A cliff at a marginal draw) move every tick on a state
+        # that holds for hours.
+        volatile=frozenset(
+            {"granted_power", "reason", "required_kwh", "deficit", "current", "session", "wants"}
+        ),
+    ),
+    LoadSensorRow(
+        key="granted_power",
         value=lambda s, _r: round(s.granted_w),
         attributes=granted_attributes,
         unit=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:flash",
+        category=EntityCategory.DIAGNOSTIC,
+        enabled=lambda _load, _runtime: False,
     ),
     LoadSensorRow(
-        key="measured",
+        key="measured_power",
         value=lambda s, _r: None if s.measured_w is None else round(s.measured_w),
         unit=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
-        # A load bound to no power role never has a value: default-disabled
-        # rather than an always-unknown row (audit ENT-29, "Effekt nå"). Only a
-        # *new* row starts this way (S1, INV-50) - see `LoadSensorRow.enabled`.
-        enabled=_has_power_role,
-        icon="mdi:gauge",
+        category=EntityCategory.DIAGNOSTIC,
+        enabled=lambda _load, _runtime: False,
+        applies=_measured_is_ours,
     ),
     LoadSensorRow(
-        key="reserved",
+        key="reserved_power",
         value=lambda s, _r: round(s.reserved_w),
         unit=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
         category=EntityCategory.DIAGNOSTIC,
         enabled=lambda _load, _runtime: False,
-        icon="mdi:bookmark-outline",
     ),
     LoadSensorRow(
-        key="plan_next",
-        value=_plan_next,
-        attributes=_plan_attributes,
-        device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:calendar-clock",
-    ),
-    LoadSensorRow(
-        key="plan",
-        value=lambda s, r: len(_plan_slots(s, r)["slots"]),
+        key="planned_energy",
+        value=_planned_kwh,
         attributes=_plan_slots,
+        unit=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
         category=EntityCategory.DIAGNOSTIC,
         enabled=lambda _load, _runtime: False,
-        icon="mdi:calendar-text",
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
-    ),
-    LoadSensorRow(
-        key="comfort_state",
-        value=_comfort_state,
-        attributes=_comfort_attributes,
-        icon="mdi:home-thermometer",
-        applies=lambda load: load.config.target is not None,
     ),
     LoadSensorRow(
         key="health",
@@ -764,33 +845,21 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
             "last_error": s.health.last_error,
             "transient_since": _iso(s.health.transient_since),
         },
-        category=EntityCategory.DIAGNOSTIC,
-        icon="mdi:heart-pulse",
-    ),
-    LoadSensorRow(
-        key="session",
-        value=session_state,
-        attributes=_session_attributes,
         device_class=SensorDeviceClass.ENUM,
-        options=SESSION_STATES,
-        # `required_kwh` counts down every tick while charging, on a state
-        # (`session_state`) that stays "charging" throughout.
-        volatile=frozenset({"required_kwh"}),
-        icon="mdi:ev-station",
-        applies=lambda load: load.config.type_key == "ev",
+        options=("ok", "transient", "unhealthy"),
+        category=EntityCategory.DIAGNOSTIC,
     ),
     LoadSensorRow(
         key="next_legionella",
-        value=_next_legionella,
+        value=lambda s, _r: s.legionella_due_at,
         device_class=SensorDeviceClass.TIMESTAMP,
-        icon="mdi:water-thermometer",
-        applies=lambda load: load.config.type_key == "water_heater",
+        applies=lambda load, _runtime: load.config.type_key == "water_heater",
     ),
 )
 
 
 class LoadSensor(LoadEntity, SensorEntity):
-    """One sensor row of the load table."""
+    """One sensor row of the appliance's set."""
 
     def __init__(self, runtime: Runtime, load: Load, row: LoadSensorRow) -> None:
         """Bind to the load and the row."""
@@ -801,8 +870,6 @@ class LoadSensor(LoadEntity, SensorEntity):
         self._attr_state_class = row.state_class
         self._attr_entity_category = row.category
         self._attr_entity_registry_enabled_default = row.enabled(load, runtime)
-        if row.icon is not None:
-            self._attr_icon = row.icon
         self._unrecorded_attributes = row.unrecorded
         if row.options is not None:
             self._attr_options = list(row.options)
@@ -838,7 +905,7 @@ def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
         LoadSensor(runtime, load, row)
         for load in _loads(runtime, loads)
         for row in LOAD_SENSORS
-        if row.applies(load)
+        if row.applies(load, runtime)
     ]
     rows.extend(load_money_sensors(runtime, loads))
     rows.extend(load_group_sensors(runtime, loads))
@@ -846,7 +913,7 @@ def load_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
 
 
 # --------------------------------------------------------------------------- #
-# sensor.<load>_energy / _cost / _savings (D11)
+# sensor.<appliance>_energy / _energy_month / _cost_month / _savings_month (D11)
 # --------------------------------------------------------------------------- #
 
 
@@ -863,18 +930,19 @@ def _load_money(text: str | None) -> float | None:
 
 
 class LoadEnergySensor(LoadEntity, SensorEntity):
-    """`sensor.<load>_energy`: lifetime kWh since the load was added (D3 `LoadMeter`).
+    """`energy`: lifetime kWh since the load was added (D3 `LoadMeter`), for the Energy dashboard.
 
     Written once per closed price slot, like the money beside it (D8 §9 14):
     the counter accrues every tick, and a row per tick was 8 000–10 300 rows a
-    day per load in the reference house. The value written is the
-    counter as of the tick that saw the slot close.
+    day per load in the reference house. Diagnostic: the Energy
+    dashboard reads its statistics, the device page need not show it (D8 §5.16).
     """
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_suggested_display_precision = 2
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
@@ -899,17 +967,11 @@ class LoadEnergySensor(LoadEntity, SensorEntity):
         return {"source": None if status is None else status.energy_source}
 
 
-class _LoadMoneySensor(LoadEntity, SensorEntity):
-    """Shared shape for a load's two monetary sensors (D8 §5.5)."""
+class _LoadMonthSensor(LoadEntity, SensorEntity):
+    """Shared shape for an appliance's month-to-date rows (D8 §5.5, §5.16)."""
 
-    _attr_device_class = SensorDeviceClass.MONETARY
     _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
-
-    def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
-        """Bind to the load; the unit is the site's own currency."""
-        super().__init__(runtime, load, key)
-        self._attr_native_unit_of_measurement = runtime.build.cfg.currency
 
     @property
     def _row(self) -> Mapping[str, Any] | None:
@@ -930,12 +992,23 @@ class _LoadMoneySensor(LoadEntity, SensorEntity):
         return None if snapshot is None else _iso(snapshot.accounting.since)
 
 
+class _LoadMoneySensor(_LoadMonthSensor):
+    """A month-to-date amount in the site's currency."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+
+    def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
+        """Bind to the load; the unit is the site's own currency."""
+        super().__init__(runtime, load, key)
+        self._attr_native_unit_of_measurement = runtime.build.cfg.currency
+
+
 class LoadCostSensor(_LoadMoneySensor):
-    """`sensor.<load>_cost`: month-to-date energy cost."""
+    """`cost_month`: month-to-date energy cost."""
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
-        super().__init__(runtime, load, "cost")
+        super().__init__(runtime, load, "cost_month")
 
     @property
     def native_value(self) -> float | None:
@@ -959,11 +1032,11 @@ class LoadCostSensor(_LoadMoneySensor):
 
 
 class LoadSavingsSensor(_LoadMoneySensor):
-    """`sensor.<load>_savings`: month-to-date energy-shift savings; absent for shadow kind `none`."""
+    """`savings_month`: month-to-date energy-shift savings; absent for shadow kind `none`."""
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
-        super().__init__(runtime, load, "savings")
+        super().__init__(runtime, load, "savings_month")
 
     @property
     def native_value(self) -> float | None:
@@ -987,11 +1060,32 @@ class LoadSavingsSensor(_LoadMoneySensor):
         }
 
 
+class LoadEnergyMonthSensor(_LoadMonthSensor):
+    """`energy_month` (diagnostic): the month's kWh, which the lifetime counter does not give."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "energy_month")
+
+    @property
+    def native_value(self) -> float | None:
+        """Month-to-date kWh as the ledger priced them."""
+        row = self._row
+        kwh = None if row is None else row.get("kwh")
+        return None if kwh is None else float(kwh)
+
+
 def load_money_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
-    """Return `_energy` and `_cost` for every load, `_savings` where it has a shadow (D8 §5.5)."""
+    """Return the energy rows and the month's cost for every load, savings where it has a shadow."""
     out: list[SensorEntity] = []
     for load in _loads(runtime, loads):
         out.append(LoadEnergySensor(runtime, load))
+        out.append(LoadEnergyMonthSensor(runtime, load))
         out.append(LoadCostSensor(runtime, load))
         if store_kind_of(load) is not StoreKind.NONE:
             out.append(LoadSavingsSensor(runtime, load))
@@ -999,19 +1093,18 @@ def load_money_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) ->
 
 
 # --------------------------------------------------------------------------- #
-# sensor.<load>_starved_s
+# sensor.<appliance>_starved_s
 # --------------------------------------------------------------------------- #
 
 
 class LoadStarvedSensor(LoadEntity, SensorEntity):
-    """`sensor.<load>_starved_s`: how long rotation has held this member back (D6 §5.6)."""
+    """`starved_s`: how long rotation has held this member back (D6 §5.6)."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:timer-sand"
 
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load."""
@@ -1025,7 +1118,7 @@ class LoadStarvedSensor(LoadEntity, SensorEntity):
 
 
 def load_group_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SensorEntity]:
-    """Return `_starved_s` for every load that is a member of a group (D8 §5.5).
+    """Return `starved_s` for every load that is a member of a group (D8 §5.5).
 
     Built from `runtime.build.groups` as they stand when called - at platform
     setup, when a load is hot-added, and when `_reload_relations` re-adds a
@@ -1037,43 +1130,3 @@ def load_group_sensors(runtime: Runtime, loads: Iterable[Load] | None = None) ->
         for load in _loads(runtime, loads)
         if load.load_id in grouped
     ]
-
-
-# --------------------------------------------------------------------------- #
-# binary_sensor.<load>_shed
-# --------------------------------------------------------------------------- #
-
-
-class LoadShedBinarySensor(LoadEntity, BinarySensorEntity):
-    """`binary_sensor.<load>_shed` with its reason (D8 §5.5)."""
-
-    _attr_icon = "mdi:arrow-down-bold-box-outline"
-
-    def __init__(self, runtime: Runtime, load: Load) -> None:
-        """Bind to the load."""
-        super().__init__(runtime, load, "shed")
-
-    @property
-    def is_on(self) -> bool | None:
-        """Whether the load is shed this tick."""
-        status = self.status
-        return None if status is None else status.shed
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Why, and since when."""
-        status = self.status
-        if status is None:
-            return {}
-        return {
-            "reason": status.shed_reason,
-            "shed_since": _iso(status.latches.shed_since),
-            "blunt": status.blunt,
-        }
-
-
-def load_binary_sensors(
-    runtime: Runtime, loads: Iterable[Load] | None = None
-) -> list[BinarySensorEntity]:
-    """One shed sensor per load."""
-    return [LoadShedBinarySensor(runtime, load) for load in _loads(runtime, loads)]

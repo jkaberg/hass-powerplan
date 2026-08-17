@@ -608,9 +608,6 @@
           "on": "Ufullstendige"
         }
       },
-      "shed": {
-        "name": "Kuttet"
-      },
       "meter_seam_60": {
         "name": "Timeskifte",
         "state": {
@@ -652,22 +649,8 @@
       "baseline_confidence": {
         "name": "Innlæring"
       },
-      "comfort_state": {
-        "name": "Komfort",
-        "state": {
-          "at_target": "På mål",
-          "below_target": "Under mål",
-          "violated": "Under gulvet"
-        }
-      },
-      "cost": {
-        "name": "Kostnad"
-      },
       "energy": {
-        "name": "Energi"
-      },
-      "granted": {
-        "name": "Tildelt"
+        "name": "Energi totalt"
       },
       "health": {
         "name": "Helse",
@@ -680,9 +663,6 @@
       "level": {
         "name": "Effekttrinn denne måneden"
       },
-      "measured": {
-        "name": "Målt"
-      },
       "meter_health": {
         "name": "Målerstatus",
         "state": {
@@ -690,12 +670,6 @@
           "degraded": "Treg",
           "stale": "Mangler data"
         }
-      },
-      "plan": {
-        "name": "Plan"
-      },
-      "plan_next": {
-        "name": "Neste i planen"
       },
       "price": {
         "name": "Strømpris nå"
@@ -729,21 +703,6 @@
           "meter_wait": "Venter på måleren",
           "site_off": "Prøvemodus: styrer ingenting",
           "safe_mode": "Nødmodus: styrer ingenting"
-        }
-      },
-      "reserved": {
-        "name": "Reservert"
-      },
-      "savings": {
-        "name": "Besparelse"
-      },
-      "session": {
-        "name": "Økt",
-        "state": {
-          "no_car": "Ingen bil tilkoblet",
-          "waiting": "Venter på billig strøm",
-          "charging": "Lader",
-          "done": "Ferdig"
         }
       },
       "stage": {
@@ -814,6 +773,44 @@
       },
       "next_peak_warning_15": {
         "name": "Neste risikokvarter"
+      },
+      "plan_status": {
+        "name": "Planstatus",
+        "state": {
+          "device_unavailable": "Apparatet svarer ikke",
+          "manual_override": "Overstyrt manuelt",
+          "run_now": "Kjører nå (overstyrt)",
+          "not_controlled": "Styres ikke av PowerPlan",
+          "observing": "Ser bare på",
+          "no_car": "Ingen bil tilkoblet",
+          "charging": "Lader",
+          "done": "Ferdig",
+          "paused_peak": "Satt på pause for å holde effekttrinnet",
+          "idle": "Trenger ikke strøm nå",
+          "running_plan": "Kjører etter plan",
+          "waiting": "Venter på billig strøm"
+        }
+      },
+      "cost_month": {
+        "name": "Kostnad denne måneden"
+      },
+      "savings_month": {
+        "name": "Besparelse denne måneden"
+      },
+      "energy_month": {
+        "name": "Energi denne måneden"
+      },
+      "granted_power": {
+        "name": "Tildelt effekt"
+      },
+      "reserved_power": {
+        "name": "Reservert effekt"
+      },
+      "planned_energy": {
+        "name": "Planlagt energi"
+      },
+      "measured_power": {
+        "name": "Målt effekt"
       }
     },
     "select": {
@@ -861,14 +858,34 @@
           "full": "Fleksibel"
         }
       },
-      "mode": {
-        "name": "Modus",
+      "control": {
+        "name": "Styring",
         "state": {
           "auto": "Automatisk",
-          "force": "Tvang",
-          "observe": "Observer",
-          "delegated": "Delegert",
-          "off": "Av"
+          "force": "Kjør nå",
+          "off": "Ikke styr",
+          "observe": "Bare se på",
+          "delegated": "Enheten styrer selv"
+        }
+      },
+      "strategy": {
+        "name": "Strategi",
+        "state": {
+          "deadline_fill": "Billigste timer før fristen",
+          "cheapest_hours": "Billigste timer",
+          "heat_capacitor": "Lagre varme i billige timer",
+          "best_save": "Spar der det svir minst",
+          "peak_shave": "Kapp toppene",
+          "arbitrage": "Kjøp billig, selg dyrt",
+          "run_once": "Én kjøring før klartid"
+        }
+      },
+      "priority": {
+        "name": "Prioritet",
+        "state": {
+          "low": "Lav",
+          "normal": "Normal",
+          "high": "Høy"
         }
       }
     },
@@ -876,26 +893,26 @@
       "margin_kwh": {
         "name": "Sikkerhetsmargin"
       },
-      "force_max_hours": {
-        "name": "Tvang varer maks"
-      },
-      "comfort_c": {
-        "name": "Komfort"
-      },
-      "comfort_min_c": {
-        "name": "Aldri under"
-      },
-      "comfort_max_c": {
-        "name": "Aldri over"
-      },
-      "target_soc": {
-        "name": "Lad til"
-      },
-      "min_soc_now": {
-        "name": "Aldri under"
-      },
       "hours_per_day": {
         "name": "Timer per dag"
+      },
+      "comfort": {
+        "name": "Komforttemperatur"
+      },
+      "temp_min": {
+        "name": "Aldri kaldere enn"
+      },
+      "temp_max": {
+        "name": "Aldri varmere enn"
+      },
+      "charge_target": {
+        "name": "Lad til"
+      },
+      "charge_min": {
+        "name": "Lad alltid til minst"
+      },
+      "run_now_max": {
+        "name": "Kjør nå i maks"
       }
     },
     "switch": {
@@ -906,11 +923,8 @@
           "off": "Av (prøvemodus)"
         }
       },
-      "force": {
-        "name": "Tvang"
-      },
       "follow_presence": {
-        "name": "Følg tilstedeværelse"
+        "name": "Spar når ingen er hjemme"
       }
     },
     "button": {
@@ -929,10 +943,7 @@
     },
     "time": {
       "ready_by": {
-        "name": "Klar til"
-      },
-      "deadline": {
-        "name": "Frist i dag"
+        "name": "Ferdig til kl."
       }
     },
     "event": {

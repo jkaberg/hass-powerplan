@@ -1782,3 +1782,18 @@ An appliance entity on a hardware device gets `entity_picture = /powerplan_stati
 
 D8 §5.16's migration steps, merge repair and golden-registry test aren't built: no released install exists, and a new install gets the new entity set directly. INV-50's merge clause has no case yet. Affects D8 §5.16, §9 25.
 **Rejected:** building it anyway - tested against a store shape no user has.
+
+### D-0422 · Priority: the select shows the nearest level; derived numbers stay
+
+`select.<appliance>_priority` shows the level nearest the stored number and writes that level's number when chosen. `derive()` keeps each type's own numbers (car 10, tank 40, heat pump 50), so allocation doesn't change: snapping would make tank and heat pump equal and move every digest. Affects D8 §5.16, D4 §6.
+**Rejected:** snapping every derived priority now - an allocation change dressed as a screen change.
+
+### D-0423 · `plan_status` adds `observing` and `idle`; its `reason` is the engine's
+
+Beside D8 §5.16's states, `observing` (effective mode `observe`, including a site switched off) and `idle` (the load wants nothing: tank full, room warm). Precedence: device, override, mode, the car's session, shed, idle, then running or waiting. `reason` is the engine's `action_reason`, since the frontend shows attributes untranslated. Every attribute of the merged rows keeps its name, so no automation loses a key. Affects D8 §5.16.
+**Rejected:** mapping observe to `not_controlled` and a satisfied load to `waiting` - both untrue on the entity a household reads first.
+
+### D-0424 · Where the entity set differs from D8 §5.16's table
+
+(1) `temp_min`/`temp_max` exist for every thermal type with a target, even with a bound `floor_min_limit`, because the profile writes the configured floor to that role (INV-64). (2) No battery `charge_min`: the kind reads its reserve at build time. (3) No strategy select for `generic_switch`: one choice remains. (4) `energy` is diagnostic and enabled. (5) `measured_power` only where the power role isn't on the appliance's own device. (6) `appliance_cycle` keeps `run_now`. (7) No appliance binary sensors. Affects D8 §5.16.
+**Rejected:** for (1), reading the device's floor role back as the source - changes INV-64's provisioning.

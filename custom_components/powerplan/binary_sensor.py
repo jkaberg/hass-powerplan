@@ -21,7 +21,6 @@ from homeassistant.const import EntityCategory
 
 from .core.model import Snapshot
 from .entity import PowerplanEntity, digest_of, window_translation_key
-from .load_entities import load_binary_sensors
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -138,7 +137,6 @@ async def async_setup_entry(
     """Create the site's binary sensors."""
     runtime = entry.runtime_data
     async_add_entities([SiteBinarySensor(runtime, description) for description in BINARY_SENSORS])
-    runtime.setup_load_platform(async_add_entities, load_binary_sensors)
 
 
 class SiteBinarySensor(PowerplanEntity, BinarySensorEntity):

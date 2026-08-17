@@ -76,19 +76,19 @@ async def test_a_loads_energy_and_cost_sensors_always_exist_savings_only_with_a_
     registry = er.async_get(hass)
 
     for subentry_id in (ev_id, sauna_id):
-        for key in ("energy", "cost"):
+        for key in ("energy", "energy_month", "cost_month"):
             entity_id = registry.async_get_entity_id(
                 "sensor", DOMAIN, unique_id(site.entry_id, key, subentry_id)
             )
             assert entity_id is not None, (subentry_id, key)
 
     ev_savings = registry.async_get_entity_id(
-        "sensor", DOMAIN, unique_id(site.entry_id, "savings", ev_id)
+        "sensor", DOMAIN, unique_id(site.entry_id, "savings_month", ev_id)
     )
     assert ev_savings is not None, "the charger has an energy shadow (D11 §5.3)"
 
     sauna_savings = registry.async_get_entity_id(
-        "sensor", DOMAIN, unique_id(site.entry_id, "savings", sauna_id)
+        "sensor", DOMAIN, unique_id(site.entry_id, "savings_month", sauna_id)
     )
     assert sauna_savings is None, "the sauna has no shadow (StoreKind.NONE): D8 §5.5 'absent'"
 
@@ -105,7 +105,7 @@ async def test_a_loads_energy_and_cost_sensors_always_exist_savings_only_with_a_
     assert float(energy_state.state) == pytest.approx(0.0)
 
     cost_id = registry.async_get_entity_id(
-        "sensor", DOMAIN, unique_id(site.entry_id, "cost", ev_id)
+        "sensor", DOMAIN, unique_id(site.entry_id, "cost_month", ev_id)
     )
     assert cost_id is not None
     cost_state = hass.states.get(cost_id)
@@ -121,7 +121,7 @@ async def test_removing_the_load_removes_its_accounting_sensors_too(
     ev_id = await _add_charger_load(hass, site, charger)
     registry = er.async_get(hass)
     cost_id = registry.async_get_entity_id(
-        "sensor", DOMAIN, unique_id(site.entry_id, "cost", ev_id)
+        "sensor", DOMAIN, unique_id(site.entry_id, "cost_month", ev_id)
     )
     assert cost_id is not None
 

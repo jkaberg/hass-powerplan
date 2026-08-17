@@ -23,7 +23,7 @@ from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.engine import EventKind
 from custom_components.powerplan.core.tariffs.evaluator import Advice
 from custom_components.powerplan.entity import unique_id
-from custom_components.powerplan.load_entities import SESSION_STATES, session_state
+from custom_components.powerplan.load_entities import PLAN_STATES, session_state
 from custom_components.powerplan.sensor import ADVICE_STATES, advice_state
 from tests.runtime.conftest import SITE_ENTRY_ID
 
@@ -99,8 +99,11 @@ def _runtime(connected: str | None) -> Any:
 
 
 def test_ent_23_the_session_is_a_closed_set_from_the_snapshot() -> None:
-    """No car · waiting · charging · done; never the engine's English reason (R2)."""
-    assert SESSION_STATES == ("no_car", "waiting", "charging", "done")
+    """No car · waiting · charging · done; never the engine's English reason (R2).
+
+    `plan_status` carries all but `waiting`, which is the plan's own state there.
+    """
+    assert {"no_car", "charging", "done", "waiting"} <= set(PLAN_STATES)
     wanting = SimpleNamespace(wants=True, reason="charging to 80 %")
     full = SimpleNamespace(wants=False, reason="at or above 80 %")
     done = SimpleNamespace(session_done=True)

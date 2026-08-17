@@ -49,7 +49,7 @@ STEPS = 360
 
 #: Keys whose state is a measurement that moves with the meter: one row a tick.
 FOLLOWS_THE_METER = frozenset(
-    {"window_used", "window_projected", "allowance", "granted", "measured", "tick_ms"}
+    {"window_used", "window_projected", "allowance", "granted_power", "measured_power", "tick_ms"}
 )
 
 #: Keys this budget does not bind, and why - neither is among F-11's named
@@ -62,12 +62,6 @@ UNBOUNDED = frozenset(
         # notification) - that is the platform's contract, not the
         # attribute-on-a-slow-state noise F-11 names.
         "events",
-        # `sensor.<load>_session`'s *state* (not an attribute) toggles
-        # charging/waiting with the EV simulator's 6 A cliff (tests.md) at a
-        # marginal draw - a real, if noisy, state change. Damping it is a
-        # per-load entity *state* change, which the narrowed U.4 scope leaves
-        # for the appliance-entity WP that follows it.
-        "session",
     }
 )
 
@@ -113,7 +107,9 @@ async def test_f11_every_entity_writes_within_its_budget_through_a_charging_hour
         await charger.advance(freezer)
     runtime: Runtime = site.runtime_data
 
-    mode = registry.async_get_entity_id("select", DOMAIN, unique_id(site.entry_id, "mode", ev_id))
+    mode = registry.async_get_entity_id(
+        "select", DOMAIN, unique_id(site.entry_id, "control", ev_id)
+    )
     assert mode is not None
     await hass.services.async_call(
         "select", "select_option", {"entity_id": mode, "option": "force"}, blocking=True

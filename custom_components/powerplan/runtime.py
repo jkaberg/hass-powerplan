@@ -1496,6 +1496,26 @@ class Runtime:
                 entry_title=self.site_name,
             )
 
+    def role_on_hardware(self, load_id: str, role: Role) -> bool:
+        """Whether a role is bound to an entity of the appliance's own hardware device (§5.16)."""
+        device = self.build.devices.get(load_id)
+        hardware = self.hardware_device(load_id)
+        entity_id = None if device is None or hardware is None else device.entity_of(role)
+        entry = None if entity_id is None else er.async_get(self.hass).async_get(entity_id)
+        return entry is not None and hardware is not None and entry.device_id == hardware.id
+
+    @callback
+    def async_update_load_data(self, load_id: str, changes: Mapping[str, Any]) -> None:
+        """Write level-2 settings into the appliance's subentry; the load follows in place (D7 §2)."""
+        subentry = self.entry.subentries.get(load_id)
+        if subentry is None or all(
+            subentry.data.get(key) == value for key, value in changes.items()
+        ):
+            return
+        self.hass.config_entries.async_update_subentry(
+            self.entry, subentry, data={**subentry.data, **changes}
+        )
+
     @callback
     def _on_device_registry_updated(self, event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
         """Follow a bound device's removal and rename (D8 §5.16, D7 §5.3)."""
@@ -1734,6 +1754,9 @@ class Runtime:
         # A re-bound device (the gear flow's answer to `device_missing`) moves
         # the entities back onto hardware and clears the repair (D8 §5.16).
         self.settle_devices()
+        # A level-2 setting written to the subentry (strategy, priority) shows at
+        # once, not on the next tick (D8 §5.16).
+        self.coordinator.async_update_listeners()
         _LOGGER.info(
             "site %s: load %s (%s) updated in place", self.site_name, subentry.title, load_id
         )

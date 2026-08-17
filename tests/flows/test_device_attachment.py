@@ -205,7 +205,9 @@ async def test_26_a_device_gone_at_startup_starts_on_the_fallback(
     assert fallback is not None
     assert fallback.model == "Car charger"
     rows = _load_rows(hass, site, load_id)
-    assert set(rows) == ids_before
+    # Every id kept; `measured_power` may join them, since no device page shows
+    # the charger's own power any more (D8 §5.16).
+    assert ids_before <= set(rows)
     assert set(rows.values()) == {fallback.id}
     assert _issue(hass, site, load_id) is not None
     assert all(

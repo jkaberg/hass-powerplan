@@ -18,7 +18,7 @@ from typing import Any
 
 from custom_components.powerplan.core.model import Confidence, Money, PlanMode
 from custom_components.powerplan.entity import money_text
-from custom_components.powerplan.load_entities import _plan_attributes, granted_attributes
+from custom_components.powerplan.load_entities import granted_attributes, plan_status_attributes
 
 
 @dataclass
@@ -52,7 +52,7 @@ def test_money_is_written_to_the_currencys_two_decimals() -> None:
 
 
 def test_a_plans_cost_is_written_to_two_decimals() -> None:
-    """`sensor.<load>_plan_next`'s `cost` attribute."""
+    """`plan_status`'s `cost` attribute (the old `sensor.<load>_plan_next`'s)."""
     plan = SimpleNamespace(
         planned_kwh=1.6,
         cost=Money(Decimal("0.8398149448858340713920000000"), "NOK"),
@@ -63,6 +63,17 @@ def test_a_plans_cost_is_written_to_two_decimals() -> None:
         strategy="deadline_fill",
         confidence=Confidence.KNOWN,
     )
+    plan.next_start = None
     runtime = SimpleNamespace(snapshot=SimpleNamespace(plans={"tank": plan}))
-    status = SimpleNamespace(load_id="tank")
-    assert _plan_attributes(status, runtime)["cost"] == "0.84 NOK"  # type: ignore[arg-type]
+    status = SimpleNamespace(
+        load_id="tank",
+        type_key="water_heater",
+        granted_w=0.0,
+        action_reason="",
+        shed=False,
+        shed_reason=None,
+        blunt=False,
+        comfort=None,
+        latches=SimpleNamespace(shed_since=None),
+    )
+    assert plan_status_attributes(status, runtime)["cost"] == "0.84 NOK"  # type: ignore[arg-type]

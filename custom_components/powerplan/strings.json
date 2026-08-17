@@ -608,9 +608,6 @@
           "on": "Incomplete"
         }
       },
-      "shed": {
-        "name": "Shed"
-      },
       "meter_seam_60": {
         "name": "Hour change",
         "state": {
@@ -652,22 +649,8 @@
       "baseline_confidence": {
         "name": "Learning"
       },
-      "comfort_state": {
-        "name": "Comfort",
-        "state": {
-          "at_target": "At target",
-          "below_target": "Below target",
-          "violated": "Under the floor"
-        }
-      },
-      "cost": {
-        "name": "Cost"
-      },
       "energy": {
-        "name": "Energy"
-      },
-      "granted": {
-        "name": "Granted"
+        "name": "Energy in total"
       },
       "health": {
         "name": "Health",
@@ -680,9 +663,6 @@
       "level": {
         "name": "Capacity step this month"
       },
-      "measured": {
-        "name": "Measured"
-      },
       "meter_health": {
         "name": "Meter status",
         "state": {
@@ -690,12 +670,6 @@
           "degraded": "Slow",
           "stale": "No data"
         }
-      },
-      "plan": {
-        "name": "Plan"
-      },
-      "plan_next": {
-        "name": "Plan next"
       },
       "price": {
         "name": "Electricity price now"
@@ -729,21 +703,6 @@
           "meter_wait": "Waiting for the meter",
           "site_off": "Trial mode: controlling nothing",
           "safe_mode": "Fallback mode: controlling nothing"
-        }
-      },
-      "reserved": {
-        "name": "Reserved"
-      },
-      "savings": {
-        "name": "Savings"
-      },
-      "session": {
-        "name": "Session",
-        "state": {
-          "no_car": "No car connected",
-          "waiting": "Waiting for cheap power",
-          "charging": "Charging",
-          "done": "Done"
         }
       },
       "stage": {
@@ -814,6 +773,44 @@
       },
       "next_peak_warning_15": {
         "name": "Next risky quarter-hour"
+      },
+      "plan_status": {
+        "name": "Plan status",
+        "state": {
+          "device_unavailable": "Device not answering",
+          "manual_override": "Changed by hand",
+          "run_now": "Running now (override)",
+          "not_controlled": "Not controlled by PowerPlan",
+          "observing": "Watching only",
+          "no_car": "No car connected",
+          "charging": "Charging",
+          "done": "Done",
+          "paused_peak": "Paused to hold the capacity step",
+          "idle": "Needs no power now",
+          "running_plan": "Running as planned",
+          "waiting": "Waiting for cheap power"
+        }
+      },
+      "cost_month": {
+        "name": "Cost this month"
+      },
+      "savings_month": {
+        "name": "Savings this month"
+      },
+      "energy_month": {
+        "name": "Energy this month"
+      },
+      "granted_power": {
+        "name": "Granted power"
+      },
+      "reserved_power": {
+        "name": "Reserved power"
+      },
+      "planned_energy": {
+        "name": "Planned energy"
+      },
+      "measured_power": {
+        "name": "Measured power"
       }
     },
     "select": {
@@ -861,14 +858,34 @@
           "full": "Flexible"
         }
       },
-      "mode": {
-        "name": "Mode",
+      "control": {
+        "name": "Control",
         "state": {
           "auto": "Automatic",
-          "force": "Force",
-          "observe": "Observe",
-          "delegated": "Delegated",
-          "off": "Off"
+          "force": "Run now",
+          "off": "Don't control",
+          "observe": "Watch only",
+          "delegated": "Device decides"
+        }
+      },
+      "strategy": {
+        "name": "Strategy",
+        "state": {
+          "deadline_fill": "Cheapest hours before the deadline",
+          "cheapest_hours": "Cheapest hours",
+          "heat_capacitor": "Bank heat in cheap hours",
+          "best_save": "Save where it hurts least",
+          "peak_shave": "Shave the peaks",
+          "arbitrage": "Buy low, sell high",
+          "run_once": "One run before ready-by"
+        }
+      },
+      "priority": {
+        "name": "Priority",
+        "state": {
+          "low": "Low",
+          "normal": "Normal",
+          "high": "High"
         }
       }
     },
@@ -876,26 +893,26 @@
       "margin_kwh": {
         "name": "Safety margin"
       },
-      "force_max_hours": {
-        "name": "Force lasts at most"
-      },
-      "comfort_c": {
-        "name": "Comfort"
-      },
-      "comfort_min_c": {
-        "name": "Never below"
-      },
-      "comfort_max_c": {
-        "name": "Never above"
-      },
-      "target_soc": {
-        "name": "Charge to"
-      },
-      "min_soc_now": {
-        "name": "Never below"
-      },
       "hours_per_day": {
         "name": "Hours per day"
+      },
+      "comfort": {
+        "name": "Comfort temperature"
+      },
+      "temp_min": {
+        "name": "Never colder than"
+      },
+      "temp_max": {
+        "name": "Never warmer than"
+      },
+      "charge_target": {
+        "name": "Charge to"
+      },
+      "charge_min": {
+        "name": "Always charge to at least"
+      },
+      "run_now_max": {
+        "name": "Run now for at most"
       }
     },
     "switch": {
@@ -906,11 +923,8 @@
           "off": "Off (trial mode)"
         }
       },
-      "force": {
-        "name": "Force"
-      },
       "follow_presence": {
-        "name": "Follow presence"
+        "name": "Save when nobody is home"
       }
     },
     "button": {
@@ -930,9 +944,6 @@
     "time": {
       "ready_by": {
         "name": "Ready by"
-      },
-      "deadline": {
-        "name": "Deadline today"
       }
     },
     "event": {

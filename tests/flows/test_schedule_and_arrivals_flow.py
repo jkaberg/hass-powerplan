@@ -9,12 +9,14 @@ is a deliberate match-step answer, not a guess.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import DOMAIN, LOAD_PARAMS, SUBENTRY_LOAD
 from custom_components.powerplan.entity import unique_id
+from custom_components.powerplan.load_entities import PARAM_NUMBERS
 from tests.flows.test_load_flow import _answer
 from tests.flows.test_water_heater_flow import _add_tank
 
@@ -71,33 +73,24 @@ async def test_an_answered_schedule_and_arrival_calendars_reach_params(
     assert params["schedule_entity"] == "schedule.hot_water"
     assert params["arrival_sources"] == ["calendar.partner", "calendar.household"]
 
+    # The tank's own setpoint is its comfort knob (D8 §5.16), so there is no
+    # PowerPlan comfort number to hide behind the schedule.
     registry = er.async_get(hass)
-    entity_id = registry.async_get_entity_id(
-        "number", DOMAIN, unique_id(site.entry_id, "comfort_c", sub.subentry_id)
+    assert (
+        registry.async_get_entity_id(
+            "number", DOMAIN, unique_id(site.entry_id, "comfort", sub.subentry_id)
+        )
+        is None
     )
-    assert entity_id is not None
-    entry = registry.async_get(entity_id)
-    assert entry is not None
-    assert entry.hidden_by is not None, "redundant with the schedule now driving the target"
 
 
-async def test_comfort_c_stays_visible_with_no_schedule_bound(
-    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
-) -> None:
-    """The usual case - no `schedule_entity` answered - leaves the knob visible."""
-    result = await _add_tank(hass, site, charger)
-    result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Tank"})
-    await hass.async_block_till_done()
-    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
-
-    registry = er.async_get(hass)
-    entity_id = registry.async_get_entity_id(
-        "number", DOMAIN, unique_id(site.entry_id, "comfort_c", sub.subentry_id)
-    )
-    assert entity_id is not None
-    entry = registry.async_get(entity_id)
-    assert entry is not None
-    assert entry.hidden_by is None
+def test_the_comfort_knob_hides_behind_a_bound_schedule() -> None:
+    """`comfort` (where no device setpoint owns it) is hidden once a schedule drives the target."""
+    comfort = next(row for row in PARAM_NUMBERS if row.key == "comfort")
+    scheduled = SimpleNamespace(config=SimpleNamespace(params={"schedule_entity": "schedule.x"}))
+    unscheduled = SimpleNamespace(config=SimpleNamespace(params={}))
+    assert comfort.visible(scheduled) is False  # type: ignore[arg-type]
+    assert comfort.visible(unscheduled) is True  # type: ignore[arg-type]
 
 
 async def test_the_follow_presence_switch_exists_disabled_by_default(

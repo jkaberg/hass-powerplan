@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from custom_components.powerplan.load_entities import plan_state
 from tests.runtime.conftest import FakeFloor, FakeMeter, advance, site_entry
 from tests.runtime.test_writes_on_record import COMFORT_C, LOAD_ID, TARGET_KW, meter, start_site
 
@@ -55,6 +56,8 @@ async def test_28_a_hand_on_the_dial_is_adopted_and_our_write_is_not(
 
     assert runtime.load_params[LOAD_ID]["comfort_c"] == 22.5
     assert LOAD_ID in runtime.overridden_at
+    assert runtime.snapshot is not None
+    assert plan_state(runtime.snapshot.loads[LOAD_ID], runtime) == "manual_override"
     assert written != 22.5
     assert COMFORT_C != 22.5
     await runtime.stop("unload")
