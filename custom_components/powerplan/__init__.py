@@ -9,11 +9,13 @@ once in `async_setup` and never per entry (PLAN §7 dec. 8); they arrive with D8
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN
+from .const import BRAND_ICON_URL, DOMAIN
 from .entity import async_prepare_site_device
 from .runtime import Runtime, build_site
 from .services import async_setup_services
@@ -47,6 +49,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     PLAN §7 dec. 8; D8 §5.7).
     """
     async_setup_services(hass)
+    # The brand icon an appliance entity shows as its picture (D8 §5.16,
+    # D-0418). `http` is an after-dependency: every frontend loads it, a bare
+    # test harness may not.
+    if hass.http is not None:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(BRAND_ICON_URL, str(Path(__file__).parent / "brand" / "icon.png"))]
+        )
     return True
 
 

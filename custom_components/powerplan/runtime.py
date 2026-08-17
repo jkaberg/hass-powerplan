@@ -29,6 +29,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import CoreState, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_point_in_utc_time,
@@ -64,8 +65,10 @@ from .const import (
     GROUP_STARVE_SECONDS,
     LOAD_BINDINGS,
     LOAD_DEVICE_ID,
+    LOAD_MANUAL_OVERRIDES,
     LOAD_PARAMS,
     LOAD_PROFILE,
+    LOAD_TITLE_USER_SET,
     LOAD_TYPE,
     ROLE_EXPORT_REGISTER,
     ROLE_GRID_POWER,
@@ -113,7 +116,8 @@ from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
 from .core.loads import Load, LoadConfig, LoadCtx, Transport, effective_mode
-from .core.loads.gate import Action, Decision
+from .core.loads.gate import Action, Decision, Origin, setpoint_origin
+from .core.loads.kinds.setpoint import Setpoint
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
 from .core.loads.types.heat_pump import curve_of
@@ -159,7 +163,7 @@ from .core.tariffs.grammar import StepTable
 from .core.tariffs.history import Override
 from .core.tariffs.presets import loader
 from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
-from .entity import site_device_info
+from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
 from .events import event_name
 from .flow.load import binding_from_data
@@ -282,6 +286,10 @@ class LoadDevice(Protocol):
 
     def call_for(self, write: Any) -> DeviceCall | None:
         """Return the service call one write means (`WriteTarget`)."""
+        ...
+
+    def entity_of(self, role: Role) -> str | None:
+        """Return the entity a role is bound to, or `None` (the override test, D-0414)."""
         ...
 
 
@@ -944,6 +952,13 @@ class Runtime:
         #: `start()` registers it (`entity.async_prepare_site_device`).
         self.site_model: str | None = None
         self.sw_version: str | None = None
+        #: The load types in words, a fallback appliance device's model (§5.16).
+        self.type_names: dict[str, str] = {}
+        #: The setpoint each shared thermostat last showed, and under which
+        #: `Context` (amended INV-27): absent until the first read after a start.
+        self._setpoint_seen: dict[str, tuple[float, str]] = {}
+        #: When a household's hand on the dial last became the comfort target.
+        self.overridden_at: dict[str, datetime] = {}
         self.store = SiteStore(hass, entry.entry_id)
         self.coordinator: DataUpdateCoordinator[Snapshot] = DataUpdateCoordinator(
             hass,
@@ -1131,6 +1146,12 @@ class Runtime:
         if self.entry.state in (ConfigEntryState.SETUP_IN_PROGRESS, ConfigEntryState.LOADED):
             await self.hass.config_entries.async_forward_entry_setups(self.entry, PLATFORMS)
             self._platforms_forwarded = True
+            self.settle_devices()
+            self._track(
+                self.hass.bus.async_listen(
+                    dr.EVENT_DEVICE_REGISTRY_UPDATED, self._on_device_registry_updated
+                )
+            )
         self._log_step("platforms")
         self._subscribe()
         self._log_step("triggers")
@@ -1423,6 +1444,82 @@ class Runtime:
         for load in self.build.loads:
             self._add_entities_for(load, async_add_entities, builder)
 
+    # ------------------------------------------------ the appliance's device (D8 §5.16) #
+
+    def hardware_device(self, load_id: str) -> dr.AnyDeviceEntry | None:
+        """Return the hardware device a load is bound to, or `None` where it has none now."""
+        subentry = self.entry.subentries.get(load_id)
+        device_id = None if subentry is None else subentry.data.get(LOAD_DEVICE_ID)
+        return dr.async_get(self.hass).async_get(str(device_id)) if device_id else None
+
+    @callback
+    def settle_devices(self) -> None:
+        """Put every load's entities on the device they belong on now (D8 §5.16).
+
+        Idempotent, so every edge runs the same walk: after the platforms load,
+        when a bound device is removed, when a load is re-bound. A load whose
+        hardware device exists has its entities on it and no fallback device -
+        removed only once empty, since removing a device of ours deletes the
+        entities still on it. A load whose device is gone gets the fallback
+        device and `device_missing_<load>`: its entities are moved, never
+        deleted or re-ided (D-0415, INV-50).
+        """
+        devices = dr.async_get(self.hass)
+        entities = er.async_get(self.hass)
+        entry_id = self.entry.entry_id
+        rows = entities.entities.get_entries_for_config_entry_id(entry_id)
+        for load in self.build.loads:
+            load_id = load.load_id
+            hardware = self.hardware_device(load_id)
+            fallback = devices.async_get_device_by_identifier(
+                fallback_identifier(entry_id, load_id), config_entry_id=entry_id
+            )
+            if hardware is None and fallback is None:
+                fallback = devices.async_get_or_create(
+                    config_entry_id=entry_id,
+                    config_subentry_id=load_id,
+                    **load_device_info(self, load),
+                )
+            target = hardware or fallback
+            assert target is not None
+            for row in rows:
+                if row.config_subentry_id == load_id and row.device_id != target.id:
+                    entities.async_update_entity(row.entity_id, device_id=target.id)
+            if hardware is not None and fallback is not None:
+                devices.async_remove_device(fallback.id)
+            async_report(
+                self.hass,
+                entry_id,
+                f"device_missing_{load_id}",
+                active=hardware is None,
+                placeholders={"load": load.config.name},
+                entry_title=self.site_name,
+            )
+
+    @callback
+    def _on_device_registry_updated(self, event: Event[dr.EventDeviceRegistryUpdatedData]) -> None:
+        """Follow a bound device's removal and rename (D8 §5.16, D7 §5.3)."""
+        data = event.data
+        bound = {
+            str(subentry.data.get(LOAD_DEVICE_ID)): subentry
+            for subentry in self.entry.subentries.values()
+            if subentry.subentry_type == SUBENTRY_LOAD
+        }
+        subentry = bound.get(data["device_id"])
+        if subentry is None:
+            return
+        if data["action"] == "remove":
+            self.settle_devices()
+            return
+        if data["action"] != "update" or not {"name", "name_by_user"} & set(data["changes"]):
+            return
+        device = dr.async_get(self.hass).async_get(data["device_id"])
+        if device is None or subentry.data.get(LOAD_TITLE_USER_SET):
+            return
+        title = device.name_by_user or device.name
+        if title and title != subentry.title:
+            self.hass.config_entries.async_update_subentry(self.entry, subentry, title=title)
+
     def _add_entities_for(
         self,
         load: Load,
@@ -1634,6 +1731,9 @@ class Runtime:
         self._rebuild_engine()
         self._subscribe_loads()
         self._add_load_entities(load)
+        # A re-bound device (the gear flow's answer to `device_missing`) moves
+        # the entities back onto hardware and clears the repair (D8 §5.16).
+        self.settle_devices()
         _LOGGER.info(
             "site %s: load %s (%s) updated in place", self.site_name, subentry.title, load_id
         )
@@ -1744,6 +1844,74 @@ class Runtime:
         if current is not None:
             self._set_load_state(load_id, replace(current, gate=gate))
             self.store.mark_dirty(Section.LOADS)
+
+    @staticmethod
+    def shared_setpoint(load: Load) -> Setpoint | None:
+        """Return the kind whose device setpoint is this load's comfort target (§5.16, INV-27)."""
+        kind = load.kind
+        if isinstance(kind, Setpoint) and kind.cfg.comfort_from_profile and load.config.target:
+            return kind
+        return None
+
+    @callback
+    def _adopt_setpoint_overrides(self, now: datetime) -> None:
+        """Take a hand on the thermostat's dial as the new comfort target (amended INV-27).
+
+        Read before each tick: the setpoint's value and the `Context` id of the
+        state that carries it. `setpoint_origin` says whose change it is. The
+        first value seen after a start is only recorded - nothing yet tells ours
+        from theirs. A household change becomes configuration (the subentry's
+        `comfort_c`, D8 §5.16), so it outlives a restart, and the next tick
+        steers around it.
+        """
+        for load in self.build.loads:
+            kind = self.shared_setpoint(load)
+            if kind is None:
+                continue
+            device = self.build.devices.get(load.load_id)
+            role = kind.cfg.role
+            entity_id = None if device is None else device.entity_of(role)
+            state = None if entity_id is None else self.hass.states.get(entity_id)
+            value = self._read_state(load.load_id, role)
+            if state is None or not isinstance(value, int | float):
+                continue
+            seen = self._setpoint_seen.get(load.load_id)
+            self._setpoint_seen[load.load_id] = (float(value), state.context.id)
+            if seen is not None and seen == (float(value), state.context.id):
+                continue
+            origin = setpoint_origin(
+                self._load_state(load.load_id).gate,
+                value=float(value),
+                context_id=state.context.id,
+                tolerance=kind.tolerance(),
+                reconciled=seen is not None,
+                now=now,
+            )
+            if origin is not Origin.USER:
+                continue
+            _LOGGER.info(
+                "site %s: %s set to %.1f by hand — the new comfort target",
+                self.site_name,
+                load.config.name,
+                value,
+            )
+            self.overridden_at[load.load_id] = now
+            self.load_params.setdefault(load.load_id, {})["comfort_c"] = float(value)
+            self._store_comfort(load.load_id, float(value))
+
+    @callback
+    def _store_comfort(self, load_id: str, value: float) -> None:
+        """Write an adopted comfort target into the appliance's configuration (INV-27)."""
+        subentry = self.entry.subentries.get(load_id)
+        if subentry is None:
+            return
+        params = {**(subentry.data.get(LOAD_PARAMS) or {}), "comfort_c": value}
+        manual = sorted({*(subentry.data.get(LOAD_MANUAL_OVERRIDES) or ()), "comfort_c"})
+        self.hass.config_entries.async_update_subentry(
+            self.entry,
+            subentry,
+            data={**subentry.data, LOAD_PARAMS: params, LOAD_MANUAL_OVERRIDES: manual},
+        )
 
     def _read_state(self, load_id: str, role: Role) -> Value | None:
         """Read one load's role back for the gate, through its bindings (INV-22).
@@ -1905,6 +2073,7 @@ class Runtime:
     async def _tick(self, trigger: str) -> None:
         assert self.engine is not None
         now = dt_util.utcnow()
+        self._adopt_setpoint_overrides(now)
         inputs = await self._inputs(now, trigger)
         state, snapshot, effects = self.engine.tick(self.state, inputs)
         self.state = state

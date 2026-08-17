@@ -1164,6 +1164,11 @@ class LiveDevice:
         """Return the service call that puts a provision on its entity."""
         return self.bound.call_for_provision(provision)
 
+    def entity_of(self, role: Role) -> str | None:
+        """Return the entity `role` is bound to, or `None` (the override test, D-0414)."""
+        binding = self.bound.binding(role)
+        return None if binding is None else binding.entity_id
+
 
 class DeviceProfile(Protocol):
     """How to talk to one product or one class of device (D4 §4.5).

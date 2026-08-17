@@ -39,6 +39,12 @@ CONF_NOTIFICATIONS: Final = "notifications"
 CONF_QUIET_HOURS: Final = "quiet_hours"
 CONF_ACTIVE: Final = "active"
 
+#: Where the brand icon is served: an appliance entity on a hardware device shows
+#: it as its picture, so it reads as PowerPlan's among the device's own rows
+#: (D8 §5.16, D-0418). Home Assistant's own `/api/brands/…` needs a signed token
+#: an entity picture cannot carry.
+BRAND_ICON_URL: Final = "/powerplan_static/icon.png"
+
 # --------------------------------------------------------------------------- #
 # Load subentries (D8 §4 `LoadSubentryData`, §5.2)
 # --------------------------------------------------------------------------- #
@@ -55,6 +61,9 @@ LOAD_STRATEGY_PARAMS: Final = "strategy_params"
 LOAD_PRIORITY: Final = "priority"
 LOAD_GROUP: Final = "group"
 LOAD_MANUAL_OVERRIDES: Final = "manual_overrides"
+#: Set once the household renames the appliance in the gear flow; until then the
+#: title follows the hardware device's name (D8 §5.16, rename rule).
+LOAD_TITLE_USER_SET: Final = "title_user_set"
 
 # --------------------------------------------------------------------------- #
 # Circuit subentries (D6 §6 `CircuitSubentryData`, D8 §5.3)

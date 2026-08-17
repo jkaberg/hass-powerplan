@@ -313,6 +313,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 33. **INV-50 permits one kind of removal: a documented merge with one repair.** *Rejected:* keep-and-hide - a hidden duplicate still invites an automation to write two controls for one thing.
 34. **Priority: three fixed numbers, 15/30/45, split at 22.5 and 37.5** (D-0411). *Rejected:* the free number with a select on top - the walk's tie-break makes more levels pointless.
 35. **Device attachment comes after U.2, U.4 and H.2 and before U.3,** so U.3 builds the load flow once against attached devices.
+36. **No migration for device attachment, and the brand marks the rows instead of a name prefix.** Nothing released needs migrating (D-0421); the brand icon is the entity picture (D-0418). *Rejected:* a "PowerPlan-" prefix - clutter in every row.
 
 ---
 
@@ -358,7 +359,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | H.1 | The running build, read end to end | done |
 | H.2 | Observe writes nothing; the gate reads what it wrote | done |
 | H.3 | The period and the baseline from the recorder | done |
-| A.1 | Attach | todo |
+| A.1 | Attach | done |
 | A.2 | The entity set and `plan_status` | todo |
 | A.3 | Settings by level and the gear flow | todo |
 | 0.1 | Scaffold and loadable shell | done |

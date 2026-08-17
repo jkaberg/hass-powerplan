@@ -1047,6 +1047,10 @@
     "store_reset": {
       "title": "The store was reset",
       "description": "{site}: the site's store file could not be read and was moved to {path}. The site started from an empty store; the current window's energy is rebuilt from the register."
+    },
+    "device_missing": {
+      "title": "An appliance's device is gone",
+      "description": "The appliance «{load}» no longer exists in Home Assistant. PowerPlan does not control it until you pick a new device: open PowerPlan, find «{load}» and choose Change setup."
     }
   },
   "selector": {
@@ -2425,6 +2429,16 @@
                 "preheat_max_outdoor_c": "Advanced: no preheat above this outdoor temperature."
               }
             }
+          }
+        },
+        "reconfigure_device": {
+          "title": "Pick the new device",
+          "description": "The device «{load}» was set up with is gone. Pick the one that replaces it; its entities are matched next.",
+          "data": {
+            "device": "Device"
+          },
+          "data_description": {
+            "device": "The charger, thermostat, plug or heat pump."
           }
         }
       },

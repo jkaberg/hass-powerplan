@@ -47,7 +47,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Protocol
 
-from homeassistant.core import callback
+from homeassistant.core import Context, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
@@ -266,6 +266,10 @@ class WriteGate:
 
         now = dt_util.utcnow()
         sent: list[DeviceCall] = []
+        # One context per command: the state change it causes carries its id,
+        # which is how a later change is told apart from a hand on the dial
+        # (amended INV-27, D-0414).
+        context = Context()
         try:
             for call in calls:
                 await self._hass.services.async_call(
@@ -274,6 +278,7 @@ class WriteGate:
                     dict(call.data),
                     blocking=True,
                     target=call.target,
+                    context=context,
                 )
                 sent.append(call)
         except TimeoutError:
@@ -290,7 +295,8 @@ class WriteGate:
             decision.reason,
         )
         self._schedule_verify(actuation, command.role, calls[0].entity_id)
-        return self._report(actuation, Action.WRITTEN, succeeded(decision.gate), tuple(sent))
+        gate = replace(succeeded(decision.gate), last_context_id=context.id)
+        return self._report(actuation, Action.WRITTEN, gate, tuple(sent))
 
     def _unaddressable(self, actuation: Actuation, write: Write) -> Outcome:
         """Report a command for a role nothing is bound to (D4 §8, INV-53).

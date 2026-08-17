@@ -1762,3 +1762,23 @@ The fallback device (the load's own identifiers, `via_device_id` = the site) is 
 
 The one-time comfort write in the device-attachment migration runs in setup after `release_all` and `restore_all` and before the first tick, as a normal `SETPOINT` decision through the gate. While the site is off it's skipped, and the device's own setpoint becomes the target on the first `auto` tick; a migration write is exactly what puts a fresh `last_context_id` on record. Affects D7 §5.5, D8 §5.16.
 **Rejected:** writing at migration regardless of site state - a site left off must stay silent through an upgrade.
+
+### D-0418 · The brand icon as entity picture replaces the "PowerPlan-" prefix
+
+An appliance entity on a hardware device gets `entity_picture = /powerplan_static/icon.png`, served from a static path registered in `async_setup`; its name has no prefix, so its entity id is HA's default and D-0410's helper isn't needed. The picture marks the row wherever it's drawn without cluttering the name. HA's own brand endpoint needs auth or a rotating token an `<img>` can't carry. Entities on PowerPlan's own devices have no picture. Affects D8 §5.16.
+**Rejected:** a custom icon set via a frontend module - loads before every frontend, and at 24 px the brand is bars and a bolt, indistinguishable from MDI. Keeping the prefix - clutter in every row.
+
+### D-0419 · `device_missing` is fixed in the gear flow, so the repair isn't fixable
+
+`device_missing_<load>` is an ERROR repair pointing to the appliance's "Endre oppsett". Reconfigure opens on a device step when the bound device is gone, re-matches roles with the type kept, then asks the usual questions; `Runtime.settle_devices()` moves the entities back, removes the empty fallback device and clears the repair. A repair fix flow can't open a subentry's reconfigure, and one that only confirms would read as fixed while the appliance stays uncontrolled. Affects D8 §5.16.
+**Rejected:** a repair flow that asks for the device itself - a second copy of the gear flow's steps.
+
+### D-0420 · The override test: context, then our value, then settling, then the first sighting
+
+`gate.setpoint_origin` says whose change a setpoint is. Ours if it carries our last write's context or equals the value we last wrote, within tolerance. Held while our write settles, or before the first sighting after a start (which is only recorded). Otherwise the household's: it becomes the subentry's `comfort_c`, joins `manual_overrides` and applies next tick. Context alone fails for a sleepy Z-Wave thermostat reporting after HA's five-second context window. A persisted `reconciled` flag would never turn true for a load we haven't written since start. Affects D4 §4.1, §9 28; D8 §9 28.
+**Rejected:** context only - can't tell a late report of our write from a hand.
+
+### D-0421 · No migration for device attachment: nothing is released yet
+
+D8 §5.16's migration steps, merge repair and golden-registry test aren't built: no released install exists, and a new install gets the new entity set directly. INV-50's merge clause has no case yet. Affects D8 §5.16, §9 25.
+**Rejected:** building it anyway - tested against a store shape no user has.

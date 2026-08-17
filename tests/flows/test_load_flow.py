@@ -21,6 +21,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import (
+    BRAND_ICON_URL,
     DOMAIN,
     LOAD_BINDINGS,
     LOAD_DERIVATION_VERSION,
@@ -238,10 +239,10 @@ async def test_03_reconfigure_re_derives_shows_the_diff_and_keeps_manual_edits(
 
 @pytest.mark.inv("INV-50")
 @pytest.mark.inv("INV-47")
-async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(
+async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(  # noqa: PLR0915 - one story
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
 ) -> None:
-    """D8 §9 4 (load half): the `ev` rows exist under the load device; `target_soc` moves the tick."""
+    """D8 §9 4 (load half), §9 23: the `ev` rows exist on the charger's own device; `target_soc` moves the tick."""
     result = await _add_charger(hass, site, charger)
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Charger"})
     await hass.async_block_till_done()
@@ -250,17 +251,17 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(
 
     registry = er.async_get(hass)
     devices = dr.async_get(hass)
-    load_device = devices.async_get_device_by_identifier(
-        (DOMAIN, f"{site.entry_id}:{sub.subentry_id}"), config_entry_id=site.entry_id
-    )
+    load_device = devices.async_get(sub.data["device_id"])
     assert load_device is not None
-    assert load_device.name == "Charger"
-    assert load_device.model == "ev"
-    # `via_device_id`, not the deprecated `via_device` (identifiers) form -
-    # the site's own device is registered eagerly in `Runtime.start()`, ahead
-    # of any platform, precisely so this is never resolved by HA's own
-    # deprecated fallback (2027.8.0).
-    assert load_device.via_device_id == runtime.site_device_id
+    # No PowerPlan device for the appliance, and PowerPlan's entry is not added
+    # to a device it does not own (`device_entry`, never `device_info`).
+    assert (
+        devices.async_get_device_by_identifier(
+            (DOMAIN, f"{site.entry_id}:{sub.subentry_id}"), config_entry_id=site.entry_id
+        )
+        is None
+    )
+    assert site.entry_id not in load_device.config_entries
     assert runtime.site_device_id is not None
     for platform, key, category, enabled in EV_ENTITIES:
         entity_id = registry.async_get_entity_id(
@@ -270,6 +271,9 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(
         entry = registry.async_get(entity_id)
         assert entry is not None
         assert entry.device_id == load_device.id, (platform, key)
+        state = hass.states.get(entity_id)
+        if state is not None:
+            assert state.attributes.get("entity_picture") == BRAND_ICON_URL, (platform, key)
         assert entry.entity_category == category, (platform, key)
         assert entry.disabled_by is None if enabled else entry.disabled_by is not None, (
             platform,

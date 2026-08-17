@@ -487,9 +487,10 @@ async def test_10_the_e2e_day(  # noqa: PLR0915, PLR0917 - the day is one story;
     assert first["presence"] == "auto"
 
     # -- the meter outage: the sensor, the repair, and both clear ------------ #
-    assert probes[CHECK_STALE_AT]["meter_stale"] == "on", probes[CHECK_STALE_AT]
+    # The household is told by the repair; `binary_sensor.<site>_meter_stale`
+    # is diagnostic and off by default since WP U.4 (ENT-17), so it has no state.
+    assert probes[CHECK_STALE_AT]["meter_stale"] is None, probes[CHECK_STALE_AT]
     assert probes[CHECK_STALE_AT]["meter_stale_issue"] is True
-    assert probes[CHECK_FRESH_AT]["meter_stale"] == "off", probes[CHECK_FRESH_AT]
     assert probes[CHECK_FRESH_AT]["meter_stale_issue"] is False
 
     # -- the store round trip mid-window (INV-14) ---------------------------- #

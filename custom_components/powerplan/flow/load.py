@@ -55,6 +55,7 @@ from custom_components.powerplan.const import (
     LOAD_PRIORITY,
     LOAD_PROFILE,
     LOAD_STRATEGY,
+    LOAD_TITLE_USER_SET,
     LOAD_TYPE,
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
@@ -817,16 +818,17 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             device_types.keys()
         )
         default_type = str(given.get("type") or match.suggested_type or type_options[0])
-        fields: dict[Any, Any] = {
-            vol.Required("type", default=default_type): SelectSelector(
+        fields: dict[Any, Any] = {}
+        # A re-bound device keeps the appliance's type (D8 §5.16): only the roles move.
+        if self.source != "reconfigure":
+            fields[vol.Required("type", default=default_type)] = SelectSelector(
                 SelectSelectorConfig(
                     options=type_options,
                     mode=SelectSelectorMode.DROPDOWN,
                     translation_key="load_type",
                     sort=False,
                 )
-            ),
-        }
+            )
         if len(self._matches) > 1:
             fields[vol.Required("profile", default=match.profile)] = SelectSelector(
                 SelectSelectorConfig(
@@ -969,7 +971,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 )
             else:
                 self._profile = self._chosen(_flat(user_input)).profile
-                self._type = str(user_input["type"])
+                self._type = str(user_input.get("type", self._type))
                 self._bindings = bindings
                 return await self.async_step_questions()
         placeholders.update(self._match_sentence(text, best))
@@ -1178,10 +1180,35 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._bindings = tuple(
             binding_from_data(row) for row in self._stored.get(LOAD_BINDINGS) or ()
         )
-        if self._device_id:
-            self._view = DeviceView.from_hass(self.hass, self._device_id)
-            self._matches = profiles.match(self._view)
+        if not self._device_id or dr.async_get(self.hass).async_get(self._device_id) is None:
+            # The hardware is gone (`device_missing`): pick its replacement,
+            # bind its roles, then the same questions (D8 §5.16).
+            return await self.async_step_reconfigure_device()
+        self._view = DeviceView.from_hass(self.hass, self._device_id)
+        self._matches = profiles.match(self._view)
         return await self.async_step_questions(user_input)
+
+    async def async_step_reconfigure_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick the device that replaces a removed one; its roles are matched next."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            device_id = str(user_input["device"])
+            view = DeviceView.from_hass(self.hass, device_id)
+            matches = profiles.match(view)
+            if not matches:
+                errors["device"] = "no_profile"
+            else:
+                self._device_id, self._view, self._matches = device_id, view, matches
+                return await self.async_step_match()
+        subentry = self._get_reconfigure_subentry()
+        return self.async_show_form(
+            step_id="reconfigure_device",
+            data_schema=vol.Schema({vol.Required("device"): DeviceSelector()}),
+            errors=errors or None,
+            description_placeholders={"load": subentry.title},
+        )
 
     async def async_step_reconfigure_review(
         self, user_input: dict[str, Any] | None = None
@@ -1204,10 +1231,17 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 manual = sorted(set(manual) | set(previous_manual))
             data = self._materialise(user_input, params, manual)
             data[LOAD_DERIVATION_VERSION_KEY] = fresh.derivation_version
+            subentry = self._get_reconfigure_subentry()
+            title = str(user_input["name"])
+            # A name the household typed stops following the device's (§5.16).
+            data[LOAD_TITLE_USER_SET] = bool(
+                self._stored.get(LOAD_TITLE_USER_SET) or title != subentry.title
+            )
             return self.async_update_and_abort(
                 self._get_entry(),
-                self._get_reconfigure_subentry(),
-                title=str(user_input["name"]),
+                subentry,
+                unique_id=f"{SUBENTRY_LOAD}:{self._device_id}",
+                title=title,
                 data=data,
             )
         text = await Text.load(self.hass)

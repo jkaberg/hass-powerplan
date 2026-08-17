@@ -1,7 +1,7 @@
 {
   "domain": "powerplan",
   "name": "PowerPlan",
-  "after_dependencies": ["recorder", "nordpool", "weather", "zwave_js"],
+  "after_dependencies": ["http", "recorder", "nordpool", "weather", "zwave_js"],
   "codeowners": ["@jkaberg"],
   "config_flow": true,
   "dependencies": [],

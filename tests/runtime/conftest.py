@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -309,16 +309,23 @@ class FakeFloor:
         self.hass.services.async_register("climate", "set_temperature", self._set_temperature)
         self._publish()
 
-    def _publish(self) -> None:
+    def _publish(self, context: Context | None = None) -> None:
         self.hass.states.async_set(
             FLOOR_CLIMATE,
             "heat",
             {"temperature": self.setpoint_c, "current_temperature": self.temp_c},
+            context=context,
         )
 
     async def _set_temperature(self, call: ServiceCall) -> None:
+        # The state a service call causes carries its context, as an entity's does.
         self.setpoint_c = float(call.data["temperature"])
         self.seen.append((str(call.data["entity_id"]), self.setpoint_c))
+        self._publish(call.context)
+
+    def turn_dial(self, setpoint_c: float) -> None:
+        """Turn the dial by hand: a new setpoint under a context of its own."""
+        self.setpoint_c = setpoint_c
         self._publish()
 
     # -- `LoadDevice` --------------------------------------------------------- #
@@ -333,6 +340,10 @@ class FakeFloor:
         return load_reads(
             now, numbers={Role.TEMP: self.temp_c, Role.SETPOINT: self.setpoint_c, Role.POWER: 0.0}
         )
+
+    def entity_of(self, role: Role) -> str | None:
+        """Return the climate entity for the setpoint; nothing else is bound by entity."""
+        return FLOOR_CLIMATE if role is Role.SETPOINT else None
 
     def call_for(self, write: Write) -> DeviceCall | None:
         """Map a setpoint write to `climate.set_temperature`; nothing else is bound."""

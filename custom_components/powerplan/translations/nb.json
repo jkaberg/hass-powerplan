@@ -1047,6 +1047,10 @@
     "store_reset": {
       "title": "Lageret ble nullstilt",
       "description": "{site}: anleggets lagerfil kunne ikke leses og ble flyttet til {path}. Anlegget startet med et tomt lager; timens energi bygges opp igjen fra målerstanden."
+    },
+    "device_missing": {
+      "title": "Et apparats enhet er borte",
+      "description": "Apparatet «{load}» finnes ikke lenger i Home Assistant. PowerPlan styrer det ikke før du velger en ny enhet: åpne PowerPlan, finn «{load}» og velg Endre oppsett."
     }
   },
   "selector": {
@@ -2425,6 +2429,16 @@
                 "param_vacation_c": "Utledet."
               }
             }
+          }
+        },
+        "reconfigure_device": {
+          "title": "Velg den nye enheten",
+          "description": "Enheten «{load}» ble satt opp med, er borte. Velg den som erstatter den; entitetene kobles etterpå.",
+          "data": {
+            "device": "Enhet"
+          },
+          "data_description": {
+            "device": "Laderen, termostaten, pluggen eller varmepumpen."
           }
         }
       },

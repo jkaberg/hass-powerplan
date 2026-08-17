@@ -38,6 +38,7 @@ __all__ = [
     "GateConfig",
     "GateState",
     "Hold",
+    "Origin",
     "Transport",
     "TransportBudget",
     "Write",
@@ -45,6 +46,7 @@ __all__ = [
     "decide",
     "failed",
     "same",
+    "setpoint_origin",
     "succeeded",
     "transient",
     "verify",
@@ -165,6 +167,9 @@ class GateState:
     #: same value has nothing new to say, and the record outlives a restart
     #: (H.1 F-4, `design/DECISIONS.md` D-0363). A write clears it.
     observed: Value | None = None
+    #: The Home Assistant `Context` id the last write went out under: a state
+    #: change carrying it is our own write settling (amended INV-27, D-0414).
+    last_context_id: str | None = None
 
     @property
     def unhealthy(self) -> bool:
@@ -491,6 +496,41 @@ def verify(
         replace(state, verify_due=None, deviations=state.deviations + (1 if deviated else 0)),
         deviated,
     )
+
+
+class Origin(StrEnum):
+    """Who changed a setpoint powerplan also writes (amended INV-27, D-0414)."""
+
+    OURS = "ours"
+    USER = "user"
+    HELD = "held"
+
+
+def setpoint_origin(
+    state: GateState,
+    *,
+    value: Value,
+    context_id: str | None,
+    tolerance: float,
+    reconciled: bool,
+    now: datetime,
+) -> Origin:
+    """Say whether an observed setpoint change is ours, the household's, or not yet knowable.
+
+    Ours: it carries the `Context` of our last write, or it is the value we last wrote -
+    a device that reports late (a sleepy Z-Wave thermostat) does so under a fresh
+    context. Held: our write is still settling, so an intermediate report is not a
+    decision anyone made; or the record has not been reconciled since a restart, so
+    nothing tells ours from theirs - the setpoint-walk incident's shape. Only what is
+    left is the household's.
+    """
+    if context_id is not None and context_id == state.last_context_id:
+        return Origin.OURS
+    if state.last_value is not None and same(value, state.last_value, tolerance):
+        return Origin.OURS
+    if not reconciled or state.settling(now):
+        return Origin.HELD
+    return Origin.USER
 
 
 def succeeded(state: GateState) -> GateState:

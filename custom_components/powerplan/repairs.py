@@ -63,6 +63,9 @@ CATALOGUE: dict[str, Issue] = {
     "savings_low_confidence": Issue(ir.IssueSeverity.WARNING),
     "load_error": Issue(ir.IssueSeverity.WARNING),
     "notify_service_missing": Issue(ir.IssueSeverity.WARNING),
+    # Fixed in the appliance's own gear flow, which a repair cannot open: the
+    # description says where, and re-binding clears it (D8 §5.16, D-0419).
+    "device_missing": Issue(ir.IssueSeverity.ERROR),
 }
 
 #: D8 §5.9: the meter's power must be stale this long before the issue is raised.

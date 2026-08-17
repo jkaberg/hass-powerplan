@@ -1,6 +1,8 @@
-"""The entity base every powerplan entity shares (D8 §3, §5.5).
+"""The entity base every powerplan entity shares (D8 §3, §5.5, §5.16).
 
-One device per site (`identifiers={(DOMAIN, entry_id)}`), entities named by
+One device per site (`identifiers={(DOMAIN, entry_id)}`); an appliance's
+entities sit on the appliance's own hardware device (`Entity.device_entry`),
+or on a PowerPlan device named after it when it has none (§5.16). Entities named by
 translation key with `has_entity_name`, unique ids derived from the entry id and
 the key and never from a name (INV-50), availability from the coordinator's
 `Snapshot`. Entities that carry a large attribute gate their own writes on a
@@ -23,7 +25,7 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN
+from .const import BRAND_ICON_URL, DOMAIN
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -40,6 +42,7 @@ __all__ = [
     "LoadEntity",
     "PowerplanEntity",
     "async_prepare_site_device",
+    "fallback_identifier",
     "git_commit",
     "load_device_info",
     "money_text",
@@ -48,11 +51,8 @@ __all__ = [
     "window_translation_key",
 ]
 
-#: The home device's maker as a household reads it (D8 §5.12, review BR-3).
+#: The home device's and a fallback appliance device's maker (D8 §5.12, §5.16).
 SITE_MANUFACTURER = "PowerPlan"
-#: A load device's, unchanged until the appliance entities move onto the
-#: appliance's own device (PLAN §9 U.4's note; the WP after U.4).
-MANUFACTURER = "powerplan"
 
 #: How far above the integration directory a checkout's `.git` may be:
 #: `custom_components/powerplan` → `custom_components` → the repository root.
@@ -145,6 +145,12 @@ async def async_prepare_site_device(hass: HomeAssistant, runtime: Runtime) -> No
     path = runtime.build.cfg.path.value
     strings = await async_get_translations(hass, hass.config.language, "device", {DOMAIN})
     runtime.site_model = strings.get(f"component.{DOMAIN}.device.site_{path}.name") or path
+    # A fallback appliance device's model is the type in words too (D8 §5.16).
+    selectors = await async_get_translations(hass, hass.config.language, "selector", {DOMAIN})
+    prefix = f"component.{DOMAIN}.selector.load_type.options."
+    runtime.type_names = {
+        key.removeprefix(prefix): name for key, name in selectors.items() if key.startswith(prefix)
+    }
     integration = await async_get_integration(hass, DOMAIN)
     version = str(integration.version) if integration.version is not None else "0"
     commit = await hass.async_add_executor_job(git_commit, Path(__file__).parent)
@@ -215,18 +221,25 @@ class PowerplanEntity(CoordinatorEntity[DataUpdateCoordinator["Snapshot"]]):
         super()._handle_coordinator_update()
 
 
-def load_device_info(runtime: Runtime, load: Load) -> DeviceInfo:
-    """Return a load's device: named after the load, the type as model, via the site (D8 §5.5).
+def fallback_identifier(entry_id: str, load_id: str) -> tuple[str, str]:
+    """Return the identifier of a load's own PowerPlan device (D8 §5.16's fallback)."""
+    return (DOMAIN, f"{entry_id}:{load_id}")
 
-    `via_device_id`, not the deprecated `via_device` (identifiers) form: the
-    site device is registered eagerly in `Runtime.start()`, ahead of any
-    platform, precisely so its id is already known here (HA rule, 2027.8.0).
+
+def load_device_info(runtime: Runtime, load: Load) -> DeviceInfo:
+    """Return the fallback device of a load with no hardware device (D8 §5.16, D-0416).
+
+    Named after the load, the type in words as model ("Varmepumpe", not
+    `heat_pump`), via the site. `via_device_id`, not the deprecated
+    `via_device` (identifiers) form: the site device is registered eagerly in
+    `Runtime.start()`, ahead of any platform, so its id is known here.
     """
     info = DeviceInfo(
-        identifiers={(DOMAIN, f"{runtime.entry.entry_id}:{load.load_id}")},
+        identifiers={fallback_identifier(runtime.entry.entry_id, load.load_id)},
         name=load.config.name,
-        manufacturer=MANUFACTURER,
-        model=load.config.type_key,
+        manufacturer=SITE_MANUFACTURER,
+        model=runtime.type_names.get(load.config.type_key, load.config.type_key),
+        model_id=load.config.type_key,
     )
     if runtime.site_device_id is not None:
         info["via_device_id"] = runtime.site_device_id
@@ -234,20 +247,30 @@ def load_device_info(runtime: Runtime, load: Load) -> DeviceInfo:
 
 
 class LoadEntity(PowerplanEntity):
-    """An entity of one load's device (D8 §5.5, the load table).
+    """An entity of one appliance (D8 §5.5, the load table; §5.16, the device it sits on).
 
-    The unique id is the entry id, the subentry id and the key (INV-50); the
-    entity is available when the coordinator has a snapshot and the load is
-    not held unhealthy on stale roles (§5.5 "Availability").
+    On the appliance's own hardware device where the load has one - no
+    `device_info`, so PowerPlan's config entry is never added to a device it
+    does not own - with the brand icon as its picture, which is what tells it
+    apart from the device's own rows (D-0418); on the fallback device
+    otherwise. The unique id is the entry id, the subentry id and the key
+    (INV-50); the entity is available when the coordinator has a snapshot and
+    the load is not held unhealthy on stale roles (§5.5 "Availability").
     """
 
     def __init__(self, runtime: Runtime, load: Load, key: str) -> None:
-        """Bind to one load of the site."""
+        """Bind to one load of the site and to its device."""
         super().__init__(runtime, key)
         self._load = load
         self.load_id = load.load_id
         self._attr_unique_id = unique_id(runtime.entry.entry_id, key, load.load_id)
-        self._attr_device_info = load_device_info(runtime, load)
+        device = runtime.hardware_device(load.load_id)
+        if device is None:
+            self._attr_device_info = load_device_info(runtime, load)
+        else:
+            self._attr_device_info = None
+            self.device_entry = device
+            self._attr_entity_picture = BRAND_ICON_URL
 
     @property
     def load(self) -> Load:
