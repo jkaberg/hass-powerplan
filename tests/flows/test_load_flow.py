@@ -128,7 +128,7 @@ async def test_02_the_load_flow_creates_a_subentry_with_answers_derived_and_vers
     result = await _add_charger(hass, site, charger)
     review = result["data_schema"]({})
     assert review["strategy"] == "deadline_fill"
-    assert review["priority"] == 10
+    assert review["priority"] == "low", "the car's derived 10 reads as low (D-0422)"
     result = await _answer(hass, result, **{**review, "name": "Garage charger"})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY, result

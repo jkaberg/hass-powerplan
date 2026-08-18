@@ -782,6 +782,8 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 - The strategy question's option list drops `always` wherever the type has ≥ 2 applicable strategies left (D-0412); where it does not (`generic_switch`'s on-call subtypes, `appliance_cycle`), the strategy question is not asked at all (it was never meaningfully a choice) and `derive()` sets `always`/`run_once` directly.
 - Priority's numeric field is replaced by Lav/Normal/Høy in the add flow too (spec §4.1: "the number field is removed from the gear flow" - for both add and reconfigure, since the *add* flow's priority question was never level 3's business either; it is the same select the entity later owns).
 
+**In code (D-0425).** `const.ENTITY_SETTINGS` is the per-type list of what the device page owns. The reconfigure `questions` step skips those questions and keeps their stored answers. `reconfigure_review` has no strategy or priority field, leaves the owned parameters out of Advanced and out of the diff, keeps their stored values on a re-derive, and reads them back in `{levels}` under `{device_name}`/`{device_url}`. The add flow's review asks strategy where ≥ 2 choices remain without `always`, and priority from `selector.priority_level`. The `circuit`, `group` and `zone` gear labels read "Endre oppsett" too.
+
 **The integration-page translations** (spec §5.2, verified against `ha-config-sub-entry-row.ts`'s localize path above - `component.powerplan.config_subentries.<type>.entry_type` / `.initiate_flow.user` / `.initiate_flow.reconfigure`):
 
 | key | nb | en |

@@ -44,7 +44,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import LOAD_PRIORITY, LOAD_STRATEGY
+from .const import LOAD_PRIORITY, LOAD_STRATEGY, PRIORITY_LEVELS, priority_level
 from .core.accounting.shadow.base import StoreKind
 from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
@@ -80,9 +80,6 @@ CONTROL_OPTIONS: tuple[str, ...] = (
     Mode.OBSERVE.value,
     Mode.DELEGATED.value,
 )
-#: Low, normal, high - the numbers the allocator reads (D-0411). A derived
-#: priority keeps its own number until the household picks a level.
-PRIORITY_LEVELS: dict[str, int] = {"low": 15, "normal": 30, "high": 45}
 #: The types D8 §5.5 lets run now, and so give a "run now at most".
 FORCE_TYPES = frozenset({"ev", "water_heater", "generic_switch"})
 THERMAL_TYPES = frozenset({"floor_heating", "radiator", "heat_pump", "water_heater"})
@@ -192,11 +189,6 @@ class LoadPrioritySelect(LoadEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Store the level's number; the load is rebuilt in place (D7 §2)."""
         self.runtime.async_update_load_data(self.load_id, {LOAD_PRIORITY: PRIORITY_LEVELS[option]})
-
-
-def priority_level(priority: int) -> str:
-    """Return the level a priority number reads as (D-0411)."""
-    return min(PRIORITY_LEVELS, key=lambda level: abs(PRIORITY_LEVELS[level] - priority))
 
 
 def load_selects(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SelectEntity]:

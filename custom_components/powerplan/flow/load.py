@@ -48,6 +48,7 @@ from homeassistant.helpers.selector import (
 )
 
 from custom_components.powerplan.const import (
+    ENTITY_SETTINGS,
     LOAD_BINDINGS,
     LOAD_DEVICE_ID,
     LOAD_MANUAL_OVERRIDES,
@@ -57,8 +58,10 @@ from custom_components.powerplan.const import (
     LOAD_STRATEGY,
     LOAD_TITLE_USER_SET,
     LOAD_TYPE,
+    PRIORITY_LEVELS,
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
+    priority_level,
 )
 from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.core.loads.questionnaire import (
@@ -414,8 +417,11 @@ def question_schema(
     *,
     suggested: Mapping[str, Any] | None = None,
     followups: bool = False,
+    skip: frozenset[str] = frozenset(),
 ) -> vol.Schema:
     """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65).
+
+    `skip` leaves out what an entity owns once the appliance exists (D8 §5.16).
 
     A question that follows a yes/no answer (`asked_if`) is on the follow-up
     step, not here (`followups=True` renders that step; D8 §5.15 rule 5); a value
@@ -426,7 +432,7 @@ def question_schema(
     fields: dict[Any, Any] = {}
     hidden: dict[Any, Any] = {}
     for question in questionnaire.questions:
-        if not _asked(question, ctx, followups=followups):
+        if question.key in skip or not _asked(question, ctx, followups=followups):
             continue
         current = given.get(question.key, question.default_for(ctx))
         target = hidden if question.advanced else fields
@@ -638,35 +644,55 @@ def _shadow_sentence(text: Text, type_key: str, params: Mapping[str, Any]) -> st
     return text.word("load_text", f"shadow_{type_key}") or None
 
 
+def strategy_choices(device_type: DeviceType) -> list[str]:
+    """Return the strategies a household chooses between: `always` left out (D-0412)."""
+    return [key for key in device_type.strategies if key != "always"]
+
+
 def _review_schema(
     derived: Derived,
     device_type: DeviceType,
     *,
     name: str,
-    strategy: str | None = None,
-    priority: int | None = None,
     params: Mapping[str, Any] | None = None,
+    reconfigure: bool = False,
 ) -> vol.Schema:
-    """Name, strategy, priority - and the derived parameters, editable, in Advanced."""
+    """Name, strategy and priority when adding - and the derived parameters, editable, in Advanced.
+
+    Strategy is asked only where there are two to choose between, priority as
+    low/normal/high (D8 §5.16, D-0411, D-0412). On reconfigure both are the
+    entities' now, as is every parameter `ENTITY_SETTINGS` names, so none is
+    shown here (amended INV-66).
+    """
     given = params if params is not None else derived.params
-    fields: dict[Any, Any] = {
-        vol.Required("name", default=name): TextSelector(),
-        vol.Optional("strategy", default=strategy or derived.strategy): SelectSelector(
+    fields: dict[Any, Any] = {vol.Required("name", default=name): TextSelector()}
+    owned: frozenset[str] = frozenset()
+    if reconfigure:
+        owned = ENTITY_SETTINGS.get(device_type.key, frozenset())
+    else:
+        choices = strategy_choices(device_type)
+        if len(choices) >= 2:  # noqa: PLR2004 - a choice needs two
+            default = derived.strategy if derived.strategy in choices else choices[0]
+            fields[vol.Optional("strategy", default=default)] = SelectSelector(
+                SelectSelectorConfig(
+                    options=choices,
+                    mode=SelectSelectorMode.DROPDOWN,
+                    translation_key="strategy",
+                    sort=False,
+                )
+            )
+        fields[vol.Optional("priority", default=priority_level(derived.priority))] = SelectSelector(
             SelectSelectorConfig(
-                options=list(device_type.strategies),
-                mode=SelectSelectorMode.DROPDOWN,
-                translation_key="strategy",
+                options=list(PRIORITY_LEVELS),
+                mode=SelectSelectorMode.LIST,
+                translation_key="priority_level",
                 sort=False,
             )
-        ),
-        vol.Optional("priority", default=priority if priority is not None else derived.priority): (
-            NumberSelector(
-                NumberSelectorConfig(min=0, max=100, step=1, mode=NumberSelectorMode.BOX)
-            )
-        ),
-    }
+        )
     hidden: dict[Any, Any] = {}
     for key, value in sorted(given.items()):
+        if key in owned:
+            continue
         if isinstance(value, bool):
             hidden[vol.Optional(f"param_{key}", default=value)] = BooleanSelector()
         elif isinstance(value, int | float):
@@ -1032,6 +1058,12 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             return await self.async_step_reconfigure_review()
         return await self.async_step_review()
 
+    def _entity_settings(self) -> frozenset[str]:
+        """Return what an entity owns for this appliance: empty while adding it."""
+        if self.source != "reconfigure":
+            return frozenset()
+        return ENTITY_SETTINGS.get(str(self._type), frozenset())
+
     def _stored_answers(self) -> dict[str, Any]:
         return dict(self._stored.get("answers") or {}) if self._stored is not None else {}
 
@@ -1048,8 +1080,13 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._ctx = self._ctx or self._qctx()
         errors: dict[str, str] = {}
         values: dict[str, Any] = self._stored_answers()
+        # A setting an entity owns is not asked again: its answer stands (D8 §5.16).
+        skip = self._entity_settings()
         if user_input is not None:
-            raw = answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx)
+            raw = {
+                **{key: value for key, value in values.items() if key in skip},
+                **answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx),
+            }
             # A follow-up keeps what it had until it is asked again.
             self._raw = {
                 **{
@@ -1073,7 +1110,12 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="questions",
             data_schema=question_schema(
-                questionnaire, str(self._type), self._ctx, values, suggested=self._suggested
+                questionnaire,
+                str(self._type),
+                self._ctx,
+                values,
+                suggested=self._suggested,
+                skip=skip,
             ),
             errors=errors or None,
             description_placeholders={
@@ -1148,6 +1190,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             last_step=True,
         )
 
+    def _priority(self, user_input: Mapping[str, Any]) -> int:
+        """Return the derived number where its level was kept, else the chosen level's (D-0422)."""
+        assert self._derived is not None
+        level = str(user_input.get("priority") or priority_level(self._derived.priority))
+        if level == priority_level(self._derived.priority):
+            return self._derived.priority
+        return PRIORITY_LEVELS[level]
+
     def _materialise(
         self, user_input: Mapping[str, Any], params: Mapping[str, Any], manual: Sequence[str]
     ) -> dict[str, Any]:
@@ -1156,8 +1206,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         assert self._derived is not None
         data = materialise(str(self._type), self._answers, self._derived)
         data[LOAD_PARAMS] = {key: jsonable(value) for key, value in sorted(params.items())}
-        data[LOAD_STRATEGY] = str(user_input.get("strategy") or self._derived.strategy)
-        data[LOAD_PRIORITY] = int(user_input.get("priority", self._derived.priority))
+        stored = self._stored or {}
+        data[LOAD_STRATEGY] = str(
+            user_input.get("strategy") or stored.get(LOAD_STRATEGY) or self._derived.strategy
+        )
+        data[LOAD_PRIORITY] = int(stored.get(LOAD_PRIORITY, self._priority(user_input)))
         data[LOAD_PROFILE] = self._profile
         data[LOAD_DEVICE_ID] = self._device_id
         data[LOAD_BINDINGS] = [binding_to_data(binding) for binding in self._bindings]
@@ -1210,6 +1263,34 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             description_placeholders={"load": subentry.title},
         )
 
+    def _levels_line(self, text: Text, params: Mapping[str, Any]) -> str:
+        """Say what the device page now owns, read back, not offered to edit (D8 §5.16)."""
+        assert self._stored is not None
+        type_key = str(self._type)
+        strategy = str(self._stored.get(LOAD_STRATEGY) or "")
+        review = f"config_subentries.{SUBENTRY_LOAD}.step.review.data"
+        level = priority_level(int(self._stored.get(LOAD_PRIORITY, PRIORITY_LEVELS["normal"])))
+        parts = [
+            f"{text.string(f'{review}.strategy')}: {text.word('strategy', strategy) or strategy}",
+            f"{text.string(f'{review}.priority')}: {text.word('priority_level', level)}",
+        ]
+        parts.extend(
+            f"{param_label(text, key)}: {_value(text, type_key, key, params[key])}"
+            for key in sorted(ENTITY_SETTINGS.get(type_key, frozenset()))
+            if key in params
+        )
+        return " · ".join(parts)
+
+    def _device_link(self) -> dict[str, str]:
+        """Return the appliance's device as a link to its page (D8 §5.16, §9 31)."""
+        device = dr.async_get(self.hass).async_get(str(self._device_id))
+        if device is None:
+            return {"device_name": "—", "device_url": "/config/devices/dashboard"}
+        return {
+            "device_name": device.name_by_user or device.name or "—",
+            "device_url": f"/config/devices/device/{device.id}",
+        }
+
     async def async_step_reconfigure_review(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
@@ -1218,6 +1299,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         assert self._answers is not None
         assert self._derived is not None
         device_type = self._device_type
+        type_key = str(self._type)
         stored_params = dict(self._stored.get(LOAD_PARAMS) or {})
         previous_manual = list(self._stored.get(LOAD_MANUAL_OVERRIDES) or [])
         candidate = {**self._stored, "answers": self._answers.as_json(), LOAD_PARAMS: stored_params}
@@ -1229,6 +1311,10 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             else:
                 params, manual = _params_from_review(stored_params, user_input, shown=fresh.params)
                 manual = sorted(set(manual) | set(previous_manual))
+            # What an entity owns is never re-derived: its value stands (amended INV-66).
+            owned = ENTITY_SETTINGS.get(type_key, frozenset())
+            params.update({key: stored_params[key] for key in owned if key in stored_params})
+            manual = sorted({*manual, *(key for key in previous_manual if key in owned)})
             data = self._materialise(user_input, params, manual)
             data[LOAD_DERIVATION_VERSION_KEY] = fresh.derivation_version
             subentry = self._get_reconfigure_subentry()
@@ -1245,20 +1331,17 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 data=data,
             )
         text = await Text.load(self.hass)
-        type_key = str(self._type)
+        owned = ENTITY_SETTINGS.get(type_key, frozenset())
+        diff = {key: change for key, change in diff.items() if key not in owned}
         diff_lines = [
             f"{param_label(text, key)}: {_value(text, type_key, key, old)} → "
             f"{_value(text, type_key, key, new)}"
             for key, (old, new) in diff.items()
         ]
         subentry = self._get_reconfigure_subentry()
-        schema = _review_schema(
-            fresh,
-            device_type,
-            name=subentry.title,
-            strategy=str(self._stored.get(LOAD_STRATEGY) or fresh.strategy),
-            priority=int(self._stored.get(LOAD_PRIORITY, fresh.priority)),
-        ).extend({vol.Optional("rederive", default=True): BooleanSelector()})
+        schema = _review_schema(fresh, device_type, name=subentry.title, reconfigure=True).extend(
+            {vol.Optional("rederive", default=True): BooleanSelector()}
+        )
         return self.async_show_form(
             step_id="reconfigure_review",
             data_schema=schema,
@@ -1267,6 +1350,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 "diff": "\n".join(f"- {line}" for line in diff_lines) or text.word("text", "none"),
                 "manual": text.join(param_label(text, key) for key in previous_manual)
                 or text.word("text", "none"),
+                "levels": self._levels_line(text, stored_params),
+                **self._device_link(),
             },
             last_step=True,
         )

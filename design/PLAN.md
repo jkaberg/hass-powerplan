@@ -361,7 +361,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | H.3 | The period and the baseline from the recorder | done |
 | A.1 | Attach | done |
 | A.2 | The entity set and `plan_status` | done |
-| A.3 | Settings by level and the gear flow | todo |
+| A.3 | Settings by level and the gear flow | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |

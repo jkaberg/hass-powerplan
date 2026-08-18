@@ -126,7 +126,7 @@ ENTITY_ID = re.compile(
     r"[a-z0-9_]+\b"
 )
 PLACEHOLDER = re.compile(r"\{([a-z_0-9]+)\}")
-URL = re.compile(r"https?://\S+")
+URL = re.compile(r"https?://\S+|/config/[^\s)]+")
 WORD = re.compile(r"[a-zæøåäö']+")
 POINT_DECIMAL = re.compile(r"\d\.\d")
 COMMA_DECIMAL = re.compile(r"\d,\d(?!\d\d)")

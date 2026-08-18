@@ -1564,6 +1564,13 @@
         "as_sunday": "Telles som søndag",
         "exclude": "Utelatt"
       }
+    },
+    "priority_level": {
+      "options": {
+        "low": "Lav",
+        "normal": "Normal",
+        "high": "Høy"
+      }
     }
   },
   "services": {
@@ -1700,10 +1707,10 @@
   },
   "config_subentries": {
     "load": {
-      "entry_type": "Last",
+      "entry_type": "Apparat",
       "initiate_flow": {
-        "user": "Legg til last",
-        "reconfigure": "Endre last"
+        "user": "Legg til apparat",
+        "reconfigure": "Endre oppsett"
       },
       "step": {
         "user": {
@@ -2070,8 +2077,8 @@
           },
           "data_description": {
             "name": "Hva lasten skal hete. Det navngir enheten og setter prefiks på entitetene.",
-            "strategy": "Hvordan denne lasten planlegges.",
-            "priority": "Høyere kuttes senere; den utledede verdien er vanligvis riktig."
+            "strategy": "Hvordan apparatet planlegges. Kan endres senere på enhetssiden.",
+            "priority": "Hvilket apparat som venter først når det er trangt: lav venter først. Kan endres senere på enhetssiden."
           },
           "sections": {
             "advanced": {
@@ -2252,17 +2259,13 @@
         },
         "reconfigure_review": {
           "title": "Utled på nytt fra svarene",
-          "description": "Å utlede på nytt fra svarene dine i dag ville endre:\n\n{diff}\n\nManuelle endringer så langt: {manual}.\n\n{explanation}",
+          "description": "Oppsett for **[{device_name}]({device_url})**.\n\nStyres fra enhetssiden: {levels}.\n\nÅ utlede på nytt fra svarene dine i dag ville endre:\n\n{diff}\n\nManuelle endringer så langt: {manual}.\n\n{explanation}",
           "data": {
             "name": "Navn",
-            "strategy": "Strategi",
-            "priority": "Prioritet",
             "rederive": "Bruk de re-utledede verdiene"
           },
           "data_description": {
             "name": "Hva lasten skal hete.",
-            "strategy": "Hvordan denne lasten planlegges.",
-            "priority": "Høyere kuttes senere.",
             "rederive": "Av beholder de lagrede parametrene og endringene dine; på tar verdiene over."
           },
           "sections": {
@@ -2474,10 +2477,10 @@
       }
     },
     "circuit": {
-      "entry_type": "Kurs",
+      "entry_type": "Sikringskurs",
       "initiate_flow": {
-        "user": "Legg til kurs",
-        "reconfigure": "Endre kurs"
+        "user": "Legg til sikringskurs",
+        "reconfigure": "Endre oppsett"
       },
       "step": {
         "user": {
@@ -2560,7 +2563,7 @@
       "entry_type": "Gruppe",
       "initiate_flow": {
         "user": "Legg til gruppe",
-        "reconfigure": "Endre gruppe"
+        "reconfigure": "Endre oppsett"
       },
       "step": {
         "user": {
@@ -2641,10 +2644,10 @@
       }
     },
     "zone": {
-      "entry_type": "Sone",
+      "entry_type": "Rom med flere varmekilder",
       "initiate_flow": {
-        "user": "Legg til sone",
-        "reconfigure": "Endre sone"
+        "user": "Legg til rom",
+        "reconfigure": "Endre oppsett"
       },
       "step": {
         "user": {

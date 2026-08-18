@@ -1797,3 +1797,8 @@ Beside D8 §5.16's states, `observing` (effective mode `observe`, including a si
 
 (1) `temp_min`/`temp_max` exist for every thermal type with a target, even with a bound `floor_min_limit`, because the profile writes the configured floor to that role (INV-64). (2) No battery `charge_min`: the kind reads its reserve at build time. (3) No strategy select for `generic_switch`: one choice remains. (4) `energy` is diagnostic and enabled. (5) `measured_power` only where the power role isn't on the appliance's own device. (6) `appliance_cycle` keeps `run_now`. (7) No appliance binary sensors. Affects D8 §5.16.
 **Rejected:** for (1), reading the device's floor role back as the source - changes INV-64's provisioning.
+
+### D-0425 · The gear flow asks level 3 only; `ENTITY_SETTINGS` says which is which
+
+`const.ENTITY_SETTINGS` lists, per type, what an appliance entity owns (comfort, floor and ceiling, follow presence, charge targets, hours per day, ready by, run-now limit). The gear flow doesn't ask those, keeps their stored answers, leaves strategy and priority out of the review and the re-derive diff, and reads them back under a link to the device page. The add flow still asks them as starting values. The map lives in `const.py` to avoid an import cycle, and a test checks every knob's parameter is in it. Affects D8 §5.16, §9 29-31; INV-66.
+**Rejected:** deriving the map from `load_entities` - circular import.

@@ -64,6 +64,30 @@ LOAD_MANUAL_OVERRIDES: Final = "manual_overrides"
 #: Set once the household renames the appliance in the gear flow; until then the
 #: title follows the hardware device's name (D8 §5.16, rename rule).
 LOAD_TITLE_USER_SET: Final = "title_user_set"
+#: Low, normal, high - the numbers the allocator reads (D-0411, D-0422).
+PRIORITY_LEVELS: Final[dict[str, int]] = {"low": 15, "normal": 30, "high": 45}
+_THERMAL_SETTINGS: Final = frozenset(
+    {"comfort_c", "min_c", "comfort_min_c", "floor_c", "max_c", "follow_presence"}
+)
+#: The answers and parameters an appliance entity owns once the appliance exists
+#: (levels 1–2, D8 §5.16): the gear flow reads them back and never asks or
+#: re-derives them (amended INV-66).
+ENTITY_SETTINGS: Final[dict[str, frozenset[str]]] = {
+    "ev": frozenset({"target_soc", "min_soc_now", "force_max_h"}),
+    "generic_switch": frozenset({"hours_per_day", "force_max_h"}),
+    "water_heater": _THERMAL_SETTINGS | {"ready_by", "force_max_h"},
+    "appliance_cycle": frozenset({"ready_by"}),
+    "floor_heating": _THERMAL_SETTINGS,
+    "heat_pump": _THERMAL_SETTINGS,
+    "radiator": _THERMAL_SETTINGS,
+    "battery": frozenset(),
+}
+
+
+def priority_level(priority: int) -> str:
+    """Return the level a priority number reads as (thresholds 22.5 and 37.5, D-0411)."""
+    return min(PRIORITY_LEVELS, key=lambda level: abs(PRIORITY_LEVELS[level] - priority))
+
 
 # --------------------------------------------------------------------------- #
 # Circuit subentries (D6 §6 `CircuitSubentryData`, D8 §5.3)

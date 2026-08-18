@@ -1564,6 +1564,13 @@
         "as_sunday": "Counts as Sunday",
         "exclude": "Excluded"
       }
+    },
+    "priority_level": {
+      "options": {
+        "low": "Low",
+        "normal": "Normal",
+        "high": "High"
+      }
     }
   },
   "services": {
@@ -1700,10 +1707,10 @@
   },
   "config_subentries": {
     "load": {
-      "entry_type": "Load",
+      "entry_type": "Appliance",
       "initiate_flow": {
-        "user": "Add load",
-        "reconfigure": "Reconfigure load"
+        "user": "Add appliance",
+        "reconfigure": "Change setup"
       },
       "step": {
         "user": {
@@ -2054,8 +2061,8 @@
           },
           "data_description": {
             "name": "What to call this load. It names the device and prefixes its entities.",
-            "strategy": "How this load is planned.",
-            "priority": "Higher is shed later; the derived value is usually right."
+            "strategy": "How this appliance is planned. Change it later on the device page.",
+            "priority": "Which appliance waits first when power is short: low waits first. Change it later on the device page."
           },
           "sections": {
             "advanced": {
@@ -2236,17 +2243,13 @@
         },
         "reconfigure_review": {
           "title": "Re-derive from the answers",
-          "description": "Re-deriving from your answers today would change:\n\n{diff}\n\nManual edits so far: {manual}.\n\n{explanation}",
+          "description": "Setup for **[{device_name}]({device_url})**.\n\nOn the device page: {levels}.\n\nRe-deriving from your answers today would change:\n\n{diff}\n\nManual edits so far: {manual}.\n\n{explanation}",
           "data": {
             "name": "Name",
-            "strategy": "Strategy",
-            "priority": "Priority",
             "rederive": "Apply the re-derived values"
           },
           "data_description": {
             "name": "What to call this load.",
-            "strategy": "How this load is planned.",
-            "priority": "Higher is shed later.",
             "rederive": "Off keeps the stored parameters and your edits; on takes the values above."
           },
           "sections": {
@@ -2477,7 +2480,7 @@
       "entry_type": "Circuit",
       "initiate_flow": {
         "user": "Add circuit",
-        "reconfigure": "Reconfigure circuit"
+        "reconfigure": "Change setup"
       },
       "step": {
         "user": {
@@ -2560,7 +2563,7 @@
       "entry_type": "Group",
       "initiate_flow": {
         "user": "Add group",
-        "reconfigure": "Reconfigure group"
+        "reconfigure": "Change setup"
       },
       "step": {
         "user": {
@@ -2641,10 +2644,10 @@
       }
     },
     "zone": {
-      "entry_type": "Zone",
+      "entry_type": "Room with several heat sources",
       "initiate_flow": {
-        "user": "Add zone",
-        "reconfigure": "Reconfigure zone"
+        "user": "Add room",
+        "reconfigure": "Change setup"
       },
       "step": {
         "user": {
