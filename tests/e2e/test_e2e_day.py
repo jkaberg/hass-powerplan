@@ -52,6 +52,7 @@ from tests.flows.test_site_flow import (
     ELECTRICAL_NO,
     _answer,
     _configure,
+    _followups,
     _start,
     _tail,
     _through_prices,
@@ -153,22 +154,24 @@ async def _through_meter(
     no `last_reset`; the pure runner feeds power and the register alone, so the
     site here binds the same two (plus the export register the meter has).
     """
-    assert result["step_id"] == "electrical"
-    result = await _answer(hass, result, **ELECTRICAL_NO)
     assert result["step_id"] == "meter"
     result = await _answer(hass, result, device=device_id)
+    assert result["step_id"] == "meter_confirm"
+    result = await _answer(hass, result, confirm="change")
     assert result["step_id"] == "meter_roles"
     roles = dict(result["data_schema"]({}))
     roles.pop("meter_window", None)
-    return await _answer(hass, result, **roles)
+    result = await _answer(hass, result, **roles)
+    assert result["step_id"] == "electrical"
+    return await _answer(hass, result, **ELECTRICAL_NO)
 
 
 async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
     """Tensio, and the 5–10 kW step as the target."""
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio")
     assert result["step_id"] == "tariff_preset"
-    result = await _answer(hass, result)
+    result = await _answer(hass, result, confirm="yes")
     assert result["step_id"] == "tariff_target"
     options = [row["value"] for row in result["data_schema"].schema["target"].config["options"]]
     assert TARGET_OPTION in options, options
@@ -181,6 +184,7 @@ async def _create_site(hass: HomeAssistant, ams_meter: str, nordpool_entry: str)
     result = await _through_meter(hass, result, ams_meter)
     result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _followups(hass, result)
     result = await _tail(hass, result)
     result = await _answer(hass, result, start_in_observe=True)
     await hass.async_block_till_done()

@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
@@ -67,7 +66,9 @@ from .flow.group import GroupSubentryFlow
 from .flow.load import LoadSubentryFlow
 from .flow.questionnaire import (
     DONT_KNOW,
+    implausible_price,
     missing_required,
+    price_implausible,
     price_stored,
     seconds_of,
     store_value,
@@ -82,6 +83,7 @@ from .runtime import step_index
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Mapping
 
+    import voluptuous as vol
     from homeassistant.config_entries import ConfigEntry, ConfigSubentryFlow
 
     from .core.metering.profile import ElectricalProfile
@@ -116,7 +118,11 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._profile: ElectricalProfile | None = None
         self._meter_device: str | None = None
         self._meter: dict[str, Any] | None = None
+        #: The roles the meter step found (or the site had), for its confirmation.
+        self._found: dict[str, str] = {}
         self._price_source = steps.SOURCE_NORDPOOL
+        #: The agreement question's answer: a source key, or Norgespris (D1 §6).
+        self._agreement: str | None = None
         self._sources: list[dict[str, Any]] = []
         self._modifier_keys: list[str] = []
         self._modifier_index = 0
@@ -214,17 +220,19 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             # FUSE_RATINGS exactly, "63" not "63.0") - `electrical_profile()`
             # itself tolerates either, so only the pre-fill needs the string.
             # "Vet ikke" is shown again where the fuse was assumed (D3 §6).
-            assumed = "main_fuse_a" in (stored_electrical.get("assumed") or ())
+            assumed = set(stored_electrical.get("assumed") or ())
             fuse = float(stored_electrical.get("main_fuse_a", 0))
             self._electrical = {
                 "country": stored_electrical.get("country", ""),
-                "system": stored_electrical.get("system", ""),
+                "system": DONT_KNOW if "system" in assumed else stored_electrical.get("system", ""),
                 "phases": str(stored_electrical.get("phases", "")),
-                "main_fuse_a": DONT_KNOW if assumed else f"{fuse:g}",
+                "main_fuse_a": DONT_KNOW if "main_fuse_a" in assumed else f"{fuse:g}",
                 "per_phase_limit_a": stored_electrical.get("per_phase_limit_a"),
             }
             self._profile = steps.electrical_profile(self._electrical)
         self._meter = dict(data[CONF_METER]) if data.get(CONF_METER) else None
+        # The meter's device is restored too, so its step is pre-filled (HUB-22).
+        self._meter_device = (self._meter or {}).get("device_id")
 
         prices = data.get(CONF_PRICES) or {}
         self._sources = [dict(source) for source in prices.get("sources") or ()]
@@ -240,6 +248,13 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             if modifier.get("source") == "user"
         ]
         self._modifier_keys = [modifier["key"] for modifier in self._modifiers]
+        self._agreement = (
+            steps.AGREEMENT_NORGESPRIS
+            if self._price_source == steps.SOURCE_NORDPOOL
+            and "fixed_price" in self._modifier_keys
+            and steps.AGREEMENT_NORGESPRIS in steps.agreements(self._country)
+            else self._price_source
+        )
         self._stored_modifiers = {
             modifier["key"]: dict(modifier.get("options") or {}) for modifier in self._modifiers
         }
@@ -337,8 +352,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     # -------------------------------------------------------------------- name
 
     async def async_step_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Name the site."""
+        """Ask "Hva vil du kalle dette hjemmet?" - Home Assistant's own name for it by default."""
         if user_input is None:
+            if not self._reconfiguring and self._name == steps.DEFAULT_SITE_NAME:
+                self._name = self.hass.config.location_name or steps.DEFAULT_SITE_NAME
             return self._form("name", steps.name_schema(self._name))
         self._name = user_input[CONF_NAME] or steps.DEFAULT_SITE_NAME
 
@@ -348,7 +365,13 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_timezone()
         self._timezone_source = TIMEZONE_FROM_HASS
         _LOGGER.debug("site timezone %s taken from hass.config", self._timezone)
-        return await self.async_step_electrical()
+        return await self._after_name()
+
+    async def _after_name(self) -> ConfigFlowResult:
+        """Go to detection first: the meter, then the fuse (D8 §5.15, questions 3 and 4)."""
+        if self._path is OnboardingPath.PRICE_ONLY:
+            return await self.async_step_electrical()
+        return await self.async_step_meter()
 
     async def async_step_timezone(
         self, user_input: dict[str, Any] | None = None
@@ -363,9 +386,14 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._timezone = user_input["timezone"]
         self._timezone_source = TIMEZONE_FROM_USER
         _LOGGER.info("site timezone %s answered in the flow; hass.config has none", self._timezone)
-        return await self.async_step_electrical()
+        return await self._after_name()
 
     # -------------------------------------------------------------- electrical
+
+    @property
+    def _asks_country(self) -> bool:
+        """The country is asked only when Home Assistant has none (HUB-2)."""
+        return not self.hass.config.country
 
     def _electrical_form(
         self, values: Mapping[str, Any], errors: Mapping[str, str] | None = None
@@ -373,16 +401,19 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         country = values.get("country") or self._country
         self._phase_suggestion = steps.phase_limit_suggestion(country, values)
         return self._form(
-            "electrical", steps.electrical_schema(country=country, values=values), errors=errors
+            "electrical",
+            steps.electrical_schema(country=country, values=values, ask_country=self._asks_country),
+            errors=errors,
         )
 
     async def async_step_electrical(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the connection: country, system, phases, main fuse (D3 §6)."""
+        """Ask "Hvor stor er hovedsikringen?" - and in Norway the voltage (D3 §6)."""
         if user_input is None:
             return self._electrical_form(self._electrical)
         answers = self._flat(user_input)
+        answers.setdefault("country", self._country or "")
         if self._phase_suggestion is not None and steps.same_value(
             answers.get("per_phase_limit_a"), self._phase_suggestion
         ):
@@ -394,53 +425,88 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return self._electrical_form(answers, errors={err.field: err.key})
         self._profile = profile
         self._electrical = steps.electrical_data(answers, profile)
-        if self._path is OnboardingPath.PRICE_ONLY:
-            return await self.async_step_prices()
-        return await self.async_step_meter()
-
-    # ------------------------------------------------------------------- meter
-
-    async def async_step_meter(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Pick the meter's device, so the seven roles can be pre-filled (D3 §6)."""
-        if user_input is None:
-            return self._form("meter", steps.meter_device_schema(self._meter_device))
-        self._meter_device = user_input.get("device")
-        return await self.async_step_meter_roles()
-
-    async def async_step_meter_roles(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Confirm the seven roles of D3 §6; every one of them is optional."""
-        if user_input is None:
-            prefilled = device_pick.prefill_roles(self.hass, self._meter_device)
-            bound = (self._meter or {}).get("roles") or prefilled
-            return self._form("meter_roles", steps.meter_roles_schema(bound))
-        try:
-            self._meter = steps.meter_data(self.hass, self._meter_device, user_input)
-        except steps.StepError as err:
-            return self._form(
-                "meter_roles",
-                steps.meter_roles_schema(
-                    {key: value for key, value in user_input.items() if isinstance(value, str)}
-                ),
-                errors={err.field: err.key},
-            )
         if self._path is OnboardingPath.FUSE_ONLY:
             return await self.async_step_presence()
         return await self.async_step_prices()
 
+    # ------------------------------------------------------------------- meter
+
+    async def async_step_meter(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ask "Hvor måler du strømforbruket?" - the device that measures power (D3 §6)."""
+        if user_input is None:
+            return self._form("meter", steps.meter_device_schema(self._meter_device))
+        device = user_input.get("device")
+        stored = (self._meter or {}).get("roles") or {}
+        if stored and device == (self._meter or {}).get("device_id"):
+            self._found = dict(stored)
+        else:
+            self._found = device_pick.prefill_roles(self.hass, device)
+        self._meter_device = device
+        if steps.meter_found(self._found):
+            return await self.async_step_meter_confirm()
+        return await self.async_step_meter_roles()
+
+    async def async_step_meter_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show what was found with its value now; the role form only on "Endre" (D3 §6)."""
+        if user_input is not None:
+            if user_input.get("confirm") == steps.METER_CHANGE:
+                return await self.async_step_meter_roles()
+            try:
+                self._meter = steps.meter_data(self.hass, self._meter_device, self._found)
+            except steps.StepError as err:
+                return self._form(
+                    "meter_roles",
+                    steps.meter_roles_schema(self._found),
+                    errors={err.field: err.key},
+                )
+            return await self.async_step_electrical()
+        text = await Text.load(self.hass)
+        return self._form(
+            "meter_confirm",
+            steps.meter_confirm_schema(),
+            placeholders={"found": steps.meter_values(self.hass, text, self._found)},
+        )
+
+    async def async_step_meter_roles(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Bind the roles of D3 §6 by hand; every one of them is optional."""
+        if user_input is None:
+            return self._form("meter_roles", steps.meter_roles_schema(self._found))
+        answers = steps.meter_roles_answers(user_input)
+        try:
+            self._meter = steps.meter_data(self.hass, self._meter_device, answers)
+        except steps.StepError as err:
+            return self._form(
+                "meter_roles",
+                steps.meter_roles_schema(
+                    {key: value for key, value in answers.items() if isinstance(value, str)}
+                ),
+                errors={err.field: err.key},
+            )
+        self._found = dict(self._meter["roles"])
+        return await self.async_step_electrical()
+
     # ------------------------------------------------------------------ prices
 
     async def async_step_prices(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Where the electricity price comes from (D1 §6)."""
+        """Ask "Hvilken strømavtale har du?" - spot, Norgespris or fixed (D1 §6)."""
         if user_input is None:
             default_source = (
-                self._price_source
+                self._agreement or self._price_source
                 if self._reconfiguring
                 else steps.default_price_source(self._country)
             )
-            return self._form("prices", steps.price_source_schema(default_source))
-        self._price_source = user_input["source"]
+            return self._form("prices", steps.price_source_schema(default_source, self._country))
+        self._agreement = str(user_input["source"])
+        # Norgespris is priced on the spot source by the `fixed_price` add-on (F-2).
+        self._price_source = (
+            steps.SOURCE_NORDPOOL
+            if self._agreement == steps.AGREEMENT_NORGESPRIS
+            else self._agreement
+        )
         match self._price_source:
             case steps.SOURCE_ENTITY:
                 return await self.async_step_prices_entity()
@@ -459,13 +525,23 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_prices_nordpool(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Nord Pool, rendered from the source's own schema (D1 §6)."""
+        """Nord Pool, rendered from the source's own schema (D1 §6).
+
+        Asked only to correct: on a first setup where the house's one Nord Pool
+        entry names its area, nothing is left to ask (CTL-9).
+        """
+        stored = self._stored_source_options(steps.SOURCE_NORDPOOL)
         if user_input is None:
-            values = self._stored_source_options(steps.SOURCE_NORDPOOL) or steps.nordpool_defaults(
-                self.hass, self._currency
-            )
-            return self._form("prices_nordpool", steps.nordpool_schema(values=values))
+            values = stored or steps.nordpool_defaults(self.hass, self._currency)
+            if not self._reconfiguring and steps.nordpool_detected(values):
+                user_input = {"config_entry": values["config_entry"], "area": values["area"]}
+            else:
+                return self._form(
+                    "prices_nordpool",
+                    steps.nordpool_schema(values=values, text=await Text.load(self.hass)),
+                )
         answers = self._flat(user_input)
+        answers["currency"] = self._currency
         # The publication clock left at what the area derives is not an override (HUB-19).
         answers = steps.drop_suggested(answers, steps.nordpool_suggested(answers.get("area")))
         self._sources = [
@@ -474,7 +550,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "options": value_of(NordpoolActionSource.schema, answers, prefix="nordpool"),
             }
         ]
-        return await self.async_step_modifiers()
+        return await self._after_source()
 
     async def async_step_prices_entity(
         self, user_input: dict[str, Any] | None = None
@@ -504,7 +580,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 },
             }
         ]
-        return await self.async_step_modifiers()
+        return await self._after_source()
 
     async def async_step_prices_fixed(
         self, user_input: dict[str, Any] | None = None
@@ -516,6 +592,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "prices_fixed",
                 steps.fixed_price_schema(self._currency, default=stored.get("price")),
             )
+        if price_implausible(user_input["price"]):
+            return self._form(
+                "prices_fixed",
+                steps.fixed_price_schema(self._currency),
+                errors={"price": "price_in_minor_unit"},
+            )
         # Shown in the minor unit, stored in major units as before (CTL-3).
         price = price_stored(user_input["price"], self._currency)
         self._sources = [
@@ -524,16 +606,34 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "options": {"price": str(price), "currency": self._currency},
             }
         ]
-        return await self.async_step_modifiers()
+        return await self._after_source()
+
+    async def _after_source(self) -> ConfigFlowResult:
+        """Go on to the grid company, then the follow-ups (D8 §5.15; the grid charge after it, HUB-3)."""
+        if self._path is OnboardingPath.FULL:
+            return await self.async_step_tariff()
+        return await self.async_step_export()
 
     async def async_step_modifiers(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Choose what is added on top of the raw price, from the registry (D1 §6)."""
+        """Ask "Er strømavtalen din spesiell?" - the price add-ons, a follow-up (D1 §6)."""
+        included = self._preset_components()
         if user_input is None:
             chosen = self._modifier_keys or None
-            return self._form("modifiers", steps.modifiers_schema(self._country, chosen))
-        self._modifier_keys = list(user_input.get("modifiers") or [])
+            also = ("fixed_price",) if self._agreement == steps.AGREEMENT_NORGESPRIS else ()
+            text = await Text.load(self.hass)
+            return self._form(
+                "modifiers",
+                steps.modifiers_schema(self._country, chosen, also=also, included=included),
+                placeholders={
+                    "included": text.join(text.word("modifier", key) for key in included)
+                    or text.word("text", "none")
+                },
+            )
+        ticked = set(user_input.get("modifiers") or []) - set(included)
+        # Asked in the order they are listed, not the order they were ticked (HUB-3).
+        self._modifier_keys = [key for key in steps.offered_modifiers() if key in ticked]
         self._modifier_index = 0
         self._modifiers = []
         return await self._next_modifier()
@@ -543,7 +643,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             key = self._modifier_keys[self._modifier_index]
             step: _Step = getattr(type(self), f"async_step_modifier_{key}")
             return await step(self, None)
-        return await self.async_step_export()
+        return await self.async_step_carriers()
 
     async def _modifier_step(self, key: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
         """One step per add-on, `modifier_<key>`, rendered from its schema (D1 §6).
@@ -560,13 +660,16 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             )
         answers = self._flat(user_input)
         missing = missing_required(schema, answers)
-        if missing is not None:
+        wrong = implausible_price(schema, answers, self._currency)
+        if missing is not None or wrong is not None:
             # A required answer with nothing to default to - Norgespris's price,
-            # an empty tier table - is refused, never stored empty (review §10).
+            # an empty tier table - is refused, never stored empty (review §10);
+            # so is a price typed in kroner into an øre box.
+            field, code = (missing, "required") if missing else (wrong, "price_in_minor_unit")
             return self._form(
                 f"modifier_{key}",
                 steps.modifier_options_schema(key, currency=self._currency, values=stored),
-                errors={missing: "required"},
+                errors={str(field): code},
             )
         self._modifiers.append(
             {
@@ -582,7 +685,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self._next_modifier()
 
     async def async_step_export(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Whether, and how, an exported kWh is paid (D1 §6).
+        """Ask "Selger du strøm tilbake?" - whether, and how, an exported kWh is paid (D1 §6).
 
         The amounts follow on their own step, and only when there is something to
         price: "I do not export" never sees them (D8 §5.15 rule 5, HUB-17).
@@ -592,7 +695,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         mode = str(user_input.get("mode", steps.EXPORT_NONE))
         if mode == steps.EXPORT_NONE:
             self._export = None
-            return await self.async_step_carriers()
+            return await self.async_step_modifiers()
         if (self._export or {}).get("mode") != mode:
             self._export = {"key": "export_price", "options": {}, "mode": mode}
         if not steps.EXPORT_FIELDS.get(mode, ("amount",)):
@@ -619,7 +722,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         options = value_of(schema, answers, prefix="export", currency=self._currency)
         options["mode"] = mode
         self._export = {"key": "export_price", "options": options, "mode": mode}
-        return await self.async_step_carriers()
+        return await self.async_step_modifiers()
 
     async def async_step_carriers(
         self, user_input: dict[str, Any] | None = None
@@ -637,7 +740,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             carrier = self._carrier_keys[self._carrier_index]
             step: _Step = getattr(type(self), f"async_step_carrier_{carrier}")
             return await step(self, None)
-        return await self._after_prices()
+        return await self.async_step_presence()
 
     async def _carrier_step(
         self, carrier: str, user_input: dict[str, Any] | None
@@ -662,16 +765,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._carrier_index += 1
         return await self._next_carrier()
 
-    async def _after_prices(self) -> ConfigFlowResult:
-        """Only the full path has a capacity tariff to configure (HLD §4)."""
-        if self._path is OnboardingPath.FULL:
-            return await self.async_step_tariff()
-        return await self.async_step_presence()
-
     # ------------------------------------------------------------------ tariff
 
     async def async_step_tariff(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Country and grid company: the preset select of D2 §6."""
+        """Ask "Hvilket nettselskap har du?" - the preset select of D2 §6."""
         if user_input is None:
             self._presets = await self.hass.async_add_executor_job(
                 steps.discover_presets, self._country
@@ -683,6 +780,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                     presets=self._presets,
                     chosen=self._preset_file,
                     text=await Text.load(self.hass),
+                    ask_country=self._asks_country,
                 ),
             )
         country = user_input.get("country") or self._country
@@ -707,32 +805,38 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_tariff_preset(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show what that preset means, in the household's own words (INV-67)."""
+        """Ask "Stemmer dette med nettleiefakturaen din?" - yes, or the list again (INV-67, HUB-4)."""
         assert self._spec is not None
         assert self._summary is not None
         if user_input is None:
             text = await Text.load(self.hass)
             return self._form(
                 "tariff_preset",
-                vol.Schema({}),
+                steps.tariff_confirm_schema(),
                 placeholders={
                     "name": self._tariff_name(text),
                     "table": tariff_table(text, self._summary),
                     "source": self._summary.source_url or text.word("text", "none"),
                 },
             )
+        if user_input.get("confirm") == steps.TARIFF_NO:
+            # HA flows have no back: "no" shows the grid companies again, where
+            # "Finner ikke mitt" and "Legg inn selv" are (HUB-4).
+            return await self.async_step_tariff()
         return await self.async_step_tariff_target()
 
     async def async_step_tariff_target(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Set what the site defends and how much it gambles (D2 §6, dec. 18)."""
+        """Ask "Hvilket effekttrinn vil du holde deg i?" - the target and how strictly (D2 §6)."""
         assert self._version is not None
         text = await Text.load(self.hass)
+        hours = {"hours": text.number(steps.peak_hours(self._version))}
         if user_input is None:
             return self._form(
                 "tariff_target",
                 steps.tariff_target_schema(self._version, text=text, values=self._target),
+                placeholders=hours,
             )
         answers = self._flat(user_input)
         try:
@@ -742,13 +846,14 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "tariff_target",
                 steps.tariff_target_schema(self._version, text=text, values=self._target),
                 errors={err.field: err.key},
+                placeholders=hours,
             )
         self._target = answers
         if steps.needs_bills(self._version):
             return await self.async_step_tariff_bills()
         if steps.needs_limits(self._version):
             return await self.async_step_tariff_limits()
-        return await self.async_step_presence()
+        return await self.async_step_export()
 
     async def async_step_tariff_bills(
         self, user_input: dict[str, Any] | None = None
@@ -762,7 +867,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._bills = dict(user_input)
         if steps.needs_limits(self._version):
             return await self.async_step_tariff_limits()
-        return await self.async_step_presence()
+        return await self.async_step_export()
 
     async def async_step_tariff_limits(
         self, user_input: dict[str, Any] | None = None
@@ -774,7 +879,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "tariff_limits", steps.limits_schema(self._version, values=self._limits)
             )
         self._limits = dict(user_input)
-        return await self.async_step_presence()
+        return await self.async_step_export()
 
     # ------------------------------------------------- presence, notifications
     # The hard-limit step is gone: its answer was read by nothing, and the grense
@@ -876,6 +981,18 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_ACTIVE: False,
         }
 
+    def _preset_components(self) -> list[str]:
+        """Return the add-ons the chosen grid company's preset already prices (D2 §6, D-0126).
+
+        They come with the preset, so the add-on step does not offer them: a
+        household that ticked the day/night charge by hand used to replace the
+        preset's numbers with its own empty ones (D-0430).
+        """
+        if self._path is not OnboardingPath.FULL or self._version is None:
+            return []
+        registered = set(modifiers.keys())
+        return [key for key in self._version.energy_components if key in registered]
+
     def _preset_modifiers(self) -> list[dict[str, Any]]:
         """Hand the preset's own energy components to D1 as modifiers (D2 §6).
 
@@ -913,13 +1030,21 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self._form(
                 "review",
-                steps.review_schema(default_observe=not self._active),
-                placeholders=await review.placeholders(
-                    self.hass, data, tariff=await self._tariff_line()
-                ),
+                steps.review_schema(reconfiguring=self._reconfiguring),
+                placeholders={
+                    **await review.placeholders(self.hass, data, tariff=await self._tariff_line()),
+                    "first": (await Text.load(self.hass)).word(
+                        "review",
+                        "first_reconfigure" if self._reconfiguring else "first_setup",
+                        name=self._name,
+                    ),
+                },
                 last_step=True,
             )
-        data[CONF_ACTIVE] = not user_input.get("start_in_observe", True)
+        # A reconfigure keeps the site's own state; only a first setup asks (HUB-5).
+        data[CONF_ACTIVE] = (
+            self._active if self._reconfiguring else not user_input.get("start_in_observe", True)
+        )
 
         if self._reconfiguring:
             entry = self._get_reconfigure_entry()

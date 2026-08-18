@@ -60,6 +60,7 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
             (site.entry_id, SUBENTRY_LOAD), context={"source": "user"}
         )
     )
+    result = await _answer(hass, result, type="generic_switch")
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
     result = await _answer(hass, result, **result["data_schema"]({}))
     # The question is shown in kW now (CTL-15); 6 kW is the sauna's 6000 W.

@@ -22,6 +22,7 @@ from custom_components.powerplan.const import (
     DOMAIN,
     LOAD_PRIORITY,
     LOAD_STRATEGY,
+    SUBENTRY_LOAD,
 )
 from custom_components.powerplan.core.model import Mode
 from custom_components.powerplan.load_entities import PLAN_STATES, plan_state
@@ -48,9 +49,27 @@ async def _named(
     return next(s.subentry_id for s in site.subentries.values() if s.title == name)
 
 
+async def _add_floor(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> dict[str, Any]:
+    """Type → the Heatit floor thermostat → match → questions, on the defaults."""
+    result = dict(
+        await hass.config_entries.subentries.async_init(
+            (site.entry_id, SUBENTRY_LOAD), context={"source": "user"}
+        )
+    )
+    result = await _answer(hass, result, type="floor_heating")
+    result = await _answer(hass, result, device=charger.loads["loop_bath_1"].device_id)
+    assert result["step_id"] == "match", result
+    result = await _answer(hass, result, **result["data_schema"]({}))
+    assert result["step_id"] == "questions", result
+    return await _answer(hass, result, **result["data_schema"]({}))
+
+
 async def _house(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse) -> dict[str, str]:
-    """Add the four appliances; return `{type: subentry id}`."""
+    """Add the five appliances; return `{type: subentry id}`."""
     return {
+        "floor_heating": await _named(hass, site, await _add_floor(hass, site, charger), "Bath"),
         "ev": await _named(hass, site, await _add_charger(hass, site, charger), "Charger"),
         "water_heater": await _named(hass, site, await _add_tank(hass, site, charger), "Tank"),
         "generic_switch": await _add_sauna(hass, site, charger),
@@ -104,6 +123,16 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
     # The sauna has no shadow, so no savings; its only strategy is `always`,
     # so no strategy select (D-0412).
     "generic_switch": {**COMMON, "run_now_max": (CONFIG, True)},
+    # Steered by its heat/eco mode; its own setpoint is the comfort target, so
+    # no comfort number of ours (D-0435).
+    "floor_heating": {
+        **COMMON,
+        "savings_month": (None, True),
+        "strategy": (CONFIG, True),
+        "follow_presence": (CONFIG, True),
+        "temp_min": (CONFIG, False),
+        "temp_max": (CONFIG, False),
+    },
     "heat_pump": {
         **COMMON,
         "savings_month": (None, True),
@@ -121,7 +150,7 @@ async def test_every_type_gets_its_set_small_and_by_level(
 ) -> None:
     """A.2's per-type count: 3–6 rows a household sees, the rest filed away.
 
-    No comfort number on these four: the thermostats' own setpoints are their
+    No comfort number on these five: the thermostats' own setpoints are their
     knobs, and no `measured_power` where the device page shows its own meter.
     """
     loads = await _house(hass, site, charger)

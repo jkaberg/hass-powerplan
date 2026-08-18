@@ -39,11 +39,12 @@ async def test_an_answered_schedule_and_arrival_calendars_reach_params(
     )
     device_id = charger.loads["tank"].device_id
     assert device_id is not None
+    result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=device_id)
 
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
-    result = await _answer(hass, result, **{**suggested, "type": "water_heater"})
+    result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})

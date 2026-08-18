@@ -521,6 +521,28 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | recorder volume | every entity `entity.digest_of`'s `volatile` argument keeps in place: a fast attribute on a slower state no longer writes a row by itself; the house's 118 485 rows/day is not re-measured here (no bench run here), but the per-entity budget test (`tests/flows/test_recorder_volume.py`) is the audit's own reproduction, green (F-11) | D-0402 |
 | tests | `tests/surface/test_sentences.py` (§9 19, the entities table's rows above), `test_labels.py` (F-18), `test_entities.py`'s `test_29_…` (ENT-29), `test_upgrade_ids.py` (§9 22), `tests/flows/test_accounting_surface.py`'s `test_f10_…` (F-10), `test_recorder_volume.py` (F-11) | D-0400…D-0403 |
 
+**In code (part 1: the flows).** The site flow's nine questions, the load flow's type-first start, and three findings from the reference house. The glossary pass over entities, repairs, services and `notifications.py` (rule 7 outside the flows; NEW-5, MSG-3, MSG-4, HUB-23), §9 18's glossary scan, and the house check are not built yet (PLAN §9, U.3's row).
+
+| part | in code | decision |
+|---|---|---|
+| the order | path → name → (time zone) → meter → `meter_confirm` → (`meter_roles`) → fuse → contract → (Nord Pool) → grid company → `tariff_preset` yes/no → target and strictness → (bills, limits) → export → add-ons → heat sources → presence → notifications → review. Fuse only skips the contract to the tariff; price only skips the meter and the grid company | HUB-1, HUB-3 |
+| detection | the meter `DeviceSelector` lists only devices with a power sensor; `meter_confirm` shows each found role with its current value, read through `providers/meters/ha_sensors.value_now` (INV-3); "Endre" or nothing found opens the role form, with L1–L3 in a "Per fase" section. The country is asked only when HA has none, in the fuse step and never again; the phases sit under Avansert; the currency is never asked; a detected Nord Pool area skips its step on a first setup | HUB-2, HUB-22, CTL-9, §10-1; D-0432 |
+| the fuse | in Norway the voltage as a radio 230 V · 400 V · Vet ikke (stored `assumed: ["system"]`, re-shown on reconfigure) | D3 §6 |
+| the contract | Nord Pool spot · Norgespris (NO) · spot from a sensor · fixed; Nord Pool labelled "via Nord Pool-integrasjonen" | HUB-20; D-0431 |
+| the grid company | a yes/no radio confirms the table; "no" shows the grid companies again, since HA flows have no back | HUB-4 |
+| strictness | a radio, Streng (anbefalt) · Bruk betalte timer · Fleksibel; `default_risk` returns 0 for every grammar; `risk_source` is `default` or `chosen`; an entry keeps its stored `risk` (INV-66); the help names the grammar's own `n` (`{hours}`) | CTL-12; D2 §6 |
+| add-ons | after the grid company, asked in listed order; what the preset prices is not offered and is named instead; Norgespris pre-ticks `fixed_price` | HUB-3; D-0430 |
+| prices | a per-kWh price below one øre is refused (`price_in_minor_unit`) | D-0433 |
+| review | "Klar til å starte"; the trial-mode toggle on a first setup only; a reconfigure keeps the entry's `active` and says so (`{first}`) | HUB-5 |
+| reconfigure | the meter device and every add-on's options pre-filled; the meter's stored roles are shown and pre-fill the role form (the reference house's missing power sensor) | HUB-9, HUB-22 |
+| the load flow | `user` asks the type over all eight; `device` is the flow's own list (CTL-11); the match step has no type field; `last_step=False` before the review; "Om {name}"; household type names | LOAD-3, 4, 5, NEW-8, S9; D-0434 |
+| titles | every step titled as a question except the reviews and "Om {name}" | HUB-6, rule 1 |
+| comfort on the device | a mode-steered thermostat with a setpoint (the Heatit floor) takes its comfort from its own dial, like a setpoint thermostat: no `number.<load>_comfort`, a dial turn adopted | D-0435 |
+| the control select | five states kept, labelled in the glossary's words (Prøvemodus, Styres av noe annet) | D-0436 |
+| tests | §9 1 and 16 in `tests/flows/test_site_flow.py`, `test_site_reconfigure.py` (no toggle, `active` kept, device and add-on options pre-filled, the power sensor pre-filled), `test_logic_findings.py` (Norgespris through the contract question); §9 2 in `test_load_flow.py` and every load-flow suite, type first; §9 15's title half and §9 18c's walks (the tank now walked as a water heater) in `test_text.py` | - |
+
+**A back button**. HA's data-entry flows have no back action; `async_configure` with no input re-shows the current step (§5.1, D-0129). The flow therefore routes "no" answers back where HA allows it, the grid company's yes/no being the one this WP adds. A general back button needs Home Assistant to add one.
+
 **Item map**. *Holds?*: yes, partly, no (not reproducible in the code) or wrong, with the evidence; paths are under `custom_components/powerplan/` unless they start with `tests/`; `nb.json` is `translations/nb.json` and a dotted key is its path. Counts: 101 review items (R1–R4, BR-1…5, HUB-1…23, CTL-1…16, LOAD-1…10, ENT-1…35, MSG-1…4, §10-1…4), plus §0's guardrail, §9 (not ours) and nine found in passing (NEW-1…9). Of the 101: 92 hold, 7 hold in part (HUB-2, HUB-22, CTL-1, CTL-2, CTL-5, CTL-9, and MSG-4, whose missing period is already fixed), 1 is not reproducible in the code (§10-3), 1 is wrong (§10-1); none is fixed outright. Five are partly or wholly impossible as proposed (ENT-2, ENT-12, ENT-15, ENT-30, ENT-33); two keep a proposal HA cannot do and follow the first cut's workaround (CTL-7, CTL-11).
 
 | ID | holds? - evidence | change | section | WP | test |

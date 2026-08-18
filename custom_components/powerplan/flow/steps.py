@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import voluptuous as vol
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
@@ -84,6 +85,7 @@ from custom_components.powerplan.core.tariffs.target import (
     RISK_FULL,
     default_risk,
 )
+from custom_components.powerplan.providers.meters.ha_sensors import value_now
 from custom_components.powerplan.providers.prices.formats import registry as formats
 from custom_components.powerplan.providers.prices.markets import NORDPOOL_MARKETS
 from custom_components.powerplan.providers.prices.nordpool_action import (
@@ -105,7 +107,14 @@ from .questionnaire import (
     render,
     time_selector,
 )
-from .text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, preset_options, target_options
+from .text import (
+    PRESET_CUSTOM,
+    PRESET_UNKNOWN,
+    Text,
+    entity_name,
+    preset_options,
+    target_options,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -226,42 +235,53 @@ def default_fuse_a(country: str | None) -> str:
     return "63"
 
 
+#: Norway is the one country where both supply systems are common; the household
+#: answers by voltage, with "Vet ikke" (D3 §6).
+_ASKS_VOLTAGE: Final = ("NO",)
+_VOLTAGE_OPTIONS: Final = (str(VoltageSystem.IT_230), str(VoltageSystem.TN_400), DONT_KNOW)
+
+
 def electrical_schema(
-    *, country: str | None, values: Mapping[str, Any] | None = None
+    *, country: str | None, values: Mapping[str, Any] | None = None, ask_country: bool = False
 ) -> vol.Schema:
-    """Return D3 §6's four plain questions and the advanced per-phase limit.
+    """Return "Hvor stor er hovedsikringen?": the fuse, and in Norway the voltage (D3 §6).
 
     The main fuse is a pick of sizes labelled "63 A", a size typed in, or "Vet
     ikke", and `vol.Required` with its default so there is no clear button
-    (review CTL-1). The per-phase limit is the fuse unless the grid company set
-    a lower one, so the fuse is its suggestion rather than a stored default
-    (HUB-19): a household that changes the fuse is not left with the old one.
+    (review CTL-1). The country comes from Home Assistant and is asked only when
+    it has none (HUB-2); the phases follow from it and sit under Avansert with
+    the per-phase limit, whose suggestion is the fuse (HUB-19).
     """
     given = values or {}
-    system = given.get("system") or default_system(country)
+    system = str(given.get("system") or default_system(country))
     phases = str(given.get("phases") or default_phases(country))
     fuse = str(given.get("main_fuse_a") or default_fuse_a(country))
     suggested_limit = phase_limit_suggestion(country, given)
     limit = given.get("per_phase_limit_a")
-    fields: dict[Any, Any] = {
-        vol.Optional("country", default=given.get("country") or country or ""): CountrySelector(
-            CountrySelectorConfig()
-        ),
-        vol.Optional("system", default=str(system)): SelectSelector(
+    fields: dict[Any, Any] = {}
+    if ask_country:
+        fields[vol.Optional("country", default=given.get("country") or country or "")] = (
+            CountrySelector(CountrySelectorConfig())
+        )
+    fields[vol.Required("main_fuse_a", default=fuse)] = fuse_selector(FUSE_RATINGS, dont_know=True)
+    if country in _ASKS_VOLTAGE:
+        fields[vol.Required("system", default=system)] = SelectSelector(
+            SelectSelectorConfig(
+                options=list(_VOLTAGE_OPTIONS),
+                mode=SelectSelectorMode.LIST,
+                translation_key="voltage",
+                sort=False,
+            )
+        )
+    else:
+        fields[vol.Required("system", default=system)] = SelectSelector(
             SelectSelectorConfig(
                 options=[member.value for member in VoltageSystem],
                 mode=SelectSelectorMode.LIST,
                 translation_key="voltage_system",
                 sort=False,
             )
-        ),
-        vol.Optional("phases", default=phases): SelectSelector(
-            SelectSelectorConfig(
-                options=["1", "3"], mode=SelectSelectorMode.LIST, translation_key="phases"
-            )
-        ),
-        vol.Required("main_fuse_a", default=fuse): fuse_selector(FUSE_RATINGS, dont_know=True),
-    }
+        )
     limit_marker = (
         vol.Optional("per_phase_limit_a", default=float(limit))
         if limit is not None and float(limit) != suggested_limit
@@ -269,11 +289,16 @@ def electrical_schema(
     )
     fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
         {
+            vol.Optional("phases", default=phases): SelectSelector(
+                SelectSelectorConfig(
+                    options=["1", "3"], mode=SelectSelectorMode.LIST, translation_key="phases"
+                )
+            ),
             limit_marker: NumberSelector(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="A"
                 )
-            )
+            ),
         }
     )
     return vol.Schema(fields)
@@ -319,11 +344,13 @@ def electrical_profile(answers: Mapping[str, Any]) -> ElectricalProfile:
     for field, value in (("main_fuse_a", fuse), ("per_phase_limit_a", limit)):
         if not FUSE_MIN_A <= value <= FUSE_MAX_A:
             raise StepError(field, "fuse_out_of_range")
-    phases = int(answers["phases"])
+    country = answers.get("country")
+    phases = int(answers.get("phases") or default_phases(country))
     if phases not in (1, 3):
         raise StepError("phases", "phases_not_available")
+    system = answers.get("system")
     profile = ElectricalProfile(
-        system=VoltageSystem(answers["system"]),
+        system=default_system(country) if system in (None, DONT_KNOW) else VoltageSystem(system),
         phases=phases,  # type: ignore[arg-type]
         main_fuse_a=fuse,
         per_phase_limit_a=limit,
@@ -358,10 +385,11 @@ def electrical_data(answers: Mapping[str, Any], profile: ElectricalProfile) -> d
             "plausible_factor": PLAUSIBLE_FACTOR,
         },
     }
-    if answers.get("main_fuse_a") == DONT_KNOW:
-        # "Vet ikke" took the country's default; the review names it as assumed,
-        # and a reconfigure shows "Vet ikke" again (D3 §6, D8 §5.15 rule 4).
-        data["assumed"] = ["main_fuse_a"]
+    # "Vet ikke" took the country's default; the review names it as assumed,
+    # and a reconfigure shows "Vet ikke" again (D3 §6, D8 §5.15 rule 4).
+    assumed = [key for key in ("main_fuse_a", "system") if answers.get(key) == DONT_KNOW]
+    if assumed:
+        data["assumed"] = assumed
     return data
 
 
@@ -399,22 +427,108 @@ _UNIT_ERRORS: Final = {
 
 
 def meter_device_schema(default: str | None) -> vol.Schema:
-    """One optional device pick; leaving it empty binds entities by hand."""
+    """One optional device pick, offering only devices that measure power (D3 §6, H8).
+
+    Leaving it empty binds the sensors by hand on the next step.
+    """
     marker = vol.Optional("device", default=default) if default else vol.Optional("device")
-    return vol.Schema({marker: DeviceSelector(DeviceSelectorConfig())})
+    return vol.Schema(
+        {
+            marker: DeviceSelector(
+                DeviceSelectorConfig(entity=[{"domain": "sensor", "device_class": "power"}])
+            )
+        }
+    )
+
+
+#: The phase currents sit in their own collapsed section of the role form (HUB-22).
+SECTION_PER_PHASE: Final = "per_phase"
+_PHASE_ROLES: Final = (ROLE_PHASE_L1, ROLE_PHASE_L2, ROLE_PHASE_L3)
+
+#: The roles without which the confirmation cannot stand: the capacity axis reads
+#: one of them (INV-53). With neither found, the role form is shown instead.
+_CAPACITY_ROLES: Final = (ROLE_GRID_POWER, ROLE_IMPORT_REGISTER)
+
+#: The confirmation's two answers (D3 §6): what was found is right, or change it.
+METER_OK: Final = "ok"
+METER_CHANGE: Final = "change"
+
+
+def meter_found(prefilled: Mapping[str, str]) -> bool:
+    """Whether the device gave a role the capacity axis can read, so it can be confirmed."""
+    return any(prefilled.get(role) for role in _CAPACITY_ROLES)
+
+
+def meter_values(hass: HomeAssistant, text: Text, roles: Mapping[str, str]) -> str:
+    """Return each found role with its value now: "Effekt nå: 1,2 kW ✓" (D3 §6, §9 21 (d)).
+
+    A household judges a sensor by what it reads, not by its name - the export
+    register the review took for a mistake read 0 kWh. The value comes through the
+    meter provider (INV-3); a role whose sensor has no value shows " - ".
+    """
+    now = dt_util.utcnow()
+    lines: list[str] = []
+    for role in METER_ROLES:
+        entity_id = roles.get(role)
+        if not entity_id:
+            continue
+        quantity = _ROLE_FILTERS[role][0]
+        value = value_now(hass, entity_id, quantity, now)
+        label = text.string(f"config.step.meter_roles.data.{role}") or text.string(
+            f"config.step.meter_roles.sections.{SECTION_PER_PHASE}.data.{role}"
+        )
+        if value is None:
+            shown, mark = "—", "?"
+        elif quantity == "power":
+            shown, mark = text.kw(value / 1000.0), "✓"
+        elif quantity == "energy":
+            shown, mark = f"{text.number(value, 0)} kWh", "✓"
+        else:
+            shown, mark = f"{text.number(value, 1)} A", "✓"
+        lines.append(f"- {label} ({entity_name(hass, entity_id)}): {shown} {mark}")
+    return "\n".join(lines)
+
+
+def meter_confirm_schema() -> vol.Schema:
+    """Right as found, or change it (D3 §6): a radio, "ok" by default."""
+    return vol.Schema(
+        {
+            vol.Required("confirm", default=METER_OK): SelectSelector(
+                SelectSelectorConfig(
+                    options=[METER_OK, METER_CHANGE],
+                    mode=SelectSelectorMode.LIST,
+                    translation_key="meter_confirm",
+                )
+            )
+        }
+    )
 
 
 def meter_roles_schema(prefilled: Mapping[str, str]) -> vol.Schema:
-    """Return the seven roles of D3 §6, pre-filled where the registry could tell."""
+    """Return the roles of D3 §6, pre-filled where the registry could tell.
+
+    L1–L3 go in one optional "Per fase" section (HUB-22).
+    """
     fields: dict[Any, Any] = {}
+    phases: dict[Any, Any] = {}
     for role in METER_ROLES:
         device_class = _ROLE_FILTERS[role][0]
         found = prefilled.get(role)
         marker = vol.Optional(role, default=found) if found else vol.Optional(role)
-        fields[marker] = EntitySelector(
+        (phases if role in _PHASE_ROLES else fields)[marker] = EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class=device_class)
         )
+    fields[vol.Optional(SECTION_PER_PHASE, default={})] = section(
+        vol.Schema(phases), {"collapsed": not any(prefilled.get(r) for r in _PHASE_ROLES)}
+    )
     return vol.Schema(fields)
+
+
+def meter_roles_answers(user_input: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the role form's answers with the per-phase section merged up."""
+    merged = {key: value for key, value in user_input.items() if key != SECTION_PER_PHASE}
+    merged.update(user_input.get(SECTION_PER_PHASE) or {})
+    return merged
 
 
 def meter_data(
@@ -444,6 +558,10 @@ SOURCE_NORDPOOL: Final = "nordpool_action"
 SOURCE_ENTITY: Final = "entity"
 SOURCE_FIXED: Final = "fixed"
 PRICE_SOURCES: Final = (SOURCE_NORDPOOL, SOURCE_ENTITY, SOURCE_FIXED)
+#: "Hvilken strømavtale har du?" also answers Norgespris in Norway: the spot
+#: source with the `fixed_price` add-on asked for (D1 §6). Not a stored source.
+AGREEMENT_NORGESPRIS: Final = "norgespris"
+_NORGESPRIS_COUNTRIES: Final = ("NO",)
 
 #: Where Nord Pool is the obvious answer (D1 §6, HLD §8).
 _NORDPOOL_COUNTRIES: Final = (
@@ -468,13 +586,23 @@ def default_price_source(country: str | None) -> str:
     return SOURCE_NORDPOOL if country in _NORDPOOL_COUNTRIES else SOURCE_FIXED
 
 
-def price_source_schema(default: str) -> vol.Schema:
-    """Return the three answers of D1 §6's first price question."""
+def agreements(country: str | None) -> list[str]:
+    """Return the answers to "Hvilken strømavtale har du?" for `country` (D1 §6)."""
+    if country in _NORGESPRIS_COUNTRIES:
+        return [SOURCE_NORDPOOL, AGREEMENT_NORGESPRIS, SOURCE_ENTITY, SOURCE_FIXED]
+    return list(PRICE_SOURCES)
+
+
+def price_source_schema(default: str, country: str | None = None) -> vol.Schema:
+    """Return D1 §6's agreement question: spot through Nord Pool or a sensor, Norgespris, fixed."""
+    options = agreements(country)
     return vol.Schema(
         {
-            vol.Optional("source", default=default): SelectSelector(
+            vol.Optional(
+                "source", default=default if default in options else options[0]
+            ): SelectSelector(
                 SelectSelectorConfig(
-                    options=list(PRICE_SOURCES),
+                    options=options,
                     mode=SelectSelectorMode.LIST,
                     translation_key="price_source",
                     sort=False,
@@ -538,19 +666,50 @@ def same_value(answer: Any, suggestion: Any) -> bool:
     return bool(answer == suggestion)
 
 
-def nordpool_schema(*, values: Mapping[str, Any]) -> vol.Schema:
-    """Render the Nord Pool source from its own registry schema (D1 §6)."""
-    return render(
+def nordpool_detected(values: Mapping[str, Any]) -> bool:
+    """Whether the house's one Nord Pool entry named both itself and the area (CTL-9)."""
+    return bool(values.get("config_entry") and values.get("area"))
+
+
+def area_options(text: Text) -> list[SelectOptionDict]:
+    """Every Nord Pool area by its region name: "NO3 – Midt-Norge" (CTL-9).
+
+    The codes are the values; a code is not a usable translation key (`NO3`,
+    `DE-LU`), so the labels are read from `selector.nordpool_area` by its
+    lower-case spelling and assembled here.
+    """
+    return [
+        SelectOptionDict(
+            value=area,
+            label=text.word("nordpool_area", area.lower().replace("-", "_")) or area,
+        )
+        for area in AREAS
+    ]
+
+
+def nordpool_schema(*, values: Mapping[str, Any], text: Text) -> vol.Schema:
+    """Render the Nord Pool source from its own registry schema (D1 §6).
+
+    The currency is Home Assistant's and never shown (HUB-2); the area carries
+    its region name (CTL-9).
+    """
+    rendered = render(
         NordpoolActionSource.schema,
         translation_prefix="nordpool",
         values=values,
         overrides={
             "config_entry": ConfigEntrySelector(
                 ConfigEntrySelectorConfig(integration=NORDPOOL_DOMAIN)
-            )
+            ),
+            "area": SelectSelector(
+                SelectSelectorConfig(
+                    options=area_options(text), mode=SelectSelectorMode.DROPDOWN, sort=False
+                )
+            ),
         },
         suggested=nordpool_suggested(values.get("area")),
     )
+    return vol.Schema({key: value for key, value in rendered.schema.items() if key != "currency"})
 
 
 def price_entity_schema(*, default_entity: str | None, default_format: str | None) -> vol.Schema:
@@ -600,15 +759,33 @@ def pre_tickable(key: str) -> bool:
     return all(field.default is not None for field in schema if field.required)
 
 
-def modifiers_schema(country: str | None, chosen: Sequence[str] | None = None) -> vol.Schema:
-    """Every registered modifier, with the country's pre-ticked (D1 §6)."""
+def offered_modifiers() -> list[str]:
+    """Every add-on the follow-up offers, in the order it lists them (HUB-3)."""
     # `modifiers.keys()` is the registry function, not a mapping method.
-    available = [key for key in modifiers.keys() if key != "export_price"]  # noqa: SIM118
+    return [key for key in modifiers.keys() if key != "export_price"]  # noqa: SIM118
+
+
+def modifiers_schema(
+    country: str | None,
+    chosen: Sequence[str] | None = None,
+    *,
+    also: Sequence[str] = (),
+    included: Sequence[str] = (),
+) -> vol.Schema:
+    """Every registered add-on, with the country's pre-ticked (D1 §6).
+
+    `also` is ticked on top - Norgespris's `fixed_price`, whose price has no
+    default and is therefore never pre-ticked on its own. `included` is what the
+    grid company's preset already prices (its day/night charge): not offered at
+    all, since HA cannot grey out one option, and named in the step's text
+    instead (D-0430).
+    """
+    available = [key for key in offered_modifiers() if key not in included]
     recommended = _RECOMMENDED.get(country or "", ())
     default = (
-        list(chosen)
+        [key for key in chosen if key in available]
         if chosen is not None
-        else [key for key in available if key in recommended and pre_tickable(key)]
+        else [key for key in available if (key in recommended and pre_tickable(key)) or key in also]
     )
     return vol.Schema(
         {
@@ -789,24 +966,45 @@ def tariff_schema(
     presets: Sequence[tuple[str, str]],
     chosen: str | None,
     text: Text,
+    ask_country: bool = False,
 ) -> vol.Schema:
-    """Country plus the preset select of D2 §6: the grid companies A–Å, the two escape hatches last.
+    """Ask "Hvilket nettselskap har du?": the grid companies A–Å, the two escape hatches last (D2 §6).
 
     Names are the operators' own (data); the escape hatches are translated and
-    pinned after the list, sorted by the language's own alphabet (HUB-11).
+    pinned after the list, sorted by the language's own alphabet (HUB-11). The
+    country is asked once, and only when Home Assistant has none (HUB-2).
     """
     generic = _GENERIC_PRESET.get((country or "").upper())
     named = [(stem, name) for stem, name in presets if stem != generic]
     options = preset_options(text, named)
     default = preset_choice(chosen, country) or (named[0][0] if len(named) == 1 else PRESET_UNKNOWN)
+    fields: dict[Any, Any] = {}
+    if ask_country:
+        fields[vol.Optional("country", default=country or "")] = CountrySelector(
+            CountrySelectorConfig()
+        )
+    fields[vol.Optional("preset", default=default)] = SelectSelector(
+        SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN, sort=False)
+    )
+    return vol.Schema(fields)
+
+
+#: "Stemmer dette med nettleiefakturaen din?" - yes, or back to the list (HUB-4).
+TARIFF_YES: Final = "yes"
+TARIFF_NO: Final = "no"
+
+
+def tariff_confirm_schema() -> vol.Schema:
+    """Return a yes/no radio: "no" shows the grid companies again, since HA flows have no back (HUB-4)."""
     return vol.Schema(
         {
-            vol.Optional("country", default=country or ""): CountrySelector(
-                CountrySelectorConfig()
-            ),
-            vol.Optional("preset", default=default): SelectSelector(
-                SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN, sort=False)
-            ),
+            vol.Required("confirm", default=TARIFF_YES): SelectSelector(
+                SelectSelectorConfig(
+                    options=[TARIFF_YES, TARIFF_NO],
+                    mode=SelectSelectorMode.LIST,
+                    translation_key="tariff_confirm",
+                )
+            )
         }
     )
 
@@ -836,6 +1034,12 @@ def risk_key(risk: float) -> str:
     return "flat"
 
 
+def peak_hours(version: TariffVersion) -> int:
+    """How many windows the metric averages - Tensio's three - for the strictness help (D2 §6)."""
+    peak = peak_of(version)
+    return peak.n if peak is not None else 1
+
+
 def tariff_target_schema(
     version: TariffVersion, *, text: Text, values: Mapping[str, Any] | None = None
 ) -> vol.Schema:
@@ -845,6 +1049,7 @@ def tariff_target_schema(
     HUB-13); its values are `auto` and `step_<i>` (ENT-2).
     """
     peak = peak_of(version)
+    # Strict for a new site (D2 §6); a reconfigure shows the site's own.
     default = default_risk(version.grammar)
     values = values or {}
     fields: dict[Any, Any] = {
@@ -999,7 +1204,9 @@ def tariff_data(
     preset bills is not stored in words: the flow renders D2's `TariffSummary`
     whenever it is shown (HUB-12), and an older entry's `description` is ignored.
     """
-    risk = RISK_LABELS[answers.get("risk", risk_key(default_risk(version.grammar)))]
+    default = risk_key(default_risk(version.grammar))
+    chosen = str(answers.get("risk", default))
+    risk = RISK_LABELS[chosen]
     return {
         "preset_id": spec.id,
         "preset_file": preset,
@@ -1010,7 +1217,8 @@ def tariff_data(
         "target": answers.get("target", "auto"),
         "target_kw": answers.get("target_kw"),
         "risk": risk,
-        "risk_source": "per_day_max" if risk == RISK_FREE_RIDE else "flat_default",
+        # Whether the household picked the strictness or kept the default (D2 §6).
+        "risk_source": "default" if chosen == default else "chosen",
         "eps_kwh": float(answers.get("eps_kwh", EPS_DEFAULT_KWH_PER_HOUR)),
         "cap_margin_kw": float(answers.get("cap_margin_kw", CAP_MARGIN_KW)),
         "bills": [value for _, value in sorted(bills.items()) if value is not None],
@@ -1138,13 +1346,6 @@ def notifications_schema(
     fields: dict[Any, Any] = dict(
         _transport_field(category, _default(category)) for category in PROMINENT_CATEGORIES
     )
-    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
-        dict(
-            _transport_field(category, _default(category))
-            for category in NOTIFICATION_DEFAULTS
-            if category not in PROMINENT_CATEGORIES
-        )
-    )
     services = notify_services(hass)
     stored_service = next(
         (
@@ -1170,6 +1371,14 @@ def notifications_schema(
     # Half-hour selects: a time selector cannot hide its seconds (CTL-7, H8).
     fields[vol.Optional("quiet_start", default=start)] = time_selector(start)
     fields[vol.Optional("quiet_end", default=end)] = time_selector(end)
+    # The rarely-changed categories last, after the questions that apply to all (HUB-16).
+    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+        dict(
+            _transport_field(category, _default(category))
+            for category in NOTIFICATION_DEFAULTS
+            if category not in PROMINENT_CATEGORIES
+        )
+    )
     return vol.Schema(fields)
 
 
@@ -1185,34 +1394,41 @@ def notifications_data(answers: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def review_schema(*, default_observe: bool = True) -> vol.Schema:
-    """One tick box: start in observe, ticked by default on a first setup.
+def review_schema(*, reconfiguring: bool = False) -> vol.Schema:
+    """Ask "Klar til å starte": one tick box, trial mode, ticked - on a first setup only.
 
-    A reconfigure passes the site's own current state instead (PLAN §7 dec. 20) -
-    re-saving an already-active site must not silently switch it back to
-    observe.
+    A reconfigure shows no toggle and keeps the site's own `active` (HUB-5): the
+    switch on the home's device is where that changes.
     """
-    return vol.Schema(
-        {vol.Optional("start_in_observe", default=default_observe): BooleanSelector()}
-    )
+    if reconfiguring:
+        return vol.Schema({})
+    return vol.Schema({vol.Optional("start_in_observe", default=True): BooleanSelector()})
 
 
 __all__ = [
+    "AGREEMENT_NORGESPRIS",
     "CARRIER_FIXED",
     "CARRIER_SENSOR",
     "DEFAULT_SITE_NAME",
     "EXPORT_NONE",
     "FUSE_RATINGS",
+    "METER_CHANGE",
+    "METER_OK",
     "METER_SOURCE",
     "NO_PEAK_TARIFF",
     "PRESET_CUSTOM",
     "PRESET_UNKNOWN",
     "PRICE_SOURCES",
     "RISK_LABELS",
+    "SECTION_PER_PHASE",
     "SOURCE_ENTITY",
     "SOURCE_FIXED",
     "SOURCE_NORDPOOL",
+    "TARIFF_NO",
+    "TARIFF_YES",
     "StepError",
+    "agreements",
+    "area_options",
     "bills_schema",
     "carrier_options_schema",
     "carriers_schema",
@@ -1226,20 +1442,27 @@ __all__ = [
     "export_schema",
     "fixed_price_schema",
     "limits_schema",
+    "meter_confirm_schema",
     "meter_data",
     "meter_device_schema",
+    "meter_found",
+    "meter_roles_answers",
     "meter_roles_schema",
+    "meter_values",
     "modifier_options_schema",
     "modifiers_schema",
     "name_schema",
     "needs_bills",
     "needs_limits",
     "nordpool_defaults",
+    "nordpool_detected",
     "nordpool_schema",
     "nordpool_suggested",
     "notifications_data",
     "notifications_schema",
     "notify_label",
+    "offered_modifiers",
+    "peak_hours",
     "peak_of",
     "people",
     "persons_schema",
@@ -1253,6 +1476,7 @@ __all__ = [
     "review_schema",
     "risk_key",
     "same_value",
+    "tariff_confirm_schema",
     "tariff_data",
     "tariff_schema",
     "tariff_target_schema",

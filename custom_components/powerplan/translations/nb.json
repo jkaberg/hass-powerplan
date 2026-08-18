@@ -3,22 +3,22 @@
   "config": {
     "step": {
       "user": {
-        "title": "Hva skal PowerPlan hjelpe med?",
-        "description": "Tre måter å kjøre på, og du kan ombestemme deg senere.\n\n**Pris og effekt** — flytt forbruk til billige timer *og* hold hver time under nettselskapets effekttrinn. Dette er det de fleste norske hus vil ha.\n\n**Bare pris** — følg prisen og se bort fra effekt. Velg dette hvis nettselskapet ikke har et effektledd, eller hvis du ikke har en måleravlesning PowerPlan kan bruke.\n\n**Bare sikring** — ingen priser, ingen nettleie: bare aldri slå ut hovedsikringen når flere store laster kjører samtidig.",
+        "title": "Hva vil du at PowerPlan skal hjelpe deg med?",
+        "description": "Velg én; du kan endre det senere. De fleste norske hjem vil spare både på strøm og nettleie.",
         "menu_options": {
-          "full": "Pris og effekt",
-          "price_only": "Bare pris",
-          "fuse_only": "Bare sikring"
+          "full": "Spar på strøm og nettleie",
+          "price_only": "Bare de billigste timene",
+          "fuse_only": "Bare beskytt hovedsikringen"
         }
       },
       "name": {
-        "title": "Gi anlegget et navn",
-        "description": "Et anlegg er ett nettilknytningspunkt: måleren, prisene og effekttariffen.",
+        "title": "Hva vil du kalle dette hjemmet?",
+        "description": "Navnet står på hjemmets enhet og entitetene dens.",
         "data": {
           "name": "Navn"
         },
         "data_description": {
-          "name": "Hva dette nettilknytningspunktet skal hete. Navnet brukes på anleggsenheten og som prefiks på entitetene."
+          "name": "Home Assistants eget navn på hjemmet, med mindre du velger et annet."
         }
       },
       "timezone": {
@@ -32,89 +32,97 @@
         }
       },
       "electrical": {
-        "title": "Nettilknytningen din",
-        "description": "Fire spørsmål om den fysiske tilknytningen. Svarene bestemmer hva huset kan trekke og hvordan ampere blir watt; oppsummeringen viser resultatet i kW så du kan kontrollere det.",
+        "title": "Hvor stor er hovedsikringen?",
+        "description": "Sikringen bestemmer hvor mye hele hjemmet kan trekke. Usikker? Velg Vet ikke, så antar PowerPlan den vanlige størrelsen.",
         "data": {
           "country": "Land",
-          "system": "Fordelingssystem",
-          "phases": "Faser",
+          "system": "Spenning",
           "main_fuse_a": "Hovedsikring"
         },
         "data_description": {
-          "country": "Hentet fra Home Assistant-innstillingene. Det bestemmer forvalgene nedenfor.",
-          "system": "Se i sikringsskapet: et IT-nett har tre ledere og ingen nøytralleder, et TN-nett har nøytralleder. Begge er vanlige i Norge.",
-          "phases": "Hvor mange faser huset er tilknyttet med.",
-          "main_fuse_a": "Merkestrømmen til hovedsikringen, i ampere. Den står på sikringen eller på nettavtalen."
+          "country": "Home Assistant har ikke noe land, så det spørres om her.",
+          "system": "Det står på sikringsskapet eller på nettleiefakturaen.",
+          "main_fuse_a": "Den står på hovedsikringen i sikringsskapet."
         },
         "sections": {
           "advanced": {
             "name": "Avansert",
-            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
+            "description": "Fylt ut fra landet og sikringen.",
             "data": {
-              "per_phase_limit_a": "Grense per fase"
+              "per_phase_limit_a": "Grense per fase",
+              "phases": "Faser"
             },
             "data_description": {
-              "per_phase_limit_a": "Avansert: en lavere grense per fase enn hovedsikringen, hvis nettselskapet har satt en. Forvalget er hovedsikringen."
+              "per_phase_limit_a": "Bare hvis nettselskapet har satt en lavere grense per fase enn sikringen.",
+              "phases": "Hvor mange faser hjemmet er tilknyttet med."
             }
           }
         }
       },
       "meter": {
-        "title": "Hvilken enhet er måleren din?",
-        "description": "Velg enheten som leser strømmåleren din — en AMS/HAN-leser, en P1-dongle, en Tibber Pulse — og PowerPlan fyller ut sensorene den finner på den. La den stå tom for å velge sensorene selv.",
+        "title": "Hvor måler du strømforbruket?",
+        "description": "Velg enheten som leser strømmåleren, for eksempel en AMS/HAN-leser eller en P1-dongle. La den stå tom for å velge sensorene selv.",
         "data": {
           "device": "Målerenhet"
         },
         "data_description": {
-          "device": "Valgfritt. Brukes bare til å foreslå sensorene i neste steg."
+          "device": "Bare enheter som måler effekt vises."
         }
       },
       "meter_roles": {
-        "title": "Hva hver målersensor er",
-        "description": "Kontroller det PowerPlan fant. Effekt fra nettet og importregisteret er de to som betyr noe: effekten er hvor fort huset trekker, registeret er det som avslutter hvert effektvindu eksakt. Alt annet er valgfritt.",
+        "title": "Hvilken sensor måler hva?",
+        "description": "Effekt nå og målerstanden er de to som betyr noe. Alt annet er valgfritt.",
         "data": {
-          "grid_power": "Effekt fra nettet",
-          "import_register": "Importregister",
-          "export_register": "Eksportregister",
-          "production_power": "Produksjonseffekt",
-          "meter_window": "Målerens egen timeverdi",
-          "phase_current_l1": "Strøm L1",
-          "phase_current_l2": "Strøm L2",
-          "phase_current_l3": "Strøm L3"
+          "grid_power": "Effekt nå",
+          "import_register": "Målerstand",
+          "export_register": "Eksport",
+          "production_power": "Solcelleeffekt nå",
+          "meter_window": "Målerens egen timeverdi"
         },
         "data_description": {
-          "grid_power": "Målerens effektavlesning for hele huset. Import er positiv, eksport negativ.",
-          "import_register": "Målerens totale importerte energi. Dette er det som avslutter hvert vindu eksakt.",
-          "export_register": "Målerens totale eksporterte energi, hvis du har produksjon. Valgfritt.",
-          "production_power": "Hva panelene eller annen produksjon leverer akkurat nå. Valgfritt.",
-          "meter_window": "Noen målere publiserer forbruket for inneværende time selv. Valgfritt.",
-          "phase_current_l1": "Strøm per fase, i ampere. Valgfritt, og nyttig bare med alle tre.",
-          "phase_current_l2": "Strøm per fase, i ampere. Valgfritt.",
-          "phase_current_l3": "Strøm per fase, i ampere. Valgfritt."
+          "grid_power": "Det hele hjemmet trekker fra nettet akkurat nå.",
+          "import_register": "Målerens totale stand i kWh, kjøpt fra nettet.",
+          "export_register": "Totalt antall kWh solgt tilbake, hvis du har solceller.",
+          "production_power": "Det solcellene produserer akkurat nå.",
+          "meter_window": "Noen målere publiserer forbruket denne timen selv."
+        },
+        "sections": {
+          "per_phase": {
+            "name": "Per fase",
+            "description": "Strømmen på hver fase, hvis måleren din rapporterer den.",
+            "data": {
+              "phase_current_l1": "Strøm L1",
+              "phase_current_l2": "Strøm L2",
+              "phase_current_l3": "Strøm L3"
+            },
+            "data_description": {
+              "phase_current_l1": "Ampere på fase 1; nyttig bare med alle tre.",
+              "phase_current_l2": "Ampere på fase 2.",
+              "phase_current_l3": "Ampere på fase 3."
+            }
+          }
         }
       },
       "prices": {
-        "title": "Hvor kommer prisene dine fra?",
-        "description": "PowerPlan trenger morgendagens priser for å planlegge i natt. Velg det du allerede har.",
+        "title": "Hvilken strømavtale har du?",
+        "description": "PowerPlan trenger morgendagens priser for å planlegge i natt.",
         "data": {
-          "source": "Priskilde"
+          "source": "Strømavtale"
         },
         "data_description": {
-          "source": "Nord Pool leses gjennom den offisielle integrasjonen; en sensor er hva som helst som allerede publiserer en priskurve."
+          "source": "Spotpris følger markedet time for time; Norgespris er statens faste pris."
         }
       },
       "prices_nordpool": {
-        "title": "Nord Pool",
-        "description": "PowerPlan spør Nord Pool-integrasjonen om prisene for hver dag; den kontakter aldri markedet selv. Morgendagens auksjonsresultat kommer vanligvis tidlig på ettermiddagen, markedstid.",
+        "title": "Hvilket prisområde er du i?",
+        "description": "PowerPlan leser prisene gjennom Nord Pool-integrasjonen. Morgendagens priser kommer vanligvis tidlig på ettermiddagen.",
         "data": {
           "config_entry": "Nord Pool-integrasjon",
-          "area": "Prisområde",
-          "currency": "Valuta"
+          "area": "Prisområde"
         },
         "data_description": {
           "config_entry": "Hvilken Nord Pool-oppføring prisene skal leses gjennom.",
-          "area": "Prisområdet huset ligger i.",
-          "currency": "Valutaen det spørres om, normalt din egen."
+          "area": "Der hjemmet ligger; det står på strømregningen."
         },
         "sections": {
           "advanced": {
@@ -132,7 +140,7 @@
         }
       },
       "prices_entity": {
-        "title": "Prissensoren din",
+        "title": "Hvilken sensor har prisene dine?",
         "description": "Velg sensoren som allerede bærer en priskurve. PowerPlan kjenner igjen de vanlige formatene og forteller hvilket den oppdaget.",
         "data": {
           "entity_id": "Prissensor",
@@ -144,18 +152,18 @@
         }
       },
       "prices_fixed": {
-        "title": "Fastprisen din",
+        "title": "Hva betaler du per kWh?",
         "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og forsvarer effektmålet ditt.",
         "data": {
           "price": "Pris per kWh"
         },
         "data_description": {
-          "price": "Hva du betaler for en kilowattime."
+          "price": "I øre per kWh, slik det står på regningen."
         }
       },
       "modifiers": {
-        "title": "Hva legges på toppen?",
-        "description": "Spotprisen er ikke det du betaler. Kryss av det som gjelder deg; hver av dem stiller sitt eget korte spørsmål etterpå. Nettselskapets energiledd kommer fra nettleien du velger senere, med tallene og kilden deres, så du slipper å skrive det inn.",
+        "title": "Er strømavtalen din spesiell?",
+        "description": "Kryss av det avtalen legger på prisen; hvert valg får sitt eget spørsmål etterpå. Allerede med fra nettselskapet: {included}.",
         "data": {
           "modifiers": "Legges på toppen"
         },
@@ -229,7 +237,7 @@
           "cap_kwh_per_month": "Tak per måned"
         },
         "data_description": {
-          "price": "I din valuta, per kWh.",
+          "price": "I øre per kWh, uten mva; mva legges på etterpå.",
           "cap_kwh_per_month": "Hvor mange kWh i måneden fastprisen dekker; over det gjelder spotpris."
         }
       },
@@ -316,8 +324,8 @@
         }
       },
       "carriers": {
-        "title": "Andre energibærere?",
-        "description": "En varmepumpe konkurrerer med det andre som varmer huset. Kryss av det du kjøper i tillegg til strøm; la det stå tomt hvis strøm er alt du har.",
+        "title": "Varmer du også med gass, fjernvarme, olje eller pellets?",
+        "description": "En varmepumpe konkurrerer med det andre som varmer hjemmet. La det stå tomt hvis du bare kjøper strøm.",
         "data": {
           "carriers": "Andre energibærere"
         },
@@ -382,32 +390,38 @@
         }
       },
       "tariff": {
-        "title": "Hvem er nettselskapet ditt?",
-        "description": "Effektdelen av nettleien er det PowerPlan først og fremst er til for. Velg nettselskapet ditt, og neste steg viser med vanlige ord hva PowerPlan tror de fakturerer deg — kontroller det mot din egen faktura.",
+        "title": "Hvilket nettselskap har du?",
+        "description": "Nettselskapet fakturerer effektdelen av nettleien. Neste steg viser hva PowerPlan tror de fakturerer, så du kan sjekke det mot fakturaen.",
         "data": {
           "country": "Land",
           "preset": "Nettselskap"
         },
         "data_description": {
-          "country": "Hvilket lands tariffer som skal listes.",
+          "country": "Home Assistant har ikke noe land, så det spørres om her.",
           "preset": "Velg ditt; mangler det, velg Finner ikke mitt nettselskap eller Legg inn selv."
         }
       },
       "tariff_preset": {
-        "title": "Er dette regningen din?",
-        "description": "**{name}**\n\n{table}\n\nKjenner du ikke igjen dette, gå tilbake og velg et annet nettselskap, eller Legg inn selv. Feil her betyr at PowerPlan forsvarer feil tall hele måneden.\n\nKilde: {source}"
+        "title": "Stemmer dette med nettleiefakturaen din?",
+        "description": "**{name}**\n\n{table}\n\nKilde: {source}",
+        "data": {
+          "confirm": "Stemmer det?"
+        },
+        "data_description": {
+          "confirm": "Nei viser nettselskapene igjen, med Legg inn selv sist."
+        }
       },
       "tariff_target": {
-        "title": "Hva skal PowerPlan forsvare?",
-        "description": "Målet er taket PowerPlan holder hver time under. Automatisk forsvarer trinnet du allerede er i denne måneden, som er det riktige svaret til du kjenner ditt eget mønster.",
+        "title": "Hvilket effekttrinn vil du holde deg i?",
+        "description": "Automatisk holder deg i trinnet du allerede har nådd denne måneden.",
         "data": {
-          "target": "Mål",
-          "risk": "Hvor mye som skal satses",
+          "target": "Effekttrinn",
+          "risk": "Hvor stramt",
           "target_kw": "Mål"
         },
         "data_description": {
           "target": "Automatisk, eller et bestemt trinn med månedsgebyret sitt.",
-          "risk": "Nettselskapet fakturerer gjennomsnittet av de tre høyeste timene dine, så timer under dagens topp er allerede betalt for. Å bruke dem koster ingenting.",
+          "risk": "Streng går aldri over målet; de andre kan, så lenge dine {hours} høyeste timer holder seg i trinnet.",
           "target_kw": "Antall kW som skal forsvares, for en tariff uten trinn."
         },
         "sections": {
@@ -426,7 +440,7 @@
         }
       },
       "tariff_bills": {
-        "title": "De siste tolv månedene dine",
+        "title": "Hva var toppene dine de siste tolv månedene?",
         "description": "Denne tariffen snitter over et rullende år, så PowerPlan trenger det du allerede har brukt. Fyll inn det du finner på fakturaene; hvert felt er valgfritt, og PowerPlan sier fra når den vet for lite.",
         "data": {
           "month_1": "Måned 1",
@@ -458,7 +472,7 @@
         }
       },
       "tariff_limits": {
-        "title": "Avtalt effekt",
+        "title": "Hvor mye effekt har du avtalt?",
         "description": "Denne tariffen avtaler en effektgrense per periode. Verdiene kommer fra tariffen; endre dem til det din egen avtale sier.",
         "data": {
           "limit_1": "Grense 1",
@@ -552,13 +566,23 @@
         }
       },
       "review": {
-        "title": "Før PowerPlan starter",
-        "description": "Dette er hva PowerPlan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}, omtrent {fuse_kw} kW. PowerPlan lar aldri hele huset gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. {fuse_assumed}\n\n**Måler** — {meter}.\n\n**Priser** — {prices}.\n\n**Nettleie** — {tariff}.\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}.\n\n**Varsler** — {notifications}.\n\n**Tider** — alt PowerPlan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n**Hva som skjer først** — {name} starter i observasjon. PowerPlan beregner hver beslutning, publiserer den og logger hva den ville gjort, og skriver ikke til noen enhet før du slår på anlegget. La avkryssingen nedenfor stå de første dagene: de dagene er også det som kalibrerer sparetallene.",
+        "title": "Klar til å starte",
+        "description": "Dette er hva PowerPlan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}, omtrent {fuse_kw} kW. PowerPlan lar aldri hele hjemmet gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. {fuse_assumed}\n\n**Måler** — {meter}.\n\n**Priser** — {prices}.\n\n**Nettleie** — {tariff}.\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}.\n\n**Varsler** — {notifications}.\n\n**Tider** — alt PowerPlan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n{first}",
         "data": {
-          "start_in_observe": "Start i observasjon"
+          "start_in_observe": "Start i prøvemodus"
         },
         "data_description": {
-          "start_in_observe": "Anbefales sterkt. PowerPlan beslutter og forklarer, men skriver ikke noe sted, så du kan se hva den ville gjort før den gjør det."
+          "start_in_observe": "Anbefalt: PowerPlan bestemmer og forklarer, men styrer ingenting, så du ser hva den ville gjort først."
+        }
+      },
+      "meter_confirm": {
+        "title": "Er dette måleren din?",
+        "description": "PowerPlan fant disse sensorene, med det de viser nå:\n\n{found}\n\nEksport skal være lav med mindre du har solceller.",
+        "data": {
+          "confirm": "Stemmer dette?"
+        },
+        "data_description": {
+          "confirm": "Velg endre for å velge sensorene selv."
         }
       }
     },
@@ -571,7 +595,8 @@
       "energy_unit_not_kwh": "En energisensor må rapportere watt-timer, kilowatt-timer eller megawatt-timer.",
       "current_unit_not_amps": "En strømsensor må rapportere ampere.",
       "register_not_cumulative": "Dette er ikke en løpende sum. Velg sensoren som bare øker.",
-      "target_above_fuse": "Dette er over det hovedsikringen noensinne kan levere. Velg et lavere trinn eller mål."
+      "target_above_fuse": "Dette er over det hovedsikringen noensinne kan levere. Velg et lavere trinn eller mål.",
+      "price_in_minor_unit": "Det er under én øre per kWh. Feltet er i øre, ikke kroner."
     },
     "abort": {
       "already_configured": "Denne måleren er allerede satt opp som et PowerPlan-anlegg.",
@@ -864,8 +889,8 @@
           "auto": "Automatisk",
           "force": "Kjør nå",
           "off": "Ikke styr",
-          "observe": "Bare se på",
-          "delegated": "Enheten styrer selv"
+          "observe": "Prøvemodus",
+          "delegated": "Styres av noe annet"
         }
       },
       "strategy": {
@@ -1083,9 +1108,10 @@
     },
     "price_source": {
       "options": {
-        "nordpool_action": "Nord Pool (innebygd)",
-        "entity": "En prissensor jeg allerede har",
-        "fixed": "En fastpris jeg skriver inn"
+        "nordpool_action": "Nord Pool (via Nord Pool-integrasjonen)",
+        "entity": "Spotpris fra en sensor",
+        "fixed": "Fastpris",
+        "norgespris": "Norgespris"
       }
     },
     "modifier": {
@@ -1125,9 +1151,9 @@
     },
     "risk": {
       "options": {
-        "flat": "Aldri over målet",
-        "free_ride": "Bruk timene dagens topp allerede har betalt for",
-        "full": "Sats på periodesnittet"
+        "flat": "Streng (anbefalt)",
+        "free_ride": "Bruk betalte timer",
+        "full": "Fleksibel"
       }
     },
     "transport": {
@@ -1165,7 +1191,9 @@
         "quiet": "stille {hours}",
         "notifications_none": "ingen",
         "export": "eksport: {mode}",
-        "fuse_assumed": "Sikringsstørrelsen er antatt for landet ditt."
+        "fuse_assumed": "Sikringsstørrelsen er antatt for landet ditt.",
+        "first_setup": "**Hva som skjer først** — {name} starter i prøvemodus: PowerPlan bestemmer, forklarer og logger hva den ville gjort, men styrer ingen enhet før du slår på automatisk styring. La avkryssingen stå de første dagene; de kalibrerer også sparetallene.",
+        "first_reconfigure": "**Hva som skjer nå** — om PowerPlan styrer apparatene dine forblir som det er; endre det med Automatisk styring på hjemmets enhet."
       }
     },
     "appliance_cycle_appliance": {
@@ -1302,10 +1330,10 @@
     },
     "water_heater_element_kw": {
       "options": {
-        "1.5": "1,5 kW",
+        "1_5": "1,5 kW",
         "2": "2 kW",
         "3": "3 kW",
-        "4.5": "4,5 kW",
+        "4_5": "4,5 kW",
         "6": "6 kW",
         "9": "9 kW"
       }
@@ -1325,13 +1353,13 @@
     },
     "load_type": {
       "options": {
-        "appliance_cycle": "Apparat",
-        "battery": "Batteri",
-        "ev": "Billader",
+        "appliance_cycle": "Oppvask-, vaske- eller tørkemaskin",
+        "battery": "Hjemmebatteri",
+        "ev": "Elbillader",
         "floor_heating": "Gulvvarme",
-        "generic_switch": "Bryterstyrt last",
+        "generic_switch": "Noe annet med bryter",
         "heat_pump": "Varmepumpe",
-        "radiator": "Ovn",
+        "radiator": "Panelovn",
         "water_heater": "Varmtvannsbereder"
       }
     },
@@ -1463,7 +1491,8 @@
         "store_room": "Romluft",
         "store_hydronic": "Vannbåren",
         "kind_setpoint": "Termostat",
-        "kind_switch": "Av og på"
+        "kind_switch": "Av og på",
+        "already_added": "{name} (allerede lagt til)"
       }
     },
     "modifier_cumulative_tier_basis": {
@@ -1570,6 +1599,49 @@
         "low": "Lav",
         "normal": "Normal",
         "high": "Høy"
+      }
+    },
+    "meter_confirm": {
+      "options": {
+        "ok": "Ja, det stemmer",
+        "change": "Nei, la meg endre"
+      }
+    },
+    "voltage": {
+      "options": {
+        "it_230": "230 V (vanligst i eldre boliger)",
+        "tn_400": "400 V (vanligst i nyere boliger)",
+        "dont_know": "Vet ikke"
+      }
+    },
+    "nordpool_area": {
+      "options": {
+        "no1": "NO1 – Østlandet",
+        "no2": "NO2 – Sørlandet",
+        "no3": "NO3 – Midt-Norge",
+        "no4": "NO4 – Nord-Norge",
+        "no5": "NO5 – Vestlandet",
+        "se1": "SE1 – Luleå",
+        "se2": "SE2 – Sundsvall",
+        "se3": "SE3 – Stockholm",
+        "se4": "SE4 – Malmö",
+        "fi": "FI – Finland",
+        "dk1": "DK1 – Vest-Danmark",
+        "dk2": "DK2 – Øst-Danmark",
+        "ee": "EE – Estland",
+        "lv": "LV – Latvia",
+        "lt": "LT – Litauen",
+        "nl": "NL – Nederland",
+        "be": "BE – Belgia",
+        "de_lu": "DE-LU – Tyskland og Luxembourg",
+        "fr": "FR – Frankrike",
+        "at": "AT – Østerrike"
+      }
+    },
+    "tariff_confirm": {
+      "options": {
+        "yes": "Ja, det er min faktura",
+        "no": "Nei, velg på nytt"
       }
     }
   },
@@ -1714,18 +1786,18 @@
       },
       "step": {
         "user": {
-          "title": "Legg til en last",
-          "description": "Velg enheten PowerPlan skal styre. Alle integrasjoner går: PowerPlan ser på enhetens entiteter og sier hva den tror den er.",
+          "title": "Hva vil du styre?",
+          "description": "Velg hva slags apparat; neste steg viser enhetene det kan være.",
           "data": {
-            "device": "Enhet"
+            "type": "Apparat"
           },
           "data_description": {
-            "device": "Laderen, termostaten, pluggen eller varmepumpen."
+            "type": "Spørsmålene som følger avhenger av det."
           }
         },
         "match": {
-          "title": "Det PowerPlan ser",
-          "description": "**{device}** ser ut som **{kind}**. PowerPlan vil styre det med **{control}**. Endre typen hvis det er feil, og sjekk hvilken entitet som har hvilken rolle.\n\n{warning}",
+          "title": "Er dette riktig enhet?",
+          "description": "**{device}** ser ut som **{kind}**. PowerPlan vil styre det med **{control}**; sjekk hvilken entitet som gjør hva.\n\n{warning}",
           "data": {
             "type": "Apparattype",
             "profile": "Profil",
@@ -1874,8 +1946,8 @@
           }
         },
         "questions": {
-          "title": "Noen spørsmål",
-          "description": "Spørsmål i klartekst om enheten. PowerPlan utleder alle parametre fra dem; den avanserte delen er allerede fylt ut.",
+          "title": "Om {name}",
+          "description": "PowerPlan regner ut alle innstillingene fra svarene dine; Avansert er allerede fylt ut.",
           "data": {
             "allow_grid_charge": "Lad fra nettet",
             "appliance": "Apparat",
@@ -2446,8 +2518,18 @@
           }
         },
         "reconfigure_device": {
-          "title": "Velg den nye enheten",
+          "title": "Hvilken enhet erstatter den?",
           "description": "Enheten «{load}» ble satt opp med, er borte. Velg den som erstatter den; entitetene kobles etterpå.",
+          "data": {
+            "device": "Enhet"
+          },
+          "data_description": {
+            "device": "Laderen, termostaten, pluggen eller varmepumpen."
+          }
+        },
+        "device": {
+          "title": "Hvilken enhet er det?",
+          "description": "Enheter PowerPlan kan slå av og på eller stille, for {type}. En som alt er lagt til, er merket.",
           "data": {
             "device": "Enhet"
           },
@@ -2457,8 +2539,8 @@
         }
       },
       "error": {
-        "no_profile": "PowerPlan kan ikke se hva denne enheten er. Velg entitetene for hånd fra en enhet den kjenner igjen, eller legg til en profil.",
-        "already_configured": "Denne enheten er allerede en last.",
+        "no_profile": "PowerPlan kan ikke styre denne enheten som denne typen apparat. Velg en annen enhet eller type.",
+        "already_configured": "Denne enheten er allerede lagt til. Velg en annen.",
         "role_missing": "Ingen entitet for: {roles}. Hver påkrevd rolle trenger én.",
         "unknown": "Ikke et spørsmål for denne typen.",
         "not_a_number": "Ikke et tall.",
@@ -2472,8 +2554,8 @@
         "outside_bounds": "Dette må holde seg mellom minimum og maksimum du satte."
       },
       "abort": {
-        "already_configured": "Denne enheten er allerede en last.",
-        "reconfigure_successful": "Lasten ble oppdatert."
+        "already_configured": "Denne enheten er allerede lagt til.",
+        "reconfigure_successful": "Apparatet ble oppdatert."
       }
     },
     "circuit": {
@@ -2484,7 +2566,7 @@
       },
       "step": {
         "user": {
-          "title": "Legg til en kurs",
+          "title": "Hvilke apparater deler en sikringskurs?",
           "description": "En sikring og lastene bak den — garasjens 32 A med laderen og badstuen. PowerPlan holder lastene på kursen under sikringen sammen, før anleggets egen grense vurderes.",
           "data": {
             "name": "Navn",
@@ -2514,7 +2596,7 @@
           }
         },
         "reconfigure": {
-          "title": "Endre kursen",
+          "title": "Hvilke apparater deler denne sikringskursen?",
           "description": "De samme spørsmålene, forhåndsutfylt med det kursen har nå.",
           "data": {
             "name": "Navn",
@@ -2567,7 +2649,7 @@
       },
       "step": {
         "user": {
-          "title": "Legg til en gruppe",
+          "title": "Hvilke apparater skal bytte på?",
           "description": "Laster som deler en felles ramme og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den til den kaldeste først, og roterer slik at ingen blir hengende.",
           "data": {
             "name": "Navn",
@@ -2595,7 +2677,7 @@
           }
         },
         "reconfigure": {
-          "title": "Endre gruppen",
+          "title": "Hvilke apparater i denne gruppen bytter på?",
           "description": "De samme spørsmålene, forhåndsutfylt med det gruppen har nå.",
           "data": {
             "name": "Navn",
@@ -2651,7 +2733,7 @@
       },
       "step": {
         "user": {
-          "title": "Legg til en sone",
+          "title": "Hvilke varmekilder deler et rom?",
           "description": "To eller flere laster som kan varme det samme rommet — en varmepumpe og en resistiv gulvflate, en varmepumpe og en kjel. PowerPlan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.",
           "data": {
             "name": "Navn",
@@ -2683,7 +2765,7 @@
           }
         },
         "reconfigure": {
-          "title": "Endre sonen",
+          "title": "Hvilke varmekilder deler dette rommet?",
           "description": "De samme spørsmålene, forhåndsutfylt med det sonen har nå.",
           "data": {
             "name": "Navn",

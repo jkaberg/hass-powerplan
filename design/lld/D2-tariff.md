@@ -339,7 +339,7 @@ Site flow, step **tariff** (skipped on the *fuse only* path):
 | *Template prices* (template only) | the template's `null` numbers as a form - for a step table, the step boundaries and fees from the bill | none: every field required, each with "from your bill" as its description |
 | *Rendered description* | *(D-0341)* the `TariffSummary` as D8's translated table (`flow/text.py`), then the source; the example below is the retired English sentence | e.g. "Tensio TS bills the **average of your three highest hours on three different days** each month, in steps: up to 2 kW 122 kr, up to 5 kW 218 kr, up to 10 kW 371 kr, … Source: tensio.no, checked." |
 | Target | select: `automatic` (default) · each step with its fee · (Linear) number kW | `auto` |
-| Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0** (strict) for every preset; PLAN §7 dec. 18). Until WP U.3 the code ships the earlier default: **0.5** when the preset has `per_day = max`, 0 otherwise |
+| Risk | select with plain labels: **Never exceed the target** (0) · **Use the hours today's peak already paid for** (0.5) · **Gamble on the period average** (1.0) | **0** (strict) for every preset; PLAN §7 dec. 18); built in WP U.3 |
 | Enter last 12 monthly peaks (rolling presets only) | 12 numbers, optional | empty |
 | Contracted power (ContractedPower presets) | per period: number kW / kVA dropdown | ES: 4.6 (P1) / 5.75 (P2); FR: 6 kVA; IT: 3 kW; NL: 3×25 A = 17.25 kW |
 

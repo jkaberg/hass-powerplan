@@ -52,7 +52,7 @@ from custom_components.powerplan.core.tariffs.evaluator import ADVICE_KEYS
 from custom_components.powerplan.core.tariffs.grammar import StepTable
 from custom_components.powerplan.core.tariffs.presets import loader
 from custom_components.powerplan.flow import steps as site_steps
-from custom_components.powerplan.flow.load import explanation_text
+from custom_components.powerplan.flow.load import explanation_text, option_key
 from custom_components.powerplan.flow.text import Text, preset_options, target_options, tariff_table
 from custom_components.powerplan.load_entities import CONTROL_OPTIONS, PLAN_STATES, PRIORITY_LEVELS
 from custom_components.powerplan.providers.prices.formats import registry as formats
@@ -91,6 +91,14 @@ SAME_IN_BOTH = frozenset(
         "August",
         "September",
         "November",
+        "Norgespris",  # the state's fixed-price scheme, a name (D1 §6)
+        # Nord Pool areas whose region is spelled alike in both (CTL-9)
+        "SE1 – Luleå",
+        "SE2 – Sundsvall",
+        "SE3 – Stockholm",
+        "SE4 – Malmö",
+        "FI – Finland",
+        "LV – Latvia",
     }
 )
 #: A number with or without a unit is the same in both languages (a whole number;
@@ -256,7 +264,9 @@ def _registry_options() -> dict[str, set[str]]:
         wanted["strategy"] |= set(device_type.strategies)
         for question in device_type.questionnaire.questions:
             if question.kind is QuestionKind.CHOICE:
-                wanted[f"{key}_{question.key}"] = {option.value for option in question.options}
+                wanted[f"{key}_{question.key}"] = {
+                    option_key(str(option.value)) for option in question.options
+                }
     for key in modifiers.keys():  # noqa: SIM118
         for field in modifiers.entry(key).schema:
             values = {str(option) for option in field.options}
@@ -499,7 +509,15 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            "modifiers": {"modifiers": [k for k in modifiers.keys() if k != "export_price"]},  # noqa: SIM118
+            # Tensio prices the day/night charge itself, so it is not offered (D-0430);
+            # its screen is walked on the price-only branch below.
+            "modifiers": {
+                "modifiers": [
+                    k
+                    for k in modifiers.keys()  # noqa: SIM118
+                    if k not in ("export_price", "tou_schedule")
+                ]
+            },
             # Every add-on ticked: the required fields with no default (D8 §9
             # 21 (a)) each need one row or one number to get past their step.
             "modifier_fixed_price": {"price": 40},
@@ -510,7 +528,7 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "modifier_tou_schedule": {"periods": [{"price": 60}]},
             "export": {"mode": "spot_minus"},
             "carriers": {"carriers": [str(c) for c in Carrier if c is not Carrier.ELECTRICITY]},
-            "tariff": {"country": "NO", "preset": "no/tensio"},
+            "tariff": {"preset": "no/tensio"},
         },
     ),
     "full_not_listed": (
@@ -565,6 +583,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "prices": {"source": "fixed"},
             # Required, no default (D8 §9 21 (a)): nothing to derive it from.
             "prices_fixed": {"price": 100},
+            "modifiers": {"modifiers": ["vat", "tou_schedule"]},
+            "modifier_tou_schedule": {"periods": [{"price": 60}]},
         },
     ),
     "fuse_only": (
@@ -696,7 +716,11 @@ async def test_18c_every_subentry_step_renders_data_only_in_the_language(
             site.entry_id,
             SUBENTRY_LOAD,
             language=language,
-            answers={"user": {"device": device_id}, "review": {"name": load_id}},
+            answers={
+                "user": {"type": charger.loads[load_id].kind},
+                "device": {"device": device_id},
+                "review": {"name": load_id},
+            },
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY, result
         await hass.async_block_till_done()
@@ -814,3 +838,24 @@ def test_18c_the_target_options_are_assembled_in_the_language() -> None:
     assert nb[-1] == {"value": "step_5", "label": "Trinn 6 · Over 20 kW · 1 200 kr/mnd"}  # noqa: RUF001 - nb groups thousands with a no-break space
     en = target_options(text_for("en"), version)
     assert en[-1]["label"] == "Step 6 · Above 20 kW · 1,200 kr/month"
+
+
+#: Steps that are not a question by design: the reviews (INV-67) and the load's
+#: questions, titled "Om {name}" (review LOAD-5).
+NOT_A_QUESTION = frozenset({"review", "reconfigure_review", "questions"})
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_15_every_step_is_titled_as_a_question(language: str) -> None:
+    """D8 §5.15 rule 1, HUB-6: one question per screen, in the household's words."""
+    document = DOCUMENTS[language]
+    steps = {f"config.{key}": step for key, step in document["config"]["step"].items()}
+    for kind, flow in document["config_subentries"].items():
+        steps |= {f"{kind}.{key}": step for key, step in flow["step"].items()}
+    statements = sorted(
+        f"{where}: {step.get('title')}"
+        for where, step in steps.items()
+        if where.rsplit(".", 1)[1] not in NOT_A_QUESTION
+        and not str(step.get("title", "")).endswith("?")
+    )
+    assert not statements, statements

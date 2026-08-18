@@ -736,6 +736,31 @@ def missing_required(schema: Schema, answers: Mapping[str, Any]) -> str | None:
     return None
 
 
+def implausible_price(
+    schema: Schema, answers: Mapping[str, Any], currency: str | None
+) -> str | None:
+    """Return a per-kWh price typed as kroner into an øre box, or `None` (INV-49).
+
+    The box is in the minor unit (CTL-3); "0,4" there is 0.4 øre, which no
+    agreement charges. A site stored Norgespris that way once.
+    """
+    for field in schema:
+        if field.kind is not FieldKind.MONEY or not _per_kwh_scale(field.unit, currency):
+            continue
+        if price_implausible(answers.get(field.key)):
+            return field.key
+    return None
+
+
+def price_implausible(value: Any) -> bool:
+    """Whether a price shown in øre per kWh is above zero and below one øre."""
+    try:
+        amount = float(value)
+    except TypeError, ValueError:
+        return False
+    return 0 < abs(amount) < 1
+
+
 def store_value(field: Field, value: Any) -> Any:
     """Return `value` in the form `entry.data` holds it (D-0123)."""
     if value is None:

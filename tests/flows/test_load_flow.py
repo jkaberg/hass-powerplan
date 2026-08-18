@@ -82,6 +82,8 @@ async def _add_charger(
     assert result["step_id"] == "user"
     device_id = charger.loads["ev"].device_id
     assert device_id is not None
+    result = await _answer(hass, result, type="ev")
+    assert result["step_id"] == "device", result
     result = await _answer(hass, result, device=device_id)
 
     assert result["step_id"] == "match", result
@@ -93,7 +95,7 @@ async def _add_charger(
     assert words["warning"] == "", "a confident match carries no warning"
     assert "profile" not in words
     suggested = result["data_schema"]({})
-    assert suggested["type"] == "ev"
+    assert "type" not in suggested, "the type was asked first (LOAD-3)"
     assert suggested["profile"] == "easee_ble"
     assert suggested["role_current_number"] == "number.ev_dynamic_charger_current"
     assert suggested["role_enable_switch"] == "switch.ev_charger_enabled"
@@ -164,6 +166,7 @@ async def test_02_the_load_flow_creates_a_subentry_with_answers_derived_and_vers
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
         )
     )
+    again = await _answer(hass, again, type="ev")
     again = await _answer(hass, again, device=charger.loads["ev"].device_id)
     assert again["type"] is FlowResultType.FORM
     assert again["errors"] == {"device": "already_configured"}

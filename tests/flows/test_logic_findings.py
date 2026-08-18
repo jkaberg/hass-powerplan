@@ -17,7 +17,7 @@ on their own field. (c) is D4 §9 16's own test
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import voluptuous as vol
@@ -32,7 +32,9 @@ from tests.flows.test_site_flow import (
     _answer,
     _configure,
     _start,
+    _through_meter,
     _through_prices,
+    _through_tariff,
 )
 from tests.runtime.conftest import FakeMeter, site_data
 
@@ -48,6 +50,17 @@ if TYPE_CHECKING:
 # --------------------------------------------------------------------------- #
 
 
+async def _to_modifiers(hass: HomeAssistant, ams_meter: str, source: str) -> dict[str, Any]:
+    """Walk a full site to the add-ons, the follow-up after the grid company (HUB-3)."""
+    _configure(hass)
+    result = await _through_meter(hass, await _start(hass, "full"), ams_meter)
+    assert result["step_id"] == "prices"
+    result = await _answer(hass, result, source=source)
+    result = await _through_tariff(hass, result)
+    assert result["step_id"] == "export"
+    return await _answer(hass, result, mode="none")
+
+
 @pytest.mark.inv("INV-49")
 async def test_a_norgespris_style_price_with_no_default_refuses_an_empty_submit(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str
@@ -60,17 +73,10 @@ async def test_a_norgespris_style_price_with_no_default_refuses_an_empty_submit(
     harness sends the dict a browser could not, and gets the same refusal
     voluptuous itself raises: `price` stays unfillable at 0.
     """
-    _configure(hass)
-    result = await _start(hass, "full")
-    result = await _answer(hass, result, **ELECTRICAL_NO)
-    result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
-
-    assert result["step_id"] == "prices"
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
-
+    # Norgespris is an answer to the contract question, and ticks its add-on (D1 §6).
+    result = await _to_modifiers(hass, ams_meter, "norgespris")
     assert result["step_id"] == "modifiers"
+    assert "fixed_price" in result["data_schema"]({})["modifiers"]
     result = await _answer(hass, result, modifiers=["fixed_price"])
     assert result["step_id"] == "modifier_fixed_price"
 
@@ -110,16 +116,7 @@ async def test_a_required_row_list_left_empty_refuses_with_the_field_named(
     presence check, which an empty list already satisfies), so it is refused
     with the field named rather than stored as a tier table with nothing in it.
     """
-    _configure(hass)
-    result = await _start(hass, "full")
-    result = await _answer(hass, result, **ELECTRICAL_NO)
-    result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
-
-    assert result["step_id"] == "prices"
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
-
+    result = await _to_modifiers(hass, ams_meter, "nordpool_action")
     assert result["step_id"] == "modifiers"
     result = await _answer(hass, result, modifiers=["cumulative_tier"])
     assert result["step_id"] == "modifier_cumulative_tier"
@@ -187,13 +184,13 @@ async def test_a_tariff_target_above_the_fuse_is_refused_on_its_field(
     # A 10 A fuse on 3-phase 230 V IT delivers ≈ 3.98 kW - well under `no/tensio`'s
     # "5–10 kW" step, whose lower bound (5 kW) is what this checks against.
     small_fuse = {**ELECTRICAL_NO, "main_fuse_a": "10"}
-    result = await _answer(hass, result, **small_fuse)
     result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, confirm="ok")
+    result = await _answer(hass, result, **small_fuse)
     result = await _through_prices(hass, result, nordpool_entry)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -215,11 +212,12 @@ async def test_a_comfort_outside_its_own_limits_reaches_the_load_flows_field(
         )
     )
     device_id = charger.loads["tank"].device_id
+    result = await _load_answer(hass, result, type="water_heater")
     assert device_id is not None
     result = await _load_answer(hass, result, device=device_id)
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
-    result = await _load_answer(hass, result, **{**suggested, "type": "water_heater"})
+    result = await _load_answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})
@@ -243,6 +241,7 @@ async def test_a_cop_curve_that_falls_reaches_the_load_flows_field(
         )
     )
     device_id = charger.loads["heat_pump"].device_id
+    result = await _load_answer(hass, result, type="heat_pump")
     assert device_id is not None
     result = await _load_answer(hass, result, device=device_id)
     assert result["step_id"] == "match", result

@@ -32,6 +32,7 @@ from tests.flows.test_site_flow import (
     NOTIFICATIONS,
     _answer,
     _configure,
+    _followups,
     _start,
     _tail,
     _through_meter,
@@ -51,6 +52,7 @@ async def _full_site(
     result = await _through_meter(hass, result, ams_meter)
     result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _followups(hass, result)
     result = await _tail(hass, result)
     result = await _answer(hass, result, start_in_observe=not active)
     await hass.async_block_till_done()
@@ -64,6 +66,35 @@ async def _reconfigure(hass: HomeAssistant, entry_id: str) -> dict[str, Any]:
             DOMAIN, context={"source": SOURCE_RECONFIGURE, "entry_id": entry_id}
         )
     )
+
+
+async def _to_review(
+    hass: HomeAssistant,
+    entry_id: str,
+    ams_meter: str,
+    *,
+    electrical: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Re-walk every step on its pre-filled answers, changing only the fuse if asked."""
+    result = await _reconfigure(hass, entry_id)
+    result = await _answer(hass, result, name="Hjemme")
+    result = await _answer(hass, result, device=ams_meter)
+    result = await _answer(hass, result, confirm="ok")
+    result = await _answer(hass, result, **(electrical or ELECTRICAL_NO))
+    result = await _answer(hass, result, source="nordpool_action")
+    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, confirm="yes")
+    result = await _answer(hass, result, target="auto", risk="free_ride")
+    result = await _answer(hass, result, mode="none")
+    result = await _answer(hass, result, modifiers=["vat"])
+    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, carriers=[])
+    result = await _answer(hass, result, mode="auto")
+    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
+    result = await _answer(hass, result, **NOTIFICATIONS)
+    assert result["step_id"] == "review", result
+    return result
 
 
 async def test_reconfigure_skips_the_path_menu_and_pre_fills_the_name(
@@ -80,113 +111,99 @@ async def test_reconfigure_skips_the_path_menu_and_pre_fills_the_name(
     assert result["data_schema"]({})[CONF_NAME] == "Hjemme"
 
 
-async def test_reconfigure_pre_fills_electrical_meter_roles_and_the_price_source(
+async def test_reconfigure_pre_fills_the_meter_device_electrical_and_the_price_source(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
 ) -> None:
-    """Fuse, phases and meter roles - the answer the household gave - come back."""
+    """The meter device (HUB-22), its roles, the fuse and the contract come back."""
     _configure(hass)
     entry_id = await _full_site(hass, ams_meter, nordpool_entry, active=False)
 
     result = await _reconfigure(hass, entry_id)
     result = await _answer(hass, result, name="Hjemme")
-    assert result["step_id"] == "electrical"
-    assert result["data_schema"]({})["main_fuse_a"] == "63"
-
-    result = await _answer(hass, result, **ELECTRICAL_NO)
     assert result["step_id"] == "meter"
+    assert result["data_schema"]({})["device"] == ams_meter, "HUB-22: the device is restored"
     result = await _answer(hass, result, device=ams_meter)
 
+    assert result["step_id"] == "meter_confirm"
+    # The power sensor used not to be pre-filled on a reconfigure. It is the
+    # site's own stored role, shown and pre-filled.
+    assert "Strømmåler Effekt" in result["description_placeholders"]["found"]
+    result = await _answer(hass, result, confirm="change")
     assert result["step_id"] == "meter_roles"
     roles = result["data_schema"]({})
+    assert roles["grid_power"] == "sensor.dataskap_strommaler_power"
     assert roles["import_register"] == "sensor.dataskap_strommaler_energy"
-
     result = await _answer(hass, result, **roles)
+
+    assert result["step_id"] == "electrical"
+    assert result["data_schema"]({})["main_fuse_a"] == "63"
+    result = await _answer(hass, result, **ELECTRICAL_NO)
+
     assert result["step_id"] == "prices"
     assert result["data_schema"]({})["source"] == "nordpool_action"
-
     result = await _answer(hass, result, source="nordpool_action")
+    # Shown on a reconfigure, to correct: the area by its region name (CTL-9).
     assert result["step_id"] == "prices_nordpool"
     assert result["data_schema"]({})["area"] == "NO3"
+    assert "currency" not in result["data_schema"]({}), "HUB-2: the currency is never asked"
 
 
-async def test_reconfigure_pre_fills_the_tariff_target(
+async def test_reconfigure_pre_fills_the_tariff_target_and_every_add_on(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
 ) -> None:
-    """The risk posture the household already confirmed comes back.
-
-    The hard-limit step is gone (D8 §5.15 S2, review NEW-1): its answer was
-    read by nothing, and the grense is D3's own fuse and per-phase limit - so
-    the tariff target step now leads straight to presence.
-    """
+    """The strictness the household chose and each add-on's options come back (HUB-9)."""
     _configure(hass)
     entry_id = await _full_site(hass, ams_meter, nordpool_entry, active=False)
 
     result = await _reconfigure(hass, entry_id)
     result = await _answer(hass, result, name="Hjemme")
-    result = await _answer(hass, result, **ELECTRICAL_NO)
     result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, confirm="ok")
+    result = await _answer(hass, result, **ELECTRICAL_NO)
     result = await _answer(hass, result, source="nordpool_action")
     result = await _answer(hass, result, **result["data_schema"]({}))
-
-    assert result["step_id"] == "modifiers"
-    assert result["data_schema"]({})["modifiers"] == ["vat"]
-    result = await _answer(hass, result, modifiers=["vat"])
-    assert result["step_id"] == "modifier_vat"
-    result = await _answer(hass, result, rate=25)
-    assert result["step_id"] == "export"
-    result = await _answer(hass, result, mode="none")
-    assert result["step_id"] == "carriers"
-    assert result["data_schema"]({})["carriers"] == []
-    result = await _answer(hass, result, carriers=[])
 
     assert result["step_id"] == "tariff"
     assert result["data_schema"]({})["preset"] == "no/tensio"
-    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio")
     assert result["step_id"] == "tariff_preset"
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
-    assert result["data_schema"]({})["risk"] == "free_ride"
+    assert result["data_schema"]({})["risk"] == "free_ride", "the site's own, not the new default"
     result = await _answer(hass, result, target="auto", risk="free_ride")
 
+    assert result["step_id"] == "export"
+    result = await _answer(hass, result, mode="none")
+    assert result["step_id"] == "modifiers"
+    assert result["data_schema"]({})["modifiers"] == ["vat"]
+    result = await _answer(hass, result, modifiers=["vat"])
+    assert result["step_id"] == "modifier_vat"
+    assert result["data_schema"]({})["rate"] == 25, "the add-on's stored option, pre-filled"
+    result = await _answer(hass, result, rate=25)
+    assert result["step_id"] == "carriers"
+    assert result["data_schema"]({})["carriers"] == []
+    result = await _answer(hass, result, carriers=[])
     assert result["step_id"] == "presence"
 
 
-async def test_reconfigure_keeps_an_active_site_active_by_default(
+async def test_reconfigure_keeps_an_active_site_active_and_shows_no_toggle(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
 ) -> None:
-    """The review checkbox reflects the site's own state - active stays active."""
+    """HUB-5: no trial-mode toggle on a reconfigure, and the entry's own `active` is kept."""
     _configure(hass)
     entry_id = await _full_site(hass, ams_meter, nordpool_entry, active=True)
     entry = hass.config_entries.async_get_entry(entry_id)
     assert entry is not None
     assert entry.data[CONF_ACTIVE] is True
 
-    result = await _reconfigure(hass, entry_id)
-    result = await _answer(hass, result, name="Hjemme")
-    result = await _answer(hass, result, **ELECTRICAL_NO)
-    result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, modifiers=["vat"])
-    result = await _answer(hass, result, rate=25)
-    result = await _answer(hass, result, mode="none")
-    result = await _answer(hass, result, carriers=[])
-    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _to_review(hass, entry_id, ams_meter)
+    assert result["data_schema"]({}) == {}, "no toggle on a reconfigure"
     result = await _answer(hass, result)
-    result = await _answer(hass, result, target="auto", risk="free_ride")
-    # The hard-limit step is gone (D8 §5.15 S2): tariff_target leads to presence.
-    assert result["step_id"] == "presence"
-    result = await _answer(hass, result, mode="auto")
-    assert result["step_id"] == "presence_persons"
-    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
-    assert result["step_id"] == "notifications"
-    result = await _answer(hass, result, **NOTIFICATIONS)
-
-    assert result["step_id"] == "review"
-    assert result["data_schema"]({})["start_in_observe"] is False
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_get_entry(entry_id)
+    assert entry is not None
+    assert entry.data[CONF_ACTIVE] is True
 
 
 async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
@@ -199,27 +216,10 @@ async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
     assert before is not None
     unique_id = before.unique_id
 
-    changed_electrical = {**ELECTRICAL_NO, "main_fuse_a": "80"}
-    result = await _reconfigure(hass, entry_id)
-    result = await _answer(hass, result, name="Hjemme")
-    result = await _answer(hass, result, **changed_electrical)
-    result = await _answer(hass, result, device=ams_meter)
-    result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, modifiers=["vat"])
-    result = await _answer(hass, result, rate=25)
-    result = await _answer(hass, result, mode="none")
-    result = await _answer(hass, result, carriers=[])
-    result = await _answer(hass, result, country="NO", preset="no/tensio")
+    result = await _to_review(
+        hass, entry_id, ams_meter, electrical={**ELECTRICAL_NO, "main_fuse_a": "80"}
+    )
     result = await _answer(hass, result)
-    result = await _answer(hass, result, target="auto", risk="free_ride")
-    # The hard-limit step is gone (D8 §5.15 S2): tariff_target leads to presence.
-    result = await _answer(hass, result, mode="auto")
-    result = await _answer(hass, result, persons=["person.joel", "person.kari"])
-    result = await _answer(hass, result, **NOTIFICATIONS)
-    assert result["step_id"] == "review"
-    result = await _answer(hass, result, start_in_observe=True)
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.ABORT
@@ -231,7 +231,9 @@ async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
     assert entry.entry_id == entry_id
     assert entry.unique_id == unique_id
     assert entry.data[CONF_ELECTRICAL]["main_fuse_a"] == 80.0
+    assert entry.data[CONF_ACTIVE] is False, "observe stays observe"
     # The hard-limit step is gone; nothing writes `hard_limits` any more (S2).
+    assert "hard_limits" not in entry.data
     assert entry.data[CONF_PRICES]["sources"][0]["key"] == "nordpool_action"
     assert entry.data[CONF_TARIFF]["preset_file"] == "no/tensio"
     assert entry.data[CONF_PRESENCE]["persons"] == ["person.joel", "person.kari"]

@@ -41,6 +41,7 @@ async def _add_tank(
     )
     device_id = charger.loads["tank"].device_id
     assert device_id is not None
+    result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=device_id)
 
     assert result["step_id"] == "match", result
@@ -48,7 +49,7 @@ async def _add_tank(
     # Only `generic_climate` claims a thermostat-shaped device, so the profile
     # field is not asked at all (review CTL-14).
     assert "profile" not in suggested
-    result = await _answer(hass, result, **{**suggested, "type": "water_heater"})
+    result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})
@@ -103,6 +104,7 @@ async def test_a_load_never_asked_for_a_legionella_cycle_has_no_sensor(
         )
     )
     device_id = charger.loads["ev"].device_id
+    result = await _answer(hass, result, type="ev")
     result = await _answer(hass, result, device=device_id)
     result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, **result["data_schema"]({}))
@@ -133,8 +135,9 @@ async def test_a_relay_tank_with_nothing_to_keep_it_safe_is_refused_on_its_field
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
         )
     )
+    result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=charger.loads["tank"].device_id)
-    result = await _answer(hass, result, **{**result["data_schema"]({}), "type": "water_heater"})
+    result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "questions", result
     answers = {**result["data_schema"]({}), "control": "relay", "mechanical_thermostat": False}
     answers.pop("temp_entity", None)

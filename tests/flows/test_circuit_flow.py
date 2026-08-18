@@ -45,6 +45,7 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
         )
     )
+    result = await _answer(hass, result, type="generic_switch")
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
     assert result["step_id"] == "match", result
     # LOAD-2: a plug is `generic_switch` at 0.4 - below 0.6 the step warns in words.
@@ -52,7 +53,6 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
         "We are not sure — check that this is the right appliance."
     )
     suggested = result["data_schema"]({})
-    assert suggested["type"] == "generic_switch"
     result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})

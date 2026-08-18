@@ -67,10 +67,11 @@ async def _add_radiator(
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
         )
     )
+    result = await _answer(hass, result, type="radiator")
     result = await _answer(hass, result, device=device_id)
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
-    result = await _answer(hass, result, **{**suggested, "type": "radiator"})
+    result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "review", result

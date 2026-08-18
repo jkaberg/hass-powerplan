@@ -157,6 +157,7 @@ async def test_the_add_flow_asks_strategy_only_where_there_is_a_choice(
             (site.entry_id, SUBENTRY_LOAD), context={"source": "user"}
         )
     )
+    sauna = await _answer(hass, sauna, type="generic_switch")
     sauna = await _answer(hass, sauna, device=charger.loads["sauna"].device_id)
     sauna = await _answer(hass, sauna, **sauna["data_schema"]({}))
     sauna = await _answer(hass, sauna, **{**sauna["data_schema"]({}), "power_w": 6.0})

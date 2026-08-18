@@ -23,7 +23,7 @@ import logging
 import math
 from collections.abc import Mapping
 from datetime import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigSubentryFlow, SubentryFlowResult
@@ -32,7 +32,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import (
     BooleanSelector,
-    DeviceSelector,
     EntitySelector,
     EntitySelectorConfig,
     EntityWithDeviceFilterSelectorConfig,
@@ -41,6 +40,7 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
     ObjectSelector,
     ObjectSelectorConfig,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -48,6 +48,7 @@ from homeassistant.helpers.selector import (
 )
 
 from custom_components.powerplan.const import (
+    DOMAIN,
     ENTITY_SETTINGS,
     LOAD_BINDINGS,
     LOAD_DEVICE_ID,
@@ -97,6 +98,7 @@ from custom_components.powerplan.providers.profiles.base import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from custom_components.powerplan.core.loads.questionnaire import Derived, Questionnaire
@@ -294,13 +296,34 @@ def _curve_selector() -> Any:
     )
 
 
-def _selector(question: Question, type_key: str, current: Any = None) -> Any:  # noqa: PLR0911 - one selector per kind, as D8 §5.4 tabulates them
+def option_key(value: str) -> str:
+    """Return an option's translation key: a value like `1.5` is spelled `1_5` (hassfest's rule)."""
+    return value.replace(".", "_")
+
+
+def _selector(  # noqa: PLR0911 - one selector per kind, as D8 §5.4 tabulates them
+    question: Question, type_key: str, current: Any = None, text: Text | None = None
+) -> Any:
     """Return the selector D8 §5.4 gives for one question, with §5.15's controls."""
     match question.kind:
         case QuestionKind.CHOICE:
+            vocabulary = f"{type_key}_{question.key}"
+            values = [str(option.value) for option in question.options]
+            # A value that cannot be a translation key (`1.5`) is labelled here,
+            # from its slug's translation, in the system language (review R3).
+            options: list[Any] = (
+                values
+                if text is None or all(option_key(value) == value for value in values)
+                else [
+                    SelectOptionDict(
+                        value=value, label=text.word(vocabulary, option_key(value)) or value
+                    )
+                    for value in values
+                ]
+            )
             return SelectSelector(
                 SelectSelectorConfig(
-                    options=[option.value for option in question.options],
+                    options=options,
                     mode=SelectSelectorMode.DROPDOWN,
                     translation_key=f"{type_key}_{question.key}",
                     sort=False,
@@ -418,6 +441,7 @@ def question_schema(
     suggested: Mapping[str, Any] | None = None,
     followups: bool = False,
     skip: frozenset[str] = frozenset(),
+    text: Text | None = None,
 ) -> vol.Schema:
     """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65).
 
@@ -449,7 +473,7 @@ def question_schema(
             )
         else:
             marker = _marker(question.key, default)
-        target[marker] = _selector(question, type_key, default)
+        target[marker] = _selector(question, type_key, default, text)
     if hidden:
         fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
     return vol.Schema(fields)
@@ -763,6 +787,59 @@ def _params_from_review(
 
 
 # --------------------------------------------------------------------------- #
+# The device list (review CTL-11)
+# --------------------------------------------------------------------------- #
+
+#: A device PowerPlan can steer has something to write: HA's `DeviceSelector`
+#: cannot say so, nor exclude an integration or mark a device (D8 §5.15 H8).
+_CONTROL_DOMAINS: Final = frozenset(
+    {"switch", "climate", "water_heater", "number", "select", "button"}
+)
+
+
+def added_devices(entry: ConfigEntry, *, but: str | None = None) -> set[str]:
+    """Return the devices already an appliance of this home, `but` one being re-bound."""
+    return {
+        str(subentry.data.get(LOAD_DEVICE_ID))
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SUBENTRY_LOAD
+        and subentry.data.get(LOAD_DEVICE_ID)
+        and subentry.subentry_id != but
+    }
+
+
+def device_options(hass: HomeAssistant, text: Text, added: set[str]) -> list[SelectOptionDict]:
+    """Return the devices an appliance can be, by name - never PowerPlan's own (CTL-11).
+
+    A device qualifies with one switch, climate, water-heater, number, select or
+    button entity. One already added is listed with a mark, so the household sees
+    why it is refused rather than wondering where it went.
+    """
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    own = {entry.entry_id for entry in hass.config_entries.async_entries(DOMAIN)}
+    options: list[SelectOptionDict] = []
+    # Iterating the registry yields entries on current HA and ids on the 2026.3
+    # floor, where `.values()` is not yet deprecated; read both.
+    for item in devices.devices:
+        device = item if isinstance(item, dr.DeviceEntry) else devices.async_get(str(item))
+        if device is None:
+            continue
+        if device.config_entries & own or device.disabled_by is not None:
+            continue
+        if not any(
+            entity.domain in _CONTROL_DOMAINS and entity.disabled_by is None
+            for entity in er.async_entries_for_device(entities, device.id)
+        ):
+            continue
+        name = device.name_by_user or device.name or device.id
+        label = text.word("load_text", "already_added", name=name) if device.id in added else name
+        options.append(SelectOptionDict(value=device.id, label=label))
+    options.sort(key=lambda option: text.sort_key(option["label"]))
+    return options
+
+
+# --------------------------------------------------------------------------- #
 # The flow
 # --------------------------------------------------------------------------- #
 
@@ -845,8 +922,9 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         )
         default_type = str(given.get("type") or match.suggested_type or type_options[0])
         fields: dict[Any, Any] = {}
-        # A re-bound device keeps the appliance's type (D8 §5.16): only the roles move.
-        if self.source != "reconfigure":
+        # The type is asked first (LOAD-3); a re-bound device keeps the appliance's
+        # (D8 §5.16). Only a flow that has none yet asks it here.
+        if self._type is None:
             fields[vol.Required("type", default=default_type)] = SelectSelector(
                 SelectSelectorConfig(
                     options=type_options,
@@ -954,27 +1032,78 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     # -------------------------------------------------------------------- user
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """Pick the device (any integration)."""
-        errors: dict[str, str] = {}
+        """Ask "Hva vil du styre?" - all eight types in the household's words (LOAD-3, S9)."""
         if user_input is not None:
-            self._device_id = str(user_input["device"])
-            self._view = DeviceView.from_hass(self.hass, self._device_id)
-            self._matches = profiles.match(self._view)
-            if not self._matches:
-                errors["device"] = "no_profile"
-            elif any(
-                subentry.data.get(LOAD_DEVICE_ID) == self._device_id
-                for subentry in self._get_entry().subentries.values()
-                if subentry.subentry_type == SUBENTRY_LOAD
-            ):
-                errors["device"] = "already_configured"
-            else:
-                return await self.async_step_match()
+            self._type = str(user_input["type"])
+            return await self.async_step_device()
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({vol.Required("device"): DeviceSelector()}),
-            errors=errors or None,
+            data_schema=vol.Schema(
+                {
+                    vol.Required("type", default=self._type or "ev"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(device_types.keys()),
+                            mode=SelectSelectorMode.LIST,
+                            translation_key="load_type",
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+            last_step=False,
         )
+
+    async def _device_form(
+        self, step_id: str, errors: Mapping[str, str], *, but: str | None = None
+    ) -> SubentryFlowResult:
+        """Show the flow's own device list (CTL-11)."""
+        text = await Text.load(self.hass)
+        options = device_options(self.hass, text, added_devices(self._get_entry(), but=but))
+        placeholders = {"type": text.word("load_type", str(self._type))}
+        if self.source == "reconfigure":
+            placeholders["load"] = self._get_reconfigure_subentry().title
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=options, mode=SelectSelectorMode.DROPDOWN, sort=False
+                        )
+                    )
+                }
+            ),
+            errors=dict(errors) or None,
+            description_placeholders=placeholders,
+            last_step=False,
+        )
+
+    def _pick(self, device_id: str, *, but: str | None = None) -> str | None:
+        """Match the picked device for the chosen type; return an error key, or `None`."""
+        if device_id in added_devices(self._get_entry(), but=but):
+            return "already_configured"
+        view = DeviceView.from_hass(self.hass, device_id)
+        matches = tuple(
+            match
+            for match in profiles.match(view)
+            if self._type is None or self._type in profiles.get(match.profile).types
+        )
+        if not matches:
+            return "no_profile"
+        self._device_id, self._view, self._matches = device_id, view, matches
+        return None
+
+    async def async_step_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick the device from the flow's own list; detection confirms the type (CTL-11)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = self._pick(str(user_input["device"]))
+            if error is None:
+                return await self.async_step_match()
+            errors["device"] = error
+        return await self._device_form("device", errors)
 
     async def async_step_match(
         self, user_input: dict[str, Any] | None = None
@@ -1006,6 +1135,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             data_schema=self._match_schema(user_input),
             errors=errors or None,
             description_placeholders=placeholders,
+            last_step=False,
         )
 
     def _match_sentence(self, text: Text, best: MatchResult) -> dict[str, str]:
@@ -1017,7 +1147,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         """
         device = load_title(self.hass, self._device_id, text.word("text", "none"))
         profile = profiles.get(best.profile)
-        kind = best.suggested_type or next(iter(profile.types), None)
+        kind = self._type or best.suggested_type or next(iter(profile.types), None)
         control = next((b for b in best.bindings if b.writable), None) or next(
             iter(best.bindings), None
         )
@@ -1116,13 +1246,18 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 values,
                 suggested=self._suggested,
                 skip=skip,
+                text=await Text.load(self.hass),
             ),
             errors=errors or None,
-            description_placeholders={
-                "type": (await Text.load(self.hass)).word("load_type", str(self._type))
-            },
+            description_placeholders=await self._about(),
             last_step=False,
         )
+
+    async def _about(self) -> dict[str, str]:
+        """Return the questions' title data: "Om {name}" - the device's name - and the type (LOAD-5)."""
+        text = await Text.load(self.hass)
+        kind = text.word("load_type", str(self._type))
+        return {"type": kind, "name": load_title(self.hass, self._device_id, kind)}
 
     async def async_step_questions_followup(
         self, user_input: dict[str, Any] | None = None
@@ -1147,12 +1282,15 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="questions_followup",
             data_schema=question_schema(
-                questionnaire, str(self._type), self._ctx, self._raw, followups=True
+                questionnaire,
+                str(self._type),
+                self._ctx,
+                self._raw,
+                followups=True,
+                text=await Text.load(self.hass),
             ),
             errors=errors or None,
-            description_placeholders={
-                "type": (await Text.load(self.hass)).word("load_type", str(self._type))
-            },
+            description_placeholders=await self._about(),
             last_step=False,
         )
 
@@ -1245,23 +1383,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Pick the device that replaces a removed one; its roles are matched next."""
+        but = self._get_reconfigure_subentry().subentry_id
         errors: dict[str, str] = {}
         if user_input is not None:
-            device_id = str(user_input["device"])
-            view = DeviceView.from_hass(self.hass, device_id)
-            matches = profiles.match(view)
-            if not matches:
-                errors["device"] = "no_profile"
-            else:
-                self._device_id, self._view, self._matches = device_id, view, matches
+            error = self._pick(str(user_input["device"]), but=but)
+            if error is None:
                 return await self.async_step_match()
-        subentry = self._get_reconfigure_subentry()
-        return self.async_show_form(
-            step_id="reconfigure_device",
-            data_schema=vol.Schema({vol.Required("device"): DeviceSelector()}),
-            errors=errors or None,
-            description_placeholders={"load": subentry.title},
-        )
+            errors["device"] = error
+        return await self._device_form("reconfigure_device", errors, but=but)
 
     def _levels_line(self, text: Text, params: Mapping[str, Any]) -> str:
         """Say what the device page now owns, read back, not offered to edit (D8 §5.16)."""

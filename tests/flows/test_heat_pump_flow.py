@@ -47,11 +47,11 @@ async def _add_heat_pump(
     )
     device_id = charger.loads["heat_pump"].device_id
     assert device_id is not None
+    result = await _answer(hass, result, type="heat_pump")
     result = await _answer(hass, result, device=device_id)
 
     assert result["step_id"] == "match", result
     suggested = result["data_schema"]({})
-    assert suggested["type"] == "heat_pump"
     # An optional role sits under Avansert now (review LOAD-6).
     assert suggested["advanced"]["role_outdoor_temp"] == "sensor.heat_pump_outside_temperature", (
         "generic_climate's own detection, not this WP's fix"

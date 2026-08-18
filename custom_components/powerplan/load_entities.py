@@ -265,7 +265,7 @@ class ParamNumber:
     step: float
     category: EntityCategory | None = None
     enabled: bool = True
-    applies: Callable[[Load], bool] = lambda _load: True
+    applies: Callable[[Load, Runtime], bool] = lambda _load, _runtime: True
     #: Visible by default unless the load makes it redundant - `comfort`
     #: hides once a `schedule_entity` drives the target instead (D8 §5.5).
     visible: Callable[[Load], bool] = lambda _load: True
@@ -299,7 +299,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         step=0.5,
         # Only where no device setpoint owns the comfort target: a thermostat's
         # own dial is the knob there (D8 §5.16, amended INV-27).
-        applies=lambda load: _thermal_target(load) and Runtime.shared_setpoint(load) is None,
+        applies=lambda load, runtime: _thermal_target(load) and runtime.comfort_role(load) is None,
         visible=lambda load: not load.config.params.get("schedule_entity"),
     ),
     ParamNumber(
@@ -312,7 +312,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
-        applies=_thermal_target,
+        applies=lambda load, _runtime: _thermal_target(load),
     ),
     ParamNumber(
         key="temp_max",
@@ -324,7 +324,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         step=0.5,
         category=EntityCategory.CONFIG,
         enabled=False,
-        applies=_thermal_target,
+        applies=lambda load, _runtime: _thermal_target(load),
     ),
     ParamNumber(
         key="charge_target",
@@ -334,7 +334,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         max_value=100.0,
         questions=("target_soc",),
         step=1.0,
-        applies=lambda load: load.config.type_key == "ev",
+        applies=lambda load, _runtime: load.config.type_key == "ev",
     ),
     ParamNumber(
         key="charge_min",
@@ -345,7 +345,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         questions=("min_soc_now",),
         step=1.0,
         category=EntityCategory.CONFIG,
-        applies=lambda load: load.config.type_key == "ev",
+        applies=lambda load, _runtime: load.config.type_key == "ev",
     ),
     ParamNumber(
         key="hours_per_day",
@@ -354,7 +354,7 @@ PARAM_NUMBERS: tuple[ParamNumber, ...] = (
         min_value=1.0,
         max_value=24.0,
         step=0.5,
-        applies=lambda load: (
+        applies=lambda load, _runtime: (
             load.config.type_key == "generic_switch"
             and load.config.params.get("hours_per_day") is not None
         ),
@@ -442,7 +442,7 @@ def load_numbers(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
         out.extend(
             LoadParamNumber(runtime, load, description)
             for description in PARAM_NUMBERS
-            if description.applies(load)
+            if description.applies(load, runtime)
         )
         if load.config.type_key in FORCE_TYPES:
             out.append(LoadRunNowMaxNumber(runtime, load))

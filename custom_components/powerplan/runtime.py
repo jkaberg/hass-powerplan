@@ -117,6 +117,8 @@ from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
 from .core.loads import Load, LoadConfig, LoadCtx, Transport, effective_mode
 from .core.loads.gate import Action, Decision, Origin, setpoint_origin
+from .core.loads.kinds.base import Role
+from .core.loads.kinds.mode import ModeKind
 from .core.loads.kinds.setpoint import Setpoint
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
@@ -205,7 +207,7 @@ if TYPE_CHECKING:
     from .core.loads import LoadState
     from .core.loads.base import ApplyResult
     from .core.loads.gate import TransportBudget
-    from .core.loads.kinds.base import Reads, Role, Value
+    from .core.loads.kinds.base import Reads, Value
     from .core.model import PriceCurve, Snapshot
     from .writegate import DeviceCall, Outcome
 
@@ -222,6 +224,10 @@ __all__ = [
 ]
 
 _LOGGER = logging.getLogger(__name__)
+
+#: How far a mode-steered thermostat's setpoint moves before it is a hand on
+#: the dial (D-0435): the setpoint kind's own generic tolerance (D4 §5.10).
+_SETPOINT_TOLERANCE_C = 0.05
 
 #: D7 §5.3: a grid-power change is a debounced tick.
 POWER_DEBOUNCE_S = 10.0
@@ -1868,12 +1874,24 @@ class Runtime:
             self._set_load_state(load_id, replace(current, gate=gate))
             self.store.mark_dirty(Section.LOADS)
 
-    @staticmethod
-    def shared_setpoint(load: Load) -> Setpoint | None:
-        """Return the kind whose device setpoint is this load's comfort target (§5.16, INV-27)."""
+    def comfort_role(self, load: Load) -> Role | None:
+        """Return the device role that is this load's comfort target, or `None` (D8 §5.16, INV-27).
+
+        A setpoint-steered thermostat's own setpoint, and - since PowerPlan only
+        switches its mode between comfort and eco and never writes the number -
+        a mode-steered one's too, where the device binds a setpoint (the Heatit
+        floor thermostat; D-0435). The household sets comfort on the climate
+        entity; PowerPlan adds no knob of its own.
+        """
         kind = load.kind
-        if isinstance(kind, Setpoint) and kind.cfg.comfort_from_profile and load.config.target:
-            return kind
+        if not load.config.target:
+            return None
+        if isinstance(kind, Setpoint) and kind.cfg.comfort_from_profile:
+            return kind.cfg.role
+        if isinstance(kind, ModeKind):
+            device = self.build.devices.get(load.load_id)
+            if device is not None and device.entity_of(Role.SETPOINT) is not None:
+                return Role.SETPOINT
         return None
 
     @callback
@@ -1888,11 +1906,10 @@ class Runtime:
         steers around it.
         """
         for load in self.build.loads:
-            kind = self.shared_setpoint(load)
-            if kind is None:
+            role = self.comfort_role(load)
+            if role is None:
                 continue
             device = self.build.devices.get(load.load_id)
-            role = kind.cfg.role
             entity_id = None if device is None else device.entity_of(role)
             state = None if entity_id is None else self.hass.states.get(entity_id)
             value = self._read_state(load.load_id, role)
@@ -1906,7 +1923,11 @@ class Runtime:
                 self._load_state(load.load_id).gate,
                 value=float(value),
                 context_id=state.context.id,
-                tolerance=kind.tolerance(),
+                # A mode-steered device's setpoint is never ours: any tolerance
+                # tells a dial turn from noise; the setpoint kind has its own.
+                tolerance=load.kind.tolerance()
+                if isinstance(load.kind, Setpoint)
+                else _SETPOINT_TOLERANCE_C,
                 reconciled=seen is not None,
                 now=now,
             )

@@ -119,4 +119,19 @@ class HaSensorsMeter:
         return tuple(readings)
 
 
-__all__ = ["HaSensorsConfig", "HaSensorsMeter"]
+def value_now(hass: HomeAssistant, entity_id: str, quantity: str, now: datetime) -> float | None:
+    """Return one sensor's value now - W, kWh or A by `quantity` - or `None` if it has none.
+
+    The site flow shows each meter role it found with its current value, so a
+    household can tell the export register from the import one by what they
+    read (D3 §6, D8 §9 21 (d)); `hass.states` stays behind a provider (INV-3).
+    """
+    reader = EntityReader(hass)
+    read = {"power": reader.power_w, "energy": reader.energy_kwh, "current": reader.current_a}
+    reading = read[quantity](entity_id, now)
+    if reading is None or reading.quality is not Quality.OK:
+        return None
+    return reading.value
+
+
+__all__ = ["HaSensorsConfig", "HaSensorsMeter", "value_now"]

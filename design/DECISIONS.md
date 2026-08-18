@@ -1802,3 +1802,38 @@ Beside D8 §5.16's states, `observing` (effective mode `observe`, including a si
 
 `const.ENTITY_SETTINGS` lists, per type, what an appliance entity owns (comfort, floor and ceiling, follow presence, charge targets, hours per day, ready by, run-now limit). The gear flow doesn't ask those, keeps their stored answers, leaves strategy and priority out of the review and the re-derive diff, and reads them back under a link to the device page. The add flow still asks them as starting values. The map lives in `const.py` to avoid an import cycle, and a test checks every knob's parameter is in it. Affects D8 §5.16, §9 29-31; INV-66.
 **Rejected:** deriving the map from `load_entities` - circular import.
+
+### D-0430 · What the grid company's preset prices isn't offered as an add-on
+
+The add-on step comes after the grid company and omits add-ons the preset already prices (Tensio's day/night `tou_schedule`), naming them instead: "Already included from your grid company: …". On reconfigure a hand-ticked copy is dropped in favour of the preset's numbers. `_preset_modifiers` had let a ticked add-on silently replace verified numbers. `SelectSelector` can't disable one option, so leaving it out and naming it is the closest. Affects D1 §6, D8 §5.15.
+**Rejected:** offering them ticked with a manual override - that's the custom preset's job.
+
+### D-0431 · The contract question: Norgespris is an answer; spot's markup stays an add-on
+
+"Hvilken strømavtale har du?" offers Nord Pool spot, Norgespris (Norway), spot from a sensor, and a fixed price. Norgespris stores the Nord Pool source with `fixed_price` pre-ticked, and reads back from that pair. A per-kWh markup is the `spot_scale`/`levy` add-on; a monthly fee changes no decision and isn't asked. `entry.data` keeps its shape (INV-66). Affects D1 §6.
+**Rejected:** a `norgespris` source - a second path to keep equal to the add-on.
+
+### D-0432 · A detected Nord Pool area isn't asked on a first setup
+
+With one Nord Pool entry whose entities name the area, the first setup skips the step (currency from HA, area detected); reconfigure shows it for correction. Areas are labelled by region ("NO3 - Midt-Norge") from `selector.nordpool_area`, keyed lower-case since `NO3` can't be a key. D8 §5.15 rule 3: detect first. Affects D1 §6.
+**Rejected:** always showing it pre-filled - a screen with nothing to answer.
+
+### D-0433 · A price per kWh below one øre is refused
+
+A money field in the minor unit per kWh refuses values between 0 and 1 with `price_in_minor_unit` ("The box is in øre, not kroner"), and the help says the fixed price is without VAT. A site stored Norgespris as 0.004 NOK: "0,4" typed into the øre box. Affects D1 §6.
+**Rejected:** guessing kroner or øre by size - stores something nobody typed.
+
+### D-0434 · Type first; the flow's own device list; labels for non-slug values
+
+The load flow asks the type first ("Hva vil du styre?", all eight types). Its device list is a flow-built select: devices with a controllable entity, never PowerPlan's own, sorted in the language's alphabet, already-added ones marked and refused. A device no profile claims for the type is refused with `no_profile`; the match step no longer asks the type. Values that can't be keys (a 1.5 kW element) are labelled from the slug's translation. HA's `DeviceSelector` can't exclude or mark (H8). Affects D8 §5.2, §5.15.
+**Rejected:** device first with a filtered type list - detection had offered an access point's LED as an appliance.
+
+### D-0435 · A mode-steered thermostat's own setpoint is its comfort target too
+
+`Runtime.comfort_role` covers a setpoint-steered thermostat's setpoint and now also a mode-steered one's where bound (the Heatit, switched between heat and eco). Such a load gets no `number.<load>_comfort`; turning its dial is adopted as `comfort_c`. PowerPlan never writes a mode-steered thermostat's setpoint, so that number is the household's comfort. Affects D8 §5.16.
+**Rejected:** keeping PowerPlan's own comfort number - two knobs for one truth.
+
+### D-0436 · The control select keeps five states; its labels use the glossary
+
+`select.<load>_control`: Automatisk · Kjør nå · Ikke styr · Prøvemodus · Styres av noe annet. The old "Bare se på" and "Enheten styrer selv" sounded like "Ikke styr". Each state behaves differently: `off` lets go, `observe` plans and calibrates, `delegated` reserves nameplate without writing (D6). Affects D4 §5.
+**Rejected:** dropping per-appliance observe - removes trialling one appliance while the rest are steered.

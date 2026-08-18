@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from .grammar import Linear, PeakTariff, StepTable, Tiers
+from .grammar import Linear, StepTable, Tiers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -74,14 +74,15 @@ def eps_for_window(eps_base_kwh: float, window_min: int) -> float:
 
 
 def default_risk(grammar: Iterable[Grammar]) -> float:
-    """Return the risk this grammar ships with (D2 §6, PLAN §7 dec. 18).
+    """Return the risk a new site starts with: strict, on every grammar (D2 §6).
 
-    0.5 under `per_day = max`, where the slack is costless by construction
-    (INV-9), and 0 everywhere else.
+    The default (PLAN §7 dec. 18): never
+    exceed the target. The free ride (INV-9) is still derived from the
+    grammar's slack and used when the household picks 0.5 or 1.0; only the
+    default moved. An existing site keeps the risk its entry materialised
+    (INV-66). `grammar` stays the signature so a later grammar may differ.
     """
-    for root in grammar:
-        if isinstance(root, PeakTariff) and root.per_day == "max":
-            return RISK_FREE_RIDE
+    del grammar
     return RISK_FLAT
 
 
