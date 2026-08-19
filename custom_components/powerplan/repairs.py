@@ -19,7 +19,7 @@ import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.helpers import issue_registry as ir
 
-from .const import DOMAIN
+from .const import DOCS_URL, DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -33,6 +33,7 @@ __all__ = [
     "async_clear",
     "async_create_fix_flow",
     "async_report",
+    "learn_more_url",
     "registry_id",
 ]
 
@@ -84,6 +85,11 @@ def registry_id(entry_id: str, issue_id: str) -> str:
     return f"{entry_id}_{issue_id}"
 
 
+def learn_more_url(key: str) -> str:
+    """Return the troubleshooting page's section for one catalogue row (D8 §5.9, §5.13)."""
+    return f"{DOCS_URL}/troubleshooting.md#{key}"
+
+
 def catalogue_key(issue_id: str) -> str:
     """Return the catalogue row an issue id belongs to (`load_error_<load>` → `load_error`)."""
     for key in sorted(CATALOGUE, key=len, reverse=True):
@@ -113,6 +119,7 @@ def async_report(
         registry_id(entry_id, issue_id),
         is_fixable=row.fixable,
         is_persistent=row.persistent,
+        learn_more_url=learn_more_url(key),
         severity=row.severity,
         translation_key=key,
         translation_placeholders={

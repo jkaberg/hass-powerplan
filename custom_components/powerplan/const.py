@@ -45,6 +45,10 @@ CONF_ACTIVE: Final = "active"
 #: an entity picture cannot carry.
 BRAND_ICON_URL: Final = "/powerplan_static/icon.png"
 
+#: The user pages every link points into (D8 §5.13): a flow placeholder, a
+#: repair's `learn_more_url`. A URL lives here, never in a translation string.
+DOCS_URL: Final = "https://github.com/jkaberg/hass-powerplan/blob/main/docs"
+
 # --------------------------------------------------------------------------- #
 # Load subentries (D8 §4 `LoadSubentryData`, §5.2)
 # --------------------------------------------------------------------------- #

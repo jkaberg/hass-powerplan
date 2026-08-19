@@ -521,7 +521,7 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | recorder volume | every entity `entity.digest_of`'s `volatile` argument keeps in place: a fast attribute on a slower state no longer writes a row by itself; the house's 118 485 rows/day is not re-measured here (no bench run here), but the per-entity budget test (`tests/flows/test_recorder_volume.py`) is the audit's own reproduction, green (F-11) | D-0402 |
 | tests | `tests/surface/test_sentences.py` (§9 19, the entities table's rows above), `test_labels.py` (F-18), `test_entities.py`'s `test_29_…` (ENT-29), `test_upgrade_ids.py` (§9 22), `tests/flows/test_accounting_surface.py`'s `test_f10_…` (F-10), `test_recorder_volume.py` (F-11) | D-0400…D-0403 |
 
-**In code (part 1: the flows).** The site flow's nine questions, the load flow's type-first start, and three findings from the reference house. The glossary pass over entities, repairs, services and `notifications.py` (rule 7 outside the flows; NEW-5, MSG-3, MSG-4, HUB-23), §9 18's glossary scan, and the house check are not built yet (PLAN §9, U.3's row).
+**In code (part 1: the flows).** The site flow's nine questions, the load flow's type-first start, and three findings from the reference house. The glossary pass over entities, repairs, services and `notifications.py` (rule 7 outside the flows; NEW-5, MSG-3, MSG-4, HUB-23) and §9 18's glossary scan are part 2 (below); the house check is manual.
 
 | part | in code | decision |
 |---|---|---|
@@ -540,6 +540,19 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | comfort on the device | a mode-steered thermostat with a setpoint (the Heatit floor) takes its comfort from its own dial, like a setpoint thermostat: no `number.<load>_comfort`, a dial turn adopted | D-0435 |
 | the control select | five states kept, labelled in the glossary's words (Prøvemodus, Styres av noe annet) | D-0436 |
 | tests | §9 1 and 16 in `tests/flows/test_site_flow.py`, `test_site_reconfigure.py` (no toggle, `active` kept, device and add-on options pre-filled, the power sensor pre-filled), `test_logic_findings.py` (Norgespris through the contract question); §9 2 in `test_load_flow.py` and every load-flow suite, type first; §9 15's title half and §9 18c's walks (the tank now walked as a water heater) in `test_text.py` | - |
+
+**In code (part 2: the glossary).** Rule 7 outside the flows.
+
+| part | in code | decision |
+|---|---|---|
+| the scan | `DESIGN_WORDS` in `tests/flows/test_text.py`, one pattern per language: HLD §2's design terms and the review's §3 "now" column, its metaphors included. It runs over every translation string, every rendered flow step (inside `check_screen`, so a Python-assembled label is scanned too) and `notifications.py`'s two dictionaries. Placeholders and the household's own names are data and are skipped | D-0449 |
+| subentry flows | circuit, group and room: sikringskurs, apparat, rom; the group's "stigetrinn" is styringsnivå and its "tak" the target this hour | HLD §2 |
+| repairs | calm titles (Mangler strømpriser, Et apparat svarer ikke, PowerPlan kjører i nødmodus); every description ends with one next step, or says there is nothing to do; `learn_more_url` = `const.DOCS_URL/troubleshooting.md#<catalogue key>`, the page itself D14's | MSG-3, §5.9, §5.13 |
+| actions | the review's names (Kjør nå i en periode, Lag feilrapport, Start timemålingen på nytt (nødløsning), Rett opp månedens toppverdi), Lær vanlig forbruk på nytt, Fortsett; `site` and `load` fields are Hjem and Apparat | MSG-4 |
+| notifications | "PowerPlan", nødmodus, mål, Kjør nå; the peak texts say "timen"/"hour" (the placeholder is the window's start, so a 15-min market reads the same) | NEW-5 |
+| trial mode | `selector.strategy.options.observe` and `plan_status`'s `observing` read Prøvemodus / Trial mode, as the control select does (D-0436) | D-0450 |
+| HUB-23 | the six phrases: `modifiers` ("markedsprisen"), `force_expired`, `sub_meter`; `prices_nordpool.currency` and the load's `questions`/`user` were fixed by part 1; the `notify_service` and presence-`mode` helps name the options as they read | HUB-23 |
+| tests | §9 18's glossary half: `test_18d_*` (strings, notifications, the scan's own positive and negative cases) and `assert_household_words` in 18c's walks; §9 10's link in `tests/surface/test_repairs.py` | - |
 
 **A back button**. HA's data-entry flows have no back action; `async_configure` with no input re-shows the current step (§5.1, D-0129). The flow therefore routes "no" answers back where HA allows it, the grid company's yes/no being the one this WP adds. A general back button needs Home Assistant to add one.
 

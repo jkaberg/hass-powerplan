@@ -28,7 +28,7 @@
           "timezone": "Timezone"
         },
         "data_description": {
-          "timezone": "The IANA zone the house is in."
+          "timezone": "The IANA time zone the house is in."
         }
       },
       "electrical": {
@@ -153,7 +153,7 @@
       },
       "prices_fixed": {
         "title": "What do you pay per kWh?",
-        "description": "With no curve to follow, PowerPlan cannot move load to a cheaper hour — but it still costs your energy and defends your capacity target.",
+        "description": "With no curve to follow, PowerPlan cannot move usage to a cheaper hour — but it still counts your cost and keeps you in your capacity step.",
         "data": {
           "price": "Price per kWh"
         },
@@ -168,7 +168,7 @@
           "modifiers": "Added on top"
         },
         "data_description": {
-          "modifiers": "Everything PowerPlan can add to a raw price. Leave one out and it is simply not part of your price."
+          "modifiers": "Everything that can come on top of the market price. Leave one out and it is simply not part of your price."
         }
       },
       "modifier_vat": {
@@ -327,7 +327,7 @@
         "title": "Do you also heat with gas, district heating, oil or pellets?",
         "description": "A heat pump competes with whatever else heats the home. Leave it empty if you only buy electricity.",
         "data": {
-          "carriers": "Other carriers"
+          "carriers": "Other heat sources"
         },
         "data_description": {
           "carriers": "Each one asks for its price next."
@@ -494,7 +494,7 @@
           "mode": "Presence"
         },
         "data_description": {
-          "mode": "Automatic follows the people you pick next; manual leaves it to a service call or the presence entity."
+          "mode": "Automatic follows the people you pick next; with I'll set it myself, an action or the presence entity decides."
         },
         "sections": {
           "advanced": {
@@ -534,7 +534,7 @@
           "peak_warning": "This hour is heading over your capacity target.",
           "comfort_violation": "A room or a tank went below the floor you set.",
           "device_unhealthy": "A controlled device stopped answering.",
-          "notify_service": "Which notify service the categories set to Notify use.",
+          "notify_service": "Which notify service the categories set to Send it to my phone use.",
           "quiet_start": "Nothing but the urgent gets through after this.",
           "quiet_end": "Normal notifications resume at this time."
         },
@@ -543,13 +543,13 @@
             "name": "Advanced",
             "description": "Already filled in. Open it only if you know you want something else.",
             "data": {
-              "peak_uncontrolled": "Peak from uncontrolled load",
+              "peak_uncontrolled": "Peak from appliances PowerPlan does not control",
               "deadline_at_risk": "Deadline at risk",
               "level_up": "Capacity step about to rise",
               "price_source_dead": "Price source silent",
               "legionella_at_risk": "Legionella cycle at risk",
-              "safe_mode": "Safe mode",
-              "force_expired": "Force expired",
+              "safe_mode": "Fallback mode",
+              "force_expired": "Run now ended",
               "prices_daily_summary": "Daily price summary"
             },
             "data_description": {
@@ -558,8 +558,8 @@
               "level_up": "The month is about to move into a more expensive step.",
               "price_source_dead": "No prices have arrived for a day.",
               "legionella_at_risk": "A water heater's protection cycle cannot complete.",
-              "safe_mode": "The engine stopped deciding and released everything.",
-              "force_expired": "A manual override ran out and normal control resumed.",
+              "safe_mode": "PowerPlan stopped steering and left every appliance as it was.",
+              "force_expired": "A run now you started ran out and normal control resumed.",
               "prices_daily_summary": "Tomorrow's prices, once a day."
             }
           }
@@ -599,8 +599,8 @@
       "price_in_minor_unit": "That is less than one øre or cent per kWh. The box is in øre (or cents), not kroner."
     },
     "abort": {
-      "already_configured": "This meter is already set up as a PowerPlan site.",
-      "reconfigure_successful": "Saved — the site reloads with the new answers."
+      "already_configured": "This meter is already set up as a home in PowerPlan.",
+      "reconfigure_successful": "Saved — the home restarts with the new answers."
     }
   },
   "entity": {
@@ -804,9 +804,9 @@
         "state": {
           "device_unavailable": "Device not answering",
           "manual_override": "Changed by hand",
-          "run_now": "Running now (override)",
+          "run_now": "Run now is on",
           "not_controlled": "Not controlled by PowerPlan",
-          "observing": "Watching only",
+          "observing": "Trial mode",
           "no_car": "No car connected",
           "charging": "Charging",
           "done": "Done",
@@ -1025,7 +1025,7 @@
       "message": "Could not find the home {site}. Check that PowerPlan is set up and running."
     },
     "unknown_load": {
-      "message": "No load with id {load} on this site."
+      "message": "No appliance with id {load} in this home."
     },
     "set_peak_needs_a_day_or_a_month": {
       "message": "Choose either a date or a month."
@@ -1033,64 +1033,64 @@
   },
   "issues": {
     "engine_failing": {
-      "title": "PowerPlan is in safe mode",
-      "description": "The engine failed {failures} times in a row ({error}). Every load has been released and the site is observing only. A restart clears safe mode; if it returns, please report the log."
+      "title": "PowerPlan is in fallback mode",
+      "description": "PowerPlan failed {failures} times in a row ({error}) and has stopped steering; every appliance is left as it was. Restart Home Assistant; if this comes back, report it with the log."
     },
     "load_error": {
-      "title": "A load failed and is held",
-      "description": "The load {load} raised an error during a tick ({error}) and is held in its current state while the other loads continue. Check the device and its bound entities."
+      "title": "An appliance is on hold",
+      "description": "{load} ran into an error ({error}) and is held as it is while the other appliances carry on. Check that the device answers in Home Assistant."
     },
     "meter_stale": {
       "title": "The grid meter stopped reporting",
-      "description": "{site}: the grid power reading has been stale for more than ten minutes. The tick is frozen until it returns; check the meter integration."
+      "description": "{site}: the power reading has not changed for more than ten minutes, so PowerPlan waits. Check that the meter's integration is running."
     },
     "register_missing": {
       "title": "No register report for a day",
-      "description": "{site}: the import register has not reported for 24 hours. Windows close on the integral instead; check the meter integration."
+      "description": "{site}: the meter reading has not reported for 24 hours; PowerPlan counts from the power reading meanwhile. Check that the meter's integration is running."
     },
     "scaling_mismatch": {
       "title": "Power and register disagree",
-      "description": "{site}: the power integral has been more than 5 % off the register for six windows. One of the two sensors may be scaled wrongly."
+      "description": "{site}: the power reading and the meter reading have disagreed by more than 5 % for six hours. Check that both sensors use the right unit."
     },
     "price_source_dead": {
-      "title": "A price source is dead",
-      "description": "{site}: {source} has not delivered for 24 hours. Prices are synthesised until it returns."
+      "title": "Electricity prices are missing",
+      "description": "{site}: {source} has not delivered prices for 24 hours; PowerPlan estimates them meanwhile. Check that the price integration is running."
     },
     "preset_outdated": {
       "title": "The tariff preset has changed",
-      "description": "{site}: the shipped preset {preset} carries other versions than the ones this site was set up with. The site keeps the version it has; reconfigure the tariff to adopt the new one."
+      "description": "{site}: the grid tariff {preset} has changed since this home was set up, and the home keeps the one it has. To use the new one, choose Reconfigure on PowerPlan."
     },
     "bound_helper_missing": {
-      "title": "A bound helper is gone",
-      "description": "{site}: a schedule, person or calendar this site was bound to no longer exists."
+      "title": "A schedule, person or calendar is gone",
+      "description": "{site}: a schedule, person or calendar this home uses no longer exists. Choose Reconfigure and pick a new one."
     },
     "role_missing": {
       "title": "A required entity is gone",
-      "description": "{site}: an entity a load was bound to no longer exists."
+      "description": "{site}: an entity an appliance uses no longer exists. Open the appliance's setup and pick a new one."
     },
     "provision_refused": {
       "title": "A device refuses its provisioning",
-      "description": "{site}: a device keeps refusing the settings PowerPlan needs."
+      "description": "{site}: a device keeps refusing the settings PowerPlan needs. Check that the device is online and accepts changes."
     },
     "legionella_at_risk": {
       "title": "Legionella cycle at risk",
-      "description": "{site}: the water heater cannot complete its legionella cycle in time."
+      "description": "{site}: the water heater cannot finish its legionella heating in time. Check that the water heater is on and reachable."
     },
     "delegated_idle": {
-      "title": "A delegated load's controller is silent",
-      "description": "{site}: a load left to another controller has not moved for 24 hours."
+      "title": "An appliance is not answering",
+      "description": "{site}: an appliance controlled by something else has not changed for 24 hours. Check the automation or integration that controls it."
     },
     "savings_low_confidence": {
       "title": "Savings figure is uncertain",
-      "description": "{site}: {load}'s counterfactual has missed its calibration for a week; its savings are shown with low confidence."
+      "description": "{site}: for a week, PowerPlan's estimate of what {load} would have used without it has missed, so its savings are uncertain. Nothing to do; it improves as PowerPlan learns."
     },
     "notify_service_missing": {
       "title": "Notification service missing",
-      "description": "{site}: the notify service {service} does not exist. Notifications fall back to persistent notifications."
+      "description": "{site}: the notify service {service} does not exist, so notices appear in Home Assistant instead. Choose Reconfigure and pick another service."
     },
     "store_reset": {
-      "title": "The store was reset",
-      "description": "{site}: the site's store file could not be read and was moved to {path}. The site started from an empty store; the current window's energy is rebuilt from the register."
+      "title": "PowerPlan's saved data was reset",
+      "description": "{site}: PowerPlan could not read its saved data and moved it to {path}; this hour is rebuilt from the meter. Nothing to do; attach that file if you report it."
     },
     "device_missing": {
       "title": "An appliance's device is gone",
@@ -1389,7 +1389,7 @@
         "cheapest_hours": "Cheapest hours",
         "deadline_fill": "Cheapest hours before the deadline",
         "heat_capacitor": "Bank heat in cheap hours",
-        "observe": "Observe only",
+        "observe": "Trial mode",
         "opportunistic": "Only when cheap",
         "peak_shave": "Shave the peaks",
         "run_once": "One run before ready-by"
@@ -1700,50 +1700,50 @@
       "description": "Fetch what is missing and run a planning cycle now.",
       "fields": {
         "site": {
-          "name": "Site",
-          "description": "The site to replan; every site when omitted."
+          "name": "Home",
+          "description": "The home to plan; every home when empty."
         }
       }
     },
     "rebuild_baseline": {
-      "name": "Rebuild baseline",
-      "description": "Discard the learned usual-load-per-hour profile and seed a fresh one from the recorder now, rather than wait for the half-life to adapt.",
+      "name": "Relearn normal usage",
+      "description": "Forget the learned normal usage per hour and learn it again from the history now.",
       "fields": {
         "site": {
-          "name": "Site",
-          "description": "The site to rebuild; every site with a meter when omitted."
+          "name": "Home",
+          "description": "The home; every home with a meter when empty."
         }
       }
     },
     "release": {
-      "name": "Release",
-      "description": "Undo a shed on one load and leave its mode as it is.",
+      "name": "Resume",
+      "description": "Let an appliance PowerPlan paused run again, and leave its mode as it is.",
       "fields": {
         "load": {
-          "name": "Load",
-          "description": "The load's id."
+          "name": "Appliance",
+          "description": "The appliance's id."
         },
         "site": {
-          "name": "Site",
-          "description": "The site the load belongs to."
+          "name": "Home",
+          "description": "The home the appliance belongs to."
         }
       }
     },
     "boost": {
-      "name": "Boost",
-      "description": "Put a load in force mode for a while.",
+      "name": "Run now for a while",
+      "description": "Turn on Run now for an appliance for a while.",
       "fields": {
         "load": {
-          "name": "Load",
-          "description": "The load's id."
+          "name": "Appliance",
+          "description": "The appliance's id."
         },
         "hours": {
           "name": "Hours",
-          "description": "How long; the load's force maximum when omitted."
+          "description": "How long; the appliance's longest Run now when empty."
         },
         "site": {
-          "name": "Site",
-          "description": "The site the load belongs to."
+          "name": "Home",
+          "description": "The home the appliance belongs to."
         }
       }
     },
@@ -1752,18 +1752,18 @@
       "description": "Start an appliance's cycle now, capacity permitting.",
       "fields": {
         "load": {
-          "name": "Load",
-          "description": "The load's id."
+          "name": "Appliance",
+          "description": "The appliance's id."
         },
         "site": {
-          "name": "Site",
-          "description": "The site the load belongs to."
+          "name": "Home",
+          "description": "The home the appliance belongs to."
         }
       }
     },
     "set_presence": {
       "name": "Set presence",
-      "description": "Override who is home, optionally until a time.",
+      "description": "Say who is home, optionally until a time.",
       "fields": {
         "mode": {
           "name": "Mode",
@@ -1774,24 +1774,24 @@
           "description": "When to return to automatic."
         },
         "site": {
-          "name": "Site",
-          "description": "The site; every site when omitted."
+          "name": "Home",
+          "description": "The home; every home when empty."
         }
       }
     },
     "reset_window_anchor": {
-      "name": "Reset window anchor",
-      "description": "Re-anchor the tariff window on the current register reading (emergency).",
+      "name": "Restart this hour's count (emergency)",
+      "description": "Start counting this hour again from the meter's current reading. For emergencies only.",
       "fields": {
         "site": {
-          "name": "Site",
-          "description": "The site; every site when omitted."
+          "name": "Home",
+          "description": "The home; every home when empty."
         }
       }
     },
     "set_peak": {
-      "name": "Set peak",
-      "description": "Override one day's or one month's peak in the tariff history.",
+      "name": "Correct a peak",
+      "description": "Correct one day's or one month's peak in the grid-fee history.",
       "fields": {
         "date": {
           "name": "Date",
@@ -1810,18 +1810,18 @@
           "description": "Why."
         },
         "site": {
-          "name": "Site",
-          "description": "The site; every site when omitted."
+          "name": "Home",
+          "description": "The home; every home when empty."
         }
       }
     },
     "dump_state": {
-      "name": "Dump state",
+      "name": "Make a bug report",
       "description": "Return the last snapshot and the assembled inputs for a bug report.",
       "fields": {
         "site": {
-          "name": "Site",
-          "description": "The site; every site when omitted."
+          "name": "Home",
+          "description": "The home; every home when empty."
         }
       }
     }
@@ -1884,7 +1884,7 @@
             "role_sg_b": "SG Ready input B"
           },
           "data_description": {
-            "type": "What kind of load this is; the questions that follow depend on it.",
+            "type": "What kind of appliance this is; the questions that follow depend on it.",
             "profile": "How PowerPlan talks to the device.",
             "role_power": "The entity for this role.",
             "role_energy": "The entity for this role.",
@@ -2068,7 +2068,7 @@
             "legionella": "Who runs the weekly anti-legionella cycle.",
             "litres": "The tank's volume, in litres.",
             "max_a": "The most current the charger can deliver, in amps.",
-            "max_c": "The ceiling when banking heat in cheap hours. Blank uses the room's usual.",
+            "max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
             "max_charge_kw": "The battery's maximum charging power, in kW.",
             "max_discharge_kw": "The battery's maximum discharging power, in kW.",
             "mechanical_thermostat": "The tank has its own thermostat that PowerPlan cannot set.",
@@ -2105,7 +2105,7 @@
                 "dwell_s": "Dwell",
                 "energy_kwh": "Energy per cycle",
                 "follow_presence": "Follow presence",
-                "force_max_h": "Force lasts at most",
+                "force_max_h": "Run now lasts at most",
                 "inverted": "Inverted switch",
                 "legionella_hold_min": "Legionella hold",
                 "legionella_interval_days": "Legionella interval",
@@ -2143,13 +2143,13 @@
                 "dwell_s": "Advanced: seconds a setpoint is held before the next change.",
                 "energy_kwh": "Advanced: kWh one programme uses.",
                 "follow_presence": "Advanced: lower the target when nobody is home.",
-                "force_max_h": "Advanced: hours a forced run lasts before it clears itself.",
+                "force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "inverted": "Advanced: on means off for this switch.",
                 "legionella_hold_min": "Advanced: minutes the temperature is held.",
                 "legionella_interval_days": "Advanced: days between cycles.",
                 "legionella_temp_c": "Advanced: the temperature the cycle heats to.",
                 "loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
-                "max_c": "The ceiling when banking heat in cheap hours. Blank uses the room's usual.",
+                "max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
                 "max_soc": "Advanced: the state of charge the battery is charged to at most.",
                 "min_a": "Advanced: the lowest current the car keeps charging at. Below it the car ends the session.",
                 "min_off_s": "Advanced: seconds a switch stays off at least.",
@@ -2173,7 +2173,7 @@
           }
         },
         "review": {
-          "title": "Before this load is added",
+          "title": "Before this appliance is added",
           "description": "Here is what PowerPlan understood:\n\n{explanation}\n\nIt will plan with **{strategy}**. The derived numbers are under Advanced, all of them editable.",
           "data": {
             "name": "Name",
@@ -2181,7 +2181,7 @@
             "priority": "Priority"
           },
           "data_description": {
-            "name": "What to call this load. It names the device and prefixes its entities.",
+            "name": "What to call this appliance. It names the device and prefixes its entities.",
             "strategy": "How this appliance is planned. Change it later on the device page.",
             "priority": "Which appliance waits first when power is short: low waits first. Change it later on the device page."
           },
@@ -2214,7 +2214,7 @@
                 "param_energy_kwh": "Energy per cycle",
                 "param_floor_c": "Floor temperature",
                 "param_follow_presence": "Follow presence",
-                "param_force_max_h": "Force lasts at most",
+                "param_force_max_h": "Run now lasts at most",
                 "param_heater_type": "Heater type",
                 "param_heating_type": "Heating type",
                 "param_hours_per_day": "Hours per day",
@@ -2299,7 +2299,7 @@
                 "param_energy_kwh": "Advanced: kWh one programme uses.",
                 "param_floor_c": "Derived.",
                 "param_follow_presence": "Advanced: lower the target when nobody is home.",
-                "param_force_max_h": "Advanced: hours a forced run lasts before it clears itself.",
+                "param_force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "param_heater_type": "What kind of heater this is.",
                 "param_heating_type": "What is under the floor.",
                 "param_hours_per_day": "How many hours a day it should run, in the cheapest hours.",
@@ -2313,7 +2313,7 @@
                 "param_litres": "The tank's volume, in litres.",
                 "param_loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
                 "param_max_a": "The most current the charger can deliver, in amps.",
-                "param_max_c": "The ceiling when banking heat in cheap hours. Blank uses the room's usual.",
+                "param_max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
                 "param_max_charge_kw": "The battery's maximum charging power, in kW.",
                 "param_max_discharge_kw": "The battery's maximum discharging power, in kW.",
                 "param_max_soc": "Advanced: the state of charge the battery is charged to at most.",
@@ -2370,7 +2370,7 @@
             "rederive": "Apply the re-derived values"
           },
           "data_description": {
-            "name": "What to call this load.",
+            "name": "What to call this appliance.",
             "rederive": "Off keeps the stored parameters and your edits; on takes the values above."
           },
           "sections": {
@@ -2402,7 +2402,7 @@
                 "param_energy_kwh": "Energy per cycle",
                 "param_floor_c": "Floor temperature",
                 "param_follow_presence": "Follow presence",
-                "param_force_max_h": "Force lasts at most",
+                "param_force_max_h": "Run now lasts at most",
                 "param_heater_type": "Heater type",
                 "param_heating_type": "Heating type",
                 "param_hours_per_day": "Hours per day",
@@ -2487,7 +2487,7 @@
                 "param_energy_kwh": "Advanced: kWh one programme uses.",
                 "param_floor_c": "Derived.",
                 "param_follow_presence": "Advanced: lower the target when nobody is home.",
-                "param_force_max_h": "Advanced: hours a forced run lasts before it clears itself.",
+                "param_force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "param_heater_type": "What kind of heater this is.",
                 "param_heating_type": "What is under the floor.",
                 "param_hours_per_day": "How many hours a day it should run, in the cheapest hours.",
@@ -2501,7 +2501,7 @@
                 "param_litres": "The tank's volume, in litres.",
                 "param_loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
                 "param_max_a": "The most current the charger can deliver, in amps.",
-                "param_max_c": "The ceiling when banking heat in cheap hours. Blank uses the room's usual.",
+                "param_max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
                 "param_max_charge_kw": "The battery's maximum charging power, in kW.",
                 "param_max_discharge_kw": "The battery's maximum discharging power, in kW.",
                 "param_max_soc": "Advanced: the state of charge the battery is charged to at most.",
@@ -2616,27 +2616,27 @@
       "step": {
         "user": {
           "title": "Which appliances share a circuit?",
-          "description": "A sub-fuse and the loads behind it — the garage's 32 A with the charger and the sauna. PowerPlan keeps the loads on it under the fuse together, before the site's own limit is considered.",
+          "description": "A fuse and the appliances behind it — the garage's 32 A with the charger and the sauna. PowerPlan keeps them under that fuse together, before the main fuse is considered.",
           "data": {
             "name": "Name",
             "fuse_a": "Fuse",
             "phases": "Phases",
-            "members": "Loads on this circuit",
+            "members": "Appliances on this circuit",
             "sub_meter": "Sub-meter"
           },
           "data_description": {
             "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
             "fuse_a": "The circuit's own fuse, in amps.",
             "phases": "How many phases the circuit is wired on; the fuse is per phase.",
-            "members": "The loads PowerPlan steers that sit behind this fuse.",
-            "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
+            "members": "The appliances PowerPlan steers that sit behind this fuse.",
+            "sub_meter": "Optional: a power sensor that measures the whole circuit. If none, the circuit's use is the sum of its appliances."
           },
           "sections": {
             "advanced": {
               "name": "Advanced",
               "description": "What no meter sees.",
               "data": {
-                "unmetered_kw": "Unmetered load"
+                "unmetered_kw": "Unmeasured use"
               },
               "data_description": {
                 "unmetered_kw": "kW to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
@@ -2651,22 +2651,22 @@
             "name": "Name",
             "fuse_a": "Fuse",
             "phases": "Phases",
-            "members": "Loads on this circuit",
+            "members": "Appliances on this circuit",
             "sub_meter": "Sub-meter"
           },
           "data_description": {
             "name": "What the circuit is called: the garage, the outbuilding, the charger feed.",
             "fuse_a": "The circuit's own fuse, in amps.",
             "phases": "How many phases the circuit is wired on; the fuse is per phase.",
-            "members": "The loads PowerPlan steers that sit behind this fuse.",
-            "sub_meter": "Optional: a power sensor that measures the whole circuit. Without one, the circuit's draw is the sum of its loads."
+            "members": "The appliances PowerPlan steers that sit behind this fuse.",
+            "sub_meter": "Optional: a power sensor that measures the whole circuit. If none, the circuit's use is the sum of its appliances."
           },
           "sections": {
             "advanced": {
               "name": "Advanced",
               "description": "What no meter sees.",
               "data": {
-                "unmetered_kw": "Unmetered load"
+                "unmetered_kw": "Unmeasured use"
               },
               "data_description": {
                 "unmetered_kw": "kW to keep clear for things on the circuit that PowerPlan neither steers nor measures — a freezer, the lights. Usually 0."
@@ -2676,17 +2676,17 @@
         },
         "review": {
           "title": "Before this circuit is added",
-          "description": "**{name}** is fused at {fuse_a} A on {phases} phase(s): {members} will never exceed it together.\n\nSub-meter: {sub_meter}. Unmetered allowance: {unmetered_w} W."
+          "description": "**{name}** is fused at {fuse_a} A on {phases} phase(s): {members} will never exceed it together.\n\nSub-meter: {sub_meter}. Unmeasured use: {unmetered_w} W."
         }
       },
       "error": {
         "no_name": "Give the circuit a name.",
         "fuse_out_of_range": "A circuit fuse is between 1 A and 200 A. Check the rating printed on the breaker.",
-        "no_members": "Pick at least one load; a circuit with nothing behind it limits nothing.",
-        "unknown_member": "One of the loads is not on this site any more."
+        "no_members": "Pick at least one appliance; a circuit with nothing behind it limits nothing.",
+        "unknown_member": "One of the appliances is no longer in this home."
       },
       "abort": {
-        "no_loads": "Add a load first: a circuit is the loads behind a fuse.",
+        "no_loads": "Add an appliance first: a circuit is the appliances behind a fuse.",
         "reconfigure_successful": "The circuit was updated."
       }
     },
@@ -2699,28 +2699,28 @@
       "step": {
         "user": {
           "title": "Which appliances should take turns?",
-          "description": "Loads that take turns for a shared allowance — six floor loops sharing 2 kW when the hour gets tight. PowerPlan gives it to whichever is coldest first, and rotates so none is left behind.",
+          "description": "Appliances that share power and take turns — six floor loops sharing 2 kW when the hour gets tight. PowerPlan serves the coldest first and rotates so none is left behind.",
           "data": {
             "name": "Name",
-            "members": "Loads in this group"
+            "members": "Appliances in this group"
           },
           "data_description": {
             "name": "What the group is called: the floor loops, the bedroom radiators.",
-            "members": "The loads that share a cap and take turns for it."
+            "members": "The appliances that share power and take turns for it."
           },
           "sections": {
             "advanced": {
               "name": "Advanced",
-              "description": "When rationing starts, and how long a load waits before it jumps the queue.",
+              "description": "When sharing starts, and how long an appliance waits before it goes first.",
               "data": {
-                "from_stage": "Ladder stage",
-                "ceiling_fraction": "Ceiling fraction",
+                "from_stage": "From control level",
+                "ceiling_fraction": "Share of this hour's target",
                 "starve_seconds": "Starvation timeout"
               },
               "data_description": {
-                "from_stage": "The capacity ladder's stage at which the group starts rationing.",
-                "ceiling_fraction": "The window's projected use, as a percent of the ceiling, at which the group rations even before that stage.",
-                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue."
+                "from_stage": "The control level at which the group starts sharing.",
+                "ceiling_fraction": "The hour's expected use, as a percent of its target, at which the group shares anyway.",
+                "starve_seconds": "How long an appliance may wait before it goes to the front of the queue."
               }
             }
           }
@@ -2730,47 +2730,47 @@
           "description": "The same questions, pre-filled with what the group has now.",
           "data": {
             "name": "Name",
-            "members": "Loads in this group"
+            "members": "Appliances in this group"
           },
           "data_description": {
             "name": "What the group is called: the floor loops, the bedroom radiators.",
-            "members": "The loads that share a cap and take turns for it."
+            "members": "The appliances that share power and take turns for it."
           },
           "sections": {
             "advanced": {
               "name": "Advanced",
-              "description": "When rationing starts, and how long a load waits before it jumps the queue.",
+              "description": "When sharing starts, and how long an appliance waits before it goes first.",
               "data": {
-                "from_stage": "Ladder stage",
-                "ceiling_fraction": "Ceiling fraction",
+                "from_stage": "From control level",
+                "ceiling_fraction": "Share of this hour's target",
                 "starve_seconds": "Starvation timeout"
               },
               "data_description": {
-                "from_stage": "The capacity ladder's stage at which the group starts rationing.",
-                "ceiling_fraction": "The window's projected use, as a percent of the ceiling, at which the group rations even before that stage.",
-                "starve_seconds": "How long a load may be held back before it jumps to the front of the queue."
+                "from_stage": "The control level at which the group starts sharing.",
+                "ceiling_fraction": "The hour's expected use, as a percent of its target, at which the group shares anyway.",
+                "starve_seconds": "How long an appliance may wait before it goes to the front of the queue."
               }
             }
           }
         },
         "review": {
           "title": "Before this group is added",
-          "description": "**{name}** shares {max_concurrent_kw} kW between {members} when the hour gets tight: the coldest gets it first.\n\nRationing begins at ladder stage {from_stage} or {ceiling_fraction}% of the ceiling; a load held back more than {starve_min} minutes jumps the queue.",
+          "description": "**{name}** shares {max_concurrent_kw} kW between {members} when the hour gets tight: the coldest gets it first.\n\nSharing starts at control level {from_stage} or at {ceiling_fraction}% of this hour's target; an appliance that waits more than {starve_min} minutes goes first.",
           "data": {
             "max_concurrent_kw": "Shared cap"
           },
           "data_description": {
-            "max_concurrent_kw": "How much these loads may draw at once, in total, once they are rationed. Defaults to the two largest loads' own power summed."
+            "max_concurrent_kw": "How much these appliances may draw at once, in total, while they share. Defaults to the two largest appliances' power summed."
           }
         }
       },
       "error": {
         "no_name": "Give the group a name.",
-        "no_members": "Pick at least one load; a group with nothing in it shares nothing.",
-        "unknown_member": "One of the loads is not on this site any more."
+        "no_members": "Pick at least one appliance; a group with nothing in it shares nothing.",
+        "unknown_member": "One of the appliances is no longer in this home."
       },
       "abort": {
-        "no_loads": "Add a load first: a group is loads that share a cap.",
+        "no_loads": "Add an appliance first: a group is appliances that share power.",
         "reconfigure_successful": "The group was updated."
       }
     },
@@ -2783,14 +2783,14 @@
       "step": {
         "user": {
           "title": "Which heat sources share a room?",
-          "description": "Two or more loads that can heat the same space — a heat pump and a resistive slab, a heat pump and a boiler. PowerPlan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.",
+          "description": "Two or more appliances that heat the same room — a heat pump and a heated floor, a heat pump and a boiler. PowerPlan runs whichever heats cheapest, and prefers the heat pump when this hour's target is at risk.",
           "data": {
             "name": "Name",
-            "members": "Loads in this zone"
+            "members": "Appliances in this room"
           },
           "data_description": {
-            "name": "What the zone is called: the living room, the bathroom.",
-            "members": "The heating loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else."
+            "name": "What the room is called: the living room, the bathroom.",
+            "members": "The heating appliances in this room; each one's heat source and efficiency come from its own setup."
           },
           "sections": {
             "advanced": {
@@ -2806,23 +2806,23 @@
               "data_description": {
                 "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
                 "switch_hysteresis": "How much cheaper the alternative must be, as a percent, before a switch is worth it.",
-                "min_dwell_min": "How long the source that is running keeps the zone before another may take over.",
+                "min_dwell_min": "How long the running heater keeps the room before another may take over.",
                 "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken.",
-                "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
+                "capacity_penalty": "What a kWh of electric heat costs extra while this hour's target is at risk, added to its price."
               }
             }
           }
         },
         "reconfigure": {
           "title": "Which heat sources share this room?",
-          "description": "The same questions, pre-filled with what the zone has now.",
+          "description": "The same questions, pre-filled with what the room has now.",
           "data": {
             "name": "Name",
-            "members": "Loads in this zone"
+            "members": "Appliances in this room"
           },
           "data_description": {
-            "name": "What the zone is called: the living room, the bathroom.",
-            "members": "The heating loads that can heat this space. Their own carrier and efficiency are read from how each is already configured — a heat pump's own COP curve, electricity for everything else."
+            "name": "What the room is called: the living room, the bathroom.",
+            "members": "The heating appliances in this room; each one's heat source and efficiency come from its own setup."
           },
           "sections": {
             "advanced": {
@@ -2838,9 +2838,9 @@
               "data_description": {
                 "min_cop": "Never engage a heat pump below this COP — a pump barely better than a resistor is not something to hand the house to.",
                 "switch_hysteresis": "How much cheaper the alternative must be, as a percent, before a switch is worth it.",
-                "min_dwell_min": "How long the source that is running keeps the zone before another may take over.",
+                "min_dwell_min": "How long the running heater keeps the room before another may take over.",
                 "switch_confirm_s": "How long a cheaper source must stay cheaper before the switch is taken.",
-                "capacity_penalty": "What a kWh of electric heat costs extra while the ceiling is at risk, added to its price per kWh."
+                "capacity_penalty": "What a kWh of electric heat costs extra while this hour's target is at risk, added to its price."
               }
             }
           }
@@ -2852,22 +2852,22 @@
             "never_substitute": "Never substitute"
           },
           "data_description": {
-            "never_substitute": "Loads that always keep their own source."
+            "never_substitute": "Appliances that always keep their own heat source."
           }
         },
         "review": {
-          "title": "Before this zone is added",
-          "description": "**{name}** shares {members}: PowerPlan runs whichever is cheaper per kWh of heat, and prefers the heat pump when the ceiling is at risk.\n\nNever substituted: {never_substitute}. A heat pump below COP {min_cop} is never engaged."
+          "title": "Before this room is added",
+          "description": "**{name}** shares {members}: PowerPlan runs whichever heats cheapest, and prefers the heat pump when this hour's target is at risk.\n\nNever swapped: {never_substitute}. A heat pump below efficiency (COP) {min_cop} is never used."
         }
       },
       "error": {
-        "no_name": "Give the zone a name.",
-        "not_enough_members": "Pick at least two loads; a zone needs something to substitute to.",
-        "unknown_member": "One of the loads is not on this site any more."
+        "no_name": "Give the room a name.",
+        "not_enough_members": "Pick at least two appliances; a room needs something to swap to.",
+        "unknown_member": "One of the appliances is no longer in this home."
       },
       "abort": {
-        "not_enough_loads": "Add at least two loads first: a zone needs two loads that can heat the same space.",
-        "reconfigure_successful": "The zone was updated."
+        "not_enough_loads": "Add at least two appliances first: a room needs two appliances that heat the same space.",
+        "reconfigure_successful": "The room was updated."
       }
     }
   }

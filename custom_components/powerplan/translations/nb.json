@@ -28,7 +28,7 @@
           "timezone": "Tidssone"
         },
         "data_description": {
-          "timezone": "IANA-sonen huset ligger i."
+          "timezone": "IANA-tidssonen huset ligger i."
         }
       },
       "electrical": {
@@ -141,7 +141,7 @@
       },
       "prices_entity": {
         "title": "Hvilken sensor har prisene dine?",
-        "description": "Velg sensoren som allerede bærer en priskurve. PowerPlan kjenner igjen de vanlige formatene og forteller hvilket den oppdaget.",
+        "description": "Velg sensoren som allerede har en priskurve. PowerPlan kjenner igjen de vanlige formatene og forteller hvilket den fant.",
         "data": {
           "entity_id": "Prissensor",
           "format": "Prisformat"
@@ -153,7 +153,7 @@
       },
       "prices_fixed": {
         "title": "Hva betaler du per kWh?",
-        "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og forsvarer effektmålet ditt.",
+        "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og holder deg i effekttrinnet ditt.",
         "data": {
           "price": "Pris per kWh"
         },
@@ -168,7 +168,7 @@
           "modifiers": "Legges på toppen"
         },
         "data_description": {
-          "modifiers": "Alt PowerPlan kan legge til en råpris. Utelater du noe, er det bare ikke en del av prisen din."
+          "modifiers": "Alt som kan komme i tillegg til markedsprisen. Utelater du noe, er det bare ikke en del av prisen din."
         }
       },
       "modifier_vat": {
@@ -231,10 +231,10 @@
       },
       "modifier_fixed_price": {
         "title": "Hva er fastprisen din?",
-        "description": "En statlig ordning som Norgespris erstatter spotprisen opp til et tak per måned. Prisen står i avtalen din.",
+        "description": "En statlig ordning som Norgespris erstatter spotprisen opp til et antall kWh per måned. Prisen står i avtalen din.",
         "data": {
           "price": "Pris per kWh",
-          "cap_kwh_per_month": "Tak per måned"
+          "cap_kwh_per_month": "Maks kWh per måned"
         },
         "data_description": {
           "price": "I øre per kWh, uten mva; mva legges på etterpå.",
@@ -422,7 +422,7 @@
         "data_description": {
           "target": "Automatisk, eller et bestemt trinn med månedsgebyret sitt.",
           "risk": "Streng går aldri over målet; de andre kan, så lenge dine {hours} høyeste timer holder seg i trinnet.",
-          "target_kw": "Antall kW som skal forsvares, for en tariff uten trinn."
+          "target_kw": "Hvor mange kW du vil holde deg under, for en tariff uten trinn."
         },
         "sections": {
           "advanced": {
@@ -494,7 +494,7 @@
           "mode": "Tilstedeværelse"
         },
         "data_description": {
-          "mode": "Automatisk følger personene du velger neste; manuell overlater det til et tjenestekall eller tilstedeværelsesentiteten."
+          "mode": "Automatisk følger personene du velger neste; med Jeg setter det selv avgjør en handling eller tilstedeværelsesentiteten."
         },
         "sections": {
           "advanced": {
@@ -521,7 +521,7 @@
       },
       "notifications": {
         "title": "Hva skal PowerPlan si fra om?",
-        "description": "Tre ting er verdt en avbrytelse; alt annet er en entitet du kan legge på et dashbord. Et vedvarende varsel virker alltid, også før du har satt opp en varslingstjeneste.",
+        "description": "Tre ting varsles alltid; alt annet er en entitet du kan legge på et dashbord. Et varsel i Home Assistant virker alltid, også før du har satt opp en varslingstjeneste.",
         "data": {
           "peak_warning": "Effektvarsel",
           "comfort_violation": "Komfort brutt",
@@ -534,7 +534,7 @@
           "peak_warning": "Denne timen er på vei over effektmålet ditt.",
           "comfort_violation": "Et rom eller en tank gikk under grensen du satte.",
           "device_unhealthy": "En styrt enhet sluttet å svare.",
-          "notify_service": "Hvilken varslingstjeneste kategoriene satt til Varsling bruker.",
+          "notify_service": "Hvilken varslingstjeneste kategoriene satt til Send det til telefonen min bruker.",
           "quiet_start": "Bare det som haster slipper gjennom etter dette.",
           "quiet_end": "Vanlige varsler starter igjen på dette tidspunktet."
         },
@@ -543,13 +543,13 @@
             "name": "Avansert",
             "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
             "data": {
-              "peak_uncontrolled": "Effekttopp fra ustyrt last",
+              "peak_uncontrolled": "Effekttopp fra apparater PowerPlan ikke styrer",
               "deadline_at_risk": "Frist i fare",
               "level_up": "Effekttrinn i ferd med å øke",
               "price_source_dead": "Priskilden er stille",
               "legionella_at_risk": "Legionellaprogram i fare",
-              "safe_mode": "Sikker modus",
-              "force_expired": "Tvang utløpt",
+              "safe_mode": "Nødmodus",
+              "force_expired": "Kjør nå er over",
               "prices_daily_summary": "Daglig prissammendrag"
             },
             "data_description": {
@@ -558,8 +558,8 @@
               "level_up": "Måneden er i ferd med å gå opp i et dyrere trinn.",
               "price_source_dead": "Ingen priser har kommet inn på et døgn.",
               "legionella_at_risk": "Beskyttelsesprogrammet til en varmtvannsbereder blir ikke fullført.",
-              "safe_mode": "Motoren sluttet å beslutte og slapp alt fritt.",
-              "force_expired": "En manuell overstyring løp ut og vanlig styring tok over.",
+              "safe_mode": "PowerPlan sluttet å styre og lot alle apparater være som de var.",
+              "force_expired": "En Kjør nå du startet er over, og vanlig styring har tatt over igjen.",
               "prices_daily_summary": "Morgendagens priser, én gang om dagen."
             }
           }
@@ -599,8 +599,8 @@
       "price_in_minor_unit": "Det er under én øre per kWh. Feltet er i øre, ikke kroner."
     },
     "abort": {
-      "already_configured": "Denne måleren er allerede satt opp som et PowerPlan-anlegg.",
-      "reconfigure_successful": "Lagret — anlegget laster på nytt med de nye svarene."
+      "already_configured": "Denne måleren er allerede satt opp som et hjem i PowerPlan.",
+      "reconfigure_successful": "Lagret — hjemmet starter på nytt med de nye svarene."
     }
   },
   "entity": {
@@ -803,10 +803,10 @@
         "name": "Planstatus",
         "state": {
           "device_unavailable": "Apparatet svarer ikke",
-          "manual_override": "Overstyrt manuelt",
-          "run_now": "Kjører nå (overstyrt)",
+          "manual_override": "Endret for hånd",
+          "run_now": "Kjør nå er på",
           "not_controlled": "Styres ikke av PowerPlan",
-          "observing": "Ser bare på",
+          "observing": "Prøvemodus",
           "no_car": "Ingen bil tilkoblet",
           "charging": "Lader",
           "done": "Ferdig",
@@ -1025,7 +1025,7 @@
       "message": "Fant ikke hjemmet {site}. Sjekk at PowerPlan er satt opp og kjører."
     },
     "unknown_load": {
-      "message": "Ingen last med id {load} på dette anlegget."
+      "message": "Fant ikke apparatet med id {load} i dette hjemmet."
     },
     "set_peak_needs_a_day_or_a_month": {
       "message": "Velg enten en dato eller en måned."
@@ -1033,64 +1033,64 @@
   },
   "issues": {
     "engine_failing": {
-      "title": "PowerPlan er i sikker modus",
-      "description": "Motoren feilet {failures} ganger på rad ({error}). Alle laster er sluppet og anlegget bare observerer. En omstart opphever sikker modus; kommer den tilbake, meld inn loggen."
+      "title": "PowerPlan kjører i nødmodus",
+      "description": "PowerPlan feilet {failures} ganger på rad ({error}) og har sluttet å styre; alle apparater er latt være som de var. Start Home Assistant på nytt; kommer dette tilbake, meld det inn med loggen."
     },
     "load_error": {
-      "title": "En last feilet og holdes",
-      "description": "Lasten {load} ga en feil under en tikk ({error}) og holdes i nåværende tilstand mens de andre lastene fortsetter. Sjekk enheten og de tilknyttede entitetene."
+      "title": "Et apparat står på vent",
+      "description": "{load} fikk en feil ({error}) og holdes som det er mens de andre apparatene fortsetter. Sjekk at enheten svarer i Home Assistant."
     },
     "meter_stale": {
       "title": "Strømmåleren sluttet å rapportere",
-      "description": "{site}: effektavlesningen har vært utdatert i mer enn ti minutter. Tikken er frosset til den er tilbake; sjekk målerintegrasjonen."
+      "description": "{site}: effektavlesningen har stått stille i mer enn ti minutter, så PowerPlan venter. Sjekk at målerens integrasjon kjører."
     },
     "register_missing": {
       "title": "Ingen målerstand på et døgn",
-      "description": "{site}: importregisteret har ikke rapportert på 24 timer. Timene lukkes på integralet i stedet; sjekk målerintegrasjonen."
+      "description": "{site}: målerstanden har ikke rapportert på 24 timer; PowerPlan regner fra effekten imens. Sjekk at målerens integrasjon kjører."
     },
     "scaling_mismatch": {
       "title": "Effekt og målerstand er uenige",
-      "description": "{site}: effektintegralet har avveket mer enn 5 % fra målerstanden i seks timer. En av sensorene kan være feil skalert."
+      "description": "{site}: effekten og målerstanden har vært uenige med mer enn 5 % i seks timer. Sjekk at begge sensorene bruker riktig enhet."
     },
     "price_source_dead": {
-      "title": "En priskilde er død",
-      "description": "{site}: {source} har ikke levert på 24 timer. Prisene syntetiseres til den er tilbake."
+      "title": "Mangler strømpriser",
+      "description": "{site}: {source} har ikke levert priser på 24 timer; PowerPlan anslår dem imens. Sjekk at prisintegrasjonen kjører."
     },
     "preset_outdated": {
       "title": "Tariffmalen er endret",
-      "description": "{site}: den leverte malen {preset} har andre versjoner enn dem anlegget ble satt opp med. Anlegget beholder sin versjon; sett opp tariffen på nytt for å ta i bruk den nye."
+      "description": "{site}: nettleien {preset} er endret siden dette hjemmet ble satt opp, og hjemmet beholder den det har. For å bruke den nye, velg Endre oppsett på PowerPlan."
     },
     "bound_helper_missing": {
-      "title": "En tilknyttet hjelper er borte",
-      "description": "{site}: en tidsplan, person eller kalender anlegget var knyttet til finnes ikke lenger."
+      "title": "En tidsplan, person eller kalender er borte",
+      "description": "{site}: en tidsplan, person eller kalender dette hjemmet bruker finnes ikke lenger. Velg Endre oppsett og velg en ny."
     },
     "role_missing": {
       "title": "En påkrevd entitet er borte",
-      "description": "{site}: en entitet en last var knyttet til finnes ikke lenger."
+      "description": "{site}: en entitet et apparat bruker finnes ikke lenger. Åpne apparatets oppsett og velg en ny."
     },
     "provision_refused": {
       "title": "En enhet avviser oppsettet",
-      "description": "{site}: en enhet avviser stadig innstillingene PowerPlan trenger."
+      "description": "{site}: en enhet avviser stadig innstillingene PowerPlan trenger. Sjekk at enheten er tilkoblet og tar imot endringer."
     },
     "legionella_at_risk": {
       "title": "Legionellasyklusen er i fare",
-      "description": "{site}: varmtvannsberederen rekker ikke legionellasyklusen i tide."
+      "description": "{site}: varmtvannsberederen rekker ikke legionellaoppvarmingen i tide. Sjekk at berederen er på og svarer."
     },
     "delegated_idle": {
-      "title": "En delegert lasts styring er taus",
-      "description": "{site}: en last overlatt til en annen styring har ikke rørt seg på 24 timer."
+      "title": "Et apparat svarer ikke",
+      "description": "{site}: et apparat som styres av noe annet har ikke endret seg på 24 timer. Sjekk automasjonen eller integrasjonen som styrer det."
     },
     "savings_low_confidence": {
       "title": "Besparelsen er usikker",
-      "description": "{site}: {load}s kontrafaktiske forbruk har bommet på kalibreringen i en uke; besparelsen vises med lav sikkerhet."
+      "description": "{site}: i en uke har PowerPlans anslag over hva {load} ville brukt uten styring bommet, så besparelsen er usikker. Du trenger ikke gjøre noe; den blir bedre etter hvert."
     },
     "notify_service_missing": {
       "title": "Varslingstjeneste mangler",
-      "description": "{site}: varslingstjenesten {service} finnes ikke. Varsler faller tilbake til vedvarende varsler."
+      "description": "{site}: varslingstjenesten {service} finnes ikke, så varslene vises i Home Assistant i stedet. Velg Endre oppsett og velg en annen tjeneste."
     },
     "store_reset": {
-      "title": "Lageret ble nullstilt",
-      "description": "{site}: anleggets lagerfil kunne ikke leses og ble flyttet til {path}. Anlegget startet med et tomt lager; timens energi bygges opp igjen fra målerstanden."
+      "title": "PowerPlans lagrede data ble nullstilt",
+      "description": "{site}: PowerPlan kunne ikke lese sine lagrede data og flyttet dem til {path}; denne timen bygges opp igjen fra måleren. Du trenger ikke gjøre noe; legg ved filen hvis du melder det inn."
     },
     "device_missing": {
       "title": "Et apparats enhet er borte",
@@ -1389,7 +1389,7 @@
         "cheapest_hours": "Billigste timer",
         "deadline_fill": "Billigste timer før fristen",
         "heat_capacitor": "Lagre varme i billige timer",
-        "observe": "Bare observer",
+        "observe": "Prøvemodus",
         "opportunistic": "Bare når det er billig",
         "peak_shave": "Kapp toppene",
         "run_once": "Én kjøring før klartid"
@@ -1700,50 +1700,50 @@
       "description": "Hent det som mangler og kjør en planleggingsrunde nå.",
       "fields": {
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget som skal planlegges; alle når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet som skal planlegges; alle når feltet er tomt."
         }
       }
     },
     "rebuild_baseline": {
-      "name": "Gjenoppbygg grunnlinje",
-      "description": "Forkast den lærte vanlige belastningen per time og bygg en ny fra historikken nå, i stedet for å vente på at halveringstiden tilpasser seg.",
+      "name": "Lær vanlig forbruk på nytt",
+      "description": "Glem det lærte vanlige forbruket per time og lær det på nytt fra historikken nå.",
       "fields": {
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget som skal gjenoppbygges; alle anlegg med måler når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet; alle hjem med måler når feltet er tomt."
         }
       }
     },
     "release": {
-      "name": "Slipp",
-      "description": "Opphev en utkobling på én last og la modusen stå.",
+      "name": "Fortsett",
+      "description": "La et apparat PowerPlan har satt på pause gå igjen, og la modusen stå.",
       "fields": {
         "load": {
-          "name": "Last",
-          "description": "Lastens id."
+          "name": "Apparat",
+          "description": "Apparatets id."
         },
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget lasten hører til."
+          "name": "Hjem",
+          "description": "Hjemmet apparatet hører til."
         }
       }
     },
     "boost": {
       "name": "Kjør nå i en periode",
-      "description": "Sett en last i tvunget modus en stund.",
+      "description": "Slå på Kjør nå for et apparat en stund.",
       "fields": {
         "load": {
-          "name": "Last",
-          "description": "Lastens id."
+          "name": "Apparat",
+          "description": "Apparatets id."
         },
         "hours": {
           "name": "Timer",
-          "description": "Hvor lenge; lastens maksimum når feltet er tomt."
+          "description": "Hvor lenge; apparatets lengste Kjør nå når feltet er tomt."
         },
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget lasten hører til."
+          "name": "Hjem",
+          "description": "Hjemmet apparatet hører til."
         }
       }
     },
@@ -1752,18 +1752,18 @@
       "description": "Start et apparats program nå, om kapasiteten tillater det.",
       "fields": {
         "load": {
-          "name": "Last",
-          "description": "Lastens id."
+          "name": "Apparat",
+          "description": "Apparatets id."
         },
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget lasten hører til."
+          "name": "Hjem",
+          "description": "Hjemmet apparatet hører til."
         }
       }
     },
     "set_presence": {
       "name": "Sett tilstedeværelse",
-      "description": "Overstyr hvem som er hjemme, eventuelt til et tidspunkt.",
+      "description": "Si hvem som er hjemme, eventuelt til et tidspunkt.",
       "fields": {
         "mode": {
           "name": "Modus",
@@ -1774,24 +1774,24 @@
           "description": "Når automatikken tar over igjen."
         },
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget; alle når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
         }
       }
     },
     "reset_window_anchor": {
-      "name": "Nullstill timeanker",
-      "description": "Forankre tariffvinduet på nåværende målerstand (nødløsning).",
+      "name": "Start timemålingen på nytt (nødløsning)",
+      "description": "Begynn å telle denne timen på nytt fra målerstanden nå. Bare for nødstilfeller.",
       "fields": {
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget; alle når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
         }
       }
     },
     "set_peak": {
-      "name": "Sett topp",
-      "description": "Overstyr én dags eller én måneds topp i tariffhistorikken.",
+      "name": "Rett opp månedens toppverdi",
+      "description": "Rett opp én dags eller én måneds toppverdi i nettleiehistorikken.",
       "fields": {
         "date": {
           "name": "Dato",
@@ -1810,18 +1810,18 @@
           "description": "Hvorfor."
         },
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget; alle når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
         }
       }
     },
     "dump_state": {
-      "name": "Dump tilstand",
+      "name": "Lag feilrapport",
       "description": "Returner siste øyeblikksbilde og de sammensatte inndataene til en feilrapport.",
       "fields": {
         "site": {
-          "name": "Anlegg",
-          "description": "Anlegget; alle når feltet er tomt."
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
         }
       }
     }
@@ -1884,7 +1884,7 @@
             "role_sg_b": "SG Ready-inngang B"
           },
           "data_description": {
-            "type": "Hva slags last dette er; spørsmålene som følger avhenger av det.",
+            "type": "Hva slags apparat dette er; spørsmålene som følger avhenger av det.",
             "profile": "Hvordan PowerPlan snakker med enheten.",
             "role_power": "Entiteten for denne rollen.",
             "role_energy": "Entiteten for denne rollen.",
@@ -2068,7 +2068,7 @@
             "legionella": "Hvem som kjører den ukentlige legionellasyklusen.",
             "litres": "Tankens volum, i liter.",
             "max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
-            "max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+            "max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
             "max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
             "max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
             "mechanical_thermostat": "Tanken har sin egen termostat som PowerPlan ikke kan stille.",
@@ -2105,7 +2105,7 @@
                 "dwell_s": "Hviletid",
                 "energy_kwh": "Energi per program",
                 "follow_presence": "Følg tilstedeværelse",
-                "force_max_h": "Tvang varer maks",
+                "force_max_h": "Kjør nå varer maks",
                 "inverted": "Invertert bryter",
                 "legionella_hold_min": "Legionellahold",
                 "legionella_interval_days": "Legionellaintervall",
@@ -2143,13 +2143,13 @@
                 "dwell_s": "Avansert: sekunder et settpunkt holdes før neste endring.",
                 "energy_kwh": "Avansert: kWh ett program bruker.",
                 "follow_presence": "Avansert: senk målet når ingen er hjemme.",
-                "force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "inverted": "Avansert: på betyr av for denne bryteren.",
                 "legionella_hold_min": "Avansert: minutter temperaturen holdes.",
                 "legionella_interval_days": "Avansert: dager mellom sykluser.",
                 "legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
                 "loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
-                "max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
                 "max_soc": "Avansert: ladenivået batteriet lades til maks.",
                 "min_a": "Avansert: den laveste strømmen bilen fortsetter å lade på. Under den avslutter bilen økten.",
                 "min_off_s": "Avansert: sekunder en bryter er av minst.",
@@ -2189,7 +2189,7 @@
           }
         },
         "review": {
-          "title": "Før denne lasten legges til",
+          "title": "Før dette apparatet legges til",
           "description": "Slik forsto PowerPlan det:\n\n{explanation}\n\nDen planlegger med **{strategy}**. De utledede tallene ligger under Avansert, alle kan endres.",
           "data": {
             "name": "Navn",
@@ -2197,7 +2197,7 @@
             "priority": "Prioritet"
           },
           "data_description": {
-            "name": "Hva lasten skal hete. Det navngir enheten og setter prefiks på entitetene.",
+            "name": "Hva apparatet skal hete. Det navngir enheten og setter prefiks på entitetene.",
             "strategy": "Hvordan apparatet planlegges. Kan endres senere på enhetssiden.",
             "priority": "Hvilket apparat som venter først når det er trangt: lav venter først. Kan endres senere på enhetssiden."
           },
@@ -2230,7 +2230,7 @@
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
-                "param_force_max_h": "Tvang varer maks",
+                "param_force_max_h": "Kjør nå varer maks",
                 "param_heater_type": "Ovnstype",
                 "param_heating_type": "Varmetype",
                 "param_hours_per_day": "Timer per dag",
@@ -2315,7 +2315,7 @@
                 "param_energy_kwh": "Avansert: kWh ett program bruker.",
                 "param_floor_c": "Utledet.",
                 "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
-                "param_force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "param_force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "param_heater_type": "Hva slags ovn dette er.",
                 "param_heating_type": "Hva som ligger under gulvet.",
                 "param_hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
@@ -2329,7 +2329,7 @@
                 "param_litres": "Tankens volum, i liter.",
                 "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
                 "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
-                "param_max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "param_max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
                 "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
                 "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
                 "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
@@ -2386,13 +2386,13 @@
             "rederive": "Bruk de re-utledede verdiene"
           },
           "data_description": {
-            "name": "Hva lasten skal hete.",
+            "name": "Hva apparatet skal hete.",
             "rederive": "Av beholder de lagrede parametrene og endringene dine; på tar verdiene over."
           },
           "sections": {
             "advanced": {
               "name": "Utledede parametre",
-              "description": "Endre her for å overstyre en utledet verdi.",
+              "description": "Endre her for å bytte ut en utledet verdi.",
               "data": {
                 "param_allow_grid_charge": "Lad fra nettet",
                 "param_appliance": "Apparat",
@@ -2418,7 +2418,7 @@
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
-                "param_force_max_h": "Tvang varer maks",
+                "param_force_max_h": "Kjør nå varer maks",
                 "param_heater_type": "Ovnstype",
                 "param_heating_type": "Varmetype",
                 "param_hours_per_day": "Timer per dag",
@@ -2503,7 +2503,7 @@
                 "param_energy_kwh": "Avansert: kWh ett program bruker.",
                 "param_floor_c": "Utledet.",
                 "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
-                "param_force_max_h": "Avansert: timer en tvungen kjøring varer før den opphever seg selv.",
+                "param_force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "param_heater_type": "Hva slags ovn dette er.",
                 "param_heating_type": "Hva som ligger under gulvet.",
                 "param_hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
@@ -2517,7 +2517,7 @@
                 "param_litres": "Tankens volum, i liter.",
                 "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
                 "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
-                "param_max_c": "Taket når varme lagres i billige timer. Tomt bruker rommets vanlige.",
+                "param_max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
                 "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
                 "param_max_discharge_kw": "Batteriets maksimale utladingseffekt, i kW.",
                 "param_max_soc": "Avansert: ladenivået batteriet lades til maks.",
@@ -2616,78 +2616,78 @@
       "step": {
         "user": {
           "title": "Hvilke apparater deler en sikringskurs?",
-          "description": "En sikring og lastene bak den — garasjens 32 A med laderen og badstuen. PowerPlan holder lastene på kursen under sikringen sammen, før anleggets egen grense vurderes.",
+          "description": "En sikring og apparatene bak den — garasjens 32 A med laderen og badstuen. PowerPlan holder dem under den sikringen sammen, før hovedsikringen vurderes.",
           "data": {
             "name": "Navn",
             "fuse_a": "Sikring",
             "phases": "Faser",
-            "members": "Laster på denne kursen",
+            "members": "Apparater på denne sikringskursen",
             "sub_meter": "Undermåler"
           },
           "data_description": {
-            "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
+            "name": "Hva sikringskursen heter: garasjen, uthuset, ladekursen.",
             "fuse_a": "Kursens egen sikring, i ampere.",
-            "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
-            "members": "Lastene PowerPlan styrer som sitter bak denne sikringen.",
-            "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
+            "phases": "Hvor mange faser sikringskursen er koblet på; sikringen gjelder per fase.",
+            "members": "Apparatene PowerPlan styrer som sitter bak denne sikringen.",
+            "sub_meter": "Valgfritt: en effektsensor som måler hele sikringskursen. Uten sensor er forbruket summen av apparatene."
           },
           "sections": {
             "advanced": {
               "name": "Avansert",
               "description": "Det ingen måler ser.",
               "data": {
-                "unmetered_kw": "Umålt last"
+                "unmetered_kw": "Umålt forbruk"
               },
               "data_description": {
-                "unmetered_kw": "kW å holde ledig for ting på kursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+                "unmetered_kw": "kW å holde ledig for ting på sikringskursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
               }
             }
           }
         },
         "reconfigure": {
           "title": "Hvilke apparater deler denne sikringskursen?",
-          "description": "De samme spørsmålene, forhåndsutfylt med det kursen har nå.",
+          "description": "De samme spørsmålene, forhåndsutfylt med det sikringskursen har nå.",
           "data": {
             "name": "Navn",
             "fuse_a": "Sikring",
             "phases": "Faser",
-            "members": "Laster på denne kursen",
+            "members": "Apparater på denne sikringskursen",
             "sub_meter": "Undermåler"
           },
           "data_description": {
-            "name": "Hva kursen heter: garasjen, uthuset, ladekursen.",
+            "name": "Hva sikringskursen heter: garasjen, uthuset, ladekursen.",
             "fuse_a": "Kursens egen sikring, i ampere.",
-            "phases": "Hvor mange faser kursen er koblet på; sikringen gjelder per fase.",
-            "members": "Lastene PowerPlan styrer som sitter bak denne sikringen.",
-            "sub_meter": "Valgfritt: en effektsensor som måler hele kursen. Uten en er kursens forbruk summen av lastene."
+            "phases": "Hvor mange faser sikringskursen er koblet på; sikringen gjelder per fase.",
+            "members": "Apparatene PowerPlan styrer som sitter bak denne sikringen.",
+            "sub_meter": "Valgfritt: en effektsensor som måler hele sikringskursen. Uten sensor er forbruket summen av apparatene."
           },
           "sections": {
             "advanced": {
               "name": "Avansert",
               "description": "Det ingen måler ser.",
               "data": {
-                "unmetered_kw": "Umålt last"
+                "unmetered_kw": "Umålt forbruk"
               },
               "data_description": {
-                "unmetered_kw": "kW å holde ledig for ting på kursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
+                "unmetered_kw": "kW å holde ledig for ting på sikringskursen som PowerPlan verken styrer eller måler — en fryser, lyset. Vanligvis 0."
               }
             }
           }
         },
         "review": {
-          "title": "Før denne kursen legges til",
-          "description": "**{name}** er sikret med {fuse_a} A på {phases} fase(r): {members} vil aldri overstige den sammen.\n\nUndermåler: {sub_meter}. Umålt last: {unmetered_w} W."
+          "title": "Før denne sikringskursen legges til",
+          "description": "**{name}** er sikret med {fuse_a} A på {phases} fase(r): {members} vil aldri overstige den sammen.\n\nUndermåler: {sub_meter}. Umålt forbruk: {unmetered_w} W."
         }
       },
       "error": {
-        "no_name": "Gi kursen et navn.",
+        "no_name": "Gi sikringskursen et navn.",
         "fuse_out_of_range": "En kurssikring er mellom 1 A og 200 A. Sjekk merkestrømmen som står på automatsikringen.",
-        "no_members": "Velg minst én last; en kurs uten noe bak seg begrenser ingenting.",
-        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+        "no_members": "Velg minst ett apparat; en sikringskurs uten noe bak seg begrenser ingenting.",
+        "unknown_member": "Ett av apparatene er ikke lenger i dette hjemmet."
       },
       "abort": {
-        "no_loads": "Legg til en last først: en kurs er lastene bak en sikring.",
-        "reconfigure_successful": "Kursen ble oppdatert."
+        "no_loads": "Legg til et apparat først: en sikringskurs er apparatene bak en sikring.",
+        "reconfigure_successful": "Sikringskursen ble oppdatert."
       }
     },
     "group": {
@@ -2699,28 +2699,28 @@
       "step": {
         "user": {
           "title": "Hvilke apparater skal bytte på?",
-          "description": "Laster som deler en felles ramme og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den til den kaldeste først, og roterer slik at ingen blir hengende.",
+          "description": "Apparater som deler effekt og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den kaldeste først og roterer slik at ingen blir hengende.",
           "data": {
             "name": "Navn",
-            "members": "Laster i denne gruppen"
+            "members": "Apparater i denne gruppen"
           },
           "data_description": {
             "name": "Hva gruppen heter: gulvsløyfene, soveromsradiatorene.",
-            "members": "Lastene som deler dette taket og tar tur på det."
+            "members": "Apparatene som deler effekt og tar tur på den."
           },
           "sections": {
             "advanced": {
               "name": "Avansert",
-              "description": "Når rasjonering starter, og hvor lenge en last venter før den hopper i køen.",
+              "description": "Når delingen starter, og hvor lenge et apparat venter før det går først.",
               "data": {
-                "from_stage": "Stigetrinn",
-                "ceiling_fraction": "Takandel",
+                "from_stage": "Fra styringsnivå",
+                "ceiling_fraction": "Andel av målet denne timen",
                 "starve_seconds": "Sultegrense"
               },
               "data_description": {
-                "from_stage": "Stigens trinn der gruppen begynner å rasjonere.",
-                "ceiling_fraction": "Vinduets forventede forbruk, som prosent av taket, der gruppen rasjonerer selv før det trinnet.",
-                "starve_seconds": "Hvor lenge en last kan holdes tilbake før den hopper fremst i køen."
+                "from_stage": "Styringsnivået der gruppen begynner å dele.",
+                "ceiling_fraction": "Timens forventede forbruk, i prosent av målet, der gruppen deler uansett.",
+                "starve_seconds": "Hvor lenge et apparat kan vente før det går fremst i køen."
               }
             }
           }
@@ -2730,47 +2730,47 @@
           "description": "De samme spørsmålene, forhåndsutfylt med det gruppen har nå.",
           "data": {
             "name": "Navn",
-            "members": "Laster i denne gruppen"
+            "members": "Apparater i denne gruppen"
           },
           "data_description": {
             "name": "Hva gruppen heter: gulvsløyfene, soveromsradiatorene.",
-            "members": "Lastene som deler dette taket og tar tur på det."
+            "members": "Apparatene som deler effekt og tar tur på den."
           },
           "sections": {
             "advanced": {
               "name": "Avansert",
-              "description": "Når rasjonering starter, og hvor lenge en last venter før den hopper i køen.",
+              "description": "Når delingen starter, og hvor lenge et apparat venter før det går først.",
               "data": {
-                "from_stage": "Stigetrinn",
-                "ceiling_fraction": "Takandel",
+                "from_stage": "Fra styringsnivå",
+                "ceiling_fraction": "Andel av målet denne timen",
                 "starve_seconds": "Sultegrense"
               },
               "data_description": {
-                "from_stage": "Stigens trinn der gruppen begynner å rasjonere.",
-                "ceiling_fraction": "Vinduets forventede forbruk, som prosent av taket, der gruppen rasjonerer selv før det trinnet.",
-                "starve_seconds": "Hvor lenge en last kan holdes tilbake før den hopper fremst i køen."
+                "from_stage": "Styringsnivået der gruppen begynner å dele.",
+                "ceiling_fraction": "Timens forventede forbruk, i prosent av målet, der gruppen deler uansett.",
+                "starve_seconds": "Hvor lenge et apparat kan vente før det går fremst i køen."
               }
             }
           }
         },
         "review": {
           "title": "Før denne gruppen legges til",
-          "description": "**{name}** deler {max_concurrent_kw} kW mellom {members} når timen blir trang: den kaldeste får det først.\n\nRasjonering starter ved stigetrinn {from_stage} eller {ceiling_fraction}% av taket; en last som holdes tilbake mer enn {starve_min} minutter hopper i køen.",
+          "description": "**{name}** deler {max_concurrent_kw} kW mellom {members} når timen blir trang: den kaldeste får det først.\n\nDelingen starter ved styringsnivå {from_stage} eller ved {ceiling_fraction}% av målet denne timen; et apparat som venter mer enn {starve_min} minutter går først.",
           "data": {
-            "max_concurrent_kw": "Delt tak"
+            "max_concurrent_kw": "Delt effekt"
           },
           "data_description": {
-            "max_concurrent_kw": "Hvor mye disse lastene samlet kan trekke når de rasjoneres. Standard er de to største lastenes egen effekt summert."
+            "max_concurrent_kw": "Hvor mye disse apparatene samlet kan trekke mens de deler. Standard er de to største apparatenes effekt summert."
           }
         }
       },
       "error": {
         "no_name": "Gi gruppen et navn.",
-        "no_members": "Velg minst én last; en gruppe uten noe i seg deler ingenting.",
-        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+        "no_members": "Velg minst ett apparat; en gruppe uten noe i seg deler ingenting.",
+        "unknown_member": "Ett av apparatene er ikke lenger i dette hjemmet."
       },
       "abort": {
-        "no_loads": "Legg til en last først: en gruppe er laster som deler et tak.",
+        "no_loads": "Legg til et apparat først: en gruppe er apparater som deler effekt.",
         "reconfigure_successful": "Gruppen ble oppdatert."
       }
     },
@@ -2783,14 +2783,14 @@
       "step": {
         "user": {
           "title": "Hvilke varmekilder deler et rom?",
-          "description": "To eller flere laster som kan varme det samme rommet — en varmepumpe og en resistiv gulvflate, en varmepumpe og en kjel. PowerPlan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.",
+          "description": "To eller flere apparater som varmer det samme rommet — en varmepumpe og et varmegulv, en varmepumpe og en kjel. PowerPlan kjører den som varmer billigst, og foretrekker varmepumpen når målet denne timen er truet.",
           "data": {
             "name": "Navn",
-            "members": "Laster i denne sonen"
+            "members": "Apparater i dette rommet"
           },
           "data_description": {
-            "name": "Hva sonen heter: stuen, badet.",
-            "members": "Varmelastene som kan varme dette rommet. Deres egen bærer og virkningsgrad leses fra hvordan hver er konfigurert — en varmepumpes egen COP-kurve, strøm for alt annet."
+            "name": "Hva rommet heter: stuen, badet.",
+            "members": "Varmeapparatene i dette rommet; varmekilde og virkningsgrad hentes fra hvert apparats eget oppsett."
           },
           "sections": {
             "advanced": {
@@ -2806,23 +2806,23 @@
               "data_description": {
                 "min_cop": "Koble aldri inn en varmepumpe under denne COP-en — en pumpe som såvidt slår en resistiv kilde er ikke noe å overlate huset til.",
                 "switch_hysteresis": "Hvor mye billigere alternativet må være, som prosent, før et bytte er verdt det.",
-                "min_dwell_min": "Hvor lenge kilden som kjører beholder sonen før en annen kan overta.",
+                "min_dwell_min": "Hvor lenge varmekilden som går beholder rommet før en annen kan overta.",
                 "switch_confirm_s": "Hvor lenge en billigere kilde må forbli billigere før byttet gjennomføres.",
-                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når taket er truet, lagt til prisen per kWh."
+                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når målet denne timen er truet, lagt til prisen."
               }
             }
           }
         },
         "reconfigure": {
           "title": "Hvilke varmekilder deler dette rommet?",
-          "description": "De samme spørsmålene, forhåndsutfylt med det sonen har nå.",
+          "description": "De samme spørsmålene, forhåndsutfylt med det rommet har nå.",
           "data": {
             "name": "Navn",
-            "members": "Laster i denne sonen"
+            "members": "Apparater i dette rommet"
           },
           "data_description": {
-            "name": "Hva sonen heter: stuen, badet.",
-            "members": "Varmelastene som kan varme dette rommet. Deres egen bærer og virkningsgrad leses fra hvordan hver er konfigurert — en varmepumpes egen COP-kurve, strøm for alt annet."
+            "name": "Hva rommet heter: stuen, badet.",
+            "members": "Varmeapparatene i dette rommet; varmekilde og virkningsgrad hentes fra hvert apparats eget oppsett."
           },
           "sections": {
             "advanced": {
@@ -2838,9 +2838,9 @@
               "data_description": {
                 "min_cop": "Koble aldri inn en varmepumpe under denne COP-en — en pumpe som såvidt slår en resistiv kilde er ikke noe å overlate huset til.",
                 "switch_hysteresis": "Hvor mye billigere alternativet må være, som prosent, før et bytte er verdt det.",
-                "min_dwell_min": "Hvor lenge kilden som kjører beholder sonen før en annen kan overta.",
+                "min_dwell_min": "Hvor lenge varmekilden som går beholder rommet før en annen kan overta.",
                 "switch_confirm_s": "Hvor lenge en billigere kilde må forbli billigere før byttet gjennomføres.",
-                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når taket er truet, lagt til prisen per kWh."
+                "capacity_penalty": "Hva en kWh elektrisk varme koster ekstra når målet denne timen er truet, lagt til prisen."
               }
             }
           }
@@ -2852,22 +2852,22 @@
             "never_substitute": "Aldri erstatt"
           },
           "data_description": {
-            "never_substitute": "Laster som alltid beholder sin egen kilde."
+            "never_substitute": "Apparater som alltid beholder sin egen varmekilde."
           }
         },
         "review": {
-          "title": "Før denne sonen legges til",
-          "description": "**{name}** deler {members}: PowerPlan kjører den som er billigst per kWh varme, og foretrekker varmepumpen når taket er truet.\n\nAldri erstattet: {never_substitute}. En varmepumpe under COP {min_cop} kobles aldri inn."
+          "title": "Før dette rommet legges til",
+          "description": "**{name}** deler {members}: PowerPlan kjører den som varmer billigst, og foretrekker varmepumpen når målet denne timen er truet.\n\nAldri byttet ut: {never_substitute}. En varmepumpe under virkningsgrad (COP) {min_cop} brukes aldri."
         }
       },
       "error": {
-        "no_name": "Gi sonen et navn.",
-        "not_enough_members": "Velg minst to laster; en sone trenger noe å erstatte med.",
-        "unknown_member": "En av lastene er ikke lenger på dette anlegget."
+        "no_name": "Gi rommet et navn.",
+        "not_enough_members": "Velg minst to apparater; et rom trenger noe å bytte til.",
+        "unknown_member": "Ett av apparatene er ikke lenger i dette hjemmet."
       },
       "abort": {
-        "not_enough_loads": "Legg til minst to laster først: en sone trenger to laster som kan varme samme rom.",
-        "reconfigure_successful": "Sonen ble oppdatert."
+        "not_enough_loads": "Legg til minst to apparater først: et rom trenger to apparater som varmer samme sted.",
+        "reconfigure_successful": "Rommet ble oppdatert."
       }
     }
   }

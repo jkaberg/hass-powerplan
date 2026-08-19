@@ -43,6 +43,16 @@ def test_10_the_catalogue_is_d8s_table() -> None:
     assert repairs.catalogue_key("meter_stale") == "meter_stale"
 
 
+async def test_10_every_issue_links_its_troubleshooting_section(hass: HomeAssistant) -> None:
+    """MSG-3, §5.9: `learn_more_url` is the catalogue row's anchor on the troubleshooting page."""
+    repairs.async_report(hass, "entry", "load_error_ev", active=True, placeholders={"load": "EV"})
+    issue = _issue(hass, "entry", "load_error_ev")
+    assert issue is not None
+    assert issue.learn_more_url == (
+        "https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md#load_error"
+    )
+
+
 async def test_10b_a_stale_meter_raises_after_ten_minutes_and_clears_on_a_reading(
     hass: HomeAssistant,
     site: MockConfigEntry,

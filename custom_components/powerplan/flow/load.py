@@ -182,11 +182,14 @@ _ROLE_FILTERS: dict[Role, list[EntityWithDeviceFilterSelectorConfig]] = {
 #: on its own device measuring a heat pump: always offered, optional.
 _ALWAYS_OFFERED: tuple[Role, ...] = (Role.POWER, Role.ENERGY)
 #: A type's own questionnaire can ask for an optional entity the match step
-#: never sees - the heat pump's outdoor/outlet sensors (D4 §5.14), read off
+#: never sees - the heat pump's outdoor/outlet sensors (D4 §5.14), the car's SoC
+#: on the car's own device rather than the charger's (D4 §5.11), read off
 #: whatever device they happen to live on, unlike a match-step role's own
 #: device. `(question key, the role it becomes)`, by type.
 _EXTRA_ROLE_ANSWERS: dict[str, tuple[tuple[str, Role], ...]] = {
     "heat_pump": (("outdoor_entity", Role.OUTDOOR_TEMP), ("outlet_entity", Role.OUTLET_TEMP)),
+    "ev": (("soc_entity", Role.SOC),),
+    "battery": (("soc_entity", Role.SOC),),
 }
 
 

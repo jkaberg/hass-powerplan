@@ -13,9 +13,12 @@ the rendered flow rather than as a runtime warning (D8 §5.15 item map, §0):
   (`^[a-z_]+(:<digits>)?$`), no entity id - and reads in the language it claims, with
   its numbers formatted for it (R1, R2).
 
-The glossary half of §9 18 (no design word on a screen, and the same scan over
-`notifications.py`) is WP U.3's; the core half (`render_plain_language` gone,
-core returns a `TariffSummary`) is `tests/core/tariffs/test_presets.py`.
+* **18d**  no screen uses the design's own words (§5.15 rule 7): not a
+  translation string, not a rendered flow step, not `notifications.py`'s two
+  dictionaries - the household's glossary (HLD §2) instead.
+
+The core half (`render_plain_language` gone, core returns a `TariffSummary`) is
+`tests/core/tariffs/test_presets.py`.
 """
 
 from __future__ import annotations
@@ -55,6 +58,7 @@ from custom_components.powerplan.flow import steps as site_steps
 from custom_components.powerplan.flow.load import explanation_text, option_key
 from custom_components.powerplan.flow.text import Text, preset_options, target_options, tariff_table
 from custom_components.powerplan.load_entities import CONTROL_OPTIONS, PLAN_STATES, PRIORITY_LEVELS
+from custom_components.powerplan.notifications import TEXTS as NOTIFICATION_TEXTS
 from custom_components.powerplan.providers.prices.formats import registry as formats
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.select import PRESENCE_OPTIONS, RISK_OPTIONS
@@ -157,6 +161,27 @@ ENGLISH = frozenset(
         "outlet", "door", "battery", "blocked", "maximum", "boost", "thermostat",
     }
 )  # fmt: skip
+#: The design's own words (HLD §2's vocabulary and the UX review's §3 "now" column,
+#: metaphors included), which no screen shows: the household's glossary replaces
+#: them (D8 §5.15 rule 7). "Time zone" and "tidssone" are not a zone; "sats" is
+#: VAT's rate, "satse" the bet the review removed.
+DESIGN_WORDS = {
+    "en": re.compile(
+        r"\b(?:sites?|loads?|(?<!time )zones?|observ\w*|shed(?:s|ding)?|baselines?|"
+        r"carriers?|modifiers?|safe mode|force mode|boost\w*|delegated|ceilings?|"
+        r"allowance|stages?|engine|counterfactual|forced?)\b",
+        re.IGNORECASE,
+    ),
+    "nb": re.compile(
+        r"\b(?:anlegg\w*|nettilknytningspunkt\w*|hub|last|laster|lasten|lastene|lastens|"
+        r"kurs|kursen|kurser|sone|sonen|soner|sonene|kapasitetstrinn\w*|tak|taket|"
+        r"forsvar\w*|kutt\w*|utkobl\w*|tvang\w*|tvungen|tvunget|boost\w*|overstyr\w*|"
+        r"observ\w*|sikker modus|grunnlinj\w*|grunnlast\w*|bærer\w*|modifikator\w*|"
+        r"satse|sats på|slapp alt fritt|taus|død|motoren|tikk\w*|kontrafakt\w*|"
+        r"verdt en avbrytelse)\b",
+        re.IGNORECASE,
+    ),
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -428,6 +453,13 @@ def assert_in_language(text: str, language: str, names: set[str], where: str) ->
         assert not COMMA_DECIMAL.search(plain), f"{where}: comma decimal in en — {text!r}"
 
 
+def assert_household_words(text: str, language: str, names: set[str], where: str) -> None:
+    """No design word on a screen; the household's glossary instead (§5.15 rule 7)."""
+    plain = PLACEHOLDER.sub(" ", _strip(text, names))
+    found = sorted({match.lower() for match in DESIGN_WORDS[language].findall(plain)})
+    assert not found, f"{where}: design words {found} — {text!r}"
+
+
 def assert_data_only(value: str, names: set[str], where: str) -> None:
     """Assert a placeholder carries data: never an internal key, never an entity id (R2)."""
     if value in names:
@@ -473,6 +505,7 @@ def check_screen(result: dict[str, Any], language: str, names: set[str], section
             assert_data_only(label, names, f"{where} option {value}")
             shown.append(label)
     assert_in_language("\n".join(shown), language, names, where)
+    assert_household_words("\n".join(shown), language, names, where)
 
 
 async def _walk(
@@ -726,17 +759,17 @@ async def test_18c_every_subentry_step_renders_data_only_in_the_language(
         await hass.async_block_till_done()
         ids[load_id] = next(s.subentry_id for s in site.subentries.values() if s.title == load_id)
 
-    for kind, members in (
-        (SUBENTRY_CIRCUIT, ["ev", "sauna"]),
-        (SUBENTRY_GROUP, ["loop_bath_1", "loop_living"]),
-        (SUBENTRY_ZONE, ["loop_living", "heat_pump"]),
+    for kind, name, members in (
+        (SUBENTRY_CIRCUIT, "Garasjen", ["ev", "sauna"]),
+        (SUBENTRY_GROUP, "Badegulvene", ["loop_bath_1", "loop_living"]),
+        (SUBENTRY_ZONE, "Stuen", ["loop_living", "heat_pump"]),
     ):
         result = await _subentry(
             hass,
             site.entry_id,
             kind,
             language=language,
-            answers={"user": {"name": f"Samling {kind}", "members": [ids[m] for m in members]}},
+            answers={"user": {"name": name, "members": [ids[m] for m in members]}},
         )
         assert result["type"] is FlowResultType.CREATE_ENTRY, result
         await hass.async_block_till_done()
@@ -838,6 +871,52 @@ def test_18c_the_target_options_are_assembled_in_the_language() -> None:
     assert nb[-1] == {"value": "step_5", "label": "Trinn 6 · Over 20 kW · 1 200 kr/mnd"}  # noqa: RUF001 - nb groups thousands with a no-break space
     en = target_options(text_for("en"), version)
     assert en[-1]["label"] == "Step 6 · Above 20 kW · 1,200 kr/month"
+
+
+# --------------------------------------------------------------------------- #
+# 18d - the household's words, never the design's
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_18d_no_string_uses_a_design_word(language: str) -> None:
+    """Rule 7 over every string: flows, entities, repairs, actions and errors (U.3)."""
+    for path, value in STRINGS[language].items():
+        assert_household_words(value, language, set(), path)
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_18d_no_notification_uses_a_design_word(language: str) -> None:
+    """The same scan over `notifications.py`'s dictionaries (NEW-5), and the brand spelled."""
+    texts = NOTIFICATION_TEXTS[language]
+    assert texts.keys() == NOTIFICATION_TEXTS["en"].keys()
+    for category, (title, body) in texts.items():
+        for part, text in (("title", title), ("body", body)):
+            assert_household_words(text, language, set(), f"notifications.{category}.{part}")
+            assert "powerplan" not in text, f"notifications.{category}.{part}: {text!r}"
+        if language == "nb":
+            shown = PLACEHOLDER.sub(" ", f"{title}\n{body}")
+            assert_in_language(shown, language, set(), f"notifications.{category}")
+
+
+def test_18d_the_design_words_are_caught() -> None:
+    """The scan itself: each glossary row's old word is found, its household word is not."""
+    for language, caught, allowed in (
+        (
+            "en",
+            "The site sheds a load in safe mode",
+            "The home pauses an appliance in fallback mode",
+        ),
+        (
+            "nb",
+            "Anlegget kutter en last i sikker modus",
+            "Hjemmet setter et apparat på pause i nødmodus",
+        ),
+        ("en", "The zone's carrier and modifier", "The IANA time zone"),
+        ("nb", "Sonens bærer, taket og kursen", "Tidssonen, sikringskursen og satsen"),
+    ):
+        assert DESIGN_WORDS[language].search(caught), caught
+        assert not DESIGN_WORDS[language].search(allowed), allowed
 
 
 #: Steps that are not a question by design: the reviews (INV-67) and the load's

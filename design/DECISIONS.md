@@ -1897,3 +1897,13 @@ Every series is average kW: a slot's planned kWh over its length, the baseline l
 
 esbuild splits: `powerplan.js` (~12 kB) registers the elements on every page, and ECharts (~565 kB) is a chunk the timeline imports on first draw. `frontend/dist` is served at `/powerplan_frontend`, the module's cache key is its SHA-256 prefix, and chunks carry their own hashes. The module URL is added only when `frontend` is loaded, or a headless HA fails setup. HA loads an extra module on every page for every user. Affects D12 §3, §5.5, §8.
 **Rejected:** one file - 565 kB on every page load.
+
+### D-0449 · The glossary scan is a word list per language, over every rendered screen
+
+`DESIGN_WORDS` holds one pattern per language with HLD §2's design terms and their Norwegian counterparts, skipping placeholders, inline code and the household's own names, with two written exceptions ("tidssone", "sats"). Scanning the rendered step also catches labels Python assembles. Affects D8 §5.15 rule 7.
+**Rejected:** an allow-list - can't be written for free text.
+
+### D-0450 · Every "observe" label reads trial mode
+
+The `observe` strategy option and `plan_status`'s `observing` read Prøvemodus / Trial mode, as the control select does (D-0436). One concept, one label (HLD §2).
+**Rejected:** "Ser bare på" on the status - the select sets what the status reports.

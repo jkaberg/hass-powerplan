@@ -77,20 +77,20 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
         "peak_warning": (
             "Peak ahead",
             (
-                "The window from {window_start} is expected to reach {expected_kwh} kWh "
-                "against a ceiling of {ceiling_kwh} kWh."
+                "The hour from {window_start} is expected to reach {expected_kwh} kWh "
+                "against a target of {ceiling_kwh} kWh."
             ),
         ),
         "peak_uncontrolled": (
             "Something big is running",
             (
-                "The current window is heading over its ceiling and most of the load is "
-                "nothing powerplan controls — an oven, a sauna?"
+                "This hour is heading over its target, and most of the use is something "
+                "PowerPlan does not control — an oven, a sauna?"
             ),
         ),
         "comfort_violation": (
             "Below comfort",
-            "{load} is below its comfort floor and is being served first.",
+            "{load} is below its lowest temperature and goes first.",
         ),
         "deadline_at_risk": (
             "Deadline at risk",
@@ -113,13 +113,13 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "{load} cannot complete its legionella cycle in time.",
         ),
         "safe_mode": (
-            "powerplan is in safe mode",
+            "PowerPlan is in fallback mode",
             (
-                "The engine failed {failures} times in a row. Every load has been released; "
-                "the site is observing only until Home Assistant restarts."
+                "PowerPlan failed {failures} times in a row and has stopped steering; every "
+                "appliance is left as it was. Restart Home Assistant."
             ),
         ),
-        "force_expired": ("Boost ended", "The boost on {load} has expired."),
+        "force_expired": ("Run now ended", "Run now on {load} is over."),
         "prices_daily_summary": (
             "Tomorrow's prices",
             "Tomorrow's prices are in: {min}–{max} {currency}/kWh.",
@@ -129,27 +129,27 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
         "peak_warning": (
             "Effekttopp i vente",
             (
-                "Timen fra {window_start} ventes å nå {expected_kwh} kWh mot et tak på "
+                "Timen fra {window_start} ventes å nå {expected_kwh} kWh mot et mål på "
                 "{ceiling_kwh} kWh."
             ),
         ),
         "peak_uncontrolled": (
             "Noe stort er i gang",
             (
-                "Denne timen er på vei over taket, og det meste av lasten er noe powerplan "
+                "Denne timen er på vei over målet, og det meste av forbruket er noe PowerPlan "
                 "ikke styrer — en ovn, en badstue?"
             ),
         ),
         "comfort_violation": (
             "Under komfort",
-            "{load} er under komfortgulvet og blir betjent først.",
+            "{load} er under laveste temperatur og går først.",
         ),
         "deadline_at_risk": (
             "Fristen er i fare",
             "{load} når kanskje ikke målet i tide.",
         ),
         "level_up": (
-            "Kapasitetstrinnet er i ferd med å stige",
+            "Effekttrinnet er i ferd med å stige",
             "Denne måneden er på vei fra {from} til {to}.",
         ),
         "device_unhealthy": (
@@ -165,13 +165,13 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "{load} rekker ikke legionellasyklusen i tide.",
         ),
         "safe_mode": (
-            "powerplan er i sikker modus",
+            "PowerPlan kjører i nødmodus",
             (
-                "Motoren feilet {failures} ganger på rad. Alle laster er sluppet; anlegget bare "
-                "observerer til Home Assistant starter på nytt."
+                "PowerPlan feilet {failures} ganger på rad og har sluttet å styre; alle apparater "
+                "er latt være som de var. Start Home Assistant på nytt."
             ),
         ),
-        "force_expired": ("Boost avsluttet", "Boosten på {load} har utløpt."),
+        "force_expired": ("Kjør nå er over", "Kjør nå for {load} er over."),
         "prices_daily_summary": (
             "Morgendagens priser",
             "Morgendagens priser er klare: {min}–{max} {currency}/kWh.",
