@@ -3,24 +3,28 @@
 Four questions and a battery size, because there is no car database: the number
 is on the spec sheet and asking is simpler and always right (D4 §11).
 
-What this type owns, and what every line of it came out of the reference house:
+What this type owns, and what every line of it came out of:
 
 * **connected** is a status in the charger's connected set, and `offline` is not
   `disconnected` - a link loss is never "somebody unplugged the car", and folding
   the two together would have the controller go quiet at exactly the moment it
   lost sight of a 32 A load;
-* the **session-done latch**, because `completed` is not a connected status: one
-  night the car finished at 01:23, the allocator granted 0 W without
+* the **session-done latch**, because `completed` is not a connected status: on
+  the ancestor controller a car finished at 01:23, the allocator granted 0 W without
   authorising a stop, and an unauthorised zero was read as a hold - switch on,
   16 A standing, until morning;
 * **min SoC now**: below the floor the car charges as fast as the capacity axis
   allows, regardless of price, and the price stops having a vote (INV-25 is about
   a zero grant; this is about the plan not getting one);
-* the deadline, from the weekday departure table.
+* the deadline, from the weekday departure table;
+* **no car, 0 A**: a charger with nothing on the cable is parked like a finished
+  session, so the next car to plug in meets a stopped charger and waits for
+  the plan instead of drawing whatever limit the last session left standing.
 
 The 6 A cliff, the ramp and the write suppression are the `MODULATE` kind's
 (INV-28); the stop that only the allocator may authorise is D6's (INV-39). The
-one stop this type takes on itself is parking a session the *car* ended.
+stops this type takes on itself are parking a session the *car* ended and
+parking a charger with no car on it.
 """
 
 import logging
@@ -588,9 +592,12 @@ class Ev:
             stage=0 if grant is None else grant.stage,
             shed=False if grant is None else grant.shed,
             stop_ok=False if grant is None else grant.stop_ok,
-            # The one stop the allocator does not have to authorise: a session
-            # the car itself ended (§5.11).
-            park=state.session_done is not None,
+            # The stops the allocator does not have to authorise: a session the
+            # car itself ended, and a charger with no car on it, which has no
+            # session to drop and must not offer a stale limit to the next car
+            # before the plan has had its say (§5.11, D-0420). A link loss is
+            # not "no car" and parks nothing.
+            park=state.session_done is not None or self.connected(ctx) is False,
             blunt=False if grant is None else grant.blunt,
             session_active=session_active,
             enabled=enabled,

@@ -1,0 +1,1330 @@
+# serializer version: 1
+# name: test_01_golden_on_a_nordic_detached_site
+  dict({
+    'title': 'Home',
+    'views': list([
+      dict({
+        'dense_section_placement': True,
+        'icon': 'mdi:home-lightning-bolt',
+        'max_columns': 3,
+        'path': 'overview',
+        'sections': list([
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Capacity now',
+                'type': 'heading',
+              }),
+              dict({
+                'entities': dict({
+                  'allowance': 'sensor.home_allowance',
+                  'ceiling': 'sensor.home_ceiling',
+                  'next_peak_warning': 'sensor.home_next_peak_warning',
+                  'peak_warning': 'binary_sensor.home_peak_warning',
+                  'stage': 'sensor.home_stage',
+                  'window_projected': 'sensor.home_window_projected',
+                  'window_used': 'sensor.home_window_used',
+                }),
+                'entry_id': 'site',
+                'labels': dict({
+                  'allowance': 'Fuse allows',
+                  'baseline': 'Other usage',
+                  'ceiling': 'Capacity limit',
+                  'estimated': 'Estimated prices',
+                  'expected': 'Expected',
+                  'min_left': '{minutes} min left',
+                  'no_plan': 'No plan yet — waiting for prices.',
+                  'now': 'Now',
+                  'of': 'of',
+                  'peak_at': 'Peak expected {time}',
+                  'power': 'Power',
+                  'price': 'Price',
+                  'used': 'Used',
+                }),
+                'type': 'custom:powerplan-window-card',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Controls',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'switch.home_active',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'select.home_presence',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'select.home_target',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Next 24 hours',
+                'type': 'heading',
+              }),
+              dict({
+                'currency': 'NOK',
+                'entities': dict({
+                  'plan': 'sensor.home_plan',
+                  'price_forecast': 'sensor.home_price_forecast',
+                }),
+                'entry_id': 'site',
+                'hours': 24,
+                'labels': dict({
+                  'allowance': 'Fuse allows',
+                  'baseline': 'Other usage',
+                  'ceiling': 'Capacity limit',
+                  'estimated': 'Estimated prices',
+                  'expected': 'Expected',
+                  'min_left': '{minutes} min left',
+                  'no_plan': 'No plan yet — waiting for prices.',
+                  'now': 'Now',
+                  'of': 'of',
+                  'peak_at': 'Peak expected {time}',
+                  'power': 'Power',
+                  'price': 'Price',
+                  'used': 'Used',
+                }),
+                'loads': list([
+                  dict({
+                    'id': 'ev',
+                    'name': 'Ev',
+                  }),
+                  dict({
+                    'id': 'loop_bath_1',
+                    'name': 'Loop Bath 1',
+                  }),
+                  dict({
+                    'id': 'loop_bath_2',
+                    'name': 'Loop Bath 2',
+                  }),
+                  dict({
+                    'id': 'loop_hall',
+                    'name': 'Loop Hall',
+                  }),
+                  dict({
+                    'id': 'loop_kitchen',
+                    'name': 'Loop Kitchen',
+                  }),
+                  dict({
+                    'id': 'loop_living',
+                    'name': 'Loop Living',
+                  }),
+                  dict({
+                    'id': 'tank',
+                    'name': 'Tank',
+                  }),
+                  dict({
+                    'id': 'heat_pump',
+                    'name': 'Heat Pump',
+                  }),
+                  dict({
+                    'id': 'radiator_bed_1',
+                    'name': 'Radiator Bed 1',
+                  }),
+                  dict({
+                    'id': 'radiator_bed_2',
+                    'name': 'Radiator Bed 2',
+                  }),
+                  dict({
+                    'id': 'dishwasher',
+                    'name': 'Dishwasher',
+                  }),
+                  dict({
+                    'id': 'sauna',
+                    'name': 'Sauna',
+                  }),
+                ]),
+                'show': list([
+                  'price',
+                  'plan',
+                  'ceiling',
+                  'baseline',
+                ]),
+                'type': 'custom:powerplan-timeline-card',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Coming up',
+                'type': 'heading',
+              }),
+              dict({
+                'entities': list([
+                  'calendar.home_plan_calendar',
+                ]),
+                'initial_view': 'listWeek',
+                'type': 'calendar',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'This month',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'sensor.home_cost',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.home_savings',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.home_level',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.home_projected_level',
+                'type': 'tile',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Advice',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'sensor.home_advice',
+                'type': 'tile',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Needs attention',
+                'type': 'heading',
+              }),
+              dict({
+                'hide_empty': True,
+                'type': 'repairs',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+        ]),
+        'title': 'Overview',
+        'type': 'sections',
+      }),
+      dict({
+        'dense_section_placement': True,
+        'icon': 'mdi:calendar-clock',
+        'max_columns': 3,
+        'path': 'plan',
+        'sections': list([
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Next 48 hours',
+                'type': 'heading',
+              }),
+              dict({
+                'currency': 'NOK',
+                'entities': dict({
+                  'plan': 'sensor.home_plan',
+                  'price_forecast': 'sensor.home_price_forecast',
+                }),
+                'entry_id': 'site',
+                'hours': 48,
+                'labels': dict({
+                  'allowance': 'Fuse allows',
+                  'baseline': 'Other usage',
+                  'ceiling': 'Capacity limit',
+                  'estimated': 'Estimated prices',
+                  'expected': 'Expected',
+                  'min_left': '{minutes} min left',
+                  'no_plan': 'No plan yet — waiting for prices.',
+                  'now': 'Now',
+                  'of': 'of',
+                  'peak_at': 'Peak expected {time}',
+                  'power': 'Power',
+                  'price': 'Price',
+                  'used': 'Used',
+                }),
+                'loads': list([
+                  dict({
+                    'id': 'ev',
+                    'name': 'Ev',
+                  }),
+                  dict({
+                    'id': 'loop_bath_1',
+                    'name': 'Loop Bath 1',
+                  }),
+                  dict({
+                    'id': 'loop_bath_2',
+                    'name': 'Loop Bath 2',
+                  }),
+                  dict({
+                    'id': 'loop_hall',
+                    'name': 'Loop Hall',
+                  }),
+                  dict({
+                    'id': 'loop_kitchen',
+                    'name': 'Loop Kitchen',
+                  }),
+                  dict({
+                    'id': 'loop_living',
+                    'name': 'Loop Living',
+                  }),
+                  dict({
+                    'id': 'tank',
+                    'name': 'Tank',
+                  }),
+                  dict({
+                    'id': 'heat_pump',
+                    'name': 'Heat Pump',
+                  }),
+                  dict({
+                    'id': 'radiator_bed_1',
+                    'name': 'Radiator Bed 1',
+                  }),
+                  dict({
+                    'id': 'radiator_bed_2',
+                    'name': 'Radiator Bed 2',
+                  }),
+                  dict({
+                    'id': 'dishwasher',
+                    'name': 'Dishwasher',
+                  }),
+                  dict({
+                    'id': 'sauna',
+                    'name': 'Sauna',
+                  }),
+                ]),
+                'show': list([
+                  'price',
+                  'plan',
+                  'ceiling',
+                  'baseline',
+                ]),
+                'type': 'custom:powerplan-timeline-card',
+              }),
+            ]),
+            'column_span': 3,
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Price now',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'sensor.home_price',
+                'features': list([
+                  dict({
+                    'hours_to_show': 24,
+                    'type': 'trend-graph',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'binary_sensor.home_prices_tomorrow',
+                'type': 'tile',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Next run',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'sensor.ev_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_1_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_2_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_hall_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_kitchen_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_living_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.tank_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.heat_pump_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_1_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_2_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.dishwasher_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.sauna_plan_status',
+                'type': 'tile',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Coming up',
+                'type': 'heading',
+              }),
+              dict({
+                'entities': list([
+                  'calendar.home_plan_calendar',
+                ]),
+                'initial_view': 'listWeek',
+                'type': 'calendar',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+        ]),
+        'title': 'Plan',
+        'type': 'sections',
+      }),
+      dict({
+        'dense_section_placement': True,
+        'icon': 'mdi:devices',
+        'max_columns': 3,
+        'path': 'loads',
+        'sections': list([
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Ev',
+                'icon': 'mdi:ev-station',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.ev_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.ev_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.ev_charge_target',
+                'features': list([
+                  dict({
+                    'style': 'slider',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.ev_charge_min',
+                'features': list([
+                  dict({
+                    'style': 'slider',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entities': list([
+                  'time.ev_ready_by',
+                ]),
+                'type': 'entities',
+              }),
+              dict({
+                'entity': 'sensor.ev_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.ev_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Loop Bath 1',
+                'icon': 'mdi:heating-coil',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.loop_bath_1_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_1_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.loop_bath_1_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.loop_bath_1_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_1_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_1_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Loop Bath 2',
+                'icon': 'mdi:heating-coil',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.loop_bath_2_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_2_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.loop_bath_2_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.loop_bath_2_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_2_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.loop_bath_2_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Loop Hall',
+                'icon': 'mdi:heating-coil',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.loop_hall_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_hall_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.loop_hall_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.loop_hall_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_hall_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.loop_hall_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Loop Kitchen',
+                'icon': 'mdi:heating-coil',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.loop_kitchen_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_kitchen_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.loop_kitchen_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.loop_kitchen_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_kitchen_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.loop_kitchen_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Loop Living',
+                'icon': 'mdi:heating-coil',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.loop_living_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_living_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.loop_living_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.loop_living_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.loop_living_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.loop_living_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Tank',
+                'icon': 'mdi:water-boiler',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.tank_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.tank_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.tank_next_legionella',
+                'type': 'tile',
+              }),
+              dict({
+                'entities': list([
+                  'time.tank_ready_by',
+                ]),
+                'type': 'entities',
+              }),
+              dict({
+                'entity': 'sensor.tank_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.tank_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Heat Pump',
+                'icon': 'mdi:heat-pump',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.heat_pump_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.heat_pump_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.heat_pump_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.heat_pump_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.heat_pump_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Radiator Bed 1',
+                'icon': 'mdi:radiator',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.radiator_bed_1_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_1_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.radiator_bed_1_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.radiator_bed_1_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_1_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_1_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Radiator Bed 2',
+                'icon': 'mdi:radiator',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.radiator_bed_2_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_2_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.radiator_bed_2_comfort',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'switch.radiator_bed_2_follow_presence',
+                'features': list([
+                  dict({
+                    'type': 'toggle',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_2_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+              dict({
+                'entity': 'sensor.radiator_bed_2_savings_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Dishwasher',
+                'icon': 'mdi:dishwasher',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.dishwasher_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.dishwasher_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'button.dishwasher_run_now',
+                'features': list([
+                  dict({
+                    'type': 'button',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entities': list([
+                  'time.dishwasher_ready_by',
+                ]),
+                'type': 'entities',
+              }),
+              dict({
+                'entity': 'sensor.dishwasher_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Sauna',
+                'icon': 'mdi:power-socket-eu',
+                'type': 'heading',
+              }),
+              dict({
+                'entity': 'select.sauna_control',
+                'features': list([
+                  dict({
+                    'type': 'select-options',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.sauna_plan_status',
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'number.sauna_hours_per_day',
+                'features': list([
+                  dict({
+                    'style': 'buttons',
+                    'type': 'numeric-input',
+                  }),
+                ]),
+                'type': 'tile',
+              }),
+              dict({
+                'entity': 'sensor.sauna_cost_month',
+                'period': dict({
+                  'calendar': dict({
+                    'period': 'month',
+                  }),
+                }),
+                'stat_type': 'change',
+                'type': 'statistic',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+        ]),
+        'title': 'Appliances',
+        'type': 'sections',
+      }),
+      dict({
+        'dense_section_placement': True,
+        'footer': dict({
+          'card': dict({
+            'collection_key': 'energy_powerplan',
+            'type': 'energy-date-selection',
+          }),
+        }),
+        'icon': 'mdi:chart-bar',
+        'max_columns': 3,
+        'path': 'history',
+        'sections': list([
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Cost and savings',
+                'type': 'heading',
+              }),
+              dict({
+                'chart_type': 'bar',
+                'collection_key': 'energy_powerplan',
+                'energy_date_selection': True,
+                'entities': list([
+                  'sensor.home_cost',
+                  'sensor.home_savings',
+                ]),
+                'stat_types': list([
+                  'change',
+                ]),
+                'type': 'statistics-graph',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Capacity windows',
+                'type': 'heading',
+              }),
+              dict({
+                'chart_type': 'line',
+                'collection_key': 'energy_powerplan',
+                'energy_date_selection': True,
+                'entities': list([
+                  'sensor.home_window_used',
+                  'sensor.home_ceiling',
+                ]),
+                'stat_types': list([
+                  'max',
+                  'mean',
+                ]),
+                'type': 'statistics-graph',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Capacity level',
+                'type': 'heading',
+              }),
+              dict({
+                'chart_type': 'line',
+                'collection_key': 'energy_powerplan',
+                'energy_date_selection': True,
+                'entities': list([
+                  'sensor.home_metric',
+                ]),
+                'stat_types': list([
+                  'max',
+                ]),
+                'type': 'statistics-graph',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Energy per appliance',
+                'type': 'heading',
+              }),
+              dict({
+                'chart_type': 'bar',
+                'collection_key': 'energy_powerplan',
+                'energy_date_selection': True,
+                'entities': list([
+                  'sensor.ev_energy',
+                  'sensor.loop_bath_1_energy',
+                  'sensor.loop_bath_2_energy',
+                  'sensor.loop_hall_energy',
+                  'sensor.loop_kitchen_energy',
+                  'sensor.loop_living_energy',
+                  'sensor.tank_energy',
+                  'sensor.heat_pump_energy',
+                  'sensor.radiator_bed_1_energy',
+                  'sensor.radiator_bed_2_energy',
+                  'sensor.dishwasher_energy',
+                  'sensor.sauna_energy',
+                ]),
+                'stat_types': list([
+                  'change',
+                ]),
+                'type': 'statistics-graph',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'Cost per appliance',
+                'type': 'heading',
+              }),
+              dict({
+                'chart_type': 'bar',
+                'collection_key': 'energy_powerplan',
+                'energy_date_selection': True,
+                'entities': list([
+                  'sensor.ev_cost_month',
+                  'sensor.loop_bath_1_cost_month',
+                  'sensor.loop_bath_2_cost_month',
+                  'sensor.loop_hall_cost_month',
+                  'sensor.loop_kitchen_cost_month',
+                  'sensor.loop_living_cost_month',
+                  'sensor.tank_cost_month',
+                  'sensor.heat_pump_cost_month',
+                  'sensor.radiator_bed_1_cost_month',
+                  'sensor.radiator_bed_2_cost_month',
+                  'sensor.dishwasher_cost_month',
+                  'sensor.sauna_cost_month',
+                ]),
+                'stat_types': list([
+                  'change',
+                ]),
+                'type': 'statistics-graph',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+          dict({
+            'cards': list([
+              dict({
+                'heading': 'What happened',
+                'type': 'heading',
+              }),
+              dict({
+                'hours_to_show': 24,
+                'target': dict({
+                  'entity_id': list([
+                    'event.home_events',
+                  ]),
+                }),
+                'type': 'logbook',
+              }),
+            ]),
+            'type': 'grid',
+          }),
+        ]),
+        'title': 'History',
+        'type': 'sections',
+      }),
+    ]),
+  })
+# ---

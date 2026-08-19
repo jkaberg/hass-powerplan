@@ -416,7 +416,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
         value=lambda s, _r: round(sum(plan.planned_kwh for plan in s.plans.values()), 3),
-        attributes=lambda s, _r: {
+        attributes=lambda s, r: {
             "by_load": {
                 load_id: {
                     "strategy": plan.strategy,
@@ -427,10 +427,23 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                     "covered": plan.covered,
                 }
                 for load_id, plan in sorted(s.plans.items())
-            }
+            },
+            # The timeline's rows (D12 §5.6): rebuilt on adoption only.
+            "window_min": r.build.cfg.window_min,
+            "slots": list(r.plan_slots),
         },
-        unrecorded=frozenset({"by_load"}),
+        unrecorded=frozenset({"by_load", "slots"}),
         digest_gated=True,
+    ),
+    SiteSensorDescription(
+        key="metric",
+        native_unit_of_measurement=UnitOfPower.KILO_WATT,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=2,
+        # The tariff period's billed metric so far (D2 §5.2) - what the
+        # dashboard's history graphs (D12 §5.6).
+        value=lambda s, _r: None if s.tariff is None else round(s.tariff.level.metric_kw, 3),
     ),
     SiteSensorDescription(
         key="production",

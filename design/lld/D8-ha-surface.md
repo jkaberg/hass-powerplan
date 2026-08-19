@@ -192,7 +192,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<site>_price_export`, `_price_<carrier>` | sensor | - | on if configured | |
 | `binary_sensor.<site>_prices_tomorrow` | binary | - | on | |
 | `sensor.<site>_plan` | sensor (planned kWh next 24 h) | diagnostic | on | attr `by_load` summary; **recorder-excluded**. *(D12 §5.6)* attr `slots`: per slot `start`, `end`, `ceiling_kwh`, `baseline_kwh`, `production_kwh` (Phase 7), `planned_kwh` by load - recorder-excluded, changes on adoption only |
-| `calendar.<site>_plan` *(D12)* | calendar | - | on | one event per contiguous active block of each adopted plan: "‹load›: ‹kWh› kWh", with estimated cost and reason; updated on adoption; past blocks drop off |
+| `calendar.<site>_planned_runs` *(D12; key `plan_calendar`, D-0442)* | calendar | - | on | one event per contiguous active block of each adopted plan: "‹load›: ‹kWh› kWh", with the estimated cost; written on adoption and when its first event changes; past blocks drop off |
 | `sensor.<site>_metric` *(D12)* | sensor kW, `state_class: measurement` | - | on | the tariff period's metric so far (D2 §5.2) - what the dashboard's history graphs |
 | `sensor.<site>_production`, `_surplus` | sensor W | - | on if production | |
 | `binary_sensor.<site>_meter_stale`, `_degraded`, `_seam` | binary | diagnostic | stale on, others off | |

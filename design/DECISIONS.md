@@ -1837,3 +1837,63 @@ The load flow asks the type first ("Hva vil du styre?", all eight types). Its de
 
 `select.<load>_control`: Automatisk · Kjør nå · Ikke styr · Prøvemodus · Styres av noe annet. The old "Bare se på" and "Enheten styrer selv" sounded like "Ikke styr". Each state behaves differently: `off` lets go, `observe` plans and calibrates, `delegated` reserves nameplate without writing (D6). Affects D4 §5.
 **Rejected:** dropping per-appliance observe - removes trialling one appliance while the rest are steered.
+
+### D-0437 · The dashboard's version table is read from each release's frontend
+
+`layout.FEATURES`: `distribution` from HA 2026.2.0, `repairs` and view `footer` from 2026.3.0, the "Add dashboard" listing (`window.customStrategies`) from 2026.5.0, read from the frontend build each release pins. At the 2026.3.0 floor only the listing is missing, and `docs/dashboard.md` gives the YAML. Affects D12 §5.5, §9 3.
+**Rejected:** raising the floor to 2026.5 - D12 §2 says the dashboard doesn't move the floor.
+
+### D-0438 · The appliance tiles follow D8 §5.16's entity set
+
+The `loads` view draws `control`, `plan_status`, the type's own knobs, `ready_by`, `granted_power` with a trend where enabled, and the month's cost and savings. "Where the power goes" shows enabled `granted_power` rows and is left out when none is. D12 was drafted against the entity keys device attachment replaced. Affects D12 §5.1.
+**Rejected:** `granted_power` on by default - it's diagnostic and off by design (D-0424).
+
+### D-0439 · Several sites: four views each, on one dashboard
+
+Without `entry_id` the builder builds every loaded site. One site keeps paths `overview`, `plan`, `loads`, `history`; with several, each gets them as `<path>-<entry_id>`, titled "‹site› · ‹view›". `entry_id` narrows to one. The strategy regenerates on every open, so new sites and appliances appear next time. Affects D12 §2, §6, §8.
+**Rejected:** a site picker in each view's header - no built-in card switches a whole view.
+
+### D-0440 · The dashboard headings live in the integration's translations
+
+Headings are `selector.dashboard.options.<key>` in `strings.json` and `translations/*.json`, read with `async_get_translations` in the frontend's language. The layout is built in Python, so it reads words the way `flow/text.py` does, with HA's English fallback. Affects D12 §3.
+**Rejected:** `frontend/src/i18n` - a second place for every word.
+
+### D-0441 · The site plan's slots are the runtime's, rebuilt on adoption
+
+`Runtime.plan_slots` is computed after every `engine.plan`, from the current slot to 48 h ahead: `start`, `end`, `ceiling_kwh` (from `Engine.window_ceiling_kwh`), `baseline_kwh` and `planned_kwh` by load from each plan's own slot kWh. `sensor.<site>_plan` publishes them with `window_min`, recorder-excluded. Only the runtime has curve, plans, tariff and baseline together, and adoption-time rebuilds add nothing to the tick. Affects D12 §5.6, D8 §5.5.
+**Rejected:** a pure core function returning the rows - needs everything only the runtime holds.
+
+### D-0442 · The plan calendar: "Planned runs", with cost and without a reason
+
+`calendar.<site>_planned_runs` has one event per contiguous block with `envelope_w > 0`: summary "‹load›: ‹kWh› kWh", description with kWh and the approximate cost. The planner's reasons are English trail text (INV-50) and never shown raw. It writes on adoption and when its first event changes, not per tick. "Plan" alone would be the same word in both languages. Affects D12 §5.6, D8 §5.5.
+**Rejected:** translated reasons - needs a closed set of reason keys from D5.
+
+### D-0443 · A hand-written dashboard shim before the bundle
+
+`frontend/dist/powerplan.js` starts as plain JavaScript: the `ll-strategy-dashboard-powerplan` element (one `callWS`, a markdown fallback linking troubleshooting), placeholder cards and the `customCards`/`customStrategies` entries, served as one file at `/powerplan_static/powerplan.js?v=<version>` beside the brand icon. It works with built-in cards only; TypeScript and esbuild come next. Affects D12 §3, §5.5.
+**Rejected:** setting up the build now - the next step's module list.
+
+### D-0444 · A charger with no car is parked at 0 A
+
+`Ev.kind_ctx` sets `park` when `connected is False`, as for the session-done latch, so `MODULATE` stops the charger (0 A, switch off where it has one). A link loss parks nothing. Before, a zero grant with no session was a hold, and the next car drew the last session's 16-32 A until a replan, up to 15 minutes on Zaptec. With no car there's no session for INV-28's cliff to protect. Row 3 makes parking every tick free. Affects D4 §5.11.
+**Rejected:** writing 0 A only on the unplug edge - a limit raised by hand while empty would stand until the next car.
+
+### D-0445 · The frontend sources live at the repository root
+
+TypeScript sources, `package.json`, the lockfile and the esbuild config are in `frontend/`; the build writes to `custom_components/powerplan/frontend/dist/`, which is committed. HACS installs the whole integration directory, so sources and `node_modules` don't belong there. Affects D12 §3.
+**Rejected:** `custom_components/powerplan/frontend/src` - every household would carry the sources.
+
+### D-0446 · The cards' words come in their config, from the integration's translations
+
+The timeline and gauge take a `labels` map the builder fills from `selector.dashboard.options.card_*`, plus load names and the currency. Only the strategy's "could not load" text is in the bundle, since it shows when the translation fetch itself failed. The frontend doesn't load an integration's `selector` strings for a card. Affects D12 §4.
+**Rejected:** `hass.localize` in the card - works only for categories the frontend happened to load, and breaks in a hand-made dashboard.
+
+### D-0447 · The timeline draws power, not energy
+
+Every series is average kW: a slot's planned kWh over its length, the baseline likewise, a window's ceiling over the window. A 60-minute ceiling in kWh beside 15-minute bars in kWh misleads fourfold; in kW, a bar above the line is over. Estimated prices are a shaded, labelled band. Affects D12 §5.2.
+**Rejected:** kWh per slot with the ceiling divided down - reads smaller than the number on the bill.
+
+### D-0448 · The bundle is split, served as a directory and keyed by content
+
+esbuild splits: `powerplan.js` (~12 kB) registers the elements on every page, and ECharts (~565 kB) is a chunk the timeline imports on first draw. `frontend/dist` is served at `/powerplan_frontend`, the module's cache key is its SHA-256 prefix, and chunks carry their own hashes. The module URL is added only when `frontend` is loaded, or a headless HA fails setup. HA loads an extra module on every page for every user. Affects D12 §3, §5.5, §8.
+**Rejected:** one file - 565 kB on every page load.

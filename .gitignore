@@ -28,3 +28,7 @@ htmlcov/
 # brand generator (tools/brand/README.md): the unpacked Inter package and the output
 tools/brand/fonts/
 tools/brand/out/
+
+# frontend (D12 §3): the bundle is committed, the tooling is not
+node_modules/
+!custom_components/powerplan/frontend/dist/

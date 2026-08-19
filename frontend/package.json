@@ -1,0 +1,19 @@
+{
+  "name": "powerplan-frontend",
+  "private": true,
+  "description": "PowerPlan's dashboard strategy and its two cards (D12 §3). Built into custom_components/powerplan/frontend/dist/powerplan.js.",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "echarts": "6.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

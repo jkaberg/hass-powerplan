@@ -1926,7 +1926,7 @@ class Engine:
         baseline = inputs.forecast_baseline
 
         for start, end in _coming_windows(meter, cfg.warn_horizon_h):
-            limit = self._window_ceiling_kwh(start, end, inputs.knobs.target)
+            limit = self.window_ceiling_kwh(start, end, inputs.knobs.target)
             if math.isinf(limit) or limit <= 0.0:
                 continue
             hours = (end - start).total_seconds() / 3600.0
@@ -2062,8 +2062,11 @@ class Engine:
         )
         return tuple(warnings), replace(runtime, peak=peak), events, notes
 
-    def _window_ceiling_kwh(self, start: datetime, end: datetime, target: Target) -> float:
-        """Return the flat ceiling of a coming window, in kWh (D5 §5.1's rule)."""
+    def window_ceiling_kwh(self, start: datetime, end: datetime, target: Target) -> float:
+        """Return the flat ceiling of a coming window, in kWh (D5 §5.1's rule); `inf` where none applies.
+
+        Public for the dashboard's timeline (D12 §5.6): the runtime draws it per slot.
+        """
         target_w = self._tariff.target_w_at(start, target)
         if math.isinf(target_w):
             return math.inf

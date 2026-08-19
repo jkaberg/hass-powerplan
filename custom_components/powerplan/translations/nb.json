@@ -836,6 +836,9 @@
       },
       "measured_power": {
         "name": "Målt effekt"
+      },
+      "metric": {
+        "name": "Effektgrunnlag denne perioden"
       }
     },
     "select": {
@@ -998,6 +1001,11 @@
             }
           }
         }
+      }
+    },
+    "calendar": {
+      "plan_calendar": {
+        "name": "Planlagte kjøringer"
       }
     }
   },
@@ -1642,6 +1650,47 @@
       "options": {
         "yes": "Ja, det er min faktura",
         "no": "Nei, velg på nytt"
+      }
+    },
+    "dashboard": {
+      "options": {
+        "view_overview": "Oversikt",
+        "view_plan": "Plan",
+        "view_loads": "Apparater",
+        "view_history": "Historikk",
+        "this_window": "Effekt nå",
+        "controls": "Kontroller",
+        "power": "Hvor strømmen går",
+        "next_24h": "Neste 24 timer",
+        "coming_up": "Kommer",
+        "this_month": "Denne måneden",
+        "advice": "Råd",
+        "solar": "Sol",
+        "attention": "Trenger oppmerksomhet",
+        "next_48h": "Neste 48 timer",
+        "price_now": "Pris nå",
+        "next_run": "Neste kjøring",
+        "cost_savings": "Kostnad og besparelse",
+        "windows": "Effektvinduer",
+        "capacity_level": "Effektnivå",
+        "energy_per_load": "Energi per apparat",
+        "cost_per_load": "Kostnad per apparat",
+        "energy": "Energi-dashbordet ditt",
+        "happened": "Hva som skjedde",
+        "no_loads": "Ingen apparater ennå. Legg til et fra PowerPlan-integrasjonen.",
+        "card_price": "Pris",
+        "card_ceiling": "Effektgrense",
+        "card_baseline": "Annet forbruk",
+        "card_now": "Nå",
+        "card_estimated": "Anslåtte priser",
+        "card_power": "Effekt",
+        "card_min_left": "{minutes} min igjen",
+        "card_peak_at": "Topp ventet {time}",
+        "card_used": "Brukt",
+        "card_expected": "Forventet",
+        "card_of": "av",
+        "card_allowance": "Sikringen tillater",
+        "card_no_plan": "Ingen plan ennå — venter på priser."
       }
     }
   },

@@ -47,6 +47,31 @@ jobs:
       - name: mypy --strict on core/
         run: uv run mypy custom_components/powerplan/core
 
+  # D12 §9 7 (WP6.4b): the committed bundle is what HACS installs, so CI
+  # rebuilds it from `frontend/` and fails when it differs; vitest covers the
+  # timeline's slot transform and the gauge's colours.
+  frontend:
+    name: frontend · bundle · vitest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: The committed bundle is the build of these sources
+        run: |
+          npm run build
+          git status --porcelain -- ../custom_components/powerplan/frontend/dist
+          test -z "$(git status --porcelain -- ../custom_components/powerplan/frontend/dist)"
+
   # PLAN §7 dec. 1: one Python (3.14), HA floor and latest stable. Only the
   # suites that load Home Assistant can differ between the two lines.
   ha:

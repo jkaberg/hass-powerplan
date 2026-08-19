@@ -62,6 +62,8 @@ SITE_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "price_forecast", DIAGNOSTIC, True),
     ("binary_sensor", "prices_tomorrow", CONTROL, True),
     ("sensor", "plan", DIAGNOSTIC, True),
+    ("sensor", "metric", CONTROL, True),
+    ("calendar", "plan_calendar", CONTROL, True),
     ("sensor", "production", CONTROL, False),
     ("sensor", "surplus", CONTROL, False),
     ("binary_sensor", "meter_stale", DIAGNOSTIC, False),
@@ -81,7 +83,7 @@ SITE_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
 )
 
 #: The rows with a large attribute (D8 §5.5 "recorder-excluded").
-LARGE = {"price_forecast": "slots", "plan": "by_load", "reasons": "trail", "advice": "items"}
+LARGE = {"price_forecast": "slots", "plan": "slots", "reasons": "trail", "advice": "items"}
 
 
 @pytest.mark.inv("INV-50")

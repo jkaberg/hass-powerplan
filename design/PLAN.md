@@ -420,8 +420,8 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.1a | Suite speed | done |
 | 6.2a | User pages | todo |
 | 6.2b | Flow links | todo |
-| 6.4a | Dashboard: layout, entities, built-in cards | todo |
-| 6.4b | Dashboard: timeline and window gauge | todo |
+| 6.4a | Dashboard: layout, entities, built-in cards | done |
+| 6.4b | Dashboard: timeline and window gauge | done |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |

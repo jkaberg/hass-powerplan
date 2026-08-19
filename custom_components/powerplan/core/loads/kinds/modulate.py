@@ -105,7 +105,7 @@ class Modulate:
             return Quantised(value=value, effective_w=value * per, reason="granted")
 
         if ctx.stop_ok or ctx.park:
-            why = "session done, parked" if ctx.park else "stop authorised"
+            why = "parked by the type" if ctx.park else "stop authorised"
             return Quantised(value=0.0, effective_w=0.0, stop=True, reason=why)
         if not cfg.cliff:
             return Quantised(value=0.0, effective_w=0.0, reason="nothing to modulate")

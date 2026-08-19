@@ -836,6 +836,9 @@
       },
       "measured_power": {
         "name": "Measured power"
+      },
+      "metric": {
+        "name": "Capacity metric this period"
       }
     },
     "select": {
@@ -998,6 +1001,11 @@
             }
           }
         }
+      }
+    },
+    "calendar": {
+      "plan_calendar": {
+        "name": "Planned runs"
       }
     }
   },
@@ -1642,6 +1650,47 @@
       "options": {
         "yes": "Yes, that is my bill",
         "no": "No, choose again"
+      }
+    },
+    "dashboard": {
+      "options": {
+        "view_overview": "Overview",
+        "view_plan": "Plan",
+        "view_loads": "Appliances",
+        "view_history": "History",
+        "this_window": "Capacity now",
+        "controls": "Controls",
+        "power": "Where the power goes",
+        "next_24h": "Next 24 hours",
+        "coming_up": "Coming up",
+        "this_month": "This month",
+        "advice": "Advice",
+        "solar": "Solar",
+        "attention": "Needs attention",
+        "next_48h": "Next 48 hours",
+        "price_now": "Price now",
+        "next_run": "Next run",
+        "cost_savings": "Cost and savings",
+        "windows": "Capacity windows",
+        "capacity_level": "Capacity level",
+        "energy_per_load": "Energy per appliance",
+        "cost_per_load": "Cost per appliance",
+        "energy": "Your Energy dashboard",
+        "happened": "What happened",
+        "no_loads": "No appliances yet. Add one from the PowerPlan integration page.",
+        "card_price": "Price",
+        "card_ceiling": "Capacity limit",
+        "card_baseline": "Other usage",
+        "card_now": "Now",
+        "card_estimated": "Estimated prices",
+        "card_power": "Power",
+        "card_min_left": "{minutes} min left",
+        "card_peak_at": "Peak expected {time}",
+        "card_used": "Used",
+        "card_expected": "Expected",
+        "card_of": "of",
+        "card_allowance": "Fuse allows",
+        "card_no_plan": "No plan yet — waiting for prices."
       }
     }
   },

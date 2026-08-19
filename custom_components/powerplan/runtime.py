@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from random import Random
 from typing import TYPE_CHECKING, Any, Protocol
@@ -132,7 +133,7 @@ from .core.metering import (
     reconstruct_windows,
     window_bounds,
 )
-from .core.model import Carrier, Direction, Mode
+from .core.model import Carrier, Direction, Mode, Plan
 from .core.pricing import (
     CoverageError,
     PriceContext,
@@ -256,6 +257,7 @@ BASELINE_SEED_DAYS = 60
 PLATFORMS: tuple[Platform, ...] = (
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.CALENDAR,
     Platform.EVENT,
     Platform.NUMBER,
     Platform.SELECT,
@@ -267,6 +269,8 @@ PLATFORMS: tuple[Platform, ...] = (
 RISK_LABELS: dict[str, float] = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE, "full": RISK_FULL}
 #: How many fetches the diagnostics remember.
 FETCH_LOG_KEEP = 200
+#: How far `sensor.<site>_plan`'s `slots` reach: the dashboard's longest timeline (D12 §5.2).
+PLAN_SLOTS_HORIZON = timedelta(hours=48)
 
 # --------------------------------------------------------------------------- #
 # What a load looks like to the runtime
@@ -995,6 +999,8 @@ class Runtime:
         self.load_params: dict[str, dict[str, Any]] = {}
         self.ticks = 0
         self.plans = 0
+        #: `sensor.<site>_plan`'s `slots` (D12 §5.6), rebuilt when a plan is adopted.
+        self.plan_slots: tuple[dict[str, Any], ...] = ()
         self.started_at: datetime | None = None
         self.dead_sources: set[str] = set()
         self.fetch_log: deque[dict[str, Any]] = deque(maxlen=FETCH_LOG_KEEP)
@@ -2155,6 +2161,7 @@ class Runtime:
             state, report, effects = self.engine.plan(self.state, inputs)
             self.state = state
             self.plans += 1
+            self.plan_slots = self._plan_slots(now, inputs)
             await self.execute(effects)
             self._persist(effects)
             _LOGGER.debug(
@@ -2164,6 +2171,54 @@ class Runtime:
                 list(report.adopted),
                 report.slots_closed,
             )
+
+    def _plan_slots(self, now: datetime, inputs: Inputs) -> tuple[dict[str, Any], ...]:
+        """Return the adopted plans per slot, for the dashboard's timeline (D12 §5.6).
+
+        The grid is the import curve's slots - the ones the plans were built on
+        (D1 §5.8) - from the one in progress to `PLAN_SLOTS_HORIZON` ahead. Per
+        slot: the ceiling of the capacity window it falls in (`None` where no
+        window is billed), D10's uncontrolled baseline, and each load's planned
+        kWh, a plan slot that straddles prorated by its overlap.
+        """
+        assert self.engine is not None
+        plans = self.state.plans.plans
+        curve = None if self.curves is None else self.curves.import_.get(Carrier.ELECTRICITY)
+        grid = (
+            {(slot.start, slot.end) for slot in curve.slots}
+            if curve is not None
+            else {(slot.start, slot.end) for plan in plans.values() for slot in plan.slots}
+        )
+        until = now + PLAN_SLOTS_HORIZON
+        window_s = self.build.cfg.window_min * 60
+        baseline = inputs.forecast_baseline
+        rows: list[dict[str, Any]] = []
+        for start, end in sorted(grid):
+            if end <= now or start >= until:
+                continue
+            epoch_s = start.timestamp()
+            window_start = datetime.fromtimestamp(epoch_s - epoch_s % window_s, tz=UTC)
+            ceiling = self.engine.window_ceiling_kwh(
+                window_start, window_start + timedelta(seconds=window_s), inputs.knobs.target
+            )
+            hours = (end - start).total_seconds() / 3600.0
+            planned = {
+                load_id: round(kwh, 3)
+                for load_id, plan in sorted(plans.items())
+                if (kwh := _planned_kwh_in(plan, start, end)) > 0.0
+            }
+            rows.append(
+                {
+                    "start": start.isoformat(),
+                    "end": end.isoformat(),
+                    "ceiling_kwh": None if math.isinf(ceiling) else round(ceiling, 3),
+                    "baseline_kwh": None
+                    if baseline is None
+                    else round(baseline.energy_kwh(start, hours), 3),
+                    "planned_kwh": planned,
+                }
+            )
+        return tuple(rows)
 
     async def _fetch_then_plan(self, trigger: str) -> None:
         changed = await self.fetch(trigger)
@@ -2915,6 +2970,16 @@ class Runtime:
     def has_production(self) -> bool:
         """Whether a production sensor is bound (the production sensors are on by default)."""
         return ROLE_PRODUCTION_POWER in self.build.meter_entities
+
+
+def _planned_kwh_in(plan: Plan, start: datetime, end: datetime) -> float:
+    """Return the kWh `plan` means to move in `[start, end)`: each slot's own `kwh`, prorated."""
+    total = 0.0
+    for slot in plan.slots_between(start, end):
+        overlap = (min(slot.end, end) - max(slot.start, start)).total_seconds()
+        if overlap > 0.0 and slot.hours > 0.0:
+            total += slot.kwh * overlap / (slot.hours * 3600.0)
+    return total
 
 
 def _calendar_moment(raw: Any, tz: tzinfo) -> datetime | None:

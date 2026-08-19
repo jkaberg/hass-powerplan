@@ -10,7 +10,7 @@
 
 ## 1. Scope and non-scope
 
-**In scope.** One dashboard per site, shipped with the integration, that shows the site's **past, present and future** from what powerplan already knows, with the knobs a household turns day to day. It looks and behaves like Home Assistant's own Energy dashboard and is built from HA's built-in cards wherever one can show the thing. The pieces:
+**In scope.** One dashboard for the household's sites (views per site where there are several, D-0439), shipped with the integration, showing the site's **past, present and future** from what powerplan already knows, with the knobs a household turns day to day. It looks and behaves like Home Assistant's own Energy dashboard and is built from HA's built-in cards wherever one can show the thing. The pieces:
 
 - a dashboard **strategy** (`custom:powerplan`), registered by the integration's own frontend module;
 - a websocket command that returns the dashboard's layout, generated in Python from the site's registry;
@@ -31,7 +31,7 @@
 
 **Where the layout is decided.** In Python. The strategy's `generate()` makes one websocket call, `powerplan/dashboard/config`, and returns what comes back. The Python builder knows the site from its registry - which loads, of which type, with which entities enabled, whether there is production, a battery, circuits - and is tested with pytest like the rest of the integration. The JavaScript stays a shim plus the two cards.
 
-**Where the data comes from.** Entities, as D8 already publishes them: the price curve on `sensor.<site>_price_forecast` (`slots`), each load's plan on `sensor.<load>_plan` (`slots`), the window on `sensor.<site>_window_used` / `_window_projected` / `_ceiling`, cost and savings on the monetary sensors. Large attributes are recorder-excluded and change only when their content does (INV-61), so a card that re-renders on a content change redraws once per replan, not once per tick. No data websocket is added.
+**Where the data comes from.** Entities, as D8 already publishes them: the price curve on `sensor.<site>_price_forecast` (`slots`), every load's plan per slot on `sensor.<site>_plan` (`slots`, §5.6), the window on `sensor.<site>_window_used` / `_window_projected` / `_ceiling`, cost and savings on the monetary sensors. Large attributes are recorder-excluded and change only when their content does (INV-61), so a card that re-renders on a content change redraws once per replan, not once per tick. No data websocket is added.
 
 **The past.** HA's long-term statistics through the cards that follow the footer's picker, `collection_key: energy_powerplan` (a collection key must start with `energy_`, `validateEnergyCollectionKey`). Cost and savings use `stat_types: change` (the monetary sensors are `total` with a monthly `last_reset`, D8 §5.5), the capacity windows use `max` of `sensor.<site>_window_used` against the `mean` of `sensor.<site>_ceiling`, and the period metric uses `sensor.<site>_metric` (§5.6).
 
@@ -46,18 +46,25 @@ custom_components/powerplan/
 ├── dashboard/
 │   ├── __init__.py       async_setup_dashboard(hass): static path, add_extra_js_url, websocket command - called once from async_setup (PLAN §7 dec. 8)
 │   ├── site_layout.py    SiteLayout from the entity and device registries and the entry's subentries (no hass.states - INV-3)
-│   ├── layout.py         build(site: SiteLayout, ha_version) → the Lovelace dashboard config (§5.1); plain data in, plain data out
-│   └── ws.py             powerplan/dashboard/config {entry_id?, language} → config
-└── frontend/
-    ├── src/strategy.ts        ll-strategy-dashboard-powerplan: generate() → websocket → config; the window.customStrategies entry
-    ├── src/timeline-card.ts   powerplan-timeline-card (§5.2)
-    ├── src/window-card.ts     powerplan-window-card (§5.3)
-    ├── src/i18n/en.json, nb.json   the headings the config names by key
-    ├── package.json, tsconfig.json, esbuild.config.mjs
-    └── dist/powerplan.js      the committed bundle HACS installs; CI rebuilds it and fails on a diff
+│   ├── layout.py         build(sites: Sequence[SiteLayout], ha_version, texts, …) → the Lovelace dashboard config (§5.1); plain data in, plain data out
+│   └── ws.py             powerplan/dashboard/config {entry_id?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440)
+└── frontend/dist/           the committed build HACS installs, served at /powerplan_frontend (§5.5)
+    ├── powerplan.js           the module every page loads (≈ 12 kB)
+    └── chunks/                ECharts and what it shares, loaded when a timeline first draws; named by content hash
+
+frontend/                      the sources, at the repository root so HACS and the live config never carry them (D-0445)
+├── src/index.ts               registers the three elements, window.customCards and window.customStrategies
+├── src/strategy.ts            ll-strategy-dashboard-powerplan: generate() → websocket → config
+├── src/timeline-card.ts       powerplan-timeline-card (§5.2)
+├── src/window-card.ts         powerplan-window-card (§5.3)
+├── src/chart.ts               ECharts 6.1.0 with the two charts and five components the timeline uses
+├── src/transforms.ts          the pure halves: slots → timeline rows, the gauge's scale and colours (§9 7)
+├── src/ha.ts                  the slice of HA's frontend objects the cards read
+├── test/transforms.test.ts    vitest
+└── package.json, package-lock.json, tsconfig.json, esbuild.config.mjs
 ```
 
-The dashboard package is HA-side and imports nothing from `core/` beyond `core/model.py`'s enums; nothing in `core/` knows it exists. It calls no service (INV-3): every knob on the dashboard is an entity the household already has, changed through that entity's own service by the frontend.
+The dashboard package is HA-side and imports nothing from `core/` beyond enums (`Role`, for the battery's own state of charge); nothing in `core/` knows it exists. It calls no service (INV-3): every knob on the dashboard is an entity the household already has, changed through that entity's own service by the frontend.
 
 ---
 
@@ -85,12 +92,19 @@ Card configs are plain dicts in HA's Lovelace schema. The two custom cards take:
 type: custom:powerplan-timeline-card
 entry_id: <entry>            # the site
 hours: 24                    # 24 or 48
-loads: [<load entity prefix>, …]   # stacked in this order; each resolves to sensor.<load>_plan
+loads: [{id: <subentry id>, name: <name>}, …]   # stacked in this order; ids key each slot's planned_kwh
+entities: {plan: sensor.<site>_plan, price_forecast: sensor.<site>_price_forecast}
 show: [price, plan, ceiling, baseline, production]   # production only with has_production
+currency: NOK
+labels: {price, ceiling, baseline, now, estimated, no_plan, …}   # from translations, `card_*` keys (D-0446)
 
 type: custom:powerplan-window-card
 entry_id: <entry>
+entities: {window_used, window_projected, ceiling, allowance, stage, peak_warning, next_peak_warning}   # the shown ones
+labels: {used, expected, of, min_left, peak_at, allowance, …}
 ```
+
+`build(sites, ha_version, texts, *, has_energy_grid, hidden_views, hidden_cards)` takes every site the command was asked for (D-0439): one site keeps the four paths, several get four views each, pathed `<path>-<entry_id>` and titled "‹site› · ‹view›".
 
 ---
 
@@ -106,12 +120,12 @@ Paths and shape mirror the Energy dashboard. "Built-in" means a card that ships 
 |---|---|---|---|
 | This hour | `custom:powerplan-window-card` | custom | `window_used`, `window_projected`, `ceiling`, `stage`, `peak_warning`, `next_peak_warning` |
 | Controls | three `tile`s: `toggle`; `select-options`; `select-options` | built-in | `switch.<site>_active`, `select.<site>_presence`, `select.<site>_target` |
-| Where the power goes | `distribution` | built-in (2026-01+; else `entities`) | each load's `granted` |
+| Where the power goes | `distribution` | built-in (HA 2026.2+; else `entities`) | each load's `granted_power`, where enabled; the section is left out when none is (D-0438) |
 | Next 24 hours | `custom:powerplan-timeline-card` (24 h) | custom | price forecast, site and load plans |
-| Coming up | `calendar` (list, 3 days) | built-in | `calendar.<site>_plan` |
+| Coming up | `calendar` (`listWeek`; the card has no 3-day list) | built-in | `calendar.<site>_planned_runs` |
 | This month | `statistic` × 2 (calendar month) + `tile` | built-in | `cost`, `savings`; `level` with `projected_level` |
 | Advice | `tile` | built-in | `sensor.<site>_advice` |
-| Needs attention | `repairs` (`hide_empty`) | built-in (2026-02+; else omitted) | - |
+| Needs attention | `repairs` (`hide_empty`) | built-in (HA 2026.3+; else omitted) | - |
 
 **`plan` - the future**
 
@@ -119,22 +133,22 @@ Paths and shape mirror the Energy dashboard. "Built-in" means a card that ships 
 |---|---|---|---|
 | Next 48 hours | `custom:powerplan-timeline-card` (48 h, `column_span` 3) | custom | as above, plus baseline and production forecasts |
 | Price now | `tile` + `trend-graph` feature | built-in | `sensor.<site>_price`, `binary_sensor.<site>_prices_tomorrow` |
-| Next run | one `tile` per load | built-in | `sensor.<load>_plan_next` |
-| Coming up | `calendar` (list, 7 days) | built-in | `calendar.<site>_plan` |
+| Next run | one `tile` per load | built-in | each load's `plan_status` |
+| Coming up | `calendar` (`listWeek`) | built-in | `calendar.<site>_planned_runs` |
 
-**`loads` - one section per load, in priority order**, headed by a `heading` card with the load's name and icon. The tiles by device type (D4's eight):
+**`loads` - one section per load, in priority order**, headed by a `heading` card with the load's name and icon. The tiles by device type (D4's eight), on D8 §5.16's entity set (D-0438); a row the device page does not show is not drawn:
 
 | type | tiles and their features |
 |---|---|
-| `ev` | `mode` (`select-options`), `force` (`toggle`), `target_soc` and `min_soc_now` (`numeric-input`), `session`, `granted` (`trend-graph`); `deadline` in an `entities` row (no tile feature edits a `time`) |
-| `floor_heating`, `heat_pump`, `radiator` | `mode`, `comfort_c` (`numeric-input`, omitted when a schedule is bound - D8 §5.5), `comfort_state`, `follow_presence` (`toggle`), `granted` (`trend-graph`) |
-| `water_heater` | `mode`, `force`, `comfort_state`, `next_legionella`; `deadline` in an `entities` row |
-| `appliance_cycle` | `run_now` (`button`), `plan_next`; `ready_by` in an `entities` row |
-| `battery` | `mode`, `granted` (`trend-graph`), the device's own state of charge where the profile bound one |
-| `generic_switch` | `mode`, `force`, `hours_per_day` (`numeric-input`) |
-| every type | `statistic` × 2: this month's `cost` and `savings` |
-
-A load whose `shed` is on shows it as the tile's state colour, not as an extra card.
+| every type | `control` (`select-options`), `plan_status` (a shed reads `paused_peak` there) |
+| `ev` | `charge_target`, `charge_min` (`numeric-input`, slider) |
+| `floor_heating`, `heat_pump`, `radiator` | `comfort` (`numeric-input`; absent where the device's own setpoint owns it, D-0435), `follow_presence` (`toggle`) |
+| `water_heater` | `comfort`, `follow_presence` where shown, `next_legionella` |
+| `appliance_cycle` | `run_now` (`button`) |
+| `battery` | `charge_target`, the device's own state of charge where the profile bound `Role.SOC` |
+| `generic_switch` | `hours_per_day` (`numeric-input`) |
+| `ev`, `water_heater`, `appliance_cycle` | `ready_by` in an `entities` row (no tile feature edits a `time`) |
+| every type | `granted_power` (`trend-graph`) where enabled; `statistic` × 2: this month's `cost_month` and `savings_month` |
 
 **`history` - the past**, with `energy-date-selection` (`collection_key: energy_powerplan`) in the footer on HA versions that have view footers, else as the first card
 
@@ -143,30 +157,31 @@ A load whose `shed` is on shows it as the tile's state colour, not as an extra c
 | Cost and savings | `statistics-graph`, bars, `stat_types: change`, `energy_date_selection` | built-in | `sensor.<site>_cost`, `sensor.<site>_savings` |
 | Capacity windows | `statistics-graph`, `max` of the window against `mean` of the ceiling | built-in | `window_used`, `ceiling` |
 | Capacity level | `statistics-graph` of the period metric | built-in | `sensor.<site>_metric` (§5.6) |
-| Per load | `statistics-graph`, `change`, stacked | built-in | every load's `energy`; a second graph of every load's `cost` |
+| Per load | `statistics-graph`, `change`, bars | built-in | every load's `energy`; a second graph of every load's `cost_month` |
 | Your Energy dashboard | `energy-usage-graph`, `energy-devices-graph`, `energy-sankey` | built-in | the household's Energy preferences - added by the strategy only when `energy/get_prefs` returns a grid source |
-| What happened | `logbook` (24 h) | built-in | `event.<site>` |
+| What happened | `logbook` (24 h, `target.entity_id`) | built-in | `event.<site>` |
 
 **Phase 7 (solar and the battery together).** With `has_production`: an `overview` section "Solar" (`tile`s for `production` and `surplus` with `trend-graph`), the timeline's production forecast and surplus shading, and a `history` graph of self-consumption. With `has_battery`: the battery's state of charge on the timeline. Colours: `--energy-solar-color`, `--energy-battery-in-color`, `--energy-battery-out-color`.
 
 ### 5.2 The timeline card
 
-ECharts (the library and major version HA uses, bundled - §11), themed from HA's CSS variables, following `hass.themes.darkMode`, `hass.locale` and the site's time zone.
+ECharts 6.1.0 (HA 2026.9's own, bundled - §11), themed from HA's CSS variables, following `hass.locale` and HA's time-zone setting (the browser's or the server's). Everything is drawn as **average power in kW**, so a 15-minute slot and a 60-minute window compare on one axis: a slot's kWh over its length, a window's ceiling over the window (D-0447).
 
 | series | from | drawn as | colour |
 |---|---|---|---|
 | import price | `sensor.<site>_price_forecast` → `slots` | step line, right axis, currency/kWh | `--primary-color` |
-| planned energy per load | `sensor.<load>_plan` → `slots` | stacked bars per slot, one colour per load in the Energy dashboard's device palette | HA's graph palette |
-| ceiling | `sensor.<site>_plan` → `slots[].ceiling_kwh` (§5.6) | dashed line per capacity window | `--error-color` |
-| uncontrolled baseline | `sensor.<site>_plan` → `slots[].baseline_kwh` | light area under the bars | `--energy-grid-consumption-color`, 40 % |
-| production forecast (Phase 7) | `slots[].production_kwh` | area | `--energy-solar-color` |
+| planned power per load | `sensor.<site>_plan` → `slots[].planned_kwh[<id>]` | stacked bars per slot, in the configured order | `--graph-color-n`, HA's defaults where the theme sets none |
+| ceiling | `sensor.<site>_plan` → `slots[].ceiling_kwh` ÷ window hours | dashed step line; a gap where no window is billed | `--error-color` |
+| uncontrolled baseline | `sensor.<site>_plan` → `slots[].baseline_kwh` | step area | `--energy-grid-consumption-color`, 40 % |
+| production forecast (Phase 7) | `slots[].production_kwh` | step area, only when present | `--energy-solar-color` |
+| estimated prices | slots whose price is not `known` (`estimated`, `synthesised`) | a shaded band labelled "Estimated prices" | `--secondary-text-color`, 12 % |
 | now | the clock | a vertical marker | `--secondary-text-color` |
 
-Slots are drawn at their native length (15/30/60 min, D1 §5.8); a DST day has 92 or 100 quarter slots and no gap. A slot whose price is `ESTIMATED` or `SYNTHESISED` (D1) is drawn hatched, so a plan beyond tomorrow's known prices reads as provisional (D5 §2). The tooltip lists, per slot, each load's kWh, the price and its cost. The legend toggles a load. The card re-renders only when one of its attributes' content changes.
+Slots are drawn at their native length (15/30/60 min, D1 §5.8), from the slot in progress to `hours` ahead; times are instants, so a DST day's 92 or 100 quarter slots follow one another with no gap (§9 7). With no plan yet the card draws the price alone on the curve's grid, and with no slots at all it says it is waiting for prices. The tooltip lists, per slot, each load's kWh, the baseline and ceiling in kW, the price and the cost of what is planned. The legend toggles a series. The card redraws when the plan's or the curve's state object changes (HA replaces it only on a change - INV-61 makes that once per adoption), on a theme or language switch, and every five minutes for the "now" marker; ECharts is loaded the first time a timeline draws.
 
 ### 5.3 The window gauge
 
-A semicircle in the style of the Energy dashboard's gauges (`energy-self-sufficiency-gauge`): used kWh against the ceiling, a needle at the projection, coloured by the ladder stage (0 green, 1–2 amber, 3–4 red), with "*n* min left" and the peak warning's time underneath. Tapping opens `sensor.<site>_window_used`'s more-info dialog. A `NoPeak` site shows the fuse allowance instead of a ceiling.
+A semicircle in the style of the Energy dashboard's gauges (`energy-self-sufficiency-gauge`), drawn as the card's own SVG rather than HA's internal `ha-gauge` (§11): used kWh against the ceiling, a needle at the projection, coloured by the ladder stage (0 `--success-color`, 1–2 `--warning-color`, 3–4 `--error-color`; red whenever used or projected is over the ceiling), with the expected kWh, "*n* min left" (`window_used.t_rem_min`) and, while `peak_warning` is on, the peak warning's time underneath. Tapping opens `sensor.<site>_window_used`'s more-info dialog. A site with no ceiling (`NoPeak`, or none billed now) scales to the projection and shows the fuse allowance (`sensor.<site>_allowance`) instead.
 
 ### 5.4 Knobs
 
@@ -174,32 +189,32 @@ Only built-in tile features and entity rows, which call the entity's own action 
 
 ### 5.5 Registration and versions
 
-`async_setup` (once per HA, not per entry): `hass.http.async_register_static_paths` for `/powerplan_static` → `frontend/dist` with caching, `frontend.add_extra_js_url(hass, "/powerplan_static/powerplan.js?v=<manifest version>")`, and the websocket command. The module registers the strategy element, the two cards (in `window.customCards` too, with `documentationURL` → `docs/dashboard.md`) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "powerplan", description, documentationURL}`.
+`async_setup` (once per HA, not per entry): the websocket command; `hass.http.async_register_static_paths` for `/powerplan_frontend` → `frontend/dist` with caching; and, where the `frontend` component is loaded, `frontend.add_extra_js_url(hass, "/powerplan_frontend/powerplan.js?v=<first 12 hex of the module's SHA-256>")` - a content key, so a new build is never served stale, and the chunks' own names carry their hash (D-0448). The module registers the strategy element, the two cards (in `window.customCards` too, with `documentationURL` → `docs/dashboard.md`) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "PowerPlan", description, documentationURL}`.
 
 `layout.py` degrades by HA version:
 
-| feature | first in HA frontend | below it |
-|---|---|---|
-| `distribution` card | 2026-01-19 | an `entities` card of the same sensors |
-| `repairs` card | 2026-02-11 | omitted |
-| view `footer` | 2026-02-24 | `energy-date-selection` as the view's first card |
-| "Add dashboard" listing | 2026-04-13 | `docs/dashboard.md`'s YAML |
+| feature | frontend merge | first HA release (frontend build) | below it |
+|---|---|---|---|
+| `distribution` card | 2026-01-19 | 2026.2.0 (`20260128.6`) | an `entities` card of the same sensors |
+| `repairs` card | 2026-02-11 | 2026.3.0 (`20260304.0`) | omitted |
+| view `footer` | 2026-02-24 | 2026.3.0 (`20260304.0`) | `energy-date-selection` as the view's first card |
+| "Add dashboard" listing | 2026-04-13 | 2026.5.0 (`20260429.3`) | `docs/dashboard.md`'s YAML |
 
-The dates are frontend merge dates; WP6.4a maps each to the first HA release that shipped it and writes that version into the table.
+Read at each release's pinned frontend tag (D-0437). At the integration floor, 2026.3.0, only the dialog listing is missing, and the first rows keep their fallbacks for development builds at no cost. The footer is `{card: {type: energy-date-selection, collection_key}}`, the 2026.3 shape.
 
 ### 5.6 Entities the dashboard needs (added to D8 §5.5)
 
 | entity | what | recorder |
 |---|---|---|
-| `calendar.<site>_plan` | one event per contiguous active block of each adopted plan: summary "‹load›: ‹kWh› kWh", description with the estimated cost and the reason (deadline, cheapest hours, legionella, run requested); updated on adoption only; past blocks drop off | the calendar platform keeps no state history of events |
-| `sensor.<site>_plan` → `slots` | per slot: `start`, `end`, `ceiling_kwh` (the window's ceiling in force), `baseline_kwh`, `production_kwh` (Phase 7), `planned_kwh` by load | excluded (INV-61) |
+| `calendar.<site>_planned_runs` (key `plan_calendar`) | one event per contiguous active block (`envelope_w > 0`) of each adopted plan: summary "‹load›: ‹kWh› kWh", description "‹kWh› kWh · ≈ ‹cost› ‹currency›"; written on adoption and when its first event changes; past blocks drop off. No reason text until D5 publishes reason keys (D-0442) | the calendar platform keeps no state history of events |
+| `sensor.<site>_plan` → `slots` | per slot of the import curve, now to 48 h: `start`, `end`, `ceiling_kwh` (the ceiling of the window the slot falls in, `None` where none is billed), `baseline_kwh` (`None` without D10), `production_kwh` (Phase 7), `planned_kwh` by load id; plus `window_min`. Rebuilt on adoption (`Runtime.plan_slots`, D-0441) | excluded (INV-61) |
 | `sensor.<site>_metric` | the tariff period's metric so far in kW (D2 §5.2), `state_class: measurement` | kept: the history view graphs it |
 
 ---
 
 ## 6. Configuration schema
 
-The flows ask nothing. The strategy takes optional YAML: `entry_id` (only when HA has more than one site), `hidden_views`, `hidden_cards` (the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so that HA's own device graphs and sankey include the loads.
+The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, four views each - D-0439), `hidden_views` (view keys: `overview`, `plan`, `loads`, `history`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so that HA's own device graphs and sankey include the loads.
 
 ---
 
@@ -213,7 +228,8 @@ None. The dashboard is generated on every open. A household that takes control o
 
 | failure | behaviour | surface |
 |---|---|---|
-| The websocket call fails or the entry is gone | the strategy returns one view with a `markdown` card saying why, linking `docs/troubleshooting.md` | the dashboard |
+| The websocket call fails, the entry is gone or no site is loaded | the strategy returns one view with a `markdown` card saying why, linking `docs/troubleshooting.md` | the dashboard |
+| A site or appliance is added | nothing to do: the strategy regenerates on the next open (§7) | the dashboard |
 | An entity is disabled or missing | the builder leaves its card out; never a card with a dead reference | - |
 | HA older than a card or feature | §5.5's table | - |
 | A stale bundle in the browser cache | the module URL carries the manifest version | - |
@@ -225,11 +241,11 @@ None. The dashboard is generated on every open. A household that takes control o
 
 1. Builder golden: a registry shaped like `nordic_detached` (twelve loads, D9 §5.9) yields a config in which every referenced entity id exists and is enabled; every card type is built-in except `custom:powerplan-timeline-card` and `custom:powerplan-window-card`; every view is `sections` with `max_columns: 3` and `dense_section_placement`; the history view's picker has `collection_key: energy_powerplan`, and every `statistics-graph` in that view has `energy_date_selection: true` and the same key.
 2. Per type: each of D4's eight types gets §5.1's tiles and features; a disabled entity is omitted; `comfort_c` is omitted when a schedule is bound.
-3. Versions: at 2026.3.0 the picker is a card and `distribution` is an `entities` card; at the release that has them, a footer and `distribution`.
+3. Versions: at 2026.1 the picker is a card, `distribution` is an `entities` card and `repairs` is omitted; at 2026.2 `distribution` is back; at 2026.3.0 (the floor) all three are (D-0437).
 4. Websocket: schema-validated; an unknown entry is an error, not an empty dashboard; read-only, so no admin required; < 100 ms for a 20-load site.
-5. `calendar.<site>_plan`: each adopted plan's contiguous active blocks are events with load, kWh and estimated cost; it changes only on adoption; a block that ended is gone.
+5. `calendar.<site>_planned_runs`: each adopted plan's contiguous active blocks are events with load, kWh and estimated cost; it changes only on adoption; a block that ended is gone.
 6. `sensor.<site>_plan` → `slots` carries `ceiling_kwh` and `baseline_kwh` per slot and is recorder-excluded; `sensor.<site>_metric` equals D2's metric.
-7. Frontend: CI runs `npm ci && npm run build` and fails when `frontend/dist/powerplan.js` differs; `vitest` covers the timeline's slot-to-series transform (a DST day draws 92 and 100 quarter slots without a gap; estimated slots are flagged) and the gauge's stage colours.
+7. Frontend: CI runs `npm ci`, the type check, `vitest` and `npm run build`, and fails when `custom_components/powerplan/frontend/dist/` differs; pytest checks every chunk the bundle imports is committed and that the module is served and loaded on every page; `vitest` covers the timeline's slot-to-series transform (a DST day draws 92 and 100 quarter slots without a gap; estimated slots are flagged) and the gauge's stage colours.
 8. `test_single_writer` and the INV-3 grep stay green: the dashboard package calls no service and reads no `hass.states`.
 
 ---

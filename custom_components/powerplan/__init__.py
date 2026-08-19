@@ -16,6 +16,7 @@ from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
 
 from .const import BRAND_ICON_URL, DOMAIN
+from .dashboard import async_setup_dashboard
 from .entity import async_prepare_site_device
 from .runtime import Runtime, build_site
 from .services import async_setup_services
@@ -56,6 +57,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(BRAND_ICON_URL, str(Path(__file__).parent / "brand" / "icon.png"))]
         )
+    await async_setup_dashboard(hass)
     return True
 
 
