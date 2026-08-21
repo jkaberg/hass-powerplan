@@ -1907,3 +1907,28 @@ esbuild splits: `powerplan.js` (~12 kB) registers the elements on every page, an
 
 The `observe` strategy option and `plan_status`'s `observing` read Prøvemodus / Trial mode, as the control select does (D-0436). One concept, one label (HLD §2).
 **Rejected:** "Ser bare på" on the status - the select sets what the status reports.
+
+### D-0451 · The attention tile shows `meter_health`, hidden at `ok`
+
+The meter tile is `sensor.<site>_meter_health` with `visibility: state_not: ok`, so it also shows while the sensor is unavailable; left out on a price-only site. Affects D12 §5.1.
+**Rejected:** showing only for `degraded` and `stale` - an unavailable health sensor is itself worth a look.
+
+### D-0452 · The month gauge colours steps by the target select's `target_kw`
+
+Steps whose lower bound is under the target's kW are green, the next amber, the rest red. Every target option, `auto` included, publishes its kW. Affects D12 §5.3.
+**Rejected:** parsing `step_<n>` - says nothing for `auto` or a kW target.
+
+### D-0453 · History's logbook targets `event.<site>` and every `plan_status`
+
+`logbook.py` files each appliance's events under its `plan_status`, so a logbook targeting only the event entity would drop them. Affects D12 §5.1, §5.6.
+**Rejected:** the event entity alone - hides the per-appliance rows.
+
+### D-0454 · The appliance colours are HA's 53-colour palette, in order
+
+`HA_GRAPH_PALETTE` is HA's `--color-1…53` from the 2026.9 frontend, repeating after 53; the timeline's fallback is the same list, so a load keeps its colour between our cards and HA's graphs. Affects D12 §5.8.
+**Rejected:** a ten-colour list that only looked like HA's.
+
+### D-0455 · "One day above X kW" is measured against the target
+
+`card_day_that_tips` reads "One day above {kw} kW takes you over your target". `days_that_matter.kw` is the largest peak today that keeps the metric at or under the target (D2 §5.6), which equals the next step's boundary only when the target is the current step. Affects D12 §5.3.
+**Rejected:** "moves you up" - wrong once a household picks a lower target.

@@ -191,6 +191,11 @@ HLD §9 phase 6.
 | **6.2b Flow links** | moved into the documentation stream (dec. 40) | D8 §5.13 | - | - |
 | **6.4a Dashboard: layout, entities, built-in cards** | the strategy dashboard built from the registry; `calendar.<site>_planned_runs`, `sensor.<site>_plan` | D12 §2-§6, §9 1-6, 8; dec. 26 | D12 §9 1-6, 8 | 6.1 |
 | **6.4b Dashboard: timeline and window gauge** | `frontend/` in TypeScript with esbuild; the two custom cards | D12 §3, §5.2, §5.3, §9 7 | D12 §9 7 | 6.4a |
+| **6.4c Dashboard redesign: layout** | two views and a subview per appliance | D12 §5.1, §5.4-§5.10; dec. 37 | D12 §9 9-12, 18 | 6.4b |
+| **6.4d Dashboard redesign: timeline and hour gauge** | one axis, the limit inside the plot, the price strip | D12 §5.2, §5.3 | D12 §9 13 | 6.4c |
+| **6.4e Dashboard redesign: month gauge and History's data** | the month gauge; `last_reset`; logbook lines | D12 §5.3, §5.6 | D12 §9 14, 15 | 6.4d |
+| **6.4f Dashboard redesign: History follows the picker** | History on the Energy period picker | D12 §5.7 | D12 §9 16 | 6.4e |
+| **6.4g Dashboard redesign: reasons** | translatable reasons; the plan's 24 h state | D12 §5.6 | D12 §9 17 | 6.4f |
 
 ### Phase 7 - Solar and the battery together
 
@@ -314,6 +319,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 34. **Priority: three fixed numbers, 15/30/45, split at 22.5 and 37.5** (D-0411). *Rejected:* the free number with a select on top - the walk's tie-break makes more levels pointless.
 35. **Device attachment comes after U.2, U.4 and H.2 and before U.3,** so U.3 builds the load flow once against attached devices.
 36. **No migration for device attachment, and the brand marks the rows instead of a name prefix.** Nothing released needs migrating (D-0421); the brand icon is the entity picture (D-0418). *Rejected:* a "PowerPlan-" prefix - clutter in every row.
+37. **The dashboard is redesigned before it ships:** two tabs, a subview per appliance, History on the Energy picker (D12). *Rejected:* polishing four tabs - the problem was the shape, not the finish.
 
 ---
 
@@ -422,6 +428,11 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.2b | Flow links | todo |
 | 6.4a | Dashboard: layout, entities, built-in cards | done |
 | 6.4b | Dashboard: timeline and window gauge | done |
+| 6.4c | Dashboard redesign: layout | todo |
+| 6.4d | Dashboard redesign: timeline and hour gauge | todo |
+| 6.4e | Dashboard redesign: month gauge and History's data | todo |
+| 6.4f | Dashboard redesign: History follows the picker | todo |
+| 6.4g | Dashboard redesign: reasons | todo |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |
