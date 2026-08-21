@@ -1,9 +1,9 @@
 """`powerplan/dashboard/config` (D12 §3): the strategy's one call, the layout back.
 
 Read-only, so any signed-in user may call it (D12 §9 4). An unknown or
-unloaded site is an error, never an empty dashboard; with no `entry_id` the one
-loaded site is meant - every one of them, four views each, so a second site
-appears on the dashboard the next time it opens.
+unloaded site is an error, never an empty dashboard; with no `entry_id` every loaded
+site is meant, so a second site appears on the dashboard the next time it
+opens (D-0439).
 """
 
 from __future__ import annotations
@@ -21,18 +21,19 @@ from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import DOMAIN
 
-from .layout import build
+from .layout import ENTITY_NAMES, build
 from .site_layout import site_layout
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from homeassistant.components.websocket_api.connection import ActiveConnection
     from homeassistant.core import HomeAssistant
 
 __all__ = ["WS_TYPE", "async_register_ws"]
 
 WS_TYPE = "powerplan/dashboard/config"
-#: The headings' place in the integration's translations; HA falls back to English.
-_HEADINGS = f"component.{DOMAIN}.selector.dashboard.options."
+_COMPONENT = f"component.{DOMAIN}."
 
 
 @callback
@@ -41,14 +42,39 @@ def async_register_ws(hass: HomeAssistant) -> None:
     async_register_command(hass, ws_dashboard_config)
 
 
-async def _texts(hass: HomeAssistant, language: str) -> dict[str, str]:
-    """Return the headings in `language`, from `selector.dashboard` (the `flow/text.py` pattern)."""
-    strings = await async_get_translations(hass, language, "selector", {DOMAIN})
-    return {
-        key.removeprefix(_HEADINGS): value
+def texts_from(strings: Mapping[str, str]) -> dict[str, str]:
+    """Return `build`'s texts from the integration's flattened translations.
+
+    The dashboard's own words (`selector.dashboard.options`), each named
+    entity's name as `entity_<key>` (`ENTITY_NAMES`) and each strategy's words
+    as `strategy_<key>` (`selector.strategy.options`, the flows' own labels).
+    """
+    options = f"{_COMPONENT}selector.dashboard.options."
+    strategies = f"{_COMPONENT}selector.strategy.options."
+    texts = {
+        key.removeprefix(options): value
         for key, value in strings.items()
-        if key.startswith(_HEADINGS)
+        if key.startswith(options)
     }
+    texts.update(
+        {
+            f"strategy_{key.removeprefix(strategies)}": value
+            for key, value in strings.items()
+            if key.startswith(strategies)
+        }
+    )
+    for key, (platform, name) in ENTITY_NAMES.items():
+        texts[f"entity_{key}"] = strings[f"{_COMPONENT}entity.{platform}.{name}.name"]
+    return texts
+
+
+async def _texts(hass: HomeAssistant, language: str) -> dict[str, str]:
+    """Return the dashboard's words in `language`; HA falls back to English per key."""
+    strings = {
+        **await async_get_translations(hass, language, "selector", {DOMAIN}),
+        **await async_get_translations(hass, language, "entity", {DOMAIN}),
+    }
+    return texts_from(strings)
 
 
 async def _has_energy_grid(hass: HomeAssistant) -> bool:
@@ -91,6 +117,7 @@ async def ws_dashboard_config(
         [site_layout(hass, entry) for entry in loaded],
         HA_VERSION,
         await _texts(hass, msg["language"]),
+        language=msg["language"],
         has_energy_grid=await _has_energy_grid(hass),
         hidden_views=msg["hidden_views"],
         hidden_cards=msg["hidden_cards"],

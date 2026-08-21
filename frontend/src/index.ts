@@ -1,10 +1,16 @@
 // PowerPlan's dashboard module (D12 §3, §5.5), loaded on every page by
 // `frontend.add_extra_js_url`: the strategy HA lists in "Add dashboard" and
-// the two cards its layout names.
+// the cards its layout names.
+//
+// The strategy element is defined first, at the module's top level, with
+// nothing to fetch before it: HA gives a strategy element a few seconds to
+// appear, and a cold load of a deep path used to miss that (D12 §5.10, B1).
+// The cards and ECharts come behind a dynamic import.
 
 import { PowerplanDashboardStrategy } from "./strategy";
-import { PowerplanTimelineCard } from "./timeline-card";
-import { PowerplanWindowCard } from "./window-card";
+
+/** The cards' module, named by its content hash; the build puts the name in (esbuild `define`). */
+declare const CARDS_MODULE: string;
 
 const DOCS = "https://github.com/jkaberg/hass-powerplan/blob/main/docs/dashboard.md";
 
@@ -13,13 +19,9 @@ interface Registry<T> {
   customStrategies?: T[];
 }
 
-const define = (name: string, element: CustomElementConstructor) => {
-  if (!customElements.get(name)) customElements.define(name, element);
-};
-
-define("ll-strategy-dashboard-powerplan", PowerplanDashboardStrategy);
-define("powerplan-timeline-card", PowerplanTimelineCard);
-define("powerplan-window-card", PowerplanWindowCard);
+if (!customElements.get("ll-strategy-dashboard-powerplan")) {
+  customElements.define("ll-strategy-dashboard-powerplan", PowerplanDashboardStrategy);
+}
 
 const registry = window as unknown as Registry<{ type: string } & Record<string, unknown>>;
 registry.customCards ??= [];
@@ -29,13 +31,13 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
     {
       type: "powerplan-timeline-card",
       name: "PowerPlan timeline",
-      description: "Prices, plans and the capacity limit for the next 24–48 hours.",
+      description: "Prices, plans and the capacity limit for the next 12–48 hours.",
       documentationURL: DOCS,
     },
     {
       type: "powerplan-window-card",
       name: "PowerPlan capacity gauge",
-      description: "The current capacity window against its limit.",
+      description: "This hour's usage, or the month's capacity step, against its limit.",
       documentationURL: DOCS,
     },
   );
@@ -47,3 +49,5 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
     documentationURL: DOCS,
   });
 }
+
+void import(/* @vite-ignore */ new URL(CARDS_MODULE, import.meta.url).href);

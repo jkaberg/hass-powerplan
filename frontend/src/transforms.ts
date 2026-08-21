@@ -171,3 +171,29 @@ export function arcPoint(fraction: number, radius: number): [number, number] {
   const angle = Math.PI * (1 - fraction);
   return [radius * Math.cos(angle), -radius * Math.sin(angle)];
 }
+
+// --------------------------------------------------------------------------- //
+// The strategy's paths (D12 §5.1)
+// --------------------------------------------------------------------------- //
+
+/** The placeholder `layout.py` writes for the dashboard's own URL path (D12 §5.1). */
+export const DASHBOARD = "{dashboard}";
+
+/** The dashboard's URL path: the first segment of the page's path ("dashboard-powerplan"). */
+export function dashboardPath(pathname: string): string {
+  return pathname.split("/").filter(Boolean)[0] ?? "";
+}
+
+/** Replace a leading `{dashboard}/` in every string of `config` with `/<urlPath>/`. */
+export function resolvePaths<T>(config: T, urlPath: string): T {
+  if (typeof config === "string") {
+    return (config.startsWith(`${DASHBOARD}/`) ? `/${urlPath}${config.slice(DASHBOARD.length)}` : config) as T;
+  }
+  if (Array.isArray(config)) return config.map((item) => resolvePaths(item, urlPath)) as T;
+  if (config && typeof config === "object") {
+    return Object.fromEntries(
+      Object.entries(config).map(([key, value]) => [key, resolvePaths(value, urlPath)]),
+    ) as T;
+  }
+  return config;
+}

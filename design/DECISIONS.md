@@ -1932,3 +1932,23 @@ Steps whose lower bound is under the target's kW are green, the next amber, the 
 
 `card_day_that_tips` reads "One day above {kw} kW takes you over your target". `days_that_matter.kw` is the largest peak today that keeps the metric at or under the target (D2 §5.6), which equals the next step's boundary only when the target is the current step. Affects D12 §5.3.
 **Rejected:** "moves you up" - wrong once a household picks a lower target.
+
+### D-0456 · The "why this plan?" table uses the flows' strategy words
+
+Strategies are named with `selector.strategy.options.<key>`, the load flow's labels; `schedule` gains its label there. One concept, one label (D8 §5.15 rule 7), and a test holds every registered strategy to a label. Affects D12 §5.9.
+**Rejected:** shorter dashboard-only words - two names for one setting.
+
+### D-0457 · `powerplan.js` has no static import; the cards load by hashed name
+
+esbuild runs twice: `chunks/cards-<hash>.js` split with ECharts, then `powerplan.js`, which defines the strategy, registers listings and dynamically imports the cards by the name passed in via `define`. HA gives a custom strategy 5 s to define itself, and a static import of a shared chunk was one more round trip on cold load, enough to time out. A test reads the built module for static imports. Affects D12 §3, §5.10.
+**Rejected:** one pass with a literal `import("./cards")` - esbuild hoists a helper into a chunk the entry imports statically.
+
+### D-0458 · Until the month gauge lands, Now's capacity section is two built-in tiles
+
+The `level` and `advice` tiles under the `projected_level` badge, replaced by the window card's `mode: month` when it exists. Each step ships a working dashboard. Affects D12 §5.1.
+**Rejected:** leaving the section out meanwhile - the household would lose the level.
+
+### D-0459 · History's summary shows the capacity basis as the month's `max`
+
+The metric's `statistic` card uses `stat_type: max` over the calendar month; the card has no "state", and within a period the metric only rises. The period summary card replaces it later. Affects D12 §5.1.
+**Rejected:** a tile on `metric` - out of place among three `statistic` cards.

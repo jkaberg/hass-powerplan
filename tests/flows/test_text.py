@@ -89,6 +89,7 @@ SAME_IN_BOTH = frozenset(
         "Plan",  # `sensor.<…>_plan`, renamed by U.4 (ENT-22)
         "Normal",  # the middle priority (D-0411), one word in both
         "Status",  # the charger's status role (review LOAD-1)
+        "Start",  # the next-runs table's first column, one word in both (D12 §5.9)
         "kW",  # a unit
         "—",  # nothing
         "April",  # months spelled the same in nb (`selector.month`)

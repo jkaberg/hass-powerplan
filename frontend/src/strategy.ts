@@ -1,8 +1,10 @@
 // `ll-strategy-dashboard-powerplan` (D12 §2, §3): one websocket call, the
 // layout back. The layout is built in Python from the site's registry; this
-// element only fetches it, and shows why when it cannot.
+// element fetches it, points its `{dashboard}` paths at the dashboard it is
+// on, and shows why when it cannot.
 
 import type { HomeAssistant } from "./ha";
+import { dashboardPath, resolvePaths } from "./transforms";
 
 const TROUBLESHOOTING = "https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md";
 
@@ -29,7 +31,7 @@ export class PowerplanDashboardStrategy extends HTMLElement {
       if (config[key] !== undefined) message[key] = config[key];
     }
     try {
-      return await hass.callWS(message);
+      return resolvePaths(await hass.callWS(message), dashboardPath(location.pathname));
     } catch (err) {
       const base = (hass.language || "en").split("-")[0]!;
       const [failed, help] = FAILED[["no", "nn"].includes(base) ? "nb" : base] ?? FAILED.en!;
