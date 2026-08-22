@@ -527,6 +527,19 @@ def test_11_sections_follow_what_the_site_has() -> None:
     ]
 
 
+def test_14_the_capacity_step_is_the_month_gauge() -> None:
+    """Now's capacity section: the window card in `mode: month` on the site's rows (D12 §5.3)."""
+    now = _view(build([_nordic()], "2026.3.0", EN), "overview")
+    cards = _section(now, EN["section_capacity"])["cards"]
+    gauge = next(card for card in cards if card["type"] == "custom:powerplan-window-card")
+    assert gauge["mode"] == "month"
+    assert gauge["entities"] == {
+        key: f"{_domain(key)}.home_{key}"
+        for key in ("metric", "level", "projected_level", "advice", "target")
+    }
+    assert gauge["grid_options"] == {"columns": 12, "rows": 6}
+
+
 def test_11_the_logbook_follows_every_appliance() -> None:
     """The site's events and every `plan_status`, where `logbook.py` files them (D-0453)."""
     history = _view(build([_nordic()], "2026.3.0", EN), "history")
@@ -557,7 +570,8 @@ def test_18_every_text_is_used_and_exists_in_both_languages() -> None:
     used |= {f"view_{view}" for view in ("overview", "history")}
     used |= {f"confidence_{c}" for c in ("known", "stale", "estimated", "synthesised")}
     cards = "".join(path.read_text("utf-8") for path in FRONTEND.glob("*.ts"))
-    used |= {f"card_{key}" for key in re.findall(r"labels\.(\w+)", cards)}
+    used |= {f"card_{key}" for key in re.findall(r"labels\??\.(\w+)", cards)}
+    used |= {f"card_stage_{word}" for word in ("normal", "tight", "critical")}  # `stageWord`
     assert used <= options["en"].keys(), used - options["en"].keys()
     assert options["en"].keys() <= used, options["en"].keys() - used
 

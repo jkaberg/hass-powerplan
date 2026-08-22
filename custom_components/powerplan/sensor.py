@@ -32,7 +32,14 @@ from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 from .core.model import Carrier, Confidence, Snapshot
 from .core.tariffs.evaluator import ADVICE_KEYS
-from .entity import PowerplanEntity, digest_of, money_text, window_translation_key
+from .core.tariffs.grammar import StepTable
+from .entity import (
+    PowerplanEntity,
+    accrual_reset,
+    digest_of,
+    money_text,
+    window_translation_key,
+)
 from .load_entities import load_sensors
 from .runtime import Runtime
 
@@ -109,6 +116,31 @@ def _slots(curve: PriceCurve | None, limit: int | None = None) -> list[dict[str,
 def _import_curve(runtime: Runtime) -> PriceCurve | None:
     curves = runtime.curves
     return None if curves is None else curves.import_.get(Carrier.ELECTRICITY)
+
+
+def level_steps(runtime: Runtime) -> dict[str, Any]:
+    """Return `{"steps": [...]}` - the tariff's ladder for the month gauge (D12 §5.6, B6).
+
+    One row per step of the version in force: `from_kw` the previous step's
+    upper bound (0 for the first), `to_kw` its own (`None` for the open top),
+    `fee` as `money_text`. Empty when the peak pricing is not a step table.
+    """
+    peak = runtime.build.tariff.active_version().peak
+    if peak is None or not isinstance(peak.pricing, StepTable):
+        return {}
+    rows: list[dict[str, Any]] = []
+    lower = 0.0
+    for step in peak.pricing.steps:
+        rows.append(
+            {
+                "name": step.name,
+                "from_kw": lower,
+                "to_kw": step.upper_kw,
+                "fee": money_text(step.fee_per_period),
+            }
+        )
+        lower = 0.0 if step.upper_kw is None else step.upper_kw
+    return {"steps": rows}
 
 
 def known_until(curve: PriceCurve | None) -> datetime | None:
@@ -304,10 +336,11 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
     SiteSensorDescription(
         key="level",
         value=lambda s, _r: None if s.tariff is None else s.tariff.level.name,
-        attributes=lambda s, _r: (
+        attributes=lambda s, r: (
             {}
             if s.tariff is None
             else {
+                **level_steps(r),
                 "metric_kw": s.tariff.level.metric_kw,
                 "fee": money_text(s.tariff.level.fee),
                 "confidence": s.tariff.level.confidence,
@@ -321,6 +354,9 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 ],
             }
         ),
+        # The ladder is static per tariff version: the month gauge reads it live,
+        # the history never needs it, so no attribute row carries it (D-0472).
+        unrecorded=frozenset({"steps"}),
     ),
     SiteSensorDescription(
         key="projected_level",
@@ -629,8 +665,10 @@ class _SiteMoneySensor(PowerplanEntity, SensorEntity):
     `state_class: total`, never `total_increasing`: a negative price or a
     battery's arbitrage revenue makes a month go down, and HA's long-term
     statistics need the sensor to say so rather than clamp it (INV-51 in
-    spirit). `last_reset` is the open month's start, read fresh every update -
-    a rollover moves it without restarting the entity. Named for the month and,
+    spirit). `last_reset` is the open month's start, or the ledger's own start
+    when that is later (D12 §5.6 B3, `accrual_reset`), read fresh every update -
+    a rollover moves it without restarting the entity; both read `None` until
+    the ledger has priced its first slot. Named for the month and,
     for savings, always "Beregnet" (D8 §5.15 S4): the translation keys are the
     site's own, `site_cost`/`site_savings`, so a load's keep theirs.
     """
@@ -647,9 +685,9 @@ class _SiteMoneySensor(PowerplanEntity, SensorEntity):
 
     @property
     def last_reset(self) -> datetime | None:
-        """The open month's start (D11 `Ledger.month_start_utc`)."""
+        """The open month's start, or the ledger's first slot when later (`accrual_reset`)."""
         snapshot = self.snapshot
-        return None if snapshot is None else snapshot.accounting.month_start
+        return None if snapshot is None else accrual_reset(snapshot.accounting)
 
     def _since_install(self) -> str | None:
         snapshot = self.snapshot
@@ -667,7 +705,7 @@ class SiteCostSensor(_SiteMoneySensor):
     def native_value(self) -> Any:
         """Month-to-date cost, or `None` before the first slot has priced."""
         snapshot = self.snapshot
-        if snapshot is None or snapshot.accounting.cost is None:
+        if snapshot is None or snapshot.accounting.cost is None or self.last_reset is None:
             return None
         return snapshot.accounting.cost.amount
 
@@ -698,7 +736,7 @@ class SiteSavingsSensor(_SiteMoneySensor):
     def native_value(self) -> Any:
         """Month-to-date savings (unclamped - negative is a real answer), or `None` unpriced."""
         snapshot = self.snapshot
-        if snapshot is None or snapshot.accounting.savings is None:
+        if snapshot is None or snapshot.accounting.savings is None or self.last_reset is None:
             return None
         return snapshot.accounting.savings.amount
 

@@ -81,8 +81,6 @@ ENTITY_NAMES: Mapping[str, tuple[str, str]] = {
     "production": ("sensor", "production"),
     "surplus": ("sensor", "surplus"),
     "level": ("sensor", "level"),
-    "projected_level": ("sensor", "projected_level"),
-    "advice": ("sensor", "advice"),
     "metric": ("sensor", "metric"),
 }
 #: `plan_status` states in which an appliance draws power now (D8 §5.16).
@@ -276,8 +274,7 @@ def _overview(site: _Site) -> list[Card | None]:
                     t["section_capacity"],
                     _entity_badge(e, "projected_level", show_state=True, icon="mdi:stairs"),
                 ),
-                _cols(_tile(e, "level", site.name("level")), 12, 1),
-                _cols(_tile(e, "advice", site.name("advice")), 12, 1),
+                _cols(_month_card(site), 12, 6),
             )
         )
     sections.extend(
@@ -1001,6 +998,19 @@ def _window_card(site: _Site) -> Card | None:
         "type": WINDOW_CARD,
         "entry_id": site.site.entry_id,
         "mode": "hour",
+        "entities": {key: e[key] for key in keys if key in e},
+        "labels": _labels(site.texts),
+    }
+
+
+def _month_card(site: _Site) -> Card:
+    """Return the capacity step's gauge (D12 §5.3, `mode: month`); the site shows `metric`."""
+    e = site.site.entities
+    keys = ("metric", "level", "projected_level", "advice", "target")
+    return {
+        "type": WINDOW_CARD,
+        "entry_id": site.site.entry_id,
+        "mode": "month",
         "entities": {key: e[key] for key in keys if key in e},
         "labels": _labels(site.texts),
     }

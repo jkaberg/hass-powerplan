@@ -239,10 +239,13 @@ class AccountingAdapter:
         """Return D7's `AccountingStatus` section from D11's month-to-date figures."""
         figures = self.accounting.status()
         site = figures.site
+        # Before the first priced slot the ledger sits on its placeholder epoch
+        # month: no start is published, so no `last_reset` either (D-0470).
+        opened = self.accounting.state().opened
         return AccountingStatus(
             month_key=figures.month,
-            month_start=figures.last_reset,
-            since=figures.since,
+            month_start=figures.last_reset if opened else None,
+            since=figures.since if opened else None,
             cost=site.cost,
             savings=site.savings,
             confidence=site.savings_confidence.value,

@@ -1952,3 +1952,63 @@ The `level` and `advice` tiles under the `projected_level` badge, replaced by th
 
 The metric's `statistic` card uses `stat_type: max` over the calendar month; the card has no "state", and within a period the metric only rises. The period summary card replaces it later. Affects D12 §5.1.
 **Rejected:** a tile on `metric` - out of place among three `statistic` cards.
+
+### D-0460 · The timeline's legend and touch readout are HTML
+
+The legend is a row of buttons under the canvas toggling series through ECharts' hidden legend; the touch readout is two lines of text under the price strip. An ECharts legend takes a height the grid can't know in advance, so the price strip couldn't sit at a fixed place, and buttons are larger tap targets. Affects D12 §5.2 rules 9, 11.
+**Rejected:** ECharts' plain legend - its wrapped height moves the grids at every width.
+
+### D-0461 · The price strip is a custom series with a canvas-pattern hatch
+
+One rectangle per price run via a `custom` series on a second grid, filled with `--primary-color` at the run's alpha; an estimated run gets a second rectangle with a 45° canvas pattern. ECharts' `decal` applies only to series item styles and doesn't reach custom series or mark areas. Affects D12 §5.2 rule 5.
+**Rejected:** bars with a decal - bars on a time axis can't span unequal slot runs edge to edge.
+
+### D-0462 · The y scale steps through 1, 2, 3, 4 and 5 × 10ⁿ
+
+`niceScale(max)` picks the smallest step from 1, 2, 3, 4, 5, 10 × 10ⁿ covering `max` in at most five ticks: 10.8 becomes 12 in steps of 3. A 10 kW limit then sits inside a 12 kW plot instead of 15 or 20. Affects D12 §5.2 rule 3.
+**Rejected:** `max: 'dataMax'` - puts the limit on the plot's edge.
+
+### D-0463 · The month gauge runs to the bound two steps above the current step
+
+The arc ends at the upper bound of the step two above the current one, or the highest finite bound. With the metric at 8.97 kW in the 5-10 step, the scale ends at 20 kW, showing the next step in full with room past it. Affects D12 §5.3.
+**Rejected:** ending at the next step's bound - the needle sits at 60 % and the next step fills the rest.
+
+### D-0464 · Over more than a day, History's timeline draws daily energy without the limit
+
+For one day, `mode: history` draws hourly grid kWh against the limit and the month's third-highest day, marks the highest hour and adds the price strip. For longer ranges it draws daily kWh by source with a dot on each day that counts, and no limit line: 77 kWh a day and a 10 kWh/h limit share no axis. The peaks gauge shows each day's highest hour. Affects D12 §5.7.
+**Rejected:** each day's highest hour as the bar - the usage section is about how much.
+
+### D-0465 · The layout carries the grid statistics; the cards fetch statistics themselves
+
+`ws.py` reads the Energy preferences' grid import statistics in both of HA's shapes and passes them as `grid_entities`. The picker cards take only the period from `energy_powerplan` and fetch `recorder/statistics_during_period` themselves, falling back to the calendar month without a picker. The collection's `stats` are HA-internal. Affects D12 §5.7.
+**Rejected:** reading `data.stats` - an internal shape that has already changed once.
+
+### D-0470 · A month total publishes nothing until the ledger has priced a slot
+
+`AccountingHook.status()` publishes `month_start` and `since` only once the ledger is `opened`; until then cost and savings read `None` with no `last_reset`. After that, `last_reset` is `max(month_start, since)`. HA's recorder zero-points a total's sum at its first valid state, and a changed `last_reset` starts a new cycle from 0: a placeholder `0` with the ledger's epoch as `last_reset`, followed by the real month total, booked the whole month's capacity fee as one hour's change. `test_monetary_statistics.py` runs the real recorder. Affects D12 §5.6, D8 §5.5.
+**Rejected:** keeping the month start and hiding only the placeholder - claims a month the total never covered.
+
+### D-0471 · A load's month rows reset at the ledger's start
+
+`cost_month`, `savings_month` and `energy_month` use the site's `accrual_reset`; D11 keeps no per-load start. A load added mid-month starts at 0, which HA zero-points whatever `last_reset` says. Affects D12 §5.6.
+**Rejected:** a per-load start in `LoadMonthRec` - nothing reads it yet.
+
+### D-0472 · `level.steps` stays out of the recorder
+
+The ladder is static per tariff version, but `level`'s other attributes change with each closed window, and each row would copy the ladder. The gauge reads live state (INV-61's spirit). Affects D12 §5.6.
+**Rejected:** recording it to redraw past months - the tariff version history already holds it.
+
+### D-0473 · The logbook's entity rides in the bus event's data
+
+`Runtime.fire_event` adds `entity_id` to the bus payload: the appliance's `plan_status` for an event with a load, else `event.<site>`. HA's logbook filters external events by `entity_id` in the data, in both query and live stream; an `entity_id` attribute on a state would make HA treat it as a group. Events fired before the event entity is registered don't show. Affects D12 §5.6, D8 §5.6.
+**Rejected:** every event on `event.<site>` only - the lines belong under the appliance.
+
+### D-0474 · Logbook lines are `selector.logbook.options`, in HA's language
+
+Each line is a template under `selector.logbook.options.<key>`, `<kind>` or `<kind>_<state>`; `logbook.MESSAGES` lists every key and a test holds both languages to it. Numbers and money go through `flow.text.Text` in `hass.config.language`. A describer is synchronous with no user language, and one key per state keeps Norwegian word order right. Affects D12 §5.6.
+**Rejected:** `exceptions.<key>.message` - these lines aren't errors.
+
+### D-0475 · A logbook line is named after the appliance as the household named it
+
+The line's `name` is `load.config.name`, or the home's name for a site event. `plan_status` sits on the hardware device, which keeps its maker's name. Affects D12 §5.6.
+**Rejected:** letting the frontend name it from the entity - "Charger Plan status".

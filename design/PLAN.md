@@ -429,9 +429,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4a | Dashboard: layout, entities, built-in cards | done |
 | 6.4b | Dashboard: timeline and window gauge | done |
 | 6.4c | Dashboard redesign: layout | done |
-| 6.4d | Dashboard redesign: timeline and hour gauge | todo |
-| 6.4e | Dashboard redesign: month gauge and History's data | todo |
-| 6.4f | Dashboard redesign: History follows the picker | todo |
+| 6.4d | Dashboard redesign: timeline and hour gauge | done |
+| 6.4e | Dashboard redesign: month gauge and History's data | done |
+| 6.4f | Dashboard redesign: History follows the picker | done |
 | 6.4g | Dashboard redesign: reasons | todo |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |

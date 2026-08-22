@@ -25,8 +25,8 @@ The three buttons at the top of *Now* are automatic control, presence and your c
 
 Two cards are PowerPlan's own:
 
-- **The timeline** shows the next 24 hours. The bars are what each appliance is planned to use, the shaded area is the rest of the house, the dashed red line is the capacity limit and the blue line is the price. Everything is in kW, so a quarter-hour and an hour read the same way. A grey band marks prices that are estimated, not yet published. Tap a slot to see its energy, price and cost. Tap a name in the legend to hide it.
-- **The capacity gauge** shows how much of this window's limit is used. The needle is where the window is expected to end. Green means all is well, amber means PowerPlan is holding back, and red means it is shedding or the limit is at risk. Tap it for the window's history.
+- **The timeline** shows the next 24 hours (12 on a phone; the buttons above it switch between 12, 24 and 48). Each appliance's bar sits on top of the grey area, the rest of the house, so the top of a bar is the total - compare it with the dashed red line, your power target. The strip under the times is the price: darker is dearer, and a hatched strip means the price is estimated, not yet published. Everything is in kW, so a quarter-hour and an hour read the same way. Point at a slot, or tap it on a phone, to see the appliances, the sum against the target, the price and the cost. Tap a name below the chart to hide it. On an appliance's page the timeline shows that appliance alone, with a line at the time it must be ready.
+- **The capacity gauge** shows this hour's usage against its limit. The pale part of the arc and the small tick show where the hour is expected to end. The label at the top says *Normal*, *Tight* or *Critical* - or when a peak is expected - and the three figures at the bottom are the expected total, the minutes left of the hour and the power still available. Tap it for the hour's history.
 
 ## It follows your setup
 

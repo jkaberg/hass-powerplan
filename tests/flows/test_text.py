@@ -90,6 +90,8 @@ SAME_IN_BOTH = frozenset(
         "Normal",  # the middle priority (D-0411), one word in both
         "Status",  # the charger's status role (review LOAD-1)
         "Start",  # the next-runs table's first column, one word in both (D12 §5.9)
+        "{min} min",  # the gauge's minutes left, a unit in both (D12 §5.3)
+        "≈ {cost} {currency}",  # the timeline's slot cost, symbols only (D12 §5.2)
         "kW",  # a unit
         "—",  # nothing
         "April",  # months spelled the same in nb (`selector.month`)

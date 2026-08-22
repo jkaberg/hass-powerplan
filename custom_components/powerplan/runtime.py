@@ -170,6 +170,7 @@ from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
 from .events import event_name
 from .flow.load import binding_from_data
+from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
 from .providers.forecasts.recorder_baseline import LoadSource, async_seed
@@ -2327,7 +2328,13 @@ class Runtime:
             )
             return
         payload["site"] = self.site_name
-        self.hass.bus.async_fire(event_name(kind), payload)
+        # The logbook card filters events by the `entity_id` in their data (D12
+        # §5.6 B4): the appliance's `plan_status`, or `event.<site>`. The event
+        # entity's own attributes stay without it - an `entity_id` attribute
+        # would make that state read as a group.
+        entity_id = logbook_entity_id(self.hass, self.entry.entry_id, payload)
+        bus = payload if entity_id is None else {**payload, "entity_id": entity_id}
+        self.hass.bus.async_fire(event_name(kind), bus)
         self.last_event = (kind.value, payload)
         for listener in list(self._event_listeners):
             listener(kind.value, payload)

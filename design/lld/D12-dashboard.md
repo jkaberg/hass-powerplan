@@ -205,6 +205,8 @@ ECharts 6.1.0 (HA's own major version, bundled, §11), themed from HA's CSS vari
 | 13 | **Colours.** `loads[].color` (§5.8), else `--graph-color-<n>`, else HA's default palette. |
 | 14 | **Empty.** No slots at all → `card_no_plan`. |
 
+The legend and the touch readout are HTML under the canvas, toggling the chart's series through ECharts' hidden legend. The price strip is a `custom` series whose estimated runs get a canvas-pattern hatch, and the y scale's steps are 1, 2, 3, 4, 5 × 10ⁿ (D-0460…D-0462).
+
 The pure halves are in `transforms.ts`, each with a vitest (§9 13): `windowHours(width, cfg)`, `sliceWindow`, `stackOffsets`, `niceMax`, `priceRuns`, `legendItems`, `slotReadout`, `runsForLoad`. `getGridOptions()` defaults `rows: 7, min_rows: 5, min_columns: 6`.
 
 **`mode: history`** is §5.7's.
@@ -231,13 +233,13 @@ One element, `powerplan-window-card`, three `mode`s. Every mode draws in an SVG 
 
 | element | from | rule |
 |---|---|---|
-| scale | `level.steps` | 0 → the upper bound of the step above the current one |
-| segments | `level.steps` | one arc per step, 2 px gap, 16 px stroke; steps whose lower bound is under the target select's `target_kw` green (every option has one, `auto` included - no option-to-step mapping), the next amber, the rest red; the current step opaque, the others 28 % |
+| scale | `level.steps` | 0 → the upper bound two steps above the current one, or the highest finite bound (D-0463) |
+| segments | `level.steps` | one arc per step, 2 px gap, 16 px stroke, coloured by **index** against the target step (§5.11 M1); the current step opaque, the others 45 % (§5.17 C8) |
 | ticks | `level.steps` | each step boundary outside the arc, "0" and the scale's end in kW |
 | needle | `metric` | 3 px `--primary-text-color` from the centre, 6 px hub |
-| reading | `metric`, `level` | "8,97 kW" (28 px) over `card_metric_label` |
+| reading | `metric`, `level` | "8,97 kW" (28 px) over `card_metric_label`, the step's fee on the subtitle |
 | top 3 | `advice.items[key=top_entries].entries` | three rows: date, an 8 px bar on 0 → scale, value; a dashed amber line at the current step's upper bound |
-| footer | `advice` items `step_headroom`, `days_that_matter` | `card_to_next_step` and `card_day_that_tips`, each only when its item is there |
+| footer | `advice` items `step_headroom`, `days_that_matter` | one tip sentence when both are known (`card_day_that_tips_step`), else `card_to_next_step` or `card_day_that_tips` alone |
 
 `days_that_matter.kw` is the largest peak today may reach with the metric still at or under the **target** (`_feasible`, D2 §5.6's closed form: `d × T − Σ` the other `d − 1` highest days), not the next step's boundary, which it only equals when the target is the current step. So `card_day_that_tips` says "takes you over your target" (D-0455).
 
@@ -277,9 +279,9 @@ Read at each release's pinned frontend tag (D-0437). At the integration floor, 2
 
 | entity | what | WP |
 |---|---|---|
-| `sensor.<site>_level` → `steps` | the tariff's ladder, `[{name, from_kw, to_kw, fee}]` (`to_kw` `None` for the open top step, `fee` as `money_text`), for the month gauge; absent without a step table | 6.4e |
-| `sensor.<site>_cost`, `_savings`, each load's `cost_month`, `savings_month` → `last_reset` | the instant the sensor began accumulating when that is later than the period's start, so a total first seen mid-month enters statistics as a start, not as one hour's change (the live 417 kr spike) | 6.4e |
-| `logbook.py` | `async_describe_events` for every `EventKind` (D8 §5.5): a translated message, and the appliance's `plan_status` (or `event.<site>` for a site event) as `entity_id`, so the History logbook reads "Gulvvarme inngang - Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr" | 6.4e |
+| `sensor.<site>_level` → `steps` | the tariff's ladder, `[{name, from_kw, to_kw, fee}]` (`to_kw` `None` for the open top step, `fee` as `money_text`), for the month gauge; absent without a step table. *In code:* recorder-excluded, since the ladder is static per version (D-0472) | 6.4e |
+| `sensor.<site>_cost`, `_savings`, each load's `cost_month`, `savings_month` → `last_reset` | the instant the sensor began accumulating when that is later than the period's start, so a total first seen mid-month enters statistics as a start, not as one hour's change (the live 417 kr spike). *In code:* the spike's cause was the ledger's placeholder month (`0` with `last_reset` 1970-01-01, before the first priced slot), not the first appearance, which HA's recorder already zero-points. The month sensors now read `None`, with no `last_reset`, until the ledger opens. After that `last_reset` = max(month start, ledger start), and a load's rows use the ledger's start (D-0470, D-0471) | 6.4e |
+| `logbook.py` | `async_describe_events` for every `EventKind` (D8 §5.5): a translated message, and the appliance's `plan_status` (or `event.<site>` for a site event) as `entity_id`, so the History logbook reads "Gulvvarme inngang - Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr". *In code:* the bus payload carries `entity_id`, which the logbook card filters on; the event entity's attributes do not (D-0473). Lines are `selector.logbook.options` in HA's language, one key per kind or state (D-0474), named after the load as the household named it (D-0475) | 6.4e |
 | `plan_status` → `reason_key`, `reason_params` | the action reason as a key the frontend's translations carry, beside today's English `reason` | 6.4g |
 | `sensor.<site>_plan`'s state | the planned kWh inside the next 24 h - not the whole 48 h plan `by_load` covers | 6.4g |
 
@@ -353,7 +355,7 @@ None. The dashboard is generated on every open. A household that takes control o
 10. Colours: one hex per load, identical in tile, distribution, timeline and statistics graph, stable across builds, counted per site; HA < 2026.6 has no `entities[].color`. (6.4c)
 11. Conditionals: no capacity tariff → no capacity section; no grid source → no usage section; no `granted_power` → no distribution; no appliances → the "no appliances" markdown; the meter tile hides at `ok`. (6.4c)
 12. The three tables render in HA's template engine against states copied from the live house: the rows, their order, the Total, comma decimals in `nb` and dots in `en`, "running now" for a charging car. (6.4c)
-13. `vitest`: `stackOffsets` (22:00 → 4,93 + 2,96 + 1,20 + 0,56 + 0,18 = 9,82 kW), `niceMax([10 × 1,2, 9,82 × 1,1])` = 12, `legendItems` (a 24 h window from 20:15 → four loads), `priceRuns` (0,8604 → 0,7294 at 22:00 → 0,8604 at 06:00, then estimated), `windowHours` (364 px → 12, 1306 px → 24), `runsForLoad`; the hour gauge's allowance in kW from a W sensor. (6.4d)
+13. `vitest`: `stackOffsets` (22:00 → 4,93 + 2,96 + 1,20 + 0,56 + 0,18 = 9,83 kW; the redesign plan printed 9,82 from unrounded parts), `niceMax([10 × 1,2, 9,82 × 1,1])` = 12, `legendItems` (a 24 h window from 20:15 → four loads), `priceRuns` (0,8604 → 0,7294 at 22:00 → 0,8604 at 06:00, then estimated), `windowHours` (364 px → 12, 1306 px → 24), `runsForLoad`; the hour gauge's allowance in kW from a W sensor. (6.4d)
 14. The month gauge: metric 8,97 on steps 0–2–5–10–15–20 → current index 2 and the needle at 44,9 % of the arc; the top 3, the headroom and the tipping day parsed from the live `advice` items; `sensor.<site>_level` carries `steps`. (6.4e)
 15. Statistics: a monetary total first seen mid-period has `last_reset` at its first accumulation, and the recorder's compiled sum does not jump (B3); the logbook describes every `EventKind` in both languages on the appliance's `plan_status` (B4). (6.4e)
 16. The picker: `energy.ts` resolves `_energy_powerplan`, falls back to the calendar month without it, and picks `hour`/`day`/`month` by range; the period summary's four cells for a month and a day; the history timeline's hourly bars for one day match the live check (8,44 · 7,30 · 4,90 kWh …). (6.4f)

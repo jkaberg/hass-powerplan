@@ -29,10 +29,11 @@ from .const import BRAND_ICON_URL, DOMAIN
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from datetime import datetime
 
     from homeassistant.core import HomeAssistant
 
-    from .core.engine import LoadStatus
+    from .core.engine import AccountingStatus, LoadStatus
     from .core.loads import Load
     from .core.model import Money, Snapshot
     from .runtime import Runtime
@@ -85,6 +86,22 @@ def money_text(value: Money | None) -> str | None:
     uses has a two-decimal minor unit.
     """
     return None if value is None else f"{value.amount:.2f} {value.currency}"
+
+
+def accrual_reset(status: AccountingStatus) -> datetime | None:
+    """Return a month-to-date total's `last_reset` (D12 §5.6, B3; D-0470).
+
+    The open month's start, or the instant the ledger began accumulating when
+    that is later - a total first seen mid-month enters the statistics as a
+    start, not as one hour's change. `None` until the ledger has priced its
+    first slot: the month sensors then read `None` too, so the recorder never
+    zero-points on a placeholder and later sees the real total as a new cycle.
+    """
+    if status.month_start is None:
+        return None
+    if status.since is None:
+        return status.month_start
+    return max(status.month_start, status.since)
 
 
 def git_commit(directory: Path) -> str | None:

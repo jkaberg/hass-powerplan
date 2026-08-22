@@ -132,6 +132,20 @@ async def test_removing_the_load_removes_its_accounting_sensors_too(
     assert registry.async_get(cost_id) is None
 
 
+async def close_the_day(charger: FakeHouse, freezer: FrozenDateTimeFactory) -> None:
+    """Step over the next local midnight: the fixture's manual prices are one slot a day.
+
+    The ledger prices a slot when it ends, so the first priced slot is the day
+    the load was added in, closed at 00:00 - not the next quarter (a 40-step
+    walk to 15:46 closed nothing and asserted on the placeholder month, D-0470).
+    """
+    for _ in range(3):
+        await charger.advance(freezer)
+    charger.now = charger.now.replace(hour=23, minute=58)
+    for _ in range(18):  # 23:58:x → 00:01:x
+        await charger.advance(freezer)
+
+
 def _cost_state(hass: HomeAssistant, site: MockConfigEntry, key: str) -> Any:
     entity_id = er.async_get(hass).async_get_entity_id(
         "sensor", DOMAIN, unique_id(site.entry_id, key)
@@ -151,10 +165,13 @@ def _assert_the_ledger_is_published(hass: HomeAssistant, site: MockConfigEntry) 
     savings = _cost_state(hass, site, "savings")
     for attribute in ("energy_savings", "capacity_savings", "counterfactual_cost"):
         assert savings.attributes[attribute] is not None, (attribute, savings.attributes)
+    # D12 §5.6 B3: a ledger opened mid-month resets at its own first slot, not
+    # at the month's start - the total enters the statistics as a start.
+    since = datetime.fromisoformat(cost.attributes["since_install"])
+    local = since.astimezone(site.runtime_data.build.cfg.tz)
+    assert (local.day, local.hour, local.minute) != (1, 0, 0), since
     for state in (cost, savings):
-        reset = datetime.fromisoformat(state.attributes["last_reset"])
-        local = reset.astimezone(site.runtime_data.build.cfg.tz)
-        assert (local.day, local.hour, local.minute) == (1, 0, 0), reset
+        assert datetime.fromisoformat(state.attributes["last_reset"]) == since
 
 
 @pytest.mark.inv("INV-50")
@@ -173,8 +190,14 @@ async def test_f10_the_cost_sensors_carry_the_ledger_and_last_reset_across_a_res
     section's four keys only.
     """
     await _add_charger_load(hass, site, charger)
-    for _ in range(40):  # 15:40:17 → 15:46:57: the 15:45 slot closes at 15:45:20
-        await charger.advance(freezer)
+    # D12 §5.6 B3, the live 417 kr bar: before the first slot is priced the
+    # ledger sits on a placeholder month - no figure and no `last_reset`, or the
+    # recorder zero-points on it and books the real total as one hour's change.
+    for key in ("cost", "savings"):
+        unpriced = _cost_state(hass, site, key)
+        assert unpriced.state == "unknown", unpriced
+        assert "last_reset" not in unpriced.attributes, unpriced.attributes
+    await close_the_day(charger, freezer)
     _assert_the_ledger_is_published(hass, site)
 
     await restart_entry(hass, site, hass_storage)

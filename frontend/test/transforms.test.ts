@@ -6,12 +6,27 @@ import {
   arcPoint,
   estimatedRanges,
   gauge,
+  legendItems,
+  niceMax,
   type PlanSlot,
+  priceRuns,
   type PriceSlot,
+  adviceItem,
+  midnights,
+  monthGauge,
+  topEntries,
+  runsForLoad,
+  slotReadout,
+  stackOffsets,
   stageTone,
+  stageWord,
   steps,
+  type TimelineSlot,
   timelineSlots,
+  toKw,
   TONE_COLOR,
+  windowHours,
+  withAlpha,
 } from "../src/transforms";
 
 const QUARTER = 15 * 60_000;
@@ -105,16 +120,24 @@ describe("the window gauge", () => {
   });
 
   it("scales against the ceiling and clamps to the arc", () => {
-    expect(gauge(2.5, 4, 5)).toEqual({ max: 5, used: 0.5, needle: 0.8, over: false });
+    expect(gauge(2.5, 4, 5)).toEqual({ max: 5, used: 0.5, projected: 0.8, over: false });
     const over = gauge(4, 6, 5);
-    expect(over.needle).toBe(1);
+    expect(over.projected).toBe(1);
     expect(over.over).toBe(true);
   });
 
-  it("scales to the projection where no ceiling is billed", () => {
+  it("scales to 1,2 × the projection where no ceiling is billed", () => {
     const scale = gauge(2, 3, null);
-    expect(scale.max).toBe(3);
+    expect(scale.max).toBeCloseTo(3.6);
     expect(scale.over).toBe(false);
+  });
+
+  it("says the stage in words and the allowance in kW (B8)", () => {
+    expect([0, 1, 2, 3, 4].map((stage) => stageWord(stageTone(stage)))).toEqual([
+      "normal", "tight", "tight", "critical", "critical",
+    ]);
+    expect(toKw(11000, "W")).toBe(11);
+    expect(toKw(13.7, "kW")).toBe(13.7);
   });
 
   it("draws the semicircle from left to right over the top", () => {
@@ -126,5 +149,163 @@ describe("the window gauge", () => {
     expect(xm).toBeCloseTo(0);
     expect(ym).toBeCloseTo(-40);
     expect(x1).toBeCloseTo(40);
+  });
+});
+
+// The live house one evening (D12 §9 13): Oslo, CEST (UTC+2).
+const at = (iso: string) => Date.parse(iso);
+function slot(startIso: string, minutes: number, extra: Partial<TimelineSlot> = {}): TimelineSlot {
+  const start = at(startIso);
+  return {
+    start,
+    end: start + minutes * 60_000,
+    hours: minutes / 60,
+    price: 0.8604,
+    estimated: false,
+    ceilingKw: 10,
+    baselineKw: null,
+    productionKw: null,
+    loadKw: {},
+    loadKwh: {},
+    ...extra,
+  };
+}
+
+describe("the redesigned timeline (D12 §5.2)", () => {
+  const loads = ["tank", "hall", "bath_1", "bath_2"];
+
+  it("stacks the loads on the rest of the house: 4,93 + 2,96 + 1,20 + 0,56 + 0,18 = 9,83 kW", () => {
+    const s = slot("2026-09-23T20:00:00Z", 15, {
+      baselineKw: 4.93,
+      loadKw: { tank: 2.96, hall: 1.2, bath_1: 0.56, bath_2: 0.18 },
+    });
+    const stack = stackOffsets(s, loads);
+    expect(stack.offset).toBe(4.93);
+    expect(stack.total).toBeCloseTo(9.83);
+    expect(stack.top).toBe(3);
+    expect(stackOffsets(slot("2026-09-23T20:00:00Z", 15), loads).top).toBe(-1);
+  });
+
+  it("puts a 10 kW limit inside the plot: niceMax(10 × 1,2, 9,82 × 1,1) = 12", () => {
+    expect(niceMax([10 * 1.2, 9.82 * 1.1])).toBe(12);
+    expect(niceMax([2.96 * 1.3])).toBe(4);
+    expect(niceMax([])).toBe(1);
+  });
+
+  it("opens at 12 h on a phone and 24 h on a desktop, unless the household chose", () => {
+    const cfg = { hours: 24, narrow_hours: 12, narrow_width: 500 };
+    expect(windowHours(364, cfg)).toBe(12);
+    expect(windowHours(1306, cfg)).toBe(24);
+    expect(windowHours(364, cfg, 48)).toBe(48);
+  });
+
+  it("joins equal prices into runs and splits where the price turns estimated", () => {
+    // Hourly from 21:00 local: day price, night price 22–06, day price, then estimated.
+    const prices = [0.8604, 0.7294, 0.7294, 0.8604, 0.8604, 0.8604];
+    const slots = prices.map((price, i) =>
+      slot(new Date(at("2026-09-23T19:00:00Z") + i * 3_600_000).toISOString(), 60, { price, estimated: i === 5 }),
+    );
+    const runs = priceRuns(slots);
+    expect(runs.map((run) => [run.price, run.estimated])).toEqual([
+      [0.8604, false],
+      [0.7294, false],
+      [0.8604, false],
+      [0.8604, true],
+    ]);
+    expect(runs[1]!.alpha).toBeCloseTo(0.28);
+    expect(runs[0]!.alpha).toBeCloseTo(0.62);
+  });
+
+  it("lists only the loads with energy in the window: four of ten from 20:15", () => {
+    const names = Array.from({ length: 10 }, (_, i) => ({ id: `l${i}`, name: `L${i}` }));
+    const planned = { l2: 0.74, l3: 0.11, l4: 0.05, l5: 0.26 };
+    const slots = [slot("2026-09-23T20:00:00Z", 15, { loadKwh: planned })];
+    const legend = legendItems(names, slots);
+    expect(legend.map((item) => item.id)).toEqual(["l2", "l3", "l4", "l5"]);
+    expect(legend[0]!.kwh).toBeCloseTo(0.74);
+  });
+
+  it("reads one slot: the sum against the limit, the loads, the price and the cost", () => {
+    const s = slot("2026-09-23T20:00:00Z", 15, {
+      price: 0.7294,
+      baselineKw: 4.93,
+      loadKw: { tank: 2.96, hall: 1.2, bath_1: 0.56, bath_2: 0.18 },
+      loadKwh: { tank: 0.74, hall: 0.3, bath_1: 0.14, bath_2: 0.045 },
+    });
+    const readout = slotReadout(s, loads);
+    expect(readout.sumKw).toBeCloseTo(9.83);
+    expect(readout.limitKw).toBe(10);
+    expect(readout.count).toBe(4);
+    expect(readout.cost).toBeCloseTo(1.225 * 0.7294);
+  });
+
+  it("finds a load's runs: 22:00–22:30 and 00:00–00:30 on two nights", () => {
+    const hall = { hall: 0.25 };
+    const slots = [
+      slot("2026-09-23T20:00:00Z", 15, { loadKwh: hall }),
+      slot("2026-09-23T20:15:00Z", 15, { loadKwh: hall }),
+      slot("2026-09-23T20:30:00Z", 15),
+      slot("2026-09-23T22:00:00Z", 15, { loadKwh: hall }),
+      slot("2026-09-23T22:15:00Z", 15, { loadKwh: hall }),
+      slot("2026-09-24T22:00:00Z", 15, { loadKwh: hall }),
+      slot("2026-09-24T22:15:00Z", 15, { loadKwh: hall }),
+    ];
+    expect(runsForLoad(slots, "hall")).toEqual([
+      [at("2026-09-23T20:00:00Z"), at("2026-09-23T20:30:00Z")],
+      [at("2026-09-23T22:00:00Z"), at("2026-09-23T22:30:00Z")],
+      [at("2026-09-24T22:00:00Z"), at("2026-09-24T22:30:00Z")],
+    ]);
+  });
+});
+
+describe("the timeline's clock and colours", () => {
+  it("finds local midnight, DST days included", () => {
+    // 2026-10-25, Oslo: midnight is 22:00Z the day before; the next is 23:00Z (CET).
+    const found = midnights(at("2026-10-24T12:00:00Z"), at("2026-10-26T12:00:00Z"), "Europe/Oslo");
+    expect(found).toEqual([at("2026-10-24T22:00:00Z"), at("2026-10-25T23:00:00Z")]);
+  });
+
+  it("mixes a theme colour with an alpha, and leaves a variable alone", () => {
+    expect(withAlpha("#03a9f4", 0.28)).toBe("rgba(3, 169, 244, 0.28)");
+    expect(withAlpha("#fff", 0.5)).toBe("rgba(255, 255, 255, 0.5)");
+    expect(withAlpha("rgb(3, 169, 244)", 0.62)).toBe("rgba(3, 169, 244, 0.62)");
+    expect(withAlpha("var(--x)", 0.3)).toBe("var(--x)");
+  });
+});
+
+describe("the month gauge (D12 §5.3)", () => {
+  // The live house's Tensio ladder, 0–2–5–10–15–20 kW and above.
+  const steps = [0, 2, 5, 10, 15, 20].map((from, i, all) => ({
+    name: `${from}–${all[i + 1] ?? "∞"} kW`,
+    from_kw: from,
+    to_kw: all[i + 1] ?? null,
+  }));
+
+  it("puts 8,97 kW in the third step with the needle at 44,9 % of a 0–20 kW arc", () => {
+    const g = monthGauge(8.97, steps, 10);
+    expect(g.index).toBe(2);
+    expect(g.max).toBe(20);
+    expect(g.needle).toBeCloseTo(0.4485, 3);
+    expect(g.ticks).toEqual([2, 5, 10, 15]);
+    expect(g.segments.map((s) => s.tone)).toEqual(["ok", "ok", "ok", "warn", "alert"]);
+    expect(g.segments.map((s) => s.current)).toEqual([false, false, true, false, false]);
+    expect(g.barMax).toBe(15);
+    expect(g.upper).toBe(10);
+  });
+
+  it("counts a threshold in the step above", () => {
+    expect(monthGauge(10, steps, 10).index).toBe(3);
+  });
+
+  it("reads the live advice: the top 3, the headroom and the day that tips", () => {
+    const items = [
+      { key: "top_entries", severity: "info", entries: [["2026-09-21", 8.94], ["2026-09-17", 9.12], ["2026-09-13", 8.86]], n: 3 },
+      { key: "step_headroom", severity: "info", to_next_kw: 1.03, next_name: "10–15 kW", fee_delta: "197", currency: "NOK" },
+      { key: "days_that_matter", severity: "info", days: 1, kw: 11.95, n: 3 },
+    ];
+    expect(topEntries(items)).toEqual([["2026-09-17", 9.12], ["2026-09-21", 8.94], ["2026-09-13", 8.86]]);
+    expect(adviceItem(items, "step_headroom")?.to_next_kw).toBe(1.03);
+    expect(adviceItem(items, "days_that_matter")?.kw).toBe(11.95);
+    expect(topEntries(undefined)).toEqual([]);
   });
 });

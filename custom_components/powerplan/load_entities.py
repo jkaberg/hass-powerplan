@@ -51,7 +51,7 @@ from .core.engine import LoadStatus
 from .core.loads import Load, Role
 from .core.loads.types import base as device_types
 from .core.model import Mode
-from .entity import LoadEntity, digest_of, money_text
+from .entity import LoadEntity, accrual_reset, digest_of, money_text
 from .runtime import Runtime
 
 if TYPE_CHECKING:
@@ -970,14 +970,16 @@ class _LoadMonthSensor(LoadEntity, SensorEntity):
         snapshot = self.snapshot
         if snapshot is None:
             return None
+        if accrual_reset(snapshot.accounting) is None:
+            return None  # the ledger has priced nothing yet: no row, no placeholder zero
         row = snapshot.accounting.per_load.get(self.load_id)
         return row if isinstance(row, Mapping) else None
 
     @property
     def last_reset(self) -> datetime | None:
-        """The open month's start - the same one the site's monetary sensors use."""
+        """The same `last_reset` the site's monetary sensors use (`accrual_reset`, D12 B3)."""
         snapshot = self.snapshot
-        return None if snapshot is None else snapshot.accounting.month_start
+        return None if snapshot is None else accrual_reset(snapshot.accounting)
 
     def _since_install(self) -> str | None:
         snapshot = self.snapshot
