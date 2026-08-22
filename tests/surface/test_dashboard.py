@@ -243,7 +243,9 @@ def _subview_cards(config: dict[str, Any], load_id: str) -> list[dict[str, Any]]
 def test_01_golden_on_a_nordic_detached_site(snapshot: SnapshotAssertion) -> None:
     """Twelve loads: every reference shown, only the two custom cards, the Energy shape (D12 §9 1)."""
     site = _nordic()
-    config = build([site], "2026.3.0", TEXTS["nb"], language="nb", has_energy_grid=True)
+    config = build(
+        [site], "2026.3.0", TEXTS["nb"], language="nb", grid_statistics=["sensor.grid_import"]
+    )
     shown = set(site.entities.values()) | {
         entity for load in site.loads for entity in load.entities.values()
     }
@@ -289,7 +291,7 @@ def test_09_two_tabs_and_a_subview_per_appliance() -> None:
 def test_09_sections_come_in_the_phone_order() -> None:
     """Config order is phone order; dense placement tidies the desktop (D12 §5.1)."""
     t = EN
-    config = build([_nordic()], "2026.3.0", t, has_energy_grid=True)
+    config = build([_nordic()], "2026.3.0", t, grid_statistics=["sensor.grid_import"])
     assert _headings(_view(config, "overview")) == [
         None, t["section_hour"], t["section_plan"], t["section_appliances"], t["section_capacity"],
         t["section_month"], t["section_next_runs"],
@@ -400,7 +402,7 @@ def test_02_each_type_gets_its_tiles(kind: str) -> None:
     control = tiles[load.entities["control"]]
     assert control["features"] == [{"type": "select-options"}]
     assert control["features_position"] == "inline"
-    assert load.entities["plan_status"] in tiles
+    assert tiles[load.entities["plan_status"]]["state_content"] == ["state", "reason_key"]
     for key, feature in TYPE_TILES[kind].items():
         tile = tiles[load.entities[key]]
         assert [f["type"] for f in tile.get("features", [])] == ([feature] if feature else [])
@@ -570,7 +572,10 @@ def test_18_every_text_is_used_and_exists_in_both_languages() -> None:
     used |= {f"view_{view}" for view in ("overview", "history")}
     used |= {f"confidence_{c}" for c in ("known", "stale", "estimated", "synthesised")}
     cards = "".join(path.read_text("utf-8") for path in FRONTEND.glob("*.ts"))
-    used |= {f"card_{key}" for key in re.findall(r"labels\??\.(\w+)", cards)}
+    used |= {
+        key if key.startswith("summary_") else f"card_{key}"
+        for key in re.findall(r"labels\??\.(\w+)", cards)
+    }
     used |= {f"card_stage_{word}" for word in ("normal", "tight", "critical")}  # `stageWord`
     assert used <= options["en"].keys(), used - options["en"].keys()
     assert options["en"].keys() <= used, options["en"].keys() - used
@@ -644,7 +649,7 @@ async def test_04_twenty_loads_build_in_under_100_ms(
     loads = tuple(_load(f"l{i}", kinds[i % len(kinds)]) for i in range(20))
     started = time.perf_counter()
     site_layout(hass, site)
-    build([_site(loads)], "2026.3.0", EN, has_energy_grid=True)
+    build([_site(loads)], "2026.3.0", EN, grid_statistics=["sensor.grid_import"])
     assert time.perf_counter() - started < 0.1
 
 

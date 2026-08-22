@@ -41,12 +41,25 @@ from .gate import (
     config_for,
     decide,
 )
-from .kinds.base import ControlKind, Desired, Hold, KindCtx, Reads, Role, RoleRead, Value, Write
+from .kinds.base import (
+    ActionReason,
+    ControlKind,
+    Desired,
+    Hold,
+    KindCtx,
+    Reads,
+    ReasonParams,
+    Role,
+    RoleRead,
+    Value,
+    Write,
+)
 from .stores.base import StoreCtx, StoreModel
 from .targets import CalendarEvent, PresenceMode, TargetProfile
 
 __all__ = [
     "Action",
+    "ActionReason",
     "ApplyResult",
     "ComfortState",
     "Command",
@@ -68,6 +81,7 @@ __all__ = [
     "Mode",
     "Observation",
     "Reads",
+    "ReasonParams",
     "Role",
     "RoleRead",
     "SessionDone",
@@ -377,6 +391,9 @@ class ApplyResult:
     #: What the device held when the gate decided - the "old" of the executor's
     #: "old → new" line, an observed decision's included (H.1 F-4, D-0363).
     current: Value | None = None
+    #: `reason` as a key and its numbers, for the surface to translate (D-0480).
+    reason_key: ActionReason = field(kw_only=True)
+    reason_params: ReasonParams = field(default_factory=dict, kw_only=True)
 
     @property
     def written(self) -> bool:
@@ -665,6 +682,8 @@ class Load:
                     action=outcome.action,
                     value=quantised.value,
                     reason=outcome.reason,
+                    reason_key=outcome.reason_key,
+                    reason_params=outcome.reason_params,
                     effective_w=quantised.effective_w,
                     budget=ctx.budget,
                 ),
@@ -772,12 +791,20 @@ class Load:
                 action=Action.SAME,
                 value=None,
                 reason=f"{reason}: nothing of ours to undo",
+                reason_key=ActionReason.NOTHING_TO_UNDO,
                 budget=ctx.budget,
             )
         if isinstance(undo, Hold):
             return (
                 replace(state, shed_active=False, shed_since=None),
-                ApplyResult(action=undo.action, value=None, reason=undo.reason, budget=ctx.budget),
+                ApplyResult(
+                    action=undo.action,
+                    value=None,
+                    reason=undo.reason,
+                    reason_key=undo.reason_key,
+                    reason_params=undo.reason_params,
+                    budget=ctx.budget,
+                ),
             )
         outcome = undo
 
@@ -852,6 +879,8 @@ class Load:
             action=decision.action,
             value=decision.value,
             reason=decision.reason,
+            reason_key=decision.reason_key,
+            reason_params=decision.reason_params,
             command=decision.command,
             blocking=decision.blocking,
             verify_at=decision.verify_at,
@@ -873,6 +902,7 @@ def _undo(prior: Mapping[str, Value | None]) -> Command | None:
     return Command(
         writes=writes,
         reason=f"back to {writes[0].value}, as it was before powerplan wrote to it",
+        reason_key=ActionReason.BACK_TO_PRIOR,
         urgent=True,
     )
 

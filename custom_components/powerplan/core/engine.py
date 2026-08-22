@@ -86,6 +86,7 @@ from .allocation import (
 )
 from .loads import (
     Action,
+    ActionReason,
     ApplyResult,
     ComfortState,
     Demand,
@@ -96,6 +97,7 @@ from .loads import (
     LoadState,
     Mode,
     Reads,
+    ReasonParams,
     Role,
     Urgency,
     effective_mode,
@@ -192,7 +194,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 5
+SnapshotSchema: int = 6
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -624,6 +626,10 @@ class LoadStatus:
     #: D4 §5.12's anti-legionella cycle, `None` for a type with none or one
     #: running its own programme (D8 §5.5 `sensor.<load>_next_legionella`).
     legionella_due_at: datetime | None = None
+    #: `action_reason` as a key and its numbers (D12 §5.6 v0.4, D-0480); `None`
+    #: when nothing was applied this tick, as `action_reason` is then "".
+    action_key: ActionReason | None = None
+    action_params: ReasonParams = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2133,6 +2139,8 @@ class Engine:
                 capped_by=() if grant is None else grant.capped_by,
                 action=Action.OBSERVE if result is None else result.action,
                 action_reason="" if result is None else result.reason,
+                action_key=None if result is None else result.reason_key,
+                action_params={} if result is None else result.reason_params,
                 health=observation.health
                 if observation is not None
                 else Health(
@@ -3204,6 +3212,8 @@ def _command_of(load_id: str, result: ApplyResult, gate: GateState) -> LoadComma
             value=result.value,
             current=result.current,
             reason=result.reason,
+            reason_key=result.reason_key,
+            reason_params=result.reason_params,
             gate=gate,
             budget=result.budget,
             blocking=result.blocking,

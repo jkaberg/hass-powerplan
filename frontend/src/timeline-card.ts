@@ -2,17 +2,24 @@
 // each appliance's planned power stacked on the rest of the house, so a bar's
 // top is the total the household compares with the dashed limit - and the
 // price as a strip under the time axis. ECharts at HA's own major version,
-// themed from HA's CSS variables. The rule numbers are D12 §5.2's.
+// themed from HA's CSS variables. The rule numbers are D12 §5.2's. `mode:
+// history` (D12 §5.7) draws the past instead, on the History view's picker:
+// grid usage per hour or per day against the limit, the days that count.
 
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
+import { fetchStatistics, followPeriod, type Period, statisticsPeriod, type StatRow } from "./energy";
 import { cssVar, type HomeAssistant, timeZone } from "./ha";
 import {
+  countingDays,
+  type DayPeak,
+  dayKey,
   estimatedRanges,
   legendItems,
   midnights,
   nextPlanned,
   niceScale,
+  nthHighest,
   type PlanSlot,
   type PriceRun,
   priceRuns,
@@ -26,17 +33,27 @@ import {
   timelineSlots,
   windowHours,
   withAlpha,
+  withoutDate,
 } from "./transforms";
 
 interface TimelineConfig {
   entry_id: string;
-  mode?: "plan";
+  mode?: "plan" | "history";
+  /** `mode: history`: the Energy preferences' grid consumption statistics. */
+  grid_entities?: string[];
   hours?: number;
   hours_options?: number[];
   narrow_hours?: number;
   narrow_width?: number;
   loads: Array<{ id: string; name: string; color?: string }>;
-  entities: { plan: string; price_forecast: string; deadline?: string };
+  entities: {
+    plan: string;
+    price_forecast: string;
+    deadline?: string;
+    window_used?: string;
+    ceiling?: string;
+    price?: string;
+  };
   show?: string[];
   currency?: string;
   labels?: Record<string, string>;
@@ -84,7 +101,16 @@ export class PowerplanTimelineCard extends HTMLElement {
   private off = new Set<string>();
   private slots: TimelineSlot[] = [];
 
+  private period?: Period;
+  private unfollow?: () => void;
+
   public setConfig(config: TimelineConfig): void {
+    if (config?.mode === "history") {
+      if (!config.grid_entities?.length) throw new Error("powerplan-timeline-card history needs grid_entities");
+      this.config = { ...config, loads: config.loads ?? [], entities: config.entities ?? ({} as TimelineConfig["entities"]) };
+      this.key = [];
+      return;
+    }
     if (!config?.entities?.plan || !config.entities.price_forecast) {
       throw new Error("powerplan-timeline-card needs entities.plan and entities.price_forecast");
     }
@@ -96,6 +122,10 @@ export class PowerplanTimelineCard extends HTMLElement {
     this.hassRef = hass;
     const config = this.config;
     if (!config) return;
+    if (config.mode === "history") {
+      this.follow();
+      return;
+    }
     // HA replaces a state object only when it changes: redraw on a new plan,
     // a new curve, a new deadline, a theme or language switch, or the clock.
     const key = [
@@ -117,7 +147,8 @@ export class PowerplanTimelineCard extends HTMLElement {
       if (Math.abs(width - this.width) < 1) return;
       this.width = width;
       this.chart?.resize();
-      void this.render();
+      if (this.config?.mode === "history") void this.renderHistory();
+      else void this.render();
     });
     this.resize.observe(this);
     if (this.hassRef) {
@@ -126,7 +157,18 @@ export class PowerplanTimelineCard extends HTMLElement {
     }
   }
 
+  /** `mode: history` follows the History view's picker (D12 §5.7). */
+  private follow(): void {
+    if (!this.hassRef || this.unfollow || !this.isConnected) return;
+    this.unfollow = followPeriod(this.hassRef, (period) => {
+      this.period = period;
+      void this.renderHistory();
+    });
+  }
+
   public disconnectedCallback(): void {
+    this.unfollow?.();
+    this.unfollow = undefined;
     this.resize?.disconnect();
     this.chart?.dispose();
     this.chart = undefined;
@@ -697,5 +739,175 @@ export class PowerplanTimelineCard extends HTMLElement {
     rows.push(escape(head.split(" · ").slice(1).join(" · ")));
     rows.push(escape(sub.split(" · ").slice(1).join(" · ")));
     return rows.filter(Boolean).join("<br>");
+  }
+
+  // --------------------------------------------------------- mode: history
+
+  private async renderHistory(): Promise<void> {
+    const hass = this.hassRef;
+    const config = this.config;
+    const period = this.period;
+    if (!hass || !config || !period) return;
+    const els = this.shell();
+    els.toggle.hidden = true;
+    els.readout.hidden = true;
+    const labels = config.labels ?? {};
+    const zone = timeZone(hass);
+    const grain = statisticsPeriod(period) === "hour" ? "hour" : "day";
+    const sources = config.grid_entities ?? [];
+    const e = config.entities;
+    const month = {
+      start: new Date(period.start.getFullYear(), period.start.getMonth(), 1),
+      end: new Date(period.start.getFullYear(), period.start.getMonth() + 1, 1),
+    };
+    const extra = grain === "hour" ? [e.ceiling, e.price].filter((id): id is string => Boolean(id)) : [];
+    const [usage, marks, peaks] = await Promise.all([
+      fetchStatistics(hass, period, sources, ["change"], grain),
+      fetchStatistics(hass, period, extra, ["mean"], "hour"),
+      e.window_used ? fetchStatistics(hass, grain === "hour" ? month : period, [e.window_used], ["max"], "day") : Promise.resolve({}),
+    ]);
+    if (this.period !== period || !this.isConnected) return;
+    const starts = [...new Set(sources.flatMap((id) => (usage[id] ?? []).map((row) => row.start)))].sort((a, b) => a - b);
+    const empty = starts.length === 0;
+    els.chart.hidden = empty;
+    els.message.hidden = !empty;
+    els.message.textContent = empty ? withoutDate(labels.collecting ?? "") : "";
+    els.legend.replaceChildren();
+    if (empty) return;
+    if (!this.chart) {
+      const { echarts } = await import("./chart");
+      if (this.chart || !this.isConnected) return;
+      this.chart = echarts.init(els.chart, undefined, { renderer: "canvas" });
+    }
+    const f = this.formats();
+    const step = grain === "hour" ? 3_600_000 : 86_400_000;
+    const start = period.start.getTime();
+    const end = period.end.getTime();
+    const muted = cssVar(this, "--secondary-text-color", "#727272");
+    const divider = cssVar(this, "--divider-color", "rgba(0,0,0,.12)");
+    const error = cssVar(this, "--error-color", "#db4437");
+    const warning = cssVar(this, "--warning-color", "#ffa600");
+    const grid = cssVar(this, "--energy-grid-consumption-color", "#488fc2");
+    const shades = [grid, withAlpha(grid, 0.6), withAlpha(grid, 0.35)];
+    const plotPx = Math.max(100, (this.width || 600) - AXIS_PX - 24);
+    const barWidth = Math.max(1, (plotPx * step) / (end - start) - 2);
+    const totals = new Map<number, number>();
+    const series: Record<string, unknown>[] = sources.map((id, index) => {
+      const rows = new Map((usage[id] ?? []).map((row) => [row.start, row.change ?? 0]));
+      for (const t of starts) totals.set(t, (totals.get(t) ?? 0) + (rows.get(t) ?? 0));
+      return {
+        name: String(hass.states[id]?.attributes.friendly_name ?? id),
+        type: "bar",
+        stack: "grid",
+        barWidth,
+        itemStyle: { color: shades[index % shades.length] },
+        data: starts.map((t) => [t + step / 2, rows.get(t) ?? 0]),
+      };
+    });
+    const peakRows = (e.window_used ? (peaks as Record<string, StatRow[]>)[e.window_used] : undefined) ?? [];
+    const dayPeaks: DayPeak[] = peakRows.filter((row) => row.max != null).map((row) => [dayKey(row.start, zone), row.max!]);
+    const top = Math.max(...totals.values());
+    const markLines: Record<string, unknown>[] = [];
+    const markPoints: Record<string, unknown>[] = [];
+    let ceilingMax = 0;
+    if (grain === "hour") {
+      // One day: the limit, the month's third-highest day and the day's highest hour.
+      const ceiling = e.ceiling ? (marks[e.ceiling] ?? []) : [];
+      if (ceiling.length) {
+        ceilingMax = Math.max(...ceiling.map((row) => row.mean ?? 0));
+        series.push({
+          name: labels.limit ?? "",
+          type: "line",
+          step: "end",
+          symbol: "none",
+          lineStyle: { type: "dashed", width: 1.5, color: error },
+          endLabel: { show: true, formatter: fill(labels.limit_value ?? "{kw} kW", { kw: f.kw.format(ceilingMax) }), color: muted, fontSize: 11, align: "right", offset: [-4, -10] },
+          data: [...ceiling.map((row) => [row.start, row.mean]), [ceiling[ceiling.length - 1]!.end, ceiling[ceiling.length - 1]!.mean]],
+        });
+      }
+      const third = nthHighest(dayPeaks.filter(([day]) => day !== dayKey(start, zone)));
+      if (third) {
+        markLines.push({
+          yAxis: third[1],
+          lineStyle: { color: warning, width: 1, type: "dashed" },
+          label: { formatter: fill(labels.third_threshold ?? "{kw}", { kw: f.money.format(third[1]) }), position: "insideStartTop", color: warning, fontSize: 11 },
+        });
+      }
+      const [bestAt, best] = [...totals.entries()].reduce((a, b) => (b[1] > a[1] ? b : a));
+      markPoints.push({
+        coord: [bestAt + step / 2, best],
+        symbol: "circle",
+        symbolSize: 7,
+        itemStyle: { color: warning },
+        label: { show: true, position: "top", formatter: fill(labels.highest_hour ?? "{kwh}", { kwh: f.money.format(best) }), color: muted, fontSize: 11 },
+      });
+      const prices = e.price ? (marks[e.price] ?? []) : [];
+      if (prices.length) {
+        const slots = prices.map((row) => ({
+          start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
+          ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {},
+        })) as TimelineSlot[];
+        series.push(this.strip(priceRuns(slots), cssVar(this, "--primary-color", "#03a9f4"), muted, cssVar(this, "--primary-text-color", "#212121"), f.money));
+      }
+    } else {
+      // A longer range: an amber dot over each day that counts.
+      const counting = countingDays(dayPeaks);
+      for (const t of starts) {
+        if (counting.has(dayKey(t, zone))) {
+          markPoints.push({ coord: [t + step / 2, totals.get(t)], symbol: "circle", symbolSize: 6, symbolOffset: [0, -6], itemStyle: { color: warning }, label: { show: false } });
+        }
+      }
+    }
+    // The marks ride on the top source, so they sit over the stack.
+    const last = sources.length - 1;
+    if (series[last]) {
+      series[last] = { ...series[last], markPoint: { silent: true, data: markPoints }, markLine: { silent: true, symbol: "none", data: markLines } };
+    }
+    const scale = niceScale(Math.max(top * 1.15, ceilingMax * 1.2));
+    const hasStrip = series.some((item) => item.type === "custom");
+    this.chart.setOption(
+      {
+        animation: false,
+        grid: [
+          { left: 4, right: 8, top: 22, bottom: (hasStrip ? STRIP_PX : 0) + LABELS_PX + 2, containLabel: true },
+          { left: 4, right: 8, bottom: 0, height: hasStrip ? STRIP_PX : 0, containLabel: true },
+        ],
+        tooltip: {
+          trigger: "axis",
+          axisPointer: { type: "line", lineStyle: { color: divider } },
+          valueFormatter: (value: number) => `${f.money.format(value)} kWh`,
+        },
+        xAxis: [
+          {
+            type: "time",
+            min: start,
+            max: end,
+            axisLine: { lineStyle: { color: divider } },
+            axisTick: { show: false },
+            axisLabel: {
+              color: muted,
+              hideOverlap: true,
+              formatter: (value: number) => (grain === "hour" ? f.clock.format(value) : new Intl.DateTimeFormat(hass.locale.language, { day: "numeric", month: "short", timeZone: zone }).format(value)),
+            },
+          },
+          { type: "time", gridIndex: 1, min: start, max: end, show: false },
+        ],
+        yAxis: [
+          {
+            type: "value",
+            name: "kWh",
+            min: 0,
+            max: scale.max,
+            interval: scale.step,
+            nameTextStyle: { color: muted },
+            axisLabel: { color: muted, formatter: (value: number) => f.kw.format(value) },
+            splitLine: { lineStyle: { color: divider, type: "dashed" } },
+          },
+          { type: "value", gridIndex: 1, min: 0, max: 1, show: false },
+        ],
+        series,
+      },
+      { notMerge: true },
+    );
   }
 }

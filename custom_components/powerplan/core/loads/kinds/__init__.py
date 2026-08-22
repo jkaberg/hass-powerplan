@@ -11,6 +11,7 @@ configuration the questionnaire derived.
 
 from .base import (
     Action,
+    ActionReason,
     Command,
     ControlKind,
     Desired,
@@ -18,6 +19,7 @@ from .base import (
     KindCtx,
     Quantised,
     Reads,
+    ReasonParams,
     Role,
     RoleRead,
     Value,
@@ -34,6 +36,7 @@ __all__ = [
     "ECO_TOKENS",
     "EV_MIN_A",
     "Action",
+    "ActionReason",
     "Command",
     "ControlKind",
     "Desired",
@@ -45,6 +48,7 @@ __all__ = [
     "ModulateCfg",
     "Quantised",
     "Reads",
+    "ReasonParams",
     "Role",
     "RoleRead",
     "Setpoint",

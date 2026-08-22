@@ -19,6 +19,7 @@ the questionnaire framework and the gate decision. The other six types
 from ..model import ComfortState, Demand, Grant, Mode, Urgency
 from .base import (
     Action,
+    ActionReason,
     ApplyResult,
     Command,
     ControlKind,
@@ -35,6 +36,7 @@ from .base import (
     LoadState,
     Observation,
     Reads,
+    ReasonParams,
     Role,
     RoleRead,
     SessionDone,
@@ -101,6 +103,7 @@ __all__ = [
     "TRANSPORT_LIMIT_PER_MIN",
     "UNHEALTHY_AT",
     "Action",
+    "ActionReason",
     "AnswerError",
     "Answers",
     "ApplyResult",
@@ -138,6 +141,7 @@ __all__ = [
     "QuestionKind",
     "Questionnaire",
     "Reads",
+    "ReasonParams",
     "Role",
     "RoleRead",
     "RoomStore",

@@ -1369,6 +1369,8 @@ class Runtime:
                 value=result.value,
                 current=None,
                 reason=result.reason,
+                reason_key=result.reason_key,
+                reason_params=result.reason_params,
                 gate=state.gate,
                 budget=result.budget,
                 blocking=result.blocking,

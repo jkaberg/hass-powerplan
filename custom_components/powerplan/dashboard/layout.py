@@ -42,7 +42,8 @@ COLLECTION_KEY = "energy_powerplan"
 #: The only card types not shipped with HA (D12 §9 1).
 TIMELINE_CARD = "custom:powerplan-timeline-card"
 WINDOW_CARD = "custom:powerplan-window-card"
-CUSTOM_CARDS = frozenset({TIMELINE_CARD, WINDOW_CARD})
+SUMMARY_CARD = "custom:powerplan-period-summary"
+CUSTOM_CARDS = frozenset({TIMELINE_CARD, WINDOW_CARD, SUMMARY_CARD})
 #: The keys `hidden_views` takes: the two tabs, and every appliance's subview.
 VIEWS: tuple[str, ...] = ("overview", "history", "appliances")
 #: The dashboard's own URL path; `strategy.ts` puts it in after the call (D12 §5.1).
@@ -80,8 +81,6 @@ ENTITY_NAMES: Mapping[str, tuple[str, str]] = {
     "granted_power": ("sensor", "granted_power"),
     "production": ("sensor", "production"),
     "surplus": ("sensor", "surplus"),
-    "level": ("sensor", "level"),
-    "metric": ("sensor", "metric"),
 }
 #: `plan_status` states in which an appliance draws power now (D8 §5.16).
 RUNNING = ("charging", "running_plan", "run_now")
@@ -135,7 +134,7 @@ def build(
     texts: Mapping[str, str],
     *,
     language: str = "en",
-    has_energy_grid: bool = False,
+    grid_statistics: Sequence[str] = (),
     hidden_views: Collection[str] = (),
     hidden_cards: Collection[str] = (),
 ) -> dict[str, Any]:
@@ -143,7 +142,8 @@ def build(
 
     `texts` is `selector.dashboard.options`, plus each `ENTITY_NAMES` entity's
     name as `entity_<key>` and each strategy's words as `strategy_<key>`.
-    `language` picks the tables' decimal mark (D12 §5.9). One site gets the plain
+    `language` picks the tables' decimal mark (D12 §5.9). `grid_statistics` are
+    the Energy preferences' grid consumption statistics, for History's usage. One site gets the plain
     paths; several get their site's name before each title and its entry id in
     each path, so one dashboard shows every site (D-0439).
     """
@@ -164,11 +164,7 @@ def build(
         if "overview" not in hidden_views:
             views.append(_view(site, "overview", _overview(site), hidden_cards))
         if "history" not in hidden_views:
-            views.append(
-                _view(
-                    site, "history", _history(site, has_energy_grid=has_energy_grid), hidden_cards
-                )
-            )
+            views.append(_view(site, "history", _history(site, grid_statistics), hidden_cards))
         if site.subviews:
             views.extend(_appliance_view(site, load, hidden_cards) for load in layout.loads)
     return {"title": sites[0].name if len(sites) == 1 else "PowerPlan", "views": views}
@@ -376,7 +372,7 @@ def _appliance_tile(site: _Site, load: LoadLayout) -> Card | None:
 # --------------------------------------------------------------------------- #
 
 
-def _history(site: _Site, *, has_energy_grid: bool) -> list[Card | None]:
+def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
     s, t, e = site.site, site.texts, site.site.entities
     savings = [
         _graph_entity(
@@ -395,10 +391,7 @@ def _history(site: _Site, *, has_energy_grid: bool) -> list[Card | None]:
     return [
         _section(
             _heading(t["section_summary"]),
-            _cols(_statistic(e, "cost", t["card_cost"], "mdi:cash"), 9, 2),
-            _cols(_statistic(e, "savings", t["card_savings"], "mdi:piggy-bank"), 9, 2),
-            _cols(_statistic(e, "metric", site.name("metric"), "mdi:flash", stat_type="max"), 9, 2),
-            _cols(_tile(e, "level", site.name("level")), 9, 2),
+            _cols(_summary_card(site, grid), "full", 2),
             span=3,
         ),
         _section(
@@ -410,23 +403,14 @@ def _history(site: _Site, *, has_energy_grid: bool) -> list[Card | None]:
                     "tap_action": {"action": "navigate", "navigation_path": "/energy"},
                 },
             ),
-            _cols({"type": "energy-usage-graph", "collection_key": COLLECTION_KEY}, "full", 6),
+            _cols(_history_timeline(site, grid), "full", 6),
             span=2,
         )
-        if has_energy_grid
+        if grid
         else None,
         _section(
             _heading(t["section_capacity"]),
-            _cols(
-                _graph(
-                    [e["window_used"]] if "window_used" in e else [],
-                    ["max"],
-                    "bar",
-                    title=t["card_peak_hour"],
-                ),
-                12,
-                6,
-            ),
+            _cols(_peaks_card(site), 12, 6),
         ),
         _section(
             _heading(t["section_per_appliance"]),
@@ -495,7 +479,8 @@ def _appliance_view(site: _Site, load: LoadLayout, hidden: Collection[str]) -> d
     ]
     status = _tile(e, "plan_status", t["card_status"], color=color)
     if status is not None:
-        status["state_content"] = ["state"]
+        # The reason in the household's words: HA translates the attribute (B7, D-0481).
+        status["state_content"] = ["state", "reason_key"]
     granted = _tile(e, "granted_power", site.name("granted_power"), {"type": "trend-graph"})
     sections: list[Card | None] = [
         _section(
@@ -883,17 +868,15 @@ def _statistic(
     key: str,
     name: str,
     icon: str | None = None,
-    *,
-    stat_type: str = "change",
 ) -> Card | None:
-    """Return this calendar month's change of a monetary total (D8 §5.5), or another stat."""
+    """Return this calendar month's change of a monetary total (D8 §5.5)."""
     if key not in entities:
         return None
     card: Card = {
         "type": "statistic",
         "entity": entities[key],
         "name": name,
-        "stat_type": stat_type,
+        "stat_type": "change",
         "period": {"calendar": {"period": "month"}},
     }
     if icon is not None:
@@ -1003,6 +986,47 @@ def _window_card(site: _Site) -> Card | None:
     }
 
 
+def _summary_card(site: _Site, grid: Sequence[str]) -> Card:
+    """Return History's four figures over the picker's period (D12 §5.7)."""
+    e = site.site.entities
+    keys = ("cost", "savings", "metric", "level", "window_used", "advice")
+    return {
+        "type": SUMMARY_CARD,
+        "entry_id": site.site.entry_id,
+        "entities": {key: e[key] for key in keys if key in e},
+        "grid_entities": list(grid),
+        "labels": _labels(site.texts),
+    }
+
+
+def _history_timeline(site: _Site, grid: Sequence[str]) -> Card:
+    """Return the timeline over the past: grid usage against the limit (D12 §5.7)."""
+    e = site.site.entities
+    return {
+        "type": TIMELINE_CARD,
+        "entry_id": site.site.entry_id,
+        "mode": "history",
+        "grid_entities": list(grid),
+        "entities": {key: e[key] for key in ("window_used", "ceiling", "price") if key in e},
+        "currency": site.site.currency,
+        "labels": _labels(site.texts),
+    }
+
+
+def _peaks_card(site: _Site) -> Card | None:
+    """Return each day's highest hour over the picker's period (D12 §5.7, `mode: peaks`)."""
+    e = site.site.entities
+    if "window_used" not in e:
+        return None
+    return {
+        "type": WINDOW_CARD,
+        "entry_id": site.site.entry_id,
+        "mode": "peaks",
+        "entities": {key: e[key] for key in ("window_used", "ceiling", "advice") if key in e},
+        "labels": _labels(site.texts),
+    }
+
+
 def _month_card(site: _Site) -> Card:
     """Return the capacity step's gauge (D12 §5.3, `mode: month`); the site shows `metric`."""
     e = site.site.entities
@@ -1019,5 +1043,7 @@ def _month_card(site: _Site) -> Card:
 def _labels(texts: Mapping[str, str]) -> dict[str, str]:
     """Return the custom cards' own words, from the integration's translations (D-0446)."""
     return {
-        key.removeprefix("card_"): value for key, value in texts.items() if key.startswith("card_")
+        key.removeprefix("card_"): value
+        for key, value in texts.items()
+        if key.startswith(("card_", "summary_"))
     }

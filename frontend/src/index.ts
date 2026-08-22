@@ -40,6 +40,12 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
       description: "This hour's usage, or the month's capacity step, against its limit.",
       documentationURL: DOCS,
     },
+    {
+      type: "powerplan-period-summary",
+      name: "PowerPlan period summary",
+      description: "Cost, savings, grid energy and the capacity step for the period the History picker shows.",
+      documentationURL: DOCS,
+    },
   );
   registry.customStrategies.push({
     type: "powerplan",

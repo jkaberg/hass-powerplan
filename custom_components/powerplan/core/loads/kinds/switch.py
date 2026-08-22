@@ -14,7 +14,19 @@ cannot know what is inside the vessel.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from .base import Action, Command, Desired, Hold, KindCtx, Quantised, Reads, Role, Value, Write
+from .base import (
+    Action,
+    ActionReason,
+    Command,
+    Desired,
+    Hold,
+    KindCtx,
+    Quantised,
+    Reads,
+    Role,
+    Value,
+    Write,
+)
 
 if TYPE_CHECKING:
     from ...model import Grant
@@ -53,13 +65,16 @@ class Switch:
             value=(not on) if cfg.inverted else on,
             effective_w=threshold if on else 0.0,
             reason="on" if on else ("shed" if shedding else "not granted"),
+            reason_key=ActionReason.SWITCH_ON
+            if on
+            else (ActionReason.PAUSED if shedding else ActionReason.NOT_GRANTED),
         )
 
     def command(self, q: Quantised, grant: Grant, ctx: KindCtx) -> Command | Hold:
         """One switch write (§5.6)."""
         cfg = self.cfg
         if q.value is None:
-            return Hold(Action.SAME, q.reason)
+            return Hold(Action.SAME, q.reason, q.reason_key, q.reason_params)
         on = (not bool(q.value)) if cfg.inverted else bool(q.value)
         if cfg.role is Role.START:
             # A start is a press, never a release: a button or a `start_program`
@@ -67,12 +82,16 @@ class Switch:
             # press goes out once - when the plan says go and the programme is
             # not running yet - and nothing else (D4 §5.13, D-0262).
             if not on:
-                return Hold(Action.SAME, "a start is pressed, never released")
+                return Hold(
+                    Action.SAME, "a start is pressed, never released", ActionReason.START_ONLY
+                )
             if ctx.session_active:
-                return Hold(Action.SAME, "the programme is running")
+                return Hold(Action.SAME, "the programme is running", ActionReason.PROGRAMME_RUNNING)
         return Command(
             writes=(Write(cfg.role, q.value),),
             reason=q.reason,
+            reason_key=q.reason_key,
+            reason_params=q.reason_params,
             # A shed at the urgent stage, or a restore that serves a violated
             # comfort floor: neither waits behind a politeness clock (D-0266).
             urgent=(ctx.stage >= cfg.urgent_from_stage and not on) or (on and ctx.comfort_violated),
@@ -108,6 +127,7 @@ class Switch:
         return Command(
             writes=(Write(cfg.role, value),),
             reason="released",
+            reason_key=ActionReason.RELEASED,
             urgent=True,
             want_on=True,
         )

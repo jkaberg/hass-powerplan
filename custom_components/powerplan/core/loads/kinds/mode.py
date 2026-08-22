@@ -18,7 +18,19 @@ that *starts with* "heat".
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from .base import Action, Command, Desired, Hold, KindCtx, Quantised, Reads, Role, Value, Write
+from .base import (
+    Action,
+    ActionReason,
+    Command,
+    Desired,
+    Hold,
+    KindCtx,
+    Quantised,
+    Reads,
+    Role,
+    Value,
+    Write,
+)
 
 if TYPE_CHECKING:
     from ...model import Grant
@@ -93,21 +105,26 @@ class ModeKind:
                 effective_w=None,
                 hold=True,
                 reason=f"no '{want}' option on the select; it offers {offered}",
+                reason_key=ActionReason.NO_OPTION,
+                reason_params={"option": want, "offered": offered},
             )
         return Quantised(
             value=option,
             effective_w=None,
             reason="shed to eco" if shedding else "comfort",
+            reason_key=ActionReason.MODE_SAVING if shedding else ActionReason.MODE_COMFORT,
         )
 
     def command(self, q: Quantised, grant: Grant, ctx: KindCtx) -> Command | Hold:
         """One `select_option`, or the reason there is none (§5.5)."""
         if q.hold or q.value is None:
-            return Hold(Action.SAME, q.reason)
+            return Hold(Action.SAME, q.reason, q.reason_key, q.reason_params)
         shedding = self._shedding(ctx)
         return Command(
             writes=(Write(self.cfg.role, q.value),),
             reason=f"{q.reason}: {q.value}",
+            reason_key=q.reason_key,
+            reason_params=q.reason_params,
             urgent=(ctx.stage >= self.cfg.urgent_from_stage and shedding)
             or (not shedding and ctx.comfort_violated),
             blunt=grant.blunt,
@@ -139,10 +156,16 @@ class ModeKind:
         """Restore the comfort option, unconditionally (§5.5, INV-26)."""
         option = self._option(self.cfg.comfort_option, ctx)
         if option is None:
-            return Hold(Action.SAME, f"no '{self.cfg.comfort_option}' option to restore")
+            return Hold(
+                Action.SAME,
+                f"no '{self.cfg.comfort_option}' option to restore",
+                ActionReason.NO_OPTION,
+                {"option": self.cfg.comfort_option},
+            )
         return Command(
             writes=(Write(self.cfg.role, option),),
             reason=f"restore {option}",
+            reason_key=ActionReason.RESTORE_MODE,
             urgent=True,
             want_on=True,
         )

@@ -77,16 +77,25 @@ async def _texts(hass: HomeAssistant, language: str) -> dict[str, str]:
     return texts_from(strings)
 
 
-async def _has_energy_grid(hass: HomeAssistant) -> bool:
-    """Whether the household's Energy preferences have a grid source (D12 §5.1, `history`)."""
+async def _grid_statistics(hass: HomeAssistant) -> list[str]:
+    """Return the Energy preferences' grid consumption statistics (D12 §5.7).
+
+    Both shapes HA keeps: a grid source's own `stat_energy_from` (2026.x) and
+    the older `flow_from` list it migrates from.
+    """
     if "energy" not in hass.config.components:
-        return False
+        return []
     from homeassistant.components.energy.data import async_get_manager  # noqa: PLC0415
 
     prefs = (await async_get_manager(hass)).data
-    return prefs is not None and any(
-        source["type"] == "grid" for source in prefs.get("energy_sources", [])
-    )
+    out: list[str] = []
+    for source in [] if prefs is None else prefs.get("energy_sources", []):
+        if source["type"] != "grid":
+            continue
+        legacy: list[Any] = list(source.get("flow_from") or [])  # type: ignore[call-overload]
+        rows: list[Any] = [source, *legacy]
+        out += [row["stat_energy_from"] for row in rows if row.get("stat_energy_from")]
+    return out
 
 
 @websocket_command(
@@ -118,7 +127,7 @@ async def ws_dashboard_config(
         HA_VERSION,
         await _texts(hass, msg["language"]),
         language=msg["language"],
-        has_energy_grid=await _has_energy_grid(hass),
+        grid_statistics=await _grid_statistics(hass),
         hidden_views=msg["hidden_views"],
         hidden_cards=msg["hidden_cards"],
     )

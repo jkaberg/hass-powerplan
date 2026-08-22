@@ -12,6 +12,9 @@ import {
   priceRuns,
   type PriceSlot,
   adviceItem,
+  countingDays,
+  dayKey,
+  nthHighest,
   midnights,
   monthGauge,
   topEntries,
@@ -307,5 +310,21 @@ describe("the month gauge (D12 §5.3)", () => {
     expect(adviceItem(items, "step_headroom")?.to_next_kw).toBe(1.03);
     expect(adviceItem(items, "days_that_matter")?.kw).toBe(11.95);
     expect(topEntries(undefined)).toEqual([]);
+  });
+});
+
+describe("the days that count (D12 §5.7)", () => {
+  const september: Array<[string, number]> = [
+    ["2026-09-13", 8.86], ["2026-09-17", 9.12], ["2026-09-21", 8.94], ["2026-09-22", 8.44], ["2026-09-01", 5.1],
+  ];
+
+  it("keeps each month's top three, and 22 Sep's 8,44 is not among them", () => {
+    const counting = countingDays([...september, ["2026-10-01", 3]]);
+    expect([...counting].sort()).toEqual(["2026-09-13", "2026-09-17", "2026-09-21", "2026-10-01"]);
+    expect(nthHighest(september)).toEqual(["2026-09-13", 8.86]);
+  });
+
+  it("names a day in the house's zone", () => {
+    expect(dayKey(Date.parse("2026-09-22T22:30:00Z"), "Europe/Oslo")).toBe("2026-09-23");
   });
 });

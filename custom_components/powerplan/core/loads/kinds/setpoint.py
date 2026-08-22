@@ -22,7 +22,20 @@ own state machine and carries on regulating if powerplan dies (INV-64).
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from .base import Action, Command, Desired, Hold, KindCtx, Quantised, Reads, Role, Value, Write
+from .base import (
+    Action,
+    ActionReason,
+    Command,
+    Desired,
+    Hold,
+    KindCtx,
+    Quantised,
+    Reads,
+    ReasonParams,
+    Role,
+    Value,
+    Write,
+)
 
 if TYPE_CHECKING:
     from ...model import Grant
@@ -84,38 +97,57 @@ class Setpoint:
         cfg = self.cfg
         if ctx.target is None:
             return Quantised(
-                value=None, effective_w=None, hold=True, reason="no comfort target (INV-27)"
+                value=None,
+                effective_w=None,
+                hold=True,
+                reason="no comfort target (INV-27)",
+                reason_key=ActionReason.NO_COMFORT_TARGET,
             )
 
         target = ctx.target
         floor = cfg.shed_setpoint if ctx.floor is None else ctx.floor
         resting = max(cfg.shed_setpoint, floor)
+        params: ReasonParams = {}
 
         if ctx.comfort_violated:
             # A comfort violation is served at `target` whatever the plan says.
             value = target
             why = "comfort violated: served at target"
+            key = ActionReason.COMFORT_VIOLATED
         elif ctx.shed or ctx.desired is Desired.SHED:
             value = resting
             why = "shed to the resting setpoint"
+            key = ActionReason.PAUSED_SETPOINT
         elif cfg.charge_setpoint is not None and ctx.desired is Desired.COMFORT:
             value = cfg.charge_setpoint
             why = "the plan says charge"
+            key = ActionReason.STORE_HEAT
         else:
             value = _clamp(
                 target + ctx.setpoint_delta, target - cfg.band_down, target + cfg.band_up
             )
             why = "target" if ctx.setpoint_delta == 0.0 else f"target {ctx.setpoint_delta:+.1f} K"
+            if ctx.setpoint_delta != 0.0:
+                key = ActionReason.TARGET_OFFSET
+                params = {"delta": round(ctx.setpoint_delta, 1)}
+            else:
+                key = ActionReason.TARGET
             value = _clamp(value, floor, ctx.ceiling)
 
         value = _clamp(value, cfg.device_min, cfg.device_max)
-        return Quantised(value=round(value, 2), effective_w=None, reason=why)
+        return Quantised(
+            value=round(value, 2),
+            effective_w=None,
+            reason=why,
+            reason_key=key,
+            reason_params=params,
+        )
 
     def command(self, q: Quantised, grant: Grant, ctx: KindCtx) -> Command | Hold:
         """Return the one write, or the dwell that holds it (§5.4, INV-29)."""
         cfg = self.cfg
         if q.hold or q.value is None:
-            return Hold(Action.SAME, q.reason)
+            return Hold(Action.SAME, q.reason, q.reason_key, q.reason_params)
 
         value = float(q.value)
         held = None if ctx.held is None else float(ctx.held)
@@ -127,6 +159,8 @@ class Setpoint:
                 return Hold(
                     Action.HELD_DWELL,
                     f"{since:.0f} s since a restore: no upward move within one dwell (INV-29)",
+                    ActionReason.RESTORE_WAIT,
+                    {"seconds": round(since)},
                 )
 
         # A shed at the urgent stage, or a restore that serves a violated comfort
@@ -137,6 +171,8 @@ class Setpoint:
         return Command(
             writes=(Write(cfg.role, value),),
             reason=f"{q.reason} → {value:.2f}",
+            reason_key=q.reason_key,
+            reason_params=q.reason_params,
             urgent=urgent,
             blunt=grant.blunt,
             sheds=grant.shed,
@@ -167,11 +203,16 @@ class Setpoint:
         """Write the configured target: a correction, never an adoption (INV-29)."""
         cfg = self.cfg
         if ctx.target is None:
-            return Hold(Action.SAME, "no comfort target to restore (INV-27)")
+            return Hold(
+                Action.SAME,
+                "no comfort target to restore (INV-27)",
+                ActionReason.NO_COMFORT_TARGET,
+            )
         value = round(_clamp(ctx.target, ctx.floor, ctx.ceiling), 2)
         return Command(
             writes=(Write(cfg.role, value),),
             reason=f"restore the configured comfort target {value:.2f}",
+            reason_key=ActionReason.RESTORE_TARGET,
             urgent=True,
             want_on=True,
         )

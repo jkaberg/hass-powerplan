@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from math import copysign, floor
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from .base import Action, Command, Hold, KindCtx, Quantised, Reads, Role, Value, Write
+from .base import Action, ActionReason, Command, Hold, KindCtx, Quantised, Reads, Role, Value, Write
 
 if TYPE_CHECKING:
     from ...model import Grant
@@ -102,13 +102,29 @@ class Modulate:
         value = max(-limit, min(limit, value))
 
         if abs(value) >= cfg.min_value:
-            return Quantised(value=value, effective_w=value * per, reason="granted")
+            return Quantised(
+                value=value,
+                effective_w=value * per,
+                reason="granted",
+                reason_key=ActionReason.LIMIT,
+            )
 
         if ctx.stop_ok or ctx.park:
             why = "parked by the type" if ctx.park else "stop authorised"
-            return Quantised(value=0.0, effective_w=0.0, stop=True, reason=why)
+            return Quantised(
+                value=0.0,
+                effective_w=0.0,
+                stop=True,
+                reason=why,
+                reason_key=ActionReason.PARKED if ctx.park else ActionReason.STOPPED,
+            )
         if not cfg.cliff:
-            return Quantised(value=0.0, effective_w=0.0, reason="nothing to modulate")
+            return Quantised(
+                value=0.0,
+                effective_w=0.0,
+                reason="nothing to modulate",
+                reason_key=ActionReason.LIMIT,
+            )
         if ctx.session_active:
             floored = cfg.min_value
             return Quantised(
@@ -116,12 +132,14 @@ class Modulate:
                 effective_w=floored * per,
                 floored=True,
                 reason=f"clamped to the {floored:.0f} A floor, session kept",
+                reason_key=ActionReason.LIMIT,
             )
         return Quantised(
             value=None,
             effective_w=0.0,
             hold=True,
             reason="a stopped charger stays stopped: no write, no enable, no re-arm",
+            reason_key=ActionReason.STAYS_STOPPED,
         )
 
     # -------------------------------------------------------------- command #
@@ -130,7 +148,7 @@ class Modulate:
         """Return the writes this tick, or why none go out (§5.3)."""
         cfg = self.cfg
         if q.hold:
-            return Hold(Action.SAME, q.reason)
+            return Hold(Action.SAME, q.reason, q.reason_key, q.reason_params)
 
         if q.stop:
             stop_writes = (
@@ -141,6 +159,8 @@ class Modulate:
             return Command(
                 writes=stop_writes,
                 reason=q.reason,
+                reason_key=q.reason_key,
+                reason_params=q.reason_params,
                 urgent=True,
                 blunt=grant.blunt,
                 sheds=grant.shed,
@@ -157,6 +177,9 @@ class Modulate:
             return Command(
                 writes=(Write(cfg.enable_role, True), Write(cfg.role, value)),
                 reason=f"resume at {value:.0f}",
+                reason_key=ActionReason.RESUME,
+                # The primary write is the enable; the sentence names the limit.
+                reason_params={"value": round(value)},
                 urgent=True,
                 blunt=grant.blunt,
                 want_on=True,
@@ -172,7 +195,7 @@ class Modulate:
         if held is not None:
             delta = abs(value - held)
             if delta == 0.0:
-                return Hold(Action.SAME, "the charger already holds it")
+                return Hold(Action.SAME, "the charger already holds it", ActionReason.ALREADY_HOLDS)
             stale_s = ctx.reads.age_s(cfg.role, ctx.now)
             if (
                 not shedding
@@ -182,11 +205,14 @@ class Modulate:
                 return Hold(
                     Action.HELD_SUPPRESSED,
                     f"|Δ| {delta:.0f} under the {cfg.suppress_delta:.0f} deadband",
+                    ActionReason.DEADBAND,
+                    {"delta": round(delta), "deadband": round(cfg.suppress_delta)},
                 )
 
         return Command(
             writes=(Write(cfg.role, value),),
             reason=f"{'trim' if shedding else 'limit'} to {value:.0f}",
+            reason_key=ActionReason.REDUCE if shedding else ActionReason.LIMIT,
             urgent=shedding,
             blunt=grant.blunt,
             sheds=grant.shed,
@@ -238,6 +264,7 @@ class Modulate:
         return Command(
             writes=writes,
             reason=f"released at {value:.0f}",
+            reason_key=ActionReason.RELEASED_AT,
             urgent=True,
             want_on=True,
         )

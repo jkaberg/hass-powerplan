@@ -481,3 +481,135 @@ export function topEntries(items: unknown): Array<[string, number]> {
     .filter(([, kw]) => Number.isFinite(kw))
     .sort((a, b) => b[1] - a[1]);
 }
+
+// --------------------------------------------------------------------------- //
+// The period summary (D12 §5.7)
+// --------------------------------------------------------------------------- //
+
+/** A period as the History picker sets it: `end` exclusive, or the picker's 23:59:59.999. */
+export interface SummaryPeriod {
+  start: Date;
+  end: Date;
+}
+
+/** A single day, a whole calendar month, or any other range. */
+export type PeriodKind = "day" | "month" | "range";
+
+/** The last cell: this month's capacity step, a day's highest hour, or a range's highest daily peak. */
+export type SummaryMode = "capacity" | "hour" | "peak";
+
+/** Year, month (1–12) and day of `date` on the wall clock of `zone` (the browser's when undefined). */
+export function zonedDay(date: Date, zone?: string): [number, number, number] {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    timeZone: zone,
+  }).formatToParts(date);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return [part("year"), part("month"), part("day")];
+}
+
+/** What the picker chose, from its first and last day read in HA's zone. */
+export function periodKind(period: SummaryPeriod, zone?: string): PeriodKind {
+  const [y0, m0, d0] = zonedDay(period.start, zone);
+  const [y1, m1, d1] = zonedDay(new Date(period.end.getTime() - 1), zone);
+  if (y0 === y1 && m0 === m1 && d0 === d1) return "day";
+  const lastDay = new Date(Date.UTC(y0, m0, 0)).getUTCDate();
+  return d0 === 1 && y1 === y0 && m1 === m0 && d1 === lastDay ? "month" : "range";
+}
+
+/** Whether `date` falls in the calendar month of `now`, in HA's zone. */
+export function inMonthOf(date: Date, now: Date, zone?: string): boolean {
+  const [y0, m0] = zonedDay(date, zone);
+  const [y1, m1] = zonedDay(now, zone);
+  return y0 === y1 && m0 === m1;
+}
+
+/** The last cell's mode: the capacity step only for the month in progress. */
+export function summaryMode(kind: PeriodKind, currentMonth: boolean): SummaryMode {
+  if (kind === "day") return "hour";
+  return kind === "month" && currentMonth ? "capacity" : "peak";
+}
+
+/**
+ * Whether a day's highest hour counts toward the month's capacity step: it
+ * does when it reaches the month's third-highest day, or when the month has
+ * fewer than three days. `ranking` is `[day, kW]` per day, in any order.
+ */
+export function countsDecision(
+  peak: number,
+  ranking: ReadonlyArray<readonly [string, number]>,
+): { counts: boolean; third?: [string, number] } {
+  const third = [...ranking].sort((a, b) => b[1] - a[1])[2];
+  if (!third) return { counts: true };
+  return { counts: peak >= third[1], third: [third[0], third[1]] };
+}
+
+/** Σ change over several statistics, `null` when none of them has a row. */
+export function sumChanges(
+  stats: Record<string, ReadonlyArray<{ change?: number | null }> | undefined>,
+  ids: readonly string[],
+): number | null {
+  let total: number | null = null;
+  for (const id of ids) {
+    const rows = stats[id];
+    if (!rows?.length) continue;
+    total = (total ?? 0) + rows.reduce((sum, row) => sum + (row.change ?? 0), 0);
+  }
+  return total;
+}
+
+/** A summary figure: money and kW to 2 decimals; kWh to 0 from 100 up, to 1 below. */
+export function formatSummary(value: number, kind: "money" | "kw" | "kwh", locale: string): string {
+  const digits = kind === "kwh" ? (Math.abs(value) >= 100 ? 0 : 1) : 2;
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+}
+
+/**
+ * `card_collecting` when no statistics row gives a date: the bracketed part
+ * holding `{date}` goes, or the placeholder alone when there are no brackets.
+ */
+export function withoutDate(label: string): string {
+  return label
+    .replace(/\s*\([^)]*\{date\}[^)]*\)/, "")
+    .replace(/\s*\{date\}/, "")
+    .trim();
+}
+
+// --------------------------------------------------------------------------- //
+// History: the days that count (D12 §5.7)
+// --------------------------------------------------------------------------- //
+
+/** A day's highest window, keyed by its local date `YYYY-MM-DD`. */
+export type DayPeak = [day: string, kw: number];
+
+/**
+ * The days whose peak counts toward the capacity step: each month's `n`
+ * highest (the Norwegian mean of the top three, D2 §5.2). Ties keep the earlier day.
+ */
+export function countingDays(peaks: readonly DayPeak[], n = 3): Set<string> {
+  const byMonth = new Map<string, DayPeak[]>();
+  for (const peak of peaks) {
+    const month = peak[0].slice(0, 7);
+    byMonth.set(month, [...(byMonth.get(month) ?? []), peak]);
+  }
+  const out = new Set<string>();
+  for (const days of byMonth.values()) {
+    [...days]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, n)
+      .forEach(([day]) => out.add(day));
+  }
+  return out;
+}
+
+/** The `n`-th highest peak of a month: the bar a day must pass to count. */
+export function nthHighest(peaks: readonly DayPeak[], n = 3): DayPeak | undefined {
+  return [...peaks].sort((a, b) => b[1] - a[1])[n - 1];
+}
+
+/** A local date key `YYYY-MM-DD` for an instant in `timeZone`. */
+export function dayKey(instant: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", timeZone }).format(instant);
+}

@@ -70,6 +70,8 @@ def test_a_plans_cost_is_written_to_two_decimals() -> None:
         type_key="water_heater",
         granted_w=0.0,
         action_reason="",
+        action_key=None,
+        action_params={},
         shed=False,
         shed_reason=None,
         blunt=False,

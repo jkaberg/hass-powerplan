@@ -26,6 +26,7 @@ from ...model import Desired, Grant, Mode
 
 __all__ = [
     "Action",
+    "ActionReason",
     "Command",
     "ControlKind",
     "Desired",
@@ -33,6 +34,7 @@ __all__ = [
     "KindCtx",
     "Quantised",
     "Reads",
+    "ReasonParams",
     "Role",
     "RoleRead",
     "Value",
@@ -106,6 +108,71 @@ class Action(StrEnum):
     DELEGATED = "delegated"
     FAILED = "failed"
     TRANSIENT = "transient"
+
+
+class ActionReason(StrEnum):
+    """Why one `apply()` did what it did, as a key (D12 §5.6 v0.4, D-0480).
+
+    The closed set beside every English `reason`: a producer emits one of these
+    with the numbers its sentence carries (`reason_params`), and the surface
+    translates it (`selector.action_reason`, `plan_status`'s `reason_key`). The
+    English sentence stays as it was - the log and INV-50 read it.
+    """
+
+    # The gate's rows (D4 §5.10).
+    ALREADY_AT = "already_at"
+    ALREADY_SENT = "already_sent"
+    READBACK_PREDATES = "readback_predates"
+    UNAVAILABLE_RETRYING = "unavailable_retrying"
+    UNAVAILABLE_FOR = "unavailable_for"
+    SETTLE_WINDOW = "settle_window"
+    INTERVAL = "interval"
+    DWELL = "dwell"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    OBSERVE_ALREADY_AT = "observe_already_at"
+    OBSERVE_WOULD_WRITE = "observe_would_write"
+    DELEGATED = "delegated"
+    OFF = "off"
+    #: A command no kind named - only a test builds one.
+    SENT = "sent"
+    # Setpoint (D4 §5.4).
+    NO_COMFORT_TARGET = "no_comfort_target"
+    COMFORT_VIOLATED = "comfort_violated"
+    PAUSED_SETPOINT = "paused_setpoint"
+    STORE_HEAT = "store_heat"
+    TARGET = "target"
+    TARGET_OFFSET = "target_offset"
+    RESTORE_WAIT = "restore_wait"
+    RESTORE_TARGET = "restore_target"
+    # Mode (D4 §5.5).
+    NO_OPTION = "no_option"
+    MODE_SAVING = "mode_saving"
+    MODE_COMFORT = "mode_comfort"
+    RESTORE_MODE = "restore_mode"
+    # Switch (D4 §5.6).
+    SWITCH_ON = "switch_on"
+    PAUSED = "paused"
+    NOT_GRANTED = "not_granted"
+    START_ONLY = "start_only"
+    PROGRAMME_RUNNING = "programme_running"
+    RELEASED = "released"
+    # Modulate (D4 §5.3).
+    PARKED = "parked"
+    STOPPED = "stopped"
+    STAYS_STOPPED = "stays_stopped"
+    RESUME = "resume"
+    ALREADY_HOLDS = "already_holds"
+    DEADBAND = "deadband"
+    LIMIT = "limit"
+    REDUCE = "reduce"
+    RELEASED_AT = "released_at"
+    # Letting go (D4 §5.1, INV-26).
+    NOTHING_TO_UNDO = "nothing_to_undo"
+    BACK_TO_PRIOR = "back_to_prior"
+
+
+#: The numbers and names an `ActionReason`'s sentence carries, by placeholder.
+type ReasonParams = Mapping[str, str | float]
 
 
 # --------------------------------------------------------------------------- #
@@ -238,6 +305,9 @@ class Command:
     blunt: bool = False
     sheds: bool = False
     want_on: bool | None = None
+    #: `reason` as a key; the gate adds the primary write's `value` to the params.
+    reason_key: ActionReason = ActionReason.SENT
+    reason_params: ReasonParams = field(default_factory=dict)
 
     @property
     def primary(self) -> Write:
@@ -266,6 +336,8 @@ class Hold:
 
     action: Action
     reason: str
+    reason_key: ActionReason
+    reason_params: ReasonParams = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +357,8 @@ class Quantised:
     hold: bool = False
     floored: bool = False
     reason: str = ""
+    reason_key: ActionReason = field(kw_only=True)
+    reason_params: ReasonParams = field(default_factory=dict, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,8 +18,8 @@ strategy:
 | tab | shows, top to bottom |
 |---|---|
 | Now | anything that needs your attention (repairs, a meter that is not reporting); this hour's usage against its limit; the plan for the next 24 hours, with a button to plan again; one tile per appliance - tap it for the appliance's own page; your capacity step; this month's cost and savings, the price now and whether tomorrow's prices are in; the next runs as a table |
-| History | a summary of the month; your usage, with a link to the Energy dashboard; the highest hour per day; savings per appliance; cost per appliance this month; cost and savings over time; what happened. The period picker at the bottom sets every graph, as on the Energy dashboard |
-| an appliance's page | its control and status, its own settings (charge to, comfort, ready by, hours per day), its plan for the next 24 hours, why the plan looks the way it does, and this month's cost, savings and energy. The arrow at the top goes back to *Now* |
+| History | a summary of the period - cost, savings, energy from the grid and your capacity basis or highest hour; your usage hour by hour or day by day, with a link to the Energy dashboard; each day's highest hour and whether it counts toward your capacity step; savings per appliance; cost per appliance this month; cost and savings over time; what happened. The period picker at the bottom sets every graph, as on the Energy dashboard |
+| an appliance's page | its control and status - with the reason for what it is doing now, its own settings (charge to, comfort, ready by, hours per day), its plan for the next 24 hours, why the plan looks the way it does, and this month's cost, savings and energy. The arrow at the top goes back to *Now* |
 
 The three buttons at the top of *Now* are automatic control, presence and your capacity target; tap one to change it. Each appliance keeps one colour on every card. The planned runs are also in Home Assistant's *Calendar* panel as **Planned runs**.
 

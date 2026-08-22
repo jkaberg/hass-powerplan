@@ -92,7 +92,7 @@ class Engine:
 
 ### 4.1 Snapshot (the contract with D8, D9)
 
-**In code (D-0235, D-0232).** `Snapshot` stays in `core/model.py` with sections `site: SiteStatus`, `meter: MeterSnapshot | None`, `budget: Budget | None`, `ladder: LadderState`, `tariff: TariffStatus | None`, `prices: PriceStatus`, `plans: Mapping[str, PlanStatus]`, `loads: Mapping[str, LoadStatus]`, `alloc: AllocReport`, `forecasts: ForecastStatus`, `accounting: AccountingStatus`, `warnings: tuple[SiteWarning,...]`, `health: HealthStatus`, `reasons` (≤ `max_reasons`); the status types are defined in `core/engine.py`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15); `SnapshotSchema` is bumped when it changes - 2 since WP2.5 (`CircuitReport.sub_meter`, D-0283), 3 since WP2.7 (`AccountingStatus` carries D11's `SiteFigures`/`LoadFigures` in full and `LoadStatus` carries D3's `lifetime_kwh`/`energy_source`, D-0288), 4 since WP3.2 (`LoadStatus.starved_s`, the allocator's own `AllocState.starved_since` clock turned into seconds per load - D8 §5.5 `sensor.<load>_starved_s`, D-0294), 5 since WP3.3 (`LoadStatus.legionella_due_at` from `Observation.legionella_due_at` - D8 §5.5 `sensor.<load>_next_legionella`, D-0295). The `Warning` type is spelled `SiteWarning`.
+`Snapshot` lives in `core/model.py` with the sections below. The status types are defined in `core/engine.py`, and `Warning` is spelled `SiteWarning`. The field tree is the golden `tests/golden/snapshot_schema.json` (§9 15), and `SnapshotSchema` is bumped whenever it changes (D-0235, D-0232).
 
 ```python
 @dataclass(frozen=True)

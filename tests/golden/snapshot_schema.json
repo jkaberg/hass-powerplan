@@ -341,6 +341,59 @@
             "transient"
           ]
         },
+        "action_key": {
+          "one_of": [
+            {
+              "enum": [
+                "already_at",
+                "already_sent",
+                "readback_predates",
+                "unavailable_retrying",
+                "unavailable_for",
+                "settle_window",
+                "interval",
+                "dwell",
+                "budget_exhausted",
+                "observe_already_at",
+                "observe_would_write",
+                "delegated",
+                "off",
+                "sent",
+                "no_comfort_target",
+                "comfort_violated",
+                "paused_setpoint",
+                "store_heat",
+                "target",
+                "target_offset",
+                "restore_wait",
+                "restore_target",
+                "no_option",
+                "mode_saving",
+                "mode_comfort",
+                "restore_mode",
+                "switch_on",
+                "paused",
+                "not_granted",
+                "start_only",
+                "programme_running",
+                "released",
+                "parked",
+                "stopped",
+                "stays_stopped",
+                "resume",
+                "already_holds",
+                "deadband",
+                "limit",
+                "reduce",
+                "released_at",
+                "nothing_to_undo",
+                "back_to_prior"
+              ]
+            },
+            "None"
+          ]
+        },
+        "action_params": "ReasonParams",
         "action_reason": "str",
         "blunt": "bool",
         "capped_by": {
@@ -927,5 +980,5 @@
       }
     }
   },
-  "schema": 5
+  "schema": 6
 }

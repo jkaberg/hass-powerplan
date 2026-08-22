@@ -282,8 +282,8 @@ Read at each release's pinned frontend tag (D-0437). At the integration floor, 2
 | `sensor.<site>_level` → `steps` | the tariff's ladder, `[{name, from_kw, to_kw, fee}]` (`to_kw` `None` for the open top step, `fee` as `money_text`), for the month gauge; absent without a step table. *In code:* recorder-excluded, since the ladder is static per version (D-0472) | 6.4e |
 | `sensor.<site>_cost`, `_savings`, each load's `cost_month`, `savings_month` → `last_reset` | the instant the sensor began accumulating when that is later than the period's start, so a total first seen mid-month enters statistics as a start, not as one hour's change (the live 417 kr spike). *In code:* the spike's cause was the ledger's placeholder month (`0` with `last_reset` 1970-01-01, before the first priced slot), not the first appearance, which HA's recorder already zero-points. The month sensors now read `None`, with no `last_reset`, until the ledger opens. After that `last_reset` = max(month start, ledger start), and a load's rows use the ledger's start (D-0470, D-0471) | 6.4e |
 | `logbook.py` | `async_describe_events` for every `EventKind` (D8 §5.5): a translated message, and the appliance's `plan_status` (or `event.<site>` for a site event) as `entity_id`, so the History logbook reads "Gulvvarme inngang - Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr". *In code:* the bus payload carries `entity_id`, which the logbook card filters on; the event entity's attributes do not (D-0473). Lines are `selector.logbook.options` in HA's language, one key per kind or state (D-0474), named after the load as the household named it (D-0475) | 6.4e |
-| `plan_status` → `reason_key`, `reason_params` | the action reason as a key the frontend's translations carry, beside today's English `reason` | 6.4g |
-| `sensor.<site>_plan`'s state | the planned kWh inside the next 24 h - not the whole 48 h plan `by_load` covers | 6.4g |
+| `plan_status` → `reason_key`, `reason_params` | the action reason as a key the frontend's translations carry, beside today's English `reason`. *Built:* `reason_key` is one of `ActionReason`'s 43 values (`None` before the first apply), and `reason_params` holds the numbers the sentence needs (`value`, `seconds`, `elapsed_s`, `interval_s`, `delta`, `deadband`, `option`, `offered`, `transport`). Both are volatile, like `reason`. Each key has a plain label at `entity.sensor.plan_status.state_attributes.reason_key.state.<key>` and a sentence with placeholders at `selector.action_reason.options.<key>`, which the card renders with `hass.localize(…, reason_params)`. The split is needed because hassfest refuses placeholders in attribute states (D-0480, D-0481) | 6.4g |
+| `sensor.<site>_plan`'s state | the planned kWh inside the next 24 h - not the whole 48 h plan `by_load` covers. *Built:* the 24 h start at the site window that holds `now`, not at `now` itself. A slot across either edge counts for its share inside, and the state moves once per window, not on every tick (D-0482) | 6.4g |
 
 ### 5.7 Cards that follow the picker
 
@@ -296,6 +296,8 @@ Three pieces subscribe to the History footer's collection, the same object HA's 
 | `custom:powerplan-period-summary` | cells in the `statistic` card's style - `card_cost` (`change` of `cost`), `card_savings` (not while the reference has none, §5.18 N3), `summary_grid_energy` (Σ change over the grid sources), and `summary_capacity` (this month: `metric` and `level`); a cell with no statistics shows "–" and `card_collecting` |
 
 The logbook does not follow the picker (48 h); the cost-per-appliance table stays "this month".
+
+The cards take the period from the collection and fetch their own statistics, and the layout hands them the Energy preferences' grid statistics as `grid_entities`. Over a range longer than a day the history timeline draws daily energy without the hourly limit (D-0464, D-0465).
 
 ### 5.8 One colour per appliance
 

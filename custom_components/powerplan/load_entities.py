@@ -636,6 +636,10 @@ def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, An
     out: dict[str, Any] = {
         "granted_power": round(status.granted_w),
         "reason": status.action_reason,
+        # The same reason as an `ActionReason` key and its numbers, for the
+        # dashboard to say in the household's language (D12 §5.6 v0.4, D-0480).
+        "reason_key": None if status.action_key is None else status.action_key.value,
+        "reason_params": dict(status.action_params),
         "shed_reason": status.shed_reason if status.shed else None,
         "shed_since": _iso(status.latches.shed_since),
         "blunt": status.blunt,
@@ -785,7 +789,17 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         # flips with the 6 A cliff at a marginal draw) move every tick on a state
         # that holds for hours.
         volatile=frozenset(
-            {"granted_power", "reason", "required_kwh", "deficit", "current", "session", "wants"}
+            {
+                "granted_power",
+                "reason",
+                "reason_key",
+                "reason_params",
+                "required_kwh",
+                "deficit",
+                "current",
+                "session",
+                "wants",
+            }
         ),
     ),
     LoadSensorRow(

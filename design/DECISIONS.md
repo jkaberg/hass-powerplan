@@ -2012,3 +2012,18 @@ Each line is a template under `selector.logbook.options.<key>`, `<kind>` or `<ki
 
 The line's `name` is `load.config.name`, or the home's name for a site event. `plan_status` sits on the hardware device, which keeps its maker's name. Affects D12 §5.6.
 **Rejected:** letting the frontend name it from the entity - "Charger Plan status".
+
+### D-0480 · The action reason has a key, `ActionReason`, beside the English sentence
+
+`core/loads/kinds/base.py` declares `ActionReason` (43 keys) and `ReasonParams`. `Quantised`, `Hold`, `Command`, `Decision` and `ApplyResult` gain `reason_key` and `reason_params` beside `reason`, and every producer names a key (gate rows, the four kinds, letting go). `plan_status` publishes them, volatile. `SnapshotSchema` 6. The dashboard can't translate "3 s of 600 s elapsed", and parsing English back breaks with every sentence change. An AST test holds every construction in `core/loads/` to an explicit key. Affects D8 §5.16, D12 §5.6, D7 §4.1.
+**Rejected:** one `Reason(key, params)` rendering its own English - every log line and test would change for a surface need.
+
+### D-0481 · Each reason key is translated twice: a label for HA, a sentence for the dashboard
+
+`entity.sensor.plan_status.state_attributes.reason_key.state.<key>` holds a plain label; `selector.action_reason.options.<key>` holds the sentence with params. hassfest refuses placeholders in `state_attributes`, and HA's more-info dialog translates from the plain label; the dashboard renders the sentence with `hass.localize`. Affects D12 §5.6.
+**Rejected:** the sentence only under `selector.dashboard` - the more-info dialog would show a raw key.
+
+### D-0482 · `sensor.<site>_plan`'s day starts at the window `now` is in
+
+The state sums every adopted plan's `slot.kwh` over the 24 h from the start of the current window, prorating straddling slots; `by_load` still carries whole plans. It used to sum up to 48 h under a name read as the next 24 h. Starting at `now` itself would change the value every tick and write a recorder row each time. Affects D12 §5.6.
+**Rejected:** `[now, now + 24 h)` - moves every tick and drops energy the timeline still shows.

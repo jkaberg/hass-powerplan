@@ -17,9 +17,9 @@ by themselves.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
     from . import PowerplanConfigEntry
-    from .core.model import PriceCurve
+    from .core.model import Plan, PriceCurve
     from .core.tariffs.evaluator import Advice
 
 #: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
@@ -111,6 +111,30 @@ def _slots(curve: PriceCurve | None, limit: int | None = None) -> list[dict[str,
         for slot in curve.slots
     ]
     return rows if limit is None else rows[:limit]
+
+
+#: `sensor.<site>_plan`'s state covers one day of the plan (D12 §5.6 v0.4).
+PLAN_STATE_SPAN = timedelta(hours=24)
+
+
+def planned_kwh_next_day(plans: Iterable[Plan], now: datetime, window_min: int) -> float:
+    """Return the kWh every plan moves in the 24 h from the window `now` falls in.
+
+    A plan runs up to 48 h (D5 §2); the state is the next day of it (B9). The
+    span starts at the site window holding `now`, on the UTC grid, so the state
+    moves when a window turns or a plan is adopted, not on every tick; a slot
+    that straddles either edge counts for its share inside (D-0482).
+    """
+    step = window_min * 60
+    start = datetime.fromtimestamp(int(now.timestamp()) // step * step, UTC)
+    end = start + PLAN_STATE_SPAN
+    total = 0.0
+    for plan in plans:
+        for slot in plan.slots:
+            inside = (min(slot.end, end) - max(slot.start, start)).total_seconds()
+            if inside > 0.0:
+                total += slot.kwh * inside / (slot.end - slot.start).total_seconds()
+    return total
 
 
 def _import_curve(runtime: Runtime) -> PriceCurve | None:
@@ -451,7 +475,10 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=2,
-        value=lambda s, _r: round(sum(plan.planned_kwh for plan in s.plans.values()), 3),
+        # The next 24 h of every plan; `by_load` keeps each whole plan (B9).
+        value=lambda s, r: round(
+            planned_kwh_next_day(r.state.plans.plans.values(), s.at, r.build.cfg.window_min), 3
+        ),
         attributes=lambda s, r: {
             "by_load": {
                 load_id: {

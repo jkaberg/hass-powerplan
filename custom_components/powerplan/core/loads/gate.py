@@ -26,7 +26,16 @@ from enum import StrEnum
 from typing import Final
 
 from ..model import Mode
-from .kinds.base import Action, Command, ControlKind, Hold, Value, Write
+from .kinds.base import (
+    Action,
+    ActionReason,
+    Command,
+    ControlKind,
+    Hold,
+    ReasonParams,
+    Value,
+    Write,
+)
 
 __all__ = [
     "TRANSIENT_GRACE_S",
@@ -233,6 +242,9 @@ class Decision:
     budget: TransportBudget
     blocking: bool = True
     verify_at: datetime | None = None
+    #: `reason` as a key and its numbers (D12 §5.6 v0.4, D-0480).
+    reason_key: ActionReason = field(kw_only=True)
+    reason_params: ReasonParams = field(default_factory=dict, kw_only=True)
 
     @property
     def written(self) -> bool:
@@ -327,6 +339,8 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     def decided(
         action: Action,
         reason: str,
+        key: ActionReason,
+        params: ReasonParams | None = None,
         *,
         gate: GateState | None = None,
         out: Command | None = None,
@@ -339,6 +353,8 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
             value=command.value,
             current=current,
             reason=reason,
+            reason_key=key,
+            reason_params={} if params is None else params,
             gate=state if gate is None else gate,
             budget=budget.consume(cfg.transport, now, len(command.writes)) if spend else budget,
             verify_at=verify_at,
@@ -352,16 +368,27 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
             # house logged "would write 21.0" to a heat pump at 21.0 every tick
             # (H.1 F-4, `design/DECISIONS.md` D-0363).
             if same(current, command.value, cfg.tolerance):
-                return decided(Action.SAME, f"observe: already at {command.value}")
+                return decided(
+                    Action.SAME,
+                    f"observe: already at {command.value}",
+                    ActionReason.OBSERVE_ALREADY_AT,
+                    {"value": command.value},
+                )
             return decided(
                 Action.OBSERVE,
                 f"observe: would have written {command.reason}",
+                ActionReason.OBSERVE_WOULD_WRITE,
+                {"value": command.value},
                 gate=replace(state, observed=command.value),
             )
         if mode is Mode.DELEGATED:
-            return decided(Action.DELEGATED, "delegated: someone else drives this device")
+            return decided(
+                Action.DELEGATED,
+                "delegated: someone else drives this device",
+                ActionReason.DELEGATED,
+            )
         if mode is Mode.OFF:
-            return decided(Action.SAME, "off: writes only through release()")
+            return decided(Action.SAME, "off: writes only through release()", ActionReason.OFF)
 
     # A link that came back is a success like any other (INV-23), and it breaks
     # the failure streak before anything else is decided.
@@ -372,7 +399,12 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     # availability row: an entity we cannot reach and do not need to write is
     # not a failure.
     if same(current, command.value, cfg.tolerance):
-        return decided(Action.SAME, f"already at {command.value}")
+        return decided(
+            Action.SAME,
+            f"already at {command.value}",
+            ActionReason.ALREADY_AT,
+            {"value": command.value},
+        )
 
     # Row 3b - the same value is already on its way. A transport whose read-back
     # lags (BLE polls every 30 s) still shows the old value after a write; sending
@@ -383,11 +415,17 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     if state.last_value is not None and same(state.last_value, command.value, cfg.tolerance):
         if state.settling(now):
             return decided(
-                Action.HELD_SETTLING, f"{command.value} already sent, awaiting read-back"
+                Action.HELD_SETTLING,
+                f"{command.value} already sent, awaiting read-back",
+                ActionReason.ALREADY_SENT,
+                {"value": command.value},
             )
         if _predates_write(state, current_at, now, cfg):
             return decided(
-                Action.HELD_SETTLING, f"{command.value} sent, read-back predates the write"
+                Action.HELD_SETTLING,
+                f"{command.value} sent, read-back predates the write",
+                ActionReason.READBACK_PREDATES,
+                {"value": command.value},
             )
 
     # Row 4 - unavailable is transient first, a failure second.
@@ -396,14 +434,22 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
             return decided(
                 Action.TRANSIENT,
                 "target unavailable: retrying next tick",
+                ActionReason.UNAVAILABLE_RETRYING,
                 gate=transient(state, now),
             )
         waited = (now - state.transient_since).total_seconds()
         if waited < cfg.transient_grace_s:
-            return decided(Action.TRANSIENT, f"target unavailable for {waited:.0f} s")
+            return decided(
+                Action.TRANSIENT,
+                f"target unavailable for {waited:.0f} s",
+                ActionReason.UNAVAILABLE_FOR,
+                {"seconds": round(waited)},
+            )
         return decided(
             Action.FAILED,
             f"target unavailable for {waited:.0f} s",
+            ActionReason.UNAVAILABLE_FOR,
+            {"seconds": round(waited)},
             gate=replace(state, failures=state.failures + 1),
         )
 
@@ -415,7 +461,9 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
         # (D-0251): the device holds what it was last told until it says otherwise.
         reference = state.last_value if state.last_value is not None else current
         if state.settling(now) and _is_upward(command, reference) and not command.blunt:
-            return decided(Action.HELD_SETTLING, "inside the settle window")
+            return decided(
+                Action.HELD_SETTLING, "inside the settle window", ActionReason.SETTLE_WINDOW
+            )
 
         # Rows 6 and 7 are bought past by an urgent write - and by a blunt one,
         # because a reason that is physical or contractual cannot be made to wait
@@ -428,16 +476,24 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
             since = (now - state.last_write_at).total_seconds()
             if since < cfg.interval_s():
                 return decided(
-                    Action.HELD_INTERVAL, f"{since:.0f} s of {cfg.interval_s():.0f} s elapsed"
+                    Action.HELD_INTERVAL,
+                    f"{since:.0f} s of {cfg.interval_s():.0f} s elapsed",
+                    ActionReason.INTERVAL,
+                    {"elapsed_s": round(since), "interval_s": round(cfg.interval_s())},
                 )
 
         # Row 7 - the reversal clocks.
         if not hurried and not _dwell_ok(command, state, cfg, now):
-            return decided(Action.HELD_DWELL, "dwell not elapsed")
+            return decided(Action.HELD_DWELL, "dwell not elapsed", ActionReason.DWELL)
 
         # Row 8 - the transport's bucket. A breaker beats a budget.
         if not command.blunt and budget.available(cfg.transport, now) < len(command.writes):
-            return decided(Action.HELD_BUDGET, f"{cfg.transport} budget exhausted")
+            return decided(
+                Action.HELD_BUDGET,
+                f"{cfg.transport} budget exhausted",
+                ActionReason.BUDGET_EXHAUSTED,
+                {"transport": str(cfg.transport)},
+            )
 
     # Row 9 - write.
     verify_at = now + timedelta(seconds=cfg.verify_after_s)
@@ -459,6 +515,8 @@ def decide(  # noqa: PLR0911, PLR0912 - nine rows, first hit wins: the matrix *i
     return decided(
         Action.WRITTEN,
         command.reason,
+        command.reason_key,
+        {"value": command.value, **command.reason_params},
         gate=written,
         out=command,
         spend=True,
