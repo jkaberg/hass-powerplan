@@ -1238,10 +1238,14 @@ class Runtime:
                 self.hass,
                 adapter.baseline,
                 register_entity_id=register,
-                # Every load, none of its own history read yet (D-0315, D-0351):
-                # nothing is subtracted, and the seed's mark says so (`none`).
+                # Every load with its bound power sensor, whose history is taken
+                # off the register (D-0483); a load with none marks the seed `none`.
                 loads=tuple(
-                    LoadSource(load_id=load.load_id, nameplate_w=load.config.nameplate_w)
+                    LoadSource(
+                        load_id=load.load_id,
+                        nameplate_w=load.config.nameplate_w,
+                        power_entity_id=self._power_entity(load.load_id),
+                    )
                     for load in self.build.loads
                 ),
                 now=dt_util.utcnow(),
@@ -1255,6 +1259,11 @@ class Runtime:
             self.state, forecasts={BASELINE_STATE_KEY: encode(adapter.baseline.state)}
         )
         self._persist_sections(frozenset({Section.FORECASTS}))
+
+    def _power_entity(self, load_id: str) -> str | None:
+        """Return the entity a load's `POWER` role is bound to, or `None`."""
+        device = self.build.devices.get(load_id)
+        return None if device is None else device.entity_of(Role.POWER)
 
     async def stop(self, reason: str) -> None:
         """D7 §5.5: unsubscribe, stop planning, release every load, flush the store.
@@ -2181,8 +2190,10 @@ class Runtime:
         The grid is the import curve's slots - the ones the plans were built on
         (D1 §5.8) - from the one in progress to `PLAN_SLOTS_HORIZON` ahead. Per
         slot: the ceiling of the capacity window it falls in (`None` where no
-        window is billed), D10's uncontrolled baseline, and each load's planned
-        kWh, a plan slot that straddles prorated by its overlap.
+        window is billed), D10's uncontrolled baseline where D10 offers it (`None`
+        below the offer confidence, the gate the planner and the budget apply -
+        D-0484), and each load's planned kWh, a plan slot that straddles prorated
+        by its overlap.
         """
         assert self.engine is not None
         plans = self.state.plans.plans
@@ -2194,7 +2205,7 @@ class Runtime:
         )
         until = now + PLAN_SLOTS_HORIZON
         window_s = self.build.cfg.window_min * 60
-        baseline = inputs.forecast_baseline
+        forecasts = self._forecasts(now)
         rows: list[dict[str, Any]] = []
         for start, end in sorted(grid):
             if end <= now or start >= until:
@@ -2204,7 +2215,7 @@ class Runtime:
             ceiling = self.engine.window_ceiling_kwh(
                 window_start, window_start + timedelta(seconds=window_s), inputs.knobs.target
             )
-            hours = (end - start).total_seconds() / 3600.0
+            offered = None if forecasts is None else forecasts.baseline_kwh(start, end)
             planned = {
                 load_id: round(kwh, 3)
                 for load_id, plan in sorted(plans.items())
@@ -2215,9 +2226,7 @@ class Runtime:
                     "start": start.isoformat(),
                     "end": end.isoformat(),
                     "ceiling_kwh": None if math.isinf(ceiling) else round(ceiling, 3),
-                    "baseline_kwh": None
-                    if baseline is None
-                    else round(baseline.energy_kwh(start, hours), 3),
+                    "baseline_kwh": None if offered is None else round(offered[0], 3),
                     "planned_kwh": planned,
                 }
             )

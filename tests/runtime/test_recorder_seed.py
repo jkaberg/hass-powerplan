@@ -32,6 +32,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 from custom_components.powerplan import runtime as runtime_module
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.forecasts import Reconstruction
+from custom_components.powerplan.core.loads.kinds.base import Role
 from custom_components.powerplan.entity import unique_id
 from custom_components.powerplan.runtime import Runtime, build_site
 from tests.core.loads.conftest import floor_load
@@ -299,4 +300,75 @@ async def test_05b_a_site_whose_loads_the_recorder_cannot_separate_is_seeded_and
     assert adapter is not None
     assert adapter.baseline.state.reconstruction is Reconstruction.NONE
     assert adapter.baseline.confidence(NOW) > 0.0
+    await runtime.stop("unload")
+
+
+#: The floor's own power sensor, declared in kW as a charger's often is.
+FLOOR_POWER = "sensor.floor_power"
+#: What the floor drew in the evening hour, in kW: part of the register's 3 kWh.
+FLOOR_EVENING_KW = 2.0
+
+
+class MeteredFloor(FakeFloor):
+    """The floor with its `POWER` role bound to a sensor the recorder keeps."""
+
+    def entity_of(self, role: Role) -> str | None:
+        """Return the power sensor for `POWER`, the climate entity otherwise."""
+        return FLOOR_POWER if role is Role.POWER else super().entity_of(role)
+
+
+def _import_floor_power(hass: HomeAssistant) -> None:
+    """Import the floor's hourly `mean` rows in kW: 2 kW in the evening hour, else 0."""
+    rows: list[dict[str, Any]] = []
+    start = FIRST_HOUR
+    while start <= LAST_HOUR:
+        kw = FLOOR_EVENING_KW if start.astimezone(OSLO).hour == EVENING_HOUR else 0.0
+        rows.append({"start": start, "mean": kw, "min": kw, "max": kw})
+        start += timedelta(hours=1)
+    async_import_statistics(
+        hass,
+        {
+            "mean_type": StatisticMeanType.ARITHMETIC,
+            "has_sum": False,
+            "name": None,
+            "source": "recorder",
+            "statistic_id": FLOOR_POWER,
+            "unit_class": "power",
+            "unit_of_measurement": "kW",
+        },
+        rows,
+    )
+
+
+async def test_05c_a_metered_load_s_own_history_is_taken_off_the_seed(
+    recorder_mock: Recorder, hass: HomeAssistant, oslo: datetime
+) -> None:
+    """The house's 22:00 bin held the car it also plans (D-0483): the load's power comes off.
+
+    In kW, converted to W by the recorder; each hourly mean integrated as the
+    hour's own energy, not smeared into its neighbours.
+    """
+    _import_register(hass)
+    _import_floor_power(hass)
+    await async_wait_recording_done(hass)
+    FakeMeter(hass)
+    floor = MeteredFloor(hass)
+    floor.register()
+    entry = site_entry(hass)
+    build = build_site(hass, entry)
+    build.loads = (floor_load(strategy="always"),)
+    build.devices = {"loop_bath": floor}
+    runtime = Runtime(hass, entry, build)
+    entry.runtime_data = runtime
+    await runtime.start()
+    await hass.async_block_till_done()
+
+    adapter = runtime.forecasts_adapter
+    assert adapter is not None
+    baseline = adapter.baseline
+    assert baseline.state.reconstruction is Reconstruction.FULL
+    evening = datetime(2026, 1, 13, EVENING_HOUR, 30, tzinfo=OSLO)
+    before = datetime(2026, 1, 13, EVENING_HOUR - 1, 30, tzinfo=OSLO)
+    assert baseline.predict(evening)[0] == pytest.approx((EVENING_KWH - FLOOR_EVENING_KW) * 1000.0)
+    assert baseline.predict(before)[0] == pytest.approx(DAY_KWH * 1000.0)
     await runtime.stop("unload")

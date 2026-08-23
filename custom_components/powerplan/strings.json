@@ -2325,7 +2325,9 @@
                 "step_up_a": "Ramp step",
                 "suppress_delta_a": "Write threshold",
                 "suppress_stale_s": "Rewrite after",
-                "swing_k": "Thermostat swing"
+                "swing_k": "Thermostat swing",
+                "role_power": "Power",
+                "role_energy": "Energy"
               },
               "data_description": {
                 "arrival_sources": "Advanced: calendars whose next event is an arrival — a deadline to be back at the comfort target.",
@@ -2363,7 +2365,9 @@
                 "step_up_a": "Advanced: how many amps the limit rises per write on the way up.",
                 "suppress_delta_a": "Advanced: a change smaller than this is not written.",
                 "suppress_stale_s": "Advanced: seconds after which the same value is written again.",
-                "swing_k": "Advanced: the thermostat's own hysteresis."
+                "swing_k": "Advanced: the thermostat's own hysteresis.",
+                "role_power": "The entity for this role.",
+                "role_energy": "The entity for this role."
               }
             }
           }

@@ -215,6 +215,31 @@ def binding_to_data(binding: RoleBinding) -> dict[str, Any]:
     }
 
 
+def extra_bindings(
+    hass: HomeAssistant, type_key: str, params: Mapping[str, Any], *, profile: str
+) -> tuple[RoleBinding, ...]:
+    """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only.
+
+    Unlike a match-step role, the entity did not come from the device the
+    household picked - the profile it reached from never saw it, so there is
+    no `MatchResult` binding to start from, only the answer itself. The flow
+    calls it on every answer; setup calls it for a subentry saved before an
+    answer was bound (D-0485).
+    """
+    out: list[RoleBinding] = []
+    for key, role in _EXTRA_ROLE_ANSWERS.get(type_key, ()):
+        entity_id = params.get(key)
+        if not entity_id:
+            continue
+        view = DeviceView.from_states(hass, [str(entity_id)]).get(str(entity_id))
+        if view is None:
+            continue
+        binding = numeric_binding(view, role, profile=profile)
+        if binding is not None:
+            out.append(binding)
+    return tuple(out)
+
+
 def binding_from_data(row: Mapping[str, Any]) -> RoleBinding:
     """Rebuild a binding from the subentry."""
     return RoleBinding(
@@ -445,10 +470,14 @@ def question_schema(
     followups: bool = False,
     skip: frozenset[str] = frozenset(),
     text: Text | None = None,
+    meters: Mapping[Role, str | None] | None = None,
 ) -> vol.Schema:
     """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65).
 
     `skip` leaves out what an entity owns once the appliance exists (D8 §5.16).
+    `meters` - a reconfigure's power and energy bindings - adds their pickers
+    under Avansert: the match step that offers them on an add is not revisited
+    while the device exists (D-0486).
 
     A question that follows a yes/no answer (`asked_if`) is on the follow-up
     step, not here (`followups=True` renders that step; D8 §5.15 rule 5); a value
@@ -477,6 +506,9 @@ def question_schema(
         else:
             marker = _marker(question.key, default)
         target[marker] = _selector(question, type_key, default, text)
+    for role, entity_id in (meters or {}).items():
+        picker = EntitySelector(EntitySelectorConfig(filter=_ROLE_FILTERS.get(role, [{}])))
+        hidden[_marker(f"{_ROLE_PREFIX}{role.value}", entity_id)] = picker
     if hidden:
         fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
     return vol.Schema(fields)
@@ -1013,24 +1045,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         )
 
     def _extra_bindings(self, type_key: str, params: Mapping[str, Any]) -> tuple[RoleBinding, ...]:
-        """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only.
-
-        Unlike a match-step role, the entity did not come from the device the
-        household picked - the profile it reached from never saw it, so there is
-        no `MatchResult` binding to start from, only the answer itself.
-        """
-        out: list[RoleBinding] = []
-        for key, role in _EXTRA_ROLE_ANSWERS.get(type_key, ()):
-            entity_id = params.get(key)
-            if not entity_id:
-                continue
-            view = DeviceView.from_states(self.hass, [str(entity_id)]).get(str(entity_id))
-            if view is None:
-                continue
-            binding = numeric_binding(view, role, profile=self._profile or "")
-            if binding is not None:
-                out.append(binding)
-        return tuple(out)
+        """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only."""
+        return extra_bindings(self.hass, type_key, params, profile=self._profile or "")
 
     # -------------------------------------------------------------------- user
 
@@ -1216,6 +1232,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         # A setting an entity owns is not asked again: its answer stands (D8 §5.16).
         skip = self._entity_settings()
         if user_input is not None:
+            if self.source == "reconfigure":
+                self._bindings = self._meters_from_form(user_input)
             raw = {
                 **{key: value for key, value in values.items() if key in skip},
                 **answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx),
@@ -1250,11 +1268,37 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 suggested=self._suggested,
                 skip=skip,
                 text=await Text.load(self.hass),
+                meters=self._meters() if self.source == "reconfigure" else None,
             ),
             errors=errors or None,
             description_placeholders=await self._about(),
             last_step=False,
         )
+
+    def _meters(self) -> dict[Role, str | None]:
+        """Return the power and energy meters bound now, `None` for an unbound one."""
+        bound = {binding.role: binding.entity_id for binding in self._bindings}
+        return {role: bound.get(role) for role in _ALWAYS_OFFERED}
+
+    def _meters_from_form(self, user_input: Mapping[str, Any]) -> tuple[RoleBinding, ...]:
+        """Return the bindings with the reconfigure's meter answers applied (D-0486).
+
+        A new entity is bound read-only off its own unit; a cleared picker
+        unbinds the meter; one the entity cannot be read as stays as it was.
+        """
+        answers = _flat(user_input)
+        by_role = {binding.role: binding for binding in self._bindings}
+        for role in _ALWAYS_OFFERED:
+            entity_id = answers.get(f"{_ROLE_PREFIX}{role.value}")
+            previous = by_role.get(role)
+            if not entity_id:
+                if previous is not None and not previous.required:
+                    by_role.pop(role)
+            elif previous is None or previous.entity_id != entity_id:
+                rebuilt = self._rebind(role, str(entity_id), previous, self._profile or "")
+                if rebuilt is not None:
+                    by_role[role] = rebuilt
+        return tuple(by_role.values())
 
     async def _about(self) -> dict[str, str]:
         """Return the questions' title data: "Om {name}" - the device's name - and the type (LOAD-5)."""

@@ -38,14 +38,8 @@ def _with_answer(defaults: dict[str, Any], key: str, value: Any) -> dict[str, An
     return {**defaults, key: value}
 
 
-@pytest.mark.inv("INV-66")
-async def test_the_soc_answer_becomes_a_binding_the_match_step_never_saw(
-    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
-) -> None:
-    """`soc_entity` names a sensor off the charger; the subentry binds it and the tick reads it."""
-    hass.states.async_set(
-        CAR_SOC_SENSOR, "87", {"unit_of_measurement": "%", "device_class": "battery"}
-    )
+async def _add_car(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse) -> None:
+    """Add the charger through the flow, answering `soc_entity` with the car's sensor."""
     result = dict(
         await hass.config_entries.subentries.async_init(
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
@@ -66,10 +60,53 @@ async def test_the_soc_answer_becomes_a_binding_the_match_step_never_saw(
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
 
+
+@pytest.mark.inv("INV-66")
+async def test_the_soc_answer_becomes_a_binding_the_match_step_never_saw(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """`soc_entity` names a sensor off the charger; the subentry binds it and the tick reads it."""
+    hass.states.async_set(
+        CAR_SOC_SENSOR, "87", {"unit_of_measurement": "%", "device_class": "battery"}
+    )
+    await _add_car(hass, site, charger)
+
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
     bindings = {row["role"]: row["entity_id"] for row in sub.data[LOAD_BINDINGS]}
     assert bindings["soc"] == CAR_SOC_SENSOR
 
+    runtime: Runtime = site.runtime_data
+    FakeMeter(hass)
+    await hass.async_block_till_done()
+    await runtime.run_tick("test")
+    now = runtime.state.runtime.last_tick_at
+    assert now is not None
+    assert runtime.build.devices[sub.subentry_id].reads(now).value(Role.SOC) == 87.0
+
+
+async def test_a_car_saved_before_the_soc_answer_was_bound_is_bound_at_setup(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """A subentry holding `soc_entity` with no `soc` binding gets one on the next start (D-0485).
+
+    The house's charger was added before `e9ba672`: the answer was a parameter,
+    `Role.SOC` read `None` and the car was never planned.
+    """
+    hass.states.async_set(
+        CAR_SOC_SENSOR, "87", {"unit_of_measurement": "%", "device_class": "battery"}
+    )
+    await _add_car(hass, site, charger)
+    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
+    rows = [row for row in sub.data[LOAD_BINDINGS] if row["role"] != "soc"]
+    hass.config_entries.async_update_subentry(site, sub, data={**sub.data, LOAD_BINDINGS: rows})
+    await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_reload(site.entry_id)
+    await hass.async_block_till_done()
+
+    sub = site.subentries[sub.subentry_id]
+    roles = [row["role"] for row in sub.data[LOAD_BINDINGS]]
+    assert roles.count("soc") == 1
     runtime: Runtime = site.runtime_data
     FakeMeter(hass)
     await hass.async_block_till_done()

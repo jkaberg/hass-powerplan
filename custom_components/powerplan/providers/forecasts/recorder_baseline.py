@@ -62,6 +62,9 @@ LONG_TERM_PERIOD: Final = "hour"
 SEED_SPAN_DAYS: Final = 60
 #: The window length a seed bins at - see `async_seed`'s own comment.
 LONG_TERM_WINDOW_MIN: Final = 60
+#: What the recorder converts to: a `kW` charger's mean comes back in W and a
+#: `Wh` register in kWh, the units `reconstruct` integrates in (D-0483).
+UNITS: Final = {"energy": "kWh", "power": "W"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,7 +93,13 @@ async def async_site_register_kwh(
 async def async_load_power_w(
     hass: HomeAssistant, entity_id: str, start: datetime, end: datetime
 ) -> tuple[tuple[datetime, float], ...]:
-    """Return a power sensor's own mean-per-period trace (D10 §2's `full` row)."""
+    """Return a power sensor's own mean-per-period trace (D10 §2's `full` row).
+
+    A `mean` is the period's average, not a reading at its start: each row comes
+    back as a step - the mean at its start and again at its end - so
+    `reconstruct`'s trapezoid integrates exactly the period's energy instead of
+    smearing a charging hour half into its neighbours (D-0483).
+    """
     rows = await _statistic_rows(hass, entity_id, start, end, stat_type="mean")
     return tuple(rows)
 
@@ -130,12 +139,14 @@ async def _statistic_rows(
     instance = get_instance(hass)
     recent_from = max(start, end - timedelta(days=RECENT_DAYS))
     rows: list[tuple[datetime, float]] = []
-    if recent_from < end:
-        query = _StatQuery(recent_from, end, entity_id, SHORT_TERM_PERIOD, stat_type)
-        rows.extend(await instance.async_add_executor_job(_query, hass, query))
     if start < recent_from:
         query = _StatQuery(start, recent_from, entity_id, LONG_TERM_PERIOD, stat_type)
         rows.extend(await instance.async_add_executor_job(_query, hass, query))
+    if recent_from < end:
+        query = _StatQuery(recent_from, end, entity_id, SHORT_TERM_PERIOD, stat_type)
+        rows.extend(await instance.async_add_executor_job(_query, hass, query))
+    # Stable, and older rows first: a mean step's end sorts before the next
+    # step's start at the same instant, the seam between the two tables included.
     rows.sort(key=lambda row: row[0])
     return rows
 
@@ -159,7 +170,7 @@ def _query(hass: HomeAssistant, query: _StatQuery) -> list[tuple[datetime, float
         query.end,
         {query.entity_id},
         query.period,  # type: ignore[arg-type]
-        None,
+        UNITS,
         {query.stat_type},  # type: ignore[arg-type]
     )
     out: list[tuple[datetime, float]] = []
@@ -169,6 +180,10 @@ def _query(hass: HomeAssistant, query: _StatQuery) -> list[tuple[datetime, float
         if not isinstance(value, int | float) or not isinstance(start_ts, int | float):
             continue
         out.append((dt_util.utc_from_timestamp(start_ts), float(value)))
+        end_ts = row.get("end")
+        if query.stat_type == "mean" and isinstance(end_ts, int | float):
+            # The period's average holds to its end (`async_load_power_w`).
+            out.append((dt_util.utc_from_timestamp(end_ts), float(value)))
     return out
 
 

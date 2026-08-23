@@ -2027,3 +2027,23 @@ The line's `name` is `load.config.name`, or the home's name for a site event. `p
 
 The state sums every adopted plan's `slot.kwh` over the 24 h from the start of the current window, prorating straddling slots; `by_load` still carries whole plans. It used to sum up to 48 h under a name read as the next 24 h. Starting at `now` itself would change the value every tick and write a recorder row each time. Affects D12 §5.6.
 **Rejected:** `[now, now + 24 h)` - moves every tick and drops energy the timeline still shows.
+
+### D-0483 · The baseline seed subtracts each load's bound power history
+
+`_seed_baseline` passes every load's `POWER`-role entity as its `LoadSource.power_entity_id`; the query asks for kWh and W so units arrive as `reconstruct` integrates them. A `mean` row becomes two points (its start and end) and long-term rows come before short-term ones, so the trapezoid integrates each period's own energy. Supersedes D-0315 and D-0351's "nothing is subtracted". The reference baseline was the whole register (a night hour at 4.9 kW against a live 1.3 kW uncontrolled, because the car and tank charged at night), and one more week would have fed that into D6's projection. Affects D10 §5.2.
+**Rejected:** each load's energy register - D10 §2's table has no energy row and fewer loads bind one. Auto-reseeding old baselines - a schema change for a one-time button press.
+
+### D-0484 · A plan slot's `baseline_kwh` is what D10 offers, `None` below the gate
+
+`_plan_slots` reads `Forecasts.baseline_kwh`, which is `None` below `offer_confidence`, instead of the ungated `Baseline.energy_kwh`. The timeline was drawing a baseline neither planner nor budget used. Affects D12 §5.6.
+**Rejected:** drawing it hatched as "still learning" - a visual state for a fortnight's warm-up, of a number the plan wasn't built on.
+
+### D-0485 · Setup binds an answered off-device sensor a subentry was saved without
+
+`async_setup_entry` runs `_bind_answered_roles`: for each load subentry, `extra_bindings` binds the type's answered off-device sensors (`soc_entity`, the heat pump's outdoor and outlet) where the subentry lacks the role. An entity with no state yet binds on a later start. A charger saved before the flow bound `soc_entity` had no SoC, so `deadline_fill` planned nothing.
+**Rejected:** a config-entry migration - runs once, often before the car's cloud sensor has loaded.
+
+### D-0486 · A reconfigure offers the power and energy meters under Advanced
+
+On reconfigure, `question_schema(meters=…)` adds `role_power` and `role_energy` pickers, pre-filled and filtered as in the match step. A new entity is re-bound off its own unit, a cleared picker unbinds an optional meter, and an unreadable one leaves the binding. Reconfigure skips the match step, so a heat pump with a plug meter had no way to bind it and reserved its 7.5 kW rating. Affects D8 §5.2.
+**Rejected:** sending every reconfigure through the match step - re-asks every role of an unchanged device.

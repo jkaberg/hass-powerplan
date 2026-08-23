@@ -15,9 +15,18 @@ from typing import TYPE_CHECKING
 from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
 
-from .const import BRAND_ICON_URL, DOMAIN
+from .const import (
+    BRAND_ICON_URL,
+    DOMAIN,
+    LOAD_BINDINGS,
+    LOAD_PARAMS,
+    LOAD_PROFILE,
+    LOAD_TYPE,
+    SUBENTRY_LOAD,
+)
 from .dashboard import async_setup_dashboard
 from .entity import async_prepare_site_device
+from .flow.load import binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
 
@@ -69,6 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     # call in the loop). Nothing inside it needs the loop: every state and
     # config read it makes is a fast, in-memory one HA allows from either
     # thread.
+    _bind_answered_roles(hass, entry)
     site = await hass.async_add_executor_job(build_site, hass, entry)
     runtime = Runtime(hass, entry, site)
     entry.runtime_data = runtime
@@ -81,6 +91,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     entry.async_on_unload(entry.add_update_listener(_async_handle_update))
     _LOGGER.debug("Site %s set up (entry %s): %s", entry.title, entry.entry_id, runtime.startup)
     return True
+
+
+def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
+    """Bind an answered off-device sensor a subentry saved before the flow bound it (D-0485).
+
+    Before `e9ba672` the car's `soc_entity` answer stayed a parameter: `Role.SOC`
+    read `None` and the EV was never planned. Only a role the subentry lacks is
+    added, so a match-step binding stands; an entity with no state yet binds on
+    a later start. Runs before the update listener exists, so it reloads nothing.
+    """
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_LOAD:
+            continue
+        data = subentry.data
+        rows = list(data.get(LOAD_BINDINGS) or ())
+        bound = {binding_from_data(row).role for row in rows}
+        missing = [
+            binding
+            for binding in extra_bindings(
+                hass,
+                str(data.get(LOAD_TYPE)),
+                data.get(LOAD_PARAMS) or {},
+                profile=str(data.get(LOAD_PROFILE) or ""),
+            )
+            if binding.role not in bound
+        ]
+        if not missing:
+            continue
+        _LOGGER.info(
+            "%s: binding %s from its answers",
+            subentry.title,
+            ", ".join(binding.role.value for binding in missing),
+        )
+        hass.config_entries.async_update_subentry(
+            entry,
+            subentry,
+            data={**data, LOAD_BINDINGS: [*rows, *(binding_to_data(b) for b in missing)]},
+        )
 
 
 async def _async_handle_update(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:

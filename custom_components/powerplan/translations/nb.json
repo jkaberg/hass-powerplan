@@ -2325,7 +2325,9 @@
                 "step_up_a": "Rampesteg",
                 "suppress_delta_a": "Skriveterskel",
                 "suppress_stale_s": "Skriv på nytt etter",
-                "swing_k": "Termostatsving"
+                "swing_k": "Termostatsving",
+                "role_power": "Effektmåling",
+                "role_energy": "Energimåler"
               },
               "data_description": {
                 "arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
@@ -2363,7 +2365,9 @@
                 "step_up_a": "Avansert: hvor mange ampere grensen økes per skriving på vei opp.",
                 "suppress_delta_a": "Avansert: en endring mindre enn dette skrives ikke.",
                 "suppress_stale_s": "Avansert: sekunder før samme verdi skrives igjen.",
-                "swing_k": "Avansert: termostatens egen hysterese."
+                "swing_k": "Avansert: termostatens egen hysterese.",
+                "role_power": "Entiteten for denne rollen.",
+                "role_energy": "Entiteten for denne rollen."
               }
             }
           }

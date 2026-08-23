@@ -18,9 +18,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.calendar import plan_events
 from custom_components.powerplan.const import DOMAIN
+from custom_components.powerplan.core.metering import AnchorKind, ClosedWindow
 from custom_components.powerplan.core.model import Confidence, Money, Plan, PlanMode, PlanSlot
 from custom_components.powerplan.dashboard.layout import (
     COLLECTION_KEY,
@@ -741,6 +743,52 @@ async def test_06_the_site_plan_carries_its_slots_unrecorded(
     assert state.attributes["window_min"] == runtime.build.cfg.window_min
     sensor = hass.data["sensor"].get_entity(entity_id)
     assert "slots" in sensor._unrecorded_attributes
+
+
+async def test_06_a_slot_s_baseline_is_only_what_d10_offers(
+    hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime
+) -> None:
+    """Below the offer confidence a slot's `baseline_kwh` is `None`, the planner's own gate (D-0484).
+
+    The house's timeline drew a 4.9 kW baseline at confidence 0.50 that neither
+    the planner nor the budget used.
+    """
+
+    async def slots() -> list[dict[str, Any]]:
+        await runtime.run_plan("test")
+        await runtime.run_tick("test")
+        await hass.async_block_till_done()
+        entity_id = er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, unique_id(SITE_ENTRY_ID, "plan")
+        )
+        rows: list[dict[str, Any]] = hass.states.get(entity_id).attributes["slots"]
+        assert rows
+        return rows
+
+    assert all(row["baseline_kwh"] is None for row in await slots())
+
+    adapter = runtime.forecasts_adapter
+    assert adapter is not None
+    now = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    # Eight weeks of quarter-hours at 1 kW: every bin well past the offer gate.
+    for quarter in range(8 * 7 * 24 * 4, 0, -1):
+        adapter.baseline.update(
+            ClosedWindow(
+                start_utc=now - timedelta(minutes=15 * quarter),
+                window_min=15,
+                kwh=0.25,
+                avg_kw=1.0,
+                anchor_kind=AnchorKind.REGISTER_LATCHED,
+                degraded=False,
+                confidence="exact",
+            ),
+            0.25,
+        )
+
+    for row in await slots():
+        start, end = datetime.fromisoformat(row["start"]), datetime.fromisoformat(row["end"])
+        hours = (end - start).total_seconds() / 3600
+        assert row["baseline_kwh"] == pytest.approx(hours, abs=1e-3)
 
 
 async def test_06_the_metric_is_the_tariffs_own(
