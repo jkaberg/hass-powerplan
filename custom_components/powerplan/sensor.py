@@ -656,7 +656,7 @@ class SiteSensor(PowerplanEntity, SensorEntity):
         if description.enabled is not None:
             self._attr_entity_registry_enabled_default = description.enabled(runtime)
         if description.unrecorded:
-            self._unrecorded_attributes = frozenset(description.unrecorded)
+            self._set_unrecorded(frozenset(description.unrecorded))
 
     @property
     def native_value(self) -> Any:

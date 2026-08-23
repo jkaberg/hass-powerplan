@@ -2047,3 +2047,38 @@ The state sums every adopted plan's `slot.kwh` over the 24 h from the start of t
 
 On reconfigure, `question_schema(meters=…)` adds `role_power` and `role_energy` pickers, pre-filled and filtered as in the match step. A new entity is re-bound off its own unit, a cleared picker unbinds an optional meter, and an unreadable one leaves the binding. Reconfigure skips the match step, so a heat pump with a plug meter had no way to bind it and reserved its 7.5 kW rating. Affects D8 §5.2.
 **Rejected:** sending every reconfigure through the match step - re-asks every role of an unchanged device.
+
+### D-0487 · The shared style sheet is a CSS string
+
+`frontend/src/styles.ts` exports `ppStyles` as a string each card puts first in its shadow root, with `tooltipStyle()` for ECharts. The cards are plain `HTMLElement`s writing `innerHTML`; Lit isn't a dependency. Affects D12 §3, §5.11.
+**Rejected:** moving the cards to Lit - rewrites four elements for no visible change and ~15 kB.
+
+### D-0488 · The month gauge colours steps by index against the target step
+
+`targetStep()` finds the target's index (`step_N`, else the step whose lower bound is `lower_kw`, else the one holding `target_kw`, else the current step); steps at or below it are `ok`, the next `warn`, above `alert`. The select publishes `target_kw: null` for a step option, and `Number(null)` is 0, which drew a healthy month as an alarm; D-0452's rule read a number not always there. Affects D12 §5.3, §5.11.
+**Rejected:** publishing `target_kw` for every option - the next missing attribute breaks it again.
+
+### D-0489 · `plan_status` carries the next run and the deadline as clock strings
+
+`next_run` is local `HH:MM` of `next_start` when it's in the future, else `""`; `deadline_time` likewise. Tiles show `[state, next_run]` (the car `[state, deadline_time]`), and the subview shows "running now" instead while running. A tile renders a datetime attribute as a full timestamp, and `next_start` followed the clock during a run. Affects D8 §5.16, D12 §5.1, §5.6.
+**Rejected:** rounding `next_start` in core - changes what automations read (INV-50).
+
+### D-0490 · The logbook line names the appliance
+
+`async_describe_events` no longer returns `entity_id` (the bus payload keeps it for filtering): HA's logbook titles a line with the entity's own name when one is given, "Plan status". A plan adopted while its load draws reads `plan_adopted_now`. The card matches events by the same target list that keeps `plan_status`'s state rows, and no target keeps one without the other. Affects D12 §5.6, §5.11.
+**Rejected:** logging everything on one quiet entity - moves every appliance's events out of its own logbook.
+
+### D-0491 · The timeline sizes its own canvas; the card is `rows: auto`
+
+The canvas is the plot (250 px on desktop, 180 px under 500 px) plus fixed margins; toggle, readout and legend flow around it and the card grows. A fixed seven-row card on a phone with a four-line legend left about 120 px of plot. Affects D12 §5.1, §5.2, §5.11.
+**Rejected:** a fixed height with the legend behind a toggle - the legend is where each appliance's kWh is written.
+
+### D-0492 · Next runs is its own element; the tables' words move to `card_*`
+
+`custom:powerplan-runs-card` replaces the next-runs markdown, and the period summary's views replace the per-appliance graph and cost markdown; their words become `card_*` so they arrive through `labels`. The "why" card writes `currency_short` ("kr") for a NOK site and the ISO code otherwise. No table or list of values is a markdown card (D12 §5.11). Affects D12 §4, §5.1, §5.9, §5.11.
+**Rejected:** keeping the markdown with a "now" column - the wide bordered table stays.
+
+### D-0493 · `unrecorded` reaches the recorder through HA's per-class set
+
+HA folds `_unrecorded_attributes` once per class in `__init_subclass__`, so a per-instance assignment never reached the recorder: `sensor.<site>_plan` (29 kB) and `price_forecast` (34 kB) exceeded the recorder's 16 kB limit, and large attributes landed in every row (INV-61). `PowerplanEntity._set_unrecorded` also sets the private `_Entity__combined_unrecorded_attributes` on the instance, and a recorder-level test fails if HA renames it.
+**Rejected:** one subclass per row with a class-level set - dynamic classes for a row table.

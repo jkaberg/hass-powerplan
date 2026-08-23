@@ -187,6 +187,30 @@ def test_06_large_attribute_entities_keep_their_attribute_out_of_the_recorder(
 
 
 @pytest.mark.inv("INV-61")
+async def test_06_the_recorder_sees_every_unrecorded_attribute(
+    hass: HomeAssistant, site: MockConfigEntry
+) -> None:
+    """The set the recorder reads (`State.state_info`) holds each row's `unrecorded` (D-0493).
+
+    HA folds `_unrecorded_attributes` per class; a per-instance assignment alone
+    left the plan's 29 kB and the forecast's 34 kB in every attribute row.
+    """
+    registry = er.async_get(hass)
+    for description in SENSORS:
+        if not description.unrecorded:
+            continue
+        entity_id = registry.async_get_entity_id(
+            "sensor", DOMAIN, unique_id(SITE_ENTRY_ID, description.key)
+        )
+        if entity_id is None or registry.async_get(entity_id).disabled_by is not None:
+            continue  # the row does not apply to this site, or is off by default
+        state = hass.states.get(entity_id)
+        assert state is not None, description.key
+        assert state.state_info is not None, description.key
+        assert description.unrecorded <= state.state_info["unrecorded_attributes"], description.key
+
+
+@pytest.mark.inv("INV-61")
 async def test_06b_a_large_attribute_entity_writes_only_when_its_content_changes(
     hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime, meter: FakeMeter
 ) -> None:

@@ -4,8 +4,9 @@ Two text tabs - `overview` (now) and `history` (the past, on the Energy
 dashboard's own period picker, `energy_powerplan`) - and one subview per
 appliance, each a `sections` view with `max_columns: 3` and dense placement.
 Section order is the phone's reading order. Built-in cards wherever one can
-show the thing; the timeline and the window gauge are the custom cards (D12
-§5.2, §5.3), and three markdown tables carry what only a table can (§5.9).
+show the thing; the timeline, the window gauge, the period summary and the
+next runs are the custom cards (D12 §5.2, §5.3, §5.7, §5.9), and one markdown
+card says why an appliance's plan is what it is (§5.9).
 Every appliance keeps one colour from HA's palette on every card (§5.8). A card
 whose entity is not shown is left out, and a section left with only its heading
 goes with it (D12 §8). Plain data in, plain data out: no `hass`.
@@ -43,7 +44,8 @@ COLLECTION_KEY = "energy_powerplan"
 TIMELINE_CARD = "custom:powerplan-timeline-card"
 WINDOW_CARD = "custom:powerplan-window-card"
 SUMMARY_CARD = "custom:powerplan-period-summary"
-CUSTOM_CARDS = frozenset({TIMELINE_CARD, WINDOW_CARD, SUMMARY_CARD})
+RUNS_CARD = "custom:powerplan-runs-card"
+CUSTOM_CARDS = frozenset({TIMELINE_CARD, WINDOW_CARD, SUMMARY_CARD, RUNS_CARD})
 #: The keys `hidden_views` takes: the two tabs, and every appliance's subview.
 VIEWS: tuple[str, ...] = ("overview", "history", "appliances")
 #: The dashboard's own URL path; `strategy.ts` puts it in after the call (D12 §5.1).
@@ -194,7 +196,14 @@ def _view(
             if badge is not None
         ]
     if name == "history":
-        picker = {"type": "energy-date-selection", "collection_key": COLLECTION_KEY}
+        # Open upward and to the right, as the Energy dashboard's own footer does:
+        # downward from the footer the range popover leaves the window (D1).
+        picker = {
+            "type": "energy-date-selection",
+            "collection_key": COLLECTION_KEY,
+            "opening_direction": "right",
+            "vertical_opening_direction": "up",
+        }
         if site.has["footer"]:
             view["footer"] = {"card": picker}
         else:
@@ -249,10 +258,13 @@ def _overview(site: _Site) -> list[Card | None]:
         _section(
             _heading(
                 t["section_plan"],
-                _entity_badge(e, "plan", show_state=True, show_icon=True),
+                _entity_badge(
+                    e, "plan", show_state=True, show_icon=True, icon="mdi:lightning-bolt"
+                ),
                 _replan_badge(e, t),
             ),
-            _cols(_timeline(site, s.loads, hours=24, options=[24, 48]), "full", 7),
+            # The card sizes its own canvas under its legend (T10, D-0491).
+            _cols(_timeline(site, s.loads, hours=24, options=[24, 48]), "full", "auto"),
             span=3,
         ),
         _section(
@@ -287,8 +299,8 @@ def _overview(site: _Site) -> list[Card | None]:
                         },
                     },
                 ),
-                _cols(_statistic(e, "cost", t["card_cost"], "mdi:cash"), 6, 2),
-                _cols(_statistic(e, "savings", t["card_savings"], "mdi:piggy-bank"), 6, 2),
+                _cols(_entity(e, "cost", t["card_cost"], "mdi:cash"), 6, 2),
+                _cols(_entity(e, "savings", t["card_savings"], "mdi:piggy-bank"), 6, 2),
                 _cols(
                     _tile(e, "plan", t["card_planned"], icon="mdi:calendar-clock", color="primary"),
                     12,
@@ -311,7 +323,7 @@ def _overview(site: _Site) -> list[Card | None]:
             ),
             _section(
                 _heading(t["section_next_runs"]),
-                _cols(_markdown(next_runs(site)), 12, 6) if "plan" in e else None,
+                _cols(_runs_card(site), 12, "auto"),
             ),
         )
     )
@@ -354,7 +366,8 @@ def _appliance_tile(site: _Site, load: LoadLayout) -> Card | None:
         "entity": e["plan_status"],
         "name": load.name,
         "color": site.colors[load.subentry_id],
-        "state_content": ["state", "deadline" if load.type == "ev" else "next_start"],
+        # A time, never a timestamp: `plan_status`'s own HH:MM strings (G5).
+        "state_content": ["state", "deadline_time" if load.type == "ev" else "next_run"],
         "hold_action": {"action": "more-info"},
     }
     if site.subviews:
@@ -374,18 +387,6 @@ def _appliance_tile(site: _Site, load: LoadLayout) -> Card | None:
 
 def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
     s, t, e = site.site, site.texts, site.site.entities
-    savings = [
-        _graph_entity(
-            site, load.entities["savings_month"], load.name, site.colors[load.subentry_id]
-        )
-        for load in s.loads
-        if "savings_month" in load.entities
-    ]
-    costs = [
-        (load.name, load.entities["cost_month"], load.entities.get("savings_month"))
-        for load in s.loads
-        if "cost_month" in load.entities
-    ]
     events = [e["events"]] if "events" in e else []
     events += [load.entities["plan_status"] for load in s.loads if "plan_status" in load.entities]
     return [
@@ -403,43 +404,30 @@ def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
                     "tap_action": {"action": "navigate", "navigation_path": "/energy"},
                 },
             ),
-            _cols(_history_timeline(site, grid), "full", 6),
+            _cols(_history_timeline(site, grid), "full", "auto"),
             span=2,
         )
         if grid
         else None,
         _section(
             _heading(t["section_capacity"]),
-            _cols(_peaks_card(site), 12, 6),
+            _cols(_peaks_card(site, grid), 12, "auto"),
         ),
         _section(
             _heading(t["section_per_appliance"]),
-            _cols(
-                _graph(
-                    savings,
-                    ["change"],
-                    "bar",
-                    title=t["card_savings_per_appliance"],
-                    period="month",
-                ),
-                "full",
-                6,
-            ),
+            _cols(_appliances_card(site, "appliances", "savings_month"), "full", "auto"),
             span=2,
         ),
         _section(
-            _heading(
-                t["section_cost_per_appliance"],
-                {"type": "button", "text": t["badge_this_month"], "tap_action": {"action": "none"}},
-            ),
-            _cols(_markdown(cost_per_appliance(site, costs)), 12, 6) if costs else None,
+            _heading(t["section_cost_per_appliance"]),
+            _cols(_appliances_card(site, "table", "cost_month"), 12, "auto"),
         ),
         _section(
             _heading(t["section_cost_savings"]),
             _cols(
                 _graph(
                     [
-                        _graph_entity(site, e[key], None, color)
+                        _graph_entity(site, e[key], t[f"card_{key}"], color)
                         for key, color in (("cost", "primary"), ("savings", "green"))
                         if key in e
                     ],
@@ -475,7 +463,7 @@ def _appliance_view(site: _Site, load: LoadLayout, hidden: Collection[str]) -> d
         _badge(e, "control", t["badge_control"], color=color),
         _badge(e, "plan_status", t["badge_status"], color=color),
         _badge(e, "ready_by", t["badge_ready_by"], color=color),
-        _badge(e, "plan_status", t["badge_next_run"], color=color, state_content=["next_start"]),
+        *_next_run_badges(e, t, color),
     ]
     status = _tile(e, "plan_status", t["card_status"], color=color)
     if status is not None:
@@ -502,41 +490,47 @@ def _appliance_view(site: _Site, load: LoadLayout, hidden: Collection[str]) -> d
             _cols(
                 {
                     "type": "entities",
-                    "entities": [{"entity": e["ready_by"], "name": site.name("ready_by")}],
+                    # An explicit icon: the row's picture would be the entity's own (A2).
+                    "entities": [
+                        {
+                            "entity": e["ready_by"],
+                            "name": site.name("ready_by"),
+                            "icon": "mdi:clock-check-outline",
+                        }
+                    ],
                 },
                 12,
-                1,
+                "auto",
             )
             if "ready_by" in e
             else None,
             _cols(granted, 12, 2),
         ),
         _section(
-            _heading(
-                t["section_appliance_plan"],
-                _entity_badge(e, "plan_status", state_content=["planned_kwh"]),
-            ),
+            _heading(t["section_appliance_plan"]),
             _cols(
                 _timeline(
                     site, (load,), hours=24, options=[12, 24, 48], deadline=e.get("plan_status")
                 ),
                 "full",
-                5,
+                "auto",
             ),
             span=2,
         ),
         _section(
             _heading(t["section_why"]),
-            _cols(_markdown(why(site, load)), "full", 4)
+            _cols(_markdown(why(site, load)), "full", "auto")
             if "plan_status" in e and "plan" in site.site.entities
             else None,
             span=2,
         ),
         _section(
             _heading(t["section_month"]),
-            _cols(_statistic(e, "cost_month", t["card_cost"]), 6, 2),
-            _cols(_statistic(e, "savings_month", t["card_savings"]), 6, 2),
-            _cols(_statistic(e, "energy", t["card_energy"]), 6, 2),
+            # The month's money is the sensors' own state; `energy` is a
+            # `total_increasing` counter, so its month is a statistic (A5, N7).
+            _cols(_entity(e, "cost_month", t["card_cost"], "mdi:cash"), 6, 2),
+            _cols(_entity(e, "savings_month", t["card_savings"], "mdi:piggy-bank"), 6, 2),
+            _cols(_statistic(e, "energy", t["card_energy"]), 12, 2),
         ),
     ]
     return {
@@ -600,7 +594,7 @@ def _controls(site: _Site, load: LoadLayout) -> list[Card | None]:
 
 
 # --------------------------------------------------------------------------- #
-# The markdown tables (D12 §5.9)
+# The markdown card: why this plan (D12 §5.9)
 # --------------------------------------------------------------------------- #
 
 
@@ -614,9 +608,9 @@ def _quoted(text: str) -> str:
     return text.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _cell(name: str) -> str:
-    """Return a name that cannot break a markdown table row."""
-    return name.replace("|", "\\|")
+def _currency_word(site: _Site) -> str:
+    """Return the site's currency as a markdown card writes it: `currency_short` for NOK ("kr"), else the code (G7)."""
+    return site.texts["currency_short"] if site.site.currency == "NOK" else site.site.currency
 
 
 def _number_macros(site: _Site) -> str:
@@ -630,74 +624,6 @@ def _number_macros(site: _Site) -> str:
     return (
         "{%- macro n(x) -%}{{ '%.2f' | format(x) }}{%- endmacro -%}\n"
         "{%- macro sn(x) -%}{{ '%+.2f' | format(x) }}{%- endmacro -%}\n"
-    )
-
-
-def next_runs(site: _Site) -> str:
-    """Return the Now view's "next runs" table: each appliance's next start, kWh and cost."""
-    s, t = site.site, site.texts
-    names = {load.subentry_id: _cell(load.name) for load in s.loads}
-    live = [
-        [load.entities["plan_status"], load.name]
-        for load in s.loads
-        if "plan_status" in load.entities
-    ]
-    days = t["md_weekdays"].split(",")
-    running = t["md_running_now"].replace("{name}", "{{ n_ }}")
-    deadline = t["md_deadline_short"].replace(
-        "{time}", "' ~ (d_ | as_timestamp | timestamp_custom('%H:%M')) ~ '"
-    )
-    return (
-        f"{{%- set by = state_attr({_lit(s.entities['plan'])}, 'by_load') or {{}} -%}}\n"
-        f"{{%- set names = {_lit(names)} -%}}\n"
-        f"{{%- set days = {_lit(days)} -%}}\n"
-        + _number_macros(site)
-        + "{%- set ns = namespace(rows=[], kwh=0, cost=0) -%}\n"
-        "{%- for id, l in by.items() if (l.planned_kwh or 0) >= 0.05 and l.next_start -%}\n"
-        "{%- set c = (l.cost or '0').split(' ')[0] | float(0) -%}\n"
-        "{%- set ns.rows = ns.rows + [[as_timestamp(l.next_start), names.get(id, id), l.planned_kwh, c]] -%}\n"
-        "{%- set ns.kwh = ns.kwh + l.planned_kwh -%}{%- set ns.cost = ns.cost + c -%}\n"
-        "{%- endfor -%}\n"
-        "{%- if ns.rows %}\n"
-        f"| {t['md_start']} | {t['md_appliance']} | kWh | {s.currency} |\n"
-        "|:--|:--|--:|--:|\n"
-        "{% for ts, name, kwh, cost in ns.rows | sort(attribute='0') -%}\n"
-        "| {{ (days[(ts | timestamp_custom('%w') | int + 6) % 7] ~ ' ') "
-        "if (ts | timestamp_custom('%Y-%m-%d')) != now().strftime('%Y-%m-%d') }}"
-        "{{ ts | timestamp_custom('%H:%M') }} | {{ name }} | {{ n(kwh) }} | {{ n(cost) }} |\n"
-        "{% endfor -%}\n"
-        f"| **{t['md_total']}** | | **{{{{ n(ns.kwh) }}}}** | **{{{{ n(ns.cost) }}}}** |\n\n"
-        f"_{t['md_plan_horizon']}_\n"
-        "{%- else %}\n"
-        f"{t['md_no_runs']}\n"
-        "{%- endif %}\n"
-        f"{{%- for e_, n_ in {_lit(live)} if states(e_) in {_lit(list(RUNNING))} %}}\n"
-        "{%- set d_ = state_attr(e_, 'deadline') %}\n\n"
-        f'<ha-icon icon="mdi:flash"></ha-icon> {running}'
-        f"{{{{ (' · ' ~ '{deadline}') if d_ }}}}\n"
-        "{%- endfor %}"
-    )
-
-
-def cost_per_appliance(site: _Site, rows: list[tuple[str, str, str | None]]) -> str:
-    """Return History's "cost per appliance" table: this month's cost and saving, dearest first."""
-    t = site.texts
-    data = [[_cell(name), cost, savings or ""] for name, cost, savings in rows]
-    return (
-        f"{{%- set rows = {_lit(data)} -%}}\n"
-        + _number_macros(site)
-        + "{%- set ns = namespace(items=[], c=0, s=0) -%}\n"
-        "{%- for name, ce, se in rows -%}\n"
-        "{%- set c = states(ce) | float(0) -%}{%- set s = (states(se) | float(0)) if se else 0 -%}\n"
-        "{%- set ns.items = ns.items + [[c, name, s]] -%}{%- set ns.c = ns.c + c -%}{%- set ns.s = ns.s + s -%}\n"
-        "{%- endfor %}\n"
-        f"| {t['md_appliance']} | {t['card_cost']} | {t['md_saved']} |\n"
-        "|:--|--:|--:|\n"
-        "{% for c, name, s in ns.items | sort(attribute='0', reverse=true) -%}\n"
-        "| {{ name }} | {{ n(c) }} | {{ sn(s) }} |\n"
-        "{% endfor -%}\n"
-        f"| **{t['md_total']}** | **{{{{ n(ns.c) }}}}** | **{{{{ sn(ns.s) }}}}** |\n\n"
-        f"_{t['md_negative_saving']}_"
     )
 
 
@@ -743,7 +669,7 @@ def why(site: _Site, load: LoadLayout) -> str:
         "{{ conf.get(a.confidence, a.confidence) }}\n\n"
         f'<ha-icon icon="mdi:cash"></ha-icon> **{t["md_cost_est"]}:** '
         "≈ {{ n((a.cost or '0').split(' ')[0] | float(0)) }} "
-        f"{site.site.currency} · {{{{ strategy.get(a.strategy, a.strategy) }}}}"
+        f"{_currency_word(site)} · {{{{ strategy.get(a.strategy, a.strategy) }}}}"
     )
 
 
@@ -781,7 +707,8 @@ def _heading(text: str, *badges: Card | None) -> Card:
     return card
 
 
-def _cols(card: Card | None, columns: int | str, rows: int | None = None) -> Card | None:
+def _cols(card: Card | None, columns: int | str, rows: int | str | None = None) -> Card | None:
+    """Return `card` with its `grid_options`; `rows: "auto"` where its content is shorter (G6)."""
     if card is None:
         return None
     options: dict[str, int | str] = {"columns": columns}
@@ -840,6 +767,27 @@ def _replan_badge(entities: Mapping[str, str], texts: Mapping[str, str]) -> Card
     }
 
 
+def _next_run_badges(
+    entities: Mapping[str, str], texts: Mapping[str, str], color: str
+) -> list[Card | None]:
+    """Return the subview's "next run" badge: the time, or "running now" while it runs (A1).
+
+    `next_run` is empty while a run is in progress, so the time badge hides then
+    and a second badge, named `badge_running_now`, shows instead.
+    """
+    time = _badge(
+        entities, "plan_status", texts["badge_next_run"], color=color, state_content=["next_run"]
+    )
+    running = _badge(entities, "plan_status", texts["badge_running_now"], color=color)
+    if time is None or running is None:
+        return []
+    when = {"condition": "state", "entity": entities["plan_status"]}
+    time["visibility"] = [{**when, "state_not": list(RUNNING)}]
+    running["show_state"] = False
+    running["visibility"] = [{**when, "state": list(RUNNING)}]
+    return [time, running]
+
+
 def _tile(
     entities: Mapping[str, str],
     key: str,
@@ -863,13 +811,24 @@ def _tile(
     return card
 
 
+def _entity(entities: Mapping[str, str], key: str, name: str, icon: str) -> Card | None:
+    """Return an `entity` card: a month-to-date sensor's own state (N7, A5).
+
+    A `statistic` card's change of a monetary total doubled a month's
+    423,32 NOK; the sensors already are the month so far, so the state is the truth.
+    """
+    if key not in entities:
+        return None
+    return {"type": "entity", "entity": entities[key], "name": name, "icon": icon}
+
+
 def _statistic(
     entities: Mapping[str, str],
     key: str,
     name: str,
     icon: str | None = None,
 ) -> Card | None:
-    """Return this calendar month's change of a monetary total (D8 §5.5)."""
+    """Return this calendar month's change of a `total_increasing` counter (D8 §5.5)."""
     if key not in entities:
         return None
     card: Card = {
@@ -902,9 +861,6 @@ def _graph(
     entities: list[str] | list[Card],
     stat_types: list[str],
     chart_type: str = "line",
-    *,
-    title: str | None = None,
-    period: str | None = None,
 ) -> Card | None:
     """Return a statistics graph that follows the history view's picker (D12 §9 1)."""
     if not entities:
@@ -917,10 +873,6 @@ def _graph(
         "energy_date_selection": True,
         "collection_key": COLLECTION_KEY,
     }
-    if title is not None:
-        card["title"] = title
-    if period is not None:
-        card["period"] = period
     return card
 
 
@@ -1007,14 +959,21 @@ def _history_timeline(site: _Site, grid: Sequence[str]) -> Card:
         "entry_id": site.site.entry_id,
         "mode": "history",
         "grid_entities": list(grid),
-        "entities": {key: e[key] for key in ("window_used", "ceiling", "price") if key in e},
+        "entities": {
+            key: e[key]
+            for key in ("window_used", "ceiling", "price", "price_forecast", "advice")
+            if key in e
+        },
         "currency": site.site.currency,
         "labels": _labels(site.texts),
     }
 
 
-def _peaks_card(site: _Site) -> Card | None:
-    """Return each day's highest hour over the picker's period (D12 §5.7, `mode: peaks`)."""
+def _peaks_card(site: _Site, grid: Sequence[str]) -> Card | None:
+    """Return each day's highest hour over the picker's period (D12 §5.7, `mode: peaks`).
+
+    `grid_entities` stand in for `window_used` on days before its statistics (D4).
+    """
     e = site.site.entities
     if "window_used" not in e:
         return None
@@ -1022,7 +981,65 @@ def _peaks_card(site: _Site) -> Card | None:
         "type": WINDOW_CARD,
         "entry_id": site.site.entry_id,
         "mode": "peaks",
-        "entities": {key: e[key] for key in ("window_used", "ceiling", "advice") if key in e},
+        "entities": {
+            key: e[key]
+            for key in ("window_used", "ceiling", "advice", "level", "target")
+            if key in e
+        },
+        "grid_entities": list(grid),
+        "labels": _labels(site.texts),
+    }
+
+
+def _appliances_card(site: _Site, view: str, key: str) -> Card | None:
+    """Return the period summary's per-appliance `view` over the picker's period (D5, D6).
+
+    `appliances`: each load's saving as a diverging bar; `table`: cost and saving
+    by appliance with a sum. Either follows the picker; neither has a title.
+    """
+    loads = [
+        {
+            "id": load.subentry_id,
+            "name": load.name,
+            "color": site.colors[load.subentry_id],
+            **{k: load.entities[k] for k in ("cost_month", "savings_month") if k in load.entities},
+        }
+        for load in site.site.loads
+        if key in load.entities
+    ]
+    if not loads:
+        return None
+    return {
+        "type": SUMMARY_CARD,
+        "entry_id": site.site.entry_id,
+        "view": view,
+        "loads": loads,
+        "currency": site.site.currency,
+        "labels": _labels(site.texts),
+    }
+
+
+def _runs_card(site: _Site) -> Card | None:
+    """Return Now's next runs: one row per appliance with planned energy, by start (N8)."""
+    e = site.site.entities
+    if "plan" not in e:
+        return None
+    return {
+        "type": RUNS_CARD,
+        "entry_id": site.site.entry_id,
+        "entities": {"plan": e["plan"]},
+        "loads": [
+            {
+                "id": load.subentry_id,
+                "name": load.name,
+                "color": site.colors[load.subentry_id],
+                "status": load.entities["plan_status"],
+            }
+            for load in site.site.loads
+            if "plan_status" in load.entities
+        ],
+        "running": list(RUNNING),
+        "currency": site.site.currency,
         "labels": _labels(site.texts),
     }
 

@@ -13,7 +13,12 @@ import {
   type PriceSlot,
   adviceItem,
   countingDays,
+  currencyWord,
   dayKey,
+  gaugeFont,
+  moneyFormat,
+  runRows,
+  targetStep,
   nthHighest,
   midnights,
   monthGauge,
@@ -285,7 +290,7 @@ describe("the month gauge (D12 §5.3)", () => {
   }));
 
   it("puts 8,97 kW in the third step with the needle at 44,9 % of a 0–20 kW arc", () => {
-    const g = monthGauge(8.97, steps, 10);
+    const g = monthGauge(8.97, steps, 2);
     expect(g.index).toBe(2);
     expect(g.max).toBe(20);
     expect(g.needle).toBeCloseTo(0.4485, 3);
@@ -297,7 +302,21 @@ describe("the month gauge (D12 §5.3)", () => {
   });
 
   it("counts a threshold in the step above", () => {
-    expect(monthGauge(10, steps, 10).index).toBe(3);
+    expect(monthGauge(10, steps, 2).index).toBe(3);
+  });
+
+  it("M1: target step_2 on the live select (target_kw null) draws 5–10 kW green at full opacity", () => {
+    // The live select: `target_kw: null`, which `Number()` made 0 and every step red.
+    const target = targetStep("step_2", { target_kw: null, lower_kw: 5, upper_kw: 10 }, steps);
+    expect(target).toBe(2);
+    const g = monthGauge(8.97, steps, target);
+    expect(g.segments[2]).toMatchObject({ tone: "ok", current: true });
+    expect(g.segments.map((s) => s.tone)).toEqual(["ok", "ok", "ok", "warn", "alert"]);
+    expect(targetStep("auto", { target_kw: null }, steps)).toBeNull();
+    expect(targetStep("auto", { target_kw: 7.5 }, steps)).toBe(2);
+    expect(targetStep("auto", { lower_kw: 10 }, steps)).toBe(3);
+    // No target: the current step is the goal.
+    expect(monthGauge(3, steps, null).segments.map((s) => s.tone)).toEqual(["ok", "ok", "warn", "alert"]);
   });
 
   it("reads the live advice: the top 3, the headroom and the day that tips", () => {
@@ -326,5 +345,48 @@ describe("the days that count (D12 §5.7)", () => {
 
   it("names a day in the house's zone", () => {
     expect(dayKey(Date.parse("2026-09-22T22:30:00Z"), "Europe/Oslo")).toBe("2026-09-23");
+  });
+});
+
+describe("iteration-2 polish (D12 §5.11)", () => {
+  it("formats money in the viewer's language and the site's currency (G7)", () => {
+    const plain = (text: string) => text.replace(/\s/g, " ");
+    expect(plain(moneyFormat("nb", "NOK").format(2.78))).toBe("2,78 kr");
+    expect(plain(moneyFormat("en", "NOK").format(2.78))).toBe("NOK 2.78");
+    expect(currencyWord("nb", "NOK")).toBe("kr");
+    expect(currencyWord("en", "NOK")).toBe("NOK");
+  });
+
+  it("lists the next runs by start, 'now' first, with the sum (N8)", () => {
+    const loads = [
+      { id: "tank", name: "Varmtvannsbereder", color: "#4269d0" },
+      { id: "hall", name: "Gulvvarme inngang", color: "#f4bd4a" },
+      { id: "bath", name: "Gulvvarme bad", color: "#ff725c" },
+      { id: "sauna", name: "Badstue", color: "#6cc5b0" },
+    ];
+    const now = Date.parse("2026-09-23T20:12:00Z");
+    const { rows, kwh, cost } = runRows(
+      {
+        tank: { planned_kwh: 3.81, cost: "2.78 NOK", next_start: "2026-09-23T21:00:00+00:00" },
+        hall: { planned_kwh: 1.06, cost: "0.77 NOK", next_start: "2026-09-23T20:12:00+00:00" },
+        bath: { planned_kwh: 0.84, cost: "0.61", next_start: "2026-09-23T20:30:00+00:00" },
+        sauna: { planned_kwh: 0.0, cost: "0.00 NOK", next_start: null },
+      },
+      loads,
+      now,
+    );
+    expect(rows.map((row) => [row.id, row.start])).toEqual([
+      ["hall", null],
+      ["bath", Date.parse("2026-09-23T20:30:00Z")],
+      ["tank", Date.parse("2026-09-23T21:00:00Z")],
+    ]);
+    expect(kwh).toBeCloseTo(5.71, 6);
+    expect(cost).toBeCloseTo(4.16, 6);
+  });
+
+  it("keeps the hour gauge's value inside its arc (H1)", () => {
+    expect(gaugeFont("0,21 kWh".length, 146, 24)).toBe(36);
+    expect(gaugeFont("0,28 kWh".length, 127, 24, 30)).toBe(30);
+    expect(gaugeFont("10,21 kWh".length, 60, 24)).toBeLessThan(30);
   });
 });

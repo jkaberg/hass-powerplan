@@ -5,6 +5,7 @@
 // card that cannot find it within 5 s uses the calendar month instead.
 
 import type { HomeAssistant } from "./ha";
+import { inMonthOf, topEntries } from "./transforms";
 
 export const COLLECTION_KEY = "energy_powerplan";
 /** How long a card waits for the picker's collection before it falls back. */
@@ -111,4 +112,73 @@ export function totalChange(rows: readonly StatRow[] | undefined): number | null
 /** The highest `max` over the rows, with the row it came from. */
 export function highest(rows: readonly StatRow[] | undefined): StatRow | undefined {
   return rows?.reduce<StatRow | undefined>((best, row) => ((row.max ?? -Infinity) > (best?.max ?? -Infinity) ? row : best), undefined);
+}
+
+/**
+ * The grid sources' energy per statistics row, summed by row start, as rows
+ * whose `max` is that sum: the stand-in for `window_used` on days before its
+ * statistics begin (D2, D4). `scale` turns each source's unit into kWh.
+ */
+export function gridHours(
+  stats: Record<string, readonly StatRow[] | undefined>,
+  ids: readonly string[],
+  scale: (id: string) => number = () => 1,
+): StatRow[] {
+  const byStart = new Map<number, StatRow>();
+  for (const id of ids) {
+    for (const row of stats[id] ?? []) {
+      const kwh = (row.change ?? 0) * scale(id);
+      const found = byStart.get(row.start);
+      if (found) found.max = (found.max ?? 0) + kwh;
+      else byStart.set(row.start, { start: row.start, end: row.end, max: kwh });
+    }
+  }
+  return [...byStart.values()].sort((a, b) => a.start - b.start);
+}
+
+/** Each local day's highest row as `[YYYY-MM-DD, value]`, in the house's zone. */
+export function dailyPeaks(rows: readonly StatRow[], zone?: string): Array<[string, number]> {
+  const format = new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: zone });
+  const best = new Map<string, number>();
+  for (const row of rows) {
+    if (row.max == null) continue;
+    const day = format.format(row.start);
+    best.set(day, Math.max(best.get(day) ?? -Infinity, row.max));
+  }
+  return [...best.entries()];
+}
+
+/** Energy statistics in kWh, whatever unit the source entity reports. */
+export function kwhScale(hass: HomeAssistant, id: string): number {
+  const unit = hass.states[id]?.attributes.unit_of_measurement;
+  return unit === "Wh" ? 1 / 1000 : unit === "MWh" ? 1000 : 1;
+}
+
+/**
+ * The month's days ranked by their highest hour, `[YYYY-MM-DD, kWh]`, one
+ * source for every "does this day count" (D2, D3, D4 share it). The month in
+ * progress is `advice`'s own top entries - what the tariff counts, from the
+ * meter's history. Another month is computed: each day's highest `window_used`
+ * hour, and before its statistics began, the grid sources' hourly sum.
+ */
+export async function monthRanking(
+  hass: HomeAssistant,
+  month: Period,
+  sources: { used?: string; grid: readonly string[]; advice?: unknown },
+  zone: string | undefined,
+  now: Date = new Date(),
+): Promise<Array<[string, number]>> {
+  if (inMonthOf(month.start, now, zone)) {
+    const top = topEntries(sources.advice);
+    if (top.length) return top;
+  }
+  const ids = [...sources.grid];
+  const [grid, used] = await Promise.all([
+    ids.length ? fetchStatistics(hass, month, ids, ["change"], "hour").catch(() => ({})) : Promise.resolve({}),
+    sources.used ? fetchStatistics(hass, month, [sources.used], ["max"], "hour").catch(() => ({})) : Promise.resolve({}),
+  ]);
+  const days = new Map(dailyPeaks(gridHours(grid as Record<string, StatRow[]>, ids, (id) => kwhScale(hass, id)), zone));
+  const own = sources.used ? (used as Record<string, StatRow[]>)[sources.used] : undefined;
+  for (const [day, kwh] of dailyPeaks(own ?? [], zone)) days.set(day, kwh);
+  return [...days.entries()].sort((a, b) => b[1] - a[1]);
 }

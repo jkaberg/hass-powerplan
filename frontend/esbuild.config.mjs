@@ -28,5 +28,9 @@ await build({
   ...common,
   entryPoints: { powerplan: "src/index.ts" },
   outdir,
-  define: { CARDS_MODULE: JSON.stringify(`./chunks/${entry.split("/").pop()}`) },
+  define: {
+    CARDS_MODULE: JSON.stringify(`./chunks/${entry.split("/").pop()}`),
+    // The cards' content hash names the build in the console (G1).
+    BUILD_HASH: JSON.stringify(entry.split("/").pop().replace(/^cards-|\.js$/g, "")),
+  },
 });

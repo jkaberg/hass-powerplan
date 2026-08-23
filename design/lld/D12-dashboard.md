@@ -50,7 +50,7 @@ custom_components/powerplan/
 │   ├── layout.py         build(sites: Sequence[SiteLayout], ha_version, texts, …) → the Lovelace dashboard config (§5.1); plain data in, plain data out
 │   └── ws.py             powerplan/dashboard/config {entry_id?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440)
 └── frontend/dist/           the committed build HACS installs, served at /powerplan_frontend (§5.5)
-    ├── powerplan.js           the module every page loads (≈ 12 kB)
+    ├── powerplan.js           the module every page loads (≈ 2 kB)
     └── chunks/                ECharts and what it shares, loaded when a timeline first draws; named by content hash
 
 frontend/                      the sources, at the repository root so HACS and the live config never carry them (D-0445)
@@ -58,7 +58,9 @@ frontend/                      the sources, at the repository root so HACS and t
 ├── src/strategy.ts            ll-strategy-dashboard-powerplan: generate() → websocket → config
 ├── src/timeline-card.ts       powerplan-timeline-card (§5.2)
 ├── src/window-card.ts         powerplan-window-card, modes hour / month / peaks (§5.3, §5.7)
-├── src/period-summary.ts      powerplan-period-summary (§5.7)
+├── src/period-summary.ts      powerplan-period-summary, views summary / appliances / table (§5.7, §5.11)
+├── src/runs-card.ts           powerplan-runs-card: Now's next runs (§5.11 N8)
+├── src/styles.ts              the one style sheet every card starts from (§5.11)
 ├── src/energy.ts              the picker's collection, with the calendar-month fallback (§5.7)
 ├── src/chart.ts               ECharts 6.1.0 with the two charts and five components the timeline uses
 ├── src/transforms.ts          the pure halves: slots → timeline rows, the gauge's scale and colours (§9 7)
@@ -113,7 +115,17 @@ labels: {…}
 
 type: custom:powerplan-period-summary
 entry_id: <entry>
-entities: {cost, savings, metric, level, window_used, advice}
+view: summary                # summary | appliances | table (§5.11 D5, D6)
+entities: {cost, savings, metric, level, window_used, advice}     # summary
+loads: [{id, name, color, cost_month, savings_month}, …]          # appliances, table
+labels: {…}
+
+type: custom:powerplan-runs-card                                   # v0.5 (§5.11 N8)
+entry_id: <entry>
+entities: {plan: sensor.<site>_plan}
+loads: [{id, name, color, status: <plan_status>}, …]
+running: [charging, running_plan, run_now]
+currency: NOK
 labels: {…}
 ```
 
@@ -130,7 +142,7 @@ Two text tabs and one subview per appliance. Every visible word comes from `sele
 | view | `path` | title key | shape |
 |---|---|---|---|
 | Now | `overview` | `view_overview` | `sections`, `max_columns: 3`, dense; three view badges; `header: {layout: center, badges_position: top, badges_wrap: scroll}`; no `icon` (a text tab) |
-| History | `history` | `view_history` | as above, no badges; `footer: {card: energy-date-selection, collection_key: energy_powerplan}` |
+| History | `history` | `view_history` | as above, no badges; `footer: {card: energy-date-selection, collection_key: energy_powerplan, opening_direction: right, vertical_opening_direction: up}` - the Energy dashboard's own footer (v0.5 D1) |
 | an appliance | `appliance-<load id, lower case>` | the appliance's name | as Now, plus `subview: true`, `back_path: '{dashboard}/overview'`, the type icon (§3's `TYPE_ICONS`) |
 
 Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `history-<entry>`, `appliance-<entry>-<load>`, and a subview's `back_path` points at its own site's Now. `{dashboard}` is a placeholder the strategy rewrites to the dashboard's own `url_path` (`location.pathname`'s first segment) after the call, in `back_path` and in every `navigation_path` that starts with it. Python and the golden keep the placeholder.
@@ -143,11 +155,11 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 |---|---|---|---|
 | 1 | attention (no heading) | 3 | `repairs` (`hide_empty`) 12; `tile` `meter_health` (`card_meter_status`, `mdi:meter-electric`, orange, `visibility: state_not ok`) 12 - a section whose cards all hide hides itself (HA 2026.9's `hui-grid-section`) |
 | 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; `tile` `peak_warning` (`card_peak_warning`, `mdi:alert-outline`) 12 × 1 |
-| 3 | `section_plan` | 3 | heading badges: `plan` (state) and `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, every load with its colour, full × 7 |
-| 4 | `section_appliances` | 2 | `distribution` of each enabled `granted_power` (`card_power_split`, colours) full × 2, left out when none is enabled; one `tile` per appliance on `plan_status`: `name`, colour, no `icon` (the status icon from `icons.json`), `state_content: [state, next_start]` (`ev`: `[state, deadline]`), tap → the subview, hold → more-info, 12 × 1 |
+| 3 | `section_plan` | 3 | heading badges: `plan` (state) and `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, every load with its colour, full × auto (v0.5 T10) |
+| 4 | `section_appliances` | 2 | `distribution` of each enabled `granted_power` (`card_power_split`, colours) full × 2, left out when none is enabled; one `tile` per appliance on `plan_status`: `name`, colour, no `icon` (the status icon from `icons.json`), `state_content: [state, next_run]` (`ev`: `[state, deadline_time]`, v0.5 G5), tap → the subview, hold → more-info, 12 × 1 |
 | 5 | `section_capacity` | 1 | heading badge `projected_level` (`mdi:stairs`); window card `mode: month` 12 × 6 - the section only where `metric` and `level` are shown |
-| 6 | `section_month` | 1 | heading badge `mdi:chart-bar` → `{dashboard}/history`; `statistic` `cost`, `savings` (calendar month) 6 × 2 each; `tile` `plan` (`card_planned`, `mdi:calendar-clock`) 12 × 1; `tile` `price` with `trend-graph` 24 h 12 × 2; `tile` `prices_tomorrow` 12 × 1 |
-| 7 | `section_next_runs` | 1 | one `markdown` 12 × 6, its Jinja generated per site and language (§5.9) |
+| 6 | `section_month` | 1 | heading badge `mdi:chart-bar` → `{dashboard}/history`; `entity` `cost`, `savings` (the month-to-date state, v0.5 N7) 6 × 2 each; `tile` `plan` (`card_planned`, `mdi:calendar-clock`) 12 × 1; `tile` `price` with `trend-graph` 24 h 12 × 2; `tile` `prices_tomorrow` 12 × 1 |
+| 7 | `section_next_runs` | 1 | `custom:powerplan-runs-card` 12 × auto (v0.5 N8; v0.4 had a markdown table) |
 | 8 | `section_solar` | 1 | Phase 7, only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
 
 **History - sections, in order** (every graph that can follows the picker)
@@ -155,23 +167,23 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 | # | section | span | cards |
 |---|---|---|---|
 | 1 | `section_summary` | 3 | `custom:powerplan-period-summary` full × 2 (§5.7); below the release that has it, four `statistic`s (`cost`, `savings` change this month; `metric` state; `level` as a tile) 9 × 2 each |
-| 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × 6 (§5.7) - before WP6.4f `energy-usage-graph` (`collection_key`); the section only with an Energy grid source |
-| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × 6 (§5.7) - before WP6.4f `statistics-graph` bar `max` of `window_used` (`card_peak_hour`) |
-| 4 | `section_per_appliance` | 2 | `statistics-graph` bar, `change`, `period: month`, each load's `savings_month` with its name and colour (`card_savings_per_appliance`) full × 6 |
-| 5 | `section_cost_per_appliance` | 1 | heading badge text `badge_this_month`; one `markdown` (§5.9), this month only |
-| 6 | `section_cost_savings` | 2 | `statistics-graph` bar, `change`, `cost` (`primary`) and `savings` (`success`) full × 4 |
+| 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × auto (§5.7) - before WP6.4f `energy-usage-graph` (`collection_key`); the section only with an Energy grid source |
+| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7) - before WP6.4f `statistics-graph` bar `max` of `window_used` (`card_peak_hour`) |
+| 4 | `section_per_appliance` | 2 | period summary `view: appliances` full × auto, no title (v0.5 D5; v0.4 a `statistics-graph` that ignored the picker) |
+| 5 | `section_cost_per_appliance` | 1 | period summary `view: table` 12 × auto, following the picker (v0.5 D6; v0.4 a markdown table for this month) |
+| 6 | `section_cost_savings` | 2 | `statistics-graph` bar, `change`, `cost` (`primary`, named `card_cost`) and `savings` (`success`, `card_savings`) full × 4 |
 | 7 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4 - worded by `logbook.py` (§5.6) |
 
 Section 3 shows the capacity windows, section 1 the capacity level, the subviews the energy per appliance, and section 2's badge links to the Energy dashboard for the rest.
 
-**An appliance's subview.** View badges `control` (`badge_control`), `plan_status` (`badge_status`), `ready_by` where shown (`badge_ready_by`), `plan_status` with `state_content: [next_start]` (`badge_next_run`), each in the appliance's colour.
+**An appliance's subview.** View badges `control` (`badge_control`), `plan_status` (`badge_status`), `ready_by` where shown (`badge_ready_by`), `plan_status` with `state_content: [next_run]` (`badge_next_run`) hidden while running, and in its place `plan_status` named `badge_running_now` without its state, each in the appliance's colour.
 
 | # | section | span | cards |
 |---|---|---|---|
-| 1 | `section_control` | 1 | `tile` `control` with `select-options`, `features_position: inline` 12 × 1; `tile` `plan_status` (`card_status`) 12 × 1; the type's controls (below); `ready_by` as a one-row `entities` card; `granted_power` with `trend-graph` where enabled 12 × 2 |
-| 2 | `section_appliance_plan` | 2 | heading badge `plan_status` with `state_content: [planned_kwh]`; the timeline single-load: `loads: [this]`, `show: [plan, price]`, `entities.deadline: <plan_status>`, `hours: 24`, `hours_options: [12, 24, 48]`, full × 5 |
-| 3 | `section_why` | 2 | one `markdown` (§5.9) full × 4 |
-| 4 | `section_month` | 1 | `statistic` `cost_month`, `savings_month`, `energy` (change, calendar month) 6 × 2 each |
+| 1 | `section_control` | 1 | `tile` `control` with `select-options`, `features_position: inline` 12 × 1; `tile` `plan_status` (`card_status`) 12 × 1; the type's controls (below); `ready_by` as a one-row `entities` card, `icon: mdi:clock-check-outline`, 12 × auto; `granted_power` with `trend-graph` where enabled 12 × 2 |
+| 2 | `section_appliance_plan` | 2 | no heading badge (the legend names the kWh); the timeline single-load: `loads: [this]`, `show: [plan, price]`, `entities.deadline: <plan_status>`, `hours: 24`, `hours_options: [12, 24, 48]`, full × auto |
+| 3 | `section_why` | 2 | one `markdown` (§5.9) full × auto |
+| 4 | `section_month` | 1 | `entity` `cost_month`, `savings_month` 6 × 2 each; `statistic` `energy` (change, calendar month) 12 × 2 |
 
 | type | controls in section 1 |
 |---|---|
@@ -209,7 +221,7 @@ The legend and the touch readout are HTML under the canvas, toggling the chart's
 
 The pure halves are in `transforms.ts`, each with a vitest (§9 13): `windowHours(width, cfg)`, `sliceWindow`, `stackOffsets`, `niceMax`, `priceRuns`, `legendItems`, `slotReadout`, `runsForLoad`. `getGridOptions()` defaults `rows: 7, min_rows: 5, min_columns: 6`.
 
-**`mode: history`** is §5.7's.
+**`mode: history`** is §5.7's, and §5.11's T1–T10 set its geometry: one vertical stack, the markers as horizontal `graphic` labels, the grids in fixed pixels, the card `rows: auto`.
 
 ### 5.3 The window gauge
 
@@ -244,6 +256,8 @@ One element, `powerplan-window-card`, three `mode`s. Every mode draws in an SVG 
 `days_that_matter.kw` is the largest peak today may reach with the metric still at or under the **target** (`_feasible`, D2 §5.6's closed form: `d × T − Σ` the other `d − 1` highest days), not the next step's boundary, which it only equals when the target is the current step. So `card_day_that_tips` says "takes you over your target" (D-0455).
 
 **`peaks`** (History's capacity step) is §5.7's.
+
+Steps are coloured by their **index** against the target step (the select's `step_N`, else its `lower_kw`, else the step holding `target_kw`; the current step without one), not by `target_kw`, which the live select publishes as `null` for `step_2` (D-0488).
 
 ### 5.4 Knobs
 
@@ -283,6 +297,7 @@ Read at each release's pinned frontend tag (D-0437). At the integration floor, 2
 | `sensor.<site>_cost`, `_savings`, each load's `cost_month`, `savings_month` → `last_reset` | the instant the sensor began accumulating when that is later than the period's start, so a total first seen mid-month enters statistics as a start, not as one hour's change (the live 417 kr spike). *In code:* the spike's cause was the ledger's placeholder month (`0` with `last_reset` 1970-01-01, before the first priced slot), not the first appearance, which HA's recorder already zero-points. The month sensors now read `None`, with no `last_reset`, until the ledger opens. After that `last_reset` = max(month start, ledger start), and a load's rows use the ledger's start (D-0470, D-0471) | 6.4e |
 | `logbook.py` | `async_describe_events` for every `EventKind` (D8 §5.5): a translated message, and the appliance's `plan_status` (or `event.<site>` for a site event) as `entity_id`, so the History logbook reads "Gulvvarme inngang - Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr". *In code:* the bus payload carries `entity_id`, which the logbook card filters on; the event entity's attributes do not (D-0473). Lines are `selector.logbook.options` in HA's language, one key per kind or state (D-0474), named after the load as the household named it (D-0475) | 6.4e |
 | `plan_status` → `reason_key`, `reason_params` | the action reason as a key the frontend's translations carry, beside today's English `reason`. *Built:* `reason_key` is one of `ActionReason`'s 43 values (`None` before the first apply), and `reason_params` holds the numbers the sentence needs (`value`, `seconds`, `elapsed_s`, `interval_s`, `delta`, `deadband`, `option`, `offered`, `transport`). Both are volatile, like `reason`. Each key has a plain label at `entity.sensor.plan_status.state_attributes.reason_key.state.<key>` and a sentence with placeholders at `selector.action_reason.options.<key>`, which the card renders with `hass.localize(…, reason_params)`. The split is needed because hassfest refuses placeholders in attribute states (D-0480, D-0481) | 6.4g |
+| `plan_status` → `next_run`, `deadline_time` (v0.5 G5) | local `HH:MM` strings for tiles and badges, which show a string as it is and a datetime as "23. september 2026 kl. 22:12:11". `next_run` is the next start when it is after the snapshot, `""` while a run is in progress or with nothing planned; `deadline_time` is `deadline`'s clock, `""` without one. `next_start` and `deadline` stay datetimes for templates (D-0489) | 6.4h |
 | `sensor.<site>_plan`'s state | the planned kWh inside the next 24 h - not the whole 48 h plan `by_load` covers. *Built:* the 24 h start at the site window that holds `now`, not at `now` itself. A slot across either edge counts for its share inside, and the state moves once per window, not on every tick (D-0482) | 6.4g |
 
 ### 5.7 Cards that follow the picker
@@ -295,7 +310,7 @@ Three pieces subscribe to the History footer's collection, the same object HA's 
 | window card `mode: peaks` | the daily maximum of `window_used` over the range as bars, the ceiling dashed, the days that count marked, the top 3 below; on one day, "does this day count": its highest hour on a 0–12 scale against the third-highest day and the step boundary, and `card_counts` / `card_not_counts`; with no statistics yet `card_collecting` |
 | `custom:powerplan-period-summary` | cells in the `statistic` card's style - `card_cost` (`change` of `cost`), `card_savings` (not while the reference has none, §5.18 N3), `summary_grid_energy` (Σ change over the grid sources), and `summary_capacity` (this month: `metric` and `level`); a cell with no statistics shows "–" and `card_collecting` |
 
-The logbook does not follow the picker (48 h); the cost-per-appliance table stays "this month".
+The logbook doesn't follow the picker (48 h). The cost table follows it (§5.11 D6).
 
 The cards take the period from the collection and fetch their own statistics, and the layout hands them the Energy preferences' grid statistics as `grid_entities`. Over a range longer than a day the history timeline draws daily energy without the hourly limit (D-0464, D-0465).
 
@@ -303,7 +318,9 @@ The cards take the period from the collection and fetch their own statistics, an
 
 `layout.py` gives each appliance one colour from HA's own chart palette, by priority order, counted per site from 0. The palette is HA's `--color-1…53` (the `--graph-color-n` defaults every ECharts card falls back to), copied in order from HA's frontend - it starts `#4269d0 #f4bd4a #ff725c #6cc5b0 #a463f2 #ff8ab7 #9c6b4e #97bbf5 #01ab63 #094bad` and only repeats after 53, as HA's own does (D-0454). The same hex goes to the tile (`color`), the timeline's `loads[].color`, the `statistics-graph` `entities[].color` (HA 2026.6+, left out below) and the subview's badges. Status is carried by the icon and the words, never by colour. Neighbouring colours can be close on a dark surface, so the 1 px gap between stacked segments stays and every load is named in the tooltip and the readout.
 
-### 5.9 The three markdown tables
+### 5.9 The markdown card
+
+Lists and tables are PowerPlan elements on the shared style sheet (§5.11 N8, D6), and only "why this plan?" is markdown, as sentences with icons.
 
 The only built-in way to lay out text from attributes (a deliberate exception to "built-in cards", §11). `layout.py` writes the template per site and language - ids, names and words filled in, so the Jinja carries no translation lookups; `nb` uses decimal commas and a true minus, `en` dots.
 
@@ -313,7 +330,47 @@ The only built-in way to lay out text from attributes (a deliberate exception to
 
 ### 5.10 The strategy's first paint (B1)
 
-`powerplan.js` defines `ll-strategy-dashboard-powerplan` at the module's top level, before any `await` or import of a card, and loads the two cards' modules and ECharts behind dynamic imports; HA's "Timeout waiting for strategy element" on a cold load of a deep path (seen on the live house) cannot happen when the define runs first.
+`powerplan.js` defines `ll-strategy-dashboard-powerplan` at the module's top level, before any `await` or import of a card, and loads the two cards' modules and ECharts behind dynamic imports. *v0.5:* it then logs `PowerPlan frontend <hash>` (the cards chunk's content hash), so Q/A can tell which build a browser runs. The iteration-2 Q/A still saw the timeout on a fresh context with this build; HA 2026.9 imports extra modules from a classic script beside `core` and `app` and races the element against 5 s, so a define that runs first leaves only the module's own arrival - what the console line is for (§5.11 G1, open).
+
+### 5.11 Iteration 2: the look of the mockups
+
+The second review (Chrome at 1480 and 390 px) found the structure right and the craft off. Every custom card starts from one style sheet, `styles.ts`, built only from HA's theme variables, and no table or list of values is a markdown card.
+
+| token | value | used for |
+|---|---|---|
+| content padding | 14 px top, 16 px sides and bottom | every custom card |
+| row | ≥ 44 px, 1 px `--divider-color` between rows | lists, tables |
+| numbers | tabular figures, right-aligned, "−" (U+2212), "+" on a positive saving | all |
+| type | values 28 px / 400; the hour gauge 36 px / 400 (30 px under 400 px); units 14–16 px secondary; labels 12–14 px; axis 11 px; no weight above 500 | G2 |
+| chart text | 11 px axis, 12 px legend, 10 px flags; grid lines dashed 2 / 4 `--pp-track`, the zero line solid at 25 % | timeline |
+| tooltip | `--card-background-color`, 1 px `--divider-color`, radius 10, padding 10 × 12, 12 / 20 px, shadow `0 6px 20px rgba(0,0,0,.45)` - resolved from the theme on each render (G4) | timeline, history |
+| money | `Intl.NumberFormat(language, {style: currency})` in the site's currency ("2,78 kr", "NOK 2.78"); the markdown card writes `currency_short` for NOK (G7) | all |
+
+| # | rule | where |
+|---|---|---|
+| G5 | tiles and badges show `next_run` / `deadline_time` (§5.6), never a datetime attribute | `layout.py` |
+| G6 | rows end level; content shorter than its rows is `rows: auto` | `layout.py` |
+| N5 | replan `mdi:refresh` (the button's own icon) | `layout.py` |
+| N7, A5 | the month's cost and savings are `entity` cards: the sensors are month to date, and the statistic's change doubled them (846,64 for 423,32) | `layout.py` |
+| N8 | the runs list: a row per load with ≥ 0,05 kWh and a start, by start - `card_now_short` when `next_start` ≤ now, else HH:MM; "kWh · ≈ cost" under the name; a sum; a chip per running appliance; `card_plan_horizon`; `card_no_runs` centred when empty | `runs-card.ts` |
+| T1 | toggle, chart, readout, legend in one flex column; nothing is positioned over the canvas | `timeline-card.ts` |
+| T2 | main grid `top 24, left 36, right 8, bottom 62`; the price grid `left 36, right 8, bottom 8, height 22`, sharing the time axis | 〃 |
+| T3 | "Nå" (a 28 × 16 flag), midnight ("torsdag 24.") and the deadline ("Ferdig til 06:00", flipped within 100 px of the edge) are `graphic` lines and horizontal labels, recomputed on resize | 〃 |
+| T4 | the strip: 1 px gaps, outer corners 6 px, alpha 0,28–0,62, the price 11 px / 500 where ≥ 34 px; the unit in the y gutter | 〃 |
+| T6 | `.pp-toggle`; a narrow card offers 12 / 24 / 48 with 12 pressed, and the pressed option is the one drawn (§5.17 C9) | 〃 |
+| T7, T8 | the readout only for a coarse pointer or a narrow card; the legend HTML under everything, the limit a dashed swatch, the price a two-tone one | 〃 |
+| T9 | x labels every 2 h (24 h), 3 h (12 h), 4 h (48 h), 6 h (48 h narrow) | 〃 |
+| T10 | the card is `rows: auto`; the canvas is the plot (250 px, 180 px narrow) plus T2's 86 px, so the plot keeps its height under any legend (D-0491) | 〃 |
+| H1–H5 | the hour gauge in the card's own pixels: the arc's radius from the card's width and height (§5.18 W3), stroke 24; the value 36 px regular, never wider than the arc's inside; the unit 16 px; end labels 11 px, 22 px under the ends; the footer values 16 / 500 | `window-card.ts` |
+| M1 | steps by index against the target step: up to it `--success-color`, the next `--warning-color`, above `--error-color` | `transforms.ts` `targetStep`, `monthGauge` |
+| M2–M5 | the needle 3 px, r + 6 long, a 6 px hub, drawn last; the top 3 in kW with the step's bound dashed and named; the footer's kW to one decimal and the fee as money | `window-card.ts` |
+| D1 | the picker opens up and right, as the Energy dashboard's footer does | `layout.py` |
+| D2 | each summary cell carries its own head (name left, icon right) and 16 px padding, dividers between cells, 2 × 2 under 600 px | `period-summary.ts`, `energy.ts` |
+| D2–D4 | one ranking of the month's days for every "does it count": `advice`'s top entries for the month in progress, else each day's highest `window_used` hour, the grid sources before it (`monthRanking`) | `energy.ts` |
+| D4 | the peaks card: value 28 / 400 with the hour, an 8 px bar on the track, "Nr. 3" and the target step's bound dashed and named, the verdict "Teller ikke i {month}" in a readout box with an icon; `rows: auto` | `window-card.ts` |
+| D5, D6 | the period summary's `view: appliances` (a diverging bar per appliance, saving right in `--success-color`, loss left in `--error-color`) and `view: table` (cost, saving and the kWh moved, a sum, the caption), both over the picked range | `period-summary.ts` |
+| D8 | the logbook line carries no `entity_id` - HA titles such a line with the entity's own name - and a plan already running reads `plan_adopted_now` | `logbook.py` |
+| A1–A6 | §5.1's subview rows | `layout.py` |
 
 ## 6. Configuration schema
 
@@ -353,16 +410,17 @@ None. The dashboard is generated on every open. A household that takes control o
 
 ---
 
-9. Views: exactly `overview` and `history` and one `appliance-<id>` subview per appliance, each subview `subview: true` with a `{dashboard}` `back_path`; section order per view is §5.1's; no card name, heading or badge carries the site's name; Plan has `column_span: 3` and Appliances `2` on the section dict (B2); appliance tiles are 12 columns; several sites prefix titles and suffix paths; `hidden_views: [appliances]` drops every subview and the tiles open more-info. (6.4c)
-10. Colours: one hex per load, identical in tile, distribution, timeline and statistics graph, stable across builds, counted per site; HA < 2026.6 has no `entities[].color`. (6.4c)
-11. Conditionals: no capacity tariff → no capacity section; no grid source → no usage section; no `granted_power` → no distribution; no appliances → the "no appliances" markdown; the meter tile hides at `ok`. (6.4c)
-12. The three tables render in HA's template engine against states copied from the live house: the rows, their order, the Total, comma decimals in `nb` and dots in `en`, "running now" for a charging car. (6.4c)
-13. `vitest`: `stackOffsets` (22:00 → 4,93 + 2,96 + 1,20 + 0,56 + 0,18 = 9,83 kW; the redesign plan printed 9,82 from unrounded parts), `niceMax([10 × 1,2, 9,82 × 1,1])` = 12, `legendItems` (a 24 h window from 20:15 → four loads), `priceRuns` (0,8604 → 0,7294 at 22:00 → 0,8604 at 06:00, then estimated), `windowHours` (364 px → 12, 1306 px → 24), `runsForLoad`; the hour gauge's allowance in kW from a W sensor. (6.4d)
-14. The month gauge: metric 8,97 on steps 0–2–5–10–15–20 → current index 2 and the needle at 44,9 % of the arc; the top 3, the headroom and the tipping day parsed from the live `advice` items; `sensor.<site>_level` carries `steps`. (6.4e)
-15. Statistics: a monetary total first seen mid-period has `last_reset` at its first accumulation, and the recorder's compiled sum does not jump (B3); the logbook describes every `EventKind` in both languages on the appliance's `plan_status` (B4). (6.4e)
-16. The picker: `energy.ts` resolves `_energy_powerplan`, falls back to the calendar month without it, and picks `hour`/`day`/`month` by range; the period summary's four cells for a month and a day; the history timeline's hourly bars for one day match the live check (8,44 · 7,30 · 4,90 kWh …). (6.4f)
-17. `plan_status.reason_key` is a closed set translated in both languages; `sensor.<site>_plan`'s state is the next 24 h only. (6.4g)
-18. The strategy element is defined before any `await` in `powerplan.js` (a test reads the built module); every `selector.dashboard.options` key a card or `layout.py` uses exists in both languages, and none is left unused. (6.4c)
+9. Views: exactly `overview` and `history` and one `appliance-<id>` subview per appliance, each subview `subview: true` with a `{dashboard}` `back_path`; section order per view is §5.1's; no card name, heading or badge carries the site's name; appliance tiles are 12 columns; several sites prefix titles and suffix paths; `hidden_views: [appliances]` drops every subview and the tiles open more-info.
+10. Colours: one hex per load, identical in tile, timeline and statistics graph, stable across builds, counted per site; HA < 2026.6 has no `entities[].color`.
+11. Conditionals: no capacity tariff → no capacity section; no grid source → no usage section; no appliances → the "no appliances" markdown; the attention card empty at `ok`.
+12. The "why" markdown renders in HA's template engine against states copied from the reference house: comma decimals in `nb` and dots in `en`.
+13. `vitest`: `stackOffsets` (22:00 → 4,93 + 2,96 + 1,20 + 0,56 + 0,18 = 9,83 kW), `niceMax([10 × 1,2, 9,82 × 1,1])` = 12, `legendItems` (a 24 h window from 20:15 → four loads), `priceRuns` (0,8604 → 0,7294 at 22:00 → 0,8604 at 06:00, estimated from midnight), `windowHours` (364 px → 12, 1306 px → 24), `runsForLoad`; the hour gauge's allowance in kW from a W sensor.
+14. The month gauge: metric 8,97 on steps 0–2–5–10–15–20 → current index 2 and the needle at 44,9 % of the arc; the top 3, the headroom and the tipping day parsed from real `advice` items; `sensor.<site>_level` carries `steps`.
+15. Statistics: a monetary total first seen mid-period has `last_reset` at its first accumulation, and the recorder's compiled sum doesn't jump (B3); the logbook describes every `EventKind` in both languages on the appliance's `plan_status` (B4).
+16. The picker: `energy.ts` resolves `_energy_powerplan`, falls back to the calendar month without it, and picks `hour`/`day`/`month` by range; the period summary's cells for a month and a day; the history timeline's hourly bars for a captured day match (8,44 · 7,30 · 4,90 kWh …).
+17. `plan_status.reason_key` is a closed set translated in both languages; `sensor.<site>_plan`'s state is the next 24 h only.
+18. The strategy element is defined before any `await` in `powerplan.js` (a test reads the built module); every `selector.dashboard.options` key a card or `layout.py` uses exists in both languages, and none is left unused.
+19. Iteration 2: tiles and badges read `next_run` / `deadline_time` and never a datetime attribute; `plan_status` carries both as local HH:MM, `next_run` empty while running; the month's money is `entity` cards; the per-appliance bars and the cost table are PowerPlan elements and the only markdown card is "why"; the picker opens upward; the subview's ready-by row has its icon and auto height; `vitest`: target `step_2` with `target_kw: null` and metric 8,97 → segment 2 green at full opacity, money "2,78 kr" / "NOK 2.78", a day's highest hour 8,44 kWh at 00–01 from the grid sources, the month ranking from `advice` or the statistics; the logbook line has no `entity_id` and a running plan reads "går nå".
 
 ## 10. Deliberately deferred
 
@@ -397,3 +455,7 @@ None. The dashboard is generated on every open. A household that takes control o
 **Markdown tables with Jinja.** *For:* the only built-in card that lays out a table from attributes. *Against:* a template is code in a string, a badly quoted name breaks it, and HA draws markdown tables bordered and content-wide with no theme tokens. **Decision:** PowerPlan elements for lists and tables; "why" stays markdown, generated per site and language by `layout.py`, names escaped, rendered in HA's template engine in the tests (§9 12).
 
 **Theme variables instead of fixed hex colours in built-in cards.** *For:* a theme could recolour everything. *Against:* built-in cards take no variable per entity, and without one colour per appliance the tile and the graphs disagree. **Decision:** HA's own palette in HA's own order, so it still looks native.
+
+**Keep the next-runs table as markdown.** *For:* no code, and the Jinja is tested in HA's template engine. *Against:* HA draws markdown tables bordered and content-wide, with no theme tokens and no way to restyle them short of card-mod; on the reference house it took 40 % of the card with 180 px empty under it. **Decision:** `powerplan-runs-card` on the shared style sheet.
+
+**A fixed `rows: 7` for the timeline instead of `rows: auto`.** *For:* level rows (G6) and the height the review measured. *Against:* at 390 px a four-line legend and the readout leave a fixed card about 120 px of plot, and the plot's 180 px floor can't hold inside a fixed height. **Decision:** the card sizes its canvas and grows with its legend (D-0491).

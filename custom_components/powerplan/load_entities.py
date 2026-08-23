@@ -43,6 +43,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from .const import LOAD_PRIORITY, LOAD_STRATEGY, PRIORITY_LEVELS, priority_level
 from .core.accounting.shadow.base import StoreKind
@@ -565,6 +566,11 @@ def _iso(value: datetime | None) -> str | None:
     return None if value is None else value.isoformat()
 
 
+def _clock(value: datetime | None) -> str:
+    """Return an instant as HA's local wall clock, `22:00`; `""` for none (D12 §5.6, G5)."""
+    return "" if value is None else dt_util.as_local(value).strftime("%H:%M")
+
+
 def session_state(status: LoadStatus, runtime: Runtime) -> str:
     """Return the car's session: `no_car`, `waiting`, `charging` or `done` (ENT-23).
 
@@ -646,10 +652,18 @@ def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, An
     }
     snapshot = runtime.snapshot
     plan = None if snapshot is None else snapshot.plans.get(status.load_id)
-    if plan is not None:
+    if snapshot is not None and plan is not None:
         out.update(
             {
                 "next_start": _iso(plan.next_start),
+                # Tiles and badges show these as they are: a time, never a
+                # timestamp. A run in progress has no next start (G5).
+                "next_run": (
+                    _clock(plan.next_start)
+                    if plan.next_start is not None and plan.next_start > snapshot.at
+                    else ""
+                ),
+                "deadline_time": _clock(plan.deadline),
                 "planned_kwh": round(plan.planned_kwh, 3),
                 "cost": money_text(plan.cost),
                 "plan_mode": plan.mode.value,
@@ -876,7 +890,7 @@ class LoadSensor(LoadEntity, SensorEntity):
         self._attr_state_class = row.state_class
         self._attr_entity_category = row.category
         self._attr_entity_registry_enabled_default = row.enabled(load, runtime)
-        self._unrecorded_attributes = row.unrecorded
+        self._set_unrecorded(row.unrecorded)
         if row.options is not None:
             self._attr_options = list(row.options)
 

@@ -262,6 +262,8 @@ def test_01_golden_on_a_nordic_detached_site(snapshot: SnapshotAssertion) -> Non
     assert history["footer"]["card"] == {
         "type": "energy-date-selection",
         "collection_key": COLLECTION_KEY,
+        "opening_direction": "right",
+        "vertical_opening_direction": "up",
     }
     graphs = [card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"]
     assert graphs
@@ -351,8 +353,8 @@ def test_09_the_appliance_tile_opens_its_page() -> None:
     }
     assert tank["hold_action"] == {"action": "more-info"}
     assert "icon" not in tank
-    assert tank["state_content"] == ["state", "next_start"]
-    assert tiles["sensor.ev_plan_status"]["state_content"] == ["state", "deadline"]
+    assert tank["state_content"] == ["state", "next_run"]
+    assert tiles["sensor.ev_plan_status"]["state_content"] == ["state", "deadline_time"]
 
 
 def test_09_hidden_appliances_drop_every_subview() -> None:
@@ -408,9 +410,9 @@ def test_02_each_type_gets_its_tiles(kind: str) -> None:
     for key, feature in TYPE_TILES[kind].items():
         tile = tiles[load.entities[key]]
         assert [f["type"] for f in tile.get("features", [])] == ([feature] if feature else [])
-    statistics = [card["entity"] for card in cards if card["type"] == "statistic"]
-    assert load.entities["cost_month"] in statistics
-    assert ("savings_month" in load.entities) == (load.entities.get("savings_month") in statistics)
+    money = [card["entity"] for card in cards if card["type"] == "entity"]
+    assert load.entities["cost_month"] in money
+    assert ("savings_month" in load.entities) == (load.entities.get("savings_month") in money)
     rows = [card for card in cards if card["type"] == "entities"]
     assert bool(rows) == ("ready_by" in load.entities)
     timeline = next(card for card in cards if card["type"] == "custom:powerplan-timeline-card")
@@ -741,8 +743,8 @@ async def test_06_the_site_plan_carries_its_slots_unrecorded(
     for row in slots:
         assert {"start", "end", "ceiling_kwh", "baseline_kwh", "planned_kwh"} <= row.keys()
     assert state.attributes["window_min"] == runtime.build.cfg.window_min
-    sensor = hass.data["sensor"].get_entity(entity_id)
-    assert "slots" in sensor._unrecorded_attributes
+    assert state.state_info is not None
+    assert "slots" in state.state_info["unrecorded_attributes"]
 
 
 async def test_06_a_slot_s_baseline_is_only_what_d10_offers(
@@ -864,18 +866,10 @@ async def test_07_the_module_is_served_and_loaded_on_every_page(
 
 
 # --------------------------------------------------------------------------- #
-# §9 12 - the three tables, in HA's template engine
+# §9 12 - the "why" card, in HA's template engine
 # --------------------------------------------------------------------------- #
 
-#: The reference house's plan one evening at 20:25 local (D12 §9 12): four appliances
-#: from 22:00, the rest nothing; the car charging towards 06:00.
-LIVE_BY_LOAD = {
-    "tank": {"planned_kwh": 2.96, "cost": "0.69 NOK", "next_start": "2026-09-23T20:00:00+00:00"},
-    "loop_hall": {"planned_kwh": 1.056, "cost": "0.77 NOK", "next_start": "2026-09-23T20:00:00+00:00"},
-    "loop_bath_1": {"planned_kwh": 0.447, "cost": "0.33 NOK", "next_start": "2026-09-23T20:00:00+00:00"},
-    "loop_bath_2": {"planned_kwh": 0.22, "cost": "0.16 NOK", "next_start": "2026-09-23T22:00:00+00:00"},
-    "sauna": {"planned_kwh": 0.0, "cost": "0.00 NOK", "next_start": None},
-}  # fmt: skip
+#: A day's plan slots from the reference house, 20:25 local (D12 §9 12).
 LIVE_SLOTS = [
     {"start": "2026-09-23T20:00:00+00:00", "end": "2026-09-23T20:15:00+00:00", "planned_kwh": {"tank": 0.74}},
     {"start": "2026-09-23T20:15:00+00:00", "end": "2026-09-23T20:30:00+00:00", "planned_kwh": {"tank": 0.74}},
@@ -892,15 +886,10 @@ async def _render(hass: HomeAssistant, content: str) -> str:
 
 @pytest.fixture
 async def live_house(hass: HomeAssistant, freezer: Any) -> HomeAssistant:
-    """Set the states the three tables read, as the reference house showed them."""
+    """Set the states the "why" card reads, as the reference house showed them."""
     await hass.config.async_set_time_zone("Europe/Oslo")
     freezer.move_to("2026-09-23T18:25:00+00:00")
-    hass.states.async_set(
-        "sensor.home_plan", "4.68", {"by_load": LIVE_BY_LOAD, "slots": LIVE_SLOTS}
-    )
-    hass.states.async_set(
-        "sensor.ev_plan_status", "charging", {"deadline": "2026-09-24T04:00:00+00:00"}
-    )
+    hass.states.async_set("sensor.home_plan", "4.68", {"slots": LIVE_SLOTS})
     hass.states.async_set(
         "sensor.tank_plan_status",
         "waiting",
@@ -909,65 +898,12 @@ async def live_house(hass: HomeAssistant, freezer: Any) -> HomeAssistant:
             "confidence": "known", "cost": "0.69 NOK", "strategy": "deadline_fill",
         },
     )  # fmt: skip
-    for load_id, cost, saved in (
-        ("loop_kitchen", "0.42", "-0.42"),
-        ("tank", "0", "2.16"),
-        ("ev", "0.23", "-0.23"),
-    ):
-        hass.states.async_set(f"sensor.{load_id}_cost_month", cost)
-        hass.states.async_set(f"sensor.{load_id}_savings_month", saved)
     return hass
 
 
 def _markdown_in(config: dict[str, Any], view: dict[str, Any], heading: str) -> str:
     section = _section(view, heading)
     return next(card["content"] for card in section["cards"] if card["type"] == "markdown")
-
-
-async def test_12_next_runs_in_norwegian(live_house: HomeAssistant) -> None:
-    """Rows by start, comma decimals, the sum, and the car running now (D12 §5.9)."""
-    config = build([_nordic()], "2026.8.0", TEXTS["nb"], language="nb")
-    text = await _render(
-        live_house,
-        _markdown_in(config, _view(config, "overview"), TEXTS["nb"]["section_next_runs"]),
-    )
-    lines = [line for line in text.splitlines() if line.startswith("|")]
-    assert lines[0] == "| Start | Apparat | kWh | NOK |"
-    assert lines[2:] == [
-        "| 22:00 | Tank | 2,96 | 0,69 |",
-        "| 22:00 | Loop Hall | 1,06 | 0,77 |",
-        "| 22:00 | Loop Bath 1 | 0,45 | 0,33 |",
-        "| tor 00:00 | Loop Bath 2 | 0,22 | 0,16 |",
-        "| **Sum** | | **4,68** | **1,95** |",
-    ]
-    assert "Ev går nå · frist 06:00" in text
-    assert "kWh og kr gjelder hele planen." in text
-
-
-async def test_12_next_runs_in_english_and_empty(live_house: HomeAssistant) -> None:
-    """Dot decimals in `en`; an empty plan says so (D12 §5.9)."""
-    config = build([_nordic()], "2026.8.0", EN, language="en")
-    content = _markdown_in(config, _view(config, "overview"), EN["section_next_runs"])
-    text = await _render(live_house, content)
-    assert "| 22:00 | Tank | 2.96 | 0.69 |" in text
-    assert "| **Total** | | **4.68** | **1.95** |" in text
-    assert "Thu 00:00" in text
-    live_house.states.async_set("sensor.home_plan", "0", {"by_load": {}})
-    assert EN["md_no_runs"] in await _render(live_house, content)
-
-
-async def test_12_cost_per_appliance(live_house: HomeAssistant) -> None:
-    """Dearest first, signed savings with a true minus in `nb` (D12 §5.9)."""
-    config = build([_nordic()], "2026.8.0", TEXTS["nb"], language="nb")
-    history = _view(config, "history")
-    text = await _render(
-        live_house, _markdown_in(config, history, TEXTS["nb"]["section_cost_per_appliance"])
-    )
-    rows = [line for line in text.splitlines() if line.startswith("|")][2:]
-    assert rows[0] == "| Loop Kitchen | 0,42 | −0,42 |"
-    assert rows[1] == "| Ev | 0,23 | −0,23 |"
-    assert "| Tank | 0,00 | +2,16 |" in rows
-    assert rows[-1] == "| **Sum** | **0,65** | **+1,51** |"
 
 
 async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
@@ -978,4 +914,153 @@ async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
     assert "**Behov:** 2,96 kWh før 06:00" in text
     assert "**Valgt tid:** 22:00–22:30, 00:00–00:15" in text
     assert "**Dekning:** 100 % · kjente priser" in text
-    assert f"≈ 0,69 NOK · {TEXTS['nb']['strategy_deadline_fill']}" in text
+    assert f"≈ 0,69 kr · {TEXTS['nb']['strategy_deadline_fill']}" in text
+
+
+# --------------------------------------------------------------------------- #
+# §9 19 - polish (D12 §5.11)
+# --------------------------------------------------------------------------- #
+
+
+def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
+    """G5: tiles read `next_run` (the car `deadline_time`); the subview's badge hides while running."""
+    config = build([_nordic()], "2026.8.0", EN)
+    tiles = {
+        card["entity"]: card
+        for card in _section(_view(config, "overview"), EN["section_appliances"])["cards"]
+        if card["type"] == "tile"
+    }
+    assert tiles["sensor.ev_plan_status"]["state_content"] == ["state", "deadline_time"]
+    assert tiles["sensor.tank_plan_status"]["state_content"] == ["state", "next_run"]
+    badges = [
+        b for b in _subview(config, "tank")["badges"] if b["entity"] == "sensor.tank_plan_status"
+    ]
+    time, running = badges[1], badges[2]
+    assert time["state_content"] == ["next_run"]
+    assert time["visibility"] == [
+        {
+            "condition": "state",
+            "entity": "sensor.tank_plan_status",
+            "state_not": ["charging", "running_plan", "run_now"],
+        }
+    ]
+    assert running["name"] == EN["badge_running_now"]
+    assert running["show_state"] is False
+    assert running["visibility"][0]["state"] == ["charging", "running_plan", "run_now"]
+    assert not any(
+        "next_start" in str(card.get("state_content"))
+        for card in (*_cards(config), *_badges(config))
+    )
+
+
+def test_19_the_month_s_money_is_the_sensor_s_own_state() -> None:
+    """N7, A5: `entity` cards for cost and savings; only the energy counter is a statistic."""
+    config = build([_nordic()], "2026.8.0", EN)
+    month = _section(_view(config, "overview"), EN["section_month"])["cards"]
+    assert [c["type"] for c in month[1:3]] == ["entity", "entity"]
+    assert month[1] == {
+        "type": "entity", "entity": "sensor.home_cost", "name": EN["card_cost"], "icon": "mdi:cash",
+        "grid_options": {"columns": 6, "rows": 2},
+    }  # fmt: skip
+    sub = _section(_subview(config, "tank"), EN["section_month"])["cards"]
+    assert [(c["type"], c["grid_options"]) for c in sub[1:]] == [
+        ("entity", {"columns": 6, "rows": 2}),
+        ("entity", {"columns": 6, "rows": 2}),
+        ("statistic", {"columns": 12, "rows": 2}),
+    ]
+    assert not any(
+        card["type"] == "statistic"
+        and card["entity"].endswith(("_cost", "_savings", "_cost_month", "_savings_month"))
+        for card in _cards(config)
+    )
+
+
+def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
+    """N8, D5, D6: the next runs and the per-appliance figures follow the style sheet; markdown only says why."""
+    config = build([_nordic()], "2026.8.0", EN)
+    runs = _section(_view(config, "overview"), EN["section_next_runs"])["cards"][1]
+    assert runs["type"] == "custom:powerplan-runs-card"
+    assert runs["grid_options"] == {"columns": 12, "rows": "auto"}
+    assert runs["entities"] == {"plan": "sensor.home_plan"}
+    assert [load["status"] for load in runs["loads"]] == [
+        f"sensor.{i}_plan_status" for i in ALL_LOADS
+    ]
+    assert runs["running"] == ["charging", "running_plan", "run_now"]
+    history = _view(config, "history")
+    per = _section(history, EN["section_per_appliance"])["cards"]
+    table = _section(history, EN["section_cost_per_appliance"])["cards"]
+    assert per[1]["view"] == "appliances"
+    assert "title" not in per[1]
+    assert table[1]["view"] == "table"
+    assert "badges" not in table[0]
+    assert {load["id"] for load in per[1]["loads"]} == {
+        i for i in ALL_LOADS if "savings_month" in TYPE_KEYS[NORDIC_TYPES[i]]
+    }
+    assert table[1]["loads"][0] == {
+        "id": "ev", "name": "Ev", "color": HA_GRAPH_PALETTE[0],
+        "cost_month": "sensor.ev_cost_month", "savings_month": "sensor.ev_savings_month",
+    }  # fmt: skip
+    markdown = [card for card in _cards(config) if card["type"] == "markdown"]
+    assert {card["content"].split("\n", 1)[0] for card in markdown} == {
+        f'{{%- set e = "sensor.{i}_plan_status" -%}}' for i in ALL_LOADS
+    }
+
+
+def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
+    """D1, D7: the picker opens as the Energy dashboard's does; the graph's legend says Cost and Savings."""
+    history = _view(build([_nordic()], "2026.8.0", EN), "history")
+    assert history["footer"]["card"]["vertical_opening_direction"] == "up"
+    graph = next(
+        card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"
+    )
+    assert [row["name"] for row in graph["entities"]] == [EN["card_cost"], EN["card_savings"]]
+    peaks = _section(history, EN["section_capacity"])["cards"][1]
+    assert peaks["grid_options"] == {"columns": 12, "rows": "auto"}
+    assert set(peaks["entities"]) == {"window_used", "ceiling", "advice", "level", "target"}
+
+
+def test_19_the_subview_s_ready_by_row_and_plan() -> None:
+    """A2, A4, A6: the row has a clock icon and its own height; no bare kWh badge; "why" is auto-height."""
+    config = build([_nordic()], "2026.8.0", EN)
+    sub = _subview(config, "tank")
+    ready = next(
+        c for c in _section(sub, EN["section_control"])["cards"] if c["type"] == "entities"
+    )
+    assert ready["entities"][0]["icon"] == "mdi:clock-check-outline"
+    assert ready["grid_options"] == {"columns": 12, "rows": "auto"}
+    assert "badges" not in _section(sub, EN["section_appliance_plan"])["cards"][0]
+    why = _section(sub, EN["section_why"])["cards"][1]
+    assert why["grid_options"] == {"columns": "full", "rows": "auto"}
+
+
+def test_19_plan_status_carries_the_next_run_and_the_deadline_as_clock_times() -> None:
+    """G5: local HH:MM; a run in progress has no next run; no plan, no attribute."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from custom_components.powerplan.load_entities import plan_status_attributes  # noqa: PLC0415
+
+    dt_util.set_default_time_zone(dt_util.get_time_zone("Europe/Oslo"))
+    try:
+        now = datetime(2026, 9, 23, 20, 12, 11, tzinfo=UTC)
+        status = SimpleNamespace(
+            load_id="tank", granted_w=0.0, action_reason="", action_key=None, action_params={},
+            shed=False, shed_reason=None, latches=SimpleNamespace(shed_since=None), blunt=False,
+            comfort=None, type_key="water_heater",
+        )  # fmt: skip
+
+        def attributes(next_start: datetime | None) -> dict[str, Any]:
+            plan = SimpleNamespace(
+                next_start=next_start, planned_kwh=3.81, cost=None, mode=PlanMode.PRICE, covered=True,
+                coverage=1.0, deadline=datetime(2026, 9, 24, 4, 0, tzinfo=UTC), strategy="deadline_fill",
+                confidence=Confidence.KNOWN,
+            )  # fmt: skip
+            runtime = SimpleNamespace(snapshot=SimpleNamespace(at=now, plans={"tank": plan}))
+            return plan_status_attributes(status, runtime)  # type: ignore[arg-type]
+
+        later = attributes(datetime(2026, 9, 23, 20, 0, tzinfo=UTC).replace(hour=21))
+        assert (later["next_run"], later["deadline_time"]) == ("23:00", "06:00")
+        assert attributes(now)["next_run"] == ""
+        assert attributes(None)["next_run"] == ""
+        assert later["next_start"] == "2026-09-23T21:00:00+00:00"
+    finally:
+        dt_util.set_default_time_zone(UTC)

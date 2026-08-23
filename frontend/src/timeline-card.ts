@@ -2,24 +2,31 @@
 // each appliance's planned power stacked on the rest of the house, so a bar's
 // top is the total the household compares with the dashed limit - and the
 // price as a strip under the time axis. ECharts at HA's own major version,
-// themed from HA's CSS variables. The rule numbers are D12 §5.2's. `mode:
-// history` (D12 §5.7) draws the past instead, on the History view's picker:
-// grid usage per hour or per day against the limit, the days that count.
+// themed from HA's CSS variables. The rule numbers are D12 §5.2's; T1–T10 the
+// iteration-2 polish (§5.11). `mode: history` (D12 §5.7) draws the past instead,
+// on the History view's picker: grid usage per hour or per day against the
+// limit, the days that count.
+//
+// One vertical stack, nothing over the canvas (T1): the toggle, the chart,
+// the touch readout, the legend. Inside the canvas two grids of fixed pixel
+// geometry (T2), the markers as horizontal `graphic` labels (T3).
 
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
-import { fetchStatistics, followPeriod, type Period, statisticsPeriod, type StatRow } from "./energy";
+import { fetchStatistics, followPeriod, gridHours, kwhScale, monthRanking, type Period, statisticsPeriod, type StatRow } from "./energy";
 import { cssVar, type HomeAssistant, timeZone } from "./ha";
+import { ppStyles, tooltipStyle } from "./styles";
 import {
   countingDays,
+  currencyWord,
   type DayPeak,
   dayKey,
   estimatedRanges,
   legendItems,
   midnights,
+  moneyFormat,
   nextPlanned,
   niceScale,
-  nthHighest,
   type PlanSlot,
   type PriceRun,
   priceRuns,
@@ -53,6 +60,7 @@ interface TimelineConfig {
     window_used?: string;
     ceiling?: string;
     price?: string;
+    advice?: string;
   };
   show?: string[];
   currency?: string;
@@ -67,11 +75,12 @@ const PALETTE = [
 /** Redraw at least this often, so the "now" line moves with no new data (rule 6). */
 const NOW_STEP_MS = 5 * 60_000;
 const HOUR_MS = 3_600_000;
-/** The price strip's height and the room under it for the time labels (rule 5). */
-const STRIP_PX = 22;
-const LABELS_PX = 22;
-/** The y-axis labels' room at the left, for the bars' width. */
-const AXIS_PX = 36;
+/** T2: the main grid and the price strip, in px of the canvas. */
+const GRID = { top: 24, left: 36, right: 8, bottom: 62 };
+const STRIP = { left: 36, right: 8, bottom: 8, height: 22 };
+/** T10: the plot's height - about 250 px on a desktop, at least 180 px on a phone. */
+const PLOT_PX = 250;
+const PLOT_NARROW_PX = 180;
 const OFFSET = "\u0000offset";
 const MARKS = "\u0000marks";
 
@@ -81,12 +90,29 @@ const fill = (text: string, values: Record<string, string>) =>
 const escape = (value: string) =>
   value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
+/** A marker the canvas draws as a horizontal label on a vertical line (T3). */
+interface Marker {
+  at: number;
+  kind: "now" | "midnight" | "deadline";
+  text: string;
+}
+
+interface LegendEntry {
+  name: string;
+  color: string;
+  value?: string;
+  swatch?: "line" | "strip";
+  /** The chart series the entry toggles; none for a mark that is not a series. */
+  series?: boolean;
+}
+
 export class PowerplanTimelineCard extends HTMLElement {
   private config?: TimelineConfig;
   private hassRef?: HomeAssistant;
   private chart?: ECharts;
   private els?: {
     toggle: HTMLDivElement;
+    plot: HTMLDivElement;
     chart: HTMLDivElement;
     readout: HTMLDivElement;
     legend: HTMLDivElement;
@@ -100,6 +126,8 @@ export class PowerplanTimelineCard extends HTMLElement {
   private pinned?: number;
   private off = new Set<string>();
   private slots: TimelineSlot[] = [];
+  private markers: Marker[] = [];
+  private stripUnit = "";
 
   private period?: Period;
   private unfollow?: () => void;
@@ -143,14 +171,24 @@ export class PowerplanTimelineCard extends HTMLElement {
 
   public connectedCallback(): void {
     this.resize = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0;
-      if (Math.abs(width - this.width) < 1) return;
-      this.width = width;
-      this.chart?.resize();
-      if (this.config?.mode === "history") void this.renderHistory();
-      else void this.render();
+      for (const entry of entries) {
+        if (entry.target === this) {
+          const width = entry.contentRect.width;
+          if (Math.abs(width - this.width) < 1) continue;
+          const narrowBefore = this.narrow;
+          this.width = width;
+          if (this.narrow !== narrowBefore || !this.chart) {
+            if (this.config?.mode === "history") void this.renderHistory();
+            else void this.render();
+            continue;
+          }
+        }
+        this.chart?.resize();
+        this.drawMarkers();
+      }
     });
     this.resize.observe(this);
+    if (this.els) this.resize.observe(this.els.plot);
     if (this.hassRef) {
       this.key = [];
       this.hass = this.hassRef;
@@ -178,17 +216,26 @@ export class PowerplanTimelineCard extends HTMLElement {
     return 7;
   }
 
-  public getGridOptions(): Record<string, number> {
-    return { columns: 12, rows: 7, min_rows: 5, min_columns: 6 };
+  /** T10: the card is as tall as its stack, so the plot keeps its height under any legend. */
+  public getGridOptions(): Record<string, number | string> {
+    return { columns: 12, rows: "auto", min_columns: 6 };
   }
 
   private get single(): boolean {
     return this.config?.loads.length === 1 && Boolean(this.config.entities.deadline);
   }
 
+  private get narrow(): boolean {
+    return this.width > 0 && this.width < (this.config?.narrow_width ?? 500);
+  }
+
   private get touch(): boolean {
     const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
-    return coarse || (this.width > 0 && this.width < (this.config?.narrow_width ?? 500));
+    return coarse || this.narrow;
+  }
+
+  private css(name: string, fallback: string): string {
+    return cssVar(this, name, fallback);
   }
 
   private shell(): NonNullable<PowerplanTimelineCard["els"]> {
@@ -196,44 +243,50 @@ export class PowerplanTimelineCard extends HTMLElement {
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        :host { display: block; height: 100%; }
-        ha-card { height: 100%; box-sizing: border-box; padding: 8px 12px 8px;
-                  display: flex; flex-direction: column; gap: 4px; }
-        .toggle { display: flex; justify-content: flex-end; gap: 4px; }
-        .toggle button { font: inherit; font-size: 12px; min-width: 44px; min-height: 28px;
-                         border: 1px solid var(--divider-color); border-radius: 14px; cursor: pointer;
-                         background: none; color: var(--secondary-text-color); }
-        .toggle button[aria-pressed="true"] { background: var(--primary-color);
-                         border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
-        .plot { position: relative; flex: 1; min-height: 200px; }
+        ${ppStyles}
+        .tl { display: flex; flex-direction: column; gap: 10px; height: 100%; box-sizing: border-box;
+              padding: 14px var(--pp-pad) var(--pp-pad); }
+        .head { display: flex; justify-content: flex-end; }
+        .head[hidden] { display: none; }
+        .tl-chart { position: relative; flex: none; }
         .chart { position: absolute; inset: 0; }
-        .message { position: absolute; inset: 0 0 ${STRIP_PX + LABELS_PX}px; display: flex;
-                   align-items: center; justify-content: center; text-align: center;
-                   color: var(--secondary-text-color); pointer-events: none; }
-        .readout { min-height: 42px; font-size: 13px; line-height: 1.5; color: var(--primary-text-color); }
-        .readout .sub { color: var(--secondary-text-color); }
-        .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px;
-                  color: var(--primary-text-color); }
-        .legend button { font: inherit; display: inline-flex; align-items: center; gap: 6px;
-                         background: none; border: 0; padding: 2px 0; cursor: pointer; color: inherit; }
-        .legend button[aria-pressed="false"] { opacity: 0.4; }
-        .swatch { width: 12px; height: 8px; border-radius: 2px; flex: none; }
-        .kwh { color: var(--secondary-text-color); }
+        .message { position: absolute; inset: 0 0 ${GRID.bottom}px ${GRID.left}px; display: flex; align-items: center;
+                   justify-content: center; text-align: center; font-size: 14px; color: var(--secondary-text-color);
+                   pointer-events: none; }
+        .pp-readout { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
+        .pp-readout[hidden], .message[hidden] { display: none; }
       </style>
-      <ha-card>
-        <div class="toggle"></div>
-        <div class="plot"><div class="chart"></div><div class="message" hidden></div></div>
-        <div class="readout" hidden></div>
-        <div class="legend"></div>
-      </ha-card>`;
+      <ha-card><div class="tl">
+        <div class="head"><div class="pp-toggle" role="group"></div></div>
+        <div class="tl-chart"><div class="chart"></div><div class="message" hidden></div></div>
+        <div class="pp-readout" hidden></div>
+        <div class="pp-legend"></div>
+      </div></ha-card>`;
     this.els = {
-      toggle: root.querySelector(".toggle") as HTMLDivElement,
+      toggle: root.querySelector(".pp-toggle") as HTMLDivElement,
+      plot: root.querySelector(".tl-chart") as HTMLDivElement,
       chart: root.querySelector(".chart") as HTMLDivElement,
-      readout: root.querySelector(".readout") as HTMLDivElement,
-      legend: root.querySelector(".legend") as HTMLDivElement,
+      readout: root.querySelector(".pp-readout") as HTMLDivElement,
+      legend: root.querySelector(".pp-legend") as HTMLDivElement,
       message: root.querySelector(".message") as HTMLDivElement,
     };
+    this.resize?.observe(this.els.plot);
     return this.els;
+  }
+
+  /** T10: the canvas is the plot plus T2's fixed top and bottom. */
+  private sizePlot(): void {
+    const plot = this.narrow ? PLOT_NARROW_PX : PLOT_PX;
+    this.els!.plot.style.height = `${plot + GRID.top + GRID.bottom}px`;
+  }
+
+  private async ensureChart(): Promise<boolean> {
+    if (this.chart) return true;
+    const { echarts } = await import("./chart");
+    if (this.chart || !this.isConnected) return Boolean(this.chart);
+    this.chart = echarts.init(this.els!.chart, undefined, { renderer: "canvas" });
+    this.chart.getZr().on("click", (event: { offsetX: number; offsetY: number }) => this.tap(event));
+    return true;
   }
 
   private async render(): Promise<void> {
@@ -241,6 +294,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     const config = this.config;
     if (!hass || !config) return;
     const els = this.shell();
+    this.sizePlot();
     const labels = config.labels ?? {};
     const hours = windowHours(this.width, config, this.chosen);
     const plan = hass.states[config.entities.plan];
@@ -265,25 +319,24 @@ export class PowerplanTimelineCard extends HTMLElement {
       els.legend.replaceChildren();
       return;
     }
-    if (!this.chart) {
-      const { echarts } = await import("./chart");
-      if (this.chart || !this.isConnected) return;
-      this.chart = echarts.init(els.chart, undefined, { renderer: "canvas" });
-      this.chart.getZr().on("click", (event: { offsetX: number; offsetY: number }) => this.tap(event));
-    }
-    this.chart.setOption(this.option(hass, config, this.slots, hours), { notMerge: true });
-    for (const name of this.off) this.chart.dispatchAction({ type: "legendUnSelect", name });
-    this.drawLegend(config);
+    if (!(await this.ensureChart())) return;
+    this.chart!.setOption(this.option(hass, config, this.slots, hours), { notMerge: true });
+    for (const name of this.off) this.chart!.dispatchAction({ type: "legendUnSelect", name });
+    this.chart!.resize();
+    this.drawMarkers();
+    this.drawLegend(this.planLegend(config));
     this.drawReadout();
   }
 
-  // ------------------------------------------------------------------ rule 1
+  // --------------------------------------------------------- rule 1, T6
 
   private drawToggle(hours: number): void {
-    const options = this.config?.hours_options ?? [];
+    const configured = this.config?.hours_options ?? [];
+    // T6: a narrow card offers 12 h too, pressed on the first render.
+    const options = configured.length && this.narrow ? [...new Set([12, ...configured])].sort((a, b) => a - b) : configured;
     const labels = this.config?.labels ?? {};
     const toggle = this.els!.toggle;
-    toggle.hidden = options.length === 0;
+    (toggle.parentElement as HTMLElement).hidden = options.length === 0;
     toggle.replaceChildren(
       ...options.map((option) => {
         const button = document.createElement("button");
@@ -299,53 +352,61 @@ export class PowerplanTimelineCard extends HTMLElement {
     );
   }
 
-  // ------------------------------------------------------------------ rule 9
+  // --------------------------------------------------------- rule 9, T8
 
-  private drawLegend(config: TimelineConfig): void {
+  private planLegend(config: TimelineConfig): LegendEntry[] {
     const labels = config.labels ?? {};
     const show = this.show(config);
-    const kwh = new Intl.NumberFormat(this.hassRef!.locale.language, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    const items: Array<{ name: string; color: string; extra?: string; dashed?: boolean }> = [];
+    const kwh = new Intl.NumberFormat(this.hassRef!.locale.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const items: LegendEntry[] = [];
     if (show.has("plan")) {
       for (const load of legendItems(config.loads, this.slots)) {
-        items.push({ name: load.name, color: this.colorOf(load.id), extra: `${kwh.format(load.kwh)} kWh` });
+        items.push({ name: load.name, color: this.colorOf(load.id), value: `${kwh.format(load.kwh)} kWh`, series: true });
       }
     }
-    if (show.has("baseline")) {
-      items.push({ name: labels.other_usage ?? "", color: cssVar(this, "--secondary-text-color", "#727272") });
+    if (show.has("baseline") && !this.single) {
+      items.push({ name: labels.other_usage ?? "", color: this.css("--secondary-text-color", "#727272"), series: true });
     }
-    if (show.has("ceiling") && this.slots.some((slot) => slot.ceilingKw !== null)) {
-      items.push({ name: labels.limit ?? "", color: cssVar(this, "--error-color", "#db4437"), dashed: true });
+    if (show.has("ceiling") && !this.single && this.slots.some((slot) => slot.ceilingKw !== null)) {
+      items.push({ name: labels.limit ?? "", color: this.css("--error-color", "#db4437"), swatch: "line", series: true });
     }
-    items.push({ name: this.priceName(config), color: cssVar(this, "--primary-color", "#03a9f4") });
+    items.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
+    return items;
+  }
+
+  private drawLegend(items: LegendEntry[]): void {
     this.els!.legend.replaceChildren(
       ...items.map((item) => {
         const button = document.createElement("button");
+        button.className = "item";
         button.setAttribute("aria-pressed", String(!this.off.has(item.name)));
-        const swatch = item.dashed
-          ? `border-top: 2px dashed ${item.color}; height: 0; border-radius: 0;`
-          : `background: ${item.color};`;
-        button.innerHTML = `<span class="swatch" style="${swatch}"></span>${escape(item.name)}${
-          item.extra ? ` <span class="kwh">${escape(item.extra)}</span>` : ""
-        }`;
-        button.addEventListener("click", () => {
-          if (this.off.has(item.name)) this.off.delete(item.name);
-          else this.off.add(item.name);
-          this.chart?.dispatchAction({ type: "legendToggleSelect", name: item.name });
-          button.setAttribute("aria-pressed", String(!this.off.has(item.name)));
-        });
+        const swatch =
+          item.swatch === "line"
+            ? `<span class="pp-swatch line" style="color:${item.color}"></span>`
+            : item.swatch === "strip"
+              ? `<span class="pp-swatch strip" style="background:linear-gradient(90deg, ${withAlpha(item.color, 0.28)} 50%, ${withAlpha(item.color, 0.62)} 50%)"></span>`
+              : `<span class="pp-swatch" style="background:${item.color}"></span>`;
+        button.innerHTML = `${swatch}<span>${escape(item.name)}</span>${item.value ? `<span class="value">${escape(item.value)}</span>` : ""}`;
+        if (item.series) {
+          button.addEventListener("click", () => {
+            if (this.off.has(item.name)) this.off.delete(item.name);
+            else this.off.add(item.name);
+            this.chart?.dispatchAction({ type: "legendToggleSelect", name: item.name });
+            button.setAttribute("aria-pressed", String(!this.off.has(item.name)));
+          });
+        } else {
+          button.disabled = true;
+          button.style.cursor = "default";
+        }
         return button;
       }),
     );
   }
 
-  // ------------------------------------------------------------ rules 10, 11
+  // ------------------------------------------------ rules 10, 11, T7
 
   private tap(event: { offsetX: number; offsetY: number }): void {
-    if (!this.chart || !this.touch) return;
+    if (!this.chart || !this.touch || this.config?.mode === "history") return;
     const [value] = this.chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY]) as number[];
     const slot = this.slots.find((s) => s.start <= value! && value! < s.end);
     if (!slot) return;
@@ -359,96 +420,135 @@ export class PowerplanTimelineCard extends HTMLElement {
     els.readout.hidden = !this.touch;
     if (!this.touch) return;
     const ids = config.loads.map((load) => load.id);
-    const slot =
-      this.slots.find((s) => s.start === this.pinned) ?? nextPlanned(this.slots, ids) ?? this.slots[0];
+    const slot = this.slots.find((s) => s.start === this.pinned) ?? nextPlanned(this.slots, ids) ?? this.slots[0];
     if (!slot) {
       els.readout.replaceChildren();
       return;
     }
     const [head, sub] = this.readoutLines(slotReadout(slot, ids));
-    els.readout.innerHTML = `<div>${escape(head)}</div><div class="sub">${escape(sub)}</div>`;
+    els.readout.innerHTML = `<div class="head">${escape(head)}</div><div class="sub">${escape(sub)}</div>`;
   }
 
-  /** Two lines: "ons 22:00–22:15 · Sum 9,83 av 10 kW" and "4 apparater · 0,73 kr/kWh · ≈ 0,89 kr". */
+  /** Two lines: "ons 22:00–22:15 · Sum 9,41 av 10 kW" and "4 apparater · 0,73 kr/kWh · ≈ 0,82 kr". */
   private readoutLines(readout: Readout): [string, string] {
-    const { labels = {}, currency = "" } = this.config!;
+    const { labels = {} } = this.config!;
     const f = this.formats();
     const when = `${f.day.format(readout.start)} ${f.clock.format(readout.start)}–${f.clock.format(readout.end)}`;
     const sum =
       readout.limitKw === null
         ? `${f.kw.format(readout.sumKw)} kW`
-        : fill(labels.sum_of_limit ?? "{sum} / {limit} kW", {
-            sum: f.kw.format(readout.sumKw),
-            limit: f.kw.format(readout.limitKw),
-          });
+        : fill(labels.sum_of_limit ?? "{sum} / {limit} kW", { sum: f.kw.format(readout.sumKw), limit: f.kw.format(readout.limitKw) });
     const parts = [fill(labels.appliance_count ?? "{n}", { n: String(readout.count) })];
     if (readout.price !== null) {
       const estimated = readout.estimated ? ` (${labels.estimated_short ?? ""})` : "";
-      parts.push(`${f.money.format(readout.price)} ${currency}/kWh${estimated}`);
+      parts.push(`${f.number.format(readout.price)} ${f.unit}/kWh${estimated}`);
     }
     if (readout.cost !== null && readout.cost > 0) {
-      parts.push(fill(labels.slot_cost ?? "≈ {cost} {currency}", { cost: f.money.format(readout.cost), currency }));
+      parts.push(fill(labels.slot_cost ?? "≈ {cost}", { cost: f.money.format(readout.cost) }));
     }
     return [`${when} · ${sum}`, parts.join(" · ")];
   }
 
-  // ---------------------------------------------------------------- the chart
+  // ---------------------------------------------------------- the chart
 
   private show(config: TimelineConfig): Set<string> {
     return new Set(config.show ?? ["plan", "baseline", "ceiling", "price"]);
   }
 
-  private priceName(config: TimelineConfig): string {
-    return fill(config.labels?.price_strip ?? "{currency}/kWh", { currency: config.currency ?? "" });
+  /** "Pris kr/kWh" - the currency as the viewer's language writes it (G7). */
+  private priceName(): string {
+    return fill(this.config?.labels?.price_strip ?? "{currency}/kWh", { currency: this.formats().unit });
   }
 
   private colorOf(id: string): string {
     const loads = this.config!.loads;
     const index = loads.findIndex((load) => load.id === id);
     const load = loads[index];
-    return load?.color ?? cssVar(this, `--graph-color-${index + 1}`, PALETTE[index % PALETTE.length]!);
+    return load?.color ?? this.css(`--graph-color-${index + 1}`, PALETTE[index % PALETTE.length]!);
   }
 
   private formats() {
     const hass = this.hassRef!;
     const locale = hass.locale.language;
     const zone = timeZone(hass);
+    const currency = this.config?.currency ?? "";
     return {
       zone,
       clock: new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: zone }),
       day: new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: zone }),
       midnight: new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", timeZone: zone }),
       kw: new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 }),
-      money: new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      number: new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      money: moneyFormat(locale, currency),
+      unit: currency ? currencyWord(locale, currency) : "",
     };
   }
 
-  private option(
-    hass: HomeAssistant,
-    config: TimelineConfig,
-    slots: TimelineSlot[],
-    hours: number,
-  ): EChartsCoreOption {
+  /** T9: x labels every 2 h on 24 h, 3 h on 12 h, 4 h on 48 h - 6 h on a narrow 48 h. */
+  private labelStep(hours: number): number {
+    const every = hours <= 12 ? 3 : hours <= 24 ? (this.narrow ? 4 : 2) : this.narrow ? 6 : 4;
+    const plot = this.els!.plot.clientHeight - GRID.top - GRID.bottom;
+    // T10: under 180 px of plot, fewer labels rather than a smaller plot.
+    return (plot > 0 && plot < PLOT_NARROW_PX ? 2 : 1) * every * HOUR_MS;
+  }
+
+  /** The axes, grids and tooltip both modes share (T2, T5, T9). */
+  private frame(start: number, end: number, scale: { max: number; step: number }, unit: string, labelStep: number, xLabel: (value: number) => string, strip: boolean) {
+    const muted = this.css("--secondary-text-color", "#727272");
+    const text = this.css("--primary-text-color", "#212121");
+    const track = this.css("--pp-track", "rgba(127,127,127,.12)");
+    return {
+      grid: [
+        { ...GRID, containLabel: false },
+        { ...STRIP, height: strip ? STRIP.height : 0, containLabel: false },
+      ],
+      tooltip: { ...tooltipStyle((name, fallback) => this.css(name, fallback)) },
+      xAxis: [
+        {
+          type: "time",
+          min: start,
+          max: end,
+          minInterval: labelStep,
+          maxInterval: labelStep,
+          axisLine: { show: true, lineStyle: { color: withAlpha(text, 0.25) } },
+          axisTick: { show: false },
+          axisLabel: { color: muted, fontSize: 11, margin: 8, hideOverlap: true, rotate: 0, formatter: xLabel },
+          splitLine: { show: false },
+        },
+        { type: "time", gridIndex: 1, min: start, max: end, show: false },
+      ],
+      yAxis: [
+        {
+          type: "value",
+          name: unit,
+          nameGap: 10,
+          nameTextStyle: { color: muted, fontSize: 10, align: "right", padding: [0, 6, 0, 0] },
+          min: 0,
+          max: scale.max,
+          interval: scale.step,
+          axisLabel: { color: muted, fontSize: 11 },
+          splitLine: { lineStyle: { color: track, type: [2, 4] } },
+        },
+        { type: "value", gridIndex: 1, min: 0, max: 1, show: false },
+      ],
+    };
+  }
+
+  private option(hass: HomeAssistant, config: TimelineConfig, slots: TimelineSlot[], hours: number): EChartsCoreOption {
     const labels = config.labels ?? {};
     const show = this.show(config);
     const single = this.single;
     const ids = config.loads.map((load) => load.id);
     const f = this.formats();
-    const text = cssVar(this, "--primary-text-color", "#212121");
-    const muted = cssVar(this, "--secondary-text-color", "#727272");
-    const divider = cssVar(this, "--divider-color", "rgba(0,0,0,.12)");
-    const surface = cssVar(this, "--card-background-color", "#fff");
-    const error = cssVar(this, "--error-color", "#db4437");
-    const warning = cssVar(this, "--warning-color", "#ffa600");
-    const primary = cssVar(this, "--primary-color", "#03a9f4");
-    const background = cssVar(this, "--primary-background-color", "#fafafa");
+    const muted = this.css("--secondary-text-color", "#727272");
+    const surface = this.css("--card-background-color", "#fff");
+    const error = this.css("--error-color", "#db4437");
     const start = slots[0]!.start;
     const end = slots[slots.length - 1]!.end;
     const now = Date.now();
-    const narrow = this.width > 0 && this.width < (config.narrow_width ?? 500);
 
     // Rule 2: the bar's width is the slot's less a 2 px gap (1 px under 6 px).
-    const plotPx = Math.max(100, (this.width || 600) - AXIS_PX - 24);
+    const plotPx = Math.max(100, (this.width || 600) - 32 - GRID.left - GRID.right);
     const slotPx = (plotPx * (slots[0]!.end - slots[0]!.start)) / (end - start);
     const barWidth = Math.max(1, slotPx - (slotPx < 6 ? 1 : 2));
     const drawBaseline = show.has("baseline") && (!single || config.show?.includes("baseline"));
@@ -511,7 +611,7 @@ export class PowerplanTimelineCard extends HTMLElement {
         step: "end",
         symbol: "none",
         lineStyle: { width: 0 },
-        areaStyle: { color: cssVar(this, "--energy-solar-color", "#ff9800"), opacity: 0.4 },
+        areaStyle: { color: this.css("--energy-solar-color", "#ff9800"), opacity: 0.4 },
         data: steps(slots, (slot) => slot.productionKw),
       });
     }
@@ -537,152 +637,88 @@ export class PowerplanTimelineCard extends HTMLElement {
       });
     }
 
-    // Rules 6, 7, 12 and the estimated band: marks on a series of their own.
-    const marks: Record<string, unknown>[] = [];
-    if (now >= start && now < end) {
-      marks.push({
-        xAxis: now,
-        lineStyle: { color: text, width: 1.5, type: "solid" },
-        label: {
-          formatter: labels.now ?? "",
-          position: "insideEndTop",
-          color: background,
-          backgroundColor: text,
-          padding: [2, 6],
-          borderRadius: 3,
-          fontSize: 11,
-        },
-      });
-    }
-    for (const midnight of midnights(start, end, f.zone)) {
-      marks.push({
-        xAxis: midnight,
-        lineStyle: { color: divider, width: 1, type: "solid" },
-        label: { formatter: f.midnight.format(midnight), position: "insideEndTop", color: muted, fontSize: 11 },
-      });
-    }
-    const deadline = single ? this.deadline(hass, config) : null;
-    if (deadline !== null && deadline > start && deadline <= end) {
-      const nearEdge = ((end - deadline) / (end - start)) * plotPx < 100;
-      marks.push({
-        xAxis: deadline,
-        lineStyle: { color: warning, width: 1.5, type: "dashed" },
-        label: {
-          formatter: fill(labels.deadline ?? "{time}", { time: f.clock.format(deadline) }),
-          position: nearEdge ? "insideEndBottom" : "insideEndTop",
-          color: warning,
-          fontSize: 11,
-        },
-      });
-    }
+    // The estimated band on the main grid; the markers are `graphic` (T3).
     series.push({
       name: MARKS,
       type: "line",
       data: [],
       silent: true,
-      markLine: { silent: true, symbol: "none", animation: false, data: marks },
       markArea: {
         silent: true,
         itemStyle: { color: muted, opacity: 0.03 },
         label: { color: muted, position: "insideTop", fontSize: 10 },
-        data: estimatedRanges(slots).map(([from, to]) => [
-          { xAxis: from, name: labels.estimated_prices ?? "" },
-          { xAxis: to },
-        ]),
+        data: estimatedRanges(slots).map(([from, to]) => [{ xAxis: from, name: labels.estimated_prices ?? "" }, { xAxis: to }]),
       },
     });
+    this.markers = [];
+    if (now >= start && now < end) this.markers.push({ at: now, kind: "now", text: labels.now ?? "" });
+    for (const midnight of midnights(start, end, f.zone)) {
+      this.markers.push({ at: midnight, kind: "midnight", text: f.midnight.format(midnight) });
+    }
+    const deadline = single ? this.deadline(hass, config) : null;
+    if (deadline !== null && deadline > start && deadline <= end) {
+      this.markers.push({ at: deadline, kind: "deadline", text: fill(labels.deadline ?? "{time}", { time: f.clock.format(deadline) }) });
+    }
 
-    // Rule 5: the price strip, a grid of its own sharing the time axis.
-    series.push(this.strip(priceRuns(slots), primary, muted, text, f.money));
+    // Rule 5, T4: the price strip, a grid of its own sharing the time axis.
+    series.push(this.strip(priceRuns(slots), f.number));
+    this.stripUnit = f.unit;
 
     const find = (value: number) => slots.find((slot) => slot.start <= value && value < slot.end);
-    const every = (narrow ? 6 : 3) * HOUR_MS;
+    const frame = this.frame(start, end, scale, "kW", this.labelStep(hours), (value) => f.clock.format(value), true);
     return {
       animation: false,
-      textStyle: { color: text },
+      textStyle: { color: this.css("--primary-text-color", "#212121"), fontFamily: this.css("--ha-font-family-body", "Roboto, sans-serif") },
       legend: { show: false, data: series.map((s) => s.name).filter((name) => name !== OFFSET && name !== MARKS) },
-      grid: [
-        { left: 4, right: 8, top: 22, bottom: STRIP_PX + LABELS_PX + 2, containLabel: true },
-        { left: 4, right: 8, bottom: 0, height: STRIP_PX, containLabel: true },
-      ],
+      ...frame,
       tooltip: {
+        ...frame.tooltip,
         show: !this.touch,
         trigger: "axis",
         triggerOn: this.touch ? "click" : "mousemove",
-        axisPointer: { type: "line", lineStyle: { color: divider } },
+        axisPointer: { type: "line", lineStyle: { color: this.css("--divider-color", "rgba(0,0,0,.12)") } },
         formatter: (params: Array<{ axisValue: number }>) => {
           const slot = params[0] ? find(params[0].axisValue) : undefined;
           return slot ? this.tooltip(slot) : "";
         },
       },
-      xAxis: [
-        {
-          type: "time",
-          min: start,
-          max: end,
-          minInterval: every,
-          maxInterval: every,
-          axisLine: { lineStyle: { color: divider } },
-          axisTick: { show: false },
-          axisLabel: { color: muted, hideOverlap: true, formatter: (value: number) => f.clock.format(value) },
-          splitLine: { show: false },
-        },
-        { type: "time", gridIndex: 1, min: start, max: end, show: false },
-      ],
-      yAxis: [
-        {
-          type: "value",
-          name: "kW",
-          min: 0,
-          max: scale.max,
-          interval: scale.step,
-          nameTextStyle: { color: muted, align: "left", padding: [0, 0, 0, -20] },
-          axisLabel: { color: muted, formatter: (value: number) => f.kw.format(value) },
-          splitLine: { lineStyle: { color: divider, type: "dashed" } },
-        },
-        { type: "value", gridIndex: 1, min: 0, max: 1, show: false },
-      ],
       series,
     };
   }
 
-  private strip(
-    runs: PriceRun[],
-    primary: string,
-    muted: string,
-    text: string,
-    money: Intl.NumberFormat,
-  ): Record<string, unknown> {
-    const hatch = this.hatch(muted);
+  /** T4: one rect per run of equal price, 1 px gaps, the outer corners rounded, the price inside when it fits. */
+  private strip(runs: PriceRun[], number: Intl.NumberFormat): Record<string, unknown> {
+    const primary = this.css("--primary-color", "#03a9f4");
+    const text = this.css("--primary-text-color", "#212121");
+    const hatch = this.hatch(this.css("--secondary-text-color", "#727272"));
+    const last = runs.length - 1;
     return {
-      name: this.priceName(this.config!),
+      name: this.priceName(),
       type: "custom",
       xAxisIndex: 1,
       yAxisIndex: 1,
       silent: true,
-      data: runs.map((run) => [run.start, run.end, run.price, run.alpha, run.estimated ? 1 : 0]),
-      renderItem: (
-        _params: unknown,
-        api: { value(i: number): number; coord(point: number[]): number[] },
-      ) => {
+      data: runs.map((run, i) => [run.start, run.end, run.price, run.alpha, run.estimated ? 1 : 0, i]),
+      renderItem: (_params: unknown, api: { value(i: number): number; coord(point: number[]): number[] }) => {
         const [x0, y0] = api.coord([api.value(0), 1]);
         const [x1, y1] = api.coord([api.value(1), 0]);
-        const width = Math.max(0, x1! - x0! - 1);
-        const shape = { x: x0!, y: y0!, width, height: y1! - y0! };
-        const children: Record<string, unknown>[] = [
-          { type: "rect", shape, style: { fill: withAlpha(primary, api.value(3)) } },
-        ];
+        const index = api.value(5);
+        const width = Math.max(0, x1! - x0! - (index === last ? 0 : 1));
+        const r = [index === 0 ? 6 : 0, index === last ? 6 : 0, index === last ? 6 : 0, index === 0 ? 6 : 0];
+        const shape = { x: x0!, y: y0!, width, height: y1! - y0!, r };
+        const children: Record<string, unknown>[] = [{ type: "rect", shape, style: { fill: withAlpha(primary, api.value(3)) } }];
         if (api.value(4) && hatch) children.push({ type: "rect", shape, style: { fill: hatch } });
         if (width >= 34) {
           children.push({
             type: "text",
             style: {
-              text: money.format(api.value(2)),
+              text: number.format(api.value(2)),
               x: x0! + width / 2,
               y: y0! + (y1! - y0!) / 2,
               align: "center",
               verticalAlign: "middle",
               fontSize: 11,
+              fontWeight: 500,
               fill: text,
             },
           });
@@ -690,6 +726,61 @@ export class PowerplanTimelineCard extends HTMLElement {
         return { type: "group", children };
       },
     };
+  }
+
+  /** T3: "Nå", midnight and the deadline as horizontal labels, and the strip's unit (T4), from the grid's pixels. */
+  private drawMarkers(): void {
+    const chart = this.chart;
+    if (!chart || !this.els) return;
+    const height = this.els.plot.clientHeight;
+    const width = this.els.plot.clientWidth;
+    if (!height || !width) return;
+    const text = this.css("--primary-text-color", "#212121");
+    const background = this.css("--primary-background-color", "#fafafa");
+    const muted = this.css("--secondary-text-color", "#727272");
+    const divider = this.css("--divider-color", "rgba(0,0,0,.12)");
+    const warning = this.css("--warning-color", "#ffa600");
+    const top = GRID.top;
+    const axis = height - GRID.bottom;
+    const elements: Record<string, unknown>[] = [];
+    for (const marker of this.markers) {
+      const [x] = chart.convertToPixel({ xAxisIndex: 0 }, [marker.at, 0]) as number[];
+      if (x === undefined || !Number.isFinite(x)) continue;
+      if (marker.kind === "now") {
+        elements.push(
+          { type: "line", silent: true, z: 50, shape: { x1: x, y1: Math.max(2, top - 10), x2: x, y2: axis }, style: { stroke: text, lineWidth: 1.5 } },
+          { type: "rect", silent: true, z: 51, shape: { x, y: Math.max(2, top - 26), width: 28, height: 16, r: 4 }, style: { fill: text } },
+          {
+            type: "text", silent: true, z: 52, x: x + 14, y: Math.max(2, top - 26) + 8,
+            style: { text: marker.text, fill: background, fontSize: 10, fontWeight: 500, align: "center", verticalAlign: "middle" },
+          },
+        );
+      } else if (marker.kind === "midnight") {
+        elements.push(
+          { type: "line", silent: true, z: 40, shape: { x1: x, y1: top - 4, x2: x, y2: axis }, style: { stroke: divider, lineWidth: 1 } },
+          {
+            type: "text", silent: true, z: 41, x: x + 6, y: top - 14,
+            style: { text: marker.text, fill: muted, fontSize: 11, align: "left", verticalAlign: "middle" },
+          },
+        );
+      } else {
+        const left = width - GRID.right - x < 100;
+        elements.push(
+          { type: "line", silent: true, z: 45, shape: { x1: x, y1: top, x2: x, y2: axis }, style: { stroke: warning, lineWidth: 1.5, lineDash: [4, 3] } },
+          {
+            type: "text", silent: true, z: 46, x: left ? x - 6 : x + 6, y: top + 8,
+            style: { text: marker.text, fill: text, fontSize: 11, align: left ? "right" : "left", verticalAlign: "middle" },
+          },
+        );
+      }
+    }
+    if (this.stripUnit) {
+      elements.push({
+        type: "text", silent: true, x: STRIP.left - 6, y: height - STRIP.bottom - STRIP.height / 2,
+        style: { text: this.stripUnit, fill: muted, fontSize: 10, align: "right", verticalAlign: "middle" },
+      });
+    }
+    chart.setOption({ graphic: elements }, { replaceMerge: ["graphic"] });
   }
 
   /** A 45° hatch for provisional prices (rule 5), as a canvas pattern ECharts can fill with. */
@@ -723,10 +814,8 @@ export class PowerplanTimelineCard extends HTMLElement {
     const ids = config.loads.map((load) => load.id);
     const readout = slotReadout(slot, ids);
     const dot = (color: string) =>
-      `<span style="display:inline-block;width:8px;height:8px;border-radius:4px;background:${color};margin-right:6px"></span>`;
-    const rows = [
-      `<b>${escape(`${f.day.format(slot.start)} ${f.clock.format(slot.start)}–${f.clock.format(slot.end)}`)}</b>`,
-    ];
+      `<span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${color};margin-right:8px"></span>`;
+    const rows = [`<b style="font-weight:500">${escape(`${f.day.format(slot.start)} ${f.clock.format(slot.start)}–${f.clock.format(slot.end)}`)}</b>`];
     for (const load of config.loads) {
       const kw = slot.loadKw[load.id] ?? 0;
       if (kw > 0) rows.push(`${dot(this.colorOf(load.id))}${escape(load.name)}: ${f.kw.format(kw)} kW`);
@@ -735,7 +824,8 @@ export class PowerplanTimelineCard extends HTMLElement {
       rows.push(`${escape(labels.other_usage ?? "")}: ${f.kw.format(slot.baselineKw)} kW`);
     }
     const [head, sub] = this.readoutLines(readout);
-    rows.push('<hr style="border:0;border-top:1px solid var(--divider-color);margin:4px 0">');
+    const divider = this.css("--divider-color", "rgba(0,0,0,.12)");
+    rows.push(`<div style="border-top:1px solid ${divider};margin:4px 0"></div>`);
     rows.push(escape(head.split(" · ").slice(1).join(" · ")));
     rows.push(escape(sub.split(" · ").slice(1).join(" · ")));
     return rows.filter(Boolean).join("<br>");
@@ -749,7 +839,8 @@ export class PowerplanTimelineCard extends HTMLElement {
     const period = this.period;
     if (!hass || !config || !period) return;
     const els = this.shell();
-    els.toggle.hidden = true;
+    this.sizePlot();
+    (els.toggle.parentElement as HTMLElement).hidden = true;
     els.readout.hidden = true;
     const labels = config.labels ?? {};
     const zone = timeZone(hass);
@@ -760,154 +851,168 @@ export class PowerplanTimelineCard extends HTMLElement {
       start: new Date(period.start.getFullYear(), period.start.getMonth(), 1),
       end: new Date(period.start.getFullYear(), period.start.getMonth() + 1, 1),
     };
-    const extra = grain === "hour" ? [e.ceiling, e.price].filter((id): id is string => Boolean(id)) : [];
-    const [usage, marks, peaks] = await Promise.all([
+    const hourly = grain === "hour";
+    // The price over the day: the forecast's own slots while it covers the day,
+    // else the statistics from an hour before, so a first partial hour can be dropped.
+    const early = { start: new Date(period.start.getTime() - HOUR_MS), end: period.end };
+    const forecast = hourly && e.price_forecast ? ((hass.states[e.price_forecast]?.attributes.slots as PriceSlot[] | undefined) ?? []) : [];
+    const covered = forecast.length > 0 && Date.parse(forecast[0]!.start) <= period.start.getTime();
+    const [usage, ceilingStats, priceStats, peaks, ranking] = await Promise.all([
       fetchStatistics(hass, period, sources, ["change"], grain),
-      fetchStatistics(hass, period, extra, ["mean"], "hour"),
-      e.window_used ? fetchStatistics(hass, grain === "hour" ? month : period, [e.window_used], ["max"], "day") : Promise.resolve({}),
+      hourly && e.ceiling ? fetchStatistics(hass, period, [e.ceiling], ["mean"], "hour").catch(() => ({})) : Promise.resolve({}),
+      hourly && e.price && !covered ? fetchStatistics(hass, early, [e.price], ["mean"], "hour").catch(() => ({})) : Promise.resolve({}),
+      !hourly && e.window_used ? fetchStatistics(hass, period, [e.window_used], ["max"], "day").catch(() => ({})) : Promise.resolve({}),
+      monthRanking(hass, month, { used: e.window_used, grid: sources, advice: e.advice ? hass.states[e.advice]?.attributes.items : undefined }, zone),
     ]);
     if (this.period !== period || !this.isConnected) return;
-    const starts = [...new Set(sources.flatMap((id) => (usage[id] ?? []).map((row) => row.start)))].sort((a, b) => a - b);
-    const empty = starts.length === 0;
+    const hours = gridHours(usage, sources, (id) => kwhScale(hass, id));
+    const empty = hours.length === 0;
     els.chart.hidden = empty;
     els.message.hidden = !empty;
     els.message.textContent = empty ? withoutDate(labels.collecting ?? "") : "";
-    els.legend.replaceChildren();
-    if (empty) return;
-    if (!this.chart) {
-      const { echarts } = await import("./chart");
-      if (this.chart || !this.isConnected) return;
-      this.chart = echarts.init(els.chart, undefined, { renderer: "canvas" });
+    if (empty) {
+      els.legend.replaceChildren();
+      return;
     }
+    if (!(await this.ensureChart())) return;
     const f = this.formats();
-    const step = grain === "hour" ? 3_600_000 : 86_400_000;
+    const step = hourly ? HOUR_MS : 86_400_000;
     const start = period.start.getTime();
     const end = period.end.getTime();
-    const muted = cssVar(this, "--secondary-text-color", "#727272");
-    const divider = cssVar(this, "--divider-color", "rgba(0,0,0,.12)");
-    const error = cssVar(this, "--error-color", "#db4437");
-    const warning = cssVar(this, "--warning-color", "#ffa600");
-    const grid = cssVar(this, "--energy-grid-consumption-color", "#488fc2");
-    const shades = [grid, withAlpha(grid, 0.6), withAlpha(grid, 0.35)];
-    const plotPx = Math.max(100, (this.width || 600) - AXIS_PX - 24);
+    const muted = this.css("--secondary-text-color", "#727272");
+    const text = this.css("--primary-text-color", "#212121");
+    const error = this.css("--error-color", "#db4437");
+    const warning = this.css("--warning-color", "#ffa600");
+    const gridColor = this.css("--energy-grid-consumption-color", "#488fc2");
+    const shades = [gridColor, withAlpha(gridColor, 0.6), withAlpha(gridColor, 0.35)];
+    const plotPx = Math.max(100, (this.width || 600) - 32 - GRID.left - GRID.right);
     const barWidth = Math.max(1, (plotPx * step) / (end - start) - 2);
-    const totals = new Map<number, number>();
+    const legend: LegendEntry[] = [];
     const series: Record<string, unknown>[] = sources.map((id, index) => {
-      const rows = new Map((usage[id] ?? []).map((row) => [row.start, row.change ?? 0]));
-      for (const t of starts) totals.set(t, (totals.get(t) ?? 0) + (rows.get(t) ?? 0));
+      const rows = new Map((usage[id] ?? []).map((row) => [row.start, (row.change ?? 0) * kwhScale(hass, id)]));
+      const name = String(hass.states[id]?.attributes.friendly_name ?? id);
+      legend.push({ name, color: shades[index % shades.length]!, series: true });
       return {
-        name: String(hass.states[id]?.attributes.friendly_name ?? id),
+        name,
         type: "bar",
         stack: "grid",
         barWidth,
         itemStyle: { color: shades[index % shades.length] },
-        data: starts.map((t) => [t + step / 2, rows.get(t) ?? 0]),
+        data: hours.map((row) => [row.start + step / 2, rows.get(row.start) ?? 0]),
       };
     });
-    const peakRows = (e.window_used ? (peaks as Record<string, StatRow[]>)[e.window_used] : undefined) ?? [];
-    const dayPeaks: DayPeak[] = peakRows.filter((row) => row.max != null).map((row) => [dayKey(row.start, zone), row.max!]);
-    const top = Math.max(...totals.values());
+    const top = Math.max(...hours.map((row) => row.max ?? 0));
     const markLines: Record<string, unknown>[] = [];
     const markPoints: Record<string, unknown>[] = [];
     let ceilingMax = 0;
-    if (grain === "hour") {
-      // One day: the limit, the month's third-highest day and the day's highest hour.
-      const ceiling = e.ceiling ? (marks[e.ceiling] ?? []) : [];
-      if (ceiling.length) {
-        ceilingMax = Math.max(...ceiling.map((row) => row.mean ?? 0));
+    this.markers = [];
+    this.stripUnit = "";
+    if (hourly) {
+      // D3: the limit across the whole day - the ceiling's statistics where they
+      // exist, the ceiling now elsewhere - in kWh per hour, as the bars are.
+      const ceilingRows = e.ceiling ? ((ceilingStats as Record<string, StatRow[]>)[e.ceiling] ?? []) : [];
+      const now = e.ceiling ? Number(hass.states[e.ceiling]?.state) : Number.NaN;
+      const byHour = new Map(ceilingRows.filter((row) => row.mean != null).map((row) => [row.start, row.mean!]));
+      const fallback = Number.isFinite(now) ? now : null;
+      const limitAt = (t: number) => byHour.get(t) ?? fallback;
+      const points = hours.map((row) => [row.start, limitAt(row.start)] as [number, number | null]);
+      if (points.some(([, v]) => v !== null)) {
+        const last = points[points.length - 1]!;
+        ceilingMax = Math.max(...points.map(([, v]) => v ?? 0));
+        const name = labels.limit ?? "";
         series.push({
-          name: labels.limit ?? "",
+          name,
           type: "line",
           step: "end",
           symbol: "none",
           lineStyle: { type: "dashed", width: 1.5, color: error },
-          endLabel: { show: true, formatter: fill(labels.limit_value ?? "{kw} kW", { kw: f.kw.format(ceilingMax) }), color: muted, fontSize: 11, align: "right", offset: [-4, -10] },
-          data: [...ceiling.map((row) => [row.start, row.mean]), [ceiling[ceiling.length - 1]!.end, ceiling[ceiling.length - 1]!.mean]],
+          endLabel: { show: true, formatter: fill(labels.limit_value_kwh ?? "{kw}", { kw: f.kw.format(ceilingMax) }), color: muted, fontSize: 11, align: "right", offset: [-4, -10] },
+          data: [...points, [Math.max(last[0] + step, end), last[1]]],
         });
+        legend.push({ name, color: error, swatch: "line", series: true });
       }
-      const third = nthHighest(dayPeaks.filter(([day]) => day !== dayKey(start, zone)));
+      // The month's third-highest day: a thin amber line (D3).
+      const third = [...ranking].sort((a, b) => b[1] - a[1])[2];
       if (third) {
         markLines.push({
           yAxis: third[1],
           lineStyle: { color: warning, width: 1, type: "dashed" },
-          label: { formatter: fill(labels.third_threshold ?? "{kw}", { kw: f.money.format(third[1]) }), position: "insideStartTop", color: warning, fontSize: 11 },
+          label: { formatter: fill(labels.third_threshold ?? "{kw}", { kw: f.number.format(third[1]) }), position: "insideStartTop", color: warning, fontSize: 11 },
         });
+        legend.push({ name: labels.top3_threshold ?? "", color: warning, swatch: "line" });
       }
-      const [bestAt, best] = [...totals.entries()].reduce((a, b) => (b[1] > a[1] ? b : a));
+      // The day's highest hour: an amber dot 4 px above its bar, named beside it.
+      const best = hours.reduce((a, b) => ((b.max ?? 0) > (a.max ?? 0) ? b : a));
       markPoints.push({
-        coord: [bestAt + step / 2, best],
+        coord: [best.start + step / 2, best.max],
         symbol: "circle",
         symbolSize: 7,
+        symbolOffset: [0, -8],
         itemStyle: { color: warning },
-        label: { show: true, position: "top", formatter: fill(labels.highest_hour ?? "{kwh}", { kwh: f.money.format(best) }), color: muted, fontSize: 11 },
+        label: { show: true, position: "right", formatter: fill(labels.highest_hour ?? "{kwh}", { kwh: f.number.format(best.max ?? 0) }), color: muted, fontSize: 11 },
       });
-      const prices = e.price ? (marks[e.price] ?? []) : [];
-      if (prices.length) {
-        const slots = prices.map((row) => ({
-          start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
-          ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {},
-        })) as TimelineSlot[];
-        series.push(this.strip(priceRuns(slots), cssVar(this, "--primary-color", "#03a9f4"), muted, cssVar(this, "--primary-text-color", "#212121"), f.money));
+      // The price strip: the forecast's slots, else hourly means without a first partial hour.
+      const priceSlots: TimelineSlot[] = covered
+        ? forecast
+            .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known" }))
+            .filter((slot) => slot.end > start && slot.start < end)
+            .map((slot) => ({ ...slot, hours: (slot.end - slot.start) / HOUR_MS, ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {} }))
+        : (() => {
+            const rows = e.price ? ((priceStats as Record<string, StatRow[]>)[e.price] ?? []) : [];
+            const first = rows[0];
+            // A statistic with no row the hour before began inside its first hour: that mean is partial.
+            const kept = first && first.start >= start ? rows.slice(1) : rows.filter((row) => row.start >= start);
+            return kept.map((row) => ({
+              start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
+              ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {},
+            }));
+          })();
+      if (priceSlots.length) {
+        series.push(this.strip(priceRuns(priceSlots), f.number));
+        this.stripUnit = f.unit;
+        legend.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
       }
+      const now2 = Date.now();
+      if (now2 >= start && now2 < end) this.markers.push({ at: now2, kind: "now", text: labels.now ?? "" });
     } else {
       // A longer range: an amber dot over each day that counts.
+      const peakRows = e.window_used ? ((peaks as Record<string, StatRow[]>)[e.window_used] ?? []) : [];
+      const dayPeaks: DayPeak[] = [...ranking, ...peakRows.filter((row) => row.max != null).map((row) => [dayKey(row.start, zone), row.max!] as DayPeak)];
       const counting = countingDays(dayPeaks);
-      for (const t of starts) {
-        if (counting.has(dayKey(t, zone))) {
-          markPoints.push({ coord: [t + step / 2, totals.get(t)], symbol: "circle", symbolSize: 6, symbolOffset: [0, -6], itemStyle: { color: warning }, label: { show: false } });
+      for (const row of hours) {
+        if (counting.has(dayKey(row.start, zone))) {
+          markPoints.push({ coord: [row.start + step / 2, row.max], symbol: "circle", symbolSize: 6, symbolOffset: [0, -6], itemStyle: { color: warning }, label: { show: false } });
         }
       }
     }
     // The marks ride on the top source, so they sit over the stack.
-    const last = sources.length - 1;
-    if (series[last]) {
-      series[last] = { ...series[last], markPoint: { silent: true, data: markPoints }, markLine: { silent: true, symbol: "none", data: markLines } };
+    const lastSource = sources.length - 1;
+    if (series[lastSource]) {
+      series[lastSource] = { ...series[lastSource], markPoint: { silent: true, data: markPoints }, markLine: { silent: true, symbol: "none", data: markLines } };
     }
     const scale = niceScale(Math.max(top * 1.15, ceilingMax * 1.2));
     const hasStrip = series.some((item) => item.type === "custom");
-    this.chart.setOption(
+    const dayLabel = new Intl.DateTimeFormat(hass.locale.language, { day: "numeric", month: "short", timeZone: zone });
+    const frame = this.frame(start, end, scale, "kWh", hourly ? 2 * HOUR_MS : 86_400_000 * Math.max(1, Math.ceil((end - start) / 86_400_000 / 10)), (value) => (hourly ? f.clock.format(value) : dayLabel.format(value)), hasStrip);
+    this.chart!.setOption(
       {
         animation: false,
-        grid: [
-          { left: 4, right: 8, top: 22, bottom: (hasStrip ? STRIP_PX : 0) + LABELS_PX + 2, containLabel: true },
-          { left: 4, right: 8, bottom: 0, height: hasStrip ? STRIP_PX : 0, containLabel: true },
-        ],
+        textStyle: { color: text, fontFamily: this.css("--ha-font-family-body", "Roboto, sans-serif") },
+        legend: { show: false, data: legend.filter((item) => item.series).map((item) => item.name) },
+        ...frame,
         tooltip: {
+          ...frame.tooltip,
           trigger: "axis",
-          axisPointer: { type: "line", lineStyle: { color: divider } },
-          valueFormatter: (value: number) => `${f.money.format(value)} kWh`,
+          axisPointer: { type: "line", lineStyle: { color: this.css("--divider-color", "rgba(0,0,0,.12)") } },
+          valueFormatter: (value: number) => `${f.number.format(value)} kWh`,
         },
-        xAxis: [
-          {
-            type: "time",
-            min: start,
-            max: end,
-            axisLine: { lineStyle: { color: divider } },
-            axisTick: { show: false },
-            axisLabel: {
-              color: muted,
-              hideOverlap: true,
-              formatter: (value: number) => (grain === "hour" ? f.clock.format(value) : new Intl.DateTimeFormat(hass.locale.language, { day: "numeric", month: "short", timeZone: zone }).format(value)),
-            },
-          },
-          { type: "time", gridIndex: 1, min: start, max: end, show: false },
-        ],
-        yAxis: [
-          {
-            type: "value",
-            name: "kWh",
-            min: 0,
-            max: scale.max,
-            interval: scale.step,
-            nameTextStyle: { color: muted },
-            axisLabel: { color: muted, formatter: (value: number) => f.kw.format(value) },
-            splitLine: { lineStyle: { color: divider, type: "dashed" } },
-          },
-          { type: "value", gridIndex: 1, min: 0, max: 1, show: false },
-        ],
         series,
       },
       { notMerge: true },
     );
+    for (const name of this.off) this.chart!.dispatchAction({ type: "legendUnSelect", name });
+    this.chart!.resize();
+    this.drawMarkers();
+    this.drawLegend(legend);
   }
 }

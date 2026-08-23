@@ -10,7 +10,9 @@ it under the appliance's name.
 A logbook card filters external events by the `entity_id` **in the event's
 data** - its database query and its live stream both read it there, never the
 describer's answer - so `Runtime.fire_event` adds it (`logbook_entity_id`)
-before the event goes on the bus.
+before the event goes on the bus. The describer's answer carries no
+`entity_id`: the 2026.9 frontend titles a line that has one with that
+entity's own name ("Planstatus"), not the `name` given here (D12 §5.6, D8).
 
 A describer is synchronous and has no user language, so the words are Home
 Assistant's own language, `hass.config.language`, from the translation cache
@@ -25,12 +27,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Final
 
-from homeassistant.components.logbook.const import (
-    LOGBOOK_ENTRY_ENTITY_ID,
-    LOGBOOK_ENTRY_MESSAGE,
-    LOGBOOK_ENTRY_NAME,
-)
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.components.logbook.const import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.translation import async_get_cached_translations
@@ -59,7 +56,7 @@ MESSAGES: Final[dict[EventKind, tuple[str, ...]]] = {
     EventKind.COMFORT_VIOLATION: ("comfort_violation", "comfort_violation_served"),
     EventKind.PEAK_WARNING: ("peak_warning", "peak_warning_cleared"),
     EventKind.DEADLINE_AT_RISK: ("deadline_at_risk",),
-    EventKind.PLAN_ADOPTED: ("plan_adopted", "plan_adopted_idle"),
+    EventKind.PLAN_ADOPTED: ("plan_adopted", "plan_adopted_now", "plan_adopted_idle"),
     EventKind.DEVICE_UNHEALTHY: ("device_unhealthy", "device_unhealthy_recovered"),
     EventKind.MONTH_CLOSED: ("month_closed",),
     EventKind.SAFE_MODE: ("safe_mode", "safe_mode_left"),
@@ -127,8 +124,10 @@ def _name(runtime: Runtime | None, data: Mapping[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def message_key(kind: EventKind, data: Mapping[str, Any]) -> str:  # noqa: PLR0911 - one answer per kind
-    """Return the `selector.logbook.options` key one event reads as."""
+def message_key(  # noqa: PLR0911 - one answer per kind
+    kind: EventKind, data: Mapping[str, Any], at: datetime | None = None
+) -> str:
+    """Return the `selector.logbook.options` key one event reads as, fired at `at`."""
     match kind:
         case EventKind.COMFORT_VIOLATION:
             return "comfort_violation_served" if data.get("served") else "comfort_violation"
@@ -136,7 +135,16 @@ def message_key(kind: EventKind, data: Mapping[str, Any]) -> str:  # noqa: PLR09
             return "peak_warning_cleared" if data.get("cleared") else "peak_warning"
         case EventKind.PLAN_ADOPTED:
             idle = not data.get("next_start") or not _float(data.get("planned_kwh"))
-            return "plan_adopted_idle" if idle else "plan_adopted"
+            if idle:
+                return "plan_adopted_idle"
+            # A plan that already draws has "now" as its next start: say so,
+            # never the minute the event fired ("fra 22:08").
+            start = dt_util.parse_datetime(str(data.get("next_start")))
+            return (
+                "plan_adopted_now"
+                if at is not None and start is not None and start <= at
+                else "plan_adopted"
+            )
         case EventKind.DEVICE_UNHEALTHY:
             return "device_unhealthy_recovered" if data.get("recovered") else "device_unhealthy"
         case EventKind.SAFE_MODE:
@@ -244,12 +252,16 @@ class _Blank(dict[str, str]):
 
 
 def describe(
-    kind: EventKind, data: Mapping[str, Any], strings: Mapping[str, str], language: str
+    kind: EventKind,
+    data: Mapping[str, Any],
+    strings: Mapping[str, str],
+    language: str,
+    at: datetime | None = None,
 ) -> str:
     """Return one event's line in `language` from the flat `strings` Home Assistant cached."""
     text = Text(language, strings)
     currency = str(data.get("currency") or "")
-    template = strings.get(f"{_OPTIONS}{message_key(kind, data)}") or strings.get(
+    template = strings.get(f"{_OPTIONS}{message_key(kind, data, at)}") or strings.get(
         f"{_OPTIONS}{kind.value}", kind.value.replace("_", " ").capitalize()
     )
     return template.format_map(_Blank(_placeholders(kind, data, text, currency)))
@@ -276,14 +288,10 @@ def async_describe_events(
                 data.setdefault("currency", runtime.build.cfg.currency)
             language = hass.config.language
             strings = async_get_cached_translations(hass, language, "selector", DOMAIN)
-            line = {
+            return {
                 LOGBOOK_ENTRY_NAME: _name(runtime, data),
-                LOGBOOK_ENTRY_MESSAGE: describe(kind, data, strings, language),
+                LOGBOOK_ENTRY_MESSAGE: describe(kind, data, strings, language, event.time_fired),
             }
-            entity_id = data.get(ATTR_ENTITY_ID)
-            if isinstance(entity_id, str):
-                line[LOGBOOK_ENTRY_ENTITY_ID] = entity_id
-            return line
 
         return _describe
 

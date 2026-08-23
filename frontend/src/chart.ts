@@ -1,12 +1,14 @@
-// ECharts, with only what the timeline draws - loaded the first time a
+// ECharts, with only what the timeline draws (the markers are `graphic`, T3) - loaded the first time a
 // timeline card renders, so the module every page loads stays small (D12 §5.5).
 
 import { BarChart, CustomChart, LineChart } from "echarts/charts";
 import {
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
+  MarkPointComponent,
   TooltipComponent,
 } from "echarts/components";
 import * as echarts from "echarts/core";
@@ -16,10 +18,12 @@ echarts.use([
   BarChart,
   CustomChart,
   LineChart,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
   MarkAreaComponent,
   MarkLineComponent,
+  MarkPointComponent,
   TooltipComponent,
   CanvasRenderer,
 ]);

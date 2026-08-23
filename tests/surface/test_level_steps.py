@@ -56,9 +56,10 @@ async def test_14_the_level_sensor_carries_the_ladder(
     assert steps[-1]["to_kw"] is None
     assert [row["fee"] for row in steps] == [money_text(step.fee_per_period) for step in table]
 
-    entity = hass.data["entity_components"]["sensor"].get_entity(entity_id)
-    assert entity is not None
-    assert "steps" in entity._unrecorded_attributes
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state_info is not None
+    assert "steps" in state.state_info["unrecorded_attributes"]
 
 
 async def test_14_no_step_table_no_steps(runtime: Runtime, monkeypatch: pytest.MonkeyPatch) -> None:

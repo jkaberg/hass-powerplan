@@ -3,6 +3,7 @@
 // the element is defined, so a card never waits on the strategy or vice versa.
 
 import { PowerplanPeriodSummary } from "./period-summary";
+import { PowerplanRunsCard } from "./runs-card";
 import { PowerplanTimelineCard } from "./timeline-card";
 import { PowerplanWindowCard } from "./window-card";
 
@@ -13,3 +14,4 @@ const define = (name: string, element: CustomElementConstructor) => {
 define("powerplan-timeline-card", PowerplanTimelineCard);
 define("powerplan-window-card", PowerplanWindowCard);
 define("powerplan-period-summary", PowerplanPeriodSummary);
+define("powerplan-runs-card", PowerplanRunsCard);

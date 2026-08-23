@@ -60,6 +60,10 @@ SITE_MANUFACTURER = "PowerPlan"
 _GIT_LEVELS = 3
 _SHA = re.compile(r"[0-9a-f]{40}")
 
+#: `Entity.__combined_unrecorded_attributes` after name mangling: the set the
+#: recorder reads (`State.state_info`), built per class, never per instance.
+_COMBINED_UNRECORDED = "_Entity__combined_unrecorded_attributes"
+
 
 def unique_id(entry_id: str, key: str, subentry_id: str | None = None) -> str:
     """Return the unique id D8 §2 prescribes: entry, optional subentry, key - never a name."""
@@ -204,6 +208,16 @@ class PowerplanEntity(CoordinatorEntity[DataUpdateCoordinator["Snapshot"]]):
         self._attr_unique_id = unique_id(runtime.entry.entry_id, key)
         self._attr_device_info = site_device_info(runtime)
         self._last_digest: str | None = None
+
+    def _set_unrecorded(self, names: frozenset[str]) -> None:
+        """Keep `names` out of the recorder for this entity (INV-61).
+
+        HA folds `_unrecorded_attributes` into a per-class set once, in
+        `Entity.__init_subclass__`; an assignment on the instance never reaches
+        the recorder, so the folded set is shadowed here too (D-0493).
+        """
+        self._unrecorded_attributes = names
+        setattr(self, _COMBINED_UNRECORDED, getattr(self, _COMBINED_UNRECORDED) | names)
 
     @property
     def snapshot(self) -> Snapshot | None:

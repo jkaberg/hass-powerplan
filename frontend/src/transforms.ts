@@ -430,29 +430,52 @@ export interface MonthGauge {
 }
 
 /**
+ * The ladder index of the household's step target (M1): `step_2` → 2; else
+ * the step whose lower bound the select names (`lower_kw`); else the step
+ * that holds `target_kw`. `null` when the select says none of these (`auto`
+ * before it has resolved a step), and the gauge then takes the current step.
+ * `target_kw` may be `null` on the live select, so it is never read through
+ * `Number()`, which turns `null` into 0.
+ */
+export function targetStep(
+  option: string | undefined,
+  attributes: Record<string, unknown> | undefined,
+  steps: readonly TariffStep[],
+): number | null {
+  const named = /^step_(\d+)$/.exec(option ?? "");
+  if (named && Number(named[1]) < steps.length) return Number(named[1]);
+  const lower = attributes?.lower_kw;
+  if (typeof lower === "number") {
+    const index = steps.findIndex((step) => Math.abs(step.from_kw - lower) < 1e-9);
+    if (index >= 0) return index;
+  }
+  const kw = attributes?.target_kw;
+  if (typeof kw === "number" && Number.isFinite(kw)) {
+    const index = steps.findIndex((step) => step.to_kw === null || kw <= step.to_kw + 1e-9);
+    if (index >= 0) return index;
+  }
+  return null;
+}
+
+/**
  * Lay the tariff's steps on the arc: 0 to the upper bound two steps above the
  * current one (the highest finite bound where there are fewer), so the next
- * step is shown whole with room beyond it (D-0463). Steps whose lower bound is
- * under the target are green, the next amber, the rest red (D-0452).
+ * step is shown whole with room beyond it (D-0463). Colour by position against
+ * the target step (M1): up to it green, the next amber, above that red; the
+ * current step opaque, the rest at 28 %.
  */
-export function monthGauge(metric: number, steps: readonly TariffStep[], targetKw: number | null): MonthGauge {
+export function monthGauge(metric: number, steps: readonly TariffStep[], target: number | null): MonthGauge {
   let index = steps.findIndex((step) => step.to_kw === null || metric < step.to_kw);
   if (index < 0) index = steps.length - 1;
   const finite = steps.map((step) => step.to_kw).filter((kw): kw is number => kw !== null);
   const top = finite.length ? Math.max(...finite) : Math.max(metric * 1.2, 1);
   const upperOf = (i: number) => steps[Math.min(i, steps.length - 1)]?.to_kw ?? top;
   const max = Math.max(Math.min(upperOf(index + 2), top), metric, upperOf(index));
-  const target = targetKw ?? upperOf(index);
-  let amber = false;
+  const goal = target ?? index;
   const segments = steps
     .filter((step) => step.from_kw < max)
     .map((step, i) => {
-      let tone: Tone = "alert";
-      if (step.from_kw < target - 1e-9) tone = "ok";
-      else if (!amber) {
-        amber = true;
-        tone = "warn";
-      }
+      const tone: Tone = i <= goal ? "ok" : i === goal + 1 ? "warn" : "alert";
       return { from: step.from_kw, to: Math.min(step.to_kw ?? max, max), tone, current: i === index };
     });
   return {
@@ -612,4 +635,80 @@ export function nthHighest(peaks: readonly DayPeak[], n = 3): DayPeak | undefine
 /** A local date key `YYYY-MM-DD` for an instant in `timeZone`. */
 export function dayKey(instant: number, timeZone?: string): string {
   return new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", timeZone }).format(instant);
+}
+
+// --------------------------------------------------------------------------- //
+// Money, runs and type (D12 §5.9, §5.11)
+// --------------------------------------------------------------------------- //
+
+/** Money in the viewer's language and the site's currency (G7): nb → "2,78 kr", en → "NOK 2.78". */
+export function moneyFormat(locale: string, currency: string, digits = 2): Intl.NumberFormat {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  } catch {
+    return new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  }
+}
+
+/** The currency as the viewer's language writes it beside a number: "kr" in nb, "NOK" in en (G7). */
+export function currencyWord(locale: string, currency: string): string {
+  const part = moneyFormat(locale, currency)
+    .formatToParts(1)
+    .find((p) => p.type === "currency")?.value;
+  return part ?? currency;
+}
+
+/** `sensor.<site>_plan` → `by_load`, one load's row (D8 §5.5). */
+export interface ByLoad {
+  planned_kwh?: number | null;
+  next_start?: string | null;
+  cost?: string | null;
+}
+
+export interface RunRow {
+  id: string;
+  name: string;
+  color: string;
+  /** The slot start, or `null` for a run already going ("nå"). */
+  start: number | null;
+  kwh: number;
+  cost: number;
+}
+
+/** The runs list (N8): each load with planned energy, by start, "now" first, and the sum. */
+export function runRows(
+  byLoad: Record<string, ByLoad> | undefined,
+  loads: ReadonlyArray<{ id: string; name: string; color: string }>,
+  now: number,
+  minKwh = 0.05,
+): { rows: RunRow[]; kwh: number; cost: number } {
+  const rows: RunRow[] = [];
+  for (const load of loads) {
+    const row = byLoad?.[load.id];
+    const kwh = Number(row?.planned_kwh ?? 0);
+    const at = row?.next_start ? Date.parse(row.next_start) : Number.NaN;
+    if (!(kwh >= minKwh) || Number.isNaN(at)) continue;
+    const cost = Number(String(row?.cost ?? "0").split(" ")[0]);
+    rows.push({ ...load, start: at <= now ? null : at, kwh, cost: Number.isFinite(cost) ? cost : 0 });
+  }
+  rows.sort((a, b) => (a.start ?? -Infinity) - (b.start ?? -Infinity));
+  return {
+    rows,
+    kwh: rows.reduce((sum, row) => sum + row.kwh, 0),
+    cost: rows.reduce((sum, row) => sum + row.cost, 0),
+  };
+}
+
+/**
+ * The hour gauge's value size (H1): 36 px, or less so that the text stays
+ * inside the arc - at most `2 × (r − stroke/2 − 12)` wide, a digit ≈ 0,56 em.
+ */
+export function gaugeFont(chars: number, radius: number, stroke: number, max = 36): number {
+  const room = 2 * (radius - stroke / 2 - 12);
+  return Math.max(20, Math.min(max, Math.floor(room / (0.56 * Math.max(chars, 1)))));
 }

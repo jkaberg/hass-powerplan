@@ -196,6 +196,7 @@ HLD §9 phase 6.
 | **6.4e Dashboard redesign: month gauge and History's data** | the month gauge; `last_reset`; logbook lines | D12 §5.3, §5.6 | D12 §9 14, 15 | 6.4d |
 | **6.4f Dashboard redesign: History follows the picker** | History on the Energy period picker | D12 §5.7 | D12 §9 16 | 6.4e |
 | **6.4g Dashboard redesign: reasons** | translatable reasons; the plan's 24 h state | D12 §5.6 | D12 §9 17 | 6.4f |
+| **6.4h Dashboard: polish** | shared styles; the runs card; clock strings on `plan_status` | D12 §5.11, §5.1, §5.3, §5.6 | D12 §9 19 | 6.4g |
 
 ### Phase 7 - Solar and the battery together
 
@@ -433,6 +434,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4e | Dashboard redesign: month gauge and History's data | done |
 | 6.4f | Dashboard redesign: History follows the picker | done |
 | 6.4g | Dashboard redesign: reasons | done |
+| 6.4h | Dashboard: polish | done |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |

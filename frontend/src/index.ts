@@ -11,6 +11,8 @@ import { PowerplanDashboardStrategy } from "./strategy";
 
 /** The cards' module, named by its content hash; the build puts the name in (esbuild `define`). */
 declare const CARDS_MODULE: string;
+/** The build's hash, logged so Q/A can tell which bundle the browser runs. */
+declare const BUILD_HASH: string;
 
 const DOCS = "https://github.com/jkaberg/hass-powerplan/blob/main/docs/dashboard.md";
 
@@ -22,6 +24,7 @@ interface Registry<T> {
 if (!customElements.get("ll-strategy-dashboard-powerplan")) {
   customElements.define("ll-strategy-dashboard-powerplan", PowerplanDashboardStrategy);
 }
+console.info("PowerPlan frontend", BUILD_HASH);
 
 const registry = window as unknown as Registry<{ type: string } & Record<string, unknown>>;
 registry.customCards ??= [];
@@ -44,6 +47,12 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
       type: "powerplan-period-summary",
       name: "PowerPlan period summary",
       description: "Cost, savings, grid energy and the capacity step for the period the History picker shows.",
+      documentationURL: DOCS,
+    },
+    {
+      type: "powerplan-runs-card",
+      name: "PowerPlan next runs",
+      description: "Each appliance's next planned run, its energy and its cost.",
       documentationURL: DOCS,
     },
   );

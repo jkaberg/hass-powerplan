@@ -1,32 +1,58 @@
-// `powerplan-period-summary` (D12 §5.7): the History picker's period in four
-// cells drawn like HA's `statistic` card - cost, savings, grid energy, and
-// the capacity step (the month in progress) or the highest hour (a day; a
-// longer range: the highest daily peak). It follows the picker through
-// `followPeriod`, fetches long-term statistics once per period (and once an
-// hour, as the recorder compiles them), and opens an entity's more-info on tap.
+// `powerplan-period-summary` (D12 §5.7): the History picker's period. The
+// default view is four cells drawn like HA's `statistic` card - cost,
+// savings, grid energy, and the capacity step (the month in progress) or the
+// highest hour (a day; a longer range: the highest daily peak). `view:
+// appliances` draws each appliance's saving as a diverging bar, `view: table`
+// cost and saving by appliance with a sum (D5, D6). Every view follows the
+// picker through `followPeriod`, fetches long-term statistics once per period
+// (and once an hour, as the recorder compiles them), and opens an entity's
+// more-info on tap.
 
-import { calendarMonth, fetchStatistics, followPeriod, highest, type Period, type StatRow, totalChange } from "./energy";
+import {
+  calendarMonth,
+  fetchStatistics,
+  followPeriod,
+  gridHours,
+  highest,
+  kwhScale,
+  monthRanking,
+  type Period,
+  type StatRow,
+  totalChange,
+} from "./energy";
 import { type HomeAssistant, moreInfo, numeric, timeZone } from "./ha";
+import { ppStyles } from "./styles";
 import {
   countsDecision,
   formatSummary,
   inMonthOf,
+  moneyFormat,
   periodKind,
   type PeriodKind,
   sumChanges,
   summaryMode,
   type SummaryMode,
   toKw,
-  topEntries,
   withoutDate,
 } from "./transforms";
 
 type Key = "cost" | "savings" | "metric" | "level" | "window_used" | "advice";
 
+interface SummaryLoad {
+  id: string;
+  name: string;
+  color: string;
+  cost_month?: string;
+  savings_month?: string;
+}
+
 interface SummaryConfig {
   entry_id: string;
-  entities: Partial<Record<Key, string>>;
+  view?: "summary" | "appliances" | "table";
+  entities?: Partial<Record<Key, string>>;
   grid_entities?: string[];
+  loads?: SummaryLoad[];
+  currency?: string;
   labels?: Record<string, string>;
 }
 
@@ -36,9 +62,9 @@ interface Fetched {
   kind: PeriodKind;
   mode: SummaryMode;
   stats: Record<string, StatRow[]>;
-  /** The highest hour's (or day's) `max` of `window_used`, in kWh. */
+  /** The highest hour's (or day's) energy: `window_used`'s `max`, else the grid sources' hourly sum. */
   peak: StatRow | undefined;
-  /** For a day outside the month in progress: that month's daily peaks as `[day, kW]`. */
+  /** For a day: the month's days ranked, `[YYYY-MM-DD, kWh]`. */
   ranking?: Array<[string, number]>;
   /** The earliest statistics row after the period, by id, for a cell that has none. */
   since: Record<string, number>;
@@ -61,9 +87,6 @@ const escape = (value: string) =>
 const fill = (text: string, values: Record<string, string>) =>
   text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
 
-/** Energy statistics in kWh, whatever unit the source entity reports. */
-const toKwh = (value: number, unit: unknown) => (unit === "Wh" ? value / 1000 : unit === "MWh" ? value * 1000 : value);
-
 export class PowerplanPeriodSummary extends HTMLElement {
   private config?: SummaryConfig;
   private hassRef?: HomeAssistant;
@@ -75,7 +98,9 @@ export class PowerplanPeriodSummary extends HTMLElement {
   private sequence = 0;
 
   public setConfig(config: SummaryConfig): void {
-    if (!config?.entities?.cost) throw new Error("powerplan-period-summary needs entities.cost");
+    const view = config?.view ?? "summary";
+    if (view === "summary" && !config?.entities?.cost) throw new Error("powerplan-period-summary needs entities.cost");
+    if (view !== "summary" && !config?.loads?.length) throw new Error(`powerplan-period-summary view: ${view} needs loads`);
     this.config = config;
     this.key = [];
     this.fetched = undefined;
@@ -90,7 +115,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
     // The recorder compiles statistics each hour: fetch the period again then.
     if (this.period && Math.floor(Date.now() / HOUR_MS) !== this.fetchedHour) void this.load(this.period);
     const key = [
-      ...Object.values(config.entities).map((id) => (id ? hass.states[id] : undefined)),
+      ...Object.values(config.entities ?? {}).map((id) => (id ? hass.states[id] : undefined)),
       hass.language,
       hass.themes.darkMode,
       this.fetched,
@@ -110,11 +135,11 @@ export class PowerplanPeriodSummary extends HTMLElement {
   }
 
   public getCardSize(): number {
-    return 2;
+    return this.config?.view && this.config.view !== "summary" ? 4 : 2;
   }
 
-  public getGridOptions(): { columns: "full"; rows: number; min_rows: number } {
-    return { columns: "full", rows: 2, min_rows: 2 };
+  public getGridOptions(): Record<string, number | string> {
+    return { columns: "full", rows: "auto" };
   }
 
   private follow(): void {
@@ -122,6 +147,10 @@ export class PowerplanPeriodSummary extends HTMLElement {
       this.period = period;
       void this.load(period);
     });
+  }
+
+  private get view(): "summary" | "appliances" | "table" {
+    return this.config?.view ?? "summary";
   }
 
   private async load(period: Period): Promise<void> {
@@ -134,31 +163,47 @@ export class PowerplanPeriodSummary extends HTMLElement {
     const now = new Date();
     const kind = periodKind(period, zone);
     const mode = summaryMode(kind, inMonthOf(period.start, now, zone));
-    const { cost, savings, window_used: used } = config.entities;
-    const changes = [cost, savings, ...(config.grid_entities ?? [])].filter((id): id is string => Boolean(id));
     const safe = (promise: Promise<Record<string, StatRow[]>>) => promise.catch(() => ({}) as Record<string, StatRow[]>);
 
-    const [changeStats, maxStats] = await Promise.all([
+    if (this.view !== "summary") {
+      // D5, D6: each appliance's cost and saving over the picked range.
+      const ids = (config.loads ?? []).flatMap((load) => [load.cost_month, load.savings_month]).filter((id): id is string => Boolean(id));
+      const stats = await safe(fetchStatistics(hass, period, ids, ["change"]));
+      if (sequence !== this.sequence) return;
+      this.fetched = { period, kind, mode, stats, peak: undefined, since: {} };
+      this.key = [];
+      this.hass = hass;
+      return;
+    }
+
+    const entities = config.entities ?? {};
+    const { cost, savings, window_used: used } = entities;
+    const grid = config.grid_entities ?? [];
+    const changes = [cost, savings, ...grid].filter((id): id is string => Boolean(id));
+    const [changeStats, maxStats, gridByHour] = await Promise.all([
       safe(fetchStatistics(hass, period, changes, ["change"])),
       used && mode !== "capacity" ? safe(fetchStatistics(hass, period, [used], ["max"])) : Promise.resolve({}),
+      mode === "hour" && grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({}),
     ]);
     const stats: Record<string, StatRow[]> = { ...changeStats, ...maxStats };
-    const peak = used ? highest(stats[used]) : undefined;
+    // D2: before `window_used`'s statistics began, the grid sources' hourly sum is the highest hour.
+    const peak =
+      (used ? highest(stats[used]) : undefined) ?? highest(gridHours(gridByHour, grid, (id) => kwhScale(hass, id)));
 
-    // A day outside the month in progress: rank that month's days ourselves.
     let ranking: Array<[string, number]> | undefined;
-    if (mode === "hour" && used && !inMonthOf(period.start, now, zone)) {
-      const month = calendarMonth(period.start);
-      const daily = (await safe(fetchStatistics(hass, month, [used], ["max"], "day")))[used] ?? [];
-      const day = new Intl.DateTimeFormat(hass.locale.language, { day: "numeric", month: "short", timeZone: zone });
-      ranking = daily
-        .filter((row) => row.max !== null && row.max !== undefined)
-        .map((row) => [day.format(row.start), row.max!] as [string, number]);
+    if (mode === "hour") {
+      ranking = await monthRanking(
+        hass,
+        calendarMonth(period.start),
+        { used, grid, advice: entities.advice ? hass.states[entities.advice]?.attributes.items : undefined },
+        zone,
+        now,
+      );
     }
 
     // A cell with no rows in the period says since when statistics exist, if they do.
     const since: Record<string, number> = {};
-    const empty = [...changes, ...(used && mode !== "capacity" ? [used] : [])].filter((id) => !stats[id]?.length);
+    const empty = changes.filter((id) => !stats[id]?.length);
     if (empty.length && period.end < now) {
       const after = await safe(fetchStatistics(hass, { start: period.end, end: now }, empty, ["change", "max"], "day"));
       for (const id of empty) {
@@ -188,15 +233,26 @@ export class PowerplanPeriodSummary extends HTMLElement {
         if ((event as KeyboardEvent).key === "Enter") open(event);
       });
     }
+    if (this.view === "appliances") this.renderAppliances(hass, config);
+    else if (this.view === "table") this.renderTable(hass, config);
+    else this.renderSummary(hass, config);
+  }
+
+  // ------------------------------------------------------------ the summary
+
+  private renderSummary(hass: HomeAssistant, config: SummaryConfig): void {
     const labels = config.labels ?? {};
+    const entities = config.entities ?? {};
     const locale = hass.locale.language;
     const zone = timeZone(hass);
     const fetched = this.fetched;
     const state = (key: Key) => {
-      const id = config.entities[key];
+      const id = entities[key];
       return id ? hass.states[id] : undefined;
     };
     const date = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: zone });
+    const isoDate = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" });
+    const hour = new Intl.DateTimeFormat(locale, { hour: "2-digit", timeZone: zone });
     const collecting = (ids: Array<string | undefined>) => {
       const found = ids.map((id) => (id ? fetched?.since[id] : undefined)).filter((t): t is number => t !== undefined);
       const label = labels.collecting ?? "";
@@ -217,7 +273,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
       ["cost", "mdi:cash"],
       ["savings", "mdi:piggy-bank"],
     ] as const) {
-      const id = config.entities[key];
+      const id = entities[key];
       if (!id) continue;
       const total = totalChange(fetched?.stats[id]);
       cells.push(
@@ -241,12 +297,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
       const kwh = fetched
         ? sumChanges(
             Object.fromEntries(
-              grid.map((id) => [
-                id,
-                fetched.stats[id]?.map((row) => ({
-                  change: toKwh(row.change ?? 0, hass.states[id]?.attributes.unit_of_measurement),
-                })),
-              ]),
+              grid.map((id) => [id, fetched.stats[id]?.map((row) => ({ change: (row.change ?? 0) * kwhScale(hass, id) }))]),
             ),
             grid,
           )
@@ -266,79 +317,69 @@ export class PowerplanPeriodSummary extends HTMLElement {
       const metric = numeric(metricEntity);
       cells.push(
         metric === null
-          ? missing(name, "mdi:flash", [], config.entities.metric)
+          ? missing(name, "mdi:flash", [], entities.metric)
           : {
               name,
               icon: "mdi:flash",
               value: formatSummary(toKw(metric, metricEntity?.attributes.unit_of_measurement), "kw", locale),
               unit: "kW",
               sub: state("level")?.state ?? "",
-              entity: config.entities.metric,
+              entity: entities.metric,
             },
       );
-    } else if (config.entities.window_used) {
-      const used = config.entities.window_used;
+    } else if (entities.window_used || grid.length) {
+      const used = entities.window_used;
       const name = labels.summary_highest_hour ?? "";
-      const peak = fetched?.peak?.max;
-      if (peak === null || peak === undefined) {
+      const peak = fetched?.peak;
+      if (peak?.max === null || peak?.max === undefined) {
         cells.push(missing(name, "mdi:flash", [used], used));
       } else {
         let sub = "";
         if (fetched!.mode === "hour") {
-          const ranking =
-            fetched!.ranking ??
-            topEntries(state("advice")?.attributes.items).map(
-              ([day, kw]) =>
-                [new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" }).format(Date.parse(day)), kw] as [
-                  string,
-                  number,
-                ],
-            );
-          const decision = countsDecision(peak, ranking);
-          sub = decision.counts
+          const decision = countsDecision(peak.max, fetched!.ranking ?? []);
+          const verdict = decision.counts
             ? (labels.counts ?? "")
             : fill(labels.not_counts ?? "", {
-                date: decision.third![0],
+                date: isoDate.format(Date.parse(decision.third![0])),
                 kw: formatSummary(decision.third![1], "kw", locale),
               });
+          sub = `${hour.format(peak.start)}–${hour.format(peak.end)} · ${verdict}`;
         }
-        cells.push({ name, icon: "mdi:flash", value: formatSummary(peak, "kw", locale), unit: "kWh", sub, entity: used });
+        cells.push({ name, icon: "mdi:flash", value: formatSummary(peak.max, "kw", locale), unit: "kWh", sub, entity: used });
       }
     }
 
     const subtitle = fetched ? this.subtitle(fetched, locale, zone) : "";
     this.shadowRoot!.innerHTML = `
       <style>
-        :host { display: block; height: 100%; }
-        ha-card { height: 100%; box-sizing: border-box; padding: 12px 16px 16px; container-type: inline-size;
-                  display: flex; flex-direction: column; gap: 8px; }
-        .period { font-size: 14px; color: var(--secondary-text-color); min-height: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr)); gap: 16px; }
-        @container (max-width: 500px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-        .cell { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-        .name { font-size: 14px; color: var(--secondary-text-color); line-height: 20px;
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .header ha-icon { color: var(--state-icon-color, var(--paper-item-icon-color, #44739e)); flex: none;
-                          --mdc-icon-size: 24px; }
-        .info { display: flex; align-items: baseline; gap: 4px; margin-top: 4px; }
-        .value { font-size: 28px; line-height: 1.1; color: var(--primary-text-color); white-space: nowrap; }
-        .unit { font-size: 14px; color: var(--primary-text-color); }
-        .sub { font-size: 12px; color: var(--secondary-text-color); margin-top: 2px; }
+        ${ppStyles}
+        ha-card { container-type: inline-size; }
+        .pp-content { padding-bottom: 0; }
+        .period { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); min-height: 16px; }
+        .grid { display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr)); margin: 8px -16px 0; }
+        .cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 16px; cursor: pointer;
+                border-left: 1px solid var(--divider-color); }
+        .cell:first-child { border-left: 0; }
+        .sub { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
+        @container (max-width: 600px) {
+          .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .cell:nth-child(odd) { border-left: 0; }
+          .cell:nth-child(n + 3) { border-top: 1px solid var(--divider-color); }
+        }
       </style>
-      <ha-card>
+      <ha-card><div class="pp-content">
         <div class="period">${escape(subtitle)}</div>
         <div class="grid">${cells
           .map(
             (cell) => `
           <div class="cell" ${cell.entity ? `data-entity="${escape(cell.entity)}" role="button" tabindex="0"` : ""}>
-            <div class="header"><span class="name">${escape(cell.name)}</span><ha-icon icon="${cell.icon}"></ha-icon></div>
-            <div class="info"><span class="value">${escape(cell.value)}</span>${cell.unit ? `<span class="unit">${escape(cell.unit)}</span>` : ""}</div>
+            <div class="pp-stat-head"><span class="pp-stat-name">${escape(cell.name)}</span><ha-icon icon="${cell.icon}"></ha-icon></div>
+            <div class="pp-stat-value">${escape(cell.value)}${cell.unit ? `<span class="pp-stat-unit">${escape(cell.unit)}</span>` : ""}</div>
             ${cell.sub ? `<div class="sub">${escape(cell.sub)}</div>` : ""}
           </div>`,
           )
           .join("")}</div>
-      </ha-card>`;
+      </div></ha-card>`;
   }
 
   /** "tirsdag 22. september", "september 2026", or "1. sep. – 23. sep." for anything else. */
@@ -352,5 +393,83 @@ export class PowerplanPeriodSummary extends HTMLElement {
     }
     const format = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: zone });
     return `${format.format(period.start)} – ${format.format(new Date(period.end.getTime() - 1))}`;
+  }
+
+  // ------------------------------------------------- per appliance (D5, D6)
+
+  private totals(config: SummaryConfig): Array<SummaryLoad & { cost: number; saved: number }> {
+    const stats = this.fetched?.stats ?? {};
+    return (config.loads ?? []).map((load) => ({
+      ...load,
+      cost: load.cost_month ? (totalChange(stats[load.cost_month]) ?? 0) : 0,
+      saved: load.savings_month ? (totalChange(stats[load.savings_month]) ?? 0) : 0,
+    }));
+  }
+
+  private signed(value: number, locale: string): string {
+    const text = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: "exceptZero" }).format(value);
+    return text.replace("-", "−");
+  }
+
+  private renderAppliances(hass: HomeAssistant, config: SummaryConfig): void {
+    const locale = hass.locale.language;
+    const rows = this.totals(config)
+      .filter((load) => load.savings_month)
+      .sort((a, b) => b.saved - a.saved);
+    const most = Math.max(...rows.map((row) => Math.abs(row.saved)), 0.01);
+    this.shadowRoot!.innerHTML = `
+      <style>
+        ${ppStyles}
+        .bar { position: relative; flex: 0 0 38%; height: 8px; }
+        .bar::before { content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px;
+                       border-left: 1px solid var(--divider-color); }
+        .bar span { position: absolute; top: 0; height: 8px; border-radius: 4px; opacity: 0.8; }
+        .pp-num { min-width: 56px; }
+      </style>
+      <ha-card><div class="pp-content"><div class="pp-list">${
+        this.fetched
+          ? rows
+              .map((row) => {
+                const share = (50 * Math.abs(row.saved)) / most;
+                const side =
+                  row.saved >= 0
+                    ? `left:50%;width:${share.toFixed(1)}%;background:var(--success-color)`
+                    : `right:50%;width:${share.toFixed(1)}%;background:var(--error-color)`;
+                return `<div class="pp-row" data-entity="${escape(row.savings_month!)}" role="button" tabindex="0">
+                  <span class="pp-dot" style="background:${escape(row.color)}"></span>
+                  <span class="pp-name">${escape(row.name)}</span>
+                  <span class="bar"><span style="${side}"></span></span>
+                  <span class="pp-num">${escape(this.signed(row.saved, locale))}</span></div>`;
+              })
+              .join("")
+          : ""
+      }</div></div></ha-card>`;
+  }
+
+  private renderTable(hass: HomeAssistant, config: SummaryConfig): void {
+    const labels = config.labels ?? {};
+    const locale = hass.locale.language;
+    const money = moneyFormat(locale, config.currency ?? "");
+    const rows = this.totals(config).sort((a, b) => b.cost - a.cost);
+    const cost = rows.reduce((sum, row) => sum + row.cost, 0);
+    const saved = rows.reduce((sum, row) => sum + row.saved, 0);
+    const line = (name: string, c: number, s: number, extra = "", entity?: string) =>
+      `<tr class="${extra}" ${entity ? `data-entity="${escape(entity)}"` : ""}><td>${name}</td><td class="num">${escape(money.format(c).replace("-", "−"))}</td><td class="num">${escape(this.signed(s, locale))}</td></tr>`;
+    this.shadowRoot!.innerHTML = `
+      <style>
+        ${ppStyles}
+        td .pp-dot { display: inline-block; margin-right: 10px; vertical-align: 1px; }
+        tr[data-entity] { cursor: pointer; }
+      </style>
+      <ha-card><div class="pp-content">${
+        this.fetched
+          ? `<table class="pp-table">
+          <tr><th>${escape(labels.appliance ?? "")}</th><th class="num">${escape(labels.cost ?? "")}</th><th class="num">${escape(labels.saved ?? "")}</th></tr>
+          ${rows.map((row) => line(`<span class="pp-dot" style="background:${escape(row.color)}"></span>${escape(row.name)}`, row.cost, row.saved, "", row.cost_month)).join("")}
+          ${line(escape(labels.total ?? ""), cost, saved, "sum")}
+        </table>
+        <div class="pp-caption">${escape(labels.negative_saving ?? "")}</div>`
+          : ""
+      }</div></ha-card>`;
   }
 }

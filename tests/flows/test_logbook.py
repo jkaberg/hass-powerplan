@@ -10,7 +10,7 @@ filter on - is read off the real bus.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -90,6 +90,26 @@ def test_15_a_new_plan_reads_like_the_household_s_example() -> None:
     assert line == "Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr"
 
 
+def test_15_a_plan_already_running_says_so_not_the_minute_it_was_adopted() -> None:
+    """D8: `next_start` at or before the event reads "går nå", never "fra 22:08"."""
+    fired = datetime(2027, 1, 12, 21, 8, tzinfo=UTC)
+    data = {
+        "planned_kwh": 1.0612,
+        "cost": "0.7712",
+        "currency": "NOK",
+        "next_start": fired.isoformat(),
+    }
+    assert logbook.message_key(EventKind.PLAN_ADOPTED, data, fired) == "plan_adopted_now"
+    assert (
+        logbook.message_key(EventKind.PLAN_ADOPTED, data, fired - timedelta(minutes=8))
+        == "plan_adopted"
+    )
+    strings = {f"{OPTIONS}{key}": value for key, value in _options("nb").items()}
+    assert logbook.describe(EventKind.PLAN_ADOPTED, data, strings, "nb", fired) == (
+        "Ny plan: 1,06 kWh, går nå · ≈ 0,77 kr"
+    )
+
+
 async def test_15_a_fired_event_is_described_on_the_appliance_s_plan_status(
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
 ) -> None:
@@ -148,9 +168,10 @@ async def test_15_a_fired_event_is_described_on_the_appliance_s_plan_status(
     assert "entity_id" not in state.attributes
 
     line = describers[plan.event_type](plan)
-    assert line["entity_id"] == plan_status
+    # No `entity_id` in the line: the frontend would title it "Planstatus" instead of the name (D8).
+    assert "entity_id" not in line
     assert line["name"] == "Charger"
     assert line["message"] == "Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr"
     line = describers[safe.event_type](safe)
-    assert line["entity_id"] == site_events
+    assert "entity_id" not in line
     assert line["message"] == "Nødmodus: styringen har stoppet"
