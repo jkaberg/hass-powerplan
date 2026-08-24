@@ -1,35 +1,18 @@
 {
   "id": "se.ellevio.household",
-  "name": "Ellevio – privatkund (effektabonnemang 2025–2026)",
+  "name": "Ellevio – privatkund (säkringsabonnemang)",
   "country": "SE",
   "operator": "Ellevio",
   "currency": "SEK",
   "tz": "Europe/Stockholm",
-  "source_url": "https://www.ellevio.se/abonnemang/elnatspriser/ny-prismodell-baserad-pa-effekt/",
-  "verified": "2026-04-17",
+  "source_url": "https://www.ellevio.se/abonnemang/prismodell-utan-effektavgift/",
+  "verified": "2026-08-24",
   "versions": [
     {
-      "valid_from": "2025-01-01",
-      "verified": null,
-      "assumed": "Two of the four fields are not stated by Ellevio and come from HLD §8's SE row. (1) The night weight: HLD §8 says windows 22:00–06:00 count 0.5×; Ellevio's own page describes the reduction but not the factor, so 0.5 is the survey's figure and would be replaced by whatever the effektavgift terms state. (2) distinct_days: Ellevio says only \"genomsnittet av dina tre högsta effekttoppar under månaden\" — the mean of the month's three highest peaks — while HLD §8 says per_day = max, which is one entry per day and therefore three different days. If Ellevio in fact took the three highest hours regardless of day, this becomes per_day = all with distinct_days false and the metric rises. The price 81.25 SEK/kW/month and the three-peak mean are read from the source page's worked example (6,8 kW × 81,25 kronor/kW = 553 kronor per månad).",
-      "source_url": "https://www.ellevio.se/abonnemang/elnatspriser/ny-prismodell-baserad-pa-effekt/",
-      "peak": {
-        "window_min": 60,
-        "weights": [{"when": {"hours": [[1320, 360]]}, "weight": 0.5}],
-        "per_day": "max",
-        "per_period": "mean_top_n",
-        "n": 3,
-        "distinct_days": true,
-        "period": "month",
-        "pricing": {"linear": {"price_per_kw": 81.25}}
-      }
-    },
-    {
       "valid_from": "2026-06-01",
-      "verified": "2026-04-17",
+      "verified": "2026-08-24",
       "source_url": "https://www.ellevio.se/abonnemang/prismodell-utan-effektavgift/",
-      "no_peak": true,
-      "assumed": "Nothing: Ellevio states \"Den 1 juni 2026 återinförde vi en prismodell baserad på säkringsstorlek\" — from 2026-06-01 the effect charge is gone and the fixed fee follows the main fuse, which is D3's hard limit and not a capacity component. The Swedish effect mandate was repealed in March 2026 (HLD §8: \"mandate repealed Jun 2026\")."
+      "no_peak": true
     }
   ]
 }

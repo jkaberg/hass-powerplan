@@ -158,6 +158,15 @@ jobs:
             echo
             uv run python tools/inv_report.py
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preset versions to re-read (D9 §3, PLAN R12)
+        # Warns, never fails: a table verified more than six months ago is a
+        # reason to read the operator's sheet again (D2 §2, PLAN §7 dec. 21).
+        run: |
+          {
+            echo '### Preset versions verified more than six months ago'
+            echo
+            uv run python tools/preset_age.py
+          } >> "$GITHUB_STEP_SUMMARY"
 
   scenarios:
     name: scenarios

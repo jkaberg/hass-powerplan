@@ -63,7 +63,7 @@ def test_a_full_run_prints_a_table_and_writes_the_json(
             "--recorder",
             str(_database(tmp_path)),
             "--preset",
-            "no/tensio",
+            "no/tensio-ts",
             "--register",
             REGISTER,
             "--out",
@@ -77,9 +77,9 @@ def test_a_full_run_prints_a_table_and_writes_the_json(
     assert "5–10 kW" in printed or "2–5 kW" in printed
 
     written = json.loads(out.read_text(encoding="utf-8"))
-    assert written["preset"] == "no.tensio.household"
+    assert written["preset"] == "no.tensio-ts.household"
     assert written["tz"] == "Europe/Oslo"
-    assert written["tz_source"].endswith("no/tensio.json")
+    assert written["tz_source"].endswith("no/tensio-ts.json")
     assert set(written["months"]) == {"2026-09"}
     assert written["total"]["windows"] == written["months"]["2026-09"]["windows"]
     # WP0.10 fills these; until then they are None and a note says why.
@@ -90,13 +90,13 @@ def test_a_full_run_prints_a_table_and_writes_the_json(
 
 def test_an_unknown_preset_is_refused(tmp_path: Path) -> None:
     """A typo in `--preset` names the preset, and nothing is read."""
-    with pytest.raises(SystemExit, match="no/tensioo"):
+    with pytest.raises(SystemExit, match="no/tensio-tss"):
         main(
             [
                 "--recorder",
                 str(_database(tmp_path)),
                 "--preset",
-                "no/tensioo",
+                "no/tensio-tss",
                 "--register",
                 REGISTER,
             ]
@@ -106,7 +106,7 @@ def test_an_unknown_preset_is_refused(tmp_path: Path) -> None:
 def test_recorder_mode_needs_a_register(tmp_path: Path) -> None:
     """Without `--register` there is nothing to reconstruct from."""
     with pytest.raises(SystemExit, match="--register"):
-        main(["--recorder", str(_database(tmp_path)), "--preset", "no/tensio"])
+        main(["--recorder", str(_database(tmp_path)), "--preset", "no/tensio-ts"])
 
 
 def test_a_missing_database_is_refused(tmp_path: Path) -> None:
@@ -117,7 +117,7 @@ def test_a_missing_database_is_refused(tmp_path: Path) -> None:
                 "--recorder",
                 str(tmp_path / "nope.db"),
                 "--preset",
-                "no/tensio",
+                "no/tensio-ts",
                 "--register",
                 REGISTER,
             ]
@@ -140,7 +140,7 @@ def test_the_tz_flag_wins(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
             "--recorder",
             str(_database(tmp_path)),
             "--preset",
-            "no/tensio",
+            "no/tensio-ts",
             "--register",
             REGISTER,
             "--tz",
@@ -160,7 +160,7 @@ def test_an_unknown_zone_is_refused(tmp_path: Path) -> None:
                 "--recorder",
                 str(_database(tmp_path)),
                 "--preset",
-                "no/tensio",
+                "no/tensio-ts",
                 "--register",
                 REGISTER,
                 "--tz",
@@ -172,7 +172,7 @@ def test_an_unknown_zone_is_refused(tmp_path: Path) -> None:
 def test_two_sources_are_mutually_exclusive(tmp_path: Path) -> None:
     """`--recorder` and `--csv` answer the same question two ways."""
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["--recorder", "a.db", "--csv", "b", "--preset", "no/tensio"])
+        build_parser().parse_args(["--recorder", "a.db", "--csv", "b", "--preset", "no/tensio-ts"])
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +225,7 @@ def test_the_table_has_a_row_per_period_a_total_and_the_notes(tmp_path: Path) ->
             register=REGISTER,
             loads=(LoadSpec("ev", "ev", "sensor.missing", 11000.0),),
         ),
-        load("no/tensio"),
+        load("no/tensio-ts"),
         OSLO,
     )
     table = render_table(result)

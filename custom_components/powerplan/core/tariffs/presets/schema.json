@@ -13,6 +13,10 @@
       "pattern": "^[a-z0-9][a-z0-9._-]*$"
     },
     "name": {"type": "string", "description": "What the flow shows in the select."},
+    "template": {
+      "type": "boolean",
+      "description": "A national rule whose numbers belong to each household (D2 §2): prices or contracted kW are null and the tariff step asks them. The loader refuses to evaluate a template until fill_template() has completed it."
+    },
     "country": {"type": "string", "description": "ISO 3166-1 alpha-2.", "pattern": "^[A-Z]{2}$"},
     "operator": {"type": "string", "description": "The DSO or utility."},
     "currency": {
@@ -25,7 +29,10 @@
       "description": "The IANA zone the tariff's own clock runs in — Europe/Stockholm for Ellevio's 22-06, Europe/Madrid for 2.0TD's P1. Every local-time rule in this file is read in this zone, never in a literal in Python and never in the site's own zone, which Home Assistant supplies and which may differ (a Spanish flat owned from Oslo).",
       "pattern": "^[A-Za-z][A-Za-z0-9+_-]*(/[A-Za-z0-9+_-]+)+$"
     },
-    "source_url": {"type": "string", "description": "Where the numbers were read."},
+    "source_url": {
+      "type": "string",
+      "description": "Where the numbers were read: the operator's or the regulator's own document (D2 §2). Required on every version of a shipped file."
+    },
     "verified": {
       "type": ["string", "null"],
       "description": "The date the whole file was last checked against the source, or null."
@@ -96,9 +103,9 @@
       "description": "Exactly one of steps, linear or tiers (D2 §4).",
       "properties": {
         "steps": {
-          "type": "array",
+          "type": ["array", "null"],
           "minItems": 1,
-          "description": "[upper_kw or null, fee per period, name]; exactly one open-ended step, last.",
+          "description": "[upper_kw or null, fee per period, name]; exactly one open-ended step, last. null only in a template: the household's steps from the bill.",
           "items": {
             "type": "array",
             "minItems": 3,
@@ -174,7 +181,11 @@
       "additionalProperties": false,
       "properties": {
         "when": {"$ref": "#/$defs/time_filter"},
-        "limit_kw": {"type": "number", "minimum": 0}
+        "limit_kw": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "null only in a template: the household's own contracted kW, asked by the flow."
+        }
       }
     },
     "weight_rule": {

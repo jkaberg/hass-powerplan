@@ -470,7 +470,7 @@ def nl_pv_negative_midday() -> Scenario:
 
 
 #: WP4.3, D9 §5.9 `be_quarter`: an ordinary winter week - Fluvius's own
-#: `min_kw = 2.5` floor and 15-minute windows (`be/fluvius.json`) need no
+#: `min_kw = 2.5` floor and 15-minute windows (`be/fluvius-imewo.json`) need no
 #: engineered scarcity to exercise, unlike a Tensio step.
 BE_QUARTER_ROLLING_START = datetime(2027, 1, 11, 6, 7, 17, tzinfo=OSLO).astimezone(
     ZoneInfo("Europe/Brussels")

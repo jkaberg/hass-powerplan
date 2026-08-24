@@ -39,6 +39,23 @@
 
 *(PLAN §7 dec. 21 - supersedes D-0054 for shipped presets.)* **A shipped preset carries verified facts only.** Every version of a shipped preset has a `source_url` to the operator's or the regulator's own document (a price page, a tariff sheet, a regulator PDF, an official API such as Energinet's DatahubPricelist - never a retailer, a blog or a secondary summary), a `verified` date on which that document was read, **no `assumed`**, and `valid_from ≤ verified`: a table is not entered before it is in force, even when it is published. The loader enforces all four for every file under `presets/<cc>/`; `assumed` survives only on `custom.json`, on templates (below) and on test fixtures under `tests/`. Operators that publish more than one tariff area ship one preset per area (`no/tensio-ts`, `no/tensio-tn`; one `be/fluvius-<area>` per VREG tariff sheet). A grammar that is national but whose **numbers belong to each DSO** (Norway's top-3 steps, Finland's power fee) is not a preset: it ships as a **template** - `"template": true`, the grammar and its source (the regulation that defines it), every price `null` - which the tariff step offers as "your grid company is not listed: start from the national rules" and completes from the household's bill. Consequence (PLAN R12): presets go stale between releases; a patch release follows each 1 January and 1 July, the site keeps its stored copy (§11, "copy the preset") and is offered the update with a diff.
 
+*(PLAN §7 dec. 38)* **Tariff sources.** Where a source publishes every grid company's household tariff in machine-readable form, the household's tariff is **fetched** rather than shipped: the tariff step lists the source's operators for the site's country, fetches the chosen one, converts it to this LLD's preset JSON, shows it (§6), and the entry keeps the result as its **copy** (`tariff.spec`) - the runtime builds the evaluator from the copy and never from a file (§8's "stored grammar copy", built at last). A `TariffSource` is registered like a price source: a pure parser in `core/tariffs/sources/<key>.py` (documents in, preset JSON out, no I/O) and a fetcher in `providers/tariffs/<key>.py` (HTTP through HA's shared session, nothing else). The three v1 sources:
+
+| key | country | documents | operator list | versions from |
+|---|---|---|---|---|
+| `fri_nettleie` | NO | `tariffer/<dso>.yml` of [kraftsystemet/fri-nettleie](https://github.com/kraftsystemet/fri-nettleie) (CC-BY-4.0), fetched raw from GitHub | the repository's `tariffer/` listing | each `tariffer[]` entry for `husholdning`: `gyldig_fra`/`gyldig_til`; `fastledd.terskler` NOK/year excl. VAT → steps per month incl. 25 % VAT (none in Nord-Norge's VAT-free zone, where the file says so); `energiledd` øre excl. VAT and levies → the `tou_schedule` incl. both, as the operators publish it |
+| `eltariff` | SE | the catalogue `GET https://eltariff.se/tariffcatalogue/all`, then each company's public `GET {apiUrl}/tariffs` ([RI-SE/Eltariff-API](https://github.com/RI-SE/Eltariff-API)) | the catalogue's companies | each tariff's `validPeriod`, split further at each `powerPrice` component's own `validPeriod` (a seasonal price is a version, since the grammar has no season inside one); a `peak` component with `numberOfPeaksForAverageCalculation` n, `peakIdentificationPeriod` P1D and a daily `activePeriods` window → `mean_top_n`, `distinct_days`, `eligible`; no `powerPrice` → `no_peak` |
+| `datahub_pricelist` | DK | Energinet's [DatahubPricelist](https://api.energidataservice.dk/dataset/DatahubPricelist) `ChargeType = D03`, the grid company's household tariff (`Note` "Nettarif C…"; 31 companies, several with more than one C product - discount, local collective, time-differentiated - so the product select applies) | the dataset's distinct `ChargeOwner`s | `ValidFrom`/`ValidTo`; `Price1…Price24` → the `tou_schedule`; always `no_peak` (HLD §8: no household capacity component in Denmark) |
+| `vreg_xlsx` | BE (Flanders) | VREG's yearly `Distributienettarieven elektriciteit <year>.xlsx`, linked from [its tariff page](https://www.vlaamsenutsregulator.be/elektriciteit-en-aardgas/nettarieven/hoeveel-bedragen-de-distributienettarieven) - read with the standard library (zip + XML), no dependency | the eight Fluvius areas, the columns of the overview sheet | one version per year (1 January); `Gemiddelde maandpiek` EUR/kW/year excl. VAT per area; the grammar - 15-min windows, the month's highest, the mean of the last 12 months, `min_kw` 2.5 - is VREG's published rule and is the parser's, cross-checked each fetch against the sheet's own "minimale bijdrage" (= 2.5 kW × the rate) |
+| `openei_urdb` | US | NREL's [Utility Rate Database](https://openei.org/services/doc/rest/util_rates/) (`api.openei.org/utility_rates`, a free api.data.gov key; `DEMO_KEY` allows 50 calls a day, enough for a setup and a monthly refresh) | the utilities in the site's state, then their approved residential rates that carry a demand charge | `startdate`/`enddate`; `demandratestructure` × `demandweekdayschedule`/`demandweekendschedule` (month × hour periods) → `eligible` and the $/kW (rate + `adj`), **one version per season** generated for the next twelve months, since the grammar holds one price per version; energy schedules → `tou_schedule` |
+| `cdr_energy` | AU | the Consumer Data Right product reference data, `GET {brand}/cds-au/v1/energy/plans` and `/plans/{id}` (public, no key; brands from the CDR register) | the retailers with plans for the site's distributor, then their plans with `demandCharges` | `effectiveFrom`/`effectiveTo`; each demand charge's `startTime`/`endTime`/`days` → `eligible`, `amount` per `chargePeriod` → `price_period_unit` (including `day`, below) |
+
+A fetched tariff is a **fact from the operator's data, not a shipped preset**: its versions carry the document's URL as `source_url` and the fetch date as `verified`, no `assumed`, and - unlike a shipped file - may hold a version whose `valid_from` is after the fetch (the operator published it; INV-52 switches to it on the day). The loader validates the converted JSON with the same schema and rules, provenance included, so a source that returns something the grammar cannot say fails the fetch rather than producing a half-right tariff (the operator is then listed as "not supported - use the template"). A country without a source (Finland: Energiavirasto publishes averages per user type only) is served by shipped presets, the template and `custom`, as before.
+
+**What a source does not say, the household confirms**. Every source was quality-checked against what the grammar needs - window length, the metric (`per_day`, `per_period`, `n`, distinct days), eligibility with its days and holidays, price and unit, VAT, validity. A field the source leaves out is not a reason to refuse it: the parser fills the grammar's default and marks the field **unconfirmed**, and the tariff step shows each unconfirmed field as one question with that default pre-selected ("Hvor lang er effektperioden på regningen din? 60 min") before the spec is stored. Found: `openei_urdb` gives no `demandwindow` in 49 of 52 residential demand rates and never marks holidays; `cdr_energy`'s structured `measurementPeriod` can contradict its own description (a "DAY" field beside "the maximum half-hourly kW over the 12 months prior"), so its measurement period is always asked. Contradictions are shown, never resolved silently. `fri_nettleie`, `eltariff`, `datahub_pricelist` and `vreg_xlsx` needed no question on the tables checked. Spain, the Netherlands and the United Kingdom need no source: 2.0TD bills the contracted kW, which the flow asks (§6), and the other two bill no measured capacity (HLD §8).
+
+**A `day` price unit**: `price_period_unit` gains `day` - the fee for a period is the rate × the days in it - which Ausgrid's c/kVA/day and every CDR plan's per-day demand charge need (supersedes that item of §10).
+
 **`Bill` and the counterfactual.** `bill(period, history) → Bill` prices the **capacity component only** from a `History` - any set of windows, the real one or the counterfactual D11 records per closed window (uncontrolled load unchanged, each controlled load replaced by its shadow, D11 §5.4). The energy component is priced by D1's curves in D11. The site's savings figure is `Σ energy savings + (bill(counterfactual) − bill(actual)).capacity_fee`, both bills from this evaluator under the same version (INV-52, INV-69). Under rolling-12 D11 takes the month's share as the rolling fee at month end minus at month start.
 
 ---
@@ -57,10 +74,15 @@ custom_components/powerplan/core/tariffs/
 │   ├── schema.json
 │   ├── loader.py    load(), validate(), summarize() → TariffSummary (data; D8 renders it)
 │   └── <cc>/*.json  no/tensio-ts.json, no/tensio-tn.json, no/elvia.json, no/template.json, se/ellevio.json,
-│                    fi/template.json (+ fi/helen.json if its own list verifies), be/fluvius-<area>.json (one per VREG sheet),
-│                    dk/<company>.json (generated from DatahubPricelist by tools/, D9), nl/connection.json, uk/nopeak.json,
-│                    es/2_0td.json, us/aps-saver-choice-max.json, us/srp-e27.json, au/ausgrid-ea116.json, custom.json
-│                    (WP4.6: no/generic-top3, no/tensio, fi/energiavirasto-2026, be/fluvius, dk/nopeak retired)
+│                    be/fluvius-<area>.json (antwerpen, halle-vilvoorde, imewo, kempen, limburg, midden-vlaanderen, west,
+│                    zenne-dijle - one per VREG sheet), nl/connection.json, uk/nopeak.json, es/2_0td.json,
+│                    us/aps-saver-choice-max.json, us/srp-e27.json, au/ausgrid-ea116.json, custom.json
+│                    (WP4.6: no/generic-top3, no/tensio, fi/energiavirasto-2026, be/fluvius, dk/nopeak retired - `RETIRED`
+│                    in loader.py names each one's successor; no fi/template: no national household grammar before 2029;
+│                    WP4.6b: the no/ files leave for tests/fixtures/, served by the `fri_nettleie` source)
+├── sources/         (dec. 38) registry.py (TariffSource, Operator), fri_nettleie.py, eltariff.py, datahub_pricelist.py,
+│                    vreg_xlsx.py, openei_urdb.py, cdr_energy.py -
+│                    pure: a source's documents → preset JSON; the fetchers are providers/tariffs/<key>.py
 └── backfill.py      seed_from_windows(), seed_from_bills()
 ```
 
@@ -160,7 +182,7 @@ class TariffVersion:  valid_from: date; version_id: str; grammar: tuple[Grammar,
 class TariffSpec:  id: str; name: str; versions: tuple[TariffVersion, ...]; currency: str
                    country: str | None; operator: str | None; source_url: str | None
                    verified: str | None; assumed: str | None
-                   template: bool = False    # grammar + source, every price None; completed in the flow (§2, §6)
+                   # template: not a field (D-0520): a template stays raw JSON - load() refuses it, fill_template() completes it (§2, §6)
 
 @dataclass(frozen=True)
 class HardLimit:  w: float; reason: Literal["contracted_trip", "contracted_surcharge"]; tolerance_s: int; tolerance_w: float
@@ -318,6 +340,10 @@ The runtime seeds the open period in the background after the first tick of ever
 
 ---
 
+### 5.13 Refresh of a fetched tariff 
+
+`next_check` = the earlier of (the last stored version's `valid_to` − 7 days) and (fetch time + 30 days); a source that gives no `valid_to` gets the 30 days. At `next_check` the runtime (D7, outside the tick lock like a price fetch) fetches the same operator and product and merges: a version whose `valid_from` is new is **appended**; a stored version whose numbers differ is **replaced** and logged at WARNING with both tables (an operator correcting its own sheet); nothing is removed. The merged copy is written to the entry (`async_update_entry`, no reload - the evaluator is rebuilt on the next plan call) and a `tariff_updated` event names the versions added or changed. A failed fetch keeps the copy, retries on D1 §5.1's backoff, and raises the repair `tariff_stale` once the copy's last version has ended without a successor. INV-52 needs nothing new: an appended version is just the next `valid_from`.
+
 ## 6. Configuration schema
 
 The step is three questions (D8 §5.15):
@@ -329,6 +355,8 @@ The step is three questions (D8 §5.15):
 | **Hvilket effekttrinn vil du holde deg i?** | `select`: "Automatisk" (recommended) first, then each step as "Trinn 2 · 2–5 kW · 218 kr/mnd" from a translated template (D8 §5.15 H7). Option values `auto`, `step_<i>` (`step:<i>` isn't a usable translation key and is read as legacy, HUB-13, ENT-2). The strictness as a radio | on reconfigure the site's own level is the suggestion, on a first setup nothing (D8 §5.15 S6) |
 
 **Strictness - strict by default (review CTL-12; PLAN §7 dec. 18, dec. 28).** Three radio choices with labels of at most five words (PLAN §7 dec. 23): **Streng (anbefalt)** (`risk` 0, **the default for a new site on every preset**), **Bruk betalte timer** (0.5) and **Fleksibel** (1.0). The review's longer wording ("… så lenge snittet av månedens tre høyeste timer holder seg i trinnet") goes into the field description, with the grammar's own numbers as placeholders - "tre høyeste timer" is Tensio's `n = 3`, and a static label cannot follow the preset (D8 §5.15 H1). INV-9 is unchanged: the free ride is still derived from the grammar's `slack` and used when the household picks 0.5 or 1.0. Only the default changes (`target.py::default_risk` returns 0 for every grammar; today 0.5 under `per_day = max`, `core/tariffs/target.py:76-85`), in WP U.3, with a benchmark re-baseline and a `design/benchmarks/CHANGELOG.md` line. **An existing site keeps its materialised `risk`** (INV-66): the entry holds the number the household saw (`flow/steps.py:832-844`), so the change reaches new sites and a household that changes the select; `risk_source` records `default` or `chosen` instead of today's `per_day_max`/`flat_default` (D8 §9 22).
+
+*(dec. 38.)* For a country with a source the first question lists the **source's operators** (fetched when the step opens; the escape hatches stay pinned last), then - only where the operator has several household products (an SE company's fuse or time-of-use variants, a NO DSO's regional tables) - a second select of the products by the operator's own names; the summary is the fetched tariff's. If the fetch fails the step says so and offers the shipped presets, the template and `custom` (never an empty list). The chosen spec is stored as `tariff.spec` with `tariff.source = {key, operator, product, fetched, next_check}`; `preset_file` is `null` for a fetched tariff.
 
 Site flow, step **tariff** (skipped on the *fuse only* path):
 
@@ -406,6 +434,10 @@ Store section `tariff`: `PeakHistory` as above plus `active_version_id`, `target
 | Rolling period with < 3 months | level `partial` | advice `coarse_history` |
 | Manual override contradicts a recorded window | override wins, both kept | attribute `overrides` |
 | Version boundary mid-period | §5.10 | INFO, `period_closed` bill notes two versions |
+| Tariff source unreachable at setup | the step lists the shipped presets, template and `custom`; nothing is stored from the source | form error `tariff_source_unreachable` |
+| Refresh fails | the copy stays; backoff; after the last version ends with no successor, `tariff_stale` | repair `tariff_stale` |
+| Source returns a shape the grammar cannot say | that operator/product is not offered | listed as "not supported" in the step |
+| Entry on a retired or source-served shipped file *(4.6b)* | load the successor (`RETIRED`) or migrate to the source's copy on first start; `preset_outdated` | repair `preset_outdated` |
 
 Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `period_closed(bill, counterfactual_bill)`, `free_ride_available(kwh)`.
 
@@ -435,6 +467,16 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 20. Provenance: every version of every shipped preset has a `source_url`, a `verified` date, no `assumed`, and `valid_from ≤ verified`; a file violating any of the four fails to load; `custom.json` and templates are the only shipped files without prices.
 21. Templates: a template refuses to evaluate until every `null` price is filled; the tariff step completed from a template yields a spec equal to the same grammar written by hand, with the household's numbers and `source_url = None`, `assumed = "from the household's bill"`.
 22. Tariff areas: `no/tensio-ts` and `no/tensio-tn` each classify the same synthetic month into the same step and bill it at their own sheet's fee; the golden cites the sheet.
+23. Sources: `fri_nettleie` on the captured `tensio-ts.yml`, `tensio-tn.yml`, `elvia.yml`, `bkk.yml`, `lede.yml`, `glitre.yml`, `foie.yml`, `lnett.yml` reproduces every table WP4.6 read from the operators' own documents (fees to the øre, energy incl. VAT and levies, the TOU days).
+24. `eltariff` on Göteborg Energi's captured `GET /tariffs`: "Tidsindelad 10 kW" becomes one version per season, weekday 07–20 excluding holidays eligible, mean of the top 3 on distinct days, the season's kr/kW; a fuse-only tariff becomes `no_peak`.
+25. `datahub_pricelist` on a captured page: one version per `ValidFrom`, 24 hourly prices folded into `tou_schedule` periods, `no_peak`.
+26. Every source's output passes `loader.validate`; a document with an unsupported method (e.g. a fri-nettleie `metode` other than the three-daily-max month) is refused, not approximated.
+27. Refresh: a copy whose last version ends in 5 days refetches; a new `valid_from` is appended, a changed table replaced with a WARNING, nothing removed; a failed fetch keeps the copy and raises `tariff_stale` only after the last version has ended.
+28. Migration: an entry with `preset_file = no/tensio` (or `no/tensio-ts`) starts on the source's copy after one fetch, `preset_outdated` raised once; with the source unreachable it starts on the `RETIRED` successor.
+29. `vreg_xlsx` on the captured 2026 sheet: eight areas, each `price_per_kw` equal to the area's PDF (Imewo 54.2009816 EUR/kW/year excl. VAT), `min_kw` 2.5 matching the sheet's own minimum contribution.
+30. `openei_urdb` on APS's captured R-3: summer $19.585 + $1.04 and winter $13.747 + $1.04 per kW as dated versions, weekday 16–19 eligible, the window **unconfirmed** and asked with 60 pre-selected.
+31. `cdr_energy` on a captured plan: the window, the per-day price (`price_period_unit = day`) and an unconfirmed measurement period that the step asks.
+32. `day` unit: a month of 30 days bills 30 × the rate; February 28.
 
 ---
 
@@ -445,8 +487,10 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 - Cost-based trade-off in D6 using `marginal_cost` (v2; published from v1).
 - Automatic preset detection from the meter or address.
 - Presets beyond the v1 list; the community adds JSON files - under §2's provenance rule, which CI enforces on contributed files too.
-- Seasonal `pricing` and `eligible` inside one version (APS and SRP bill a lower winter demand rate; their presets ship summer only), a `day` price-period unit and a power factor on `PeakTariff` (Ausgrid bills c/kVA/day). Each is a grammar change, D2's call.
+- Seasonal `pricing` and `eligible` inside one version (APS and SRP bill a lower winter demand rate; the shipped files carry summer only - a fetched URDB tariff carries every season as its own dated version) and a power factor on `PeakTariff` (Ausgrid bills per kVA). Each is a grammar change, D2's call. *(The `day` unit is built in WP4.6c.)*
 - A published table before its `valid_from` (PLAN §7 dec. 21; steelman in §11).
+- An **nth-highest** period metric (`per_period = "nth"`): Helen Sähköverkko bills the month's third-highest hour with night hours at 80 % - verified, not shippable until the grammar says it. D2's call.
+- A per-metering-point lookup (the Eltariff `lookup/{mpid}` and Norway's Digin API find the household's tariff from its meter id, some behind OAuth or a free key): the operator list plus a product select is enough for v1.
 
 ---
 
@@ -467,3 +511,5 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 **Admit a published table before its `valid_from`.** *For:* it's a fact, not a guess - winter tariffs are published ahead of their start, and without it a household runs last season's rate from the change until the next release. *Against:* the rule is explicit (PLAN §7 dec. 21), and prices change mid-year anyway (Tensio has published three tables in one year), so a release cadence is needed regardless, and the flow's override covers the days in between. **Decision:** `valid_from ≤ verified`, enforced by the loader.
 
 **Copy the rule into the store vs. reference it by id.** *For reference:* updates flow automatically. *Against:* an edit in a release would silently change a live site's ceiling. **Decision:** copy at setup, offer "update to the current rule" with a diff.
+
+**Ship generated presets instead of fetching** *(dec. 38)*. *For:* offline, reviewable in a diff, deterministic in tests; no network call in a setup flow; the provenance rule applies unchanged. *Against:* the call made here - a household should get its own tariff when it needs it; a shipped table is stale from the next 1 January or 1 July until the next release (PLAN R12), and Norway alone has about eighty DSOs. **Decision:** fetch where an open source covers the country, copy into the entry, refresh; ship verified files only where no source exists.

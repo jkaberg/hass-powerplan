@@ -159,6 +159,8 @@ HLD §9 phase 4. **Gate (simulated):** golden tests per market; one benchmark ho
 | **4.3b Market houses: FI, ES, FR** | `fi_linear`, `es_contracted`, `fr_tempo` on one builder | D9 §5.9 | their scenarios and baselines | 4.3a, 4.9 |
 | **4.4 Entity format table** | price sensors from any market | D1 §2 | D1 §9 1 | 1.2 |
 | **4.6 Tariffs: verified facts only** | every shipped version read from its operator's own document; templates where the household's numbers are the bill's; retired files mapped | D2 §2, §3, §6, §9 20-22; dec. 21 | D2 §9 1, 10, 12, 20-22 | 0.3, 4.3a |
+| **4.6b Tariff sources: NO, SE, DK** | fetched tariffs (superseded by the price-by-party stream) | D2 §2; dec. 38 | - | 4.6 |
+| **4.6c Tariff sources: BE, US, AU** | fetched tariffs (superseded by the price-by-party stream) | D2 §2; dec. 38 | - | 4.6b |
 | **4.7 Price sources: every row through the flow** | every format configurable from the prices step; new rows with fixtures from their sources | D1 §2, §6, §9 18; dec. 22 | D1 §9 1; a flow test over every registered format | 4.4, 1.3 |
 | **4.8a Charger profiles: Zaptec, Easee cloud** | `zaptec`, `easee_cloud`; device-addressed calls; `zaptec_slow_trim` | D4 §5.9, §5.10, §9 16, 22-24; dec. 24 | D4 §9 5, 6, 16, 22-24; D9 §9 7 | 2.2, 2.3 |
 | **4.8b Charger profiles: OCPP and vocabulary rows** | `ocpp`, `wallbox`, `peblar`, `v2c`, `goecharger_api2` | D4 §5.9, §9 16, 24; dec. 24 | D4 §9 16 | 4.8a |
@@ -321,6 +323,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 35. **Device attachment comes after U.2, U.4 and H.2 and before U.3,** so U.3 builds the load flow once against attached devices.
 36. **No migration for device attachment, and the brand marks the rows instead of a name prefix.** Nothing released needs migrating (D-0421); the brand icon is the entity picture (D-0418). *Rejected:* a "PowerPlan-" prefix - clutter in every row.
 37. **The dashboard is redesigned before it ships:** two tabs, a subview per appliance, History on the Energy picker (D12). *Rejected:* polishing four tabs - the problem was the shape, not the finish.
+38. **Grid tariffs come from the operators' data, not files in the repository.** Where a source publishes every company's household tariff, the flow fetches it, the entry keeps a copy, and the runtime renews it. *Superseded by dec. 39.*
 
 ---
 
@@ -410,7 +413,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3a | Tariff presets | done |
 | 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
-| 4.6 | Tariffs: verified facts only | todo |
+| 4.6 | Tariffs: verified facts only | done |
+| 4.6b | Tariff sources: NO, SE, DK | todo |
+| 4.6c | Tariff sources: BE, US, AU | todo |
 | 4.7 | Price sources: every row through the flow | todo |
 | 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | todo |

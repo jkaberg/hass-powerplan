@@ -1,0 +1,32 @@
+{
+  "id": "be.fluvius-imewo.household",
+  "name": "Fluvius Imewo – capaciteitstarief",
+  "country": "BE",
+  "operator": "Fluvius Imewo",
+  "currency": "EUR",
+  "tz": "Europe/Brussels",
+  "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FI%20-%202026%20-%20ELEK.pdf?VersionId=o.Ff7S0oq3NPOxA.3H0yWN1S3EqcyILw",
+  "verified": "2026-08-24",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "verified": "2026-08-24",
+      "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FI%20-%202026%20-%20ELEK.pdf?VersionId=o.Ff7S0oq3NPOxA.3H0yWN1S3EqcyILw",
+      "peak": {
+        "window_min": 15,
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "rolling_months",
+        "rolling_months": 12,
+        "price_period_unit": "year",
+        "pricing": {
+          "linear": {
+            "price_per_kw": 54.2009816,
+            "min_kw": 2.5
+          }
+        }
+      }
+    }
+  ]
+}

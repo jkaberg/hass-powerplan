@@ -1,86 +1,37 @@
 {
-  "_": "Golden for the se.ellevio.household preset — D2 §9 1 and 3, D9 §3. Every number carries its source; a change to the preset or the evaluator changes this file with a source, never the other way round.",
+  "_": "Golden for the se.ellevio.household preset — D2 §9 1, D9 §3. The claim under test is that Ellevio bills no effect charge since 2026-06-01.",
   "preset": "se/ellevio",
   "id": "se.ellevio.household",
   "tz": "Europe/Stockholm",
   "currency": "SEK",
   "window_min": 60,
-  "period_key": "2026-03",
-  "at_local": "2026-03-20T12:00:00",
+  "period_key": "2026-09",
+  "at_local": "2026-09-20T12:00:00",
   "sources": {
-    "price": "ellevio.se/abonnemang/elnatspriser/ny-prismodell-baserad-pa-effekt/, read 2026-09-19: the worked example \"6,8 kW x 81,25 kronor/kW = 553 kronor per manad\" gives 81.25 SEK per kW per month.",
-    "metric": "Same page: the effektavgift is \"genomsnittet av dina tre hogsta effekttoppar under manaden\" — the mean of the month's three highest peaks.",
-    "weights": "HLD §8's SE row: weights 22-06 x 0.5. Ellevio's own page does not state the factor, so the preset marks it assumed.",
-    "distinct_days": "HLD §8's SE row: per_day = max, which is one entry per day and therefore three different days. Ellevio's page says only \"tre hogsta effekttoppar\".",
-    "month": "Constructed, not measured: a March week that makes the weight load-bearing. March 2026 is inside the effect model, which ran 2025-01-01 to 2026-06-01, and before the 2026-03-29 DST change.",
-    "metric_kw": "Weighted daily maxima 7.2 (03-10), 6.0 (03-03), 5.4 (03-24), 4.5 (03-17); the top three are 7.2 + 6.0 + 5.4 = 18.6, and 18.6 / 3 = 6.20 kW.",
-    "not_metric_kw": "Without the night weight the entries would be 10.0 (03-03), 9.0 (03-17), 7.2 (03-10), 5.4 (03-24): 10.0 + 9.0 + 7.2 = 26.2, and 26.2 / 3 = 8.733333 kW. The golden asserts the metric is NOT this — D2 §9 3, weights before the daily maximum.",
-    "fee": "6.20 kW x 81.25 SEK/kW/month = 503.75 SEK.",
-    "day_max_2026_03_03": "10.0 kWh at 23:00 is a night hour and enters the day at 5.0 kW; the 6.0 kWh at 18:00 is a full-weight 6.0 kW and takes the day. This is D2 §9 3's sentence, on the file."
+    "no_peak": "ellevio.se/abonnemang/prismodell-utan-effektavgift/, read 2026-09-23: \"Den 1 juni 2026 återinförde vi en prismodell baserad på säkringsstorlek. Den ersätter prismodellen med effektavgifter.\" The fixed fee follows the main fuse (16 A 450 … 63 A 2 480 kr/månad) and the transfer fee is 26 öre/kWh; nothing measures the household's peak.",
+    "metric_kw": "0.0 by construction on a NoPeak site; `level.metric_kw` is None."
   },
   "windows": [
-    {"local": "2026-03-03T23:00:00", "kwh": 10.0},
-    {"local": "2026-03-03T18:00:00", "kwh": 6.0},
-    {"local": "2026-03-10T19:00:00", "kwh": 7.2},
-    {"local": "2026-03-17T02:00:00", "kwh": 9.0},
-    {"local": "2026-03-24T18:00:00", "kwh": 5.4}
+    {
+      "local": "2026-09-14T18:00:00",
+      "kwh": 9.5
+    }
   ],
   "expected": {
-    "metric_kw": 6.2,
-    "not_metric_kw": 8.733333,
-    "level_name": "6.20 kW",
-    "fee": 503.75,
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
     "currency": "SEK",
     "confidence": "exact",
-    "bill_fee": 503.75,
-    "windows_priced": 5
+    "bill_fee": null,
+    "windows_priced": 0
   },
-  "daily_maxima": {"2026-03-03": 6.0, "2026-03-10": 7.2, "2026-03-17": 4.5, "2026-03-24": 5.4},
-  "weights_at": [
-    {"local": "2026-03-03T23:30:00", "weight": 0.5, "why": "22:00-06:00 counts half"},
-    {"local": "2026-03-03T18:30:00", "weight": 1.0, "why": "an evening hour counts whole"},
-    {"local": "2026-03-04T05:30:00", "weight": 0.5, "why": "the night rule wraps midnight"},
-    {"local": "2026-03-04T06:30:00", "weight": 1.0, "why": "and ends at 06:00"}
+  "ceiling_is_infinite_at": [
+    "2026-09-14T18:00:00",
+    "2026-12-14T18:00:00"
   ],
-  "free_ride": {
-    "_": "INV-9 on a weighted tariff, which no inline test covers: the free ride and the night weight compose.",
-    "today": {"local": "2026-03-25T18:00:00", "kwh": 8.0},
-    "today_max_kw": 8.0,
-    "metric_after_kw": 7.066667,
-    "target_kw": 7.0,
-    "risk": 0.5,
-    "eps_kwh": 0.3,
-    "slack_kw": 8.0,
-    "sources": {
-      "metric_after_kw": "entries 8.00 (03-25), 7.20 (03-10), 6.00 (03-03), 5.40 (03-24), 4.50 (03-17); the top three are 8.00 + 7.20 + 6.00 = 21.20, and 21.20 / 3 = 7.066667",
-      "slack_kw": "D2 §5.6 fast path: the target 7.00 is already passed, so feasible(7.00) = 0; feasible(metric_now) = 3 x 7.066667 - (7.20 + 6.00) = 21.20 - 13.20 = 8.00, which is the free ride and is exactly today's own maximum (INV-9)",
-      "day_ceiling_kwh": "weight 1.0: to_kwh(min(8.00, 8.00)) - eps = 8.00 - 0.30 = 7.70 kWh, and the cap max(7.00 + 0.50, 8.00) = 8.00 does not bind",
-      "night_ceiling_kwh": "weight 0.5: a night hour's raw ceiling is doubled, to_kwh(8.00) = 16.00, less eps = 15.70 kWh — and drawing it still leaves the weighted entry at 8.00, so the month does not move"
-    },
-    "checks": [
-      {
-        "local": "2026-03-25T20:00:00",
-        "weight": 1.0,
-        "ceiling_kwh": 7.7,
-        "slack_kwh": 8.0,
-        "reason": "free ride",
-        "free_ride": true,
-        "why": "an evening hour rides today's own 8.00 kW peak at full weight"
-      },
-      {
-        "local": "2026-03-25T23:30:00",
-        "weight": 0.5,
-        "ceiling_kwh": 15.7,
-        "slack_kwh": 16.0,
-        "reason": "free ride",
-        "free_ride": true,
-        "why": "the same free ride through a half-counted hour is twice the kWh"
-      }
-    ]
-  },
   "describes": [
-    "3 highest hours on 3 different days",
-    "81.25 kr per kW per month",
-    "count 0.5×"
+    "No capacity charge",
+    "only the energy price matters"
   ]
 }

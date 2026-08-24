@@ -1,0 +1,181 @@
+{
+  "_": "Golden for the be.fluvius-antwerpen.household preset — D2 §9 1, 6 and 9, D9 §3. Every number carries its source.",
+  "preset": "be/fluvius-antwerpen",
+  "id": "be.fluvius-antwerpen.household",
+  "tz": "Europe/Brussels",
+  "currency": "EUR",
+  "window_min": 15,
+  "period_key": "2026-12",
+  "at_local": "2026-12-20T12:00:00",
+  "sources": {
+    "price": "VREG, 'Fluvius Antwerpen - ELEKTRICITEIT - Tarieflijst periodieke distributienettarieven 2026 - Afname' (FA - 2026 - ELEK.pdf), read 2026-09-23: 'Afnameklanten op laagspanningsnet met piekmeting — Gemiddelde maandpiek EUR/kW/jaar 49,4036563', valid 01/01/2026 to 31/12/2026, excluding VAT. The sheet's minimum contribution for these customers equals 2.5 kW x this rate.",
+    "minimum": "Same page: \"Iedereen betaalt een minimumbijdrage. Die bijdrage komt overeen met een piek van 2,5 kW.\" Fluvius: \"We rekenen bij een digitale meter sowieso een minimale maandpiek van 2.5 kW aan.\"",
+    "metric": "Fluvius, fluvius.be/.../aangerekend: \"het hoogste kwartiervermogen per maand\" — the highest quarter-hour of the month. VREG on the billed figure: \"de 'facturatiepiek' ... Dat is het gemiddelde van de gemiddelde maandpieken van de afgelopen 12 maanden.\" That is per_day = all, per_period = max, period = rolling_months 12.",
+    "seed_bills": "Constructed: eleven months at a flat 4.00 kW so the rolling mean is arithmetic anyone can check. Fluvius prints the twelve monthly peaks on the bill, which is what `seed_from_bills` is for (D2 §2).",
+    "windows": "One December quarter-hour at 0.25 kWh = 1.00 kW: a quiet month, deliberately under the 2.5 kW minimum so the floor is load-bearing.",
+    "metric_kw": "The plain rolling mean, which is what the metric reports: (11 x 4.00 + 1.00) / 12 = 45.00 / 12 = 3.75 kW.",
+    "fee": "D2 §5.3: the minimum applies to each month BEFORE the mean. Eleven months bill at 4.00, December at max(1.00, 2.50) = 2.50, so the billed mean is (44.00 + 2.50) / 12 = 46.50 / 12 = 3.875 kW; 3.875 x 49.4036563 / 12 = 15.953264 EUR for the month.",
+    "not_fee": "The same arithmetic in the wrong order — max(mean, 2.50) = 3.75 — gives 3.75 x 49.4036563 / 12 = 15.438643 EUR. The golden asserts the fee is not this (D2 §9 9).",
+    "price_period_unit": "BE quotes EUR/kW/year, so the month pays a twelfth (D2 §4, §5.3)."
+  },
+  "seed_bills": [
+    [
+      "2026-01",
+      4.0
+    ],
+    [
+      "2026-02",
+      4.0
+    ],
+    [
+      "2026-03",
+      4.0
+    ],
+    [
+      "2026-04",
+      4.0
+    ],
+    [
+      "2026-05",
+      4.0
+    ],
+    [
+      "2026-06",
+      4.0
+    ],
+    [
+      "2026-07",
+      4.0
+    ],
+    [
+      "2026-08",
+      4.0
+    ],
+    [
+      "2026-09",
+      4.0
+    ],
+    [
+      "2026-10",
+      4.0
+    ],
+    [
+      "2026-11",
+      4.0
+    ]
+  ],
+  "windows": [
+    {
+      "local": "2026-12-08T18:00:00",
+      "kwh": 0.25
+    }
+  ],
+  "expected": {
+    "metric_kw": 3.75,
+    "level_name": "3.75 kW",
+    "fee": 15.953264,
+    "not_fee": 15.438643,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": 15.953264,
+    "windows_priced": 1
+  },
+  "minimum": {
+    "_": "D2 §9 9 verbatim, on the file: two known months at 1.0 and 2.6 kW.",
+    "seed_bills": [
+      [
+        "2026-10",
+        1.0
+      ]
+    ],
+    "window": {
+      "local": "2026-11-08T18:00:00",
+      "kwh": 0.65
+    },
+    "period_key": "2026-11",
+    "metric_kw": 1.8,
+    "billed_kw": 2.55,
+    "fee": 10.498277,
+    "not_billed_kw": 2.5,
+    "not_fee": 10.292428,
+    "confidence": "partial",
+    "missing_months": 10
+  },
+  "rolling": {
+    "_": "D2 §9 6, on the file: the thirteenth month pushes the first one out.",
+    "seed_bills": [
+      [
+        "2026-01",
+        10.0
+      ],
+      [
+        "2026-02",
+        4.0
+      ],
+      [
+        "2026-03",
+        4.0
+      ],
+      [
+        "2026-04",
+        4.0
+      ],
+      [
+        "2026-05",
+        4.0
+      ],
+      [
+        "2026-06",
+        4.0
+      ],
+      [
+        "2026-07",
+        4.0
+      ],
+      [
+        "2026-08",
+        4.0
+      ],
+      [
+        "2026-09",
+        4.0
+      ],
+      [
+        "2026-10",
+        4.0
+      ],
+      [
+        "2026-11",
+        4.0
+      ],
+      [
+        "2026-12",
+        4.0
+      ]
+    ],
+    "twelve_months": {
+      "window": {
+        "local": "2026-12-08T18:00:00",
+        "kwh": 1.0
+      },
+      "metric_kw": 4.5,
+      "why": "(10.00 + 11 x 4.00) / 12 = 54.00 / 12 = 4.50; the December window is 1.0 kWh over a quarter-hour, which is 4.00 kW and leaves the seeded month unchanged",
+      "confidence": "exact",
+      "missing_months": 0
+    },
+    "thirteenth_month": {
+      "window": {
+        "local": "2027-01-08T18:00:00",
+        "kwh": 1.5
+      },
+      "metric_kw": 4.166667,
+      "why": "2026-01's 10.00 kW leaves the window and January 2027's 6.00 kW enters: (11 x 4.00 + 6.00) / 12 = 50.00 / 12 = 4.166667"
+    }
+  },
+  "describes": [
+    "your highest quarter-hour",
+    "averaged over the last 12 months",
+    "49.40 € per kW per year",
+    "at least 2.5 kW"
+  ]
+}

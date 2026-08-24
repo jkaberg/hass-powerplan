@@ -83,7 +83,7 @@ async def _to_review(
     result = await _answer(hass, result, **(electrical or ELECTRICAL_NO))
     result = await _answer(hass, result, source="nordpool_action")
     result = await _answer(hass, result, **result["data_schema"]({}))
-    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio-ts")
     result = await _answer(hass, result, confirm="yes")
     result = await _answer(hass, result, target="auto", risk="free_ride")
     result = await _answer(hass, result, mode="none")
@@ -164,8 +164,8 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_every_add_on(
     result = await _answer(hass, result, **result["data_schema"]({}))
 
     assert result["step_id"] == "tariff"
-    assert result["data_schema"]({})["preset"] == "no/tensio"
-    result = await _answer(hass, result, preset="no/tensio")
+    assert result["data_schema"]({})["preset"] == "no/tensio-ts"
+    result = await _answer(hass, result, preset="no/tensio-ts")
     assert result["step_id"] == "tariff_preset"
     result = await _answer(hass, result)
 
@@ -235,5 +235,5 @@ async def test_reconfiguring_updates_the_same_entry_and_a_change_persists(
     # The hard-limit step is gone; nothing writes `hard_limits` any more (S2).
     assert "hard_limits" not in entry.data
     assert entry.data[CONF_PRICES]["sources"][0]["key"] == "nordpool_action"
-    assert entry.data[CONF_TARIFF]["preset_file"] == "no/tensio"
+    assert entry.data[CONF_TARIFF]["preset_file"] == "no/tensio-ts"
     assert entry.data[CONF_PRESENCE]["persons"] == ["person.joel", "person.kari"]

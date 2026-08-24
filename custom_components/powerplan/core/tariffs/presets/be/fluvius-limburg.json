@@ -1,0 +1,32 @@
+{
+  "id": "be.fluvius-limburg.household",
+  "name": "Fluvius Limburg – capaciteitstarief",
+  "country": "BE",
+  "operator": "Fluvius Limburg",
+  "currency": "EUR",
+  "tz": "Europe/Brussels",
+  "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FL%20-%202026%20-%20ELEK.pdf?VersionId=sp2IgErTz4CB1QfTNbUbXe_dY.suyU2Z",
+  "verified": "2026-08-24",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "verified": "2026-08-24",
+      "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FL%20-%202026%20-%20ELEK.pdf?VersionId=sp2IgErTz4CB1QfTNbUbXe_dY.suyU2Z",
+      "peak": {
+        "window_min": 15,
+        "per_day": "all",
+        "per_period": "max",
+        "n": 1,
+        "period": "rolling_months",
+        "rolling_months": 12,
+        "price_period_unit": "year",
+        "pricing": {
+          "linear": {
+            "price_per_kw": 49.0469384,
+            "min_kw": 2.5
+          }
+        }
+      }
+    }
+  ]
+}

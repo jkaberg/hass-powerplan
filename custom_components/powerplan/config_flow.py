@@ -138,6 +138,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         #: The tariff step's own answer - a preset, `unknown` or `custom` -
         #: which names the tariff on the screens that follow (HUB-11).
         self._preset_choice: str | None = None
+        #: The chosen preset's JSON (a template has nulls) and the tariff this site
+        #: keeps: that JSON with the household's own numbers (D2 §6, INV-66).
+        self._raw: dict[str, Any] | None = None
+        self._copy: dict[str, Any] | None = None
+        #: A template's step table as the household entered it from the bill.
+        self._steps: dict[str, Any] = {}
         self._spec: TariffSpec | None = None
         self._version: TariffVersion | None = None
         self._summary: TariffSummary | None = None
@@ -269,10 +275,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         preset_file = tariff.get("preset_file")
         if self._path is OnboardingPath.FULL and preset_file:
             self._preset_file = preset_file
-            self._spec = await self.hass.async_add_executor_job(loader.load, preset_file)
-            today = await self._local_today()
-            self._version = self._spec.version_at(today)
-            self._summary = loader.summarize(self._spec, today)
+            self._raw = await self.hass.async_add_executor_job(steps.preset_raw, preset_file)
+            if tariff.get("spec") and steps.needs_steps(self._raw):
+                self._steps = steps.step_answers(tariff["spec"])
             self._preset_choice = steps.preset_choice(preset_file, self._country)
             # An entry from before WP U.1 holds `step:<i>` and an English
             # `description`; the first reads as `step_<i>` and the second is
@@ -297,6 +302,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 f"limit_{index + 1}": value
                 for index, value in enumerate(tariff.get("contracted_kw") or ())
             }
+            await self._apply_tariff()
 
         self._presence = dict(data.get(CONF_PRESENCE) or {})
         self._notifications = dict(data.get(CONF_NOTIFICATIONS) or {})
@@ -786,11 +792,53 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         country = user_input.get("country") or self._country
         self._electrical["country"] = country
         self._preset_choice = str(user_input["preset"])
-        self._preset_file = steps.preset_file(self._preset_choice, country)
-        self._spec = await self.hass.async_add_executor_job(loader.load, self._preset_file)
+        chosen = steps.preset_file(self._preset_choice, country)
+        if chosen != self._preset_file:
+            # Another company's table: the last one's numbers are not this one's.
+            self._steps, self._limits = {}, {}
+        self._preset_file = chosen
+        self._raw = await self.hass.async_add_executor_job(steps.preset_raw, chosen)
+        if steps.needs_steps(self._raw):
+            return await self.async_step_tariff_steps()
+        await self._apply_tariff()
+        return await self.async_step_tariff_preset()
+
+    async def _apply_tariff(self) -> None:
+        """Build the tariff this site keeps from the preset and the household's numbers."""
+        assert self._raw is not None
+        self._copy = steps.filled_tariff(
+            self._raw, country=self._country, steps=self._steps, limits=self._limits
+        )
+        self._spec = loader.from_raw(self._copy, source="flow")
         today = await self._local_today()
         self._version = self._spec.version_at(today)
         self._summary = loader.summarize(self._spec, today)
+
+    async def async_step_tariff_steps(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask the steps from the bill - the country's rule has no numbers of its own (D2 §6)."""
+        if user_input is None:
+            return self._form(
+                "tariff_steps", steps.steps_schema(self._currency, values=self._steps)
+            )
+        try:
+            rows = steps.step_rows(user_input)
+        except steps.StepError as err:
+            return self._form(
+                "tariff_steps",
+                steps.steps_schema(self._currency, values=user_input),
+                errors={err.field: err.key},
+            )
+        self._steps = dict(user_input)
+        if not rows:
+            # No bill at hand: the safe default is no capacity component, as
+            # `custom` - the summary says so, and a reconfigure can add it later.
+            self._preset_file = steps.PRESET_CUSTOM
+            self._raw = await self.hass.async_add_executor_job(
+                steps.preset_raw, steps.PRESET_CUSTOM
+            )
+        await self._apply_tariff()
         return await self.async_step_tariff_preset()
 
     def _tariff_name(self, text: Text) -> str:
@@ -879,6 +927,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "tariff_limits", steps.limits_schema(self._version, values=self._limits)
             )
         self._limits = dict(user_input)
+        # The household's contract, not the starting value, is what the site keeps.
+        await self._apply_tariff()
         return await self.async_step_export()
 
     # ------------------------------------------------- presence, notifications
@@ -962,6 +1012,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 answers=self._target,
                 bills=self._bills,
                 limits=self._limits,
+                copy=self._copy,
             )
         elif self._path is OnboardingPath.PRICE_ONLY:
             tariff = dict(steps.NO_PEAK_TARIFF)
@@ -991,7 +1042,13 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._path is not OnboardingPath.FULL or self._version is None:
             return []
         registered = set(modifiers.keys())
-        return [key for key in self._version.energy_components if key in registered]
+        # A grid charge published with the levies included already carries them,
+        # so the levy add-on is not offered on top (D-0523). VAT is: the preset's
+        # VAT covers its own charge, the household's VAT still taxes the spot price.
+        levies = [
+            key for key in self._version.energy_components.get("includes") or () if key == "levy"
+        ]
+        return [key for key in (*self._version.energy_components, *levies) if key in registered]
 
     def _preset_modifiers(self) -> list[dict[str, Any]]:
         """Hand the preset's own energy components to D1 as modifiers (D2 §6).

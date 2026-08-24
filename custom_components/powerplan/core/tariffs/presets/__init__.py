@@ -7,21 +7,33 @@ schema and loader take them unchanged.
 """
 
 from .loader import (
+    RETIRED,
     EnergyRate,
     PresetError,
     SummaryBand,
     TariffSummary,
+    TemplateError,
+    fill_template,
+    from_raw,
     load,
+    load_raw,
+    successor,
     summarize,
     validate,
 )
 
 __all__ = [
+    "RETIRED",
     "EnergyRate",
     "PresetError",
     "SummaryBand",
     "TariffSummary",
+    "TemplateError",
+    "fill_template",
+    "from_raw",
     "load",
+    "load_raw",
+    "successor",
     "summarize",
     "validate",
 ]

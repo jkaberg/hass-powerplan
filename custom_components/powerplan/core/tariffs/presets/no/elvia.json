@@ -5,14 +5,13 @@
   "operator": "Elvia",
   "currency": "NOK",
   "tz": "Europe/Oslo",
-  "source_url": "https://www.elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/",
-  "verified": "2026-04-08",
+  "source_url": "https://www.elvia.no/siteassets/dokumenter/priser/2026/1-juli-2026/tariffblad_1_0_standard-tariff_privat_20260701.pdf",
+  "verified": "2026-08-24",
   "versions": [
     {
       "valid_from": "2026-07-01",
-      "verified": "2026-04-08",
-      "assumed": "Only the open-ended step above 20 kW: Elvia publishes trinn 6–10 in a separate price list that could not be read on 2026-09-19, and 925 NOK continues the 165–170 NOK interval of trinn 4 and 5. Trinn 1–5 and both energy rates are read from the source page.",
-      "source_url": "https://www.elvia.no/nettleie/alt-om-nettleiepriser/nettleie-pris/",
+      "verified": "2026-08-24",
+      "source_url": "https://www.elvia.no/siteassets/dokumenter/priser/2026/1-juli-2026/tariffblad_1_0_standard-tariff_privat_20260701.pdf",
       "peak": {
         "window_min": 60,
         "per_day": "max",
@@ -22,26 +21,88 @@
         "period": "month",
         "pricing": {
           "steps": [
-            [2, 150, "0–2 kW"],
-            [5, 250, "2–5 kW"],
-            [10, 420, "5–10 kW"],
-            [15, 585, "10–15 kW"],
-            [20, 755, "15–20 kW"],
-            [null, 925, "over 20 kW"]
+            [
+              2,
+              150,
+              "0–2 kW"
+            ],
+            [
+              5,
+              250,
+              "2–5 kW"
+            ],
+            [
+              10,
+              420,
+              "5–10 kW"
+            ],
+            [
+              15,
+              585,
+              "10–15 kW"
+            ],
+            [
+              20,
+              755,
+              "15–20 kW"
+            ],
+            [
+              25,
+              925,
+              "20–25 kW"
+            ],
+            [
+              50,
+              1760,
+              "25–50 kW"
+            ],
+            [
+              75,
+              2600,
+              "50–75 kW"
+            ],
+            [
+              100,
+              3440,
+              "75–100 kW"
+            ],
+            [
+              null,
+              6800,
+              "over 100 kW"
+            ]
           ]
         }
       },
       "energy_components": {
+        "includes": [
+          "vat",
+          "levy"
+        ],
         "tou_schedule": {
           "periods": [
             {
               "name": "dag",
               "price": 0.464,
-              "hours": [[360, 1320]],
-              "weekdays": [0, 1, 2, 3, 4],
+              "hours": [
+                [
+                  360,
+                  1320
+                ]
+              ],
+              "weekdays": [
+                0,
+                1,
+                2,
+                3,
+                4
+              ],
               "holidays": "exclude"
             },
-            {"name": "natt", "price": 0.314}
+            {
+              "name": "natt",
+              "price": 0.314
+            }
           ]
         }
       }

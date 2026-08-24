@@ -44,19 +44,19 @@
 ```
 tests/
 ├── conftest.py                    fake hass (pytest-homeassistant-custom-component), time control, store in tmp
-├── builders/                      curves.py histories.py houses.py devices.py events.py
-├── sim/                           base.py (the shapes below) slab.py room.py tank.py ev.py heatpump.py cycle.py charger_ble.py meter.py weather.py prices.py uncontrolled.py household.py
+├── builders/                      curves.py histories.py houses.py devices.py events.py presets.py tariff_sources.py
+├── sim/                           base.py (the shapes below) slab.py room.py tank.py ev.py heatpump.py cycle.py charger_ble.py meter.py weather.py prices.py uncontrolled.py household.py production.py battery.py tempo.py switch.py
 ├── core/
 │   ├── metering/ tariffs/ pricing/ loads/ strategies/ allocation/ forecasts/ engine/     one file per D-LLD §9 item group
-│   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py
+│   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py, test_no_network.py
 ├── property/                      hypothesis: greedy_vs_bruteforce, window_sums, normalise_roundtrip, gate_matrix
-├── fixtures/presets/               labelled synthetic tariff versions the benchmark needs and no operator has published (the Tensio 2027 switch, INV-52) - never shipped (D2 §2)
-├── golden/                        presets/<id>.json (history → expected level/fee); questionnaires/<type>.json; snapshot_schema.json
-├── scenarios/                     runner.py + scenarios/*.yaml (a day in the house; a month; DST day; restart mid-window; BLE flaps; price outage)
+├── fixtures/presets/              labelled synthetic tariff versions the benchmark needs and no operator has published (a next-year switch, INV-52), never shipped (D2 §2); the company tariffs the houses run on
+├── golden/                        presets/<id>.json (history → expected level/fee); questionnaires/<type>.json; profiles/; snapshot_schema.json
+├── scenarios/                     runner.py, catalogue.py, cache.py (a day in the house; a month; DST day; restart mid-window; BLE flaps; price outage)
 ├── benchmark/                     houses/<name>.py (BenchmarkHouse specs), year.py (SyntheticYear generators), baselines/<house>.json, test_benchmark.py (tiers)
 ├── e2e/                           fake_house.py (simulated house as HA entities), test_e2e_day.py (integration loaded, one accelerated day)
 ├── providers/                     meters/ prices/formats/ events/ profiles/ (captured fixtures)
-├── flows/                         site, load, group, zone, circuit, options; entity tables; services; repairs; diagnostics; translations
+├── flows/                         site, load, group, zone, circuit, options; entity tables; actions; repairs; diagnostics; translations
 └── perf/                          tick_budget.py plan_budget.py
 tools/
 ├── backtest.py                    recorder/CSV/simulator → metrics
@@ -64,8 +64,9 @@ tools/
 ├── capture_fixture.py             dump a device's entities/attributes from a live HA into tests/fixtures/captured/
 ├── price_replay.py                curve regimes through the planner (from effektstyring)
 ├── inv_report.py                  which INV has which tests (feeds the traceability test)
-├── dk_presets.py                   Energinet DatahubPricelist → dk/<company>.json, rows with ValidFrom ≤ the run date only (D2 §2)
-└── preset_age.py                  lists shipped preset versions verified more than 6 months ago - a CI step that warns, never fails (PLAN R12)
+├── digests.py, durations.py       speed without change (§5.13), xdist ordering
+├── tariff_canary.py, vat_check.py the nightly live source check and the EU VAT check (§5.15)
+└── preset_age.py                  dated facts verified more than 6 months ago, a CI step that warns and never fails (PLAN R12)
 ```
 
 ---
@@ -254,15 +255,15 @@ One fictional house, one synthetic year, one metric set, one committed baseline 
 
 | element | spec | source |
 |---|---|---|
-| site | 230 V IT 3φ, 63 A main fuse; NO preset `no/tensio` with **both** versions (2026) so the year straddles the switch (INV-52). The preset becomes `no/tensio-ts` with its verified versions, and the 2027-01-01 version a labelled synthetic fixture in `tests/fixtures/presets/` (D2 §2) - the switch stays in the year, the guess leaves the shipped files | D3 §5.1 table; the preset golden files |
-| EV | 3φ 32 A charger with BLE quirks (10-min drops, 6 A cliff), 60 kWh battery, weekday departure 07:30 ± 10 min, arrival 16:30 ± 30 min, energy per session lognormal around a commute (`assumed`; replaced by recorder sessions), plugged in on arrival 90 % of weekdays, weekend trips | `sim/ev.py`, `sim/charger_ble.py`, `sim/household.py` |
-| floor heating | 5 loops (2 bathrooms, hall, kitchen, living), cable in screed, areas 4–30 m², comfort per D4 §6.1 defaults, **two-node RC** slab + room model with a loss coefficient from area × U-value assumptions (`assumed`) and window solar gain | `sim/slab.py`; D4 §6.1 as the questionnaire *answers*, not the model |
-| water heater | 300 L, 3 kW, thermostat 75 °C, stratified two-layer tank, draw-off 45 L/person/day at 55 °C for 3 persons, morning/evening weighted, legionella weekly | `sim/tank.py`; D4 §5.7 draw-off profile |
-| heat pump | air-to-air 1.5 kW rated, COP curve by outdoor temperature, defrost cycles below +3 °C, band 1 K | `sim/heatpump.py`; COP curve from a manufacturer datasheet named in the file |
+| site | 230 V IT 3φ, 63 A main fuse; Tensio TS's tariff with **two** versions so the year straddles a switch (INV-52) - the verified one, and the new-year version a labelled synthetic fixture (`tests/fixtures/presets/no/tensio-ts-2027.json`, loaded by `tests/builders/houses.py::fixture_preset`, D2 §2); `be_quarter` runs on `be/fluvius-imewo` | D3 §5.1 table; the tariff golden files |
+| EV | 3φ 32 A charger with BLE quirks (10-min drops, 6 A cliff), 60 kWh battery, weekday departure 07:30 ± 10 min, arrival 16:30 ± 30 min, energy per session lognormal around a commute (`assumed`, replaced by recorder sessions), plugged in on arrival 90 % of weekdays, weekend trips | `sim/ev.py`, `sim/charger_ble.py`, `sim/household.py` |
+| floor heating | 5 loops (2 bathrooms, hall, kitchen, living), cable in screed, areas 4–30 m², comfort per D4 §6.1 defaults, a **two-node RC** slab + room model with a loss coefficient from area × U-value assumptions (`assumed`) and window solar gain | `sim/slab.py`; D4 §6.1 as the questionnaire *answers*, not the model |
+| water heater | 300 L, 3 kW, thermostat 75 °C, stratified two-layer tank, draw-off 45 L/person/day at 55 °C for 3 persons, weighted to morning and evening, legionella weekly | `sim/tank.py`; D4 §5.7 draw-off profile |
+| heat pump | air-to-air 1.5 kW rated, COP curve by outdoor temperature, defrost cycles below +3 °C, band 1 K | `sim/heatpump.py`; COP curve anchored on D4's table (D-0044) |
 | radiators | 2 bedroom panel heaters 800 W, plug-controlled | `sim/room.py` |
 | dishwasher | eco programme 0.9 kWh / 3 h, requested 5 evenings a week at 19:00–21:00, ready by 07:00 | D4 §6.8 |
 | sauna | 6 kW, Saturdays 19:00 for 90 min, `generic_switch` with force | `assumed` |
-| uncontrolled | base load 250–400 W diurnal, cooking peaks 17:00–19:00 weekdays (1.5–3 kW, 30–60 min), laundry 3× weekly, Sunday roast (oven 2.5 kW × 2 h), lighting seasonal, stochastic component seeded; annual total scaled to the SSB/NVE figure for the house class minus the controlled loads | `sim/uncontrolled.py`; SSB/NVE table cited in the file |
+| uncontrolled | base load 250–400 W diurnal, cooking peaks 17:00–19:00 weekdays (1.5–3 kW, 30–60 min), laundry 3× weekly, Sunday roast (oven 2.5 kW × 2 h), seasonal lighting, a seeded stochastic part; the annual total scaled to the SSB/NVE figure for the house class minus the controlled loads | `sim/uncontrolled.py`; SSB/NVE table cited in the file |
 | household | 2 adults + 1 child; presence from a weekly pattern; vacation weeks at Christmas (2 w), winter break (1 w), Easter (1 w), summer (3 w) with arrival preheat | `sim/household.py` |
 
 **Year `y2026_27`:** a July-to-June year (365 days, `Europe/Oslo`, both DST changes, a full heating season, one new year). Price regimes: `flat` (Norgespris 0.50 NOK/kWh incl. VAT through the autumn, HLD §8) → `spot_like` (an NO3-shaped 15-min curve after new year: hour-of-day × month means, weekday/weekend, a daily spread drawn from the published distribution, winter volatility, two `negative_days` in April) with the Tensio energy component as a `tou_schedule` modifier and the new version's prices from new year; one `outage` of 48 h in November. Weather: climate-normal monthly means with a diurnal cycle, two seeded cold snaps (−18 °C, 5 days each, January and February), a mild week in December. Faults on known days: `meter_stale` (30 min, twice), `ble_flap` (weekly), `restart` (mid-window, monthly), `clock_jump` (once), `price_outage` (the 48 h). Events: none on this house (`day_type` events belong to `fr_tempo`).
@@ -428,7 +429,7 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 9. Baseline machinery: a metric outside tolerance fails `--compare` with the offending row; `zero` tolerances are enforced; a baseline update without a `design/benchmarks/CHANGELOG.md` line fails a lint check.
 10. `e2e` day: the integration set up through its real flows against `fake_house`; every entity in D8 §5.5 exists; writes arrive with `blocking=True` (the executor's test until WP2.4 binds a load; the day itself writes nothing in phase 1); the pure runner's same day agrees - closed windows one for one, `over_target` and the capacity fee equal, writes both zero; the phase-1 gate's projection p95 and warning leads as §5.10 defines them (`tests/e2e/test_e2e_day.py`).
 11. Uncontrolled loads in the house spec (types not yet implemented) run on their own logic and are metered into `uncontrolled`; the baseline's `controlled_share` matches the build.
-12. `tools/dk_presets.py` on a captured DatahubPricelist page emits one version per season with `ValidFrom` ≤ the run date and nothing later; `tools/preset_age.py` lists exactly the versions verified more than 6 months before a given date.
+12. `tools/preset_age.py` lists exactly the versions verified more than 6 months before a given date. *(PLAN dec. 38: `tools/dk_presets.py` is dropped - Denmark's tariff is fetched at setup by D2's `datahub_pricelist` source, tested by D2 §9 25.)*
 13. *(§5.13; WP T.1b, D-0333)* Speed without change: `tools/digests.py` runs every cached scenario fixture and the smoke benchmark on the PR's tree and on its base, each recording every result's digest (`POWERPLAN_DIGESTS`, `tests/scenarios/cache.py`); one result that moved or went missing fails, whatever the change gains. CI runs it on every PR labelled `speed` (the `digests` job); an unlabelled PR is not compared, because a behaviour change inside tolerance is not a forced re-record (D-0331). `tests/scenarios/test_digests.py` holds the recorder and the comparison. The test count and the tolerance files are unchanged by T.1; the PR description carries the before/after wall times of the PR command and each CI job.
 
 ---

@@ -206,7 +206,7 @@ async def test_19_a_quarter_hour_market_names_its_window_by_the_quarter(
     hass: HomeAssistant, meter: FakeMeter
 ) -> None:
     """Fluvius measures 15 minutes: the translation key follows; the unique id does not (INV-50)."""
-    data = site_data(hass, tariff="be/fluvius")
+    data = site_data(hass, tariff="be/fluvius-imewo")
     entry = MockConfigEntry(domain=DOMAIN, title="Test site", entry_id=SITE_ENTRY_ID, data=data)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)

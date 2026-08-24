@@ -146,10 +146,14 @@ class Text:
         return f"{self.number(value)} kW"
 
     def money(self, amount: Decimal | float, currency: str) -> str:
-        """Return money in major units: `1 200 kr`, `53,39 €`; a price keeps its own scale."""
+        """Return money in major units: `1 200 kr`, `53,39 €` - never finer than a cent.
+
+        A regulator's sheet may carry seven decimals (VREG's 49,4036563 EUR/kW/year);
+        the household's bill shows two, so the flow does too.
+        """
         value = Decimal(str(amount))
         symbol = _CURRENCIES.get(currency, (currency, currency))[0]
-        return f"{self.number(value, _decimals(value))} {symbol}"
+        return f"{self.number(value, min(_decimals(value), 2))} {symbol}"
 
     def minor_per_kwh(self, amount: Decimal | float, currency: str) -> str:
         """Return a price per kWh in the currency's minor unit: `36,04 øre/kWh` (D1 §6)."""

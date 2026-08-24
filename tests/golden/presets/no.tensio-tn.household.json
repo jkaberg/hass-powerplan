@@ -1,16 +1,20 @@
 {
-  "_": "Golden for the no.tensio.household preset — D2 §9 1, D9 §3. Every number carries its source; a change to the preset or the evaluator changes this file with a source, never the other way round.",
-  "preset": "no/tensio",
-  "id": "no.tensio.household",
+  "_": "Golden for the no.tensio-tn.household preset — D2 §9 1 and 22, D9 §3. Every number carries its source; a change to the preset or the evaluator changes this file with a source, never the other way round.",
+  "preset": "no/tensio-tn",
+  "id": "no.tensio-tn.household",
   "tz": "Europe/Oslo",
   "month": "2026-09",
   "window_min": 60,
   "period_key": "2026-09",
   "at_local": "2026-09-15T12:00:00",
-  "describes": ["3 highest hours on 3 different days", "| 0–2 kW | 137 kr |", "| Above 20 kW | 1,200 kr |"],
-  "version_valid_from": "2026-01-01",
+  "describes": [
+    "3 highest hours on 3 different days",
+    "| 0–2 kW | 141 kr |",
+    "| Above 500 kW | 30,046 kr |"
+  ],
+  "version_valid_from": "2026-07-01",
   "sources": {
-    "steps": "D2 §6 preset excerpt, verified 2026-09-19 against tensio.no: up to 2 kW 137, 5 kW 244, 10 kW 416, 15 kW 613, 20 kW 812, over 20 kW 1200 NOK/month",
+    "steps": "tensio.no/no/kunde/nettleie/nettleiepriser-for-privat, read 2026-09-23: the table the page's CMS files under `north` (Tensio TN; NVE's nettleietariffer for TENSIO TN AS on 2026-09-01 agrees at 141/284/512), from 2026-07-01, NOK/month incl. VAT: 0–2 kW 141, 2–5 kW 284, 5–10 kW 512, 10–15 kW 776, 15–20 kW 1041, 20–25 kW 1305, 25–50 kW 2274, 50–75 kW 3598, 75–100 kW 4921, 100–150 kW 7123, 150–200 kW 9770, 200–300 kW 14175, 300–400 kW 19467, 400–500 kW 24759, over 500 kW 30046.",
     "windows": "effektstyring README §1, the 2026-09 row of the table verified against 12 months of recorder history: d03h21 5.26, d03h22 4.91, d03h23 4.52, d02h22 4.39, d01h22 3.97 kWh",
     "metric_kw": "(5.26 + 4.39 + 3.97) / 3 = 13.62 / 3 = 4.54 — the published top-3-daily-maxima mean for 2026-09",
     "not_metric_kw": "(5.26 + 4.91 + 4.52) / 3 = 14.69 / 3 = 4.896667 — what the mean would be WITHOUT distinct_days (the README's 'top 3 hours ignoring day' column, 4.897). The golden asserts the metric is not this.",
@@ -19,45 +23,69 @@
     "checkpoints": "hand-computed in the test file; eps 0.30 kWh per 60-min window (D2 §6), cap margin 0.5 kW (D2 §5.4)"
   },
   "windows": [
-    {"local": "2026-09-01T22:00:00", "kwh": 3.97},
-    {"local": "2026-09-02T22:00:00", "kwh": 4.39},
-    {"local": "2026-09-03T21:00:00", "kwh": 5.26},
-    {"local": "2026-09-03T22:00:00", "kwh": 4.91},
-    {"local": "2026-09-03T23:00:00", "kwh": 4.52}
+    {
+      "local": "2026-09-01T22:00:00",
+      "kwh": 3.97
+    },
+    {
+      "local": "2026-09-02T22:00:00",
+      "kwh": 4.39
+    },
+    {
+      "local": "2026-09-03T21:00:00",
+      "kwh": 5.26
+    },
+    {
+      "local": "2026-09-03T22:00:00",
+      "kwh": 4.91
+    },
+    {
+      "local": "2026-09-03T23:00:00",
+      "kwh": 4.52
+    }
   ],
   "expected": {
     "metric_kw": 4.54,
     "not_metric_kw": 4.896667,
     "level_index": 1,
     "level_name": "2–5 kW",
-    "fee": "244",
+    "fee": "284",
     "currency": "NOK",
     "confidence": "exact",
-    "bill_fee": "244",
+    "bill_fee": "284",
     "windows_priced": 5
   },
   "then_add": [
-    {"local": "2026-09-04T18:00:00", "kwh": 9.15},
-    {"local": "2026-09-05T18:00:00", "kwh": 10.6}
+    {
+      "local": "2026-09-04T18:00:00",
+      "kwh": 9.15
+    },
+    {
+      "local": "2026-09-05T18:00:00",
+      "kwh": 10.6
+    }
   ],
   "expected_after": {
     "metric_kw": 8.336667,
     "level_index": 2,
     "level_name": "5–10 kW",
-    "fee": "416",
+    "fee": "512",
     "currency": "NOK",
     "confidence": "exact",
-    "top_entries": [["2026-09-05", 10.6], ["2026-09-04", 9.15], ["2026-09-03", 5.26]]
-  },
-  "second_version": {
-    "_": "INV-52: the same five-day month, recorded in January 2027 instead, is billed on the 2027-01-01 version. Its prices are ASSUMED (the preset file says so) - only the switch is under test, not the numbers.",
-    "valid_from": "2027-01-01",
-    "month": "2027-01",
-    "metric_kw": 8.336667,
-    "level_index": 2,
-    "level_name": "5–10 kW",
-    "fee": "441",
-    "source": "137/244/416/613/812/1200 x 1.06, rounded to whole NOK: 145/259/441/650/861/1272"
+    "top_entries": [
+      [
+        "2026-09-05",
+        10.6
+      ],
+      [
+        "2026-09-04",
+        9.15
+      ],
+      [
+        "2026-09-03",
+        5.26
+      ]
+    ]
   },
   "checkpoints": [
     {

@@ -199,7 +199,7 @@ def site_data(
     hass: HomeAssistant,
     *,
     meter: bool = True,
-    tariff: str | None = "no/tensio",
+    tariff: str | None = "no/tensio-ts",
     target_kw: float | None = None,
 ) -> dict[str, Any]:
     """Return `entry.data` as the site flow materialises it (D8 §4), for one test site.
@@ -208,7 +208,7 @@ def site_data(
     """
     tariff_data: dict[str, Any] = (
         {
-            "preset_id": "no/tensio",
+            "preset_id": "no/tensio-ts",
             "preset_file": tariff,
             "version_ids": [version.version_id for version in loader.load(tariff).versions],
             "target": "auto" if target_kw is None else "kw",

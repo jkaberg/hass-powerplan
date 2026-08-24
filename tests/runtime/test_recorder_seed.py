@@ -176,7 +176,8 @@ async def test_h3_a_site_created_mid_month_reports_the_month_s_level_from_the_re
     level = _state(hass, "sensor", "level")
     assert level.state == "5–10 kW"
     assert level.attributes["metric_kw"] == pytest.approx((9.0 + 8.5 + 8.0) / 3)
-    assert level.attributes["fee"].startswith("416")
+    # Tensio TS's H1 2026 sheet: 5–10 kW 371 NOK/month.
+    assert level.attributes["fee"].startswith("371")
     history = runtime.build.tariff.history
     assert date(2025, 12, 28) not in history.days, "December is another period"
     # Every closed hour of January: the row filed under 09:00 closes 08:00–09:00.

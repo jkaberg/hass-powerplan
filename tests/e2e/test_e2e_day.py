@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -43,7 +43,10 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.engine import EventKind
 from custom_components.powerplan.core.metering import ClosedWindow
+from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
+from custom_components.powerplan.core.tariffs import Evaluator
 from custom_components.powerplan.core.tariffs.evaluator import Period
+from custom_components.powerplan.core.tariffs.presets import loader
 from custom_components.powerplan.entity import unique_id
 from tests.benchmark.year import y2026_27
 from tests.builders.houses import OSLO, nordic_detached
@@ -113,12 +116,18 @@ PEAK_KINDS = frozenset({"peak", "peak_uncontrolled"})
 def _house() -> House:
     """Return the benchmark house on the benchmark year, every load passive (D9 §9 11)."""
     year = y2026_27(SEED)
-    return nordic_detached(
+    house = nordic_detached(
         seed=SEED,
         start=year.start,
         price_regimes=year.price_regimes,
         weather_events=year.weather_events,
         controlled=frozenset(),
+    )
+    # The HA side runs what the flow picks, the shipped `no/tensio-ts`; the
+    # benchmark's synthetic 2027 version is a test fixture neither side ships
+    # (D-0524), so the pure side bills on the same file.
+    return replace(
+        house, tariff=Evaluator(loader.load("no/tensio-ts"), tz=OSLO, calendar=NO_HOLIDAYS)
     )
 
 
@@ -169,7 +178,7 @@ async def _through_meter(
 async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
     """Tensio, and the 5–10 kW step as the target."""
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio-ts")
     assert result["step_id"] == "tariff_preset"
     result = await _answer(hass, result, confirm="yes")
     assert result["step_id"] == "tariff_target"

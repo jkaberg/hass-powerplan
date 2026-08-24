@@ -1,0 +1,360 @@
+{
+  "id": "no.tensio-tn.household",
+  "name": "Tensio TN – privatkunde",
+  "country": "NO",
+  "operator": "Tensio TN",
+  "currency": "NOK",
+  "tz": "Europe/Oslo",
+  "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
+  "verified": "2026-08-24",
+  "versions": [
+    {
+      "valid_from": "2025-07-01",
+      "verified": "2026-08-24",
+      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/82999f6aedb9325d09e5f737d04b7e03d191c6db.pdf",
+      "peak": {
+        "window_min": 60,
+        "per_day": "max",
+        "per_period": "mean_top_n",
+        "n": 3,
+        "distinct_days": true,
+        "period": "month",
+        "pricing": {
+          "steps": [
+            [
+              2,
+              140,
+              "0–2 kW"
+            ],
+            [
+              5,
+              281,
+              "2–5 kW"
+            ],
+            [
+              10,
+              508,
+              "5–10 kW"
+            ],
+            [
+              15,
+              770,
+              "10–15 kW"
+            ],
+            [
+              20,
+              1032,
+              "15–20 kW"
+            ],
+            [
+              25,
+              1295,
+              "20–25 kW"
+            ],
+            [
+              50,
+              2256,
+              "25–50 kW"
+            ],
+            [
+              75,
+              3570,
+              "50–75 kW"
+            ],
+            [
+              100,
+              4882,
+              "75–100 kW"
+            ],
+            [
+              150,
+              7067,
+              "100–150 kW"
+            ],
+            [
+              200,
+              9693,
+              "150–200 kW"
+            ],
+            [
+              300,
+              14063,
+              "200–300 kW"
+            ],
+            [
+              400,
+              19313,
+              "300–400 kW"
+            ],
+            [
+              500,
+              24562,
+              "400–500 kW"
+            ],
+            [
+              null,
+              29807,
+              "over 500 kW"
+            ]
+          ]
+        }
+      },
+      "energy_components": {
+        "includes": [
+          "vat",
+          "levy"
+        ],
+        "tou_schedule": {
+          "periods": [
+            {
+              "name": "dag",
+              "price": 0.5066,
+              "hours": [
+                [
+                  360,
+                  1320
+                ]
+              ]
+            },
+            {
+              "name": "natt",
+              "price": 0.3379
+            }
+          ]
+        }
+      }
+    },
+    {
+      "valid_from": "2026-01-01",
+      "verified": "2026-08-24",
+      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/09adbe4bd2eded08c99c2b6b5b2eb2cd6b08a8bf.pdf",
+      "peak": {
+        "window_min": 60,
+        "per_day": "max",
+        "per_period": "mean_top_n",
+        "n": 3,
+        "distinct_days": true,
+        "period": "month",
+        "pricing": {
+          "steps": [
+            [
+              2,
+              134,
+              "0–2 kW"
+            ],
+            [
+              5,
+              270,
+              "2–5 kW"
+            ],
+            [
+              10,
+              488,
+              "5–10 kW"
+            ],
+            [
+              15,
+              739,
+              "10–15 kW"
+            ],
+            [
+              20,
+              991,
+              "15–20 kW"
+            ],
+            [
+              25,
+              1243,
+              "20–25 kW"
+            ],
+            [
+              50,
+              2166,
+              "25–50 kW"
+            ],
+            [
+              75,
+              3427,
+              "50–75 kW"
+            ],
+            [
+              100,
+              4687,
+              "75–100 kW"
+            ],
+            [
+              150,
+              6784,
+              "100–150 kW"
+            ],
+            [
+              200,
+              9305,
+              "150–200 kW"
+            ],
+            [
+              300,
+              13500,
+              "200–300 kW"
+            ],
+            [
+              400,
+              18540,
+              "300–400 kW"
+            ],
+            [
+              500,
+              23580,
+              "400–500 kW"
+            ],
+            [
+              null,
+              28615,
+              "over 500 kW"
+            ]
+          ]
+        }
+      },
+      "energy_components": {
+        "includes": [
+          "vat",
+          "levy"
+        ],
+        "tou_schedule": {
+          "periods": [
+            {
+              "name": "dag",
+              "price": 0.4254,
+              "hours": [
+                [
+                  360,
+                  1320
+                ]
+              ]
+            },
+            {
+              "name": "natt",
+              "price": 0.2642
+            }
+          ]
+        }
+      }
+    },
+    {
+      "valid_from": "2026-07-01",
+      "verified": "2026-08-24",
+      "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
+      "peak": {
+        "window_min": 60,
+        "per_day": "max",
+        "per_period": "mean_top_n",
+        "n": 3,
+        "distinct_days": true,
+        "period": "month",
+        "pricing": {
+          "steps": [
+            [
+              2,
+              141,
+              "0–2 kW"
+            ],
+            [
+              5,
+              284,
+              "2–5 kW"
+            ],
+            [
+              10,
+              512,
+              "5–10 kW"
+            ],
+            [
+              15,
+              776,
+              "10–15 kW"
+            ],
+            [
+              20,
+              1041,
+              "15–20 kW"
+            ],
+            [
+              25,
+              1305,
+              "20–25 kW"
+            ],
+            [
+              50,
+              2274,
+              "25–50 kW"
+            ],
+            [
+              75,
+              3598,
+              "50–75 kW"
+            ],
+            [
+              100,
+              4921,
+              "75–100 kW"
+            ],
+            [
+              150,
+              7123,
+              "100–150 kW"
+            ],
+            [
+              200,
+              9770,
+              "150–200 kW"
+            ],
+            [
+              300,
+              14175,
+              "200–300 kW"
+            ],
+            [
+              400,
+              19467,
+              "300–400 kW"
+            ],
+            [
+              500,
+              24759,
+              "400–500 kW"
+            ],
+            [
+              null,
+              30046,
+              "over 500 kW"
+            ]
+          ]
+        }
+      },
+      "energy_components": {
+        "includes": [
+          "vat",
+          "levy"
+        ],
+        "tou_schedule": {
+          "periods": [
+            {
+              "name": "dag",
+              "price": 0.4416,
+              "hours": [
+                [
+                  360,
+                  1320
+                ]
+              ]
+            },
+            {
+              "name": "natt",
+              "price": 0.2729
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

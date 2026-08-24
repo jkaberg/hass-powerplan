@@ -63,7 +63,7 @@ from custom_components.powerplan.providers.prices.formats import registry as for
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.select import PRESENCE_OPTIONS, RISK_OPTIONS
 from custom_components.powerplan.sensor import ADVICE_STATES
-from tests.core.tariffs.conftest import market_golden, preset_names
+from tests.core.tariffs.conftest import market_golden, preset_names, shipped_spec
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -364,7 +364,11 @@ def test_18b_every_flow_error_code_is_translated(language: str) -> None:
 def _max_steps() -> int:
     most = 0
     for name in preset_names():
-        for version in loader.load(name).versions:
+        if name == "no/template":
+            # Its steps are the household's; the steps form takes at most STEP_ROWS.
+            most = max(most, site_steps.STEP_ROWS)
+            continue
+        for version in shipped_spec(name).versions:
             peak = version.peak
             if peak is not None and isinstance(peak.pricing, StepTable):
                 most = max(most, len(peak.pricing.steps))
@@ -544,26 +548,26 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            # Tensio prices the day/night charge itself, so it is not offered (D-0430);
-            # its screen is walked on the price-only branch below.
+            # Tensio prices the day/night charge itself, levies included, so
+            # neither is offered (D-0430, D-0523); both screens are walked on the
+            # price-only branch below.
             "modifiers": {
                 "modifiers": [
                     k
                     for k in modifiers.keys()  # noqa: SIM118
-                    if k not in ("export_price", "tou_schedule")
+                    if k not in ("export_price", "tou_schedule", "levy")
                 ]
             },
             # Every add-on ticked: the required fields with no default (D8 §9
             # 21 (a)) each need one row or one number to get past their step.
             "modifier_fixed_price": {"price": 40},
-            "modifier_levy": {"amount": 7},
             "modifier_subsidy_threshold": {"threshold": 90},
             "modifier_cumulative_tier": {"tiers": [{"price": 100}]},
             "modifier_day_type": {"rates": [{"type": "weekday", "price": 50}]},
             "modifier_tou_schedule": {"periods": [{"price": 60}]},
             "export": {"mode": "spot_minus"},
             "carriers": {"carriers": [str(c) for c in Carrier if c is not Carrier.ELECTRICITY]},
-            "tariff": {"preset": "no/tensio"},
+            "tariff": {"preset": "no/tensio-ts"},
         },
     ),
     "full_not_listed": (
@@ -572,6 +576,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
             "tariff": {"preset": "unknown"},
+            # The Norwegian template: the steps from the household's bill (D2 §6).
+            "tariff_steps": {"fee_1": 150, "fee_2": 250, "fee_3": 420},
         },
     ),
     "full_custom": (
@@ -587,7 +593,7 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            "tariff": {"preset": "be/fluvius"},
+            "tariff": {"preset": "be/fluvius-imewo"},
         },
     ),
     "full_contracted": (
@@ -618,7 +624,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "prices": {"source": "fixed"},
             # Required, no default (D8 §9 21 (a)): nothing to derive it from.
             "prices_fixed": {"price": 100},
-            "modifiers": {"modifiers": ["vat", "tou_schedule"]},
+            "modifiers": {"modifiers": ["vat", "tou_schedule", "levy"]},
+            "modifier_levy": {"amount": 7},
             "modifier_tou_schedule": {"periods": [{"price": 60}]},
         },
     ),
@@ -657,7 +664,7 @@ async def test_18c_every_site_step_renders_data_only_in_the_language(
     hass.config.time_zone = environment.get("time_zone", "Europe/Oslo")
     _phone(hass)
     # The grid companies' own names are data, in their own languages (D2 §6).
-    names = {"Hjemme", "NO3"} | {loader.load(name).name for name in preset_names()}
+    names = {"Hjemme", "NO3"} | {loader.load_raw(name)["name"] for name in preset_names()}
     # So are the time zones' own names (`Swift_Current`, `Port_of_Spain`).
     names |= set(zoneinfo.available_timezones())
 
@@ -830,7 +837,7 @@ def test_18c_every_market_renders_a_table_the_household_can_recognise(
     data = market_golden(name)
     assert data is not None
     at = date.fromisoformat(f"{data['period_key']}-15")
-    table = tariff_table(text_for(language), loader.summarize(loader.load(name), at=at))
+    table = tariff_table(text_for(language), loader.summarize(shipped_spec(name), at=at))
     assert_in_language(table, language, set(), name)
     if language == "en":
         for fragment in data["describes"]:
@@ -866,13 +873,13 @@ def test_18c_grid_companies_sort_in_the_alphabet_with_the_escape_hatches_last() 
 
 def test_18c_the_target_options_are_assembled_in_the_language() -> None:
     """HUB-13, ENT-2: "Automatisk", then "Trinn N · range · fee"; values `step_<i>`."""
-    version = loader.load("no/tensio").version_at(date(2026, 9, 19))
+    version = loader.load("no/tensio-ts").version_at(date(2026, 9, 19))
     nb = target_options(text_for("nb"), version)
     assert nb[0] == {"value": "auto", "label": "Automatisk"}
-    assert nb[2] == {"value": "step_1", "label": "Trinn 2 · 2–5 kW · 244 kr/mnd"}
-    assert nb[-1] == {"value": "step_5", "label": "Trinn 6 · Over 20 kW · 1 200 kr/mnd"}  # noqa: RUF001 - nb groups thousands with a no-break space
+    assert nb[2] == {"value": "step_1", "label": "Trinn 2 · 2–5 kW · 233 kr/mnd"}
+    assert nb[-1] == {"value": "step_14", "label": "Trinn 15 · Over 500 kW · 21 473 kr/mnd"}  # noqa: RUF001 - nb groups thousands with a no-break space
     en = target_options(text_for("en"), version)
-    assert en[-1]["label"] == "Step 6 · Above 20 kW · 1,200 kr/month"
+    assert en[-1]["label"] == "Step 15 · Above 500 kW · 21,473 kr/month"
 
 
 # --------------------------------------------------------------------------- #

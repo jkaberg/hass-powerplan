@@ -862,9 +862,14 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
     """Load the chosen preset, or the `NoPeak` site a price-only house is.
 
     Returns the spec and whether the shipped preset's versions differ from the
-    ones the site was set up with (`preset_outdated`, D8 §5.9).
+    ones the site was set up with (`preset_outdated`, D8 §5.9). The entry's own
+    copy wins when it has one (D2 §6, INV-66): a release that edits or retires
+    the file never moves the site's ceiling, it only raises the repair.
     """
     preset_file = tariff.get("preset_file")
+    if tariff.get("spec"):
+        spec = loader.from_raw(tariff["spec"], source="entry")
+        return spec, _outdated(str(preset_file or ""), spec)
     if not preset_file:
         return TariffSpec(
             id=str(tariff.get("preset_id") or "no_peak"),
@@ -876,9 +881,22 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
             ),
             currency=currency,
         ), False
-    spec = loader.load(str(preset_file))
+    # An entry from before WP4.6 holds no copy and reads the file.
+    retired = loader.successor(str(preset_file))
+    if retired is not None:
+        _LOGGER.warning(
+            "preset %s was retired; the site runs on %s until it is reconfigured",
+            preset_file,
+            retired,
+        )
+    raw = loader.load_raw(retired or str(preset_file))
+    if raw.get("template"):
+        # `es/2_0td` or `nl/connection` before they became templates: the
+        # household's contracted kW were answered in the flow and kept here.
+        raw = loader.fill_template(raw, limits=list(tariff.get("contracted_kw") or ()))
+    spec = loader.from_raw(raw, source=f"{retired or preset_file}.json")
     shipped = [version.version_id for version in spec.versions]
-    outdated = shipped != list(tariff.get("version_ids") or shipped)
+    outdated = retired is not None or shipped != list(tariff.get("version_ids") or shipped)
     if outdated:
         _LOGGER.warning(
             "preset %s ships versions %s, the site was set up with %s (preset_outdated)",
@@ -887,6 +905,23 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
             tariff.get("version_ids"),
         )
     return spec, outdated
+
+
+def _outdated(preset_file: str, copy: TariffSpec) -> bool:
+    """Whether the shipped file now differs from the entry's copy of it (D8 §5.9).
+
+    A completed template and a retired file have nothing current to compare with;
+    a retired one is outdated by definition.
+    """
+    if not preset_file or preset_file == "custom":
+        return False
+    if loader.successor(preset_file) is not None:
+        return True
+    raw = loader.load_raw(preset_file)
+    if raw.get("template"):
+        return False
+    shipped = [version.version_id for version in loader.from_raw(raw).versions]
+    return shipped != [version.version_id for version in copy.versions]
 
 
 def _target_of(tariff: Mapping[str, Any]) -> tuple[Target, float | None, float | None]:

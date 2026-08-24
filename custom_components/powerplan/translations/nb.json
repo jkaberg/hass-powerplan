@@ -471,9 +471,65 @@
           "month_12": "Den høyeste målte verdien den måneden, i kW."
         }
       },
+      "tariff_steps": {
+        "title": "Hvilke trinn har nettselskapet ditt?",
+        "description": "Nettselskapet ditt står ikke i listen, så fyll inn trinnene fra nettleiefakturaen: for hvert trinn effekten det går opp til og hva det koster per måned. La resten stå tomme; det siste trinnet du fyller inn, har ingen øvre grense.",
+        "data": {
+          "upper_1": "Trinn 1: opp til",
+          "fee_1": "Trinn 1: per måned",
+          "upper_2": "Trinn 2: opp til",
+          "fee_2": "Trinn 2: per måned",
+          "upper_3": "Trinn 3: opp til",
+          "fee_3": "Trinn 3: per måned",
+          "upper_4": "Trinn 4: opp til",
+          "fee_4": "Trinn 4: per måned",
+          "upper_5": "Trinn 5: opp til",
+          "fee_5": "Trinn 5: per måned",
+          "upper_6": "Trinn 6: opp til",
+          "fee_6": "Trinn 6: per måned",
+          "upper_7": "Trinn 7: opp til",
+          "fee_7": "Trinn 7: per måned",
+          "upper_8": "Trinn 8: opp til",
+          "fee_8": "Trinn 8: per måned",
+          "upper_9": "Trinn 9: opp til",
+          "fee_9": "Trinn 9: per måned",
+          "upper_10": "Trinn 10: opp til",
+          "fee_10": "Trinn 10: per måned",
+          "upper_11": "Trinn 11: opp til",
+          "fee_11": "Trinn 11: per måned",
+          "upper_12": "Trinn 12: opp til",
+          "fee_12": "Trinn 12: per måned"
+        },
+        "data_description": {
+          "upper_1": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_1": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_2": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_2": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_3": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_3": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_4": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_4": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_5": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_5": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_6": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_6": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_7": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_7": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_8": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_8": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_9": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_9": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_10": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_10": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_11": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_11": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "upper_12": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
+          "fee_12": "Hva dette trinnet koster per måned, slik det står på fakturaen."
+        }
+      },
       "tariff_limits": {
         "title": "Hvor mye effekt har du avtalt?",
-        "description": "Denne tariffen avtaler en effektgrense per periode. Verdiene kommer fra tariffen; endre dem til det din egen avtale sier.",
+        "description": "Tariffen din avtaler en effektgrense per periode. Verdiene som vises, er et vanlig utgangspunkt; endre dem til det din egen avtale sier.",
         "data": {
           "limit_1": "Grense 1",
           "limit_2": "Grense 2",
@@ -596,7 +652,10 @@
       "current_unit_not_amps": "En strømsensor må rapportere ampere.",
       "register_not_cumulative": "Dette er ikke en løpende sum. Velg sensoren som bare øker.",
       "target_above_fuse": "Dette er over det hovedsikringen noensinne kan levere. Velg et lavere trinn eller mål.",
-      "price_in_minor_unit": "Det er under én øre per kWh. Feltet er i øre, ikke kroner."
+      "price_in_minor_unit": "Det er under én øre per kWh. Feltet er i øre, ikke kroner.",
+      "steps_too_few": "Fyll inn minst to trinn fra fakturaen.",
+      "steps_not_rising": "Hvert trinn må gå opp til mer enn trinnet før.",
+      "limit_required": "Fyll inn effekten avtalen din gir deg."
     },
     "abort": {
       "already_configured": "Denne måleren er allerede satt opp som et hjem i PowerPlan.",

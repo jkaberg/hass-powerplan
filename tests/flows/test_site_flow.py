@@ -130,14 +130,15 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
     """Answer the grid company, confirm the table, then target and strictness."""
     assert result["step_id"] == "tariff"
     assert "country" not in result["data_schema"]({}), "asked once, and HA has it (HUB-2)"
-    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio-ts")
 
     assert result["step_id"] == "tariff_preset"
     # HUB-12: D2's `TariffSummary` rendered as a translated table, nothing stored.
     table = result["description_placeholders"]["table"]
     assert "3 highest hours on 3 different days" in table
-    assert "| Above 20 kW | 1,200 kr |" in table
-    assert result["description_placeholders"]["name"] == "Tensio – privatkunde"
+    # Tensio TS's own table from 2026-07-01, fifteen steps to "over 500 kW".
+    assert "| Above 500 kW | 21,473 kr |" in table
+    assert result["description_placeholders"]["name"] == "Tensio TS – privatkunde"
     result = await _answer(hass, result, confirm="yes")
 
     assert result["step_id"] == "tariff_target"
@@ -230,14 +231,23 @@ async def test_the_full_path_creates_a_site_in_observe(
     ) == ("vat", {"rate": "0.25"})
     # D2 §6: the preset's own energy components are handed to D1 as a modifier.
     grid = next(mod for mod in prices["modifiers"] if mod["key"] == "tou_schedule")
-    assert grid["source"] == "no.tensio.household"
+    assert grid["source"] == "no.tensio-ts.household"
 
     tariff = data[CONF_TARIFF]
-    assert tariff["preset_id"] == "no.tensio.household"
-    assert tariff["preset_file"] == "no/tensio"
+    assert tariff["preset_id"] == "no.tensio-ts.household"
+    assert tariff["preset_file"] == "no/tensio-ts"
     assert tariff["version_ids"] == [
-        "no.tensio.household@2026-01-01",
-        "no.tensio.household@2027-01-01",
+        "no.tensio-ts.household@2025-07-01",
+        "no.tensio-ts.household@2026-01-01",
+        "no.tensio-ts.household@2026-07-01",
+    ]
+    # The entry keeps its own copy of the tariff (D2 §6, INV-66): a release that
+    # edits or retires the file never moves this site's ceiling.
+    assert tariff["spec"]["id"] == "no.tensio-ts.household"
+    assert [version["valid_from"] for version in tariff["spec"]["versions"]] == [
+        "2025-07-01",
+        "2026-01-01",
+        "2026-07-01",
     ]
     assert tariff["risk"] == 0.5
     assert tariff["risk_source"] == "chosen", "the household picked it over the strict default"
@@ -354,7 +364,7 @@ async def test_a_guard_band_in_watts_is_refused_inline(
     result = await _through_prices(hass, result, nordpool_entry)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio-ts")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -447,7 +457,7 @@ async def test_the_review_explains_what_was_derived(
     result = await _tail(hass, result)
 
     placeholders = result["description_placeholders"]
-    assert placeholders["tariff"] == "Tensio – privatkunde · Automatic"
+    assert placeholders["tariff"] == "Tensio TS – privatkunde · Automatic"
     assert placeholders["timezone"] == SITE_TZ
     assert "Home Assistant" in placeholders["timezone_source"]
     assert "63" in placeholders["connection"]
@@ -518,7 +528,7 @@ async def test_a_guard_band_of_zero_is_refused_inline(
     result = await _through_prices(hass, result, nordpool_entry)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio")
+    result = await _answer(hass, result, preset="no/tensio-ts")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -551,8 +561,13 @@ async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
         for option in value.config["options"]
     ]
     assert "tou_schedule" not in offered, "the preset already prices it"
+    # Tensio's figures include forbruksavgift and Enova, so the levy is not
+    # offered again (D-0523); VAT still taxes the spot price, so it is.
+    assert "levy" not in offered
     assert "vat" in offered
-    assert result["description_placeholders"]["included"] == "Grid energy charge (day/night)"
+    assert result["description_placeholders"]["included"] == (
+        "Grid energy charge (day/night) and Taxes and levies"
+    )
     result = await _answer(hass, result, modifiers=["vat"])
     result = await _answer(hass, result, rate=25)
     result = await _answer(hass, result, carriers=[])
@@ -561,5 +576,5 @@ async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
 
     grid = [mod for mod in result["data"][CONF_PRICES]["modifiers"] if mod["key"] == "tou_schedule"]
     assert len(grid) == 1
-    assert grid[0]["source"] == "no.tensio.household"
+    assert grid[0]["source"] == "no.tensio-ts.household"
     assert grid[0]["options"]["periods"], "the preset's day/night numbers, not an empty table"

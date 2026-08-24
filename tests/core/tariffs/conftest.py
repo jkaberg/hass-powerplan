@@ -39,6 +39,7 @@ from custom_components.powerplan.core.tariffs import (
     TariffSpec,
     TariffVersion,
 )
+from custom_components.powerplan.core.tariffs.presets import loader
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -215,7 +216,7 @@ PRESET_DIR = (
 
 
 def preset_names() -> list[str]:
-    """Every shipped preset's load name (`no/tensio`, `custom`), sorted.
+    """Every shipped preset's load name (`no/tensio-ts`, `custom`), sorted.
 
     Discovered from disk rather than listed, so a file added without a golden
     fails the suite instead of being ignored (D2 §9 1: a golden *per preset*).
@@ -235,6 +236,19 @@ def preset_raw(name: str) -> dict[str, Any]:
     """
     data: dict[str, Any] = json.loads((PRESET_DIR / f"{name}.json").read_text(encoding="utf-8"))
     return data
+
+
+def shipped_spec(name: str) -> TariffSpec:
+    """Load a shipped preset; a template is filled from its golden's `fill`, as the flow would.
+
+    Only the contracted templates (ES, NL) have a golden and so something to fill;
+    `no/template`'s steps are D2 §9 21's own test (`test_preset_provenance.py`).
+    """
+    raw = loader.load_raw(name)
+    if raw.get("template"):
+        fill = (market_golden(name) or {}).get("fill") or {}
+        raw = loader.fill_template(raw, limits=fill.get("limits", ()))
+    return loader.from_raw(raw, source=name)
 
 
 def market_golden(name: str) -> dict[str, Any] | None:

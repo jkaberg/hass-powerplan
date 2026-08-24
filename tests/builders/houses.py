@@ -15,8 +15,10 @@ line (D9 §5.11).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from datetime import date
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -26,7 +28,7 @@ from custom_components.powerplan.core.loads import Load, Transport
 from custom_components.powerplan.core.loads.targets import ConstantSchedule
 from custom_components.powerplan.core.metering import ElectricalProfile, VoltageSystem
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS, calendar_for
-from custom_components.powerplan.core.tariffs import Evaluator, NoPeak
+from custom_components.powerplan.core.tariffs import Evaluator, NoPeak, TariffSpec
 from custom_components.powerplan.core.tariffs.presets import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
@@ -91,7 +93,7 @@ ALL_LOADS: tuple[str, ...] = (
 
 #: Where each house-level number comes from (D9 §2: a value without a source is a bug).
 HOUSE_SOURCES: dict[str, str] = {
-    "site": "D9 §5.9: 230 V IT 3φ, 63 A main fuse, preset no/tensio with both versions (INV-52)",
+    "site": "D9 §5.9: 230 V IT 3φ, 63 A main fuse, preset no/tensio-ts with a synthetic 2027 version (INV-52)",
     "ev": (
         "D9 §5.9: 3φ 32 A charger over BLE, 60 kWh battery, weekday departure 07:30; "
         "sessions and trips from sim/household.py"
@@ -186,9 +188,24 @@ def site_config(**overrides: Any) -> SiteConfig:
     return SiteConfig(**options)
 
 
+#: Presets that exist for tests only - a synthetic version is never shipped (D2 §2).
+FIXTURE_PRESETS = Path(__file__).parents[1] / "fixtures" / "presets"
+
+
+def fixture_preset(name: str) -> TariffSpec:
+    """Load a test-only preset from `tests/fixtures/presets/` (e.g. `no/tensio-ts-2027`)."""
+    raw = json.loads((FIXTURE_PRESETS / f"{name}.json").read_text(encoding="utf-8"))
+    return loader.from_raw(raw, source=f"fixture {name}")
+
+
 def tensio() -> Evaluator:
-    """Return the NO Tensio preset's evaluator, both versions loaded (INV-52)."""
-    return Evaluator(loader.load("no/tensio"), tz=OSLO, calendar=NO_HOLIDAYS)
+    """Return Tensio TS's evaluator with a synthetic 2027 version (INV-52, D2 §9 10).
+
+    The shipped file carries verified versions only, the last from 2026-07-01;
+    the benchmark year crosses 1 January 2027, so a labelled synthetic version is
+    added from the fixture to keep the version switch exercised (PLAN §7 dec. 21).
+    """
+    return Evaluator(fixture_preset("no/tensio-ts-2027"), tz=OSLO, calendar=NO_HOLIDAYS)
 
 
 def no_peak(evaluator: Evaluator) -> Evaluator:
@@ -611,9 +628,10 @@ AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 AMSTERDAM_LATITUDE_DEG = 52.3676
 #: D9 §5.9's own line for this house: "PV 6 kWp".
 NL_PV_ARRAY_KWP = 6.0
-#: 3×25 A, the connection size `nl/connection.json`'s own preset offers as its
-#: default (17.25 kW at 230 V, TN, three phase - the preset's own file note).
+#: 3×25 A, the connection the flow starts `nl/connection`'s template from
+#: (`flow/steps.py::LIMIT_DEFAULTS`, 17.25 kW at 230 V, TN, three phase).
 NL_MAIN_FUSE_A = 25.0
+NL_CONNECTION_KW = 3 * 230.0 * NL_MAIN_FUSE_A / 1000.0
 
 NL_PV_HOUSE_ID = "nl_pv@1"
 
@@ -730,7 +748,15 @@ def nl_pv(
     uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
     return House(
         cfg=cfg,
-        tariff=Evaluator(loader.load("nl/connection"), tz=AMSTERDAM, calendar=calendar_for("NL")),
+        tariff=Evaluator(
+            # The Dutch rule is a template: the connection is the household's own,
+            # here 3×25 A, the flow's starting value (D-0521).
+            loader.from_raw(
+                loader.fill_template(loader.load_raw("nl/connection"), limits=[NL_CONNECTION_KW])
+            ),
+            tz=AMSTERDAM,
+            calendar=calendar_for("NL"),
+        ),
         loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
         sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
         passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},
@@ -758,7 +784,7 @@ def nl_pv(
 
 BRUSSELS = ZoneInfo("Europe/Brussels")
 #: assumed: a typical Belgian household connection, 3×40 A - Fluvius's own
-#: capacity tariff (`be/fluvius.json`) has no connection-size limit of its own,
+#: capacity tariff (`be/fluvius-imewo.json`) has no connection-size limit of its own,
 #: so this is wiring realism only, the same role `nordic_detached`'s 63 A plays.
 BE_MAIN_FUSE_A = 40.0
 
@@ -767,7 +793,8 @@ BE_QUARTER_HOUSE_ID = "be_quarter@1"
 BE_QUARTER_SOURCES: dict[str, str] = {
     "site": "D9 §5.9: 15-min windows, rolling-12, no free ride; TN 400 V, three phase (Belgium)",
     "tariff": (
-        "preset be/fluvius (D2, WP4.3a): 53.39 EUR/kW/year, min 2.5 kW, the highest 15-min "
+        "preset be/fluvius-imewo (D2, WP4.6): 54.2009816 EUR/kW/year excl. VAT from VREG's "
+        "Imewo 2026 sheet (was VREG's regional average 53.39), min 2.5 kW, the highest 15-min "
         "window of a rolling 12 months — every day counts, unlike Tensio's own daily-maximum "
         "exemption (D-0278), which is this house's own point"
     ),
@@ -867,7 +894,7 @@ def be_quarter(
     uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
     return House(
         cfg=cfg,
-        tariff=Evaluator(loader.load("be/fluvius"), tz=BRUSSELS, calendar=calendar_for("BE")),
+        tariff=Evaluator(loader.load("be/fluvius-imewo"), tz=BRUSSELS, calendar=calendar_for("BE")),
         loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
         sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
         passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},

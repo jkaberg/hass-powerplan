@@ -2,7 +2,7 @@
 """Replay real history through D3's window reconstruction and D2's bill (D9 §5.4).
 
 `uv run python tools/backtest.py --recorder <copy.db> --register <entity> --preset
-no/tensio` reads a Home Assistant recorder database (a **copy**, opened
+no/tensio-ts` reads a Home Assistant recorder database (a **copy**, opened
 read-only), rebuilds the windows the tariff measures, bills them month by month
 and prints what the history would have cost. `--csv <dir>` does the same from an
 export, for a house whose recorder is gone or was never Norwegian.
@@ -1313,7 +1313,7 @@ def build_parser() -> argparse.ArgumentParser:
             "on the simulated house and report its metrics (D9 §5.2, §5.4)"
         ),
     )
-    parser.add_argument("--preset", help="a shipped tariff preset, e.g. no/tensio")
+    parser.add_argument("--preset", help="a shipped tariff preset, e.g. no/tensio-ts")
     parser.add_argument("--register", help="the grid import register entity (recorder mode)")
     parser.add_argument("--power", help="the grid power entity, for windows the register misses")
     parser.add_argument(

@@ -38,7 +38,7 @@ from tools.backtest import (
 pytestmark = pytest.mark.backtest
 
 COPY_ENV = "POWERPLAN_RECORDER_COPY"
-PRESET = "no/tensio"
+PRESET = "no/tensio-ts"
 OSLO = ZoneInfo("Europe/Oslo")
 
 #: The reference house's meter (D3 §6): a Norwegian AMS register plus its power
@@ -232,7 +232,7 @@ def _log(
 
 
 #: The five hours of 2026-09 that effektstyring's README §1 tabulates, quoted as
-#: the source of `tests/golden/presets/no.tensio.household.json`.
+#: the source of `tests/golden/presets/no.tensio-ts.household.json`.
 PUBLISHED = "d03h21 5.26, d03h22 4.91, d03h23 4.52, d02h22 4.39, d01h22 3.97 kWh → 4.54 kW"
 
 

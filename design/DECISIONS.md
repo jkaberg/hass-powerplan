@@ -2082,3 +2082,43 @@ The canvas is the plot (250 px on desktop, 180 px under 500 px) plus fixed margi
 
 HA folds `_unrecorded_attributes` once per class in `__init_subclass__`, so a per-instance assignment never reached the recorder: `sensor.<site>_plan` (29 kB) and `price_forecast` (34 kB) exceeded the recorder's 16 kB limit, and large attributes landed in every row (INV-61). `PowerplanEntity._set_unrecorded` also sets the private `_Entity__combined_unrecorded_attributes` on the instance, and a recorder-level test fails if HA renames it.
 **Rejected:** one subclass per row with a class-level set - dynamic classes for a row table.
+
+### D-0520 · The entry keeps the tariff itself; a template is never a `TariffSpec`
+
+The tariff step stores the preset's JSON, filled with the household's numbers, as `entry.data.tariff.spec`, and `runtime._spec` builds from that copy, falling back to the file only for older entries. D2 §8 said presets are copied at setup, and nothing did: retiring a file would have stopped sites on it from setting up, and the contracted kW asked in the flow was read by nothing. A template (`"template": true`, nulls where the bill answers) stays raw: `loader.load()` refuses it, `fill_template()` completes it (D2 §9 21 by construction). Affects D2 §4, §6, §8.
+**Rejected:** copying into the site store - the entry is what the flow writes and reads back, and the store is rebuilt from it.
+
+### D-0521 · Spain and the Netherlands ship as templates; their kW are the household's
+
+`es/2_0td` (2.0TD's two power periods, BOE-A-2020-1066 art. 7.4) and `nl/connection` (ACM) carry the rule with `limit_kw: null`; the flow starts from `LIMIT_DEFAULTS` (ES 4.6/5.75 kW, NL 17.25 kW) and keeps the answer. No tolerance is assumed: the interruptor and the main fuse trip at the contract, the safe direction (INV-15). The kW had been flow defaults written into the files as facts (PLAN §7 dec. 21). Affects D2 §6.
+**Rejected:** keeping a 10 % ICP tolerance - widely described, but no operator document says so.
+
+### D-0522 · What a release removes keeps running: `RETIRED`
+
+`loader.RETIRED` maps each removed file to what its sites run on until reconfigured, with `preset_outdated` raised: `no/tensio` → `no/tensio-ts`; the others → `custom`. Removed because they couldn't be one operator document per version: APS R-3 and SRP E-27 (seasonal), Ausgrid (c/kVA/day), Finland (no national household tariff before 2029), Helen (needs an nth-highest term), Ellevio's old effect terms (the page is gone). The US and Australia return later from their own sources, season by season. Affects D2 §3, §8, §10.
+**Rejected:** mapping a retired national file to the largest operator - bills a household on another area's rate.
+
+### D-0523 · A grid charge published with levies included says so
+
+A preset's `energy_components` may carry `includes` (`["vat", "levy"]`), and the add-on step then doesn't offer `levy`; VAT stays. Norwegian sheets publish the energy charge including VAT, forbruksavgift and Enova, and the chain already ran the preset after `vat`, but Norway pre-ticked `levy`, counting about 10 øre/kWh twice. Affects D1 §6, D2 §6.
+**Rejected:** storing the charge exclusive and composing - the inclusive figure is the one a household checks against its bill (INV-67).
+
+### D-0524 · Tensio's two areas, from Tensio's own documents
+
+`no/tensio-ts` and `no/tensio-tn` carry three versions from Tensio's PDFs and price page, cross-checked with NVE's tariff data. The earliest version's energy rates are as printed, though forbruksavgift changed mid-period. The benchmark's next-year version is a fixture (the latest steps × 1.06), labelled synthetic. The old file's steps matched neither area and its top steps were guessed. Affects D2 §3, §9 22, D9 §5.9.
+**Rejected:** splitting a version at the levy change - the sheet prints one rate.
+
+### D-0525 · The flow shows money to the cent
+
+`Text.money` renders at most two decimals. VREG's sheet carries 49,4036563 EUR/kW/year; the bill shows 49,40. Per-kWh prices are unaffected. Affects D8 §5.15.
+**Rejected:** rounding in the preset - the file keeps the regulator's number.
+
+### D-0526 · The template's steps form: twelve rows, bounds offered, empty means no capacity
+
+`tariff_steps` asks up to twelve rows of "up to kW" and "per month"; bounds 2/5/10/…/100 are offered, fees never pre-filled; the last row with a fee is the open top. No fee at all falls back to `custom` and the summary says so; one row or non-rising bounds are refused. Every answer needs a default (HLD §7.9). Affects D2 §6, D8 §5.15.
+**Rejected:** a text field for the table - never free text for a tariff (HLD §7.9).
+
+### D-0527 · One Fluvius preset per VREG area
+
+Eight `be/fluvius-<area>` files, each with the area's average-monthly-peak rate from its own VREG sheet (49,40 Antwerpen … 57,10 West) and the 2.5 kW minimum from VREG's capacity-tariff page, confirmed by each sheet's minimum contribution. The single file carried a regional average no one is billed; areas differ by 16 %. `be_quarter` runs on Imewo. Affects D2 §3, D9 §5.9.
+**Rejected:** one file with the rate asked in the flow - the areas are published facts.

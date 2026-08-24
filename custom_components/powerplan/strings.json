@@ -471,9 +471,65 @@
           "month_12": "The highest measured value that month, in kW."
         }
       },
+      "tariff_steps": {
+        "title": "What steps does your grid company have?",
+        "description": "Your grid company is not in the list, so enter the steps from your grid bill: for each step, the power it goes up to and what it costs per month. Leave the rest empty; the last step you fill in has no upper limit.",
+        "data": {
+          "upper_1": "Step 1: up to",
+          "fee_1": "Step 1: per month",
+          "upper_2": "Step 2: up to",
+          "fee_2": "Step 2: per month",
+          "upper_3": "Step 3: up to",
+          "fee_3": "Step 3: per month",
+          "upper_4": "Step 4: up to",
+          "fee_4": "Step 4: per month",
+          "upper_5": "Step 5: up to",
+          "fee_5": "Step 5: per month",
+          "upper_6": "Step 6: up to",
+          "fee_6": "Step 6: per month",
+          "upper_7": "Step 7: up to",
+          "fee_7": "Step 7: per month",
+          "upper_8": "Step 8: up to",
+          "fee_8": "Step 8: per month",
+          "upper_9": "Step 9: up to",
+          "fee_9": "Step 9: per month",
+          "upper_10": "Step 10: up to",
+          "fee_10": "Step 10: per month",
+          "upper_11": "Step 11: up to",
+          "fee_11": "Step 11: per month",
+          "upper_12": "Step 12: up to",
+          "fee_12": "Step 12: per month"
+        },
+        "data_description": {
+          "upper_1": "The power this step goes up to, as on your bill.",
+          "fee_1": "What this step costs per month, as on your bill.",
+          "upper_2": "The power this step goes up to, as on your bill.",
+          "fee_2": "What this step costs per month, as on your bill.",
+          "upper_3": "The power this step goes up to, as on your bill.",
+          "fee_3": "What this step costs per month, as on your bill.",
+          "upper_4": "The power this step goes up to, as on your bill.",
+          "fee_4": "What this step costs per month, as on your bill.",
+          "upper_5": "The power this step goes up to, as on your bill.",
+          "fee_5": "What this step costs per month, as on your bill.",
+          "upper_6": "The power this step goes up to, as on your bill.",
+          "fee_6": "What this step costs per month, as on your bill.",
+          "upper_7": "The power this step goes up to, as on your bill.",
+          "fee_7": "What this step costs per month, as on your bill.",
+          "upper_8": "The power this step goes up to, as on your bill.",
+          "fee_8": "What this step costs per month, as on your bill.",
+          "upper_9": "The power this step goes up to, as on your bill.",
+          "fee_9": "What this step costs per month, as on your bill.",
+          "upper_10": "The power this step goes up to, as on your bill.",
+          "fee_10": "What this step costs per month, as on your bill.",
+          "upper_11": "The power this step goes up to, as on your bill.",
+          "fee_11": "What this step costs per month, as on your bill.",
+          "upper_12": "The power this step goes up to, as on your bill.",
+          "fee_12": "What this step costs per month, as on your bill."
+        }
+      },
       "tariff_limits": {
         "title": "How much power have you contracted?",
-        "description": "This tariff contracts a power limit per period. The values come from the tariff; change them to what your own contract says.",
+        "description": "Your tariff contracts a power limit per period. The values shown are a common starting point; change them to what your own contract says.",
         "data": {
           "limit_1": "Limit 1",
           "limit_2": "Limit 2",
@@ -596,7 +652,10 @@
       "eps_looks_like_watts": "This looks like watts. The guard band is energy: 0.30 kWh is the default for an hour-long window.",
       "eps_not_positive": "The guard band has to be more than zero.",
       "target_above_fuse": "This is above what the main fuse can ever deliver. Pick a lower step or target.",
-      "price_in_minor_unit": "That is less than one øre or cent per kWh. The box is in øre (or cents), not kroner."
+      "price_in_minor_unit": "That is less than one øre or cent per kWh. The box is in øre (or cents), not kroner.",
+      "steps_too_few": "Enter at least two steps from your bill.",
+      "steps_not_rising": "Each step must go up to more than the one before it.",
+      "limit_required": "Enter the power your contract gives you."
     },
     "abort": {
       "already_configured": "This meter is already set up as a home in PowerPlan.",

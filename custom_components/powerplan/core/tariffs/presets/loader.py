@@ -8,6 +8,14 @@ express - versions strictly ascending, exactly one open-ended step, a period
 change that needs a `history_policy`, a version without a source that has to say
 it is assumed, a `tz` that no system knows - are checked here as well.
 
+A **shipped** file (under `presets/<cc>/`) carries verified facts only: every
+version has the operator's or regulator's `source_url`, a `verified` date on or
+after its `valid_from`, and no `assumed` (D2 §2, PLAN §7 dec. 21). A **template**
+is the one exception - a national rule whose numbers belong to each household,
+null where the household's bill answers - and it is never evaluated: `load()`
+refuses it and `fill_template()` completes it into a preset the entry keeps as
+its own copy (D2 §6, INV-66).
+
 `schema.json` is interpreted by the small subset validator below rather than by
 `jsonschema`: `core/` carries no third-party dependency, and the keywords the
 schema uses are few and fixed (`design/DECISIONS.md` D-0053).
@@ -48,11 +56,17 @@ if TYPE_CHECKING:
     from ..grammar import Grammar
 
 __all__ = [
+    "RETIRED",
     "EnergyRate",
     "PresetError",
     "SummaryBand",
     "TariffSummary",
+    "TemplateError",
+    "fill_template",
+    "from_raw",
     "load",
+    "load_raw",
+    "successor",
     "summarize",
     "validate",
 ]
@@ -68,6 +82,30 @@ class PresetError(ValueError):
     back to the grammar copied into its store at setup, which is why a broken
     preset in a release can never move a live ceiling (INV-66, D2 §8).
     """
+
+
+class TemplateError(PresetError):
+    """A template asked to evaluate before the household filled it (D2 §9 21)."""
+
+
+#: Files a release removed, and what a site set up on one runs on instead until it
+#: is reconfigured (D2 §8, `preset_outdated`). A successor is a shipped file or
+#: `custom`; `custom` means the site keeps no capacity component (D-0522).
+RETIRED: Mapping[str, str] = {
+    "no/tensio": "no/tensio-ts",
+    "no/generic-top3": "custom",
+    "fi/energiavirasto-2026": "custom",
+    "be/fluvius": "custom",
+    "dk/nopeak": "custom",
+    "us/aps-saver-choice-max": "custom",
+    "us/srp-e27": "custom",
+    "au/ausgrid-ea116": "custom",
+}
+
+
+def successor(name: str) -> str | None:
+    """Return the file a retired preset's sites run on, or `None` if `name` is current."""
+    return RETIRED.get(name)
 
 
 # --------------------------------------------------------------------------- #
@@ -178,14 +216,19 @@ def _schema() -> Mapping[str, Any]:
     return loaded
 
 
-def validate(raw: Mapping[str, Any], *, source: str = "preset") -> None:
+def validate(raw: Mapping[str, Any], *, source: str = "preset", shipped: bool = False) -> None:
     """Check a preset against `schema.json` and D2's semantic rules (D2 §2).
 
     Raises `PresetError` with the field's path. Everything it checks is something a
-    community file can get wrong.
+    community file can get wrong. `shipped` adds §2's provenance rule, which a
+    file under `presets/<cc>/` meets and a household's own copy need not.
     """
     schema = _schema()
     _check(raw, schema, "", schema, source)
+    template = bool(raw.get("template", False))
+    if not template:
+        for path in _nulls(raw):
+            _fail(path, "only a template leaves a number for the household to fill", source)
 
     zone = raw.get("tz")
     if zone is not None:
@@ -214,6 +257,9 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset") -> None:
                 source,
             )
 
+        if shipped and not template:
+            _check_provenance(version, raw, valid_from, path, source)
+
         roots = [key for key in ("peak", "contracted", "no_peak") if key in version]
         if not roots:
             _fail(path, "needs one of peak, contracted or no_peak", source)
@@ -235,6 +281,36 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset") -> None:
             previous_period = period
 
 
+def _check_provenance(
+    version: Mapping[str, Any], raw: Mapping[str, Any], valid_from: date, path: str, source: str
+) -> None:
+    """D2 §2: the operator's own document, read on a date, nothing assumed, nothing early."""
+    if not version.get("source_url", raw.get("source_url")):
+        _fail(path, "a shipped version needs the operator's or regulator's source_url", source)
+    verified = version.get("verified", raw.get("verified"))
+    if verified is None:
+        _fail(path, "a shipped version needs the date its source was read (verified)", source)
+    if version.get("assumed") or raw.get("assumed"):
+        _fail(path, "a shipped version carries verified facts only: no assumed", source)
+    if valid_from > date.fromisoformat(str(verified)):
+        _fail(path, f"valid_from {valid_from} is after verified {verified}", source)
+
+
+def _nulls(raw: Mapping[str, Any]) -> list[str]:
+    """Return the paths a template leaves for the household: null steps and null kW."""
+    found: list[str] = []
+    for index, version in enumerate(raw["versions"]):
+        path = f"versions[{index}]"
+        peak = version.get("peak")
+        if peak is not None and "steps" in peak["pricing"] and peak["pricing"]["steps"] is None:
+            found.append(f"{path}.peak.pricing.steps")
+        contracted = version.get("contracted")
+        for position, limit in enumerate((contracted or {}).get("limits", ())):
+            if limit["limit_kw"] is None:
+                found.append(f"{path}.contracted.limits[{position}].limit_kw")
+    return found
+
+
 def _validate_peak(peak: Mapping[str, Any], path: str, source: str, raw: Mapping[str, Any]) -> None:
     pricing = peak["pricing"]
     shapes = [key for key in ("steps", "linear", "tiers") if key in pricing]
@@ -242,7 +318,7 @@ def _validate_peak(peak: Mapping[str, Any], path: str, source: str, raw: Mapping
         _fail(f"{path}.pricing", "needs exactly one of steps, linear or tiers", source)
     if not raw.get("currency"):
         _fail(path, "a priced peak needs the preset's currency", source)
-    if "steps" in pricing:
+    if pricing.get("steps") is not None:
         _validate_open_ended(pricing["steps"], f"{path}.pricing.steps", source, index=0)
         uppers = [row[0] for row in pricing["steps"] if row[0] is not None]
         if uppers != sorted(uppers) or len(set(uppers)) != len(uppers):
@@ -269,17 +345,85 @@ def _validate_open_ended(rows: Sequence[Any], path: str, source: str, *, index: 
 
 
 def load(name: str) -> TariffSpec:
-    """Load a shipped preset by path stem, e.g. `no/tensio` or `custom` (D2 §3).
+    """Load a shipped preset by path stem, e.g. `no/tensio-ts` or `custom` (D2 §3).
 
-    JSON numbers are read as `Decimal` so a price is exact from the file to the
-    bill: money is never a float in this integration (HLD §7.2).
+    A template is refused: its numbers are the household's (`fill_template`).
+    """
+    return from_raw(load_raw(name), source=f"{name}.json")
+
+
+def load_raw(name: str) -> dict[str, Any]:
+    """Return a shipped preset's validated JSON - what an entry copies (D2 §6, INV-66).
+
+    Plain JSON, so the copy can be stored in `entry.data` as it is; `from_raw` reads
+    every price through `Decimal(str(...))`, so money is never a float past this
+    point (HLD §7.2).
     """
     path = (HERE / f"{name}.json").resolve()
     if not path.is_file() or HERE not in path.parents:
         raise PresetError(f"no preset {name!r} under {HERE}")
-    raw: Mapping[str, Any] = json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)
-    validate(raw, source=f"{name}.json")
+    raw: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    validate(raw, source=f"{name}.json", shipped="/" in name)
+    return raw
+
+
+def from_raw(raw: Mapping[str, Any], *, source: str = "entry") -> TariffSpec:
+    """Validate a preset's JSON - a shipped file or an entry's own copy - and build it."""
+    validate(raw, source=source)
+    if raw.get("template"):
+        raise TemplateError(f"{source}: a template is the household's to fill before it bills")
     return _build(raw)
+
+
+#: What a completed template says about where its numbers came from (D2 §9 21).
+FROM_THE_BILL = "from the household's bill"
+
+
+def fill_template(
+    raw: Mapping[str, Any],
+    *,
+    steps: Sequence[tuple[float | None, float]] = (),
+    limits: Sequence[float] = (),
+) -> dict[str, Any]:
+    """Complete a template with the household's numbers (D2 §6, §9 21).
+
+    `steps` are `(upper_kw, fee)` rows from the bill, the last open-ended; `limits`
+    are the contracted kW in the template's own order. The result is the same
+    grammar written by hand: no `template`, no source, `assumed` saying whose
+    numbers they are. A non-template is returned with its null-free numbers as
+    they are, except that `limits`, when given, replace the contracted kW - the
+    household's contract, not the file's.
+    """
+    filled: dict[str, Any] = json.loads(json.dumps(raw))
+    template = bool(filled.pop("template", False))
+    rows = [
+        [None if upper is None else float(upper), float(fee), _step_label(steps, index)]
+        for index, (upper, fee) in enumerate(steps)
+    ]
+    for version in filled["versions"]:
+        peak = version.get("peak")
+        if peak is not None and "steps" in peak["pricing"] and peak["pricing"]["steps"] is None:
+            peak["pricing"]["steps"] = rows
+        contracted = version.get("contracted")
+        if contracted is not None and limits:
+            for limit, kw in zip(contracted["limits"], limits, strict=True):
+                limit["limit_kw"] = float(kw)
+        if template:
+            for key in ("source_url", "verified", "assumed"):
+                version.pop(key, None)
+    if template:
+        for key in ("source_url", "verified"):
+            filled.pop(key, None)
+        filled["assumed"] = FROM_THE_BILL
+        filled["verified"] = None
+    return filled
+
+
+def _step_label(steps: Sequence[tuple[float | None, float]], index: int) -> str:
+    lower = 0.0 if index == 0 else steps[index - 1][0] or 0.0
+    upper = steps[index][0]
+    low = f"{lower:g}"
+    return f"over {low} kW" if upper is None else f"{low}–{upper:g} kW"
 
 
 def _build(raw: Mapping[str, Any]) -> TariffSpec:

@@ -36,7 +36,7 @@ from custom_components.powerplan.core.model import Carrier, Confidence, Directio
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
 from custom_components.powerplan.core.strategies import Curves
 from custom_components.powerplan.core.tariffs import Evaluator
-from custom_components.powerplan.core.tariffs.presets import loader
+from tests.builders.houses import fixture_preset
 from tests.core.loads.conftest import ev_load, floor_load, reads
 
 if TYPE_CHECKING:
@@ -68,8 +68,8 @@ def site(**overrides: Any) -> SiteConfig:
 
 
 def evaluator() -> Evaluator:
-    """Return the NO Tensio preset's evaluator, both versions loaded (INV-52)."""
-    return Evaluator(loader.load("no/tensio"), tz=OSLO, calendar=NO_HOLIDAYS)
+    """Return Tensio TS's evaluator with the synthetic 2027 version (INV-52)."""
+    return Evaluator(fixture_preset("no/tensio-ts-2027"), tz=OSLO, calendar=NO_HOLIDAYS)
 
 
 def window_meter(cfg: SiteConfig) -> WindowMeter:

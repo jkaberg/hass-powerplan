@@ -1,53 +1,53 @@
 {
-  "build": "07fc4f2",
+  "build": "6de8246",
   "house": "nordic_detached",
   "results": {
     "smoke": {
-      "build": "07fc4f2",
+      "build": "6de8246",
       "controlled_share": 1.0,
       "house": "nordic_detached",
       "months": {
         "2026-10": {
           "comfort_violation_min": 0.83,
-          "cost_counterfactual": "1103.10 NOK",
-          "cost_energy": "244.03 NOK",
+          "cost_counterfactual": "1071.36 NOK",
+          "cost_energy": "247.74 NOK",
           "deadline_misses": 0,
-          "fee": "416.00 NOK",
-          "kwh": 315.81,
+          "fee": "397.00 NOK",
+          "kwh": 315.82,
           "level": "5\u201310 kW",
           "max_window_kwh": 7.25,
           "metric_kw": 7.167,
           "over_target": 0,
-          "savings": "443.14 NOK",
+          "savings": "426.71 NOK",
           "windows": 168,
-          "writes": 1111
+          "writes": 1113
         },
         "2027-01": {
           "comfort_violation_min": 4.0,
-          "cost_counterfactual": "1210.81 NOK",
-          "cost_energy": "328.64 NOK",
+          "cost_counterfactual": "1180.16 NOK",
+          "cost_energy": "336.09 NOK",
           "deadline_misses": 0,
-          "fee": "441.00 NOK",
+          "fee": "421.00 NOK",
           "kwh": 595.91,
           "level": "5\u201310 kW",
           "max_window_kwh": 8.539,
           "metric_kw": 8.273,
           "over_target": 0,
-          "savings": "441.18 NOK",
+          "savings": "423.08 NOK",
           "windows": 168,
           "writes": 1623
         }
       },
       "perf": {
-        "plan_p95_ms": 51.552,
-        "tick_p95_ms": 3.473,
+        "plan_p95_ms": 52.491,
+        "tick_p95_ms": 3.673,
         "ticks": 120960,
-        "ticks_per_s": 234,
-        "wall_s": 516.1
+        "ticks_per_s": 433,
+        "wall_s": 279.1
       },
       "seed": 20260919,
-      "set_at": "2026-09-23T11:23:40+00:00",
-      "since": "WP5.6",
+      "set_at": "2026-09-23T22:14:02+00:00",
+      "since": "WP4.6",
       "spans": [
         {
           "comfort_violation_min": 0.833,
@@ -79,7 +79,7 @@
           "windows": 168,
           "writes": {
             "dishwasher": 1,
-            "ev": 103,
+            "ev": 105,
             "heat_pump": 46,
             "loop_bath_1": 154,
             "loop_bath_2": 154,
@@ -142,22 +142,22 @@
       "total": {
         "comfort_violation_min": 4.83,
         "commitment_breaks": 0,
-        "cost_counterfactual": "2313.91 NOK",
-        "cost_energy": "572.67 NOK",
+        "cost_counterfactual": "2251.52 NOK",
+        "cost_energy": "583.83 NOK",
         "deadline_misses": 0,
         "engine_failures": 0,
-        "fee": "857.00 NOK",
-        "kwh": 911.72,
+        "fee": "818.00 NOK",
+        "kwh": 911.73,
         "max_window_kwh": 8.539,
         "over_target": 0,
         "plan_gaps": 0,
-        "savings": "884.32 NOK",
+        "savings": "849.79 NOK",
         "sessions_dropped": 10,
         "windows": 336,
-        "writes": 2734,
+        "writes": 2736,
         "writes_by_load": {
           "dishwasher": 2,
-          "ev": 285,
+          "ev": 287,
           "heat_pump": 152,
           "loop_bath_1": 329,
           "loop_bath_2": 329,
@@ -174,7 +174,7 @@
       "year": "y2026_27@1"
     }
   },
-  "since": "WP5.6",
+  "since": "WP4.6",
   "tolerances": {
     "perf.plan_p95_ms": {
       "kind": "abs",

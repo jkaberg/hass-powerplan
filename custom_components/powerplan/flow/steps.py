@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import zoneinfo
 from collections.abc import Mapping
+from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -910,8 +911,24 @@ def carrier_options_schema(currency: str) -> vol.Schema:
 # --------------------------------------------------------------------------- #
 
 #: What "I don't know / not listed" falls back to, per country: the country's
-#: generic preset where one ships, and no capacity component where none does.
-_GENERIC_PRESET: Final = {"NO": "no/generic-top3"}
+#: template where one ships - its steps asked from the bill - and no capacity
+#: component where none does (D2 §2, §6).
+_GENERIC_PRESET: Final = {"NO": "no/template"}
+
+#: Where a template leaves the contracted kW to the household, the value the
+#: limits step starts from (D2 §6's table): 2.0TD's common 20 A / 25 A single
+#: phase (4.6 / 5.75 kW), a Dutch 3×25 A connection (17.25 kW). A starting value
+#: to change, never a fact about the household (D-0521).
+LIMIT_DEFAULTS: Final[Mapping[str, tuple[float, ...]]] = {"ES": (4.6, 5.75), "NL": (17.25,)}
+
+#: The bill's step table as rows of "up to kW" and "per month" (D2 §6, the
+#: template's form). Twelve rows cover every Norwegian table read but
+#: Tensio's fifteen, whose top steps are over 150 kW; the bounds pre-filled
+#: are the ones most DSOs use, the fees are never pre-filled.
+STEP_ROWS: Final = 12
+_STEP_BOUNDS: Final = (2, 5, 10, 15, 20, 25, 50, 75, 100)
+#: A step table is at least a bottom step and the open top.
+_MIN_STEPS: Final = 2
 
 #: The site a price-only house gets: there is no meter, so there is no metric to
 #: bill and the capacity axis is off (HLD §4, D-0127).
@@ -939,12 +956,128 @@ def discover_presets(country: str | None) -> list[tuple[str, str]]:
     for path in sorted(folder.glob("*.json")):
         stem = f"{country.lower()}/{path.stem}"
         try:
-            spec = loader.load(stem)
+            raw = loader.load_raw(stem)
         except loader.PresetError:
             _LOGGER.exception("shipped preset %s does not validate and is not offered", stem)
             continue
-        found.append((stem, spec.name))
+        found.append((stem, str(raw["name"])))
     return found
+
+
+def preset_raw(preset_file: str) -> dict[str, Any]:
+    """Return a preset's JSON - a retired file's successor's - for the flow (blocking I/O)."""
+    return loader.load_raw(loader.successor(preset_file) or preset_file)
+
+
+def needs_steps(raw: Mapping[str, Any]) -> bool:
+    """Whether the preset is a template whose step table the household enters (D2 §6)."""
+    return any(
+        (version.get("peak") or {}).get("pricing", {}).get("steps", ()) is None
+        for version in raw["versions"]
+    )
+
+
+def steps_schema(currency: str, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
+    """Return the bill's steps as a form: "up to" kW and the fee per month, row by row (D2 §6).
+
+    Rows left without a fee are ignored; the last row with one is the open top,
+    whatever its bound says.
+    """
+    values = values or {}
+    fields: dict[Any, Any] = {}
+    for row in range(1, STEP_ROWS + 1):
+        bound = _STEP_BOUNDS[row - 1] if row <= len(_STEP_BOUNDS) else None
+        upper = values.get(f"upper_{row}", bound)
+        fee = values.get(f"fee_{row}")
+        # A bound is a default - a row without a fee is ignored whatever it says -
+        # while a fee is never pre-filled: it is the household's number.
+        key = (
+            vol.Optional(f"upper_{row}")
+            if upper is None
+            else vol.Optional(f"upper_{row}", default=upper)
+        )
+        fields[key] = NumberSelector(
+            NumberSelectorConfig(
+                min=0, mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW"
+            )
+        )
+        fields[vol.Optional(f"fee_{row}", description={"suggested_value": fee})] = price_selector(
+            currency
+        )
+    return vol.Schema(fields)
+
+
+def step_rows(answers: Mapping[str, Any]) -> list[tuple[float | None, float]]:
+    """Return the answered rows as `(upper_kw, fee)`, the last open-ended (D2 §6).
+
+    No fee at all is an answer - "I don't have the bill at hand" - and returns no
+    rows; the flow then keeps no capacity component (HLD §7.9 (2)'s safe default).
+    Raises `StepError` on a single row, a missing bound below the top or bounds
+    that do not rise - a table the evaluator could not classify.
+    """
+    rows: list[tuple[float | None, float]] = []
+    for row in range(1, STEP_ROWS + 1):
+        fee = answers.get(f"fee_{row}")
+        if fee is None:
+            continue
+        upper = answers.get(f"upper_{row}")
+        rows.append((None if upper is None else float(upper), float(fee)))
+    if not rows:
+        return []
+    if len(rows) < _MIN_STEPS:
+        raise StepError("fee_1", "steps_too_few")
+    bounds = [upper for upper, _ in rows[:-1]]
+    if any(upper is None for upper in bounds):
+        raise StepError("upper_1", "steps_not_rising")
+    rising = [float(upper) for upper in bounds if upper is not None]
+    if any(later <= earlier for earlier, later in pairwise(rising)):
+        raise StepError("upper_1", "steps_not_rising")
+    return [*rows[:-1], (None, rows[-1][1])]
+
+
+def step_answers(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a stored copy's step table as the steps form's answers (a reconfigure)."""
+    peak = raw["versions"][-1].get("peak") or {}
+    table = peak.get("pricing", {}).get("steps") or ()
+    answers: dict[str, Any] = {}
+    for row, (upper, fee, _name) in enumerate(table, start=1):
+        answers[f"upper_{row}"] = upper
+        answers[f"fee_{row}"] = fee
+    return answers
+
+
+def filled_tariff(
+    raw: Mapping[str, Any],
+    *,
+    country: str | None,
+    steps: Mapping[str, Any],
+    limits: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the tariff this site keeps: the preset with the household's numbers (D2 §6).
+
+    The step table comes from the steps form; the contracted kW from the limits
+    step once answered, else the file's own, else the country's starting value -
+    so the summary can be shown before the limits step asks.
+    """
+    rows = step_rows(steps) if needs_steps(raw) else []
+    contracted = [
+        limit["limit_kw"]
+        for limit in (raw["versions"][-1].get("contracted") or {}).get("limits", ())
+    ]
+    kw: list[float] = []
+    if contracted:
+        answered = [value for _, value in sorted(limits.items()) if value is not None]
+        starting = LIMIT_DEFAULTS.get((country or "").upper(), ())
+        for index, stored in enumerate(contracted):
+            if index < len(answered):
+                kw.append(float(answered[index]))
+            elif stored is not None:
+                kw.append(float(stored))
+            elif index < len(starting):
+                kw.append(starting[index])
+            else:
+                raise StepError("limit_1", "limit_required")
+    return loader.fill_template(raw, steps=rows, limits=kw)
 
 
 def preset_choice(preset_file: str | None, country: str | None) -> str | None:
@@ -1193,14 +1326,17 @@ def tariff_data(
     answers: Mapping[str, Any],
     bills: Mapping[str, Any],
     limits: Mapping[str, Any],
+    copy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Materialise the tariff choice, including the risk default (INV-66).
 
-    The grammar itself is not copied here: D2 §8 has D7 copy the spec into the
-    **site store** at setup, which is what makes a preset edit in a later release
-    unable to move a live ceiling. The entry holds the identity of what was
-    chosen - preset, file and every version id - so that copy can be checked
-    against it and `preset_outdated` raised when they differ (D-0128). What the
+    `copy` is the tariff itself - the preset's JSON with the household's own
+    numbers (a template's steps, the contracted kW) - kept as `spec`, which the
+    runtime builds from instead of the file: a preset edit or retirement in a
+    later release can never move a live ceiling (D2 §6, §8; D-0520). The
+    identity of what was chosen - preset, file and every version id - stays
+    beside it so `preset_outdated` can be raised when the file moves on
+    (D-0128). What the
     preset bills is not stored in words: the flow renders D2's `TariffSummary`
     whenever it is shown (HUB-12), and an older entry's `description` is ignored.
     """
@@ -1223,6 +1359,7 @@ def tariff_data(
         "cap_margin_kw": float(answers.get("cap_margin_kw", CAP_MARGIN_KW)),
         "bills": [value for _, value in sorted(bills.items()) if value is not None],
         "contracted_kw": [value for _, value in sorted(limits.items()) if value is not None],
+        "spec": dict(copy) if copy is not None else None,
     }
 
 
