@@ -20,7 +20,7 @@ import math
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from random import Random
 from typing import TYPE_CHECKING, Any, Protocol
@@ -115,9 +115,10 @@ from .core.engine import (
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
+from .core.forecasts.quantiles import HourOfWeekQuantile
 from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
 from .core.loads import Load, LoadConfig, LoadCtx, Transport, effective_mode
-from .core.loads.gate import Action, Decision, Origin, setpoint_origin
+from .core.loads.gate import OVERRIDE_GRACE, Action, Decision, Origin, setpoint_origin
 from .core.loads.kinds.base import Role
 from .core.loads.kinds.mode import ModeKind
 from .core.loads.kinds.setpoint import Setpoint
@@ -125,6 +126,7 @@ from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, p
 from .core.loads.types import base as device_types
 from .core.loads.types.heat_pump import curve_of
 from .core.metering import (
+    ClosedWindow,
     ElectricalProfile,
     MeterSample,
     VoltageSystem,
@@ -133,7 +135,7 @@ from .core.metering import (
     reconstruct_windows,
     window_bounds,
 )
-from .core.model import Carrier, Direction, Mode, Plan
+from .core.model import Carrier, Confidence, Direction, Mode, Plan, Slot
 from .core.pricing import (
     CoverageError,
     PriceContext,
@@ -149,7 +151,8 @@ from .core.pricing.forecasters.base import PriceForecaster, chain
 from .core.pricing.forecasters.carry_known import CarryKnown
 from .core.pricing.forecasters.synthesised import Synthesised
 from .core.pricing.holidays import NoHolidays, UnknownCalendarError, calendar_for
-from .core.pricing.modifiers.base import PriceModifier
+from .core.pricing.modifiers.base import SPOT, PriceModifier
+from .core.pricing.modifiers.fixed_price import FixedPrice
 from .core.pricing.modifiers.tou_schedule import TouSchedule
 from .core.state_codec import decode, encode
 from .core.strategies.context import Curves
@@ -173,7 +176,11 @@ from .flow.load import binding_from_data
 from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
-from .providers.forecasts.recorder_baseline import LoadSource, async_seed
+from .providers.forecasts.recorder_baseline import (
+    LoadSource,
+    async_seed,
+    async_site_register_kwh,
+)
 from .providers.forecasts.weather_entity import WeatherEntitySource
 from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
@@ -211,6 +218,7 @@ if TYPE_CHECKING:
     from .core.loads.gate import TransportBudget
     from .core.loads.kinds.base import Reads, Value
     from .core.model import PriceCurve, Snapshot
+    from .load_entities import StatusHold
     from .writegate import DeviceCall, Outcome
 
 __all__ = [
@@ -272,6 +280,84 @@ RISK_LABELS: dict[str, float] = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE,
 FETCH_LOG_KEEP = 200
 #: How far `sensor.<site>_plan`'s `slots` reach: the dashboard's longest timeline (D12 §5.2).
 PLAN_SLOTS_HORIZON = timedelta(hours=48)
+
+
+@dataclass(frozen=True, slots=True)
+class FixedPriceSaving:
+    """What the fixed price (Norgespris) saved this month, against the same hours on spot (D-0499)."""
+
+    #: The local month's start: the sensor's `last_reset`.
+    since: datetime
+    month: float
+    today: float
+    #: The metered kWh the saving is over.
+    kwh: float
+
+
+def fixed_price_saving(
+    windows: Sequence[ClosedWindow],
+    raw: Sequence[RawSlot],
+    chain_: Sequence[PriceModifier],
+    ctx: PriceContext,
+    *,
+    since: datetime,
+    today: datetime,
+) -> FixedPriceSaving:
+    """Price each metered window with and without every `FixedPrice`; the difference × kWh, summed.
+
+    Each raw row goes through the site's own modifier chain twice - as it is, and
+    with the fixed price left out - so VAT and the grid tariff cancel and only
+    the energy part differs. A window with no priced row is left out (D-0499).
+    """
+    without = [m for m in chain_ if not isinstance(m, FixedPrice)]
+    diffs: list[tuple[datetime, datetime, float]] = []
+    for row in raw:
+        slot = Slot(row.start, row.end, row.value, {SPOT: row.value}, Confidence.KNOWN)
+        actual, reference = slot, slot
+        for modifier in chain_:
+            actual = modifier.apply(actual, ctx)
+        for modifier in without:
+            reference = modifier.apply(reference, ctx)
+        diffs.append((row.start, row.end, float(reference.total - actual.total)))
+    month = day = kwh = 0.0
+    for window in windows:
+        end = window.start_utc + timedelta(minutes=window.window_min)
+        weights = [
+            ((min(end, b) - max(window.start_utc, a)).total_seconds(), d)
+            for a, b, d in diffs
+            if a < end and b > window.start_utc
+        ]
+        covered = sum(w for w, _ in weights)
+        if covered <= 0 or window.kwh < 0:
+            continue
+        gain = window.kwh * sum(w * d for w, d in weights) / covered
+        month += gain
+        kwh += window.kwh
+        if window.start_utc >= today:
+            day += gain
+    return FixedPriceSaving(
+        since=since, month=round(month, 2), today=round(day, 2), kwh=round(kwh, 1)
+    )
+
+
+def _baseline_p90(
+    mean_kwh: float | None, high_kwh: float | None, sigma_w: float | None, hours: float
+) -> float | None:
+    """Return a slot's P90 of the rest of the house: the empirical profile, else mean + z·σ (D-0494, D-0498).
+
+    Never under the mean: the reserve it draws is the difference.
+    """
+    if mean_kwh is None:
+        return None
+    if high_kwh is not None:
+        return round(max(high_kwh, mean_kwh), 3)
+    if sigma_w is None:
+        return None
+    return round(mean_kwh + P90_Z * sigma_w * hours / 1000.0, 3)
+
+
+#: The standard normal's 90th percentile: a slot's baseline P90 is the mean plus this many σ (D-0494).
+P90_Z = 1.2816
 
 # --------------------------------------------------------------------------- #
 # What a load looks like to the runtime
@@ -1005,6 +1091,16 @@ class Runtime:
         self._setpoint_seen: dict[str, tuple[float, str]] = {}
         #: When a household's hand on the dial last became the comfort target.
         self.overridden_at: dict[str, datetime] = {}
+        #: A change at the device waiting out `OVERRIDE_GRACE`: (value, first seen) (D-0497).
+        self._override_pending: dict[str, tuple[float, datetime]] = {}
+        #: Each appliance's `display_status` hold (D12 §5.12 R5, `load_entities.held_status`).
+        self.status_holds: dict[str, StatusHold] = {}
+        #: What the fixed price saved this month, refreshed hourly (D-0499).
+        self.fixed_saving: FixedPriceSaving | None = None
+        #: Past days' raw prices this month, fetched once each: a past day never changes.
+        self._past_raw: dict[date, tuple[RawSlot, ...]] = {}
+        #: The rest of the house's hour-of-week P90, rebuilt with each baseline seed (D-0498).
+        self.baseline_p90: HourOfWeekQuantile | None = None
         self.store = SiteStore(hass, entry.entry_id)
         self.coordinator: DataUpdateCoordinator[Snapshot] = DataUpdateCoordinator(
             hass,
@@ -1019,6 +1115,8 @@ class Runtime:
         self.state = EngineState()
         self.snapshot: Snapshot | None = None
         self.curves: Curves | None = None
+        #: The import curve without the fixed-price modifier, for the price card (D12 §5.12 P3).
+        self.reference_curve: PriceCurve | None = None
         self.raw = RawSlotStore()
         self.engine: Engine | None = None
         self.adapter: AccountingAdapter | None = None
@@ -1269,7 +1367,7 @@ class Runtime:
         if adapter is None or not register or not recorder_loaded(self.hass):
             return
         try:
-            await async_seed(
+            history = await async_seed(
                 self.hass,
                 adapter.baseline,
                 register_entity_id=register,
@@ -1290,10 +1388,83 @@ class Runtime:
         except ForecastSourceError as err:
             _LOGGER.warning("site %s: baseline seed (%s) failed: %s", self.site_name, trigger, err)
             return
+        self.baseline_p90 = HourOfWeekQuantile.from_history(
+            history, self.build.cfg.tz, dt_util.utcnow()
+        )
         self.state = replace(
             self.state, forecasts={BASELINE_STATE_KEY: encode(adapter.baseline.state)}
         )
         self._persist_sections(frozenset({Section.FORECASTS}))
+
+    @property
+    def has_fixed_price(self) -> bool:
+        """Whether the price chain has a fixed price (Norgespris) to measure (D-0499)."""
+        return any(isinstance(m, FixedPrice) for m in self.build.price_modifiers)
+
+    async def _refresh_fixed_saving(self, now: datetime) -> None:
+        """Recompute this month's fixed-price saving from the register and the prices (D-0499).
+
+        The register's hourly energy since the local month began, and the raw
+        prices of every day of it: those the store still has, the rest fetched
+        from the site's own sources once and kept, since a past day's price
+        does not change. Observation only; nothing plans on it.
+        """
+        build = self.build
+        register = build.meter_entities.get(ROLE_IMPORT_REGISTER)
+        if (
+            not self.has_fixed_price
+            or not register
+            or not build.sources
+            or not recorder_loaded(self.hass)
+        ):
+            return
+        tz = build.cfg.tz
+        local = now.astimezone(tz)
+        since = datetime(local.year, local.month, 1, tzinfo=tz)
+        today = datetime(local.year, local.month, local.day, tzinfo=tz)
+        rows = await async_site_register_kwh(self.hass, register, since - timedelta(hours=1), now)
+        windows = [w for w in reconstruct_windows(rows, 60, tz) if w.start_utc >= since]
+        raw = list(self.raw.between(today - timedelta(days=1), now))
+        day = since.date()
+        while day < (today - timedelta(days=1)).date():
+            raw.extend(await self._past_day(day, tz))
+            day += timedelta(days=1)
+        ctx = PriceContext(
+            now=now,
+            tz=tz,
+            currency=build.cfg.currency,
+            mtd_kwh_at=lambda _t: 0.0,
+            ytd_kwh_at=lambda _t: 0.0,
+            day_type_at=lambda _d: None,
+            holidays=build.holidays,
+        )
+        self.fixed_saving = fixed_price_saving(
+            windows, raw, build.price_modifiers, ctx, since=since, today=today
+        )
+
+    @callback
+    def _on_fixed_saving(self, now: datetime) -> None:
+        self.hass.async_create_background_task(
+            self._refresh_fixed_saving(now), f"powerplan {self.site_name} fixed-price saving"
+        )
+
+    async def _past_day(self, day: date, tz: tzinfo) -> tuple[RawSlot, ...]:
+        """Return a past local day's raw prices, from the first source that has them."""
+        if day in self._past_raw:
+            return self._past_raw[day]
+        start = datetime(day.year, day.month, day.day, tzinfo=tz)
+        rows: tuple[RawSlot, ...] = tuple(self.raw.between(start, start + timedelta(days=1)))
+        for source in () if rows else self.build.sources:
+            try:
+                rows = tuple(await source.fetch(day))
+            except Exception:
+                _LOGGER.debug("site %s: no %s prices for %s", self.site_name, source.key, day)
+                continue
+            if rows:
+                break
+        if rows:
+            self._past_raw[day] = rows
+        return rows
 
     def _power_entity(self, load_id: str) -> str | None:
         """Return the entity a load's `POWER` role is bound to, or `None`."""
@@ -1956,7 +2127,10 @@ class Runtime:
         first value seen after a start is only recorded - nothing yet tells ours
         from theirs. A household change becomes configuration (the subentry's
         `comfort_c`, D8 §5.16), so it outlives a restart, and the next tick
-        steers around it.
+        steers around it. A change a person made (a `user_id` on its context)
+        counts at once; one made at the device itself must still stand
+        `OVERRIDE_GRACE` later, so a device re-reporting under a fresh context
+        is not a hand on the dial (D-0497).
         """
         for load in self.build.loads:
             role = self.comfort_role(load)
@@ -1970,7 +2144,11 @@ class Runtime:
                 continue
             seen = self._setpoint_seen.get(load.load_id)
             self._setpoint_seen[load.load_id] = (float(value), state.context.id)
+            pending = self._override_pending.get(load.load_id)
             if seen is not None and seen == (float(value), state.context.id):
+                if pending is not None and now - pending[1] >= OVERRIDE_GRACE:
+                    del self._override_pending[load.load_id]
+                    self._adopt_comfort(load, pending[0], now)
                 continue
             origin = setpoint_origin(
                 self._load_state(load.load_id).gate,
@@ -1983,18 +2161,32 @@ class Runtime:
                 else _SETPOINT_TOLERANCE_C,
                 reconciled=seen is not None,
                 now=now,
+                parent_id=state.context.parent_id,
+                user_id=state.context.user_id,
             )
             if origin is not Origin.USER:
+                self._override_pending.pop(load.load_id, None)
                 continue
-            _LOGGER.info(
-                "site %s: %s set to %.1f by hand — the new comfort target",
-                self.site_name,
-                load.config.name,
-                value,
-            )
-            self.overridden_at[load.load_id] = now
-            self.load_params.setdefault(load.load_id, {})["comfort_c"] = float(value)
-            self._store_comfort(load.load_id, float(value))
+            if state.context.user_id is None:
+                # At the device: a candidate until it has stood the grace.
+                if pending is None or pending[0] != float(value):
+                    self._override_pending[load.load_id] = (float(value), now)
+                continue
+            self._override_pending.pop(load.load_id, None)
+            self._adopt_comfort(load, float(value), now)
+
+    @callback
+    def _adopt_comfort(self, load: Load, value: float, now: datetime) -> None:
+        """Make a hand on the dial the appliance's comfort target (amended INV-27)."""
+        _LOGGER.info(
+            "site %s: %s set to %.1f by hand — the new comfort target",
+            self.site_name,
+            load.config.name,
+            value,
+        )
+        self.overridden_at[load.load_id] = now
+        self.load_params.setdefault(load.load_id, {})["comfort_c"] = value
+        self._store_comfort(load.load_id, value)
 
     @callback
     def _store_comfort(self, load_id: str, value: float) -> None:
@@ -2227,8 +2419,9 @@ class Runtime:
         slot: the ceiling of the capacity window it falls in (`None` where no
         window is billed), D10's uncontrolled baseline where D10 offers it (`None`
         below the offer confidence, the gate the planner and the budget apply -
-        D-0484), and each load's planned kWh, a plan slot that straddles prorated
-        by its overlap.
+        D-0484) with its P90 - the baseline plus `P90_Z` of the bin's residual σ
+        over the slot, `None` where σ is (D12 §5.12 F2, D-0494) - and each load's
+        planned kWh, a plan slot that straddles prorated by its overlap.
         """
         assert self.engine is not None
         plans = self.state.plans.plans
@@ -2251,6 +2444,14 @@ class Runtime:
                 window_start, window_start + timedelta(seconds=window_s), inputs.knobs.target
             )
             offered = None if forecasts is None else forecasts.baseline_kwh(start, end)
+            sigma_w = (
+                None if forecasts is None or offered is None else forecasts.residual_sigma_w(start)
+            )
+            high = (
+                None
+                if offered is None or self.baseline_p90 is None
+                else self.baseline_p90.kwh_between(start, end)
+            )
             planned = {
                 load_id: round(kwh, 3)
                 for load_id, plan in sorted(plans.items())
@@ -2262,6 +2463,12 @@ class Runtime:
                     "end": end.isoformat(),
                     "ceiling_kwh": None if math.isinf(ceiling) else round(ceiling, 3),
                     "baseline_kwh": None if offered is None else round(offered[0], 3),
+                    "baseline_p90_kwh": _baseline_p90(
+                        None if offered is None else offered[0],
+                        high,
+                        sigma_w,
+                        (end - start).total_seconds() / 3600.0,
+                    ),
                     "planned_kwh": planned,
                 }
             )
@@ -2469,6 +2676,7 @@ class Runtime:
             self.store.set(Section.PRICES, self.raw.to_data())
         if changed or self.curves is None:
             self.curves = self._build_curves(now)
+            self.reference_curve = self._build_reference_curve(now)
         if changed:
             self._prices_received(report, now)
         dead: set[str] = set()
@@ -2538,6 +2746,45 @@ class Runtime:
                 await self.run_plan("prices")
 
         self._retry_timers[source_key] = async_track_point_in_utc_time(self.hass, retry, due)
+
+    def _build_reference_curve(self, now: datetime) -> PriceCurve | None:
+        """Return the import curve with every `FixedPrice` left out, or `None` without one.
+
+        What the household would pay on spot (D12 §5.12 P3): the same raw rows,
+        forecaster and remaining modifiers, so VAT and the grid tariff still apply.
+        Observation only - nothing plans on it.
+        """
+        build = self.build
+        chain_ = [m for m in build.price_modifiers if not isinstance(m, FixedPrice)]
+        if not build.sources or len(chain_) == len(build.price_modifiers):
+            return None
+        horizon = timedelta(hours=build.cfg.horizon_h)
+        ctx = PriceContext(
+            now=now,
+            tz=build.cfg.tz,
+            currency=build.cfg.currency,
+            mtd_kwh_at=lambda _t: 0.0,
+            ytd_kwh_at=lambda _t: 0.0,
+            day_type_at=lambda _d: None,
+            holidays=build.holidays,
+        )
+        keys = {source.key for source in build.sources}
+        try:
+            return build_curve(
+                [
+                    slot
+                    for slot in self.raw.between(now - timedelta(days=1), now + horizon)
+                    if slot.source in keys
+                ],
+                chain_,
+                build.forecaster,
+                ctx,
+                horizon,
+                now,
+                source_priority=[source.key for source in build.sources],
+            )
+        except CoverageError:
+            return None
 
     def _build_curves(self, now: datetime) -> Curves | None:
         build = self.build
@@ -2691,6 +2938,10 @@ class Runtime:
                 hass, self._on_quarter, minute=list(PLAN_MINUTES), second=PLAN_SECOND
             )
         )
+        if self.has_fixed_price:
+            # Hourly, after the register's hour has closed; once now (D-0499).
+            self._track(async_track_time_change(hass, self._on_fixed_saving, minute=7, second=30))
+            self._on_fixed_saving(dt_util.utcnow())
         if build.presence.mode == "auto" and build.presence.persons:
             self._track(
                 async_track_state_change_event(

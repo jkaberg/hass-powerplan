@@ -2122,3 +2122,33 @@ A preset's `energy_components` may carry `includes` (`["vat", "levy"]`), and the
 
 Eight `be/fluvius-<area>` files, each with the area's average-monthly-peak rate from its own VREG sheet (49,40 Antwerpen … 57,10 West) and the 2.5 kW minimum from VREG's capacity-tariff page, confirmed by each sheet's minimum contribution. The single file carried a regional average no one is billed; areas differ by 16 %. `be_quarter` runs on Imewo. Affects D2 §3, D9 §5.9.
 **Rejected:** one file with the rate asked in the flow - the areas are published facts.
+
+### D-0494 · A slot's reserve is D10's residual σ at the 90th percentile
+
+`slots[].baseline_p90_kwh` = `baseline_kwh` + 1.2816 · σ · the slot's hours, with σ from `Forecasts.residual_sigma_w`; `None` without either. The forecast draws the difference hatched as "Reserve". D10 already learns and persists σ per bin, which D6's reserve uses; a second hour-of-week profile would disagree with the planner's. Affects D12 §5.6.
+**Rejected:** an empirical per-bin 90th percentile - D10 keeps σ, not samples. (See D-0498.)
+
+### D-0495 · The price card reads the curve: spot per slot, and a curve without the fixed price
+
+`price_forecast`'s slots gain `energy` (the spot component with its VAT share) and, with a `FixedPrice` modifier, `reference`: the same slot from a second curve built without it. The curve already holds raw prices, VAT and grid tariff in the household's own configuration, whatever the source. Affects D12 §5.6.
+**Rejected:** a websocket that calls Nord Pool directly - a second price path and a service call outside INV-3's allowed files.
+
+### D-0496 · The dashboard prototype's cards are ported, not dropped in
+
+The appliances card, dialog, price card, forecast and status keep the prototype's markup and CSS. Their words come from `card_*` translations (D-0446), the status reads `plan_status`'s states, the forecast is the timeline card's plan mode, and the dialog's mini plan is the timeline element. The prototype's backend pieces are replaced by D-0470/0471, D-0494/0498 and D-0495; it was written against assumed entity ids. Affects D12 §3, §4, §5.1.
+**Rejected:** porting its status guard as is - it changes how the engine detects a hand on the dial (see D-0497).
+
+### D-0497 · A hand on the dial: any recent write of ours, a person at once, the device after 2 min; `display_status` holds 90 s
+
+`GateState.recent_context_ids` keeps the 8 contexts before the last; a change whose context or parent is among them is ours, one with a `user_id` is the household's at once, and one with neither (made at the device) is adopted only if it still stands `OVERRIDE_GRACE` (2 min) later. `plan_status` gains `display_status`: a new state shows once it has held 90 s, except device, hand and mode changes. Floor loops were flipping between `running_plan` and `manual_override` every few minutes (86 changes in 6 h on one) as devices re-reported under fresh contexts. Affects D4 §4.1, §9 28; D8 §5.16.
+**Rejected:** debouncing only in the card - the flaps reached the logbook, the comfort target and automations.
+
+### D-0498 · The reserve is the empirical hour-of-week P90, σ only without it
+
+`HourOfWeekQuantile` folds the last 28 days of the uncontrolled history D10 is seeded from into a 90th percentile per local week-hour (day-hour under 3 samples; hours over 30 kWh dropped). `async_seed` returns that history, so one recorder read feeds both, rebuilt with every seed. `baseline_p90_kwh = max(profile, baseline)`, D-0494's σ form where the profile has no bin. A real quantile, not a normal assumption. Affects D10 §5.2, D12 §5.6.
+**Rejected:** a separate store and hourly refresh - the seed reads 60 days at every start, and a 28-day quantile doesn't move in an hour.
+
+### D-0499 · What the fixed price saved this month is a sensor
+
+`sensor.<site>_fixed_price_savings` (monetary, `total`, reset at the local month's start), only with a `FixedPrice` modifier: each metered hour × (its price without the fixed price − its price), both through the site's own chain so VAT and grid cancel. Past days' prices come from the sources' `fetch(day)` once each, kept in memory; refreshed at :07. Attributes `today`, `kwh`. A sensor gives the figure a history and keeps service calls in the sources (INV-3). Affects D8 §5.5, D12 §5.6.
+**Rejected:** a D11 counterfactual tariff - what-if views are deferred, and the ledger keeps no raw prices.

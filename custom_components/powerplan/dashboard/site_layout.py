@@ -13,6 +13,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import DOMAIN, SUBENTRY_CIRCUIT, SUBENTRY_GROUP
@@ -47,6 +49,9 @@ class LoadLayout:
     type: str
     entities: Mapping[str, str]
     icon: str
+    #: The room, for the dialog's subtitle (D12 §5.12 R7): the appliance's own
+    #: device's area, else the area of the first entity it steers; "" for none.
+    area: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +86,7 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
         else:
             by_load.setdefault(subentry, {})[key.removeprefix(f"{subentry}_")] = row.entity_id
     loads = sorted(runtime.build.loads, key=lambda load: (-load.config.priority, load.load_id))
+    areas = _load_areas(hass, entry, [load.load_id for load in loads])
     layouts: list[LoadLayout] = []
     for load in loads:
         entities = dict(by_load.get(load.load_id, {}))
@@ -95,6 +101,7 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
                 type=load.config.type_key,
                 entities=entities,
                 icon=TYPE_ICONS.get(load.config.type_key, "mdi:flash"),
+                area=areas.get(load.load_id, ""),
             )
         )
     subentries = entry.subentries.values()
@@ -110,3 +117,34 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
         circuits=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_CIRCUIT),
         groups=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_GROUP),
     )
+
+
+def _load_areas(
+    hass: HomeAssistant, entry: PowerplanConfigEntry, load_ids: list[str]
+) -> dict[str, str]:
+    """Return each appliance's room by name, from the registries only (INV-3)."""
+    devices, entities, names = dr.async_get(hass), er.async_get(hass), ar.async_get(hass)
+
+    def name(area_id: str | None) -> str:
+        area = None if area_id is None else names.async_get_area(area_id)
+        return "" if area is None else area.name
+
+    out: dict[str, str] = {}
+    for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+        for subentry in device.config_entries_subentries.get(entry.entry_id, ()):
+            if subentry in load_ids and device.area_id:
+                out[subentry] = name(device.area_id)
+    for load_id in load_ids:
+        bound = entry.runtime_data.build.devices.get(load_id)
+        for entity_id in () if load_id in out or bound is None else bound.entity_ids:
+            row = entities.async_get(entity_id)
+            owner = (
+                None if row is None or row.device_id is None else devices.async_get(row.device_id)
+            )
+            area_id = (row.area_id if row is not None else None) or (
+                owner.area_id if owner else None
+            )
+            if area_id:
+                out[load_id] = name(area_id)
+                break
+    return out

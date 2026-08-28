@@ -159,6 +159,11 @@ class NordpoolActionSource:
         self.carrier = Carrier.ELECTRICITY
         self.direction = Direction.IMPORT
 
+    @property
+    def area(self) -> str:
+        """The bidding zone, for the dashboard's "Spot NO3" (D12 §5.12 P1)."""
+        return self._area
+
     def publication(self) -> Publication:
         """Return the area's publication window: about 13:00 market time (INV-6).
 

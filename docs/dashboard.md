@@ -17,7 +17,7 @@ strategy:
 
 | tab | shows, top to bottom |
 |---|---|
-| Now | anything that needs your attention (repairs, a meter that is not reporting); this hour's usage against its limit; the plan for the next 24 hours, with a button to plan again; one tile per appliance - tap it for the appliance's own page; your capacity step; this month's cost and savings, the price now and whether tomorrow's prices are in; the next runs as a list, with what is running now |
+| Now | anything that needs your attention (repairs, a meter that is not reporting); this hour's usage against its limit; your electricity price today and tomorrow - with a fixed price such as Norgespris, also what it would be without it - and whether tomorrow's prices are in; the whole house for the next 24 hours, hour by hour, with a button to plan again; one row per appliance with its status and its next 24 hours - tap it for its controls, its plan and why, and from there its own page; your capacity step; this month's cost and savings, day by day |
 | History | a summary of the period - cost, savings, energy from the grid and your capacity basis or highest hour; your usage hour by hour or day by day, with a link to the Energy dashboard; each day's highest hour and whether it counts toward your capacity step; savings per appliance; cost per appliance; cost and savings over time; what happened. The period picker at the bottom sets every graph, as on the Energy dashboard |
 | an appliance's page | its control and status - with the reason for what it is doing now, its own settings (charge to, comfort, ready by, hours per day), its plan for the next 24 hours, why the plan looks the way it does, and this month's cost, savings and energy. The arrow at the top goes back to *Now* |
 

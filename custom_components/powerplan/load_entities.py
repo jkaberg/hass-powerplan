@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
@@ -621,6 +621,41 @@ def plan_state(status: LoadStatus, runtime: Runtime) -> str:  # noqa: PLR0911 - 
     return "running_plan" if drawn > 0.0 else "waiting"
 
 
+#: How long a new `plan_status` must hold before `display_status` shows it (D12 §5.12 R5, D-0497).
+DISPLAY_HOLD = timedelta(seconds=90)
+#: States `display_status` shows at once: the device, a hand, the household's own mode.
+DISPLAY_AT_ONCE = frozenset(
+    {"device_unavailable", "manual_override", "run_now", "not_controlled", "observing"}
+)
+
+
+@dataclass(slots=True)
+class StatusHold:
+    """One appliance's shown status, the candidate replacing it, and since when."""
+
+    shown: str
+    candidate: str
+    since: datetime
+
+
+def held_status(holds: dict[str, StatusHold], load_id: str, raw: str, now: datetime) -> str:
+    """Return the status to show: `raw` once it has held `DISPLAY_HOLD`, else the one shown.
+
+    One floor loop's `plan_status` changed 86 times in 6 h on the reference house
+    (`running_plan` ⇄ `paused_peak` ⇄ `waiting`); the state stays the engine's
+    truth each tick, and this is what a card or tile shows (D-0497).
+    """
+    hold = holds.get(load_id)
+    if hold is None or raw in DISPLAY_AT_ONCE or hold.shown in DISPLAY_AT_ONCE:
+        holds[load_id] = StatusHold(raw, raw, now)
+        return raw
+    if raw != hold.candidate:
+        hold.candidate, hold.since = raw, now
+    elif raw != hold.shown and now - hold.since >= DISPLAY_HOLD:
+        hold.shown = raw
+    return hold.shown
+
+
 def _comfort_state(status: LoadStatus) -> str | None:
     comfort = status.comfort
     if comfort is None:
@@ -723,6 +758,8 @@ class LoadSensorRow:
     digest_gated: bool = False
     #: Attributes that never write a row by themselves.
     volatile: frozenset[str] = frozenset()
+    #: Publish the state held 90 s as `display_status` (D-0497).
+    held: bool = False
     applies: Callable[[Load, Runtime], bool] = lambda _load, _runtime: True
     #: The closed set of an `enum` row, translated under `entity.sensor.<key>.state`.
     options: tuple[str, ...] | None = None
@@ -797,6 +834,7 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         key="plan_status",
         value=plan_state,
         attributes=plan_status_attributes,
+        held=True,
         device_class=SensorDeviceClass.ENUM,
         options=PLAN_STATES,
         # The grant, the reason, the car's remaining kWh and its session (which
@@ -911,7 +949,16 @@ class LoadSensor(LoadEntity, SensorEntity):
         status = self.status
         if status is None or self.row.attributes is None:
             return {}
-        return dict(self.row.attributes(status, self.runtime))
+        attributes = dict(self.row.attributes(status, self.runtime))
+        snapshot = self.runtime.snapshot
+        if self.row.held and snapshot is not None:
+            attributes["display_status"] = held_status(
+                self.runtime.status_holds,
+                status.load_id,
+                self.row.value(status, self.runtime),
+                snapshot.at,
+            )
+        return attributes
 
     def _digest(self) -> str | None:
         if not self.row.digest_gated and not self.row.volatile:

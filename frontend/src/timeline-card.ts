@@ -13,6 +13,7 @@
 
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
+import { FORECAST_CSS, forecastOption, railHtml, summaryHtml } from "./forecast";
 import { fetchStatistics, followPeriod, gridHours, kwhScale, monthRanking, type Period, statisticsPeriod, type StatRow } from "./energy";
 import { cssVar, type HomeAssistant, timeZone } from "./ha";
 import { ppStyles, tooltipStyle } from "./styles";
@@ -36,6 +37,7 @@ import {
   slotReadout,
   stackOffsets,
   steps,
+  bucketize,
   type TimelineSlot,
   timelineSlots,
   windowHours,
@@ -64,6 +66,8 @@ interface TimelineConfig {
   };
   show?: string[];
   currency?: string;
+  /** Now's Plan card: the whole-house forecast with a rail this wide (D12 §5.12 F1–F6). */
+  rail_width?: number;
   labels?: Record<string, string>;
 }
 
@@ -114,6 +118,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     toggle: HTMLDivElement;
     plot: HTMLDivElement;
     chart: HTMLDivElement;
+    side: HTMLDivElement;
     readout: HTMLDivElement;
     legend: HTMLDivElement;
     message: HTMLDivElement;
@@ -177,7 +182,8 @@ export class PowerplanTimelineCard extends HTMLElement {
           if (Math.abs(width - this.width) < 1) continue;
           const narrowBefore = this.narrow;
           this.width = width;
-          if (this.narrow !== narrowBefore || !this.chart) {
+          // The forecast lays its bars and rail out in pixels: redraw on any width.
+          if (this.narrow !== narrowBefore || !this.chart || this.forecast) {
             if (this.config?.mode === "history") void this.renderHistory();
             else void this.render();
             continue;
@@ -225,6 +231,10 @@ export class PowerplanTimelineCard extends HTMLElement {
     return this.config?.loads.length === 1 && Boolean(this.config.entities.deadline);
   }
 
+  private get forecast(): boolean {
+    return this.config?.rail_width !== undefined && this.config.mode !== "history" && !this.single;
+  }
+
   private get narrow(): boolean {
     return this.width > 0 && this.width < (this.config?.narrow_width ?? 500);
   }
@@ -254,11 +264,16 @@ export class PowerplanTimelineCard extends HTMLElement {
                    justify-content: center; text-align: center; font-size: 14px; color: var(--secondary-text-color);
                    pointer-events: none; }
         .pp-readout { flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
-        .pp-readout[hidden], .message[hidden] { display: none; }
+        .pp-readout[hidden], .message[hidden], .pp-legend[hidden] { display: none; }
+        .tl.fc { position: relative; padding: 0; gap: 0; }
+        .tl.fc .head { position: absolute; top: 10px; right: 12px; z-index: 2; }
+        .tl.fc .message { inset: 0; }
+        .side:empty { display: none; }
+        ${FORECAST_CSS}
       </style>
       <ha-card><div class="tl">
         <div class="head"><div class="pp-toggle" role="group"></div></div>
-        <div class="tl-chart"><div class="chart"></div><div class="message" hidden></div></div>
+        <div class="tl-chart"><div class="side"></div><div class="chart"></div><div class="message" hidden></div></div>
         <div class="pp-readout" hidden></div>
         <div class="pp-legend"></div>
       </div></ha-card>`;
@@ -266,6 +281,7 @@ export class PowerplanTimelineCard extends HTMLElement {
       toggle: root.querySelector(".pp-toggle") as HTMLDivElement,
       plot: root.querySelector(".tl-chart") as HTMLDivElement,
       chart: root.querySelector(".chart") as HTMLDivElement,
+      side: root.querySelector(".side") as HTMLDivElement,
       readout: root.querySelector(".pp-readout") as HTMLDivElement,
       legend: root.querySelector(".pp-legend") as HTMLDivElement,
       message: root.querySelector(".message") as HTMLDivElement,
@@ -293,6 +309,10 @@ export class PowerplanTimelineCard extends HTMLElement {
     const hass = this.hassRef;
     const config = this.config;
     if (!hass || !config) return;
+    if (this.forecast) {
+      await this.renderForecast(hass, config);
+      return;
+    }
     const els = this.shell();
     this.sizePlot();
     const labels = config.labels ?? {};
@@ -326,6 +346,70 @@ export class PowerplanTimelineCard extends HTMLElement {
     this.drawMarkers();
     this.drawLegend(this.planLegend(config));
     this.drawReadout();
+  }
+
+  // ------------------------------------------------- the forecast (F1–F6)
+
+  /** Now's Plan card: the whole house per capacity window, the rail or the phone summary, the price under it. */
+  private async renderForecast(hass: HomeAssistant, config: TimelineConfig): Promise<void> {
+    const els = this.shell();
+    const compact = this.narrow || (this.width > 0 && this.width < 600);
+    els.plot.style.height = `${compact ? 468 : 440}px`;
+    (els.plot.parentElement as HTMLElement).classList.add("fc");
+    els.readout.hidden = true;
+    els.legend.hidden = true;
+    const hours = windowHours(this.width, config, this.chosen);
+    this.drawToggle(hours);
+    const plan = hass.states[config.entities.plan];
+    const planSlots = (plan?.attributes.slots as PlanSlot[] | undefined) ?? [];
+    const priceSlots = (hass.states[config.entities.price_forecast]?.attributes.slots as PriceSlot[] | undefined) ?? [];
+    const windowMin = Number(plan?.attributes.window_min ?? 60);
+    const now = Date.now();
+    const width = windowMin * 60_000;
+    const from = Math.floor(now / width) * width;
+    const buckets = bucketize(planSlots, priceSlots, windowMin, from, hours);
+    const empty = !planSlots.length;
+    els.chart.hidden = empty;
+    els.message.hidden = !empty;
+    els.message.textContent = empty ? (config.labels?.no_plan ?? "") : "";
+    if (empty) {
+      els.side.replaceChildren();
+      return;
+    }
+    const W = this.width || this.getBoundingClientRect().width || 800;
+    const rail = compact ? 0 : config.rail_width!;
+    const f = this.formats();
+    const options = {
+      now,
+      from,
+      hours,
+      windowMin,
+      width: W,
+      height: compact ? 468 : 440,
+      rail,
+      compact,
+      zone: f.zone,
+      locale: hass.locale.language,
+      currency: f.unit,
+      labels: config.labels ?? {},
+      css: {
+        text: this.css("--primary-text-color", "#e1e1e1"),
+        text2: this.css("--secondary-text-color", "#9b9b9b"),
+        divider: this.css("--divider-color", "rgba(225,225,225,.12)"),
+        primary: this.css("--primary-color", "#009ac7"),
+        error: this.css("--error-color", "#db4437"),
+        card: this.css("--card-background-color", "#1c1c1c"),
+      },
+      tooltip: tooltipStyle((name, fallback) => this.css(name, fallback)),
+    };
+    const loads = config.loads.map((load) => ({ id: load.id, name: load.name, color: this.colorOf(load.id) }));
+    els.side.style.cssText = compact ? "position:absolute;left:0;right:0;top:0" : `position:absolute;left:0;top:0;bottom:0;width:${rail}px`;
+    els.side.innerHTML = compact ? summaryHtml(buckets, loads, options) : railHtml(buckets, loads, options);
+    if (!(await this.ensureChart())) return;
+    this.markers = [];
+    this.stripUnit = "";
+    this.chart!.setOption(forecastOption(buckets, loads, options), { notMerge: true });
+    this.chart!.resize();
   }
 
   // --------------------------------------------------------- rule 1, T6
@@ -406,7 +490,7 @@ export class PowerplanTimelineCard extends HTMLElement {
   // ------------------------------------------------ rules 10, 11, T7
 
   private tap(event: { offsetX: number; offsetY: number }): void {
-    if (!this.chart || !this.touch || this.config?.mode === "history") return;
+    if (!this.chart || !this.touch || this.config?.mode === "history" || this.forecast) return;
     const [value] = this.chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY]) as number[];
     const slot = this.slots.find((s) => s.start <= value! && value! < s.end);
     if (!slot) return;
@@ -731,7 +815,7 @@ export class PowerplanTimelineCard extends HTMLElement {
   /** T3: "Nå", midnight and the deadline as horizontal labels, and the strip's unit (T4), from the grid's pixels. */
   private drawMarkers(): void {
     const chart = this.chart;
-    if (!chart || !this.els) return;
+    if (!chart || !this.els || this.forecast) return;
     const height = this.els.plot.clientHeight;
     const width = this.els.plot.clientWidth;
     if (!height || !width) return;

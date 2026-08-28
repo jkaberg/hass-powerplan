@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -31,6 +32,8 @@ from homeassistant.components.sensor import (
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 
 from .core.model import Carrier, Confidence, Snapshot
+from .core.pricing.modifiers.base import SPOT
+from .core.pricing.modifiers.vat import Vat
 from .core.tariffs.evaluator import ADVICE_KEYS
 from .core.tariffs.grammar import StepTable
 from .entity import (
@@ -98,19 +101,41 @@ def _name(value: Any) -> str | None:
     return str(getattr(value, "value", value))
 
 
-def _slots(curve: PriceCurve | None, limit: int | None = None) -> list[dict[str, Any]]:
+def _slots(
+    curve: PriceCurve | None, limit: int | None = None, reference: PriceCurve | None = None
+) -> list[dict[str, Any]]:
+    """Return the curve's slots; with `reference`, each slot's price without the fixed price too."""
     if curve is None:
         return []
-    rows = [
-        {
+    without = {} if reference is None else {slot.start: slot.total for slot in reference.slots}
+    rows = []
+    for slot in curve.slots:
+        row = {
             "start": slot.start.isoformat(),
             "end": slot.end.isoformat(),
             "total": str(slot.total),
             "confidence": slot.confidence.value,
+            "energy": _energy_part(slot.components, slot.total),
         }
-        for slot in curve.slots
-    ]
+        if slot.start in without:
+            row["reference"] = str(without[slot.start])
+        rows.append(row)
     return rows if limit is None else rows[:limit]
+
+
+def _energy_part(components: Mapping[str, Decimal], total: Decimal) -> str | None:
+    """Return the energy component with its share of VAT, for the price card (D12 §5.12 P3).
+
+    VAT is a component over the others (D1 §5.4), so the energy's share is its
+    component scaled by total ÷ (total − VAT) - exact where VAT covers every
+    component, the modifier's default (D-0495).
+    """
+    spot = components.get(SPOT)
+    if spot is None:
+        return None
+    vat = components.get("vat", Decimal(0))
+    base = total - vat
+    return str(round(spot if not vat or not base else spot * total / base, 5))
 
 
 #: `sensor.<site>_plan`'s state covers one day of the plan (D12 §5.6 v0.4).
@@ -455,8 +480,16 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda _s, r: known_until(_import_curve(r)),
         attributes=lambda _s, r: {
-            "slots": _slots(_import_curve(r)),
+            "slots": _slots(_import_curve(r), reference=r.reference_curve),
             "built_at": None if (curve := _import_curve(r)) is None else _iso(curve.built_at),
+            # The price card's "Spot NO3" and its price without VAT (D12 §5.12 P1).
+            "area": next(
+                (area for source in r.build.sources if (area := getattr(source, "area", None))),
+                None,
+            ),
+            "vat": next(
+                (float(m.rate) for m in r.build.price_modifiers if isinstance(m, Vat)), None
+            ),
         },
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
@@ -617,6 +650,8 @@ async def async_setup_entry(
         SiteSensor(runtime, description) for description in SENSORS if description.applies(runtime)
     ]
     entities.extend([SiteCostSensor(runtime), SiteSavingsSensor(runtime)])
+    if runtime.has_fixed_price:
+        entities.append(SiteFixedPriceSavingsSensor(runtime))
     entities.extend(
         SiteSensor(
             runtime,
@@ -783,4 +818,45 @@ class SiteSavingsSensor(_SiteMoneySensor):
             "previous_month": None if status is None else money_text(status.previous_savings),
             "since_install": self._since_install(),
             "savings_confidence": None if status is None else status.confidence,
+        }
+
+
+class SiteFixedPriceSavingsSensor(PowerplanEntity, SensorEntity):
+    """`sensor.<site>_fixed_price_savings`: this month's saving from the fixed price (D-0499).
+
+    The metered kWh of each hour × (its price without the fixed price − with it),
+    since the local month began - the price card's "≈ 991 kr i sep". Negative
+    when spot was the cheaper. `total` with the month's start as `last_reset`,
+    so its statistics are one month each; `None` until the first refresh.
+    """
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_suggested_display_precision = 0
+    _attr_translation_key = "site_fixed_price_savings"
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site; the unit is the site's own currency."""
+        super().__init__(runtime, "fixed_price_savings")
+        self._attr_native_unit_of_measurement = runtime.build.cfg.currency
+
+    @property
+    def native_value(self) -> float | None:
+        """The month's saving so far, or `None` before the first refresh."""
+        saving = self.runtime.fixed_saving
+        return None if saving is None else saving.month
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """The local month's start."""
+        saving = self.runtime.fixed_saving
+        return None if saving is None else saving.since
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any]:
+        """Return today's saving and the kWh it is over."""
+        saving = self.runtime.fixed_saving
+        return {
+            "today": None if saving is None else saving.today,
+            "kwh": None if saving is None else saving.kwh,
         }

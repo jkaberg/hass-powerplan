@@ -33,6 +33,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.powerplan.core.forecasts.model import ForecastKind, Series, SeriesPoint
 from custom_components.powerplan.core.forecasts.reconstruct import (
     ControlledHistory,
+    UncontrolledHistory,
     uncontrolled_history,
 )
 from custom_components.powerplan.core.forecasts.registry import register
@@ -196,8 +197,11 @@ async def async_seed(
     now: datetime,
     tz: tzinfo,
     span_days: int = SEED_SPAN_DAYS,
-) -> None:
-    """Read the recorder and fold every historical window into `baseline` (D10 §5.2).
+) -> UncontrolledHistory:
+    """Read the recorder, fold every historical window into `baseline`, and return them (D10 §5.2).
+
+    The history comes back so the dashboard's P90 profile is folded from the
+    same windows, with no second read (D-0498).
 
     Runs once at setup and again on the `rebuild_baseline` service - both
     times through this same function, an executor-bound read followed by
@@ -241,6 +245,7 @@ async def async_seed(
         seeded,
         history.reconstruction.value,
     )
+    return history
 
 
 @register

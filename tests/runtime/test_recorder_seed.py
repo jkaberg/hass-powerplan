@@ -250,9 +250,9 @@ async def test_05_a_fresh_site_s_first_start_seeds_the_baseline_once(
     seeds: list[str] = []
     original = runtime_module.async_seed
 
-    async def counting(*args: Any, **kwargs: Any) -> None:
+    async def counting(*args: Any, **kwargs: Any) -> Any:
         seeds.append(kwargs["register_entity_id"])
-        await original(*args, **kwargs)
+        return await original(*args, **kwargs)
 
     monkeypatch.setattr(runtime_module, "async_seed", counting)
     entry = site_entry(hass)

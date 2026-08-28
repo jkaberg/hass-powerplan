@@ -293,12 +293,12 @@ def test_09_two_tabs_and_a_subview_per_appliance() -> None:
 
 
 def test_09_sections_come_in_the_phone_order() -> None:
-    """Config order is phone order; dense placement tidies the desktop (D12 §5.1)."""
+    """Config order is phone order; dense placement tidies the desktop (D12 §5.1, §5.12)."""
     t = EN
     config = build([_nordic()], "2026.3.0", t, grid_statistics=["sensor.grid_import"])
     assert _headings(_view(config, "overview")) == [
-        None, t["section_hour"], t["section_plan"], t["section_appliances"], t["section_capacity"],
-        t["section_month"], t["section_next_runs"],
+        None, t["section_hour"], t["section_price"], t["section_plan"], t["section_appliances"],
+        t["section_capacity"], t["section_month"],
     ]  # fmt: skip
     assert _headings(_view(config, "history")) == [
         t["section_summary"], t["section_usage"], t["section_capacity"], t["section_per_appliance"],
@@ -310,14 +310,18 @@ def test_09_sections_come_in_the_phone_order() -> None:
 
 
 def test_09_column_span_sits_on_the_section() -> None:
-    """Plan spans 3, Appliances 2, on the section dict and never on a card (B2)."""
+    """Price spans 2, Plan and Appliances 3, on the section dict and never on a card (B2, §5.12)."""
     now = _view(build([_nordic()], "2026.3.0", EN), "overview")
+    assert _section(now, EN["section_price"])["column_span"] == 2
     assert _section(now, EN["section_plan"])["column_span"] == 3
     appliances = _section(now, EN["section_appliances"])
-    assert appliances["column_span"] == 2
-    tiles = [card for card in appliances["cards"] if card["type"] == "tile"]
-    assert len(tiles) == len(ALL_LOADS)
-    assert {tile["grid_options"]["columns"] for tile in tiles} == {12}
+    assert appliances["column_span"] == 3
+    [lanes] = [card for card in appliances["cards"] if card["type"] != "heading"]
+    assert lanes["type"] == "custom:powerplan-appliances-card"
+    assert lanes["grid_options"] == {"columns": "full", "rows": "auto"}
+    assert [load["status"] for load in lanes["loads"]] == [
+        f"sensor.{i}_plan_status" for i in ALL_LOADS
+    ]
     for view in build([_nordic()], "2026.3.0", EN)["views"]:
         for card in _cards({"views": [view]}):
             assert "column_span" not in card
@@ -338,35 +342,33 @@ def test_09_no_name_carries_the_site_or_the_device() -> None:
     assert all("name" in tile for tile in tiles)
 
 
-def test_09_the_appliance_tile_opens_its_page() -> None:
-    """Tap → the subview, hold → more-info; the car shows its deadline (D12 §5.1)."""
+def test_09_the_appliance_row_opens_its_dialog_and_page() -> None:
+    """A row's dialog reads the appliance's own entities and links its subview (D12 §5.12 R7)."""
     config = build([_nordic()], "2026.3.0", EN)
-    tiles = {
-        card["entity"]: card
-        for card in _section(_view(config, "overview"), EN["section_appliances"])["cards"]
-        if card["type"] == "tile"
-    }
-    tank = tiles["sensor.tank_plan_status"]
-    assert tank["tap_action"] == {
-        "action": "navigate",
-        "navigation_path": f"{DASHBOARD}/appliance-tank",
-    }
-    assert tank["hold_action"] == {"action": "more-info"}
-    assert "icon" not in tank
-    assert tank["state_content"] == ["state", "next_run"]
-    assert tiles["sensor.ev_plan_status"]["state_content"] == ["state", "deadline_time"]
+    lanes = _section(_view(config, "overview"), EN["section_appliances"])["cards"][1]
+    rows = {load["id"]: load for load in lanes["loads"]}
+    tank = rows["tank"]
+    assert tank["path"] == f"{DASHBOARD}/appliance-tank"
+    assert tank["status"] == "sensor.tank_plan_status"
+    assert tank["kind"] == "water_heater"
+    assert tank["kind_name"] == TEXTS["en"]["type_water_heater"]
+    assert tank["icon"] == TYPE_ICONS["water_heater"]
+    for key in ("control", "cost_month", "next_legionella"):
+        assert tank[key] == f"{_domain(key)}.tank_{key}"
+    assert rows["ev"]["ready_by"] == "time.ev_ready_by"
+    assert (
+        lanes["rail_width"]
+        == _section(_view(config, "overview"), EN["section_plan"])["cards"][1]["rail_width"]
+    )
+    assert lanes["strategies"]["deadline_fill"] == TEXTS["en"]["strategy_deadline_fill"]
 
 
 def test_09_hidden_appliances_drop_every_subview() -> None:
-    """`hidden_views: [appliances]`: no subviews, and a tile opens more-info (D12 §6)."""
+    """`hidden_views: [appliances]`: no subviews, and a row's dialog links none (D12 §6)."""
     config = build([_nordic()], "2026.3.0", EN, hidden_views=["appliances"])
     assert [view["path"] for view in config["views"]] == ["overview", "history"]
-    tiles = [
-        card
-        for card in _section(_view(config, "overview"), EN["section_appliances"])["cards"]
-        if card["type"] == "tile"
-    ]
-    assert {tile["tap_action"]["action"] for tile in tiles} == {"more-info"}
+    lanes = _section(_view(config, "overview"), EN["section_appliances"])["cards"][1]
+    assert not any("path" in load for load in lanes["loads"])
     hidden = build([_nordic()], "2026.3.0", EN, hidden_views=["history"], hidden_cards=["markdown"])
     assert "history" not in [view["path"] for view in hidden["views"]]
     assert "markdown" not in {card["type"] for card in _cards(hidden)}
@@ -427,16 +429,14 @@ def test_02_a_disabled_or_absent_entity_is_left_out() -> None:
     assert "number.x_comfort" not in {card.get("entity") for card in _subview_cards(config, "x")}
 
 
-def test_02_granted_power_draws_where_the_household_enabled_it() -> None:
-    """`granted_power` is off by default: the power split appears only when a load shows it."""
-    plain = build([_site((_load("x", "ev"),))], "2026.3.0", EN)
-    assert "distribution" not in {card["type"] for card in _cards(plain)}
+def test_02_granted_power_draws_on_the_subview_only() -> None:
+    """The lanes replaced Now's power split (§5.12); `granted_power` stays a subview tile."""
     load = _load("x", "ev", (*TYPE_KEYS["ev"], "granted_power"))
-    enabled = build([_site((load,))], "2026.3.0", EN)
-    distribution = next(card for card in _cards(enabled) if card["type"] == "distribution")
-    assert distribution["entities"] == [
-        {"entity": "sensor.x_granted_power", "name": "X", "color": HA_GRAPH_PALETTE[0]}
-    ]
+    config = build([_site((load,))], "2026.3.0", EN)
+    assert "distribution" not in {card["type"] for card in _cards(config)}
+    now = {card.get("entity") for card in _cards({"views": [_view(config, "overview")]})}
+    assert "sensor.x_granted_power" not in now
+    assert "sensor.x_granted_power" in {card.get("entity") for card in _subview_cards(config, "x")}
 
 
 # --------------------------------------------------------------------------- #
@@ -445,26 +445,18 @@ def test_02_granted_power_draws_where_the_household_enabled_it() -> None:
 
 
 def test_03_below_the_releases_that_have_them_the_builder_degrades() -> None:
-    """2026.1: no `distribution`, no `repairs`, the picker a card; 2026.3.0 has all three (D12 §5.5)."""
-    load = _load("x", "ev", (*TYPE_KEYS["ev"], "granted_power"))
+    """2026.1: no `repairs`, the picker a card; 2026.3.0 has both (D12 §5.5)."""
+    load = _load("x", "ev")
     old = build([_site((load,))], "2026.1.0", EN)
-    types = {card["type"] for card in _cards(old)}
-    assert "distribution" not in types
-    assert "repairs" not in types
+    assert "repairs" not in {card["type"] for card in _cards(old)}
     history = _view(old, "history")
     assert "footer" not in history
     assert history["sections"][0]["cards"][0]["type"] == "energy-date-selection"
-    appliances = _section(_view(old, "overview"), EN["section_appliances"])
-    assert "entities" in {card["type"] for card in appliances["cards"]}
-
     floor = build([_site((load,))], "2026.3.0", EN)
-    types = {card["type"] for card in _cards(floor)}
-    assert {"distribution", "repairs"} <= types
+    assert "repairs" in {card["type"] for card in _cards(floor)}
     assert "footer" in _view(floor, "history")
     between = build([_site((load,))], "2026.2.1", EN)
-    types = {card["type"] for card in _cards(between)}
-    assert "distribution" in types
-    assert "repairs" not in types
+    assert "repairs" not in {card["type"] for card in _cards(between)}
 
 
 # --------------------------------------------------------------------------- #
@@ -923,15 +915,8 @@ async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
 
 
 def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
-    """G5: tiles read `next_run` (the car `deadline_time`); the subview's badge hides while running."""
+    """G5: the subview's next-run badge reads `next_run` and hides while running."""
     config = build([_nordic()], "2026.8.0", EN)
-    tiles = {
-        card["entity"]: card
-        for card in _section(_view(config, "overview"), EN["section_appliances"])["cards"]
-        if card["type"] == "tile"
-    }
-    assert tiles["sensor.ev_plan_status"]["state_content"] == ["state", "deadline_time"]
-    assert tiles["sensor.tank_plan_status"]["state_content"] == ["state", "next_run"]
     badges = [
         b for b in _subview(config, "tank")["badges"] if b["entity"] == "sensor.tank_plan_status"
     ]
@@ -976,16 +961,12 @@ def test_19_the_month_s_money_is_the_sensor_s_own_state() -> None:
 
 
 def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
-    """N8, D5, D6: the next runs and the per-appliance figures follow the style sheet; markdown only says why."""
+    """D5, D6: the per-appliance figures follow the style sheet; markdown only says why.
+
+    Now's runs list (N8) went: the appliances card's lanes show every run (§5.12).
+    """
     config = build([_nordic()], "2026.8.0", EN)
-    runs = _section(_view(config, "overview"), EN["section_next_runs"])["cards"][1]
-    assert runs["type"] == "custom:powerplan-runs-card"
-    assert runs["grid_options"] == {"columns": 12, "rows": "auto"}
-    assert runs["entities"] == {"plan": "sensor.home_plan"}
-    assert [load["status"] for load in runs["loads"]] == [
-        f"sensor.{i}_plan_status" for i in ALL_LOADS
-    ]
-    assert runs["running"] == ["charging", "running_plan", "run_now"]
+    assert "custom:powerplan-runs-card" not in {card["type"] for card in _cards(config)}
     history = _view(config, "history")
     per = _section(history, EN["section_per_appliance"])["cards"]
     table = _section(history, EN["section_cost_per_appliance"])["cards"]
@@ -1064,3 +1045,192 @@ def test_19_plan_status_carries_the_next_run_and_the_deadline_as_clock_times() -
         assert later["next_start"] == "2026-09-23T21:00:00+00:00"
     finally:
         dt_util.set_default_time_zone(UTC)
+
+
+# --------------------------------------------------------------------------- #
+# §9 20 - the price card's slots, the forecast's reserve, Now's order
+# --------------------------------------------------------------------------- #
+
+
+async def test_20_a_slot_s_p90_is_the_baseline_plus_d10_s_sigma(
+    hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime
+) -> None:
+    """`baseline_p90_kwh` = baseline + P90_Z·σ over the slot, `None` without a baseline (F2, D-0494)."""
+    from custom_components.powerplan.runtime import P90_Z  # noqa: PLC0415
+
+    async def slots() -> list[dict[str, Any]]:
+        await runtime.run_plan("test")
+        await runtime.run_tick("test")
+        await hass.async_block_till_done()
+        entity_id = er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, unique_id(SITE_ENTRY_ID, "plan")
+        )
+        rows: list[dict[str, Any]] = hass.states.get(entity_id).attributes["slots"]
+        assert rows
+        return rows
+
+    assert all(row["baseline_p90_kwh"] is None for row in await slots())
+    adapter = runtime.forecasts_adapter
+    assert adapter is not None
+    now = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+    # Eight weeks of quarter-hours alternating 0.8 and 1.2 kW: a mean of 1 kW with a spread.
+    for quarter in range(8 * 7 * 24 * 4, 0, -1):
+        kw = 0.8 if quarter % 2 else 1.2
+        adapter.baseline.update(
+            ClosedWindow(
+                start_utc=now - timedelta(minutes=15 * quarter),
+                window_min=15,
+                kwh=kw / 4,
+                avg_kw=kw,
+                anchor_kind=AnchorKind.REGISTER_LATCHED,
+                degraded=False,
+                confidence="exact",
+            ),
+            kw / 4,
+        )
+    rows = await slots()
+    for row in rows:
+        start, end = datetime.fromisoformat(row["start"]), datetime.fromisoformat(row["end"])
+        sigma_w = adapter.baseline.residual_sigma(start)
+        assert sigma_w is not None
+        hours = (end - start).total_seconds() / 3600
+        expected = row["baseline_kwh"] + P90_Z * sigma_w * hours / 1000
+        assert row["baseline_p90_kwh"] == pytest.approx(expected, abs=2e-3)
+    assert any(row["baseline_p90_kwh"] > row["baseline_kwh"] for row in rows)
+
+
+def _price_slot(total: str, **components: str) -> Any:
+    from custom_components.powerplan.core.model import Slot  # noqa: PLC0415
+
+    start = datetime(2026, 9, 23, 21, tzinfo=UTC)
+    return Slot(
+        start=start,
+        end=start + timedelta(minutes=15),
+        total=Decimal(total),
+        components={name: Decimal(value) for name, value in components.items()},
+        confidence=Confidence.KNOWN,
+    )
+
+
+def test_20_a_price_slot_carries_its_energy_part_and_its_price_without_the_fixed_price() -> None:
+    """P3: Norgespris 0.40 + VAT 25 % + grid 0.18 → energy 0.50, grid 0.23; spot 0.834 → 1.27 (D-0495)."""
+    from custom_components.powerplan.core.model import (  # noqa: PLC0415
+        Carrier,
+        Direction,
+        PriceCurve,
+    )
+    from custom_components.powerplan.sensor import _slots  # noqa: PLC0415
+
+    def curve(slot: Any) -> PriceCurve:
+        return PriceCurve(
+            carrier=Carrier.ELECTRICITY,
+            direction=Direction.IMPORT,
+            currency="NOK",
+            slots=(slot,),
+            built_at=slot.start,
+            sources=("nordpool",),
+        )
+
+    fixed = _price_slot("0.7300", spot="0.40", grid="0.184", vat="0.146")
+    spot = _price_slot("1.2725", spot="0.834", grid="0.184", vat="0.2545")
+    [row] = _slots(curve(fixed), reference=curve(spot))
+    assert float(row["energy"]) == pytest.approx(0.50, abs=1e-4)
+    assert float(row["total"]) - float(row["energy"]) == pytest.approx(0.23, abs=1e-4)
+    assert row["reference"] == "1.2725"
+    [plain] = _slots(curve(fixed))
+    assert "reference" not in plain
+    no_vat = _slots(curve(_price_slot("0.584", spot="0.40", grid="0.184")))[0]
+    assert float(no_vat["energy"]) == pytest.approx(0.40)
+
+
+def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
+    """The price card beside the hour; the Plan card's rail equals the appliances card's (R2)."""
+    config = build([_nordic()], "2026.8.0", EN)
+    now = _view(config, "overview")
+    price = _section(now, EN["section_price"])["cards"]
+    assert price[0]["badges"][0]["entity"] == "binary_sensor.home_prices_tomorrow"
+    assert price[1]["type"] == "custom:powerplan-price-card"
+    assert price[1]["entities"] == {
+        "price": "sensor.home_price",
+        "price_forecast": "sensor.home_price_forecast",
+        "prices_tomorrow": "binary_sensor.home_prices_tomorrow",
+        "level": "sensor.home_level",
+    }
+    plan = _section(now, EN["section_plan"])["cards"][1]
+    lanes = _section(now, EN["section_appliances"])["cards"][1]
+    assert plan["rail_width"] == lanes["rail_width"] == 300
+    month = _section(now, EN["section_month"])["cards"]
+    assert month[-1]["type"] == "statistics-graph"
+    assert month[-1]["entities"] == ["sensor.home_cost"]
+    assert {card["type"] for card in _cards({"views": [now]})} >= {
+        "custom:powerplan-price-card",
+        "custom:powerplan-appliances-card",
+    }
+    assert "tile" not in {card["type"] for card in _section(now, EN["section_appliances"])["cards"]}
+
+
+def test_20_the_fixed_price_saving_is_each_hour_s_kwh_times_what_spot_would_have_cost_more() -> (
+    None
+):
+    """P1, D-0499: spot 0.834 → 1.0425 with VAT, Norgespris 0.50; 2 kWh at 00–01 save 1.085."""
+    from custom_components.powerplan.core.pricing import PriceContext, RawSlot  # noqa: PLC0415
+    from custom_components.powerplan.core.pricing.holidays import NoHolidays  # noqa: PLC0415
+    from custom_components.powerplan.core.pricing.modifiers.fixed_price import (  # noqa: PLC0415
+        FixedPrice,
+    )
+    from custom_components.powerplan.core.pricing.modifiers.vat import Vat  # noqa: PLC0415
+    from custom_components.powerplan.runtime import fixed_price_saving  # noqa: PLC0415
+
+    since = datetime(2026, 8, 31, 22, tzinfo=UTC)
+    today = datetime(2026, 9, 22, 22, tzinfo=UTC)
+
+    def window(start: datetime, kwh: float) -> ClosedWindow:
+        return ClosedWindow(
+            start_utc=start, window_min=60, kwh=kwh, avg_kw=kwh,
+            anchor_kind=AnchorKind.REGISTER_LATCHED, degraded=False, confidence="exact",
+        )  # fmt: skip
+
+    def raw(start: datetime, spot: str) -> RawSlot:
+        return RawSlot(
+            start=start, end=start + timedelta(hours=1), value=Decimal(spot), currency="NOK",
+            source="nordpool", fetched_at=start,
+        )  # fmt: skip
+
+    ctx = PriceContext(
+        now=today, tz=UTC, currency="NOK", mtd_kwh_at=lambda _t: 0.0, ytd_kwh_at=lambda _t: 0.0,
+        day_type_at=lambda _d: None, holidays=NoHolidays(),
+    )  # fmt: skip
+    chain = (FixedPrice(price=Decimal("0.40")), Vat(rate=Decimal("0.25")))
+    yesterday = today - timedelta(hours=2)
+    saving = fixed_price_saving(
+        [window(today, 2.0), window(yesterday, 1.0), window(today + timedelta(hours=5), 3.0)],
+        [raw(today, "0.834"), raw(yesterday, "0.30")],
+        chain,
+        ctx,
+        since=since,
+        today=today,
+    )
+    assert saving.today == pytest.approx(2.0 * (0.834 * 1.25 - 0.50), abs=0.01)
+    # Yesterday spot was the cheaper: a negative saving counts too; an unpriced hour does not.
+    assert saving.month == pytest.approx(saving.today + 1.0 * (0.30 * 1.25 - 0.50), abs=0.01)
+    assert saving.kwh == 3.0
+    assert saving.since == since
+
+
+def test_20_display_status_holds_a_flap_and_shows_a_hand_at_once() -> None:
+    """R5, D-0497: TV-stua's `running_plan` ⇄ `paused_peak` shows only after 90 s; a hand at once."""
+    from custom_components.powerplan.load_entities import DISPLAY_HOLD, held_status  # noqa: PLC0415
+
+    holds: dict[str, Any] = {}
+    t0 = datetime(2026, 9, 23, 21, tzinfo=UTC)
+    assert held_status(holds, "tv", "running_plan", t0) == "running_plan"
+    assert held_status(holds, "tv", "paused_peak", t0 + timedelta(seconds=10)) == "running_plan"
+    assert held_status(holds, "tv", "running_plan", t0 + timedelta(seconds=40)) == "running_plan"
+    assert held_status(holds, "tv", "paused_peak", t0 + timedelta(seconds=50)) == "running_plan"
+    assert (
+        held_status(holds, "tv", "paused_peak", t0 + timedelta(seconds=50) + DISPLAY_HOLD)
+        == "paused_peak"
+    )
+    assert (
+        held_status(holds, "tv", "manual_override", t0 + timedelta(minutes=5)) == "manual_override"
+    )

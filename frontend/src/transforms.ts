@@ -7,6 +7,10 @@ export interface PriceSlot {
   end: string;
   total: string;
   confidence: string;
+  /** The energy part incl. its VAT (D12 §5.12 P3); absent before WP6.4i. */
+  energy?: string;
+  /** The same slot without the fixed-price modifier (Norgespris), where one is configured (P3). */
+  reference?: string;
 }
 
 /** One row of `sensor.<site>_plan`'s `slots` (D12 §5.6). */
@@ -15,6 +19,8 @@ export interface PlanSlot {
   end: string;
   ceiling_kwh: number | null;
   baseline_kwh: number | null;
+  /** The rest of the house's high estimate (P90), for the forecast's reserve (D12 §5.12 F2). */
+  baseline_p90_kwh?: number | null;
   production_kwh?: number | null;
   planned_kwh: Record<string, number>;
 }
@@ -711,4 +717,184 @@ export function runRows(
 export function gaugeFont(chars: number, radius: number, stroke: number, max = 36): number {
   const room = 2 * (radius - stroke / 2 - 12);
   return Math.max(20, Math.min(max, Math.floor(room / (0.56 * Math.max(chars, 1)))));
+}
+
+// --------------------------------------------------------------------------- //
+// Iteration 3: the appliances card, the price card and the whole-house forecast (D12 §5.12)
+// --------------------------------------------------------------------------- //
+
+export interface Run {
+  start: number;
+  end: number;
+  kwh: number;
+}
+
+/** One load's planned runs: consecutive slots with energy merged, in order (R3). */
+export function planRuns(slots: readonly PlanSlot[], id: string): Run[] {
+  const out: Run[] = [];
+  for (const slot of [...slots].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))) {
+    const kwh = Number(slot.planned_kwh[id] ?? 0);
+    if (!(kwh > 0.0005)) continue;
+    const start = Date.parse(slot.start);
+    const end = Date.parse(slot.end);
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.end - start) < 1000) {
+      last.end = end;
+      last.kwh += kwh;
+    } else out.push({ start, end, kwh });
+  }
+  return out;
+}
+
+/** The cheap threshold: the lowest quarter of the prices' range, `null` for a flat curve (R4, P2, F4). */
+export function cheapThreshold(prices: readonly number[]): number | null {
+  const finite = prices.filter(Number.isFinite);
+  if (!finite.length) return null;
+  const lo = Math.min(...finite);
+  const hi = Math.max(...finite);
+  return hi - lo > 1e-4 ? lo + (hi - lo) * 0.25 : null;
+}
+
+/** The cheap hours inside `[from, to)` as merged `[start, end)` bands (R4, P2). */
+export function cheapBands(prices: readonly PriceSlot[], from: number, to: number): Array<[number, number]> {
+  const inside = prices
+    .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total) }))
+    .filter((slot) => slot.end > from && slot.start < to && Number.isFinite(slot.price))
+    .sort((a, b) => a.start - b.start);
+  const threshold = cheapThreshold(inside.map((slot) => slot.price));
+  if (threshold === null) return [];
+  const bands: Array<[number, number]> = [];
+  for (const slot of inside) {
+    if (slot.price > threshold) continue;
+    const last = bands[bands.length - 1];
+    if (last && Math.abs(last[1] - slot.start) < 1000) last[1] = slot.end;
+    else bands.push([slot.start, slot.end]);
+  }
+  return bands;
+}
+
+/** One bar of the whole-house forecast: a window's energy, so bars and the limit share kWh per window (F1). */
+export interface Bucket {
+  start: number;
+  end: number;
+  baseline: number | null;
+  p90: number | null;
+  loads: Record<string, number>;
+  ceiling: number | null;
+  price: number | null;
+  estimated: boolean;
+}
+
+/** The plan's slots summed into `windowMin` buckets from `from`, each with its mean price (F1). */
+export function bucketize(
+  plan: readonly PlanSlot[],
+  prices: readonly PriceSlot[],
+  windowMin: number,
+  from: number,
+  hours: number,
+): Bucket[] {
+  const width = windowMin * 60_000;
+  const n = Math.round((hours * HOUR_MS) / width);
+  const out: Bucket[] = Array.from({ length: n }, (_, i) => ({
+    start: from + i * width,
+    end: from + (i + 1) * width,
+    baseline: null,
+    p90: null,
+    loads: {},
+    ceiling: null,
+    price: null,
+    estimated: false,
+  }));
+  for (const slot of plan) {
+    const bucket = out[Math.floor((Date.parse(slot.start) - from) / width)];
+    if (!bucket) continue;
+    if (slot.baseline_kwh != null) bucket.baseline = (bucket.baseline ?? 0) + slot.baseline_kwh;
+    if (slot.baseline_p90_kwh != null) bucket.p90 = (bucket.p90 ?? 0) + slot.baseline_p90_kwh;
+    for (const [id, kwh] of Object.entries(slot.planned_kwh)) {
+      if (kwh > 0) bucket.loads[id] = (bucket.loads[id] ?? 0) + kwh;
+    }
+    // `ceiling_kwh` is the window's already, whichever slot of it carries it.
+    if (slot.ceiling_kwh != null) bucket.ceiling = slot.ceiling_kwh;
+  }
+  const priced = prices.map((slot) => ({
+    start: Date.parse(slot.start),
+    end: Date.parse(slot.end),
+    price: Number(slot.total),
+    estimated: slot.confidence !== "known",
+  }));
+  for (const bucket of out) {
+    const inside = priced.filter((p) => p.end > bucket.start && p.start < bucket.end && Number.isFinite(p.price));
+    if (!inside.length) continue;
+    bucket.price = inside.reduce((sum, p) => sum + p.price, 0) / inside.length;
+    bucket.estimated = inside.some((p) => p.estimated);
+  }
+  return out;
+}
+
+/** The forecast rail's figures: the rest of the house, each load, and the managed share in cheap hours (F3). */
+export function forecastTotals(
+  buckets: readonly Bucket[],
+  loadIds: readonly string[],
+): { other: number; loads: Record<string, number>; managed: number; cheapPct: number | null } {
+  const threshold = cheapThreshold(buckets.map((b) => b.price).filter((p): p is number => p !== null));
+  const loads: Record<string, number> = {};
+  let other = 0;
+  let cheap = 0;
+  for (const bucket of buckets) {
+    other += bucket.baseline ?? 0;
+    let managed = 0;
+    for (const id of loadIds) {
+      const kwh = bucket.loads[id] ?? 0;
+      loads[id] = (loads[id] ?? 0) + kwh;
+      managed += kwh;
+    }
+    if (threshold !== null && bucket.price !== null && bucket.price <= threshold) cheap += managed;
+  }
+  const managed = Object.values(loads).reduce((sum, kwh) => sum + kwh, 0);
+  return {
+    other,
+    loads,
+    managed,
+    cheapPct: threshold !== null && managed > 0 ? Math.round((cheap / managed) * 100) : null,
+  };
+}
+
+/** Hours since local midnight in `timeZone` (the browser's when undefined). */
+export function localHour(instant: number, timeZone?: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).formatToParts(instant);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return part("hour") + part("minute") / 60;
+}
+
+/** The next time the wall clock reads `hh:mm[:ss]` after `now`, in `timeZone` (R3's deadline). */
+export function nextClock(clock: string, now: number, timeZone?: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})/.exec(clock);
+  if (!match) return null;
+  let hours = Number(match[1]) + Number(match[2]) / 60 - localHour(now, timeZone);
+  if (hours <= 0) hours += 24;
+  return Math.floor((now + hours * HOUR_MS) / 60_000) * 60_000;
+}
+
+/** The start of the local day holding `now`, in `timeZone` (P2's 48 h axis). */
+export function localMidnight(now: number, timeZone?: string): number {
+  return Math.floor((now - localHour(now, timeZone) * HOUR_MS) / 60_000) * 60_000;
+}
+
+function luminance(rgb: readonly number[]): number {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+/** An appliance's icon colour on a dark card: its hue, lifted until it reads ≥ 3 : 1 on #1c1c1c (R1). */
+export function readable(hex: string, dark: boolean): string {
+  if (!dark || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
+  const card = luminance([28, 28, 28]);
+  let rgb = hex.slice(1).match(/../g)!.map((d) => parseInt(d, 16));
+  for (let i = 0; i < 12 && (luminance(rgb) + 0.05) / (card + 0.05) < 3; i++) {
+    rgb = rgb.map((v) => Math.round(v + (255 - v) * 0.18));
+  }
+  return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }

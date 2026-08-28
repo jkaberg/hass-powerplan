@@ -46,11 +46,13 @@ def texts_from(strings: Mapping[str, str]) -> dict[str, str]:
     """Return `build`'s texts from the integration's flattened translations.
 
     The dashboard's own words (`selector.dashboard.options`), each named
-    entity's name as `entity_<key>` (`ENTITY_NAMES`) and each strategy's words
-    as `strategy_<key>` (`selector.strategy.options`, the flows' own labels).
+    entity's name as `entity_<key>` (`ENTITY_NAMES`), each strategy's words
+    as `strategy_<key>` (`selector.strategy.options`, the flows' own labels) and
+    each device type's name as `type_<key>` (`selector.load_type.options`).
     """
     options = f"{_COMPONENT}selector.dashboard.options."
     strategies = f"{_COMPONENT}selector.strategy.options."
+    types = f"{_COMPONENT}selector.load_type.options."
     texts = {
         key.removeprefix(options): value
         for key, value in strings.items()
@@ -61,6 +63,13 @@ def texts_from(strings: Mapping[str, str]) -> dict[str, str]:
             f"strategy_{key.removeprefix(strategies)}": value
             for key, value in strings.items()
             if key.startswith(strategies)
+        }
+    )
+    texts.update(
+        {
+            f"type_{key.removeprefix(types)}": value
+            for key, value in strings.items()
+            if key.startswith(types)
         }
     )
     for key, (platform, name) in ENTITY_NAMES.items():

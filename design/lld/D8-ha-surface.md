@@ -843,6 +843,7 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 
 ---
 
+ `plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499). `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
 ## 6. Configuration schema
 
 This LLD *is* the rendering of every schema; the fields themselves are owned by D1 (prices), D2 (tariff), D3 (meter/electrical), D4 (questionnaires), D6 (group/zone/circuit), D7 (runtime Advanced), D10 (forecasts Advanced). D8 adds only: onboarding path, site name, presence, notifications, quiet hours.

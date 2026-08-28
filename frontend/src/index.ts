@@ -55,6 +55,18 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
       description: "Each appliance's next planned run, its energy and its cost.",
       documentationURL: DOCS,
     },
+    {
+      type: "powerplan-appliances-card",
+      name: "PowerPlan appliances",
+      description: "One row per appliance with its status and its next 24 hours as a lane.",
+      documentationURL: DOCS,
+    },
+    {
+      type: "powerplan-price-card",
+      name: "PowerPlan electricity price",
+      description: "Your price today and tomorrow, and what it would be without a fixed price.",
+      documentationURL: DOCS,
+    },
   );
   registry.customStrategies.push({
     type: "powerplan",

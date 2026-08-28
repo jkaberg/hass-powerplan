@@ -323,10 +323,10 @@ class FakeFloor:
         self.seen.append((str(call.data["entity_id"]), self.setpoint_c))
         self._publish(call.context)
 
-    def turn_dial(self, setpoint_c: float) -> None:
-        """Turn the dial by hand: a new setpoint under a context of its own."""
+    def turn_dial(self, setpoint_c: float, user_id: str | None = None) -> None:
+        """Turn the dial: at the device (a context of its own), or as a person in the app (`user_id`)."""
         self.setpoint_c = setpoint_c
-        self._publish()
+        self._publish(None if user_id is None else Context(user_id=user_id))
 
     # -- `LoadDevice` --------------------------------------------------------- #
 

@@ -79,3 +79,77 @@ def test_an_intermediate_report_while_our_write_settles_is_held() -> None:
 def test_a_device_we_never_wrote_to_follows_its_household() -> None:
     """No write on record, reconciled: every change is the household's."""
     assert _origin(GateState(), value=22.0) is Origin.USER
+
+
+# --- D-0497: every recent write is ours, a child of ours is ours, a person is a person ---
+
+
+@pytest.mark.inv("INV-27")
+def test_an_older_write_s_context_and_a_child_of_ours_are_ours() -> None:
+    """A late report of the write before last, or an automation answering ours: never a hand."""
+    from custom_components.powerplan.core.loads.gate import (  # noqa: PLC0415
+        RECENT_CONTEXTS,
+        remember_context,
+    )
+
+    state = remember_context(remember_context(OURS, "ctx-2"), "ctx-3")
+    assert state.last_context_id == "ctx-3"
+    assert state.recent_context_ids == ("ctx-2", "ctx-ours")
+    assert (
+        setpoint_origin(
+            state, value=19.0, context_id="ctx-ours", tolerance=TOLERANCE, reconciled=True, now=NOW
+        )
+        is Origin.OURS
+    )
+    assert (
+        setpoint_origin(
+            state,
+            value=19.0,
+            context_id="ctx-new",
+            parent_id="ctx-2",
+            tolerance=TOLERANCE,
+            reconciled=True,
+            now=NOW,
+        )
+        is Origin.OURS
+    )
+    for i in range(RECENT_CONTEXTS + 2):
+        state = remember_context(state, f"ctx-x{i}")
+    assert len(state.recent_context_ids) == RECENT_CONTEXTS
+    assert "ctx-ours" not in state.recent_context_ids
+
+
+@pytest.mark.inv("INV-27")
+def test_a_person_is_a_person_even_while_our_write_settles() -> None:
+    """A `user_id` on the context: someone in the app - not held, not ours."""
+    settling = GateState(
+        last_write_at=NOW - timedelta(seconds=5),
+        last_value=21.0,
+        verify_due=NOW + timedelta(seconds=55),
+        last_context_id="ctx-ours",
+    )
+    assert (
+        setpoint_origin(
+            settling,
+            value=22.5,
+            context_id="ctx-app",
+            user_id="u1",
+            tolerance=TOLERANCE,
+            reconciled=True,
+            now=NOW,
+        )
+        is Origin.USER
+    )
+    # Our own value from a person is no change at all.
+    assert (
+        setpoint_origin(
+            settling,
+            value=21.0,
+            context_id="ctx-app",
+            user_id="u1",
+            tolerance=TOLERANCE,
+            reconciled=True,
+            now=NOW,
+        )
+        is Origin.OURS
+    )

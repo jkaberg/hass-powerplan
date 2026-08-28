@@ -59,6 +59,7 @@ from .core.loads.gate import (
     GateState,
     TransportBudget,
     failed,
+    remember_context,
     succeeded,
     transient,
     verify,
@@ -295,7 +296,7 @@ class WriteGate:
             decision.reason,
         )
         self._schedule_verify(actuation, command.role, calls[0].entity_id)
-        gate = replace(succeeded(decision.gate), last_context_id=context.id)
+        gate = remember_context(succeeded(decision.gate), context.id)
         return self._report(actuation, Action.WRITTEN, gate, tuple(sent))
 
     def _unaddressable(self, actuation: Actuation, write: Write) -> Outcome:

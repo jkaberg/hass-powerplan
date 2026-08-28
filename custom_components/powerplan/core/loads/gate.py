@@ -70,6 +70,12 @@ TRANSIENT_GRACE_S: Final = 15.0
 
 #: `unhealthy` needs N consecutive failures (D4 §5.10).
 UNHEALTHY_AT: Final = 2
+#: How many earlier write contexts the gate remembers as its own (D-0497).
+RECENT_CONTEXTS: Final = 8
+#: How long a change made at the device itself must stand before it is the
+#: household's new comfort target: a device re-reporting under a fresh context
+#: settles within it (the live floors' "already at" flapping, D-0497).
+OVERRIDE_GRACE: Final = timedelta(minutes=2)
 
 
 class Transport(StrEnum):
@@ -179,6 +185,11 @@ class GateState:
     #: The Home Assistant `Context` id the last write went out under: a state
     #: change carrying it is our own write settling (amended INV-27, D-0414).
     last_context_id: str | None = None
+    #: The `Context` ids of the writes before the last one, newest first, at most
+    #: `RECENT_CONTEXTS`: a device that reports an older write late, or a change
+    #: another integration makes in reply to ours (a child context), is still ours
+    #: (HLD "Override": "one of powerplan's own recorded writes"; D-0497).
+    recent_context_ids: tuple[str, ...] = ()
 
     @property
     def unhealthy(self) -> bool:
@@ -564,6 +575,13 @@ class Origin(StrEnum):
     HELD = "held"
 
 
+def remember_context(state: GateState, context_id: str) -> GateState:
+    """Return `state` after a write under `context_id`, the earlier ones kept (D-0497)."""
+    earlier = () if state.last_context_id is None else (state.last_context_id,)
+    recent = (*earlier, *state.recent_context_ids)[:RECENT_CONTEXTS]
+    return replace(state, last_context_id=context_id, recent_context_ids=recent)
+
+
 def setpoint_origin(
     state: GateState,
     *,
@@ -572,20 +590,31 @@ def setpoint_origin(
     tolerance: float,
     reconciled: bool,
     now: datetime,
+    parent_id: str | None = None,
+    user_id: str | None = None,
 ) -> Origin:
     """Say whether an observed setpoint change is ours, the household's, or not yet knowable.
 
-    Ours: it carries the `Context` of our last write, or it is the value we last wrote -
-    a device that reports late (a sleepy Z-Wave thermostat) does so under a fresh
-    context. Held: our write is still settling, so an intermediate report is not a
-    decision anyone made; or the record has not been reconciled since a restart, so
-    nothing tells ours from theirs - the setpoint-walk incident's shape. Only what is
-    left is the household's.
+    Ours: it carries the `Context` of one of our recent writes, or has one as
+    its parent (an automation or integration answering our write), or it is
+    the value we last wrote - a device that reports late (a sleepy Z-Wave
+    thermostat) does so under a fresh context. A person's: a `user_id` on the
+    context - someone in the app or on a dashboard - whatever else holds.
+    Held: our write is still settling, so an intermediate report is not a
+    decision anyone made; or the record has not been reconciled since a
+    restart, so nothing tells ours from theirs - the setpoint-walk incident's
+    shape. Only what is left is the household's, at the device itself; the
+    runtime holds that one for `OVERRIDE_GRACE` before adopting it (D-0497).
     """
-    if context_id is not None and context_id == state.last_context_id:
+    ours = {state.last_context_id, *state.recent_context_ids} - {None}
+    if (context_id is not None and context_id in ours) or (
+        parent_id is not None and parent_id in ours
+    ):
         return Origin.OURS
     if state.last_value is not None and same(value, state.last_value, tolerance):
         return Origin.OURS
+    if user_id is not None:
+        return Origin.USER
     if not reconciled or state.settling(now):
         return Origin.HELD
     return Origin.USER
