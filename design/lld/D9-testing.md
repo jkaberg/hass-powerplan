@@ -351,14 +351,13 @@ D-0328 found the cost diffuse and declined a rewrite of the three conventions be
 
 **Lever 1: waste out of the pipeline (T.1a).** Every item leaves every test and every result as it is.
 
-| # | change | why it is the same test |
+| # | change | why it's the same test |
 |---|---|---|
-| 1 | `run_benchmark` runs a tier's **spans in parallel** (one process per span, `spawn`, D-0322's precedent) and folds the results in span order | each span starts from its own fresh house and year; the fold is order-stable |
-| 2 | `test_smoke_runs_byte_identically_twice` runs its two smoke runs **at the same time**, each span in its own `spawn`ed process, and still compares the two digests *(T.1a: the first sketch compared one run with the committed baseline, which would have turned every behaviour change into a forced re-baseline)* | the same assertion; each span now runs in a fresh interpreter with its own hash seed, so an order that depends on hashing would show - stronger than two runs in one process. In-process reuse stays covered by `test_a_scenario_is_byte_identical_across_runs` |
-| 3 | *(dropped in T.1a)* CI's `bench smoke` step and that test sharing one run - CI's pytest already excludes `bench`, so CI never ran smoke twice; the nightly job runs the determinism test | - |
-| 4 | the HA-agnostic suites (`tests/core`, `property`, `sim`, `scenarios`, `benchmark`, `backtest`) run once per CI run, not on both HA fixture lines; the HA-facing suites (`flows`, `surface`, `runtime`, `providers`, `e2e`) keep both lines | the agnostic suites import no `homeassistant` (INV-2 and the purity test prove it), so the second line re-ran identical code |
-| 5 | CI splits into parallel jobs - `lint`, `ha` (both lines), `core`, `scenarios`, `bench`, then `coverage` - and every run orders xdist groups **longest first** from a committed `tests/durations.json` (`tools/durations.py` refreshes it from a JUnit report; the nightly job keeps one) | scheduling only |
-| 6 | a **simulation result cache**: `run_scenario` and each benchmark span are keyed by a SHA-256 over the scenario or span spec, every file under `custom_components/powerplan/core/`, `tests/sim/`, `tests/builders/`, `tests/scenarios/{runner,catalogue}.py`, `tests/benchmark/`, `uv.lock` and the Python version. A hit returns the stored result, a miss runs and stores it, and a file lock makes parallel workers compute each key once. CI restores the cache from `main`; `POWERPLAN_SIM_CACHE=off` bypasses it; the nightly run is always uncached (`.github/workflows/nightly.yml`). Coverage is gated on the non-scenario suites only, since a cached scenario executes nothing | a hit is the result a run would produce - determinism is asserted (§9 8) - and any change to an input changes the key; a PR that touches `core/` recomputes everything |
+| 1 | `run_benchmark` runs a tier's **spans in parallel** (one process per span, `spawn`) and folds the results in span order | each span starts from its own fresh house and year, and the fold is order-stable |
+| 2 | `test_smoke_runs_byte_identically_twice` runs its two smoke runs **at the same time**, each span in its own `spawn`ed process, and still compares the two digests - comparing one run against the committed baseline instead would turn every behaviour change into a forced re-baseline | the same assertion; each span runs in a fresh interpreter with its own hash seed, so an order that depends on hashing shows up, stronger than two runs in one process. In-process reuse stays covered by `test_a_scenario_is_byte_identical_across_runs` |
+| 3 | the HA-agnostic suites (`tests/core`, `property`, `sim`, `scenarios`, `benchmark`, `backtest`) run once per CI run, not on both HA fixture lines; the HA-facing suites (`flows`, `surface`, `runtime`, `providers`, `e2e`) keep both lines | the agnostic suites import no `homeassistant` (INV-2 and the purity test prove it), so the second line re-ran identical code |
+| 4 | CI splits into parallel jobs - `lint`, `ha` (both lines), `core`, `scenarios`, `bench`, then `coverage` - and every run orders xdist groups **longest first** from a committed `tests/durations.json` (`tools/durations.py` refreshes it from a JUnit report, the nightly job keeps one) | scheduling only |
+| 5 | a **simulation result cache**: `run_scenario` and each benchmark span are keyed by a SHA-256 over the scenario or span spec, every file under `custom_components/powerplan/core/`, every non-test `.py` under `tests/`, `pyproject.toml`, `uv.lock` and the Python version. A hit returns the stored result, a miss runs and stores it, and a file lock makes parallel workers compute each key once. CI restores the cache from `main`, `POWERPLAN_SIM_CACHE=off` bypasses it, and the nightly run is always uncached (`.github/workflows/nightly.yml`). Coverage is gated on the non-scenario suites only, since a cached scenario executes nothing | a hit is the result a run would produce - determinism is asserted (§9 8) - and any change to an input changes the key; a PR touching `core/` recomputes everything |
 
 **Lever 2: the incremental tick (T.1b).** The engine stops recomputing, every tick, what didn't change since the last one. Same types, same immutability, same tz-aware datetimes, same order of steps (D7 §5.1):
 
@@ -385,7 +384,29 @@ Byte-identical on all 22 recorded results and **+11 %** (196 → 218 ticks/s on 
 | CI or local, a PR touching neither | as above | ≤ 3 min: the simulation cache hits | same | same |
 | smoke on its own | 662 s | ≈ 330 s: two spans in parallel | +11 % ticks/s measured (D-0333), so ≈ 300 s | ≤ 60 s (§5.9's own budget) |
 
-The arithmetic behind "≤ 5 min": after T.1a removes the second smoke run, the simulations are ≈ 3 000 CPU-seconds, which six cores can clear in five minutes only if they fall to ≈ 1 500; and the longest single simulation - one 30-day run, 1 175 s under load - must fall to ≈ 270 s. That is **≈ 4.3× on the sequential path**, for the engine *and* the simulators and runner, which are 18 % of a simulated day (Amdahl caps a core-only speedup at ≈ 5.5×). Hence T.1c compiles `tests/sim/` and the runner beside `core/` if the spike adopts compilation at all. If T.1b and T.1c together fall short, the WP reports the measured gap; no test is narrowed to meet the number.
+The arithmetic behind "≤ 5 min": after T.1a removes the second smoke run, the simulations are ≈ 3 000 CPU-seconds, which six cores clear in five minutes only if they fall to ≈ 1 500, and the longest single simulation - one 30-day run, 1 175 s under load - has to fall to ≈ 270 s. That's **≈ 4.3× on the sequential path**, for the engine *and* the simulators and runner, which are 18 % of a simulated day (Amdahl caps a core-only speedup at ≈ 5.5×). So T.1c would compile `tests/sim/` and the runner next to `core/` if compilation were adopted at all. If T.1b and T.1c together fall short the measured gap is reported, and no test is narrowed to meet the number.
+
+### 5.14 Which tests a change runs
+
+**The rule.** CI doesn't change: every PR runs every test (§5.8, PLAN §7 dec. 27). What changes is what runs **locally, and when**, and selection only matters for the simulations. Every non-simulation test together takes under a minute on a 6-core box (2 146 tests in 33.5 s, D-0331), while the scenario files take 25 s to 20 min each and the benchmark tiers 5–24 min.
+
+| step | runs | cost |
+|---|---|---|
+| after an edit | the touched module's own test file, without xdist | seconds |
+| before a commit | the **fast suite** (`tests` minus `tests/scenarios`, markers as the PR command), plus the simulations the diff reaches | ≤ 1 min + the rows |
+| end of the WP | the PR command once; smoke `--compare` (the PR table); month for `core/` (§5.11); the `e2e` day for `runtime.py`, `storage.py`, `__init__.py`, `writegate.py`, `flow/`; `tools/digests.py` for a `speed` PR | 8 min warm, 20 min cold (D-0331) |
+
+The path → tests map is in `CONTRIBUTING.md`, the only copy. It rests on four measured facts (an AST import graph over the 245 test modules, `TYPE_CHECKING` imports excluded):
+
+| fact | consequence |
+|---|---|
+| `core/model.py`, `core/metering/`, `core/engine.py` reach almost every test | a core change is not narrowed to one `tests/core/<domain>`; the fast suite runs whole |
+| `tests/flows`, `tests/surface`, `tests/runtime` set up the whole integration in their conftests | any `.py` outside `core/` reaches all three; the fast suite covers it |
+| the scenario runner wires `AccountingAdapter` but no forecasts adapter | a D10-only change reaches no simulation and runs none locally |
+| each scenario file asserts a known set of domains (§5.3), and costs its longest xdist group cold (`tests/durations.json`) | a domain change runs its own file(s) before a commit and all files at the WP's end |
+
+**The cache key is wider than the reach.** `tests/scenarios/cache.py` hashes every file under `core/` and every non-test `.py` under `tests/`. So a D10 change, or an edit to an HA conftest or `builders/curves.py`, recomputes every simulation even though none reads the file (≈ 20 min cold). The result is correct, only slow, and narrowing the key to the runner's import closure is a separate change to `cache.py`.
+
 ---
 
 ## 6. Configuration schema
@@ -445,6 +466,10 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Path-filtered CI: a PR only runs the jobs its paths reach.** *For:* a PR that only touches a flow would skip the scenarios and the benchmark, and §5.14's map already says which paths reach them. *Against:* dec. 27 keeps every test on the PR, a map kept by hand misses a dependency sooner or later, and a missed dependency means a merged regression. The simulation cache already gives most of the saving safely: a non-`core/` PR runs its simulations as cache hits. **Decision:** the map only drives local runs.
+
+**Automatic test-impact selection (pytest-testmon, coverage-based).** *For:* it runs exactly the tests whose executed lines changed, and nobody keeps a map. *Against:* it misses data files (tariffs, translations, `docs/` tables the tests parse), dynamic loading through HA's loader, and processes started with `spawn`, and a cached scenario executes nothing so it would never be selected. The fast suite runs whole in under a minute, which leaves little to save outside the simulations. **Decision:** a hand map at the granularity of scenario files, where the minutes are.
 
 **Speed by doing less: long scenarios and the smoke tier nightly, a fast PR subset.** *For:* the PR run drops to the ≈ 165 CPU-seconds of non-simulation tests at once, with no engine work, and many projects gate PRs on unit tests and run the heavy suite nightly. *Against:* the point is the same tests, only faster - the simulations are the gate (PLAN §7 dec. 7, 13), and a regression found overnight is a regression merged. **Decision:** every test stays on the PR, the pipeline stops repeating work and the engine stops recomputing (§5.13).
 
