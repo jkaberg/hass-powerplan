@@ -20,12 +20,14 @@ the provider's business - a weather series that failed to refresh arrives with a
 the whole story.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 from ..model import Confidence
+from .hold import HourOfDayMean
 
 if TYPE_CHECKING:
     from ..pricing.model import Schema
@@ -203,6 +205,10 @@ class PlannerForecasts:
         answer = self.source.baseline_w(t)
         return 0.0 if answer is None else answer[0]
 
+    def hold_w(self, load_id: str, t: datetime) -> float | None:
+        """Return a thermal load's measured holding draw at `t`, or `None` (D-0501)."""
+        return self.source.hold_w(load_id, t)
+
 
 @dataclass(frozen=True, slots=True)
 class BudgetForecast:
@@ -252,6 +258,8 @@ class Forecasts:
     production: Series | None = None
     baseline: BaselineModel | None = None
     offer_confidence: float = field(default=OFFER_CONFIDENCE)
+    #: Each thermal load's measured holding draw by hour of day (`hold.py`, D-0501).
+    hold: Mapping[str, HourOfDayMean] = field(default_factory=dict)
 
     def outdoor_c(self, t: datetime) -> tuple[float, Confidence] | None:
         """Return the outdoor temperature forecast at `t` (D10 §5.4)."""
@@ -294,6 +302,11 @@ class Forecasts:
         (INV-62).
         """
         return None if self.baseline is None else self.baseline.residual_sigma(t)
+
+    def hold_w(self, load_id: str, t: datetime) -> float | None:
+        """Return what `load_id` draws to hold its temperature at `t`, measured, or `None` (D-0501)."""
+        profile = self.hold.get(load_id)
+        return None if profile is None else profile.w_at(t)
 
     def for_planner(self) -> PlannerForecasts:
         """Return the view D5's `PlanContext` takes (`design/DECISIONS.md` D-0217)."""

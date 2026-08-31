@@ -175,6 +175,7 @@ function slot(startIso: string, minutes: number, extra: Partial<TimelineSlot> = 
     productionKw: null,
     loadKw: {},
     loadKwh: {},
+    holdKw: {},
     ...extra,
   };
 }

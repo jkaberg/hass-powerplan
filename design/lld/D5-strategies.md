@@ -229,6 +229,8 @@ Parameters: `delta_k` (±1.0 default, bounded by the store's max/min, INV-56), `
 ```
 Cooling: the signs flip (`store.direction`).
 
+**Holding.** Every slot that isn't a coast carries `PlanSlot.hold_kwh`: what the store draws holding its setpoint (`strategies/holding.py`: the store's loss coefficient, a gated fit or a configured one, × the drive to the forecast outdoor temperature; else the load's measured holding draw, D10's `Forecasts.hold_w`). The bank budget above is still only the raise. `best_save`'s free slots carry the same (§5.5). It's priced and projected, never counted as covering a need (D-0501).
+
 ### 5.8 Battery
 
 `arbitrage`: pair the cheapest charge slots with the dearest discharge slots later in the horizon, taking a pair only if `p_dis × η_rt − p_chg > threshold` (default 0.05 major/kWh). The SoC path is simulated slot by slot within `[min_soc, max_soc]`, with `reserve_soc` kept for `peak_shave`. `peak_shave`: reserve discharge capacity for windows where D10's baseline + planned grants > D2's ceiling, envelope negative in those windows, and charge the reserve back in the cheapest slots before. The two compose: `peak_shave` claims first, `arbitrage` uses what's left.
@@ -342,6 +344,8 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 20. Confidence and replan: a slot whose production confidence is below 0.5 is priced at `p_in`, and a production reading 30 % below forecast for 15 min triggers exactly one replan.
 21. Negative export price: a surplus charge is taken first and nothing is curtailed.
 ---
+
+22. Holding energy (D-0501): a slot `heat_capacitor` holds or banks in, or `best_save` leaves free, carries `hold_kwh` - the store's loss coefficient × (target − outdoor) where known, else the load's measured holding draw - and a coast or postponed slot carries none. `hold_kwh` is priced in `cost_estimate` and never counted in `planned_kwh` (`tests/core/strategies/test_22_holding_energy.py`).
 
 ## 10. Deliberately deferred
 

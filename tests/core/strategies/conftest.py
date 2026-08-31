@@ -17,7 +17,7 @@ step-up deadline is a fill (D5 §2).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -384,6 +384,8 @@ class Weather:
     outdoor: float | None = None
     surplus: float = 0.0
     baseline: float = 0.0
+    #: A load's measured holding draw in W, by load id (D-0501).
+    hold: dict[str, float] = field(default_factory=dict)
 
     def outdoor_c(self, t: datetime) -> float | None:
         """Return the forecast outdoor temperature."""
@@ -396,6 +398,10 @@ class Weather:
     def baseline_w(self, t: datetime) -> float:
         """Return the uncontrolled load expected."""
         return self.baseline
+
+    def hold_w(self, load_id: str, t: datetime) -> float | None:
+        """Return the holding draw measured for `load_id` (D-0501): none unless a test sets it."""
+        return self.hold.get(load_id)
 
 
 # --------------------------------------------------------------------------- #

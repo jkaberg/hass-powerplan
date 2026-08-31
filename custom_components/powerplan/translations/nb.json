@@ -951,6 +951,21 @@
       },
       "site_fixed_price_savings": {
         "name": "Spart med fastpris denne måneden"
+      },
+      "learned_loss_coeff_w_per_k": {
+        "name": "Lært varmetap"
+      },
+      "learned_heatup_k_per_h": {
+        "name": "Lært oppvarmingshastighet"
+      },
+      "learned_standby_loss_w": {
+        "name": "Lært stillstandstap"
+      },
+      "learned_nameplate_w": {
+        "name": "Lært merkeeffekt"
+      },
+      "learned_charge_efficiency": {
+        "name": "Lært ladeeffektivitet"
       }
     },
     "select": {
@@ -1995,7 +2010,10 @@
         "card_managed": "Styrt",
         "card_cheap_share": "{pct} % av styrt forbruk ligger i billige timer",
         "card_excl_vat": "{v} eks. mva",
-        "card_fixed_saves_month": "{unit} nå · ≈ {v} {currency} i {month}"
+        "card_fixed_saves_month": "{unit} nå · ≈ {v} {currency} i {month}",
+        "card_status_holding": "Holder",
+        "card_count_holding": "{n} holder temperaturen",
+        "card_holding_short": "holder"
       }
     },
     "logbook": {

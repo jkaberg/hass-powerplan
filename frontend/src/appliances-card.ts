@@ -16,6 +16,7 @@ import { ppStyles } from "./styles";
 import {
   type ByLoad,
   cheapBands,
+  holdRuns,
   localHour,
   moneyFormat,
   nextClock,
@@ -67,6 +68,8 @@ interface Row {
   load: ApplianceLoad;
   view: StatusView;
   runs: Run[];
+  /** Holding its setpoint (D-0501): drawn as a faint band under the runs. */
+  holds: Run[];
   sub: string;
   /** "2,90 kWh · 2,11 kr" */
   meta: string;
@@ -182,7 +185,9 @@ export class PowerplanAppliancesCard extends HTMLElement {
         const a = status?.attributes ?? {};
         const runs = planRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
         const runNow = runs.some((run) => run.start <= now && run.end > now);
-        const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels));
+        const holds = holdRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
+        const holdNow = holds.some((run) => run.start <= now && run.end > now);
+        const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels, holdNow));
         const parts: string[] = [];
         const current = toNumber(a.current);
         const target = toNumber(a.target);
@@ -211,6 +216,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
           load,
           view,
           runs,
+          holds,
           sub: parts.filter(Boolean).join(" · "),
           meta,
           cost,
@@ -273,6 +279,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
         ["running", labels.count_running],
         ["waiting", labels.count_waiting],
         ["planned", labels.count_planned],
+        ["holding", labels.count_holding],
         ["paused", labels.count_paused],
         ["manual", labels.count_manual],
         ["idle", labels.count_idle],
@@ -331,6 +338,13 @@ export class PowerplanAppliancesCard extends HTMLElement {
           if (!compact) lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt dim" text-anchor="middle">${escape(view.reason)}</text>`;
         } else if (view.kind === "idle" && !compact) {
           lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt faint" text-anchor="middle">${escape(fill(labels.no_need ?? "", { h: hours }))}</text>`;
+        }
+        for (const run of row.holds) {
+          const x0 = Math.max(sx(run.start), lx0);
+          const x1 = Math.min(sx(run.end), lx1);
+          // Thinner and fainter than a run: the thermostat's own draw, not a decision (D-0501).
+          const h = Math.max(laneH * 0.4, 3);
+          if (x1 > x0) lane += `<rect x="${x0.toFixed(1)}" y="${(laneY + (laneH - h) / 2).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${h.toFixed(1)}" rx="${(h / 2).toFixed(1)}" style="fill:${withAlpha(color, 0.3)}"/>`;
         }
         for (const run of row.runs) {
           const x0 = Math.max(sx(run.start), lx0);
@@ -453,6 +467,7 @@ const CSS = `
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .dot.running { background: var(--success-color, #43a047); }
   .dot.planned, .dot.waiting { background: var(--primary-color); }
+  .dot.holding { background: var(--success-color, #43a047); opacity: .55; }
   .dot.paused { background: var(--warning-color, #ffa600); }
   .dot.manual, .dot.idle { background: var(--disabled-text-color, #6f6f6f); }
   .grow { flex: 1 1 auto; }
@@ -503,6 +518,7 @@ const CSS = `
   .pill.planned, .pill.waiting { background: rgba(var(--rgb-primary-color, 0,154,199), .16); color: #5cc8ea; }
   .pill.planned i, .pill.waiting i { background: var(--primary-color); }
   .pill.paused { background: rgba(255,166,0,.16); color: #ffc15c; } .pill.paused i { background: var(--warning-color, #ffa600); }
+  .pill.holding { background: rgba(67,160,71,.10); color: #9ad69d; } .pill.holding i { background: var(--success-color, #43a047); opacity: .55; }
   .pill.manual, .pill.unavailable { background: rgba(158,158,158,.16); color: #c4c4c4; } .pill.manual i, .pill.unavailable i { background: #9e9e9e; }
   .foot { display: flex; align-items: center; gap: 12px; width: 100%; height: 50px; padding: 0 var(--pp-pad); border: 0;
           border-top: 1px solid var(--divider-color); background: transparent; cursor: pointer; color: inherit; font: inherit; text-align: left; }

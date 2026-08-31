@@ -951,6 +951,21 @@
       },
       "site_fixed_price_savings": {
         "name": "Saved by the fixed price this month"
+      },
+      "learned_loss_coeff_w_per_k": {
+        "name": "Learned heat loss"
+      },
+      "learned_heatup_k_per_h": {
+        "name": "Learned heat-up rate"
+      },
+      "learned_standby_loss_w": {
+        "name": "Learned standby loss"
+      },
+      "learned_nameplate_w": {
+        "name": "Learned rated power"
+      },
+      "learned_charge_efficiency": {
+        "name": "Learned charging efficiency"
       }
     },
     "select": {
@@ -1995,7 +2010,10 @@
         "card_managed": "Managed",
         "card_cheap_share": "{pct} % of managed use is in cheap hours",
         "card_excl_vat": "{v} excl.",
-        "card_fixed_saves_month": "{unit} now · ≈ {currency} {v} in {month}"
+        "card_fixed_saves_month": "{unit} now · ≈ {currency} {v} in {month}",
+        "card_status_holding": "Holding",
+        "card_count_holding": "{n} holding",
+        "card_holding_short": "holding"
       }
     },
     "logbook": {

@@ -9,7 +9,7 @@
 // held for `DEBOUNCE_MS`; availability and the household's own changes show
 // at once.
 
-export type Kind = "running" | "planned" | "waiting" | "paused" | "manual" | "idle" | "unavailable";
+export type Kind = "running" | "planned" | "waiting" | "paused" | "holding" | "manual" | "idle" | "unavailable";
 
 export interface StatusView {
   kind: Kind;
@@ -22,14 +22,15 @@ export interface StatusView {
 export const DEBOUNCE_MS = 90_000;
 
 /** Row order: what is happening now first, what needs nothing last. */
-export const KIND_ORDER: readonly Kind[] = ["running", "waiting", "paused", "planned", "manual", "idle", "unavailable"];
+export const KIND_ORDER: readonly Kind[] = ["running", "waiting", "paused", "planned", "holding", "manual", "idle", "unavailable"];
 
 /**
  * `plan_status` (D8 §5.16's twelve states) → what the row says.
  *
  * `hasRunNow` and `hasFutureRun` come from the plan's slots: a load the plan
  * runs this slot reads "running" even while the device still ramps, and one
- * waiting for a planned run reads "planned".
+ * waiting for a planned run reads "planned". `holding` is a thermal load the
+ * plan leaves at its setpoint now, drawing its standing loss (D-0501): not idle.
  */
 export function rawStatus(
   state: string | undefined,
@@ -37,6 +38,7 @@ export function rawStatus(
   hasRunNow: boolean,
   hasFutureRun: boolean,
   labels: Record<string, string>,
+  holding = false,
 ): StatusView {
   // The integration's own 90 s hold, where it publishes one (D-0497).
   if (typeof attributes.display_status === "string" && state !== "unavailable" && state !== "unknown") {
@@ -63,6 +65,7 @@ export function rawStatus(
   }
   if (state === "running_plan" || hasRunNow) return { kind: "running", label: labels.status_running ?? "" };
   if (hasFutureRun) return { kind: "planned", label: labels.status_planned ?? "" };
+  if (holding) return { kind: "holding", label: labels.status_holding ?? "" };
   if (state === "waiting") return { kind: "waiting", label: labels.status_waiting ?? "" };
   return { kind: "idle", label: "" };
 }

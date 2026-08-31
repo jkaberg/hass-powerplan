@@ -105,6 +105,7 @@ from .loads import (
 )
 from .loads.gate import Decision, GateState, TransportBudget
 from .loads.targets import CalendarEvent, PresenceMode, profile_from_params
+from .loads.types import base as device_types
 from .metering import (
     ClosedWindow,
     ControlledView,
@@ -194,7 +195,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 6
+SnapshotSchema: int = 7
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -315,6 +316,9 @@ class SiteConfig:
 
 #: The knob keys that rebuild a thermal load's target profile (D4 §4.4).
 _TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_presence")
+#: The parameters a load's store is built from that D10 fits (D10 §5.6): an
+#: override of one rebuilds the load, so the store and D11's shadow read it (D-0500).
+_STORE_KEYS: Final = ("loss_coeff_w_per_k", "heat_loss_w_per_k", "standby_loss_w", "charge_eff")
 
 #: D6 §2's evaluation order: outermost physical limit first, preferences last.
 _SCOPE_ORDER: Final = ("site", "circuit", "phase", "group", "zone", "load")
@@ -564,6 +568,8 @@ class PlanStatus:
     confidence: Confidence
     built_at: datetime
     reason: str
+    #: Holding a thermal store's setpoint over the plan (D-0501); apart from `planned_kwh`.
+    hold_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -1139,7 +1145,11 @@ class Engine:
             target = load.config.target
             if any(key in overrides for key in _TARGET_KEYS):
                 target = profile_from_params(params) or target
-            out.append(replace(load, config=replace(load.config, params=params, target=target)))
+            config = replace(load.config, params=params, target=target)
+            if any(key in overrides for key in _STORE_KEYS):
+                out.append(device_types.get(config.type_key).build(config))
+                continue
+            out.append(replace(load, config=config))
         self._loads = tuple(out)
 
     def _cycle_reservations(
@@ -2305,7 +2315,8 @@ class Engine:
                     HaEvent(EventKind.BASELINE_READY, {"confidence": forecast_close.confidence})
                 )
             if forecast_close.window_updated:
-                forecasts_state = dict(forecast_close.state)
+                # Merged: the section also keeps the daily fits (D-0500).
+                forecasts_state = {**forecasts_state, **forecast_close.state}
         if forecasts_state != dict(state.forecasts):
             dirty.add(Section.FORECASTS)
 
@@ -2789,10 +2800,11 @@ def _planned_kwh(plan: Plan | None, start: datetime, end: datetime) -> float:
         return 0.0
     total = 0.0
     for slot in plan.slots_between(start, end):
+        # What the store draws holding its setpoint is in the window too (D-0501).
         overlap = (min(slot.end, end) - max(slot.start, start)).total_seconds()
         if overlap <= 0.0 or slot.hours <= 0.0:
             continue
-        total += slot.kwh * (overlap / (slot.hours * 3600.0))
+        total += (slot.kwh + slot.hold_kwh) * (overlap / (slot.hours * 3600.0))
     return total
 
 
@@ -3370,6 +3382,7 @@ def _plan_statuses(plans: Mapping[str, Plan], now: datetime) -> dict[str, PlanSt
             confidence=plan.confidence,
             built_at=plan.built_at,
             reason=plan.reason,
+            hold_kwh=plan.hold_kwh,
         )
         for load_id, plan in sorted(plans.items())
     }

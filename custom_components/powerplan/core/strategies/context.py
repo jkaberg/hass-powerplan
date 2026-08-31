@@ -87,6 +87,10 @@ class Forecasts(Protocol):
         """Return the uncontrolled load expected at `t`."""
         ...
 
+    def hold_w(self, load_id: str, t: datetime) -> float | None:
+        """Return what a thermal load draws to hold its temperature at `t`, measured (D-0501)."""
+        ...
+
 
 class _NoHolidays:
     """The calendar a site without one has (D1 §2).

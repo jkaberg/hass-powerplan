@@ -99,12 +99,19 @@ COMMON = {
     "reserved_power": (DIAGNOSTIC, False),
     "planned_energy": (DIAGNOSTIC, False),
 }
+#: D10 §5.6's fits, published per load and disabled by default.
+LEARNED_THERMAL = {
+    "learned_loss_coeff_w_per_k": (DIAGNOSTIC, False),
+    "learned_heatup_k_per_h": (DIAGNOSTIC, False),
+}
+LEARNED_NAMEPLATE = {"learned_nameplate_w": (DIAGNOSTIC, False)}
 EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
     "ev": {
         **COMMON,
         "savings_month": (None, True),
         "charge_target": (None, True),
         "ready_by": (None, True),
+        "learned_charge_efficiency": (DIAGNOSTIC, False),
         "strategy": (CONFIG, True),
         "run_now_max": (CONFIG, True),
         "charge_min": (CONFIG, True),
@@ -114,6 +121,8 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
         "savings_month": (None, True),
         "ready_by": (None, True),
         "next_legionella": (None, True),
+        "learned_standby_loss_w": (DIAGNOSTIC, False),
+        **LEARNED_NAMEPLATE,
         "strategy": (CONFIG, True),
         "run_now_max": (CONFIG, True),
         "follow_presence": (CONFIG, False),
@@ -127,14 +136,18 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
     # no comfort number of ours (D-0435).
     "floor_heating": {
         **COMMON,
+        **LEARNED_THERMAL,
+        **LEARNED_NAMEPLATE,
         "savings_month": (None, True),
         "strategy": (CONFIG, True),
         "follow_presence": (CONFIG, True),
         "temp_min": (CONFIG, False),
         "temp_max": (CONFIG, False),
     },
+    # A heat pump modulates: no nameplate to learn (D10 §9 9).
     "heat_pump": {
         **COMMON,
+        **LEARNED_THERMAL,
         "savings_month": (None, True),
         "strategy": (CONFIG, True),
         "follow_presence": (CONFIG, True),

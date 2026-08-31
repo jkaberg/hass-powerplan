@@ -428,7 +428,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 5.4 | `battery`, `arbitrage`, `peak_shave` | done |
 | 5.5 | External limits and `delegated` | done |
 | 5.6 | The remaining shadows | done |
-| 5.7 | Fits wired | todo |
+| 5.7 | Fits wired | done |
 | 6.1 | Quality and performance gates | done |
 | 6.1a | Suite speed | done |
 | 6.2a | User pages | todo |

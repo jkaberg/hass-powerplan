@@ -2152,3 +2152,18 @@ The appliances card, dialog, price card, forecast and status keep the prototype'
 
 `sensor.<site>_fixed_price_savings` (monetary, `total`, reset at the local month's start), only with a `FixedPrice` modifier: each metered hour × (its price without the fixed price − its price), both through the site's own chain so VAT and grid cancel. Past days' prices come from the sources' `fetch(day)` once each, kept in memory; refreshed at :07. Attributes `today`, `kwh`. A sensor gives the figure a history and keeps service calls in the sources (INV-3). Affects D8 §5.5, D12 §5.6.
 **Rejected:** a D11 counterfactual tariff - what-if views are deferred, and the ledger keeps no raw prices.
+
+### D-0500 · The fits run daily and reach the load as a parameter the engine rebuilds its store from
+
+`_refresh_fits` runs `fit_all` at 03:17:30 local daily (and at start when none is stored) over a `LoadHistory` per fittable load, assembled by `recorder_fits.py` from 60 days of power statistics and state history (attributes included, for `current_temperature` and the weather entity). A passing fit puts `effective` into `load_params` under the store's parameter; a failing one takes ours back (INV-63). `_apply_load_knobs` rebuilds the load through the registry when such a parameter changes, so the store and D11's shadow see it next plan. Fits persist in the `forecasts` section, and each is published as a disabled diagnostic `sensor.<load>_learned_<key>`. `nameplate` is published but not applied. Affects D10 §5.6, §9 19.
+**Rejected:** carrying fits in D4's `Learned` - nothing that builds a store reads it.
+
+### D-0501 · What holding a thermal store costs is in the plan, apart from what it moves
+
+`PlanSlot.hold_kwh`: the standing loss of a slot `heat_capacitor` holds or banks in, or `best_save` leaves free, at its setpoint: loss coefficient × (target − forecast outdoor) where known, else the loop's measured mean draw for that local hour over 14 days (`Forecasts.hold_w`), else 0. Coasting and postponed slots hold nothing. It's priced in the plan's cost and counted in the window projection, but not in `planned_kwh`, so it never makes a need look covered. Floor loops at target showed nothing planned while drawing all day, and since D-0483 that draw was in no projection. D-0216 expects the slab fit to fail, so the measured draw is the usual source. Affects D5 §5.5, §5.7, §9 22; D7; D10; D12 §5.6.
+**Rejected:** holding energy in `PlanSlot.kwh` - a floor still catching up would read covered.
+
+### D-0502 · An EV's charging sessions are cut from its charger's power and the car's SoC
+
+`sessions_from` makes sessions from the charger's power (above 10 % of nameplate, gaps under 30 min joined, at least 15 min), energy from the charger's register where bound, else integrated power; SoC is the car's reading near each edge (up to 6 h before the start, 2 h after the end), or the session is dropped. `charge_efficiency` fits over them, and a gated result becomes `charge_eff`, rebuilding the EV's `EnergyStore` (D-0500). Affects D10 §5.6, §9 8.
+**Rejected:** sessions from the charger's status history - vocabularies differ, and some report charging at 0 W.

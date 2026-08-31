@@ -114,6 +114,8 @@ from .core.engine import (
     SitePath,
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
+from .core.forecasts.fit import Fit, FitKey, fit_all
+from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts.quantiles import HourOfWeekQuantile
 from .core.forecasts_hook import BASELINE_STATE_KEY, ForecastsAdapter
@@ -122,6 +124,8 @@ from .core.loads.gate import OVERRIDE_GRACE, Action, Decision, Origin, setpoint_
 from .core.loads.kinds.base import Role
 from .core.loads.kinds.mode import ModeKind
 from .core.loads.kinds.setpoint import Setpoint
+from .core.loads.stores.energy import EnergyStore
+from .core.loads.stores.thermal import RoomStore, SlabStore, TankStore
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
 from .core.loads.types.heat_pump import curve_of
@@ -180,6 +184,12 @@ from .providers.forecasts.recorder_baseline import (
     LoadSource,
     async_seed,
     async_site_register_kwh,
+)
+from .providers.forecasts.recorder_fits import (
+    FIT_SPAN_DAYS,
+    FitSpec,
+    HistorySeries,
+    async_load_history,
 )
 from .providers.forecasts.weather_entity import WeatherEntitySource
 from .providers.meters.circuit import CircuitMeter
@@ -356,6 +366,9 @@ def _baseline_p90(
     return round(mean_kwh + P90_Z * sigma_w * hours / 1000.0, 3)
 
 
+#: The forecasts section's keys for the daily fits and the holding draws.
+FITS_STATE_KEY = "fits"
+HOLD_STATE_KEY = "hold"
 #: The standard normal's 90th percentile: a slot's baseline P90 is the mean plus this many σ (D-0494).
 P90_Z = 1.2816
 
@@ -387,6 +400,10 @@ class LoadDevice(Protocol):
 
     def entity_of(self, role: Role) -> str | None:
         """Return the entity a role is bound to, or `None` (the override test, D-0414)."""
+        ...
+
+    def attribute_of(self, role: Role) -> str | None:
+        """Return the attribute a role reads, `None` for the entity's state."""
         ...
 
 
@@ -1099,6 +1116,9 @@ class Runtime:
         self.fixed_saving: FixedPriceSaving | None = None
         #: Past days' raw prices this month, fetched once each: a past day never changes.
         self._past_raw: dict[date, tuple[RawSlot, ...]] = {}
+        #: D10's daily fits by "<load>.<key>", and each thermal load's holding draw.
+        self.fits: dict[str, Fit] = {}
+        self.hold_profiles: dict[str, HourOfDayMean] = {}
         #: The rest of the house's hour-of-week P90, rebuilt with each baseline seed (D-0498).
         self.baseline_p90: HourOfWeekQuantile | None = None
         self.store = SiteStore(hass, entry.entry_id)
@@ -1239,6 +1259,7 @@ class Runtime:
             if ROLE_IMPORT_REGISTER in build.meter_entities
             else None
         )
+        self._restore_fits()
         self.engine = Engine(
             build.cfg,
             WindowMeter(
@@ -1392,9 +1413,202 @@ class Runtime:
             history, self.build.cfg.tz, dt_util.utcnow()
         )
         self.state = replace(
-            self.state, forecasts={BASELINE_STATE_KEY: encode(adapter.baseline.state)}
+            self.state,
+            forecasts={**self.state.forecasts, BASELINE_STATE_KEY: encode(adapter.baseline.state)},
         )
         self._persist_sections(frozenset({Section.FORECASTS}))
+
+    # ------------------------------------------------ the daily fits #
+
+    def _fit_spec(self, load: Load) -> tuple[FitSpec, str, FitKey] | None:
+        """Return what `load`'s history is read from and the parameter its fit sets, or `None`.
+
+        The store says which fit applies (D10 §5.6): a slab's or a room's loss
+        coefficient, a tank's standby loss. The level is the role the type reads
+        its temperature from; the outdoor series is a bound outdoor sensor, else
+        the site's weather entity (D-0500).
+        """
+        store = load.store
+        device = self.build.devices.get(load.load_id)
+        if device is None:
+            return None
+        params = load.config.params
+        if isinstance(store, SlabStore):
+            key, param, capacity, area = (
+                FitKey.LOSS_COEFF,
+                "loss_coeff_w_per_k",
+                store.capacity_kwh_per_unit(),
+                store.area_m2,
+            )
+        elif isinstance(store, RoomStore):
+            key, param, capacity, area = (
+                FitKey.LOSS_COEFF,
+                "heat_loss_w_per_k",
+                store.capacity_kwh_per_unit(),
+                None,
+            )
+        elif isinstance(store, TankStore):
+            key, param, capacity, area = (
+                FitKey.STANDBY_LOSS,
+                "standby_loss_w",
+                store.capacity_kwh_per_unit(),
+                None,
+            )
+        elif isinstance(store, EnergyStore) and load.config.type_key == "ev":
+            return self._ev_fit_spec(load, store, device)
+        else:
+            return None
+        level_role = (
+            Role.TEMP_FLOOR
+            if isinstance(store, SlabStore)
+            and str(params.get("sensor", "floor")) != "air"
+            and device.entity_of(Role.TEMP_FLOOR) is not None
+            else Role.TEMP
+        )
+
+        def series(role: Role) -> HistorySeries | None:
+            entity_id = device.entity_of(role)
+            return (
+                None if entity_id is None else HistorySeries(entity_id, device.attribute_of(role))
+            )
+
+        outdoor = series(Role.OUTDOOR_TEMP)
+        if outdoor is None and self._weather_entity_id:
+            outdoor = HistorySeries(self._weather_entity_id, "temperature")
+        power = device.entity_of(Role.POWER)
+        fits = (key,) if key is FitKey.STANDBY_LOSS else (key, FitKey.HEATUP_RATE)
+        configured = params.get(param)
+        spec = FitSpec(
+            load_id=load.load_id,
+            type_key=load.config.type_key,
+            # D10 §9 9: a heat pump modulates, so its power has no "nameplate" to find.
+            fits=(*fits, FitKey.NAMEPLATE)
+            if power and load.config.type_key != "heat_pump"
+            else fits,
+            nameplate_w=load.config.nameplate_w,
+            capacity_kwh_per_k=capacity,
+            area_m2=area,
+            configured={
+                key: None if configured is None else float(configured),
+                FitKey.NAMEPLATE: load.config.nameplate_w,
+            },
+            power=power,
+            level=series(level_role),
+            indoor=series(Role.TEMP) if level_role is Role.TEMP_FLOOR else None,
+            outdoor=outdoor,
+        )
+        return spec, param, key
+
+    def _ev_fit_spec(
+        self, load: Load, store: EnergyStore, device: LoadDevice
+    ) -> tuple[FitSpec, str, FitKey] | None:
+        """Return an EV's charge-efficiency spec: its power, its SoC, its register (D-0502).
+
+        Nothing to fit without both a power trace and the car's SoC.
+        """
+        power = device.entity_of(Role.POWER)
+        soc = device.entity_of(Role.SOC)
+        if power is None or soc is None:
+            return None
+        configured = load.config.params.get("charge_eff")
+        spec = FitSpec(
+            load_id=load.load_id,
+            type_key=load.config.type_key,
+            fits=(FitKey.CHARGE_EFFICIENCY,),
+            nameplate_w=load.config.nameplate_w,
+            capacity_kwh_per_k=None,
+            area_m2=None,
+            configured={
+                FitKey.CHARGE_EFFICIENCY: None if configured is None else float(configured)
+            },
+            power=power,
+            level=HistorySeries(soc, device.attribute_of(Role.SOC)),
+            capacity_kwh=store.capacity_kwh,
+            energy=device.entity_of(Role.ENERGY),
+        )
+        return spec, "charge_eff", FitKey.CHARGE_EFFICIENCY
+
+    async def _refresh_fits(self, now: datetime) -> None:
+        """Run D10's fits and fold each thermal load's holding draw, once a day (D-0500, D-0501).
+
+        In the planning loop's own time, never the tick's (INV-46): the recorder
+        reads run in its executor. A fit's `effective` value - the fitted one
+        where it passed its gate, the configured one otherwise (INV-63) - goes
+        onto the load as a parameter the engine rebuilds its store from, so the
+        planner, the allocator and D11's shadow all read it on the next plan.
+        """
+        if not recorder_loaded(self.hass):
+            return
+        start = now - timedelta(days=FIT_SPAN_DAYS)
+        specs = [found for load in self.build.loads if (found := self._fit_spec(load)) is not None]
+        histories = []
+        for spec, _param, _key in specs:
+            try:
+                histories.append(await async_load_history(self.hass, spec, start, now))
+            except Exception:
+                _LOGGER.debug(
+                    "site %s: no history for %s", self.site_name, spec.load_id, exc_info=True
+                )
+        if self._stopped:
+            return
+        self.fits = dict(fit_all(histories, now))
+        tz = self.build.cfg.tz
+        self.hold_profiles = {
+            history.load_id: profile
+            for history in histories
+            if history.type_key != "water_heater"
+            and (profile := HourOfDayMean.from_power(history.power_rows, tz, now)) is not None
+        }
+        self._apply_fits({spec.load_id: (param, key) for spec, param, key in specs})
+        self.state = replace(
+            self.state,
+            forecasts={
+                **self.state.forecasts,
+                FITS_STATE_KEY: encode(self.fits),
+                HOLD_STATE_KEY: {k: list(v.watts) for k, v in self.hold_profiles.items()},
+            },
+        )
+        self._persist_sections(frozenset({Section.FORECASTS}))
+        _LOGGER.info(
+            "site %s: fits %s; holding draw for %d load(s)",
+            self.site_name,
+            ", ".join(f"{k}={f.effective}" for k, f in sorted(self.fits.items())) or "none",
+            len(self.hold_profiles),
+        )
+        await self.run_plan("fits")
+
+    def _apply_fits(self, params: Mapping[str, tuple[str, FitKey]]) -> None:
+        """Put each load's effective fitted parameter on it; take ours back where none is (INV-63)."""
+        for load_id, (param, key) in params.items():
+            fit = self.fits.get(f"{load_id}.{key}")
+            overrides = self.load_params.setdefault(load_id, {})
+            if fit is not None and fit.quality.ok and fit.effective is not None:
+                overrides[param] = fit.effective
+            else:
+                overrides.pop(param, None)
+
+    def _restore_fits(self) -> None:
+        """Take the last fits and holding draws back from the store (D10 §7), and apply them."""
+        section = self.store.get(Section.FORECASTS) or {}
+        raw = section.get(FITS_STATE_KEY)
+        self.fits = decode(dict[str, Fit], raw) if raw else {}
+        tz = self.build.cfg.tz
+        self.hold_profiles = {
+            load_id: HourOfDayMean(watts=tuple(watts), tz=tz)
+            for load_id, watts in (section.get(HOLD_STATE_KEY) or {}).items()
+        }
+        params: dict[str, tuple[str, FitKey]] = {}
+        for load in self.build.loads:
+            found = self._fit_spec(load)
+            if found is not None:
+                params[found[0].load_id] = (found[1], found[2])
+        self._apply_fits(params)
+
+    @callback
+    def _on_fits(self, now: datetime) -> None:
+        self.hass.async_create_background_task(
+            self._refresh_fits(now), f"powerplan {self.site_name} fits"
+        )
 
     @property
     def has_fixed_price(self) -> bool:
@@ -2288,7 +2502,9 @@ class Runtime:
         adapter = self.forecasts_adapter
         if adapter is None:
             return None
-        return Forecasts(at=now, weather=self._weather_series, baseline=adapter.baseline)
+        return Forecasts(
+            at=now, weather=self._weather_series, baseline=adapter.baseline, hold=self.hold_profiles
+        )
 
     def _forecasts_view(self, now: datetime) -> PlannerForecasts | None:
         """Return D5's narrow view of D10 (D-0217)."""
@@ -2457,6 +2673,11 @@ class Runtime:
                 for load_id, plan in sorted(plans.items())
                 if (kwh := _planned_kwh_in(plan, start, end)) > 0.0
             }
+            held = {
+                load_id: round(kwh, 3)
+                for load_id, plan in sorted(plans.items())
+                if (kwh := _planned_kwh_in(plan, start, end, hold=True)) > 0.0
+            }
             rows.append(
                 {
                     "start": start.isoformat(),
@@ -2470,6 +2691,8 @@ class Runtime:
                         (end - start).total_seconds() / 3600.0,
                     ),
                     "planned_kwh": planned,
+                    # What each thermal load draws holding its setpoint (D-0501).
+                    "hold_kwh": held,
                 }
             )
         return tuple(rows)
@@ -2938,6 +3161,10 @@ class Runtime:
                 hass, self._on_quarter, minute=list(PLAN_MINUTES), second=PLAN_SECOND
             )
         )
+        # D10 §5.7: the fits daily at 03:xx, never on the hour; now when none is stored.
+        self._track(async_track_time_change(hass, self._on_fits, hour=3, minute=17, second=30))
+        if not self.fits:
+            self._on_fits(dt_util.utcnow())
         if self.has_fixed_price:
             # Hourly, after the register's hour has closed; once now (D-0499).
             self._track(async_track_time_change(hass, self._on_fixed_saving, minute=7, second=30))
@@ -3276,13 +3503,13 @@ class Runtime:
         return ROLE_PRODUCTION_POWER in self.build.meter_entities
 
 
-def _planned_kwh_in(plan: Plan, start: datetime, end: datetime) -> float:
-    """Return the kWh `plan` means to move in `[start, end)`: each slot's own `kwh`, prorated."""
+def _planned_kwh_in(plan: Plan, start: datetime, end: datetime, *, hold: bool = False) -> float:
+    """Return the kWh `plan` means to move in `[start, end)` - or, with `hold`, to hold - prorated."""
     total = 0.0
     for slot in plan.slots_between(start, end):
         overlap = (min(slot.end, end) - max(slot.start, start)).total_seconds()
         if overlap > 0.0 and slot.hours > 0.0:
-            total += slot.kwh * overlap / (slot.hours * 3600.0)
+            total += (slot.hold_kwh if hold else slot.kwh) * overlap / (slot.hours * 3600.0)
     return total
 
 

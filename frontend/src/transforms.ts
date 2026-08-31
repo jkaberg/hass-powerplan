@@ -23,6 +23,8 @@ export interface PlanSlot {
   baseline_p90_kwh?: number | null;
   production_kwh?: number | null;
   planned_kwh: Record<string, number>;
+  /** What each thermal load draws holding its setpoint (D-0501). */
+  hold_kwh?: Record<string, number>;
 }
 
 /** One slot as the timeline draws it: power in kW, so slots of any length compare. */
@@ -38,6 +40,8 @@ export interface TimelineSlot {
   productionKw: number | null;
   loadKw: Record<string, number>;
   loadKwh: Record<string, number>;
+  /** Holding a thermal store's setpoint (D-0501), apart from what the plan moves. */
+  holdKw: Record<string, number>;
 }
 
 const HOUR_MS = 3_600_000;
@@ -84,10 +88,12 @@ export function timelineSlots(
     const slotHours = (end - start) / HOUR_MS;
     const loadKwh: Record<string, number> = {};
     const loadKw: Record<string, number> = {};
+    const holdKw: Record<string, number> = {};
     for (const id of loadIds) {
       const kwh = row?.planned_kwh[id] ?? 0;
       loadKwh[id] = kwh;
       loadKw[id] = kwh / slotHours;
+      holdKw[id] = (row?.hold_kwh?.[id] ?? 0) / slotHours;
     }
     out.push({
       start,
@@ -100,6 +106,7 @@ export function timelineSlots(
       productionKw: row?.production_kwh == null ? null : row.production_kwh / slotHours,
       loadKw,
       loadKwh,
+      holdKw,
     });
   }
   return out;
@@ -746,6 +753,14 @@ export function planRuns(slots: readonly PlanSlot[], id: string): Run[] {
   return out;
 }
 
+/** One load's holding stretches (D-0501): consecutive slots with holding energy, merged. */
+export function holdRuns(slots: readonly PlanSlot[], id: string): Run[] {
+  return planRuns(
+    slots.map((slot) => ({ ...slot, planned_kwh: { [id]: slot.hold_kwh?.[id] ?? 0 } })),
+    id,
+  );
+}
+
 /** The cheap threshold: the lowest quarter of the prices' range, `null` for a flat curve (R4, P2, F4). */
 export function cheapThreshold(prices: readonly number[]): number | null {
   const finite = prices.filter(Number.isFinite);
@@ -780,6 +795,8 @@ export interface Bucket {
   baseline: number | null;
   p90: number | null;
   loads: Record<string, number>;
+  /** Holding each thermal store's setpoint (D-0501). */
+  hold: Record<string, number>;
   ceiling: number | null;
   price: number | null;
   estimated: boolean;
@@ -801,6 +818,7 @@ export function bucketize(
     baseline: null,
     p90: null,
     loads: {},
+    hold: {},
     ceiling: null,
     price: null,
     estimated: false,
@@ -812,6 +830,9 @@ export function bucketize(
     if (slot.baseline_p90_kwh != null) bucket.p90 = (bucket.p90 ?? 0) + slot.baseline_p90_kwh;
     for (const [id, kwh] of Object.entries(slot.planned_kwh)) {
       if (kwh > 0) bucket.loads[id] = (bucket.loads[id] ?? 0) + kwh;
+    }
+    for (const [id, kwh] of Object.entries(slot.hold_kwh ?? {})) {
+      if (kwh > 0) bucket.hold[id] = (bucket.hold[id] ?? 0) + kwh;
     }
     // `ceiling_kwh` is the window's already, whichever slot of it carries it.
     if (slot.ceiling_kwh != null) bucket.ceiling = slot.ceiling_kwh;
@@ -840,22 +861,25 @@ export function forecastTotals(
   const loads: Record<string, number> = {};
   let other = 0;
   let cheap = 0;
+  let movable = 0;
   for (const bucket of buckets) {
     other += bucket.baseline ?? 0;
-    let managed = 0;
+    let moved = 0;
     for (const id of loadIds) {
       const kwh = bucket.loads[id] ?? 0;
-      loads[id] = (loads[id] ?? 0) + kwh;
-      managed += kwh;
+      loads[id] = (loads[id] ?? 0) + kwh + (bucket.hold[id] ?? 0);
+      moved += kwh;
     }
-    if (threshold !== null && bucket.price !== null && bucket.price <= threshold) cheap += managed;
+    movable += moved;
+    if (threshold !== null && bucket.price !== null && bucket.price <= threshold) cheap += moved;
   }
   const managed = Object.values(loads).reduce((sum, kwh) => sum + kwh, 0);
+  // The cheap share is of what the plan moves: holding follows the thermostat, not the price.
   return {
     other,
     loads,
     managed,
-    cheapPct: threshold !== null && managed > 0 ? Math.round((cheap / managed) * 100) : null,
+    cheapPct: threshold !== null && movable > 0 ? Math.round((cheap / movable) * 100) : null,
   };
 }
 

@@ -29,7 +29,7 @@ from .base import (
     slope_k_per_h,
     span_days,
 )
-from .ev import charge_efficiency
+from .ev import charge_efficiency, sessions_from
 from .nameplate import nameplate_w
 from .tank import standby_loss_w
 from .thermal import coast_rate, heatup_rate
@@ -53,6 +53,7 @@ __all__ = [
     "heatup_rate",
     "nameplate_w",
     "resolve",
+    "sessions_from",
     "slope_k_per_h",
     "span_days",
     "standby_loss_w",

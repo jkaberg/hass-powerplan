@@ -49,7 +49,10 @@ from .const import LOAD_PRIORITY, LOAD_STRATEGY, PRIORITY_LEVELS, priority_level
 from .core.accounting.shadow.base import StoreKind
 from .core.accounting_hook import store_kind_of
 from .core.engine import LoadStatus
+from .core.forecasts.fit import Fit, FitKey
 from .core.loads import Load, Role
+from .core.loads.stores.energy import EnergyStore
+from .core.loads.stores.thermal import RoomStore, SlabStore, TankStore
 from .core.loads.types import base as device_types
 from .core.model import Mode
 from .entity import LoadEntity, accrual_reset, digest_of, money_text
@@ -914,6 +917,61 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
         applies=lambda load, _runtime: load.config.type_key == "water_heater",
     ),
 )
+
+#: D10 §5.6's fits, as `sensor.<load>_learned_<key>`: the key, its unit, and the
+#: stores it applies to. Diagnostic and disabled by default (D10 §5.6).
+_LEARNED: tuple[tuple[FitKey, str, tuple[type, ...]], ...] = (
+    (FitKey.LOSS_COEFF, "W/K", (SlabStore, RoomStore)),
+    (FitKey.HEATUP_RATE, "K/h", (SlabStore, RoomStore)),
+    (FitKey.STANDBY_LOSS, "W", (TankStore,)),
+    (FitKey.NAMEPLATE, "W", (SlabStore, RoomStore, TankStore)),
+    (FitKey.CHARGE_EFFICIENCY, "", (EnergyStore,)),
+)
+
+
+def _learned_row(key: FitKey, unit: str, stores: tuple[type, ...]) -> LoadSensorRow:
+    """Return the diagnostic row that publishes one fit, applied or not (INV-63)."""
+
+    def fit(status: LoadStatus, runtime: Runtime) -> Fit | None:
+        return runtime.fits.get(f"{status.load_id}.{key}")
+
+    def value(status: LoadStatus, runtime: Runtime) -> float | None:
+        found = fit(status, runtime)
+        return None if found is None else round(found.value, 3)
+
+    def attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
+        found = fit(status, runtime)
+        if found is None:
+            return {}
+        return {
+            "applied": found.quality.ok,
+            "effective": found.effective,
+            "configured": found.configured,
+            "reason": found.quality.reason,
+            "n": found.quality.n,
+            "r2": None if found.quality.r2 is None else round(found.quality.r2, 3),
+            "span_days": round(found.quality.span_days, 1),
+            "bounds": list(found.bounds),
+            "fitted_at": found.fitted_at.isoformat(),
+        }
+
+    return LoadSensorRow(
+        key=f"learned_{key}",
+        value=value,
+        attributes=attributes,
+        unit=unit or None,
+        state_class=SensorStateClass.MEASUREMENT,
+        category=EntityCategory.DIAGNOSTIC,
+        enabled=lambda _load, _runtime: False,
+        applies=lambda load, _runtime: (
+            isinstance(load.store, stores)
+            and not (key is FitKey.NAMEPLATE and load.config.type_key == "heat_pump")
+            and not (key is FitKey.CHARGE_EFFICIENCY and load.config.type_key != "ev")
+        ),
+    )
+
+
+LOAD_SENSORS = (*LOAD_SENSORS, *(_learned_row(*row) for row in _LEARNED))
 
 
 class LoadSensor(LoadEntity, SensorEntity):

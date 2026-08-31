@@ -741,6 +741,7 @@
             "None"
           ]
         },
+        "hold_kwh": "float",
         "load_id": "str",
         "mode": {
           "enum": [
@@ -980,5 +981,5 @@
       }
     }
   },
-  "schema": 6
+  "schema": 7
 }

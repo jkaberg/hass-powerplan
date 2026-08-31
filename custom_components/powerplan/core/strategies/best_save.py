@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, register
+from .holding import comfort_target, holding_kwh
 from .plan import build_plan, confidence_of, inputs_digest
 
 if TYPE_CHECKING:
@@ -144,14 +145,15 @@ def _decide(slots: Sequence[Slot], policy: _Policy) -> list[bool]:
     return off
 
 
-def _slot(slot: Slot, *, postponed: bool, kind: str) -> PlanSlot:
-    """Return one slot of the plan: standing still, or nothing to say (INV-30)."""
+def _slot(slot: Slot, *, postponed: bool, kind: str, hold_kwh: float = 0.0) -> PlanSlot:
+    """Return one slot of the plan: standing still, or free (INV-30) with what holding costs (D-0501)."""
     return PlanSlot(
         start=slot.start,
         end=slot.end,
         envelope_w=0.0 if postponed else None,
         desired_state=Desired.SHED if postponed and kind in {"mode", "setpoint"} else None,
         kwh=0.0,
+        hold_kwh=0.0 if postponed else hold_kwh,
         price=slot.total,
         reason="postponed" if postponed else "",
     )
@@ -194,7 +196,7 @@ class BestSave:
             strategy=self.key,
             mode=PlanMode.PRICE,
             slots=tuple(
-                _slot(slot, postponed=skip, kind=ctx.load.kind)
+                _slot(slot, postponed=skip, kind=ctx.load.kind, hold_kwh=_hold(ctx, demand, slot))
                 for slot, skip in zip(window, off, strict=True)
             ),
             now=ctx.now,
@@ -206,6 +208,12 @@ class BestSave:
                 self.key, ctx.load.mode, demand.price_sensitive, sorted(params.items(), key=str)
             ),
         )
+
+
+def _hold(ctx: PlanContext, demand: Demand, slot: Slot) -> float:
+    """Return what the store draws holding its target in a free slot (D-0501); 0 with no target."""
+    target = comfort_target(ctx, demand, slot.start)
+    return 0.0 if target is None else holding_kwh(ctx, slot.start, slot.end, target)
 
 
 def _reason(postponed: Sequence[Slot], policy: _Policy) -> str:

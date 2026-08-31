@@ -200,6 +200,8 @@ envelopes and heavy screeds land inside the bounds and are applied.
 
 `effective = value if quality.ok else configured`. Every fit is published with its quality (`sensor.<load>_learned_<key>`, diagnostic, disabled by default). A fit that fails its gate is *kept as information* and never applied. D4 reads `effective` through the load's `Learned` state.
 
+`Runtime._refresh_fits` runs `fit_all` daily at 03:17:30 local, and once at start when none is stored, over a `LoadHistory` per load with a slab, room or tank store. `providers/forecasts/recorder_fits.py` builds it from 60 days (power statistics; level, indoor and outdoor state history, attributes included). `effective` reaches the load as a parameter the engine rebuilds its store from, so D4's store and D11's shadow both read it, and a failed gate takes it back. Fits and each thermal load's measured holding draw (`hold.HourOfDayMean`, 14 days by local hour) persist in the `forecasts` section, `Forecasts.hold_w` gives D5 the draw. An EV's sessions are cut from its charger's power (register energy where bound) and the car's SoC by `fit.ev.sessions_from` (D-0502), and the gated efficiency becomes the store's `charge_eff` (D-0500, D-0501).
+
 ### 5.7 Refresh schedule
 
 Weather: hourly and on change. Baseline: per closed window (cheap). Fits: daily at 03:xx (+ jitter, never :00). PV: when the source updates. Everything that touches network or disk runs in the planning loop or an executor job (INV-46).
@@ -272,9 +274,9 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 16. `Forecasts.for_budget(at)` satisfies D6's `allocation.budget.Baseline` protocol
     structurally, without `core/allocation` importing `core/forecasts` (D-0320).
 
-17. `energy_solar` on three `wh_hours` payloads written from Forecast.Solar's, Solcast's and Open-Meteo Solar's `energy.py`: hourly and half-hourly periods become average watts; two entries on one source sum; a period no entry covers is a hole, not 0; no solar source in the Energy preferences yields no series.
-18. `energy_solar` degrades: a missing or changed `async_get_energy_platforms` yields no series and raises `pv_forecast_unavailable`; the tick and the plan run unchanged.
-19. Fits through the runtime: a simulated 60-day history reaches `fit_all` once per day in the planning loop, a gated fit changes the load's `effective` value on the next plan, and a failed gate leaves `configured` (INV-63); §9 11 still holds.
+17. `energy_solar` on three `wh_hours` payloads written from Forecast.Solar's, Solcast's and Open-Meteo Solar's `energy.py`: hourly and half-hourly periods become average watts, two entries on one source sum, a period no entry covers is a hole and not 0, and no solar source in the Energy preferences gives no series.
+18. `energy_solar` degrades: a missing or changed `async_get_energy_platforms` gives no series and raises `pv_forecast_unavailable`, the tick and the plan run as before.
+19. Fits through the runtime (`tests/runtime/test_fits_wired.py`): a simulated 60-day history reaches `fit_all` once a day in the planning loop, a gated fit changes the load's `effective` on the next plan, and a failed gate leaves `configured` (INV-63). §9 11 still holds.
 
 ---
 

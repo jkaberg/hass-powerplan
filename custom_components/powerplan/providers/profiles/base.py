@@ -1169,6 +1169,11 @@ class LiveDevice:
         binding = self.bound.binding(role)
         return None if binding is None else binding.entity_id
 
+    def attribute_of(self, role: Role) -> str | None:
+        """Return the attribute `role` reads, `None` for the entity's state (WP5.7's history)."""
+        binding = self.bound.binding(role)
+        return None if binding is None else binding.attribute
+
 
 class DeviceProfile(Protocol):
     """How to talk to one product or one class of device (D4 §4.5).

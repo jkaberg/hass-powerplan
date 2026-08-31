@@ -150,7 +150,8 @@ def build_plan(
     horizon = now + timedelta(minutes=commit_min)
     marked = tuple(_marked(slot, _is_committed(slot, now, horizon, known_until)) for slot in slots)
     planned = sum(slot.kwh for slot in marked)
-    cost = sum((_dec(slot.kwh) * slot.price for slot in marked), Decimal(0))
+    hold = sum(slot.hold_kwh for slot in marked)
+    cost = sum((_dec(slot.kwh + slot.hold_kwh) * slot.price for slot in marked), Decimal(0))
     covered = required_kwh is None or planned + COVER_EPS_KWH >= required_kwh
     coverage = 1.0
     if required_kwh is not None and required_kwh > 0.0:
@@ -166,6 +167,7 @@ def build_plan(
         reason=reason,
         required_kwh=required_kwh,
         planned_kwh=planned,
+        hold_kwh=hold,
         covered=covered,
         coverage=coverage,
         deadline=deadline,

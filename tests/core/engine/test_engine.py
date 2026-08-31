@@ -43,6 +43,7 @@ from custom_components.powerplan.core.engine import (
 )
 from custom_components.powerplan.core.loads import Action, Mode, targets
 from custom_components.powerplan.core.loads import base as loads_base
+from custom_components.powerplan.core.loads.stores import EnergyStore
 from custom_components.powerplan.core.pricing import events as pricing_events
 from custom_components.powerplan.core.tariffs import Target
 from tests.core.engine.conftest import (
@@ -741,3 +742,31 @@ def test_a_knob_lowered_by_hand_takes_effect_on_the_next_tick() -> None:
     assert snapshot.budget is not None
     assert snapshot.budget.ceiling_kwh < wide, "the lowered target binds at once (INV-12, INV-47)"
     assert snapshot.site.target_kw == 5.0
+
+
+def test_a_fitted_store_parameter_rebuilds_the_loads_store() -> None:
+    """D-0500, D-0502: a gated `charge_eff` knob reaches the EV's store on the next tick."""
+    cfg = site()
+    loads = reference_loads()
+    engine = engine_for(loads, cfg=cfg)
+    ev = loads[0]
+    assert isinstance(ev.store, EnergyStore)
+    assert ev.store.charge_eff != 0.84
+    engine.tick(
+        EngineState(),
+        inputs_at(
+            cfg,
+            START,
+            grid_w=1_500.0,
+            loads=both(START),
+            knobs=Knobs(
+                target=Target(kind="kw", kw=10.0),
+                load_params={ev.load_id: {"charge_eff": 0.84}},
+            ),
+            curves_=curves(),
+        ),
+    )
+    rebuilt = next(load for load in engine.loads if load.load_id == ev.load_id)
+    assert isinstance(rebuilt.store, EnergyStore)
+    assert rebuilt.store.charge_eff == 0.84
+    assert rebuilt.config.params["charge_eff"] == 0.84

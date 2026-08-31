@@ -331,7 +331,11 @@ export class PowerplanTimelineCard extends HTMLElement {
     this.drawToggle(hours);
     const empty = this.slots.length === 0;
     els.chart.hidden = empty;
-    const idle = !empty && this.single && legendItems(config.loads, this.slots).length === 0;
+    const idle =
+      !empty &&
+      this.single &&
+      legendItems(config.loads, this.slots).length === 0 &&
+      !this.slots.some((slot) => Object.values(slot.holdKw).some((kw) => kw > 0));
     els.message.hidden = !(empty || idle);
     els.message.textContent = empty ? (labels.no_plan ?? "") : idle ? (labels.no_run ?? "") : "";
     if (empty) {
@@ -640,7 +644,8 @@ export class PowerplanTimelineCard extends HTMLElement {
 
     // Rule 3: one axis with the limit inside it.
     const stacks = slots.map((slot) => stackOffsets(slot, ids));
-    const tops = stacks.map((stack) => (drawBaseline ? stack.total : stack.total - stack.offset));
+    const held = (slot: TimelineSlot) => ids.reduce((sum, id) => sum + (slot.holdKw[id] ?? 0), 0);
+    const tops = stacks.map((stack, i) => (drawBaseline ? stack.total : stack.total - stack.offset) + held(slots[i]!));
     const ceilings = slots.map((slot) => slot.ceilingKw ?? 0);
     const candidates = single
       ? [Math.max(0, ...tops) * 1.3]
@@ -687,6 +692,22 @@ export class PowerplanTimelineCard extends HTMLElement {
           z: 3,
         });
       });
+    }
+    if (show.has("plan")) {
+      // Holding a thermal store's setpoint: each load's colour, lighter, over its runs (D-0501).
+      for (const load of config.loads) {
+        if (!slots.some((slot) => (slot.holdKw[load.id] ?? 0) > 0)) continue;
+        series.push({
+          name: load.name,
+          type: "bar",
+          stack: "total",
+          barWidth,
+          barGap: "-100%",
+          itemStyle: { color: withAlpha(this.colorOf(load.id), 0.45), borderColor: surface, borderWidth: slotPx >= 6 ? 1 : 0 },
+          data: slots.map((slot) => [(slot.start + slot.end) / 2, slot.holdKw[load.id] ?? 0]),
+          z: 3,
+        });
+      }
     }
     if (show.has("production") && slots.some((slot) => slot.productionKw !== null)) {
       series.push({
@@ -1040,7 +1061,7 @@ export class PowerplanTimelineCard extends HTMLElement {
         ? forecast
             .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known" }))
             .filter((slot) => slot.end > start && slot.start < end)
-            .map((slot) => ({ ...slot, hours: (slot.end - slot.start) / HOUR_MS, ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {} }))
+            .map((slot) => ({ ...slot, hours: (slot.end - slot.start) / HOUR_MS, ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {} }))
         : (() => {
             const rows = e.price ? ((priceStats as Record<string, StatRow[]>)[e.price] ?? []) : [];
             const first = rows[0];
@@ -1048,7 +1069,7 @@ export class PowerplanTimelineCard extends HTMLElement {
             const kept = first && first.start >= start ? rows.slice(1) : rows.filter((row) => row.start >= start);
             return kept.map((row) => ({
               start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
-              ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {},
+              ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {},
             }));
           })();
       if (priceSlots.length) {

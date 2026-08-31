@@ -345,6 +345,10 @@ class FakeFloor:
         """Return the climate entity for the setpoint; nothing else is bound by entity."""
         return FLOOR_CLIMATE if role is Role.SETPOINT else None
 
+    def attribute_of(self, role: Role) -> str | None:
+        """Return the setpoint's attribute; nothing else is bound."""
+        return "temperature" if role is Role.SETPOINT else None
+
     def call_for(self, write: Write) -> DeviceCall | None:
         """Map a setpoint write to `climate.set_temperature`; nothing else is bound."""
         if write.role is not Role.SETPOINT:

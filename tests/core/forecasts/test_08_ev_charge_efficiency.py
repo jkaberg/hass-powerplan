@@ -19,6 +19,7 @@ from custom_components.powerplan.core.forecasts import (
     LoadHistory,
     charge_efficiency,
 )
+from custom_components.powerplan.core.forecasts.fit import sessions_from
 from tests.core.forecasts.conftest import local
 from tests.sim.base import Env
 from tests.sim.ev import CAPACITY_KWH, CHARGE_EFFICIENCY, Command, EvSim
@@ -109,3 +110,66 @@ def test_08c_a_short_session_does_not_count() -> None:
 def test_08d_no_sessions_at_all_produces_no_fit() -> None:
     """A car that has never charged is not a fit that failed; it is no fit."""
     assert charge_efficiency(_history(()), START) is None
+
+
+# --- D-0502: the sessions themselves, cut from the charger's power and the car's SoC ---
+
+
+def _night(
+    start: datetime, *, soc: float, hours: float, pause_min: float = 0.0
+) -> tuple[list, list]:
+    """Charge the simulated car one night; return its power trace and sparse SoC readings.
+
+    The car reports its SoC an hour before plugging in and 40 minutes after the
+    charge stops, as a real one that sleeps does; `pause_min` is a stop mid-session.
+    """
+    sim = EvSim(soc=soc)
+    sim.plug_in()
+    power: list[tuple[datetime, float]] = []
+    socs = [(start - timedelta(hours=1), sim.soc * 100.0)]
+    at = start
+    for step in range(int(hours * 3600.0 / STEP_S)):
+        if pause_min and 60 <= step < 60 + pause_min:
+            power.append((at, 0.0))  # the charger idles; the car waits
+        else:
+            reads = sim.step(STEP_S, Command(limit_a=AMPS), Env(now=at, outdoor_c=-5.0))
+            power.append((at, reads.power_w))
+        at += timedelta(seconds=STEP_S)
+    power.append((at, 0.0))
+    socs.append((at + timedelta(minutes=40), sim.soc * 100.0))
+    return power, socs
+
+
+def test_08e_sessions_cut_from_the_trace_recover_the_efficiency() -> None:
+    """Three nights, one with a 20-minute stop: three sessions, and 0.90 back from them."""
+    power: list = []
+    socs: list = []
+    for day, (soc, pause) in enumerate(((0.2, 0.0), (0.3, 20.0), (0.25, 0.0))):
+        p, s = _night(START + timedelta(days=day), soc=soc, hours=4.0, pause_min=pause)
+        power += p
+        socs += s
+    sessions = sessions_from(power, socs, capacity_kwh=CAPACITY_KWH, nameplate_w=22_000.0)
+    assert len(sessions) == 3, "the stop is inside a session, not a second one"
+    fit = charge_efficiency(_history(sessions), START + timedelta(days=10))
+    assert fit is not None
+    assert fit.value == pytest.approx(CHARGE_EFFICIENCY, abs=0.02)
+    assert fit.quality.ok
+
+
+def test_08f_a_session_with_no_soc_near_its_end_is_left_out() -> None:
+    """A car that never reported after the charge: no guessed SoC, no session."""
+    power, socs = _night(START, soc=0.2, hours=4.0)
+    assert sessions_from(power, socs[:1], capacity_kwh=CAPACITY_KWH, nameplate_w=22_000.0) == ()
+
+
+def test_08g_the_chargers_register_is_the_energy_where_one_is_bound() -> None:
+    """The register's rise over the session, not the integrated power."""
+    power, socs = _night(START, soc=0.2, hours=4.0)
+    register = [
+        (START - timedelta(minutes=5), 1000.0),
+        (power[-1][0] + timedelta(minutes=5), 1030.0),
+    ]
+    [session] = sessions_from(
+        power, socs, capacity_kwh=CAPACITY_KWH, nameplate_w=22_000.0, energy_rows=register
+    )
+    assert session.energy_kwh == pytest.approx(30.0)

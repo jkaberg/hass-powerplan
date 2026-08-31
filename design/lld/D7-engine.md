@@ -313,6 +313,8 @@ All internal times UTC (`dt_util.utcnow()`), local conversions only in D2/D5 fil
 
 ---
 
+`_apply_load_knobs` rebuilds a load through the device-type registry when a knob overrides a store parameter D10 fits (`loss_coeff_w_per_k`, `heat_loss_w_per_k`, `standby_loss_w`), so the store and D11's shadow read the fitted value. The planner counts each plan's `hold_kwh` next to what it moves, and `PlanStatus.hold_kwh` carries it to D8. The `forecasts` section merges the baseline's state with the daily fits instead of replacing it (D-0500, D-0501).
+
 ## 6. Configuration schema
 
 Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `plan_interval_min` 15, `warn_horizon_h` 3, `warn_fraction` 0.95, `safe_mode_after_failures` 3, `tick_budget_ms` 50. The site `active` switch and `select.<site>_presence` are entities (D8), read live every tick.

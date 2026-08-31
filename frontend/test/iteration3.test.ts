@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEBOUNCE_MS, rawStatus, StatusDebouncer } from "../src/status";
-import { bucketize, cheapBands, forecastTotals, nextClock, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
+import { bucketize, cheapBands, forecastTotals, holdRuns, nextClock, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
 
 const LABELS = {
   status_running: "Går",
@@ -17,6 +17,7 @@ const LABELS = {
   status_not_controlled: "Manuell",
   status_observing: "Prøvemodus",
   status_unavailable: "Utilgjengelig",
+  status_holding: "Holder",
   reason_paused: "Pause for å holde effekttrinnet",
   reason_manual: "Endret på enheten",
   reason_not_controlled: "Styres fra enheten — ingen plan",
@@ -136,5 +137,37 @@ describe("readable (R1)", () => {
     expect(readable("#094bad", true)).not.toBe("#094bad");
     expect(readable("#094bad", false)).toBe("#094bad");
     expect(readable("#f4bd4a", true)).toBe("#f4bd4a");
+  });
+});
+
+describe("holding a floor's setpoint (D-0501)", () => {
+  it("is its own status, not idle, and a planned run still wins", () => {
+    expect(rawStatus("idle", {}, false, false, LABELS, true)).toEqual({ kind: "holding", label: "Holder" });
+    expect(rawStatus("waiting", {}, false, true, LABELS, true).label).toBe("Planlagt");
+    expect(rawStatus("running_plan", {}, true, true, LABELS, true).label).toBe("Går");
+  });
+
+  it("merges the holding stretches apart from the runs", () => {
+    const slots = [
+      slot(0, { hall: 0.22 }, { hold_kwh: {} }),
+      slot(1, {}, { hold_kwh: { hall: 0.08 } }),
+      slot(2, {}, { hold_kwh: { hall: 0.08 } }),
+    ];
+    expect(planRuns(slots, "hall")).toHaveLength(1);
+    const holds = holdRuns(slots, "hall");
+    expect(holds).toHaveLength(1);
+    expect(holds[0]!.start).toBe(T0 + Q);
+    expect(holds[0]!.kwh).toBeCloseTo(0.16, 6);
+  });
+
+  it("counts in the load's total but not in the cheap share, which is of what the plan moves", () => {
+    const plan = [0, 1, 2, 3].map((i) => slot(i, i === 0 ? { hall: 0.3 } : {}, { hold_kwh: { hall: 0.1 } }));
+    const prices = [price(0, 0.73), price(1, 0.73), price(2, 0.73), price(3, 0.73), price(4, 0.86), price(5, 0.86), price(6, 0.86), price(7, 0.86)];
+    const later = [4, 5, 6, 7].map((i) => slot(i, {}, { hold_kwh: { hall: 0.1 } }));
+    const buckets = bucketize([...plan, ...later], prices, 60, T0, 2);
+    expect(buckets[0]!.hold).toEqual({ hall: 0.4 });
+    const totals = forecastTotals(buckets, ["hall"]);
+    expect(totals.loads.hall).toBeCloseTo(0.3 + 0.8, 6);
+    expect(totals.cheapPct).toBe(100);
   });
 });

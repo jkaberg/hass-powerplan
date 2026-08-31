@@ -479,7 +479,10 @@ class PlanSlot:
 
     `kwh` is the energy this slot was planned to move and `price` the effective
     price it was chosen at - kept per slot so the plan can be priced, published
-    and compared without the curve it came from. `committed` is set by the
+    and compared without the curve it came from. `hold_kwh` is what a thermal
+    store draws holding its setpoint in the slot, the thermostat's own business:
+    priced and projected, but never counted as moving the store towards a need
+    (D5 §5.7, `design/DECISIONS.md` D-0501). `committed` is set by the
     builder: a slot that has started, or is `KNOWN` and starts inside the
     commitment window, moves only for twice the hysteresis (D5 §5.9).
     """
@@ -492,6 +495,7 @@ class PlanSlot:
     price: Decimal = Decimal(0)
     reason: str = ""
     committed: bool = False
+    hold_kwh: float = 0.0
 
     @property
     def hours(self) -> float:
@@ -523,6 +527,8 @@ class Plan:
     reason: str = ""
     required_kwh: float | None = None
     planned_kwh: float = 0.0
+    #: What holding the store's setpoint draws over the plan (D-0501); not in `planned_kwh`.
+    hold_kwh: float = 0.0
     covered: bool = True
     coverage: float = 1.0
     deadline: datetime | None = None

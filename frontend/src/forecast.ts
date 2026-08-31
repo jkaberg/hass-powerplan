@@ -8,7 +8,7 @@
 // A rail on the left names the totals (its width equals the appliances card's,
 // so the two time axes line up); under 600 px a summary sits above instead.
 
-import { type Bucket, forecastTotals } from "./transforms";
+import { type Bucket, forecastTotals, withAlpha } from "./transforms";
 
 export interface ForecastLoad {
   id: string;
@@ -52,10 +52,13 @@ export function forecastOption(b: readonly Bucket[], loads: readonly ForecastLoa
   const right = o.compact ? 12 : 16;
   const plotW = o.width - left - right;
   const barW = Math.max(plotW / b.length - (plotW / b.length > 14 ? 3 : 1.5), 2);
-  const used = loads.filter((l) => b.some((k) => (k.loads[l.id] ?? 0) > 0));
+  const used = loads.filter((l) => b.some((k) => (k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0) > 0));
+  const managedIn = (k: Bucket) =>
+    Object.values(k.loads).reduce((s, v) => s + v, 0) + Object.values(k.hold).reduce((s, v) => s + v, 0);
   const ceiling = b.find((k) => k.ceiling !== null)?.ceiling ?? null;
-  const maxY = Math.max(ceiling ?? 0, ...b.map((k) => (k.p90 ?? k.baseline ?? 0) + Object.values(k.loads).reduce((s, v) => s + v, 0)));
-  const ymax = Math.max(4, Math.ceil((maxY * 1.1) / 3) * 3);
+  const maxY = Math.max(ceiling ?? 0, ...b.map((k) => (k.p90 ?? k.baseline ?? 0) + managedIn(k)));
+  // Four steps of whole kWh: a multiple of 4, so no tick reads "3,75".
+  const ymax = Math.max(4, Math.ceil((maxY * 1.1) / 4) * 4);
   const nowX = (o.now - o.from) / 3_600_000;
   const prices = b.map((k) => k.price).filter((p): p is number => p !== null);
   const pmin = prices.length ? Math.min(...prices) : 0;
@@ -75,6 +78,10 @@ export function forecastOption(b: readonly Bucket[], loads: readonly ForecastLoa
   }
   for (const load of used) {
     series.push({ ...base, name: load.name, id: load.id, data: b.map((k, i) => [x(i), k.loads[load.id] ?? 0]), itemStyle: { color: load.color } });
+    // Holding its setpoint: the same colour, lighter — the thermostat's own draw, not a run (D-0501).
+    if (b.some((k) => (k.hold[load.id] ?? 0) > 0)) {
+      series.push({ ...base, name: load.name, id: `${load.id}:hold`, data: b.map((k, i) => [x(i), k.hold[load.id] ?? 0]), itemStyle: { color: withAlpha(load.color, 0.45) } });
+    }
   }
   if (b.some((k) => k.p90 !== null)) {
     series.push({
@@ -241,13 +248,13 @@ function tooltip(
   const clock = new Intl.DateTimeFormat(o.locale, { hour: "2-digit", minute: "2-digit", timeZone: o.zone });
   const day = new Intl.DateTimeFormat(o.locale, { weekday: "short", timeZone: o.zone }).format(k.start);
   const rows = loads
-    .filter((l) => (k.loads[l.id] ?? 0) > 0)
+    .filter((l) => (k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0) > 0)
     .map(
       (l) =>
-        `<div style="display:flex;gap:8px;align-items:center"><span style="width:8px;height:8px;border-radius:50%;background:${l.color}"></span><span style="flex:1">${escape(l.name)}</span><b style="font-weight:500">${two.format(k.loads[l.id]!)}</b></div>`,
+        `<div style="display:flex;gap:8px;align-items:center"><span style="width:8px;height:8px;border-radius:50%;background:${l.color}"></span><span style="flex:1">${escape(l.name)}${(k.loads[l.id] ?? 0) > 0 ? "" : ` <span style="color:${o.css.text2}">· ${escape(o.labels.holding_short)}</span>`}</span><b style="font-weight:500">${two.format((k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0))}</b></div>`,
     )
     .join("");
-  const managed = Object.values(k.loads).reduce((s, v) => s + v, 0);
+  const managed = Object.values(k.loads).reduce((s, v) => s + v, 0) + Object.values(k.hold).reduce((s, v) => s + v, 0);
   const total = managed + (k.baseline ?? 0);
   const base =
     k.baseline !== null

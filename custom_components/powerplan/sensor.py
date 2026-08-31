@@ -518,6 +518,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                     "strategy": plan.strategy,
                     "mode": plan.mode.value,
                     "planned_kwh": round(plan.planned_kwh, 3),
+                    "hold_kwh": round(plan.hold_kwh, 3),
                     "next_start": _iso(plan.next_start),
                     "cost": money_text(plan.cost),
                     "covered": plan.covered,

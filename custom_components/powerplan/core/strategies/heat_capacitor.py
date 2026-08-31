@@ -54,6 +54,7 @@ from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, register
 from .deadline_fill import plan_one
 from .deadlines import needs
+from .holding import holding_kwh
 from .plan import build_plan, confidence_of, inputs_digest
 
 if TYPE_CHECKING:
@@ -450,9 +451,8 @@ def _shape(
         if kind is _Kind.BANK:
             # One episode per run: the budget is what it takes to raise the store
             # from where it is to the raised target, and the slots that follow hold
-            # it there. What holding costs is the standing loss, which needs a
-            # fitted coefficient - so it is **skipped**, never guessed, exactly as
-            # the store's own loss term is (D4 §5.7, `design/DECISIONS.md` D-0195).
+            # it there. What holding costs is added below, for every slot that is
+            # not coasting (`holding.py`, D-0501).
             if not banking:
                 budget = _bank_kwh(store, ctx, level=level, target=target + wanted)
                 level = target
@@ -462,12 +462,17 @@ def _shape(
         else:
             take = 0.0
             budget, banking = 0.0, False
+        # The standing loss at the slot's own setpoint: a coast lets the store fall.
+        hold = (
+            0.0 if kind is _Kind.COAST else holding_kwh(ctx, slot.start, slot.end, target + delta)
+        )
         rows.append(
             _row(
                 slot,
                 kind,
                 delta=delta,
                 kwh=take,
+                hold_kwh=hold,
                 demand=demand,
                 ctx=ctx,
                 in_peak=_inside(slot, peaks),
@@ -603,6 +608,7 @@ def _row(
     *,
     delta: float,
     kwh: float,
+    hold_kwh: float = 0.0,
     demand: Demand,
     ctx: PlanContext,
     in_peak: bool,
@@ -622,6 +628,7 @@ def _row(
             envelope_w=envelope,
             desired_state=_desired(ctx.load.kind, delta, banking=banking),
             kwh=kwh,
+            hold_kwh=hold_kwh,
             price=slot.total,
             reason=_slot_reason(kind, delta, in_peak=in_peak, pre_peak=pre_peak),
         ),

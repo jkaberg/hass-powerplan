@@ -13,7 +13,7 @@ import type { ApplianceLoad, AppliancesConfig } from "./appliances-card";
 import { escape, fill, toNumber } from "./appliances-card";
 import { type HomeAssistant, moreInfo, timeZone } from "./ha";
 import { rawStatus } from "./status";
-import { type ByLoad, moneyFormat, type PlanSlot, planRuns, readable, withAlpha } from "./transforms";
+import { type ByLoad, holdRuns, moneyFormat, type PlanSlot, planRuns, readable, withAlpha } from "./transforms";
 
 const TAG = "powerplan-appliance-dialog";
 
@@ -259,7 +259,9 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const planAttrs = hass.states[config.entities.plan]?.attributes ?? {};
     const now = Date.now();
     const runs = planRuns((planAttrs.slots as PlanSlot[] | undefined) ?? [], load.id).filter((run) => run.end > now);
-    const view = rawStatus(status?.state, a, runs.some((run) => run.start <= now), runs.length > 0, labels);
+    const planSlots = (planAttrs.slots as PlanSlot[] | undefined) ?? [];
+    const holdNow = holdRuns(planSlots, load.id).some((run) => run.start <= now && run.end > now);
+    const view = rawStatus(status?.state, a, runs.some((run) => run.start <= now), runs.length > 0, labels, holdNow);
     const row = (planAttrs.by_load as Record<string, ByLoad> | undefined)?.[load.id];
     const kwh = toNumber(row?.planned_kwh ?? a.planned_kwh);
     const cost = toNumber(String(row?.cost ?? a.cost ?? "").split(" ")[0]);
@@ -384,6 +386,7 @@ const CSS = `
   .pill.running { background: rgba(67,160,71,.16); color: #7ccf80; } .pill.running i { background: var(--success-color, #43a047); }
   .pill.planned, .pill.waiting { background: rgba(var(--rgb-primary-color,0,154,199), .16); color: #5cc8ea; } .pill.planned i, .pill.waiting i { background: var(--primary-color); }
   .pill.paused { background: rgba(255,166,0,.16); color: #ffc15c; } .pill.paused i { background: var(--warning-color, #ffa600); }
+  .pill.holding { background: rgba(67,160,71,.10); color: #9ad69d; } .pill.holding i { background: var(--success-color, #43a047); opacity: .55; }
   .pill.manual, .pill.unavailable, .pill.idle { background: rgba(158,158,158,.16); color: #c4c4c4; } .pill.manual i, .pill.unavailable i { background: #9e9e9e; }
   .ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .ctl > * { min-width: 0; }
