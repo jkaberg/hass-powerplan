@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEBOUNCE_MS, rawStatus, StatusDebouncer } from "../src/status";
-import { bucketize, cheapBands, forecastTotals, holdRuns, nextClock, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
+import { bucketize, cheapBands, forecastTotals, holdRuns, nextClock, pauseRuns, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
 
 const LABELS = {
   status_running: "Går",
@@ -169,5 +169,15 @@ describe("holding a floor's setpoint (D-0501)", () => {
     const totals = forecastTotals(buckets, ["hall"]);
     expect(totals.loads.hall).toBeCloseTo(0.3 + 0.8, 6);
     expect(totals.cheapPct).toBe(100);
+  });
+});
+
+describe("a planned pause (D-0507)", () => {
+  it("merges the slots a load stands still in, apart from runs and holding", () => {
+    const slots = [slot(0, { hall: 0.2 }), slot(1, {}, { paused: ["hall"] }), slot(2, {}, { paused: ["hall", "bath"] }), slot(3, {})];
+    const pauses = pauseRuns(slots, "hall");
+    expect(pauses).toEqual([{ start: T0 + Q, end: T0 + 3 * Q, kwh: 0 }]);
+    expect(pauseRuns(slots, "bath")).toEqual([{ start: T0 + 2 * Q, end: T0 + 3 * Q, kwh: 0 }]);
+    expect(planRuns(slots, "hall")).toHaveLength(1);
   });
 });

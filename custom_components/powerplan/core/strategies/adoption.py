@@ -132,7 +132,30 @@ def should_adopt(
     threshold = _threshold(policy, curve, new, tz=tz, now=now, stale=stale)
     if _moves_a_commitment(old, new, now):
         threshold *= COMMITMENT_FACTOR
-    return old.cost_estimate.amount - new.cost_estimate.amount > threshold
+    # Both plans on today's curve and only what they move: a plan priced on
+    # yesterday's curve always looked cheaper than today's and was never
+    # replaced (D-0506); holding follows the thermostat, not the plan (D-0503).
+    return moved_cost(old, curve, now) - moved_cost(new, curve, now) > threshold
+
+
+def moved_cost(plan: Plan, curve: PriceCurve, now: datetime) -> Decimal:
+    """Return the plan's cost of what it moves, re-priced on `curve` from `now` (D-0503, D-0506).
+
+    The estimate less what holding a setpoint costs in it, plus, for every slot
+    still to come, its energy times the change in its price since the plan was
+    built: equal prices leave the estimate as it was, and a plan built on
+    yesterday's curve is compared on today's. A slot the curve does not cover
+    keeps the price it was planned at.
+    """
+    hold = sum((_dec(slot.hold_kwh) * slot.price for slot in plan.slots), Decimal(0))
+    drift = Decimal(0)
+    for slot in plan.slots:
+        if slot.end <= now or slot.kwh <= 0.0:
+            continue
+        priced = curve.price_at(slot.start)
+        if priced is not None:
+            drift += _dec(slot.kwh) * (priced.total - slot.price)
+    return plan.cost_estimate.amount - hold + drift
 
 
 def _threshold(

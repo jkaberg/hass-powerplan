@@ -734,6 +734,11 @@ async def test_06_the_site_plan_carries_its_slots_unrecorded(
     assert slots, "the plan should reach the price horizon"
     for row in slots:
         assert {"start", "end", "ceiling_kwh", "baseline_kwh", "planned_kwh"} <= row.keys()
+        # Who stands still there on purpose, by the plan's own envelope (D-0507, INV-30).
+        paused = row["paused"]
+        for load_id, plan in runtime.state.plans.plans.items():
+            found = plan.slot_at(datetime.fromisoformat(row["start"]))
+            assert (load_id in paused) == (found is not None and found.envelope_w == 0.0)
     assert state.attributes["window_min"] == runtime.build.cfg.window_min
     assert state.state_info is not None
     assert "slots" in state.state_info["unrecorded_attributes"]

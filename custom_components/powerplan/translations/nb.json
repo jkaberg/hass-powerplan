@@ -2013,7 +2013,8 @@
         "card_fixed_saves_month": "{unit} nå · ≈ {v} {currency} i {month}",
         "card_status_holding": "Holder",
         "card_count_holding": "{n} holder temperaturen",
-        "card_holding_short": "holder"
+        "card_holding_short": "holder",
+        "card_lowered_until": "Senket til {time}"
       }
     },
     "logbook": {

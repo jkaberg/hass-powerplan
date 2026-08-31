@@ -14,7 +14,7 @@ The volatile NO3 day runs from 1.40 at 18:00 to −0.05 at 13:00, so its spread 
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -41,6 +41,13 @@ if TYPE_CHECKING:
 
 POLICY = HysteresisPolicy()
 
+
+def _curve_price(start: datetime) -> Decimal:
+    """Return the volatile curve's price at `start`, 0.40 where it has none."""
+    slot = volatile_curve().price_at(start)
+    return Decimal("0.40") if slot is None else slot.total
+
+
 #: 3 % of the NO3 day's 1.45 NOK spread.
 H = Decimal("0.0435")
 
@@ -53,7 +60,8 @@ def slot(start_offset_min: int, *, w: float = 7360.0, minutes: int = 15) -> Plan
         end=start + timedelta(minutes=minutes),
         envelope_w=w,
         kwh=w * minutes / 60.0 / 1000.0,
-        price=Decimal("0.40"),
+        # Priced as a fresh plan is, on the curve it is compared on (D-0506).
+        price=_curve_price(start),
         reason="test",
         committed=start_offset_min <= COMMIT_MIN,
     )
@@ -202,3 +210,24 @@ def test_11_an_uncovered_plan_gives_way_to_a_covered_one() -> None:
     assert should_adopt(
         plan("5.00", covered=False), plan("12.00"), POLICY, curve=curve, tz=OSLO, now=NOW
     )
+
+
+@pytest.mark.inv("INV-32")
+def test_11_a_plan_priced_on_yesterdays_curve_is_compared_on_todays() -> None:
+    """A plan priced on yesterday's curve is compared on today's (D-0506).
+
+    On the reference house a floor loop's plan built on yesterday's 0.37 kr curve always
+    looked cheaper than today's and was never replaced. On today's curve the plan that
+    moves half as much energy is the better one, and is adopted.
+    """
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    curve = volatile_curve()
+    yesterday = tuple(_replace(s, price=Decimal("0.10")) for s in (slot(60), slot(75)))
+    old = plan(str(sum(Decimal(repr(s.kwh)) * s.price for s in yesterday)), slots=yesterday)
+    today = (slot(60),)
+    new = plan(str(sum(Decimal(repr(s.kwh)) * s.price for s in today)), slots=today)
+    assert old.cost_estimate.amount < new.cost_estimate.amount, (
+        "on its own prices the stale plan looks cheaper"
+    )
+    assert should_adopt(old, new, POLICY, curve=curve, tz=OSLO, now=NOW)

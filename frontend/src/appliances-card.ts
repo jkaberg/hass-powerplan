@@ -18,6 +18,7 @@ import {
   cheapBands,
   holdRuns,
   localHour,
+  pauseRuns,
   moneyFormat,
   nextClock,
   type PlanSlot,
@@ -70,6 +71,8 @@ interface Row {
   runs: Run[];
   /** Holding its setpoint (D-0501): drawn as a faint band under the runs. */
   holds: Run[];
+  /** Planned pauses - coasting, postponed (D-0507): a hatched band with its end. */
+  pauses: Run[];
   sub: string;
   /** "2,90 kWh · 2,11 kr" */
   meta: string;
@@ -187,6 +190,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
         const runNow = runs.some((run) => run.start <= now && run.end > now);
         const holds = holdRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
         const holdNow = holds.some((run) => run.start <= now && run.end > now);
+        const pauses = pauseRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
         const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels, holdNow));
         const parts: string[] = [];
         const current = toNumber(a.current);
@@ -217,6 +221,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
           view,
           runs,
           holds,
+          pauses,
           sub: parts.filter(Boolean).join(" · "),
           meta,
           cost,
@@ -338,6 +343,17 @@ export class PowerplanAppliancesCard extends HTMLElement {
           if (!compact) lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt dim" text-anchor="middle">${escape(view.reason)}</text>`;
         } else if (view.kind === "idle" && !compact) {
           lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt faint" text-anchor="middle">${escape(fill(labels.no_need ?? "", { h: hours }))}</text>`;
+        }
+        for (const run of row.pauses) {
+          // Turned down on purpose: hatched, and where it fits "Senket til 22:00" (D-0507).
+          const x0 = Math.max(sx(run.start), lx0);
+          const x1 = Math.min(sx(run.end), lx1);
+          if (x1 - x0 < 2) continue;
+          lane += `<rect x="${x0.toFixed(1)}" y="${laneY}" width="${(x1 - x0).toFixed(1)}" height="${laneH}" rx="${rr}" style="fill:url(#${U}-man)"/>`;
+          const text = fill(labels.lowered_until ?? "", { time: clock.format(run.end) });
+          if (!compact && text && (x1 - x0) > text.length * 6.3 + 16) {
+            lane += `<text x="${(x0 + 8).toFixed(1)}" y="${mid}" class="ltxt dim">${escape(text)}</text>`;
+          }
         }
         for (const run of row.holds) {
           const x0 = Math.max(sx(run.start), lx0);

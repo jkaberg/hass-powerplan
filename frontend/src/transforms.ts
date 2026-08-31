@@ -25,6 +25,8 @@ export interface PlanSlot {
   planned_kwh: Record<string, number>;
   /** What each thermal load draws holding its setpoint (D-0501). */
   hold_kwh?: Record<string, number>;
+  /** The loads the plan stands still in this slot: a coast or a postponement (D-0507). */
+  paused?: string[];
 }
 
 /** One slot as the timeline draws it: power in kW, so slots of any length compare. */
@@ -759,6 +761,14 @@ export function holdRuns(slots: readonly PlanSlot[], id: string): Run[] {
     slots.map((slot) => ({ ...slot, planned_kwh: { [id]: slot.hold_kwh?.[id] ?? 0 } })),
     id,
   );
+}
+
+/** One load's planned pauses (D-0507): consecutive slots where its plan stands still, merged. */
+export function pauseRuns(slots: readonly PlanSlot[], id: string): Run[] {
+  return planRuns(
+    slots.map((slot) => ({ ...slot, planned_kwh: { [id]: slot.paused?.includes(id) ? 1 : 0 } })),
+    id,
+  ).map((run) => ({ ...run, kwh: 0 }));
 }
 
 /** The cheap threshold: the lowest quarter of the prices' range, `null` for a flat curve (R4, P2, F4). */

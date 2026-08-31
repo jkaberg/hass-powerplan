@@ -124,6 +124,28 @@ def inputs_digest(*parts: Any) -> str:
     return hashlib.blake2s(material, digest_size=8).hexdigest()
 
 
+def with_hold_of(kept: Plan, fresh: Plan) -> Plan:
+    """Return `kept` carrying `fresh`'s holding energy per slot, and its totals redone (D-0503).
+
+    Holding a store's setpoint is not something the plan decides, so a plan kept
+    by the hysteresis (INV-32) still shows what holding costs now - the measured
+    draw or the fitted loss that arrived after it was built. Its prices stay the
+    ones it was built on: a kept plan does not move with price noise (§9 3).
+    """
+    hold = {slot.start: slot.hold_kwh for slot in fresh.slots}
+    slots = tuple(replace(slot, hold_kwh=hold.get(slot.start, 0.0)) for slot in kept.slots)
+    if slots == kept.slots:
+        return kept
+    held = sum(slot.hold_kwh for slot in slots)
+    cost = sum((_dec(slot.kwh + slot.hold_kwh) * slot.price for slot in slots), Decimal(0))
+    return replace(
+        kept,
+        slots=slots,
+        hold_kwh=held,
+        cost_estimate=Money(cost, kept.cost_estimate.currency),
+    )
+
+
 def build_plan(
     *,
     load_id: str,

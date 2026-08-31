@@ -63,6 +63,8 @@ LONG_TERM_PERIOD: Final = "hour"
 SEED_SPAN_DAYS: Final = 60
 #: The window length a seed bins at - see `async_seed`'s own comment.
 LONG_TERM_WINDOW_MIN: Final = 60
+#: The finest window the seed cuts, where the 5-minute statistics reach (D-0505).
+SEED_WINDOW_MIN: Final = 15
 #: What the recorder converts to: a `kW` charger's mean comes back in W and a
 #: `Wh` register in kWh, the units `reconstruct` integrates in (D-0483).
 UNITS: Final = {"energy": "kWh", "power": "W"}
@@ -234,11 +236,13 @@ async def async_seed(
             )
         )
 
-    # Seeded at hourly granularity regardless of the site's own window_min:
-    # `HourOfWeekBaseline.update` bins by the hour-of-week either way (D10
-    # §5.1's "4 updates/h" is for the *live* quarter-hour case), and hourly
-    # long-term statistics beyond `RECENT_DAYS` could never yield a finer one.
-    history = uncontrolled_history(site_rows, controlled, window_min=LONG_TERM_WINDOW_MIN, tz=tz)
+    # Quarter-hour windows where the 5-minute statistics allow - the last
+    # `RECENT_DAYS` - and hourly beyond, where the long-term table has nothing
+    # finer (`uncontrolled_history` keeps each row's own cadence). An hourly-only
+    # seed gave each hour-of-week bin one sample a week, and 60 days of that
+    # decayed to n_eff ≈ 4.6: confidence 0.57, under the offer gate, so the
+    # house's baseline was never offered (D-0505).
+    history = uncontrolled_history(site_rows, controlled, window_min=SEED_WINDOW_MIN, tz=tz)
     seeded = baseline.seed(history)
     _LOGGER.debug(
         "recorder_baseline: seeded %d window(s), reconstruction=%s",

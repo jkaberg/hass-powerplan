@@ -73,3 +73,39 @@ def test_the_week_hour_s_p90_and_the_day_hour_fallback() -> None:
 def test_no_usable_window_is_no_profile() -> None:
     """No history: no profile, and the slots fall back to D10's σ (D-0494)."""
     assert HourOfWeekQuantile.from_history(UncontrolledHistory(), OSLO, NOW) is None
+
+
+def test_quarter_hour_windows_are_summed_into_their_hour_first() -> None:
+    """The seed's recent days come as quarters (D-0505): 4 × 0.3 kWh is a 1.2 kWh hour, not 0.3 × 4 rates."""
+    wednesday = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)  # Wed 00:00 in Oslo
+    windows = []
+    for week in range(3):
+        for quarter in range(4):
+            start = wednesday - timedelta(days=7 * week) + timedelta(minutes=15 * quarter)
+            windows.append(
+                UncontrolledWindow(
+                    window=ClosedWindow(
+                        start_utc=start, window_min=15, kwh=0.3, avg_kw=1.2,
+                        anchor_kind=AnchorKind.REGISTER_LATCHED, degraded=False, confidence="exact",
+                    ),
+                    uncontrolled_kwh=0.3,
+                    controlled_kwh=0.0,
+                )
+            )  # fmt: skip
+    # A lone quarter of the next hour is not a whole hour: left out.
+    windows.append(
+        UncontrolledWindow(
+            window=ClosedWindow(
+                start_utc=wednesday + timedelta(hours=1), window_min=15, kwh=0.3, avg_kw=1.2,
+                anchor_kind=AnchorKind.REGISTER_LATCHED, degraded=False, confidence="exact",
+            ),
+            uncontrolled_kwh=0.3,
+            controlled_kwh=0.0,
+        )
+    )  # fmt: skip
+    profile = HourOfWeekQuantile.from_history(
+        UncontrolledHistory(windows=tuple(windows)), OSLO, NOW
+    )
+    assert profile is not None
+    assert profile.kwh_per_hour(wednesday) == pytest.approx(1.2)
+    assert profile.kwh_per_hour(wednesday + timedelta(hours=1)) is None

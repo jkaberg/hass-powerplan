@@ -272,6 +272,16 @@ def describe(
 # --------------------------------------------------------------------------- #
 
 
+def _fired(event: Any) -> datetime:
+    """Return when `event` fired, from whichever timestamp it carries.
+
+    The logbook hands a `LazyEventPartialState`, which has only `time_fired_ts`;
+    the bus hands an `Event` with `time_fired` (D-0504).
+    """
+    fired = getattr(event, "time_fired", None)
+    return fired if isinstance(fired, datetime) else dt_util.utc_from_timestamp(event.time_fired_ts)
+
+
 @callback
 def async_describe_events(
     hass: HomeAssistant,
@@ -290,7 +300,7 @@ def async_describe_events(
             strings = async_get_cached_translations(hass, language, "selector", DOMAIN)
             return {
                 LOGBOOK_ENTRY_NAME: _name(runtime, data),
-                LOGBOOK_ENTRY_MESSAGE: describe(kind, data, strings, language, event.time_fired),
+                LOGBOOK_ENTRY_MESSAGE: describe(kind, data, strings, language, _fired(event)),
             }
 
         return _describe

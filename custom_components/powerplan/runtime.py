@@ -368,6 +368,10 @@ def _baseline_p90(
 
 #: The forecasts section's keys for the daily fits and the holding draws.
 FITS_STATE_KEY = "fits"
+#: How the baseline was seeded: 2 cuts quarter-hour windows from the recent 5-minute
+#: statistics (D-0505); a store at 1 is re-seeded once at startup.
+SEED_VERSION_KEY = "seed_version"
+SEED_VERSION = 2
 HOLD_STATE_KEY = "hold"
 #: The standard normal's 90th percentile: a slot's baseline P90 is the mean plus this many σ (D-0494).
 P90_Z = 1.2816
@@ -1329,7 +1333,16 @@ class Runtime:
         # The open period's windows from the recorder, where the history has
         # none - the live meter's own windows come first (D2 §2, §5.12).
         self.hass.async_create_task(self._seed_peak_history("startup", replace=False))
+        seeded = (self.store.get(Section.FORECASTS) or {}).get(SEED_VERSION_KEY, 1)
         if (
+            self.forecasts_adapter is not None
+            and self.forecasts_adapter.baseline.state.last_update is not None
+            and seeded < SEED_VERSION
+        ):
+            # Seeded hourly-only before D-0505: once, a fresh baseline from the
+            # denser seed, as the rebuild button would.
+            self.hass.async_create_task(self.async_rebuild_baseline())
+        elif (
             self.forecasts_adapter is not None
             and self.forecasts_adapter.baseline.state.last_update is None
         ):
@@ -1414,7 +1427,11 @@ class Runtime:
         )
         self.state = replace(
             self.state,
-            forecasts={**self.state.forecasts, BASELINE_STATE_KEY: encode(adapter.baseline.state)},
+            forecasts={
+                **self.state.forecasts,
+                BASELINE_STATE_KEY: encode(adapter.baseline.state),
+                SEED_VERSION_KEY: SEED_VERSION,
+            },
         )
         self._persist_sections(frozenset({Section.FORECASTS}))
 
@@ -2678,6 +2695,13 @@ class Runtime:
                 for load_id, plan in sorted(plans.items())
                 if (kwh := _planned_kwh_in(plan, start, end, hold=True)) > 0.0
             }
+            # Standing still on purpose - a coast, a postponement (envelope 0,
+            # INV-30) - so the dashboard can say so rather than draw nothing (D-0507).
+            paused = sorted(
+                load_id
+                for load_id, plan in plans.items()
+                if (found := plan.slot_at(start)) is not None and found.envelope_w == 0.0
+            )
             rows.append(
                 {
                     "start": start.isoformat(),
@@ -2693,6 +2717,7 @@ class Runtime:
                     "planned_kwh": planned,
                     # What each thermal load draws holding its setpoint (D-0501).
                     "hold_kwh": held,
+                    "paused": paused,
                 }
             )
         return tuple(rows)

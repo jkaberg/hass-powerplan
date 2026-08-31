@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from .reconstruct import UncontrolledHistory
 
+#: A profile hour is a whole hour of windows (D-0505).
+MINUTES_PER_HOUR: Final = 60
 #: The quantile the reserve is drawn to.
 P90: Final = 0.9
 #: The span of history a profile is folded from: four of each weekday.
@@ -53,17 +55,23 @@ class HourOfWeekQuantile:
         week: dict[int, list[float]] = defaultdict(list)
         day: dict[int, list[float]] = defaultdict(list)
         since = now - LOOKBACK
+        # Whole hours only: quarter-hour windows (the seed's recent days, D-0505)
+        # are summed into their hour first, since a quarter's rate is spikier than
+        # the hour's energy the profile is about.
+        hours: dict[datetime, list[float]] = defaultdict(lambda: [0.0, 0.0])
         for row in history.windows:
             start = row.window.start_utc
-            hours = row.window.window_min / 60
-            if start < since or hours <= 0:
+            if start < since or row.window.window_min <= 0:
                 continue
-            per_hour = row.uncontrolled_kwh / hours
-            if not 0.0 <= per_hour <= MAX_PLAUSIBLE_KWH:
+            hour = start.replace(minute=0, second=0, microsecond=0)
+            hours[hour][0] += row.uncontrolled_kwh
+            hours[hour][1] += row.window.window_min
+        for hour, (kwh, minutes) in hours.items():
+            if minutes != MINUTES_PER_HOUR or not 0.0 <= kwh <= MAX_PLAUSIBLE_KWH:
                 continue
-            local = start.astimezone(tz)
-            week[local.weekday() * 24 + local.hour].append(per_hour)
-            day[local.hour].append(per_hour)
+            local = hour.astimezone(tz)
+            week[local.weekday() * 24 + local.hour].append(kwh)
+            day[local.hour].append(kwh)
         if not day:
             return None
         return cls(

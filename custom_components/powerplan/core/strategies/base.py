@@ -33,7 +33,7 @@ from .context import (
     SitePlan,
     with_rewards,
 )
-from .plan import build_plan
+from .plan import build_plan, with_hold_of
 
 if TYPE_CHECKING:
     from ..model import Demand, Plan, Slot
@@ -267,7 +267,7 @@ def plan_all(
             inputs_changed=inputs_changed(before, plan),
             stale=ctx.stale,
         )
-        chosen = plan if take or before is None else before
+        chosen = plan if take or before is None else with_hold_of(before, plan)
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)

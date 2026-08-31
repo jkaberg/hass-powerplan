@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -172,6 +173,12 @@ async def test_15_a_fired_event_is_described_on_the_appliance_s_plan_status(
     assert "entity_id" not in line
     assert line["name"] == "Charger"
     assert line["message"] == "Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr"
+    # The logbook's processor hands a `LazyEventPartialState`: `time_fired_ts`, no `time_fired`
+    # (D-0504).
+    lazy = SimpleNamespace(
+        data=plan.data, event_type=plan.event_type, time_fired_ts=plan.time_fired_timestamp
+    )
+    assert describers[plan.event_type](lazy) == line  # type: ignore[arg-type]
     line = describers[safe.event_type](safe)
     assert "entity_id" not in line
     assert line["message"] == "Nødmodus: styringen har stoppet"

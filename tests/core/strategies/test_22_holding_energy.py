@@ -87,3 +87,28 @@ def test_22d_best_save_holds_where_it_is_free_and_not_where_it_waits() -> None:
     assert postponed
     assert all(slot.hold_kwh == pytest.approx(400.0 * slot.hours / 1000.0) for slot in free)
     assert all(slot.hold_kwh == 0.0 and slot.kwh == 0.0 for slot in postponed)
+
+
+def test_22e_a_kept_plan_takes_the_holding_energy_and_holding_never_decides_adoption() -> None:
+    """A plan kept by the hysteresis carries the holding energy that arrived after it.
+
+    Plans built before the holding draw was known were never
+    replaced, because a plan that prices holding is dearer (D-0503). Now the old plan is
+    kept - nothing it decides changed - and carries the new holding energy.
+    """
+    source = volatile_curve()
+    view = floor_view(
+        strategy="best_save",
+        target=bathroom_target(),
+        demand=demand(required_kwh=3.0, deadline=None, min_w=0.0, max_w=960.0),
+    )
+    first = plan_all([view], curves_of(source), site_ctx(forecasts=Weather(outdoor=-5.0)), NOW)
+    old = first.plans["loop_bath"]
+    assert old.hold_kwh == 0.0
+    site = site_ctx(forecasts=Weather(outdoor=-5.0, hold={"loop_bath": 400.0}))
+    second = plan_all([view], curves_of(source), site, NOW, previous=first.plans)
+    kept = second.plans["loop_bath"]
+    assert "loop_bath" not in second.adopted
+    assert [slot.envelope_w for slot in kept.slots] == [slot.envelope_w for slot in old.slots]
+    assert kept.hold_kwh > 5.0
+    assert kept.cost_estimate.amount > old.cost_estimate.amount

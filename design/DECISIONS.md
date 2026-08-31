@@ -2167,3 +2167,28 @@ The appliances card, dialog, price card, forecast and status keep the prototype'
 
 `sessions_from` makes sessions from the charger's power (above 10 % of nameplate, gaps under 30 min joined, at least 15 min), energy from the charger's register where bound, else integrated power; SoC is the car's reading near each edge (up to 6 h before the start, 2 h after the end), or the session is dropped. `charge_efficiency` fits over them, and a gated result becomes `charge_eff`, rebuilding the EV's `EnergyStore` (D-0500). Affects D10 §5.6, §9 8.
 **Rejected:** sessions from the charger's status history - vocabularies differ, and some report charging at 0 W.
+
+### D-0503 · Holding energy never decides adoption, and a kept plan carries it
+
+`should_adopt` compares `moved_cost`, the plan's cost less holding, and a plan the hysteresis keeps gets the fresh plan's `hold_kwh` per slot. A plan that prices holding is always dearer, so thermal plans built before holding was known were never replaced and published zero holding. Affects D5 §5.9, §9 22.
+**Rejected:** comparing total cost - holding is the same whichever plan wins.
+
+### D-0504 · The logbook describer reads `time_fired_ts` from the row
+
+`logbook._fired` takes `time_fired` from a bus `Event` and `row[TIME_FIRED_TS_POS]` from the `LazyEventPartialState` the logbook processor hands over, which has no `time_fired_ts` attribute. Every PowerPlan logbook line was failing to render. The test builds the real class via `async_event_to_row`.
+**Rejected:** a stand-in object in the test - it's what hid the bug.
+
+### D-0505 · The baseline seed cuts quarter-hour windows where the 5-minute statistics reach
+
+`async_seed` uses 15-minute windows over the last 10 days' 5-minute statistics and hourly windows beyond; the P90 profile sums quarters back into hours. A store seeded earlier (`seed_version` absent or 1) is re-seeded once at startup, then records `seed_version: 2`. Hourly-only seeding gave each week-hour one sample a week, n_eff ≈ 4.6 after decay, confidence 0.57, under the 0.6 gate: no baseline on any slot. Four quarters of one hour aren't four independent samples, so n_eff overstates recent evidence, as it already does for a quarter-hour site's live updates. Affects D10 §5.2.
+**Rejected:** drawing the baseline below the gate on the dashboard - D-0484 removed exactly that.
+
+### D-0506 · Adoption compares both plans on today's curve
+
+`moved_cost(plan, curve, now)` is the plan's estimate less holding, plus each remaining slot's moved energy times its price change since the plan was built. Equal prices leave the comparison as it was; a kept plan keeps its own prices, so noise never changes it (D5 §9 3). Plans built on yesterday's cheaper curve looked cheaper than any fresh plan priced today and were never replaced. Affects D5 §5.9.
+**Rejected:** each plan on its own prices - a stale plan wins forever.
+
+### D-0507 · A planned pause is drawn, not left blank
+
+`slots[].paused` lists loads whose plan stands still in the slot (envelope 0: a coast, a postponement; INV-30). The appliances card draws each such stretch as a hatched band with "Senket til 22:00" where it fits. Five loops coasting before a 22:00 price drop read as missing data. Affects D12 §5.6.
+**Rejected:** leaving pauses blank - indistinguishable from no data.
