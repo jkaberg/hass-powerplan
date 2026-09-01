@@ -415,8 +415,8 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
 | 4.6 | Tariffs: verified facts only | done |
-| 4.6b | Tariff sources: NO, SE, DK | todo |
-| 4.6c | Tariff sources: BE, US, AU | todo |
+| 4.6b | Tariff sources: NO, SE, DK | on hold |
+| 4.6c | Tariff sources: BE, US, AU | on hold |
 | 4.7 | Price sources: every row through the flow | todo |
 | 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | todo |
