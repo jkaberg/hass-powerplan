@@ -23,8 +23,8 @@
 | F8 | The household's answers must be what bills (the contracted kW were read by nothing until D-0520). | D-0520 |
 | F9 | No network at Home Assistant start; fetch when the flow opens and at renewal. | - |
 | F10 | The add-on step is titled "Er strømavtalen din spesiell?" but offers three parties' items side by side - the grid's "Energiledd (dag/natt)" and "Avgifter", the state's "Merverdiavgift", "Norgespris" and "Strømstøtte", the supplier's "Påslag". A household cannot tell what choosing its grid company already answered. | `translations/nb.json`, `config.step.modifiers` |
-| F12 | Most of Norway's households are reachable through an API: six DSOs implement the Digin standard (Elvia, Norgesnett, Agder Energi Nett, Glitre Nett, Lnett, Lede) - together with Tensio's price page, which carries its tables as JSON, ≈ 77 % of customers; eight aggregators exist, one open (Strømpriseridag), the rest behind registration. Keys: Elvia (Azure subscription key), Glitre (`x-api-key`) - free, per user. | kraftsystemet.no, "Nettleie API i Norge" (updated 2026-09-18); 3lbits `gridcompany-mapping.json`; probes 2026-09-24 |
-| F13 | An open aggregator can fail the quality check: Strømpriseridag labels Tensio TS's day rate 22.1 øre `vat_included: true`, but 22.1 is fri-nettleie's figure **excluding** VAT and levies (Tensio's own: 22.102 × 1.25 + 10.16 = 37.79). | `api.strompriseridag.no/v1/nettleie/tensio-ts` |
+| F12 | Most of Norway's households are reachable through an API: six DSOs implement the Digin standard (Elvia, Norgesnett, Agder Energi Nett, Glitre Nett, Lnett, Lede) - together with Tensio's price page, which carries its tables as JSON, ≈ 77 % of customers. Of the eight APIs the national overview lists, none is both country-wide and usable today (§5.8). Keys: Elvia, Glitre - free, per user, personal by Elvia's terms. | kraftsystemet.no, "Nettleie API i Norge" (updated 2026-09-18); 3lbits `gridcompany-mapping.json`; probes 2026-09-24 |
+| F13 | An open aggregator can fail the quality check: Strømpriseridag labels Tensio TS's day rate 22.1 øre `vat_included: true`, but 22.1 is fri-nettleie's figure **excluding** VAT and levies (Tensio's own: 22.102 × 1.25 + 10.16 = 37.79) - the same for Elvia, BKK, Tensio TN, Lnett, Lede; so consistent it can be corrected under a guard (rule 8, §5.4). | `api.strompriseridag.no/v1/nettleie/tensio-ts` |
 | F14 | The regulators' own consumer sites load country-wide JSON: elpris.dk (DK) serves each grid area's tariff and the national taxes (elafgift included), sahkonhinta.fi (FI) every grid company's postal codes and every supplier product, V-test (BE) estimates by postcode. A newspaper's site (VG) serves market data, not tariffs. Every one keys on the postcode. | §5.9, 2026-09-24 |
 | F11 | The grid company's rules are often the **only** price signal a household has: on Norgespris or a fixed-price contract the energy price is flat and the plan moves loads for the grid's day/night difference alone. They are first-class planning inputs, not a detail of the bill. | - |
 
@@ -32,12 +32,12 @@
 
 1. **Three parties, one owner per fact.** Every component of the household's price belongs to exactly one party - the **grid company** (its tariff: capacity, energy charge by time, fixed fee, its own events), the **supplier contract** (spot, fixed or Norgespris-like agreement, markup, monthly fee, its own time-of-use offer), the **state** (VAT, levies, subsidies and price schemes). The flow asks by party, in that order, and no screen asks for something an earlier party already gave.
 2. **Rules in the repository, facts fetched.** The repository holds the grammar (D2), each country's *rule* as a template without prices, the tax rules, and the source adapters - never a company's prices. *(Tax rates:, §9.)*
-3. **One stored tariff per site**, in `entry.data` (INV-66), built by the flow, the only thing the runtime reads; fetched when the flow opens, renewed by a timer, refetched on reconfigure, **never fetched at start**.
+3. **One stored tariff per site**, in `entry.data` (INV-66), built by the flow, the only thing the runtime reads; fetched when the flow opens, synced monthly by a timer and on demand by `powerplan.refresh_tariff`, refetched on reconfigure, **never fetched at start**.
 4. **Facts stored as published**, with their basis (`vat`, `levies`), provenance (source, URL, fetch date, licence) and validity.
 5. **Taxes applied once**, from the household's tax zone, to the energy chain and the capacity bill alike.
 6. **Every component counted once** across the price source, the grid tariff, the supplier contract and the taxes: each declares its basis, the composer adds only what is missing.
 7. **The grid company's rules are planning inputs and are explained.** Every rule the grid company imposes reaches the plan (D5, D6) through the price curve or the ceiling, and every decision it causes can be said in the household's words (§7).
-8. **Missing is asked, contradictory is shown, nothing is guessed**; every source is quality-checked (§5).
+8. **Missing is asked, contradictory is shown, nothing is guessed**; every source is quality-checked (§5). A field a source gets wrong **consistently and provably** may be corrected by its adapter: the correction and its evidence are recorded, a guard on every fetch fails closed if the deviation changes, and the nightly canary watches it (§5.6).
 9. **What a source cannot say is not supported**; the household falls back to its country's rule template (numbers from the bill) or `custom`.
 
 ## 3. Model
@@ -149,11 +149,11 @@ The flow lists operators from the country's **directory** - an official list wit
 
 ### 5.4 Norway, by customers (NVE counts via Strømpriseridag's list)
 
-**No T1 passes for Norway today**: NVE is partial, Strømpriseridag fails F13, EnerSky and nettleie.io need registration, Elhub's API is not built. Getting one is the first Norwegian task (O16): ask Strømpriseridag to correct its VAT label (its values are fri-nettleie's, excluding VAT and levies), read EnerSky's and nettleie.io's terms, and take Elhub's the day it exists - any of them replaces every per-company row below without a change to the design. Until then, per company:
+**Norway's source (revised the same day): fri-nettleie, fetched from GitHub.** It is the data every Norwegian aggregator is built from, complete where Strømpriseridag is lossy (the rules by hour, `virkedag`/`helg`/holidays and months; every version with `gyldig_fra`/`gyldig_til`; household, cabin and small-business groups; the operator's own page per file), and actively maintained: ≥ 100 commits in 2026 (32 in August), 9 authors this year and 15 contributors, an automated job; 45 of its 75 files updated since December 2025 (each file carries `sist_oppdatert`). The national overview itself counts "a data file on a known format and location" as an API, so it ranks as **T1b** (country-wide, third-party), fetched as one tarball when the flow opens (405 kB, 0.5 s). The `fri_nettleie` adapter reads its basis as published (excluding VAT and levies - no correction needed), credits it (CC BY 4.0), and guards staleness: a company whose file has no version valid today, or whose `sist_oppdatert` is older than twelve months, is shown with that date and its tariff confirmed by the household (rule 8). Strømpriseridag (the same data, lossy, mislabelled) and the per-company APIs (Digin at Elvia and Glitre, Tensio's page) are **nightly cross-checks only**; no household key is needed (O13).
 
 | company | customers | cumulative | best tier found | status |
 |---|---|---|---|---|
-| Elvia | 862 683 | 36.7 % | T3 Digin (`elvia.azure-api.net/grid-tariff/digin`, subscription key) | 401 without key - reachable with one |
+| Elvia | 862 683 | 36.7 % | T3 Digin (`elvia.azure-api.net/grid-tariff/{orgNo}/digin/api/1/…`, the household's own key - Elvia's terms) | 401 without key - reachable with one |
 | BKK | 221 679 | 46.1 % | T4 candidate (server-rendered price page) - to investigate | T5 until then |
 | Lede | 178 080 | 53.6 % | T3 Digin (`elbits.infosynergi.no`) | TLS error, to recheck |
 | Glitre Nett | 150 628 | 60.0 % | T3 Digin (`api.aenergi.no/Glitrenett/gridtariff`, `x-api-key`) | 401 without key |
@@ -178,6 +178,32 @@ NVE (T1, partial) gives every company's steps up to ≈ 10 kW and the energy cha
 | FI | none found | DSO price pages - to survey (Helen verifies but needs nth-highest) | - | none: `custom` |
 | ES, NL, UK | not needed (rule only) | - | - | - |
 
+### 5.6 Quality check
+
+Every adapter, every field: window · metric (`per_day`, `per_period`, `n`, distinct days) · eligibility (hours, days, holidays, months) · price and unit · **basis** (VAT, levies - F13 is why) · validity · holiday definition. A field the source omits is asked (rule 8); a field it gets wrong fails the adapter - unless the error is consistent and proven, in which case the adapter corrects it with a guard that fails closed if the error changes (rule 8; Strømpriseridag's VAT label, §5.4); an adapter that fails falls to the next tier.
+
+### 5.7 Cross-check and canary
+
+A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement opens an issue for the maintainer. Tests in the PR suite never touch the network (D9).
+
+### 5.8 Norway's tariff APIs, every one (kraftsystemet.no, "Nettleie API i Norge", each probed)
+
+The article's own comparison, with what the probe found and the tier:
+
+| API | whole Norway | open | households | tariff description | hourly price | format | probe | verdict |
+|---|---|---|---|---|---|---|---|---|
+| NVE nettleietariffer | yes | yes | yes | partial (fixed-fee steps) | yes | JSON API, per concessionaire | open; steps only up to the example customers (≈ 10 kW); NVE doesn't vouch for the conversions | **T1a, partial**: directory, tax zone (§9), cross-check, not a tariff source |
+| Strømpriseridag | yes (73 companies; hourly for 51) | yes (120 req/h anonymous, 2 000 with a free key) | yes | yes (steps, energy) | yes | JSON REST | figures are fri-nettleie's **excluding** VAT and levies but labelled `vat_included: true` (F13), consistent across the five companies checked; energy only as a two-day hourly series, holidays priced as weekdays | cross-check only (§5.4) |
+| EnerSky | yes, with history, calculation engine, prosumers | no: an API key from its customer portal; priced per metering point, sales contact | yes | yes | yes | OpenAPI v3 (`tariffs.enersky.no/api/v1`, `X-API-Key`) | every path 401 without a key | **T1b, commercial**: only under a project agreement (O16) |
+| nettleie.io (Spotbot) | yes | no: login | yes | yes | yes | JSON REST | `nettleie.io` and `api.nettleie.io` don't resolve | **gone** |
+| Zohm API (Strømradar) | yes | no: registration | yes | ? | yes | REST | its price endpoint says it leaves out fixed fee, capacity and reactive charges | **fails**: no capacity component |
+| Hark.eco | yes | no: paid | yes | yes | ? | GraphQL | bankrupt; continued as Enerlytics (Wattn, NTE), not public | **not available** |
+| 3lbits / Digin standard | no: per implementing company | no: a user account per company | yes | yes | yes | JSON REST, per company | Elvia (`/{orgNo}/digin/api/1/…`, `X-API-Key`), Glitre (`api.aenergi.no`, `x-api-key`) answer 401 without a key; Norgesnett's swagger reachable, paths 404; Lnett "API blocked"; Lede TLS error | **T3** for Elvia and Glitre (O13); the rest to recheck |
+| fri-nettleie | yes | yes | yes | yes | derived | YAML on GitHub, one tarball | matched 12/12 hand-read tables; actively maintained (§5.4) | **T1b, Norway's source** (§5.4) |
+| Elhub | - | - | - | - | - | - | signalled for years; NVE to study DSO reporting to Elhub | **T1a when it exists** |
+
+**Norway today:** fri-nettleie, fetched from GitHub, is the country-wide source (§5.4). The per-company APIs are its cross-checks and the v1.x path to the operators' own data. Elvia's terms settle how its key may be used (O13): "your primary and secondary keys are personal … and must not be shared"; a private user may use the API for "private smart house solution(s)" and not for "competitive or proxy services" - a household entering its own key into its own Home Assistant is that; a key shipped in the repository is not.
+
 ### 5.9 Consumer-facing national sites
 
 Every country's comparison sites were opened and the JSON their pages load read:
@@ -197,24 +223,45 @@ Every country's comparison sites were opened and the JSON their pages load read:
 
 Two findings: the regulators' own consumer sites are the best country-wide sources where no documented API exists (DK, FI, BE), and **a postcode** is what every one of them keys on.
 
-### 5.6 Quality check
+### 5.10 The rest of Europe
 
-Every adapter, every field: window · metric (`per_day`, `per_period`, `n`, distinct days) · eligibility (hours, days, holidays, months) · price and unit · **basis** (VAT, levies - F13 is why) · validity · holiday definition. A field the source omits is asked (rule 8); a field it gets wrong fails the adapter (F13); an adapter that fails falls to the next tier.
+What a household's grid tariff bills, the best source found and its tier. "Lead" is a source seen but not read end to end yet; its WP reads it.
 
-### 5.7 Cross-check and canary
+| country | household grid tariff | grammar | best source found | tier | status |
+|---|---|---|---|---|---|
+| DE | energy + base price per DSO (≈ 860), flat per kWh - no steering signal but money; **§14a Modul 3** (since 2025): HT/ST/NT windows per DSO for a controllable device - the steering signal; §14a dimming | `NoPeak` + a **per-load** grid TOU (below); `ExternalLimit` | Modul 3: GET AG's "Module 3 Export API" (`gridfeepricesheet`: every DSO's sheet in one format, 15-min; commercial, free test access). Flat charges: the Bundesnetzagentur's transparency site (§23b EnWG) and its all-DSO Excel (T6). `variable-netzentgelte.de` (InnoCharge, ene't) loads only statistics - HT/NT as a percentage of ST per DSO, national averages - not a source | T1b (Modul 3, commercial) / T6 | read; Modul 3 needs a source decision (O19) |
+| FR | TURPE, national (CRE); subscribed kVA; HP/HC windows per meter (105 bands, Enedis); Tempo day colours | `ContractedPower(kVA, trip)`; grid TOU per meter; `day_type` events | TURPE amounts: CRE's decision as the rule template. The meter's HC band: Enedis's own open data has none and its page offers no lookup; Enedis Data Connect's contract data carries `offpeak_hours` but is for companies with a SIRET, so a household reaches it through the MyElectricalData gateway (the household's own consent and token; two HA integrations use it) or a Linky TIC integration that reports the current period; asked otherwise. Colours: RTE's Tempo API | rule + T3 (via a gateway) / meter; T1a (Tempo) | read |
+| AT | per network area, set by E-Control's regulation (SNE-VO); **households billed on power from 2027-01-01** (≈ 30 % power / 70 % energy at the start) | `PeakTariff` (15-min) from 2027 | E-Control's Tarifkalkulator sits behind a captcha (Friendly Captcha) - excluded by §5.2's conduct; the SNE-VO's per-area tables (T6) until E-Control publishes data | T6 | read |
+| CH | per municipality and operator (≈ 600), ElCom-supervised; HT/NT | grid TOU; `NoPeak` | ElCom `strompreis.elcom.admin.ch/api/graphql` (live, the site's own backend) and LINDAS linked open data (SPARQL), CSV | **T1a** | reachable |
+| IT | ARERA national tariff; contracted power (3 kW typical, tolerance) | `ContractedPower` | ARERA decisions (national rule template); Portale Offerte open data for supplier offers (O11) | rule / T1a (O11) | national rule |
+| PT | ERSE TAR national; simple / bi- / tri-horário, daily or weekly cycle, summer/winter; contracted kVA | `ContractedPower` + grid TOU | ERSE (national rule template) | rule | national rule |
+| PL | per DSO (5 major), URE-approved: G11/G12/G12w/G13 zones; capacity fee by annual consumption band (fixed) | grid TOU per DSO; `NoPeak` | URE/DSO tariff PDFs | T6 | documents only |
+| CZ | ERÚ national prices (T6); breaker-size fixed fee; **HDO**: the grid switches low tariff per HDO code | grid TOU and a switched window from HDO; `NoPeak` | ČEZ Distribuce's anonymous portal service `dip.cezdistribuce.cz/irj/portal/anonymous/casy-spinani?path=switch-times/signals` - a POST with the household's EAN, meter serial or place, no captcha; per-signal times (boiler, heating) by date (read from the `cez-distribution-hdo` client and three HA integrations); EG.D, PREdi to read | T4 | read; the EAN goes only to the household's own grid company |
+| SK | ÚRSO; dual tariff, tariff programme switching times per DSO | as CZ | ZSDIS: every HDO code's switching times (32 household, 12 business codes, weekday and weekend) sit as a JSON literal in its public page (`household_rates`); the household picks the code on its meter's label. ZSDIS's REST APIs (HDO code per EIC) are for suppliers with a distribution contract. SSD: a 2017 XLS only; VSD to read | T4 (ZSDIS) / T6 | read |
+| HU | MEKH system usage fees (frozen for 2026); H-tarifa (heat pumps, separate meter), controlled tariffs | per-load tariff; `NoPeak` | MEKH decisions | T6 | documents only |
+| SI | **5 time blocks** (seasons Nov–Feb high), an **agreed power per block** per metering point set by the DSO, excess power charged (since 2024-10-01) | `ContractedPower` per block, `on_exceed = surcharge` | national methodology (AGEN) as the rule; the household's own agreed powers and 15-min readings from **Moj elektro's documented OpenAPI** (`api.informatika.si/mojelektro/v1`, the household's own token; a community HA integration uses it) | rule + T3 | read |
+| HR | HEP ODS: Plavi (single rate 0.037608 €/kWh), Bijeli (VT 0.044446 / NT 0.020514 €/kWh), 2026-01-01 | grid TOU; `NoPeak` | HEP ODS tariff sheet | T6 | read (secondary) |
+| RO | ANRE distribution tariff per DSO, yearly | `NoPeak` | ANRE decisions | T6 | documents only |
+| GR | regulated network charges; DEDDIE dual-zone reduced rates (winter night 02–05, midday 12–15) | grid TOU | DEDDIE's published winter/summer schedule, national, as the rule template; its dual-zone checker app sits behind reCAPTCHA and Incapsula - excluded (§5.2) | rule | read |
+| IE | DUoS national (CRU, ESB Networks); night hours national (23–08 winter, 00–09 summer); no household capacity | grid TOU; `NoPeak` | national rule template | rule | national rule |
+| LU | Creos (single DSO): **reference power** categories assigned from history, a **per-kWh surcharge** on energy drawn above it (since 2025-01-01) | new term: overrun energy above a power threshold | ILR's decision and Creos's 2026 guide (T6): categories 3, 7, 12, 17, 27, 43, 70, 100, 150, 200 kW; each kWh above the reference power in a **15-min** mean is charged the surcharge on top of the volumetric fee; a night surcharge 22–06 for storage heating. The household's own Pref is on its bill, on my.creos.net and on **Leneda**, the national data platform, whose API takes the household's own key (two HA integrations use it). Pref is re-assigned monthly from the last 12 months | T6 + T3 (Leneda) | read; grammar gap (O20) |
+| EE | Elektrilevi network packages (day 07–22 weekdays / night, weekends, holidays) | grid TOU; `NoPeak` | Elektrilevi price list (T6); Elering's open dashboard API carries spot prices, not network tariffs | T6 | read |
+| LV | Sadales tīkls: capacity maintenance fee by connection (1-phase 1.26, 3-phase 3.50 € excl. VAT/month from 2026-01-01) + energy | `NoPeak` (fixed fee) | Sadales tīkls | T6 | read (secondary) |
+| LT | ESO: one, two or four time zones; "Efektyvus" plan with a fee per kW of permitted power | grid TOU; fixed per kW | ESO's page: an HTML table, no JSON behind it (Efektyvus with 1.00 €/kW/month of permitted power, Namai with 3.00 €/month; one, two or four zones; day 07–23 weekdays winter, 08–24 summer) | T6 | read |
+| BG | regulated per distribution area (EVN, Energo-Pro, Electrohold) by EWRC decision: day/night, night 22–06 winter, 23–07 summer | grid TOU; `NoPeak` | EWRC decisions (T6); a community HA integration (`bg_electricity_regulated_pricing`) encodes them (T5); no API found | T6 / T5 | read |
+| CY | EAC (single operator): tariff 02 day 09–23 / night 23–09 | grid TOU; `NoPeak` | EAC tariff sheet | T6 | read (secondary) |
+| MT | Enemalta/ARMS: progressive yearly consumption bands, no time of use | D1 `cumulative_tier`; `NoPeak` | ARMS tariff page | T6 | read (secondary) |
+| IS | Veitur, RARIK and others: distribution per kWh (Veitur 11.52 kr before VAT, 2026), urban/rural areas; no household capacity | `NoPeak` | the operators' price lists | T6 | read (secondary) |
 
-A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement opens an issue for the maintainer. Tests in the PR suite never touch the network (D9).
+**A pan-European commercial source.** tounify (Vienna) serves 25 markets through one API (grid operators, postcode mapping - Norway: 70 operators, 5 132 postcodes), at EUR 89–1 350 a month. Like EnerSky it's only usable under a project agreement (O19), and it would be T1b for every country without an official source.
 
-### 5.8 Aggregators assessed
-
-| aggregator | access | verdict |
-|---|---|---|
-| Strømpriseridag | open, 120 req/h anonymous, CC-BY; 73 companies | T1b - **fails** F13 (VAT label) today; derived from fri-nettleie; the first candidate if corrected (O16) |
-| EnerSky | registration; all companies with history, OpenAPI | T1b candidate - terms to read (O16) |
-| nettleie.io | login; all companies | T1b candidate - terms to read (O16) |
-| Zohm (Strømradar) | registration | T1b candidate - not yet assessed |
-| Hark / Enerlytics | paid; Hark bankrupt | not used |
-| Elhub | a national API signalled since 2021, not built; NVE (Oct 2025) to study DSO reporting to Elhub | T1a for all of Norway **when it exists** - the design takes it without change |
+**What the survey adds to the design.**
+1. **Per-load grid tariffs.** DE §14a Modul 3, HU H-tarifa, CZ/SK HDO price or switch *one load's* consumption (a separate meter or a controllable device), not the house's. The grid party gets `per_load` tariffs, and D1/D4 a price curve per load where one applies (TS.7).
+2. **The grid switches a load itself** (HDO ripple control): a window the load can't run outside, read from the source, entering D4 as an external constraint (like §14a dimming, `ExternalLimit`).
+3. **Model gaps:** per-block agreed power with an excess charge (SI) fits `ContractedPower(on_exceed = surcharge)` per period; LU's surcharge is per **kWh** above the reference power in each 15-min mean, `ContractedPower(on_exceed = energy_surcharge)` - the same threshold billed on energy, not a new tariff kind (O20); a household power charge on 15-min windows (AT) fits `PeakTariff`.
+4. **Postcode** again: tounify and the FI and DK regulators key on it (O17). The HDO services don't: ČEZ keys on the EAN or meter serial, ZSDIS on the HDO code printed on the meter - asked in the flow's per-load step and only sent to the household's own grid company.
+5. **The household's own figure is behind its own login.** SI's agreed powers (Moj elektro), LU's reference power (Leneda), FR's HC band (Enedis via MyElectricalData) are the household's data, not a tariff: the flow asks them, with where to read them, and a T3 adapter reads them where the household enters its own token (O13).
+6. **Captchas end two regulators' sites** (E-Control's calculator, DEDDIE's checker): §5.2 holds, AT falls to its regulation's tables (T6, O15), GR to its national schedule.
 
 ## 6. The flow, by party (D8)
 
@@ -223,7 +270,7 @@ Order and words. Titles are questions (D8 §5.15); every screen after the first 
 | # | step | nb title | what it says / asks |
 |---|---|---|---|
 | 0 | postcode | **Hva er postnummeret ditt?** | "Postnummeret finner nettselskapet ditt, prisområdet og avgiftene som gjelder der du bor." Resolves, where the country's directory maps it: the grid company (pre-selected in step 1), the municipality (the tax zone exactly, the tiltakssone included - §9), the price area (D1), the supplier products (O11). Optional: "Hopp over" asks each of those instead (O17). |
-| 1 | grid company | **Hvilket nettselskap har du?** | "Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg." The operators of the country's source, fetched now; "Finner ikke mitt nettselskap" (the rule template) and "Legg inn selv" pinned last. |
+| 1 | grid company | **Hvilket nettselskap har du?** | "Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg." The operators of the country's source, fetched now; "Finner ikke mitt nettselskap" (the rule template) and "Legg inn selv" pinned last. Below the list, a small note crediting the country's sources (§6.1). |
 | 1a | product | **Hvilken nettleie har du hos {operator}?** | only when the operator has several |
 | 1b | tax zone | **Hvilket fylke bor du i?** | only when the operator spans zones; its own counties |
 | 1c | confirm | one question per missing field | the source's gap, the default pre-selected |
@@ -236,6 +283,17 @@ Order and words. Titles are questions (D8 §5.15); every screen after the first 
 | 5 | review | | one hour tonight and one this afternoon, split by party ("Nettleie 23 øre + strøm 71 øre + avgifter 32 øre") |
 
 English mirrors it ("Which grid company do you have?", "What does your supplier add, on top of the grid tariff?", "Do these taxes look right?").
+
+### 6.1 Attribution
+
+As soon as the country is known, the flow credits the sources that serve it - a small note under the grid company step, repeated in the grid summary (1d), in the diagnostics and in the user docs, never a screen of its own. Each source in the registry declares its credit, `attribution = {name, url, licence}`, and the note is one translated template filled from the sources the country's ladder can use:
+
+| language | text |
+|---|---|
+| nb | «Nettleiepriser fra {sources}. Takk!» |
+| en | «Grid tariffs from {sources}. Thank you!» |
+
+`{sources}` lists each by name, linked, with its licence where one requires it - for Norway: «Fri Nettleie (CC BY 4.0)»; Denmark «Energi Data Service og elpris.dk»; Sweden «Eltariff (RISE)»; Belgium «VREG og Fluvius»; the US «OpenEI (NREL)»; Australia «Energy Made Easy (AER)». A source whose licence requires credit (fri-nettleie, Strømpriseridag: CC BY 4.0, "fri bruk med lenke") cannot be registered without it - a registry test enforces it.
 
 ## 7. What the grid company's rules do to plans, loads and prices
 
@@ -279,7 +337,7 @@ The chain adds, in order: supplier components → the grid energy charge (if the
 
 ## 10. Renewal and migration
 
-**Renewal.** `renew_at` = the earlier of (the last version's `valid_to` − 7 days) and (fetched + 30 days); a runtime timer (D7), never at start. Same operator and product; a new `valid_from` appended, a changed version replaced and logged with both tables, nothing removed (INV-52); the entry written without a reload; `tariff_updated` fired. A failure keeps the copy, retries on D1 §5.1's backoff, raises `tariff_stale` once the last version has ended without a successor; a renewal that disagrees with a confirmed field keeps the household's answer and raises `tariff_review`.
+**Renewal - monthly, and on request**. The copy is synced **once a month** - `renew_at` = the earlier of (the last fetch + 1 month) and (the last version's `valid_to` − 7 days) - by a runtime timer (D7), never at start; and whenever the household asks, through the service **`powerplan.refresh_tariff`** (`site`: the entry id or title, every loaded site when omitted; `SupportsResponse.OPTIONAL`), which fetches at once and answers `{source, fetched, added, changed, kept, next_renewal}`. Both do the same thing: the same operator and product from the same tier ladder; a new `valid_from` appended, a changed version replaced and logged with both tables, nothing removed (INV-52); the entry written without a reload; `tariff_updated` fired with what changed. A failure keeps the copy: the timer retries on D1 §5.1's backoff and raises `tariff_stale` once the last version has ended without a successor; the service raises a translated `HomeAssistantError` (`tariff_refresh_failed`, naming the source and the reason) and changes nothing. A renewal that disagrees with a field the household confirmed keeps the household's answer and raises `tariff_review`. A template or `custom` tariff has nothing to fetch: the service answers `{source: "template", added: [], …}`.
 
 **Migration** (at start, no network):
 
@@ -305,8 +363,8 @@ Every domain and cross-cutting concern: what the three-party model changes, and 
 | D4 loads | nothing directly; reasons gain the party | `plan_status` reason keys by party - TS.2 |
 | D5 strategies | plan on the total price; on a flat supplier price the grid TOU is the only signal (F11) | no change in D5; §7's reasons; a test that a Norgespris house still moves the EV to the grid's night - TS.1 |
 | D6 allocation | the ceiling from the grid party; contracted kW from the household (ES, NL) | no change (D-0520 bills the answer) |
-| D7 runtime | renewal timer, no fetch at start, entry writes without reload | TS.2 |
-| D8 flow and surface | §6's order and words; repairs `tariff_stale`, `tariff_review`, `tariff_source_unreachable`; diagnostics carry the copy's provenance (no personal data) | TS.2 |
+| D7 runtime | the monthly renewal timer, no fetch at start, entry writes without reload | TS.2 |
+| D8 flow and surface | §6's order and words; the service `powerplan.refresh_tariff` (D8 §5.7, with `services.yaml` and translations); repairs `tariff_stale`, `tariff_review`, `tariff_source_unreachable`; diagnostics carry the copy's provenance and next renewal (no personal data) | TS.2 |
 | D9 testing | no network in tests: captured fixtures per source, fake sources in the flow, a setup test that fails on any HTTP call; the 12 hand-read NO tables; benchmark houses on fixtures | every TS |
 | D10 forecasts | not affected | - |
 | D11 accounting | savings by party; the counterfactual on the same copy and taxes (INV-69); bills as the household pays them | TS.1, D11 amendment |
@@ -314,11 +372,12 @@ Every domain and cross-cutting concern: what the three-party model changes, and 
 | export (plusskunde) | grid feed-in terms (Tensio: negative energy charge = spot × marginal-loss rate, 6 % winter / 4 % summer); export pays no VAT or levies | `GridTariff.feed_in` where published (fri-nettleie does not; Tensio's PDF does) - Phase 7 |
 | state schemes | Norgespris (settled by the grid company, replaces spot, excludes strømstøtte), strømstøtte (threshold, share) | party 3's schemes, asked; exclusions enforced - TS.1 |
 | customer groups | fri-nettleie has `husholdning`, `fritid` (cabins), `liten_næring`; Norgespris limits differ for cabins | the site asks bolig/hytte once (O12); the group filters products - TS.3 |
+| per-load tariffs | DE §14a Modul 3, HU H-tarifa, CZ/SK HDO price or switch one load's consumption (§5.10) | `GridTariff.per_load`; a price curve per load (D1, D4); HDO windows as an external constraint - TS.7 |
 | location | a coordinate is not an answer; a postcode is, and every regulator's consumer site keys on it (F14) | step 0 (O17): the grid company, the municipality (tax zone), the price area - TS.2 |
 | moving / changing grid company | a new operator is a reconfigure | history continues on windows, level on the new rule - TS.2 |
 | multi-site | each site its own entry and copy | no change |
 | currency and units | øre/kWh, kr/year, SEK, EUR, $/kW, c/kVA/day | parsers convert to major units and the grammar's per-month/per-year; the summary shows the household's units (D8 §5.15) |
-| licences and attribution | fri-nettleie CC-BY-4.0 requires credit; URDB and CDR have terms of use | attribution in the grid summary and `docs/`; terms read per source in its WP |
+| licences and attribution | fri-nettleie and Strømpriseridag are CC BY 4.0 ("fri bruk med lenke"); URDB and CDR have terms of use | every source declares `attribution`; the flow credits the country's sources under the grid company step, in the summary, diagnostics and docs (§6.1); terms read per source in its WP |
 | network, privacy, security | outbound calls to GitHub, NVE, Eltariff hosts, Energinet, VREG, OpenEI, CDR hosts; no personal data sent (no meter id); untrusted input | TLS, timeouts, size caps (≤ 5 MB), `yaml.safe_load`, every parsed tariff through the loader (D2 §2) - TS.2 |
 | source failure or abandonment | a community dataset can stop | the copy keeps working; `tariff_stale` after its last version; the template path always exists; `preset_age.py`'s CI step extended to tax data |
 | rate limits | URDB `DEMO_KEY` 50/day; the rest open | one listing + one document per flow; one renewal per copy |
@@ -390,6 +449,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | a T4 page changed shape | the adapter falls to the next tier; the nightly canary opens an issue | - |
 | a T3 key rejected | the next tier; the household told once | form error `tariff_key_rejected` |
 | renewal fails | copy kept, backoff | `tariff_stale` after the last version ends |
+| `refresh_tariff` fails | copy kept | `HomeAssistantError` `tariff_refresh_failed` (source, reason) |
 | renewal changes a confirmed field | the household's answer kept | `tariff_review` |
 | price-source basis unknown | asked in step 2 | - |
 | tax data older than six months | used, warned | CI step |
@@ -399,7 +459,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 - **INV-70** A company's prices are never shipped in the repository; they are fetched and kept as the site's own copy.
 - **INV-71** A stored price keeps the basis its source published; taxes are applied in one place, from the household's tax zone.
 - **INV-72** Every price component belongs to one party and is counted once across price source, grid tariff, supplier contract and taxes.
-- **INV-73** No tariff fetch at start; the flow and the renewal timer are the only callers.
+- **INV-73** No tariff fetch at start; the flow, the monthly renewal timer and the `refresh_tariff` service are the only callers.
 - **INV-74** No flow screen asks for a component an earlier party already supplied, and every screen after the grid company names what is already covered.
 - **INV-75** A company's tariff comes from the first source tier that exists and passes the quality check, country-wide before company-specific, an API before a file, a file before a document.
 
@@ -413,17 +473,20 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | O4 | the old `vat`/`levy` add-ons become overrides of the state stage | yes |
 | O5 | price sources declare their basis; a total-price entity asks it | yes |
 | O6 | fri-nettleie is Norway's **T5 fallback** (not its source), credited | yes |
-| O7 | renewal timer (§10) | yes |
+| O7 | renewal monthly by a timer, and on demand by `powerplan.refresh_tariff` (§10) | yes |
 | O8 | shipped price files removed one release after migration (§12) | yes |
 | O9 | INV-70 … INV-75 | yes |
 | O10 | the flow ordered by party with §6's words; the grid summary says what the plan does with each rule | yes |
 | O11 | supplier contracts: asked in v1; fetching them (NO Forbrukerrådet, SE Elpriskollen - availability to verify) later | ask in v1, research for v1.x |
 | O12 | the site asks bolig/hytte once to pick the customer group | yes |
-| O13 | T3 keys (Elvia, Glitre): the household enters its own free key, optional, asked only for those companies; never a key shipped in the repository | yes |
+| O13 | T3 keys (Elvia, Glitre, Moj elektro, Leneda, MyElectricalData): never shipped in the repository (Elvia's terms); in v1 not needed for Norway (§5.4); in v1.x the household may enter its own to get the operator's own data or its own agreed or reference power (§5.10) | yes |
 | O14 | T4 "in plain sight" endpoints under §5.2's conduct, each adapter's site terms recorded | yes |
-| O15 | T6 documents need a maintainer's sign-off per adapter (today: VREG's XLSX only, and only if V-test yields no T4) | yes |
+| O15 | T6 documents need a maintainer's sign-off per adapter (candidates: VREG's XLSX, only if V-test yields no T4; Austria's SNE-VO tables; the Bundesnetzagentur's DSO Excel) | yes |
+| O18 | the country's sources are credited in the flow as a small note under the grid company step, and in the summary, diagnostics and docs (§6.1) | yes |
+| O19 | commercial country-wide APIs (EnerSky for Norway; tounify for 25 markets) only under a project agreement, never charged to a household | yes |
+| O20 | LU: D2's `ContractedPower` gains `on_exceed = energy_surcharge` (kWh above the threshold per 15-min mean; a night variant 22–06), rather than a new tariff kind; the planner treats the threshold as a soft ceiling priced per kWh | yes |
 | O17 | the flow asks the **postcode** first (optional, skippable) to pre-select the grid company and settle the tax zone and price area; it is sent only to the country's official directory (§5.9), stored in the entry, and never to a third party | yes |
-| O16 | Norway's T1: contact Strømpriseridag about the VAT label; read EnerSky's and nettleie.io's terms; take Elhub's API when it exists | yes - research in TS.3 before any per-company adapter beyond Elvia/Glitre/Tensio |
+| O16 | Norway: fri-nettleie from GitHub (T1b, replacing the earlier Strømpriseridag choice); Strømpriseridag and the per-company APIs as nightly cross-checks; EnerSky only under a project agreement; Elhub's API when it exists | decided |
 
 ## 16. Alternatives considered (steelmanned)
 
@@ -436,7 +499,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 7. **Keep one add-on list and reword it.** *For:* least change. *Against:* the options are the problem (F10). **Rejected (O10).**
 8. **Ignore taxes for control.** *For:* VAT does not change the order of hours. *Against:* export and self-consumption are taxed differently; levies are flat per kWh; a capacity step costs VAT too. **Rejected.**
 9. **Ask the household for its whole bill.** *For:* exact for that household. *Against:* the question the UX review removed (HLD §7.9 (9)); stale after the next change. **Kept only as the template fallback.**
-10. **One commercial country-wide API for Norway** (EnerSky, nettleie.io). *For:* every company, with history, one adapter, T1 by §5's own ordering. *Against:* registration and commercial terms, and a third party between the household and its grid company whose conversions we cannot see. **Open (O16)** - the design takes it as a T1b source unchanged if its terms and quality pass.
+10. **One commercial country-wide API for Norway** (EnerSky; nettleie.io is gone). *For:* every company, with history, one adapter, T1 by §5's own ordering. *Against:* registration and commercial terms, and a third party between the household and its grid company whose conversions we cannot see. **Open (O16)** - the design takes it as a T1b source unchanged if its terms and quality pass.
 11. **Ship a project-wide key for T3 APIs.** *For:* no key step for the household; Elvia alone covers 36.7 % of Norwegian customers. *Against:* a key in a public repository is published, shared by every install's rate limit, and very likely against the API's terms. **Rejected (O13).**
 
 ## 17. Work packages (replace PLAN 4.6b, 4.6c)
@@ -444,8 +507,9 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | WP | produces | exit |
 |---|---|---|
 | TS.1 Model, composition, first cleanup | `HouseholdPrice` by party, `Basis`, tax zones and tax data (O3), the chain by party (§8), D2 `spec()`; price-source basis (O5); rules moved to `core/tariffs/rules/`; WP4.6 copies and add-ons migrated (§10); `_preset_components`/`_preset_modifiers` and `includes` removed (§12); D11 savings by party | one Tensio TS month billed and composed identically from excl-VAT and incl-VAT copies; no component counted twice across every D1 source × basis; a Norgespris house still moves the EV to the grid's night; the reference house migrates offline |
-| TS.2 Source framework, flow by party, renewal | the ladder and registry (§5.1), directories (§5.3), the postcode step and its resolvers (O17), the nightly canary (§5.7), §6's steps and words (en, nb), the grid summary's "what the plan does", reasons by party (§7), renewal and repairs (§10), `_RECOMMENDED` and the grid/state add-ons removed from the supplier step (§12); D12's price stack by party | the three-party walk in both languages; no screen offers an earlier party's component (INV-74); no HTTP at setup; a fake source at each tier falls to the next |
-| TS.3 Norway | O16's T1 research first; the Digin adapter (T3: Elvia, Glitre, Lede, Lnett, Norgesnett), Tensio's page (T4), BKK/Arva/Linja/Fagne pages investigated for T4, NVE directory and zones, fri-nettleie (T5, the parked parser); customer group | the 12 hand-read tables through whichever tier serves each company; Tensio TN asks the county, Elvia does not |
+| TS.2 Source framework, flow by party, renewal | the ladder and registry (§5.1) with each source's `attribution` and the credit note (§6.1), the monthly renewal timer and the `refresh_tariff` service (§10), directories (§5.3), the postcode step and its resolvers (O17), the nightly canary (§5.7), §6's steps and words (en, nb), the grid summary's "what the plan does", reasons by party (§7), renewal and repairs (§10), `_RECOMMENDED` and the grid/state add-ons removed from the supplier step (§12); D12's price stack by party | the three-party walk in both languages; `refresh_tariff` appends a new version, replaces a corrected one, keeps the rest and answers what it did, and leaves the copy untouched when the source fails; the timer fires one month after the last fetch or seven days before the last version ends, whichever is first; the credit note shown under the grid company step for every country with a source, and a registry test that no licence-requiring source lacks its credit; no screen offers an earlier party's component (INV-74); no HTTP at setup; a fake source at each tier falls to the next |
+| TS.3 Norway | `fri_nettleie` (T1b, the parked parser) with its staleness guard, NVE zones; the nightly cross-check against Strømpriseridag, Digin (Elvia, Glitre - the maintainer's own keys, CI only) and Tensio's page; customer group | the 12 hand-read tables reproduced; Elvia's 17 May priced at the holiday rate; a stale file shown with its date and confirmed; Tensio TN asks the county, Elvia does not |
 | TS.4 Sweden, Denmark | `eltariff` (T1a), `elpris_dk` (T1a: grid areas and national taxes) with `datahub_pricelist` (T1a) as its cross-check; Elpriskollen and SE non-Eltariff companies investigated for T1–T4 | Göteborg's seasonal peak tariff; Radius's winter table |
 | TS.5 Belgium, US, Australia | Fluvius areas (T1a), V-test's calculation captured (T1a) else VREG XLSX (T6, O15); sahkonhinta.fi's directory for FI (postcode → grid company); `openei_urdb`, `cdr_energy` (T1a); D2 `day` unit, power factor; `tou_urdb` paste removed | VREG rates equal the eight PDFs; APS summer and winter; a CDR plan with its confirmations |
+| TS.7 Europe | per-load grid tariffs (D1, D4) and grid-switched windows (HDO); Switzerland (ElCom, T1a), Czechia (ČEZ HDO, T4) and Slovakia (ZSDIS HDO codes, T4) adapters; Austria on the SNE-VO tables (T6, O15) until E-Control publishes data; national rule templates for IT, PT, IE, FR (with Tempo events); SI per-block contracted power; LU's `energy_surcharge` (D2, O20); DE Modul 3 after reading GET AG's terms | a §14a Modul 3 heat pump billed on its own curve beside the house; an HDO water heater that never runs outside its window; ElCom's tariff for one municipality reproduced |
 | TS.6 Retire shipped prices | §12's removals; backtest and benchmark houses on fixtures; `preset_age.py` on rules and tax data | the house on its fetched copy; no company price in the repository (INV-70) |
