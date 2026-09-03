@@ -905,7 +905,7 @@ def _markdown_in(config: dict[str, Any], view: dict[str, Any], heading: str) -> 
 
 async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
     """Need, the chosen runs, coverage and the strategy's own words (D12 §5.9)."""
-    config = build([_nordic()], "2026.8.0", TEXTS["nb"], language="nb")
+    config = build([_nordic()], "2026.9.0", TEXTS["nb"], language="nb")
     why = _markdown_in(config, _subview(config, "tank"), TEXTS["nb"]["section_why"])
     text = await _render(live_house, why)
     assert "**Behov:** 2,96 kWh før 06:00" in text
@@ -921,7 +921,7 @@ async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
 
 def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
     """G5: the subview's next-run badge reads `next_run` and hides while running."""
-    config = build([_nordic()], "2026.8.0", EN)
+    config = build([_nordic()], "2026.9.0", EN)
     badges = [
         b for b in _subview(config, "tank")["badges"] if b["entity"] == "sensor.tank_plan_status"
     ]
@@ -945,7 +945,7 @@ def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
 
 def test_19_the_month_s_money_is_the_sensor_s_own_state() -> None:
     """N7, A5: `entity` cards for cost and savings; only the energy counter is a statistic."""
-    config = build([_nordic()], "2026.8.0", EN)
+    config = build([_nordic()], "2026.9.0", EN)
     month = _section(_view(config, "overview"), EN["section_month"])["cards"]
     assert [c["type"] for c in month[1:3]] == ["entity", "entity"]
     assert month[1] == {
@@ -970,7 +970,7 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
 
     Now's runs list (N8) went: the appliances card's lanes show every run (§5.12).
     """
-    config = build([_nordic()], "2026.8.0", EN)
+    config = build([_nordic()], "2026.9.0", EN)
     assert "custom:powerplan-runs-card" not in {card["type"] for card in _cards(config)}
     history = _view(config, "history")
     per = _section(history, EN["section_per_appliance"])["cards"]
@@ -994,7 +994,7 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
 
 def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
     """D1, D7: the picker opens as the Energy dashboard's does; the graph's legend says Cost and Savings."""
-    history = _view(build([_nordic()], "2026.8.0", EN), "history")
+    history = _view(build([_nordic()], "2026.9.0", EN), "history")
     assert history["footer"]["card"]["vertical_opening_direction"] == "up"
     graph = next(
         card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"
@@ -1007,7 +1007,7 @@ def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
 
 def test_19_the_subview_s_ready_by_row_and_plan() -> None:
     """A2, A4, A6: the row has a clock icon and its own height; no bare kWh badge; "why" is auto-height."""
-    config = build([_nordic()], "2026.8.0", EN)
+    config = build([_nordic()], "2026.9.0", EN)
     sub = _subview(config, "tank")
     ready = next(
         c for c in _section(sub, EN["section_control"])["cards"] if c["type"] == "entities"
@@ -1150,7 +1150,7 @@ def test_20_a_price_slot_carries_its_energy_part_and_its_price_without_the_fixed
 
 def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
     """The price card beside the hour; the Plan card's rail equals the appliances card's (R2)."""
-    config = build([_nordic()], "2026.8.0", EN)
+    config = build([_nordic()], "2026.9.0", EN)
     now = _view(config, "overview")
     price = _section(now, EN["section_price"])["cards"]
     assert price[0]["badges"][0]["entity"] == "binary_sensor.home_prices_tomorrow"
