@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | HLD section | §6.1 |
-| Depends on | D3 (month-to-date consumption for context), D10 (projected consumption, optional), D2 (preset-supplied energy components) |
+| Depends on | D3 (month-to-date consumption for context), D10 (projected consumption, optional), D13 (the tariff copy by party and the country module's state stage; was D2's preset-supplied energy components) |
 | Consumers | D5 (curves), D6 (zone cost comparison, event load limits via D6 constraints), D7/D8 (price sensors, events, health) |
 | Invariants owned | INV-4 … INV-8, INV-51 |
 
@@ -76,7 +76,7 @@ Rows to add, in order of Home Assistant installs (HA analytics). Each moves into
 | `frank_energie` | `frank_energie` | attributes `prices` and `tomorrow_prices`: `[{from, till, price}]`, EUR/kWh | 15 | 1 262 |
 | `cz_energy_spot_prices` | `cz_energy_spot_prices` | payload read in WP4.7 | - | 1 060 |
 | `tibber_prices` | `tibber_prices` (HACS) | payload read in WP4.7 | - | 996 |
-| `stromligning` | `stromligning` | payload read in WP4.7; its price already includes the Danish grid tariff, so the DK preset's `tou_schedule` is not stacked on it (D2 §6) | - | 575 |
+| `stromligning` | `stromligning` | payload read in WP4.7; its price already includes the Danish grid tariff, levies and VAT, and its **basis** says so, so the chain adds neither the grid's energy charge nor the state stage on it (D13 §8) | - | 575 |
 
 An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, energy, magnitude)`, where `Interval(start, end | None, value)` is the triple before normalisation, and `providers/prices/base.normalise` is called once by `EntitySource` for every row (D-0088). The unit comes back *with* the intervals and not from config, since several rows carry it in an attribute the user can change - the HACS sensor's `price_type` is `kWh`, `MWh` or `Wh`, and a `Wh` sensor is refused instead of guessed. In `raw_today` / `raw_tomorrow` a `value` of `None` is an hour the sensor couldn't price (upstream `_calc_price` returns `None` for `None` or infinity), so it's a hole, never a zero price. `registry.py`'s `for_platform(platform)` is what the prices step pre-selects from.
 
@@ -93,13 +93,10 @@ An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, en
 ```
 custom_components/powerplan/core/pricing/
 ├── __init__.py
-├── model.py         Slot, PriceCurve, Confidence, Carrier, Direction, RawSlot, Field/FieldKind/Schema   (Money, Slot and PriceCurve themselves live in core/model.py, HLD §5 - D2 and D11 use them without importing D1 - and are re-exported here)
+├── model.py         Slot, PriceCurve, Confidence, Carrier, Direction, RawSlot, Field/FieldKind/Schema   (Money, Slot and PriceCurve live in core/model.py so D2 and D11 use them without importing D1, HLD §5; re-exported here)
 ├── context.py       PriceContext, HolidayCalendar protocol
 ├── modifiers/       base.py, vat.py, levy.py, spot_scale.py, fixed_price.py, subsidy_threshold.py,
-│                    tou_schedule.py, tou_urdb.py, day_type.py, cumulative_tier.py, export_price.py, registry.py
-│                    (tou_schedule.py holds TimeFilter/HolidayMode/TouPeriod until D2's grammar
-│                     lands in WP0.3, then imports them - D-0036; tou_urdb.py is the URDB 12×24
-│                     importer and its inverse, not a modifier - it registers nothing)
+│                    tou_schedule.py, day_type.py, cumulative_tier.py, export_price.py, registry.py
 ├── holidays.py      CountryCalendar over the `holidays` package, NO_HOLIDAYS, calendar_for()   (D-0070)
 ├── forecasters/     base.py (protocol + chain()), carry_known.py, same_weekday.py, synthesised.py, registry.py
 ├── events.py        Event, EventStore
@@ -112,8 +109,8 @@ custom_components/powerplan/providers/prices/
 ├── base.py          PriceSource protocol (async), fetch wrappers, error taxonomy
 ├── nordpool_action.py   core Nord Pool `get_prices_for_date`
 ├── entity.py        EntitySource + formats/ (one adapter per ATTRIBUTES row above)
-├── action.py        ActionSource + the one read-only response-action call site (ACTION rows - D-0101)
-├── markets.py       MarketClock per market and the Nord Pool area table: the only timezone names in the integration (D-0100)
+├── action.py        ActionSource and the one read-only response action call site (ACTION rows, D-0101)
+├── markets.py       MarketClock per market and the Nord Pool area table, the only timezone names in the integration (D-0100)
 ├── manual.py        flat or daily prices typed by the user (gas, oil, district heat, "my fixed contract")
 └── formats/         nordpool_hacs.py, energidataservice.py, entsoe.py, tibber_action.py, energyzero_action.py,
                      octopus_energy.py, amber.py, pvpc.py, comed.py, tge.py, hourly_attributes.py, generic_list.py
@@ -268,21 +265,31 @@ build_curve(raw, modifiers, forecaster, ctx, horizon, now):
 ```
 Modifiers are pure functions of `(slot, ctx)`, so composition is deterministic and unit tested per modifier. Component names are fixed strings so dashboards can stack them.
 
+**The chain is built by party** from the site's tariff copy (D13 §8, INV-72), not typed in as add-ons: (1) the **supplier**'s components - `fixed_price` (an agreement, Norgespris), `spot_scale`, the supplier's own `tou_schedule`, `cumulative_tier`, `day_type`; (2) the **grid company**'s energy charge, a `tou_schedule` built from `GridTariff.energy`, unless the price source's basis already includes the grid; (3) the **state** stage - `levy` and `vat` at the country module's values for the slot's **date** and the site's zone (INV-71), `subsidy_threshold` for a scheme the household is in - on whatever the basis doesn't already include. Each price source declares `basis ⊆ {spot, grid, vat, levies}` (`nordpool_action`: spot, `stromligning`: all four, a total-price entity: asked). Every component carries its party:
+
+| component | party |
+|---|---|
+| `spot`, `supplier`, `tier`, `day_type` | supplier |
+| `grid_energy` | grid company |
+| `levy`, `vat`, `subsidy` | state |
+
+A load with **its own tariff** (D13 §18 G13: a §14a Modul 3 device, an H-tarifa meter, a heating meter) gets its own curve: the same chain with that tariff's grid component, built per tariffed load and handed to D5 for that load only.
+
 ### 5.4 The v1 modifiers
 
 | key | component | rule |
 |---|---|---|
-| `vat` | `vat` | `rate × Σ(components in applies_to)`; applies_to default = all present components. NO 25 % (households in Nord-Norge are exempt → `rate 0` in those presets), DK 25 %, DE 19 %, NL 21 %, ES 21 %, UK 5 %, US none |
-| `levy` | `levy` | fixed per kWh with optional `months` (NO elavgift reduced Jan–Mar), optional `applies_above_mtd_kwh` |
+| `vat` | `vat` | `rate × Σ(components in applies_to)`; applies_to default = all present components. The rate is the **country module's for the slot's date and zone** (D13 §9.1: GB 0 % from 2026-10-01, Nord-Norge 0 %, CY 9 % to 2027-03-31) - never typed where the module knows it; `tiers` on a cumulative basis give Portugal's 6 % on the first 200 kWh (300 for five or more) per 30 days (G17) |
+| `levy` | `levy` | fixed per kWh with optional `months` (NO elavgift reduced Jan–Mar), optional `applies_above_mtd_kwh`; the amount is the country module's for the slot's date (G16) |
 | `spot_scale` | `supplier` | `spot × (mult − 1) + offset` - supplier markup / certificates |
 | `fixed_price` | replaces `spot` | Norgespris: `spot ← fixed` while `ctx.mtd_kwh_at(slot.start) < cap_kwh_per_month`; above the cap the spot stays. Future slots use the projected mtd → the curve *shows* where the cap will bite. The fixed price is entered **ex VAT** and `vat` follows in order (NO: 0.40 → 0.50 NOK/kWh incl. VAT) |
 | `subsidy_threshold` | `subsidy` (negative) | strømstøtte: `−share × max(0, spot − threshold)`; negative spot handled per NO rules (`spot < 0 → kraft = threshold` in the pyscript - kept as an option `negative_rule`) |
-| `tou_schedule` | `grid_energy` | periods with `TimeFilter` (months × weekdays × hours × holidays) → price; first match wins; `fallback` price. Importer in `tou_urdb.py`: `from_urdb` turns `energyweekdayschedule`/`energyweekendschedule` 12×24 + `energyratestructure` into periods - one per (period, day kind, months sharing an hour pattern), contiguous hours merged, never wrapping past midnight, the first tier's `rate + adj` as the price; `to_urdb` is its inverse, which is what §9 7's round trip checks |
-| `day_type` | `day_type` (may be a multiplier applied to `spot`) | mapping `{type: DayTypeRate(price \| multiplier)}` looked up via `ctx.day_type_at(local date)`; `price` is the type's own surcharge, `multiplier` writes `spot × (multiplier − 1)`. `fallback` is the **key** of a configured type - Tempo's blue - used for an unannounced day and for an announced type this site has no rate for (D-0073) |
+| `tou_schedule` | `grid_energy` (the grid's charge, from the copy) or `supplier` (a supplier's own offer) | periods with `TimeFilter` (months × weekdays × hours × holidays, and D2's standard-time `clock`, G11) → price; first match wins; `fallback` price. Importer in `tou_urdb.py`: `from_urdb` turns `energyweekdayschedule`/`energyweekendschedule` 12×24 + `energyratestructure` into periods - one per (period, day kind, months sharing an hour pattern), contiguous hours merged, never wrapping past midnight, the first tier's `rate + adj` as the price; `to_urdb` is its inverse, which is what §9 7's round trip checks |
+| `day_type` | `day_type` (may be a multiplier applied to `spot`) | mapping `{type: DayTypeRate(price \| multiplier)}` looked up via `ctx.day_type_at(local date)`; `price` is the type's own surcharge, `multiplier` writes `spot × (multiplier − 1)`. `fallback` is the **key** of a configured type - Tempo's blue - used for an unannounced day and for an announced type this site has no rate for (D-0073). *(G12)* A `DayTypeRate` may carry `periods` (a price per `TimeFilter` within the type - Tempo's 3 colours × HP/HC), and `day_starts_min` moves the day's start (Tempo: 06:00) |
 | `cumulative_tier` | `tier` | `[(upto_kwh, price)]`, the first step the running total has not passed, written as an **additive** component (tiers are differences from the base rate); `basis` reads `ctx.mtd_kwh_at` (default) or `ctx.ytd_kwh_at`, so US monthly baselines and the Danish reduced tax above 4 000 kWh/year both fit; the boundary belongs to the step above (D-0072) |
-| `export_price` | builds the **export** curve (writes `spot`) | `fixed` · `spot_minus(amount)` · `spot_times(share)` · `from_source` - the import modifiers are *not* applied to export unless listed, so the export curve is a second `build_curve` call with `direction=EXPORT` and this modifier first |
+| `export_price` | builds the **export** curve (writes `spot`) | `fixed` · `spot_minus(amount)` · `spot_times(share)` · `from_source` · *(G18, Phase 7)* `net_metering` (valued at the import price up to the period's imported kWh - US NEM, BE-WAL's old compensation) - the import modifiers are *not* applied to export unless listed, so the export curve is a second `build_curve` call with `direction=EXPORT` and this modifier first |
 
-No modifier clamps at zero (INV-51). A preset's `energy_components` (D2) pre-fills `tou_schedule` and `levy`.
+No modifier clamps at zero (INV-51). Nothing is pre-filled into an add-on: the grid's charge comes from the tariff copy and the state stage from the country module (D13 §8, §12).
 
 ### 5.5 Forecasters
 
@@ -316,19 +323,19 @@ A local day has 23, 24 or 25 hours, so 92/96/100 quarter slots. Slot arithmetic 
 
 The household sees one question, **"Hvilken strømavtale har du?"** (spot · Norgespris · fixed), and only what that answer needs (D8 §5.15).
 
-| part | design | evidence today |
-|---|---|---|
-| spot | markup and fee: the markup in the currency's minor unit per kWh - øre (NOK, DKK), öre (SEK), cent (EUR) - and the fee in kr/mnd; stored in major units as a decimal string (D-0123) (CTL-3) | money boxes carry no unit (`flow/questionnaire.py:85` drops `per_kwh`) or `<CUR>/kWh` (`flow/steps.py:481, 594`) |
-| Norgespris | the `fixed_price` modifier; its `price` is **required** and refused empty. The cause of the review's empty price is the renderer, not the modifier: `fixed_price.price` is `required` with no default (`core/pricing/modifiers/fixed_price.py:35`), and `render()` makes every field `vol.Optional` (`flow/questionnaire.py:127-134`). From U.2 a field that is required and has no default renders `vol.Required` with none (D8 §9 21) | - |
-| fixed | the price in the minor unit per kWh | `flow/steps.py:475-485` |
-| price area | from the Nord Pool entry's own entities (`flow/steps.py:419-439`, as today), shown with its region name ("NO3 – Midt-Norge") through `selector.nordpool_area` translations. Not from lat/long: no area map exists in the repository (CTL-9) | raw codes: `render()` asks `selector.nordpool_area`, which no translation file has (`flow/questionnaire.py:164`) |
-| currency, time zone | from HA and never shown; the Nord Pool step's `currency` field goes (HUB-2) | `nb.json` `config.step.prices_nordpool.data.currency` |
-| Nord Pool label | "Nord Pool (via Nord Pool-integrasjonen)" (HUB-20) | `nb.json` `selector.price_source.options.nordpool_action` "Nord Pool (innebygd)" |
-| VAT | from the country, override under Avansert as a box in % - not a slider, a rate need not be whole - stored as the fraction `vat.rate` declares (CTL-2) | a fraction box, unit dropped (`flow/questionnaire.py:83-87`) |
-| the add-on toolkit | tiers, time of use, day types, levies: a follow-up behind "Er strømavtalen din spesiell?". **Each add-on is its own step id `modifier_<key>`**, so each has its own question title, description and field help (HUB-7, HUB-8, HUB-21) - translations are keyed by step id, and one shared `modifier_options` step is why the titles are keys and `fallback`'s help is shared today (`config_flow.py:502-512`). The steps follow the order the options are **listed**, not the order they were ticked (HUB-3; `config_flow.py:492` keeps the submission order under a list sorted by key, `core/pricing/modifiers/registry.py:43-45`). A `SELECT` field's options are translated under `selector.modifier_<key>_<field>` (HUB-10: `cumulative_tier.basis` shows `month`/`year`) | - |
-| lists | `object`-selector forms (CTL-6): each row converted to the stored shape by the modifier's own `from_options` (WP1.1 above), so `entry.data` does not change; pre-filled on a reconfigure, which D-0330 left out (HUB-9) | a bare `ObjectSelector` (`flow/questionnaire.py:96`); no `values` passed (`config_flow.py:510`) |
-| the grid energy charge | comes with the grid company (D2 §6), so its add-on is not offered before the tariff step (HUB-3) | `config_flow.py:435-580` asks modifiers before the tariff |
-| export, other heat sources | follow-ups asked only when they apply: the export amounts after a mode other than "Jeg eksporterer ikke" (HUB-17; `flow/steps.py:540-555` always renders them); heat sources behind "Varmer du også med ved, pellets, olje eller fjernvarme?" in the word "varmekilde" | - |
+| part | design |
+|---|---|
+| spot | markup in the currency's minor unit per kWh (øre for NOK and DKK, öre for SEK, cent for EUR) and the fee in kr/mnd, stored in major units as a decimal string (D-0123, CTL-3) |
+| Norgespris | the `fixed_price` modifier, its `price` is **required** and refused empty. A field that's required with no default renders `vol.Required` without one (D8 §9 21) |
+| fixed | the price in the minor unit per kWh |
+| price area | from the Nord Pool entry's own entities, shown with its region name ("NO3 – Midt-Norge") through `selector.nordpool_area` translations. Not from lat/long, there is no area map in the repo (CTL-9) |
+| currency, time zone | from HA and never shown (HUB-2) |
+| Nord Pool label | "Nord Pool (via Nord Pool-integrasjonen)" (HUB-20) |
+| VAT | from the country module and the zone, **never asked** where it knows the rate (D13 §9.1). The state step states it with its source, an override lives in the options flow (O4) as a % box stored as the fraction `vat.rate` declares (CTL-2) |
+| the add-on toolkit | tiers, time of use, day types, levies: a follow-up behind "Er strømavtalen din spesiell?". **Each add-on is its own step id `modifier_<key>`**, so each has its own title, description and field help (HUB-7, HUB-8, HUB-21) - translations are keyed by step id. The steps follow the order the options are **listed**, not the order they were ticked (HUB-3). A `SELECT` field's options are translated under `selector.modifier_<key>_<field>` (HUB-10) |
+| lists | `object` selector forms (CTL-6), each row converted to the stored shape by the modifier's own `from_options`, so `entry.data` doesn't change, and pre-filled on reconfigure (HUB-9) |
+| the grid energy charge | comes with the grid company's tariff copy (D13), so **never an add-on** (HUB-3, D13 §12) |
+| export, other heat sources | follow-ups asked only when they apply: the export amounts after a mode other than "Jeg eksporterer ikke" (HUB-17), heat sources behind "Varmer du også med ved, pellets, olje eller fjernvarme?" in the word "varmekilde" |
 
 The table below is the data model.
 
@@ -344,16 +351,16 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 | *(Sensor)* Tomorrow's entity | entity selector, pre-filled from the same device | only for rows that publish tomorrow separately (`octopus_energy`) |
 | Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"); Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
 | *(Fixed)* Price per kWh | number in site currency | - |
-| What is added on top? | multi-select with plain labels: **VAT** · **Grid energy charge (day/night or time-of-use)** · **Taxes / levies** · **State scheme (Norgespris)** · **State subsidy (strømstøtte)** · **Supplier markup** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** | pre-ticked from the D2 preset's `energy_components` and the country (NO: VAT + grid + levy + Norgespris; DK: VAT + grid + levy; ES/IT/FR/UK: VAT + grid; US: none) |
-| *(per ticked item)* sub-form | VAT %; grid periods editor pre-filled from preset or "day 06–22 / night" template; levy per kWh; Norgespris price + cap; subsidy threshold + share; markup; tiers; day-type entity + mapping | preset / country defaults with a "source: <DSO>" hint |
+| *(D13 §6 step 2a)* What does your supplier add, on top of the grid tariff? | opens by naming what the grid company's tariff already covers; multi-select: **Supplier markup** · **Monthly fee** · **The supplier's own time-of-use offer** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** - nothing of the grid's or the state's | none pre-ticked; Norgespris is an agreement (step 2), strømstøtte a scheme (step 3) |
+| *(per ticked item)* sub-form | markup; monthly fee; the supplier's periods; tiers; day-type entity + mapping | none |
 | Export | select: **I don't export** · **fixed** · **spot minus** · **spot × share** · **from a sensor** | none |
 | Other carriers | repeatable: gas / district heat / oil / pellets → **fixed** or **daily from a sensor** | none. A follow-up behind "Varmer du også med ved, pellets, olje eller fjernvarme?", and in the household's word "varmekilde" |
 
-Review text (INV-67): "Tomorrow's prices come from Nord Pool NO3 at about 13:00. Your price is spot + 25 % VAT + Tensio's grid charge (0.36 kr day, 0.23 kr night) + 1 øre levy, or 50 øre fixed while you are under 5 000 kWh this month. If Nord Pool is unreachable, powerplan keeps planning with yesterday's shape and the grid charge."
+Review text (INV-67), by party: "Tomorrow's prices come from Nord Pool NO3 at about 13:00. Tonight at 23:00: grid 23 øre (Tensio) + power 71 øre (spot + your supplier's 4 øre) + taxes 32 øre (VAT 25 %, forbruksavgift, Enova). If Nord Pool is unreachable, powerplan keeps planning with yesterday's shape and the grid charge."
 
 Advanced: `max_age_h` (12), `horizon_h` (48), `fx_rate`, hysteresis policy fields, publication time override, retention days.
 
-Validation: currency mismatch without `fx_rate` refused; VAT > 30 % warns; a `tou_schedule` whose periods do not cover the week is refused ("a gap Tuesday 02:00–03:00"); `fixed_price` cap ≤ 0 refused; `fixed_price` together with `subsidy_threshold` refused (Norgespris and strømstøtte are mutually exclusive by law).
+Validation: currency mismatch without `fx_rate` refused, a VAT override > 30 % warns, a `tou_schedule` whose periods don't cover the week is refused ("a gap Tuesday 02:00–03:00"), `fixed_price` cap ≤ 0 refused, and `fixed_price` together with `subsidy_threshold` refused (Norgespris and strømstøtte are mutually exclusive by law).
 
 ---
 
@@ -384,24 +391,30 @@ Entities (rendered by D8): `sensor.<site>_price` (state = current import total, 
 
 ## 9. Tests that must exist before merge
 
-1. Every format adapter parses a captured fixture (one per table row) into normalised `RawSlot`s; unit and currency handled; DST day fixtures for at least `nordpool_hacs` and `octopus_energy`. **WP1.2** covers the two rows it implements, from hand-written fixtures under `tests/fixtures/formats/` - the reference house runs the *core* Nord Pool integration, so a HACS dump cannot be captured from it and a DST day cannot be captured on demand; each file names its upstream documentation in a `source` key (D-0081). **WP4.4** covers the remaining rows the same way - one payload per row, `octopus_energy`'s 25-hour day and a `pvpc` one for its `price_02h_d` - and adds two tests the table itself is the input to: `test_registry_table.py` parses this §2 table out of the LLD and fails if a row has no registered adapter, no fixture, a different `platform`, or if an adapter is registered that §2 does not name.
-2. `never_on_the_hour` - 10 000 random schedules never fire within ±60 s of HH:00.
-3. A restart with a complete store performs zero fetches; a hole triggers exactly one.
-4. Composition: components sum to total; modifier order respected; each modifier changes only its component.
-5. `fixed_price` with cap: past slots below cap fixed, projected crossing mid-month switches future slots to spot at the right slot.
-6. `subsidy_threshold` including the negative-spot rule.
-7. `tou_schedule`: Spanish 2.0TD with national holidays as `as_sunday`; Danish 3.0 with winter/summer; URDB 12×24 import round-trips.
-8. `day_type` with Tempo events; unknown type → fallback.
+1. Every format adapter parses a fixture (one per table row) into normalised `RawSlot`s, unit and currency handled, DST day fixtures for atleast `nordpool_hacs` and `octopus_energy`. The fixtures are written by hand under `tests/fixtures/formats/` - the reference house runs the *core* Nord Pool integration so a HACS dump can't be captured there, and a DST day can't be captured on demand - and each names its upstream documentation in a `source` key (D-0081). `octopus_energy`'s 25-hour day and a `pvpc` one for `price_02h_d` included. `test_registry_table.py` parses §2's table out of this LLD and fails if a row has no registered adapter, no fixture or another `platform`, or if an adapter is registered that §2 doesn't name.
+2. `never_on_the_hour`: 10 000 random schedules never fire within ±60 s of HH:00.
+3. A restart with a complete store does zero fetches, a hole triggers exactly one.
+4. Composition: components sum to total, modifier order respected, each modifier only changes its component.
+5. `fixed_price` with cap: past slots under the cap fixed, a projected crossing mid-month switches future slots to spot at the right slot.
+6. `subsidy_threshold` including the negative spot rule.
+7. `tou_schedule`: Spanish 2.0TD with national holidays `as_sunday`, Danish 3.0 with winter/summer, URDB 12×24 import round-trips.
+8. `day_type` with Tempo events, unknown type → fallback.
 9. `cumulative_tier` on projected mtd.
-10. Forecasters: with 2 weeks of history → `ESTIMATED` weekday profile; with none → `SYNTHESISED` floor; the curve always covers the horizon (INV-5).
-11. Stale marking after `max_age`; hysteresis doubles (§5.7).
-12. Negative prices propagate unchanged through every modifier (INV-51).
-13. Currency mismatch refused without `fx_rate`; converted with it.
+10. Forecasters: with 2 weeks of history an `ESTIMATED` weekday profile, with none the `SYNTHESISED` floor, and the curve always covers the horizon (INV-5).
+11. Stale marking after `max_age`, hysteresis doubles (§5.7).
+12. Negative prices go through every modifier unchanged (INV-51).
+13. Currency mismatch refused without `fx_rate`, converted with it.
 14. Export curve built from `spot_minus` without import modifiers.
-15. Gas carrier with daily slots coexists with electricity 15-min slots.
+15. Gas with daily slots next to electricity's 15-min slots.
 16. Event upsert/replace/revoke/expiry.
 17. `spread`, `is_flat`, `coverage_h` on flat (Norgespris) and volatile days.
-18. Every registered format key, parametrised over `formats.keys()`: the site flow with a fixture entity of that platform reaches a stored source, `_price_source` builds it without error, and the first fetch yields a parsed curve; an `ACTION` row takes its config entry from the picked entity; `octopus_energy` with both entities covers today and tomorrow.
+18. Every registered format key, parametrised over `formats.keys()`: the site flow with a fixture entity of that platform reaches a stored source, `_price_source` builds it, and the first fetch gives a parsed curve. An `ACTION` row takes its config entry from the picked entity, and `octopus_energy` with both entities covers today and tomorrow.
+19. Counted once (INV-72): every price source × every basis × a copy stored excl. and incl. VAT, no component twice and none missing (with D13 §19 10).
+20. The state stage by date (G16): a GB site's `vat` changes on the day the rate changes without a reconfigure, and a levy changed at new year prices December and January slots each at its own amount.
+21. Portugal's VAT bands (G17): the 200th kWh of a 30-day period at 6 %, the 201st at 23 %, 300 for a household of five or more.
+22. Tempo (G12): a red day's HP and HC at their own prices, and the colour announced for "tomorrow" applies from 06:00, not midnight.
+23. A §14a Modul 3 load's curve carries its own grid component (G13), the house's curve doesn't change.
+24. `net_metering` (G18): exported kWh valued at the import price up to the period's imported kWh, the rest at the fallback.
 
 ---
 

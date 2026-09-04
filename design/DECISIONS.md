@@ -2192,3 +2192,8 @@ The appliances card, dialog, price card, forecast and status keep the prototype'
 
 `slots[].paused` lists loads whose plan stands still in the slot (envelope 0: a coast, a postponement; INV-30). The appliances card draws each such stretch as a hatched band with "Senket til 22:00" where it fits. Five loops coasting before a 22:00 price drop read as missing data. Affects D12 §5.6.
 **Rejected:** leaving pauses blank - indistinguishable from no data.
+
+### D-0530 · "Tariff model" means the typed rules; the evaluator's protocol becomes `TariffEvaluator`
+
+D2's "grammar" becomes the tariff model (`grammar.py` → `model.py`, `Grammar` → `TariffRule`, `TariffVersion.grammar` → `.rules`), since "grammar" read as text parsing (D13 O25). The evaluator's protocol, already called `TariffModel`, becomes `TariffEvaluator`, so one term doesn't mean two things. D2 §9 42 asserts nothing imports the old names. Affects HLD §2, §6.2; D2 §3, §4.
+**Rejected:** "tariff rules" in `rules.py` - `core/tariffs/rules/` already holds the rule templates.

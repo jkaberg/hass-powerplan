@@ -315,6 +315,10 @@ All internal times UTC (`dt_util.utcnow()`), local conversions only in D2/D5 fil
 
 `_apply_load_knobs` rebuilds a load through the device-type registry when a knob overrides a store parameter D10 fits (`loss_coeff_w_per_k`, `heat_loss_w_per_k`, `standby_loss_w`), so the store and D11's shadow read the fitted value. The planner counts each plan's `hold_kwh` next to what it moves, and `PlanStatus.hold_kwh` carries it to D8. The `forecasts` section merges the baseline's state with the daily fits instead of replacing it (D-0500, D-0501).
 
+### 5.9 Tariff renewal (D13 §10, INV-73)
+
+The grid tariff copy is renewed by a **runtime timer**, planning side: `renew_at` = the earlier of (the last fetch + 1 month) and (the last version's `valid_to` − 7 days), armed with `async_track_point_in_utc_time` at setup from the stored copy - **no fetch at start**. `powerplan.refresh_tariff` runs the same renewal at once. Both fetch outside the runtime lock (like a price fetch), merge (append a new `valid_from`, replace a changed version, never remove - INV-52), write the entry with `async_update_entry` **without a reload**, rebuild the evaluator on the next planning call, fire `powerplan_tariff_updated`, and re-arm the timer. A failed fetch keeps the copy and retries on D1 §5.1's backoff; `tariff_stale` is raised once the last version has ended with no successor. VAT and levies are not renewed: they live in the country module and change with a release (D13 §9.1). The tick never waits on any of it (INV-46).
+
 ## 6. Configuration schema
 
 Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `plan_interval_min` 15, `warn_horizon_h` 3, `warn_fraction` 0.95, `safe_mode_after_failures` 3, `tick_budget_ms` 50. The site `active` switch and `select.<site>_presence` are entities (D8), read live every tick.
@@ -369,15 +373,17 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 14. Clock jump handling.
 15. Snapshot schema golden: field set stable (D8 depends on it).
 
-**WP1.1** - 4 (the boundary guard, the fallback's two cases, the trailing tick), 6, 7, 8, 14 and 17 (INV-46: the fetch runs before the lock) are `tests/runtime/test_runtime.py`; 10 and 11 are WP1.1a's; the two scenario rows are `tests/scenarios/test_phase1.py`. 9 (subentry hot paths) is `tests/flows/test_subentry_hot_paths.py`, 12 WP1.5's, 13 the perf tier's.
-16. Accounting close runs in `plan()` once per closed price slot and never in `tick()` (INV-68); a planning cycle skipped for an hour closes the four-slot backlog on the next one, oldest first; `month_closed` is emitted exactly once per rollover; a frozen tick (stale meter) still lets the load meters integrate.
-17. Planning I/O never holds the tick lock: a 3 s executor job inside `run_plan` does not skip a heartbeat tick; the lock is held for < 500 ms per cycle (INV-46).
-18. A `day_type` entity changing to a mapped state upserts one event, reaches `Inputs.events` on the next tick and the `day_type` modifier on the next plan; a restart restores the store with zero re-reads beyond one read per source; an expired event is pruned in the planning cycle (D1 §9 8, 16 through the runtime).
+4, 6, 7, 8, 14 and 17 are `tests/runtime/test_runtime.py`, 10 and 11 `tests/runtime/test_storage.py`, the two scenario rows `tests/scenarios/test_phase1.py`, 9 `tests/flows/test_subentry_hot_paths.py`, 13 the perf tier's.
+16. The accounting close runs in `plan()` once per closed price slot and never in `tick()` (INV-68). A planning cycle skipped for an hour closes the four-slot backlog on the next one, oldest first. `month_closed` is emitted exactly once per rollover. A frozen tick (stale meter) still lets the load meters integrate.
+17. Planning I/O never holds the tick lock: a 3 s executor job inside `run_plan` doesn't skip a heartbeat tick, and the lock is held < 500 ms per cycle (INV-46).
+18. A `day_type` entity changing to a mapped state upserts one event, reaches `Inputs.events` on the next tick and the `day_type` modifier on the next plan. A restart restores the store with one read per source and no more, and an expired event is pruned in the planning cycle (D1 §9 8, 16 through the runtime).
 19. The fits run once a day in the planning cycle's unlocked half, never in the tick, and a stored fit survives a restart (D10 §9 19).
-20. *(Phase 7)* The PV forecast refreshes hourly and on an Energy-preferences change, outside the lock; a site without solar sources performs no energy-platform call.
-21. An `e2e` observe day with a charger and a heat pump bound through the flows, through a Home Assistant restart and an entry reload, makes zero device service calls, leaves the household's values as it found them, logs each would-be value once and logs no ERROR; a site switched off writes nothing at unload, stop or start; the switch's edge to off undoes powerplan's own writes (INV-26, INV-27, INV-48).
-22. A load subentry reconfigure keeps its entities, mode, knobs and `LoadState` with no ERROR; unload after `homeassistant_started` and a `homeassistant_stop` log no ERROR; a restart restores a clean store with no WARNING (D-0364, D-0365).
-23. A device-registry `remove` for a load's bound device detaches (not deletes) its entities and raises the repair without a tick or a plan; a `rename` follows the sub-entry title unless the household renamed it separately; step 5a runs once, after release/restore and before the first tick, and is skipped entirely while the site is `off` (D8 §5.16 §9).
+20. The PV forecast refreshes hourly and on an Energy preferences change, outside the lock. A site without solar sources makes no energy platform call.
+21. An `e2e` observe day with a charger and a heat pump bound through the flows, across an HA restart and an entry reload, makes zero device action calls, leaves the household's values as it found them, logs each would-be value once and logs no ERROR. A site switched off writes nothing at unload, stop or start, and the switch's edge to off undoes powerplan's own writes (INV-26, INV-27, INV-48).
+22. A load subentry reconfigure keeps its entities, mode, knobs and `LoadState` with no ERROR. Unload after `homeassistant_started` and a `homeassistant_stop` log no ERROR. A restart restores a clean store with no WARNING (D-0364, D-0365).
+23. A device registry `remove` for a load's bound device detaches (doesn't delete) its entities and raises the repair without a tick or plan. A `rename` follows the sub-entry title unless the household renamed it separately. Step 5a runs once, after release/restore and before the first tick, and is skipped entirely while the site is `off` (D8 §5.16 §9).
+24. A setup with a tariff source makes no HTTP call before the flow or the renewal timer, and the timer is armed at `renew_at` from the stored copy (INV-73).
+25. `refresh_tariff` while a tick runs: the tick isn't delayed, the entry is written without a reload and the next planning call uses the merged copy.
 
 ---
 

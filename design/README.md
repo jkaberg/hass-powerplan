@@ -14,7 +14,7 @@
 | ID | Domain | HLD § | Depends on | File |
 |---|---|---|---|---|
 | D1 | Pricing - sources, modifiers, forecasters, events, curves | 6.1 | - | [D1-pricing.md](lld/D1-pricing.md) |
-| D2 | Tariff & capacity - the PeakTariff grammar, ContractedPower, presets, evaluator | 6.2 | D3 (window) | [D2-tariff.md](lld/D2-tariff.md) |
+| D2 | Tariff & capacity - the tariff model (PeakTariff, ContractedPower, NoPeak), rule templates, evaluator | 6.2 | D3 (window) | [D2-tariff.md](lld/D2-tariff.md) |
 | D3 | Metering & site electrical - WindowMeter, anchors, σ, ElectricalProfile | 6.3 | - | [D3-metering.md](lld/D3-metering.md) |
 | D4 | Loads - device types, control kinds, device profiles, WriteGate, store models, questionnaires | 6.4 | D3 (profile) | [D4-loads.md](lld/D4-loads.md) |
 | D5 | Strategies & planning - Plan model, strategies, combinators, adoption | 6.5 | D1, D2, D4 | [D5-strategies.md](lld/D5-strategies.md) |
@@ -25,8 +25,9 @@
 | D10 | Forecasts & learning - weather, PV, uncontrolled-load baseline, parameter fitting | 6.10 | D1, D3 | [D10-forecasts.md](lld/D10-forecasts.md) |
 | D11 | Accounting - per-load and site ledgers, slot pricing, counterfactual shadows, savings, calibration | 6.11 | D1, D2, D3, D4, D10 | [D11-accounting.md](lld/D11-accounting.md) |
 | D12 | Dashboard - a strategy dashboard in the Energy dashboard's shape: past, present, future and the knobs, built-in cards plus a timeline and a window gauge | 6.12 | D1, D2, D5, D7, D8, D10, D11 | [D12-dashboard.md](lld/D12-dashboard.md) |
+| D13 | The household's price by party - grid company (fetched from the best source tier), supplier contract, state (VAT and levies from the country module); renewal; the flow's tariff steps | 6.13 | D1, D2, D7, D8 | [D13-tariff-sources.md](lld/D13-tariff-sources.md) |
 
-Suggested order: D3 → D2 → D1 → D4 → D5 → D6 → D10 → D11 → D7 → D8 → D9. D3 first because the window is the unit everything else counts in; D2 next because its grammar is the biggest change from effektstyring and D5/D6 both consume it; D10 after D6 because it only *feeds* the planner and the reserve, and its v1 build is small (weather entity + recorder baseline).
+Suggested order: D3 → D2 → D1 → D4 → D5 → D6 → D10 → D11 → D7 → D8 → D9. D3 first because the window is the unit everything else counts in; D2 next because its tariff model is the biggest change from effektstyring and D5/D6 both consume it; D10 after D6 because it only *feeds* the planner and the reserve, and its v1 build is small (weather entity + recorder baseline).
 
 ## LLD template
 

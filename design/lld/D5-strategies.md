@@ -171,6 +171,8 @@ plan_all(loads, curves, ctx, now):
         adopt or keep old (5.9)
     return SitePlan(plans, headroom_left, adopted)
 ```
+*(D13 O23, TS.7.)* **A priced limit is a power tier on price, not headroom.** Where D2's `priced_limit_now` gives a limit whose excess is priced (SI's agreed power, LU's reference power), each slot offers two tiers: capacity up to `priced.w − baseline_w − Σ reserved` at the composed price, and capacity above it - up to the ordinary headroom - at the composed price **plus** the surcharge (per kWh; SI's per-kW excess converted per window). `deadline_fill` sorts `(slot, tier)` pairs by `(price, index, tier)` and fills cheapest-first, so a plan crosses the limit only where that is still the cheapest way to cover what it needs before its deadline; the greedy stays exact because the tiers of one slot are ordered by price. The envelope it publishes is what D6 grants (D6 §5.3 step 5). **A load with its own tariff** (G13) is planned on its own curve (D1 §5.3); **a load the grid switches** (G14: CZ/SK HDO) has every slot outside its allowed windows at cap 0.
+
 No global solver. The EV, lowest priority, takes the residual (HLD non-goal). Loads of equal priority are walked in `load_id` order, so two identical loops are always planned in the same order. What a slot reserves is its `envelope_w` - the same number the allocator will cap the grant at - which for a partly filled slot is less than the load's maximum: a loop taking 480 W of a 960 W element leaves the charger 4 520 W of a 5 kW target, not 4 040. `adopted` names the loads whose plan actually changed, which is the edge D7 fires `plan_adopted` on (§5.12).
 
 ### 5.2 `deadline_fill`: the exact greedy
@@ -369,4 +371,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 
 **Replan on every price tick.** *For:* always current. *Against:* churn, the EV starts and stops. **Decision:** triggers + hysteresis + commitment.
 
-**`best_save` forcing consumption in cheap slots.** *For:* symmetric with `cheapest_hours`. *Against:* powersaver's insight is that best_save is a *postponement* strategy; forcing belongs to `heat_capacitor`/`opportunistic`. **Decision:** keep it postponement-only.
+**`best_save` forcing consumption in cheap slots.** *For:* symmetric with `cheapest_hours`. *Against:* powersaver's insight is that best_save *postpones*, forcing belongs to `heat_capacitor`/`opportunistic`. **Decision:** postponement only.
+23. The power tier (O23): LU, 7 kW reference power, 0.0765 €/kWh surcharge, an EV needing 30 kWh by 07:00. With a flat night spot it charges at 7 kW − baseline as long as the night allows and only crosses in the slots it needs. With a slot 30 øre cheaper, crossing there beats a later slot under the limit exactly when the saving exceeds 0.0765 €/kWh. The greedy equals brute force on (slot, tier) instances.
+24. A §14a Modul 3 heat pump is planned on its own curve (G13): its cheapest slots follow the Modul 3 NT windows even where the house's curve says otherwise.
+25. An HDO water heater has no energy planned outside its allowed windows (G14), and its demand is met inside them or reported at risk.

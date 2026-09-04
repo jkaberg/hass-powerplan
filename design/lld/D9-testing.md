@@ -224,9 +224,9 @@ The recorder and CSV halves (D-0220). The flags: `--recorder <copy.db>` (opened 
 
 The CSV layout is one file per role (`grid_register.csv`, `grid_power.csv`, `loads/<id>.{energy,power,onoff}.csv`, optional `meta.json`), two columns each, every timestamp with a UTC offset (D-0228). The house check this produces is logged under `design/benchmarks/house/<date>-recorder-backtest.md` (§5.12).
 
-### 5.5 Golden preset tests
+### 5.5 Golden tests per rule template and source adapter
 
-For each preset JSON: a `history.json` (windows or daily maxima), the expected `metric_kw`, `level`, `fee`, and `ceiling` at three points in the period, hand-computed with the source of each number in a comment. A preset without a golden file fails CI.
+For each rule template and each adapter's captured tariff: a `history.json` (windows or daily maxima), the expected `metric_kw`, `level`, `fee` and `ceiling` at three points in the period, hand-computed with the source of each number in a comment. A tariff without a golden file fails CI.
 
 ### 5.6 INV traceability
 
@@ -280,7 +280,7 @@ The house is `tests/builders/houses.py::nordic_detached()` - all twelve loads th
 
 **Other houses** (same generators, one baseline each): `nl_pv` (EPEX 15-min, PV 6 kWp, `ContractedPower`, negative midday), `be_quarter` (15-min windows, rolling-12, no free ride), `fi_linear` (`Linear(free_kw=8)`), `es_contracted` (P1/P2 trip), `us_demand` (SRP 30-min on-peak, pre-cooling), `au_solar` (solar soak), `fr_tempo` (day-type events).
 
-*(Phase 7 in v1.0)* `au_solar@1` - panels and a battery - is built in WP7.4 with its own baseline, as is the metric `self_consumption` (self-consumed production ÷ production, per month and total). `nl_pv` gains the Dutch net-metering end on 2027-01-01, inside `y2026_27`: before it, export is valued at the import price (net metering); from it, at 50 % of the bare supply price, the legal floor to 2030 (Rijksoverheid). A version bump of the house (`nl_pv@2`) with a `design/benchmarks/CHANGELOG.md` line. `fi_linear` keeps its grammar as a benchmark house even though WP4.6 retires the national FI preset: the house tests the shape, not a shipped bill.
+*(Phase 7 in v1.0)* `au_solar@1` - panels and a battery - is built in WP7.4 with its own baseline, as is the metric `self_consumption` (self-consumed production ÷ production, per month and total). `nl_pv` gains the Dutch net-metering end on 2027-01-01, inside `y2026_27`: before it, export is valued at the import price (net metering); from it, at 50 % of the bare supply price, the legal floor to 2030 (Rijksoverheid). A version bump of the house (`nl_pv@2`) with a `design/benchmarks/CHANGELOG.md` line. `fi_linear` keeps its tariff model as a benchmark house even though WP4.6 retires the national FI preset: the house tests the shape, not a shipped bill.
 
 ### 5.10 HA-level end-to-end (`e2e`)
 
@@ -407,6 +407,13 @@ The path → tests map is in `CONTRIBUTING.md`, the only copy. It rests on four 
 
 **The cache key is wider than the reach.** `tests/scenarios/cache.py` hashes every file under `core/` and every non-test `.py` under `tests/`. So a D10 change, or an edit to an HA conftest or `builders/curves.py`, recomputes every simulation even though none reads the file (≈ 20 min cold). The result is correct, only slow, and narrowing the key to the runner's import closure is a separate change to `cache.py`.
 
+### 5.15 Tariff sources without the network (D13 §5.7, §9.1)
+
+- **No test touches the network.** Every source adapter (D13 §5.11) runs on captured documents under `tests/fixtures/tariff_sources/<key>/` with a `COMMIT` or `CAPTURED` file naming where and when each was taken; a setup test fails on any HTTP call (D13 §19 14). The flow tests use fake sources, one per tier, to walk the ladder (D13 §19 15).
+- **The nightly live job** (`.github/workflows/tariff-sources.yml`, a schedule, never in a household's HA and never in the PR suite) fetches every adapter's live endpoint with its named User-Agent, runs its contract test (the fields it reads, the paths) and cross-checks each company across the tiers that exist (fri-nettleie against Strømpriseridag, Digin with the maintainer's own keys, Tensio's page); a changed shape or a disagreement opens an issue.
+- **`tools/vat_check.py`** asks the Commission's TEDB service for every EU country module's VAT on the day (CN 2716 and `SUPPLY_ELECTRICITY`) and warns on a difference; its test runs on a captured TEDB response (D13 §19 11). Three TEDB rows are known wrong (IE, CY, MT) and are allow-listed with their national source.
+- **`tools/preset_age.py`** covers the rule templates and every country module's dated facts (VAT, levies, national regulated tariffs): a fact verified more than six months ago warns; nothing fails.
+
 ---
 
 ## 6. Configuration schema
@@ -452,6 +459,8 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 11. Uncontrolled loads in the house spec (types not yet implemented) run on their own logic and are metered into `uncontrolled`; the baseline's `controlled_share` matches the build.
 12. `tools/preset_age.py` lists exactly the versions verified more than 6 months before a given date. *(PLAN dec. 38: `tools/dk_presets.py` is dropped - Denmark's tariff is fetched at setup by D2's `datahub_pricelist` source, tested by D2 §9 25.)*
 13. *(§5.13; WP T.1b, D-0333)* Speed without change: `tools/digests.py` runs every cached scenario fixture and the smoke benchmark on the PR's tree and on its base, each recording every result's digest (`POWERPLAN_DIGESTS`, `tests/scenarios/cache.py`); one result that moved or went missing fails, whatever the change gains. CI runs it on every PR labelled `speed` (the `digests` job); an unlabelled PR is not compared, because a behaviour change inside tolerance is not a forced re-record (D-0331). `tests/scenarios/test_digests.py` holds the recorder and the comparison. The test count and the tolerance files are unchanged by T.1; the PR description carries the before/after wall times of the PR command and each CI job.
+14. No test in the PR suite opens a socket (a pytest plugin refuses connections outside `127.0.0.1`); the tariff-source fixtures each name their capture.
+15. `vat_check.py` flags a module whose rate differs from the captured TEDB response and passes one that matches; `preset_age.py` lists a country-module fact verified seven months ago.
 
 ---
 

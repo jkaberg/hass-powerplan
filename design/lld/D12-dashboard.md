@@ -420,6 +420,10 @@ The third iteration's mockups (rendered in Chromium on the reference house's dat
 | F6 | under 600 px no rail: a summary above the chart; the 12 / 24 / 48 toggle top right | 〃 |
 | F7 | each load's `hold_kwh` (D-0501) as a hollow bar over its runs in its colour; the rail's kWh per load includes it, the cheap share doesn't (holding follows the thermostat, not the price) | `forecast.ts` |
 
+### 5.13 The price by party *(D13 §7)*
+
+The timeline's price band stacks D1's components **by party** - grid company · supplier · taxes - in that order, bottom to top, in HA's energy palette, with the legend in the household's words ("Nettleie", "Strøm", "Avgifter"); a tariffed load's lane shows its own curve's total (D4 §5.16). Every "why" the dashboard shows names the party (D13 §7's reason keys: «Venter til 22:00 - nettleien er 13 øre lavere da»). The overview's month card splits cost and savings by party (D11 §5.8). The sources' credit (D13 §6.1) is one line under the price card, from the site's copy; nothing else about sources is shown.
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -471,6 +475,8 @@ None. The dashboard is generated on every open. A household that takes control o
 19. Iteration 2: tiles and badges read `next_run` / `deadline_time` and never a datetime attribute; `plan_status` carries both as local HH:MM, `next_run` empty while running; the month's money is `entity` cards; the per-appliance bars and the cost table are PowerPlan elements and the only markdown card is "why"; the picker opens upward; the subview's ready-by row has its icon and auto height; `vitest`: target `step_2` with `target_kw: null` and metric 8,97 → segment 2 green at full opacity, money "2,78 kr" / "NOK 2.78", a day's highest hour 8,44 kWh at 00–01 from the grid sources, the month ranking from `advice` or the statistics; the logbook line has no `entity_id` and a running plan reads "går nå".
 
 20. Iteration 3 (6.4i): Now's sections are hour · price · plan · appliances · capacity · month; the appliances card lists every appliance with its `plan_status`, entities and `{dashboard}` subview path (none with `hidden_views: [appliances]`); its `rail_width` equals the Plan timeline's; no tile, `distribution` or runs card on Now; `baseline_p90_kwh` is the baseline plus 1,2816 σ over the slot on a trained house; a price slot's `energy` is 0,50 and its grid part 0,23 for Norgespris 0,40 + grid 0,184 + 25 % VAT, and `reference` is the slot without the fixed price; `vitest`: `rawStatus` over the twelve states with `already_at` as the plan, the 90 s hold, `planRuns` merging 23:00–00:00 to 2,90 kWh, the cheap bands, `bucketize` into 60-minute windows, `nextClock` to tomorrow's 06:00, `readable`. (6.4i)
+21. The price band's three stacks sum to the slot's total for every slot of a captured `sensor.<site>_prices` attribute; a DK `stromligning` site (basis includes grid and taxes) shows one stack, not three.
+22. The credit line names the copy's sources and is absent for a template or custom tariff.
 
 ## 10. Deliberately deferred
 

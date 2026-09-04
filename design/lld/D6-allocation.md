@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | HLD section | §6.6 |
-| Depends on | D2 (ceiling, hard limits, marginal cost, eligibility), D3 (used, t_rem, σ, uncontrolled, phases, seam/stale), D4 (Demand, comfort, apply), D5 (plan caps, reservations, stop horizons), D10 (baseline for reserve/projection, optional) |
+| Depends on | D2 (ceiling, hard limits, priced limits, marginal cost, eligibility), D3 (used, t_rem, σ, uncontrolled, phases, seam/stale), D4 (Demand, comfort, apply), D5 (plan caps, reservations, stop horizons), D10 (baseline for reserve/projection, optional) |
 | Consumers | D4 (Grants → apply), D7 (report, events), D8 (sensors) |
 | Invariants owned | INV-1, INV-34 … INV-42, INV-60 |
 
@@ -128,6 +128,7 @@ class AllocCtx:                     # WP0.7: one tick's inputs, and what constra
     loads: tuple[LoadView, ...]; plans: Mapping[str, Plan]; views: Mapping[str, ControlledView]
     previous: Mapping[str, Grant]; stage: int; blunt: bool; frozen: bool
     hard: HardLimits | None; marginal_cost: MarginalCost | None          # the v2 hook (§10)
+    priced: PricedLimit | None                                           # v0.1.14 (O23): D2 §5.8 - a limit whose excess is priced, never in `hard`
 
 # LoadView (D5 §4) carries what only the load knows: thermostatic, sheddable, min_on_s,
 # phase_names, phases and quantise() - WP0.7, design/DECISIONS.md D-0160.
@@ -163,11 +164,11 @@ class Violation:  constraint: str; scope_id: str; excess_w: float; members: tupl
 ceiling  ← D2.ceiling_kwh(now, target, risk, eps × window_min/60)        # ε in kWh, scaled by window (INV-34)
 reserve  ← clamp( max(σ_uc, σ_floor) × k × t_rem_h + r_trim, min_kwh, max_kwh )     # k = 1.5; shrinks with the window
 E_budget ← ceiling − used − reserve
-P_allow  ← max(0, E_budget / t_rem_h × 1000);  P_allow ← min(P_allow, P_hard)          # P_hard = min(fuse_w, contracted.limit_now_w, external limits)
+P_allow  ← max(0, E_budget / t_rem_h × 1000);  P_allow ← min(P_allow, P_hard)          # P_hard = min(fuse_w, contracted.limit_now_w - a TRIP limit only (O23), external limits)
 frozen   ← meter.stale or meter.seam                                                   # INV-15/17: hold grants, no escalation
 degraded ← meter.degraded → reserve += degraded_bump_kwh (0.2), PI `binding` suppressed this window
 ```
-Not eligible (D2 says `+inf`): `P_allow = P_hard` - only the hard limits bind.
+Not eligible (D2 says `+inf`): `P_allow = P_hard`, only the hard limits bind.
 
 **PI trim** (per closed window): `utilisation = closed_kwh / ceiling`, `r_trim += ki × (utilisation − target_util) × scale` if `binding ∧ ¬outlier ∧ ¬degraded ∧ ¬defrost`, clamped to `[−0.5, 1.5]`. The sign matters: a binding window that *over*-used its ceiling grows the reserve, one that under-used it (loads held back for nothing) shrinks it. The other way round is positive feedback. `outlier` = uncontrolled peak > μ + 3σ (a Sunday roast isn't a control error). `binding` = the budget stage held something back atleast once this window, recorded from the budget stage only - a stage raised because we were blind doesn't count.
 
@@ -200,34 +201,38 @@ with the whole reservation, because the relay *will* open.
 ```
 allocate():
  0 if frozen: return previous grants unchanged, no escalation, report.frozen                 # blindness never opens a gate
+ 0a stage ≥ 1: serve_discharge, a signed load offering discharge takes −min(deficit + what it delivers, −min_w), before comfort
  1 zones.transform(demands): pick sources per zone (5.7); non-chosen sources get wants=False this tick
- 2 P_free = P_allow − Σ_all reserved_w(load, previous grant) ; constraints.prepare(ctx)      # what the site is drawing/holding now, every load included
-   # A load is always judged against `avail = P_free + its own current reservation`: it gives its old reservation back
-   # before it asks, so a tank that is already on is never asked to fit BESIDE its own 3 kW (which would deny it).
- 3 comfort violators first (any priority, any stage):  avail = P_free + reserved_w(load, prev); grant demand.max_w (cap by hard constraints only - circuits/phases still apply, groups/zones do not); P_free = avail − reserved_w(load, grant)
+ 2 P_free = P_allow − Σ_all reserved_w(load, previous grant) ; constraints.prepare(ctx)      # what the site draws/holds now, every load included
+   # a load is always judged against `avail = P_free + its own current reservation`: it gives its old reservation back
+   # before it asks, so a tank that's already on is never asked to fit BESIDE its own 3 kW (which would deny it)
+ 3 comfort violators first (any priority, any stage):  avail = P_free + reserved_w(load, prev); grant demand.max_w (capped by hard constraints only; circuits/phases still apply, groups/zones don't); P_free = avail − reserved_w(load, grant)
       if Σ comfort > P_allow: serve them, record breach_w, log + event `comfort_over_allowance` (HLD §3: the one named exception to the ceiling)
- 4 running cycles: as 3 with grant = nameplate (CycleReservation); never in shed set below stage 4
+ 4 running cycles: as 3 with grant = nameplate (CycleReservation); never in the shed set below stage 4
  5 walk remaining loads in DESCENDING priority (heat pumps 50 → floors 30 → radiators 28 → panel 25 → tank 20 → EV 10 → battery 5):
       avail = P_free + reserved_w(load, previous grant)
       cap = min(demand.max_w, plan.cap_w(now) if not None, constraints.cap_w(load) …)      # plan None = free; 0 = stand still
-      if plan.cap_w == 0: grant 0, shed=False ("planned idle" is not a shed - INV-25)
+      # with a priced limit in force a load with NO plan is also capped so Σ grants ≤ priced.w (PricedLimitCap, scope `load`);
+      # only a plan crosses it, since only a plan priced the crossing (D5 §5.1's power tier); a plan's envelope is the cap as ever (INV-30, O23)
+      if plan.cap_w == 0: grant 0, shed=False ("planned idle" isn't a shed, INV-25)
       elif on/off: grant nameplate if avail ≥ nameplate else 0 (denied, start starvation clock)
-              a constraint's cap below the nameplate is the same denial, with that constraint's reason - a relay draws its nameplate or nothing, so it is never granted the 4.7 kW a circuit has left (D-0284); a plan's cap below it is pacing and stays
+              a constraint's cap below the nameplate is the same denial, with that constraint's reason - a relay draws its nameplate or nothing,
+              so it's never granted the 4.7 kW a circuit has left (D-0284); a plan's cap below it is pacing and stays
       elif modulating: grant min(cap, avail) quantised DOWN by D4's kind (via LoadView.quantise; a vetoed stop returns the floor's W) ; EV last on the residual
       sticky: a grant > 0 holds for min_on_s unless stage ≥ 3 (sticky_until)
       P_free = avail − reserved_w(load, grant)
  6 stage actions (from the ladder, INV-36): stage ≥ 1 throttle modulating; stage ≥ 2 stores to comfort floor → shed set; stage ≥ 3 coast heat pumps −1 K; stage 4 (blunt) all off except comfort violators and heat pumps
- 7 shed set = loads whose grant is 0 (or reduced) BECAUSE WE ARE HOLDING THEM BACK; reason ∈ {budget, stage, group_cap, zone_substituted, circuit, phase, external_limit, trim}
+ 7 shed set = loads whose grant is 0 (or reduced) BECAUSE WE ARE HOLDING THEM BACK; reason ∈ {budget, stage, group_cap, zone_substituted, circuit, phase, external_limit, trim, grid_switched}
       filtered to agree with grants before publishing (INV-40): a load with grant > 0 is never in the shed set
  8 EV stop gates (INV-39):  stop_ok = blunt ∧ min_stop_ok  OR  plan_stop ∧ plan_stop_ok
       # a BUDGET stop is a blunt reason (`spent_window`, `fuse_breach`, `trip_risk`, `external_limit`) judged on the window horizon;
       # stage 3 never stops an EV - the trim walks it down to the floor and holds it there (INV-28, §8 "veto forever")
       min_stop_ok  = expected off-time ≥ EV_MIN_STOP_S (600): budget horizon = min(t_rem, plan.next_active)   # undone by the window turning OR the plan
-      plan_stop_ok = plan.idle_seconds_from(now) ≥ EV_MIN_STOP_S ∧ (plan.next_active(now) exists ∨ nothing owed)   # undone by the plan alone; a plan that never draws again while energy is owed ran out - the floor until the re-cut (D-0253)
+      plan_stop_ok = plan.idle_seconds_from(now) ≥ EV_MIN_STOP_S ∧ (plan.next_active(now) exists ∨ nothing owed)   # undone by the plan alone; a plan that never draws again while energy is owed ran out, the floor until the re-cut (D-0253)
  9 trim (5.5) against measured P_total if deficit > 0
-10 report + unconstrained_ask_w = Σ demands.max_w for loads that wanted power (unconstrained ask) - published in AllocReport; D11 records its own counterfactual per window
+10 report + unconstrained_ask_w = Σ demands.max_w for loads that wanted power, published in AllocReport; D11 records its own counterfactual per window
 ```
-Batteries (design): at stage ≥ 1 with `soc > reserve_soc`, grant `−min(deficit_w, max_discharge_w)` **before** any comfort shed; at stage 0 the plan (arbitrage) governs. **Still design, not built (D-0326):** D5 §5.8's `peak_shave` strategy delivers the same underlying protection at the planning cadence today - a negative `Headroom` slot is forced to discharge before the plan is even adopted - but this tick-level, faster-than-a-replan mechanism is not built; a household running `peak_shave` is not undefended, just not defended as fast as this note describes.
+**Batteries.** At stage ≥ 1 with `soc > reserve_soc`, step 0a grants the discharge **before** any comfort shed. At stage 0 the plan (arbitrage) governs, and D5 §5.8's `peak_shave` gives the same protection at the planning cadence.
 
 **Surplus following.** A plan built on the effective curve (D5 §2) says per slot how much of its envelope it planned from surplus (`PlanSlot.surplus_w`) and how much from the grid (`grid_w`). The forecast is only a forecast, so in the tick a `MODULATE` load's grant in such a slot follows the **measured** surplus instead: `grant = min(cap, avail, grid_w + live_surplus_share)`, where `live_surplus` is D3's export power plus what the surplus loads themselves draw now, shared in step 5's priority order. It never imports more than the plan's `grid_w` for that slot, so the capacity axis - which only counts import (INV-19) - sees nothing new, and every ceiling, circuit and stage above still caps it. A surplus-only load (`grid_w = 0`, D5's `surplus`) starts when `live_surplus ≥ min_surplus_w` has held for 60 s and stops when it has imported for 300 s, evcc's enable and disable delays, and an EV still obeys INV-39's stop gates (600 s). The two delays are defaults tuned on `pv_no_battery_ev_waits`, not measured constants. A `SETPOINT` or `MODE` load can't follow watts, its surplus slots keep their plan and the replan trigger (D5 §5.9) corrects the next ones.
 
@@ -239,17 +244,18 @@ Batteries (design): at stage ≥ 1 with `soc > reserve_soc`, grant `−min(defic
 | 1 | 0.85–0.95 | modulating loads throttled to residual; battery discharge |
 | 2 | 0.95–1.00 | stores to comfort floor (shed set); substitution engages |
 | 3 | projected > ceiling | proportional trim; rotation tightened; heat pumps coast −1 K |
-| 4 | **blunt** only: `fuse_breach` (P_total > fuse_w) · `trip_risk` (P_total > contracted + tolerance for > tolerance_s/2) · `spent_window` (used ≥ ceiling) · `external_limit` (DSO event) | all off except comfort violators and heat pumps |
+| 4 | **blunt** only: `fuse_breach` (P_total > fuse_w) · `trip_risk` (P_total > a **tripping** contracted power + tolerance for > tolerance_s/2) · `spent_window` (used ≥ ceiling) · `external_limit` (DSO event) | all off except comfort violators and heat pumps |
 
 ```
 stage_for(...):
     if any blunt reason: return 4, reason, blunt=True
     s = by projection thresholds
-    escalation guard: the projection thresholds top out at 3 - "an hour that will land under the step cannot be helped by a blunt shed"; only a blunt reason reaches 4
-    stage 4 never arises from a capacity number (INV-36); `spent_window` is a blunt reason because the ceiling (ε-reduced) has been CONSUMED, not projected
+    escalation guard: the projection thresholds top out at 3 - an hour that will land under the step can't be helped by a blunt shed; only a blunt reason reaches 4
+    stage 4 never comes from a capacity number (INV-36), nor from a priced contracted power (exceeding it costs a surcharge, it trips nothing, O23);
+    `spent_window` is a blunt reason because the ceiling (ε-reduced) has been CONSUMED, not projected
 escalation: immediate
-de-escalation: needs de_escalate_ticks (2) consecutive ticks with P_total < P_allow − hysteresis_w (300)    # ~20 s, not two minutes
-             fuse path only: additional wall-clock hold de_escalate_seconds (120) after a fuse breach
+de-escalation: needs de_escalate_ticks (2) ticks in a row with P_total < P_allow − hysteresis_w (300)    # ~20 s, not two minutes
+             fuse path only: an extra wall-clock hold of de_escalate_seconds (120) after a fuse breach
 circuit breach: a Violation from CircuitLimit is a fuse_breach for ITS MEMBERS only → stage 4 scoped to the circuit (INV-60)
 ```
 
@@ -416,6 +422,8 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 
 24. *(Phase 7)* Surplus following: in a slot planned with `grid_w = 1 kW` and `surplus_w = 3 kW`, a charger's grant tracks the measured surplus as it falls from 3 kW to 0.5 kW and never makes grid import exceed 1 kW; a surplus-only load starts after 60 s of surplus above `min_surplus_w` and stops after 300 s of import; the ceiling, circuits and stages still cap every grant.
 25. *(Phase 7)* Tick-level battery discharge: at stage ≥ 1 with `soc > reserve_soc` the battery is granted `−min(deficit_w, max_discharge_w)` before any comfort shed; at stage 0 the plan governs; below `reserve_soc` it is never discharged.
+26. *(O23)* A priced limit is no hard limit: LU with a 7 kW reference power - an EV whose plan priced 11 kW in a slot is granted 11 kW, stage 0; with no plan it is granted what keeps the site at 7 kW; `P_hard` is the fuse; stage 4 never follows from the priced limit however long it is exceeded (INV-36).
+27. *(O23)* A tripping limit is unchanged: ES P1 4.6 kW with 10 % / 30 s tolerance still caps `P_allow` and raises `trip_risk` after 15 s over 5.06 kW (test 8's companion).
 ---
 
 ## 10. Deliberately deferred

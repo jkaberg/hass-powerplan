@@ -76,7 +76,7 @@ SiteData = {
   "electrical": ElectricalProfile + {"derived": {w_per_amp, fuse_w, plausible_w, …}},  # INV-66
   "meter": {"source": "ha_sensors", "device_id": str | None, "roles": {role: entity_id}} | None,
   "prices": {"sources": [...], "modifiers": [...], "export": ..., "carriers": [...]} | None,
-  # The grammar copy lives in the site STORE (D2 §8); the entry holds the identity (D-0128).
+  # The tariff copy (HouseholdPrice) lives in the ENTRY (D13 §3, INV-66); the store holds the peak history (D2 §7).
   "tariff": {"preset_id": str, "preset_file": str, "version_ids": [...], "chosen_version_id": str,
              "description": str, "target": ..., "risk": float, "risk_source": str} | None,
   "hard_limits": {...},
@@ -105,15 +105,34 @@ name            → text (default "Home")
 timezone        → ONLY when hass.config.time_zone is missing or not a valid IANA key (D-0120)
 electrical      → D3 §6 (country, voltage system, phases, fuse) - plain labels; review line
 meter           → D3 §6 (skipped on price_only) - device pick …
-  meter_roles   → … pre-fills the seven roles from the entity registry; all optional
-prices          → D1 §6 (skipped on fuse_only) - source menu → per-source step → modifiers multi-select → per-modifier sub-steps → export → carriers
-tariff          → D2 §6 (skipped on fuse_only AND on price_only, which has no metric to bill → NoPeak; D-0127)
-                  country → preset select → rendered description → target/risk → (rolling) bills → (contracted) limits
-hard_limits     → contracted power (if not in preset), external DSO limit toggle (v1.x). *(WP U.2: the step goes - its answer is read by nothing; §5.15 S2)*
+  meter_roles   → … pre-fills the seven roles from the entity registry; all optional -
+(D13 §6) the price is asked BY PARTY, grid company first; every screen after it names what is already covered (INV-74) -
+country         → ONLY when hass.config.country is empty: HA's CountrySelector, full names, pre-selected from the time zone the
+                  country modules declare (D13 0′)
+postcode        → optional; resolved by the country's official directory only (NO: Kartverket) → municipality, tax zone,
+                  price area, the grid company pre-selected (D13 step 0, O17)
+grid_company    → the country's operators, fetched now; "Finner ikke mitt nettselskap" (the rule template) and "Legg inn selv"
+                  pinned last; the credit note under the list (§5.17). (skipped on fuse_only AND on price_only → NoPeak; D-0127)
+  product       → only when the operator has several
+  tax_zone      → only when the operator spans zones and no postcode settled it
+  confirm       → one question per field the source left out, its default pre-selected (D13 1c)
+  own_figures   → the rule template's or "Legg inn selv"'s numbers, labelled incl. VAT; the VAT asked ONLY in a country without
+                  a module or a national rate (D13 1c′)
+  summary       → the grid company's rules as the household pays them, and what the plan does with each (D13 1d)
+  target        → D2 §6: target/risk → (rolling) bills → (contracted, agreed or reference power) limits
+prices          → D1 §6 (skipped on fuse_only) - "Hvilken strømavtale har du med strømleverandøren?": spot · fastpris ·
+                  Norgespris · "prisen jeg ser er totalprisen" (its basis asked) → per-source step
+  additions     → "Hva legger strømleverandøren på, i tillegg til nettleien?" - opens by naming what the grid tariff covers;
+                  markup, monthly fee, the supplier's own time-of-use, tiers, day types; nothing of the grid's or the state's
+state           → VAT and levies STATED with their source, never asked where the country module knows them; asks the schemes
+                  (strømstøtte; hidden with Norgespris) and, in Portugal only, a household of five or more
+export          → as today; the grid's feed-in terms from the copy where published
+carriers        → other heat sources
+hard_limits     → contracted power (if not in preset), external DSO limit toggle (v1.x). *(not asked: its answer is read by nothing; §5.15 S2)*
 presence        → auto (pick person entities) / manual
 notifications   → per category transport (defaults: persistent for peak & comfort & unhealthy, off for the rest); quiet hours.
                   The eight categories that default to off sit in the step's collapsed `advanced` section (D-0129)
-review          → the assembled explanation (INV-67): connection, meter, prices, tariff, forecasts (WP5.1: the auto-detected weather entity, whether the meter will feed a usage baseline - D10 §6, nothing is asked), presence, notifications, timezone, what will happen first (observe mode for the first days is recommended and pre-ticked)
+review          → the assembled explanation (INV-67): connection, meter, prices, tariff, forecasts (the auto-detected weather entity, whether the meter will feed a usage baseline - D10 §6, nothing is asked), presence, notifications, timezone, what will happen first (observe mode for the first days is recommended and pre-ticked)
 create entry    → site starts in observe (switch active = off)
 reconfigure     → `async_step_reconfigure` on the config flow itself: restores every field from `entry.data` and re-enters the chain at `name` (never the path menu - a reconfigure does not change full/price_only/fuse_only), every step's own form pre-filled exactly as onboarding's; the review's own checkbox defaults from the site's current active state, not always "observe"; saves through `async_update_entry` + `async_abort`, not a second entry
 ```
@@ -123,7 +142,7 @@ Every step validates with the domain's schema (INV-49) and shows errors inline; 
 
 **Timezone (binding).** The site timezone is `hass.config.time_zone`, materialised into `entry.data` at creation together with `timezone_source`. No IANA key is a literal anywhere in `config_flow.py` or `flow/` - a market's publication zone is data on the price source. `tests/flows/test_no_timezone_literals.py` greps for one (D-0120).
 
-**Where the grid charge comes from.** A modifier is pre-ticked only when every required option of its schema has a default, so Norway pre-ticks `vat` alone. The chosen preset's `energy_components` are then materialised as modifiers carrying `source: <preset id>`, and the review names them (D-0126).
+**Where the grid charge comes from.** *(D13 §8, §12; supersedes D-0126's materialised modifiers.)* From the grid company's tariff copy - never an add-on, never pre-ticked. VAT and levies come from the country module. The review states the price by party ("Nettleie 23 øre + strøm 71 øre + avgifter 32 øre").
 
 ### 5.2 Load subentry flow
 
@@ -273,6 +292,7 @@ Availability: an entity is `available` when the coordinator has a Snapshot; load
 | `powerplan_ev_connected` | `load, connected: bool, soc` - both edges of the cable (D4 §5.11) |
 | `powerplan_safe_mode` | `entered: bool, reason` |
 | `powerplan_baseline_ready` | `confidence` - D10's own bin/day gate first clears 0.6, never again |
+| `powerplan_tariff_updated` | `source, fetched, added: [valid_from], changed: [valid_from], kept: [valid_from], next_renewal` - a renewal or `refresh_tariff` that changed the copy (D13 §10) |
 
 All are edge-triggered in D7; a `cleared: true` variant is emitted when the condition ends where meaningful.
 
@@ -294,6 +314,7 @@ All are edge-triggered in D7; a `cleared: true` variant is emitted when the cond
 | `powerplan.set_peak` | `site`, `date` or `month`, `kw`, `note` | D2 override |
 | `powerplan.rebuild_baseline` | `site` | D10 reseed |
 | `powerplan.dump_state` | `site` | write the Snapshot + Inputs to the log / return as response |
+| `powerplan.refresh_tariff` | `site` (optional: every loaded site) | fetch the grid tariff now from the same operator, product and tier; merge; answer `{source, fetched, added, changed, kept, next_renewal}` (`SupportsResponse.OPTIONAL`); a template or custom tariff answers `{source: "template", …}`; a failure raises `HomeAssistantError` `tariff_refresh_failed` (source, reason) and changes nothing (D13 §10) |
 Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config_entry_id` or device selector. All registered once per domain with `supports_response` where useful.
 
 **In code (D-0275).** `services.py::async_setup_services(hass)` registers `replan`, `release`, `boost`, `run_now`, `set_presence`, `reset_window_anchor`, `set_peak` and `dump_state` (response only) once, from `async_setup`; `services.yaml` carries the selectors. A call names a site by `site` (the entry id or title; every loaded site when omitted) and a load by `load` (its id); an unknown one is a `ServiceValidationError` with a translation key (`exceptions.unknown_site`, `unknown_load`). `set_peak` takes `date` or `month` (exclusive) and writes a D2 `Override`; `reset_window_anchor` reads the register through the meter provider and calls the engine's `reset_window_anchor` under the lock; `dump_state` answers with the last snapshot, the assembled inputs and the store sections.
@@ -316,7 +337,9 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 | `register_missing` | warning | no | no register report for 24 h |
 | `scaling_mismatch` | warning | no | integral bias > 5 % over 6 windows |
 | `price_source_dead` | error | no | 24 h without a fetch |
-| `preset_outdated` | info | yes (apply diff) | stored grammar differs from the shipped preset |
+| `preset_outdated` | info | yes (apply diff) | an entry on a retired shipped file (D13 §10's migration) |
+| `tariff_stale` | warning | no | the tariff copy's last version has ended with no successor and the renewal keeps failing (D13 §10) |
+| `tariff_review` | info | yes (confirm) | a renewal disagrees with a field the household confirmed, or a migrated VAT/levy add-on differs from the country module (D13 §10) |
 | `bound_helper_missing` | warning | yes (re-bind) | schedule/person/calendar gone |
 | `role_missing` | error | yes (re-bind) | a required role's entity gone |
 | `provision_refused` | warning | no | provisioning fails repeatedly |
@@ -328,7 +351,7 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 | `notify_service_missing` (**WP1.4**) | warning | no | the configured `notify` service does not exist (§8) |
 | `load_error` (**WP1.4**) | warning | no | a load raised in a tick and is held (D7 §8) |
 
-**In code (D-0275).** `repairs.py` holds the catalogue (`Issue(severity, fixable, persistent)`), `async_report(hass, entry_id, issue_id, active=…)` creating or clearing the registry issue under `{entry_id}_{issue_id}` with the site's title as a placeholder, and `RepairsWatch.evaluate(now, snapshot)`, run by the runtime after every tick, which raises and clears `meter_stale` (power reading older than ten minutes), `register_missing`, `scaling_mismatch` (integral bias over 5 % of the smoothed power for six windows), `price_source_dead`, `store_reset` and `preset_outdated` on their edges. `engine_failing` and `load_error` come from the engine's `Effects.repairs`. The one fix flow so far is `engine_failing`'s: confirming acknowledges safe mode (`Runtime.async_acknowledge_safe_mode`) and the issue goes; a restart clears it too. `bound_helper_missing`'s and `role_missing`'s re-bind flows are WP2.4's; `preset_outdated` is raised as a warning without a flow until the store carries the grammar copy (D-0128). Every id has `issues.<id>` in the three translation files.
+**In code (D-0275).** `repairs.py` holds the catalogue (`Issue(severity, fixable, persistent)`), `async_report(hass, entry_id, issue_id, active=…)` creating or clearing the registry issue under `{entry_id}_{issue_id}` with the site's title as a placeholder, and `RepairsWatch.evaluate(now, snapshot)`, run by the runtime after every tick, which raises and clears `meter_stale` (power reading older than ten minutes), `register_missing`, `scaling_mismatch` (integral bias over 5 % of the smoothed power for six windows), `price_source_dead`, `store_reset` and `preset_outdated` on their edges. `engine_failing` and `load_error` come from the engine's `Effects.repairs`. The one fix flow so far is `engine_failing`'s: confirming acknowledges safe mode (`Runtime.async_acknowledge_safe_mode`) and the issue goes; a restart clears it too. `bound_helper_missing`'s and `role_missing`'s re-bind flows are the load flow's (§5.2); `preset_outdated` is raised as a warning without a flow until the store carries the tariff model copy (D-0128). Every id has `issues.<id>` in the three translation files.
 
 ### 5.10 Diagnostics
 
@@ -412,13 +435,13 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | markup, energy charge, prices; monthly fees | a box in the currency's minor unit per kWh - øre (NOK, DKK), öre (SEK), cent (EUR) - and kr/mnd; stored in major units as a decimal string (D-0123) (CTL-3) | D1 §6 |
 | hours per day | slider 1–24 h, flow and knob (CTL-4) | D4 §6 |
 | temperatures | slider in °C with the type's own question range, flow and knob alike - the knobs use one 5–80 °C box for every type (`load_entities.py:240-270`); `min ≤ comfort ≤ max` checked in `Questionnaire.validate` (CTL-5, CTL-16) | D4 §6 |
-| tiers, periods, day types, "applies to" | `object` selector with `fields`, `multiple`, `label_field` and `translation_key` - a form list, never the YAML editor (CTL-6, HUB-9). Each row is converted to the stored shape by the modifier's `from_options` (D1 §6), so `entry.data` does not change. HA's fix for nested selectors in object fields landed on 2026-05-13 (core PR #170453), after the 2026.3 floor: U.2 checks the form on the floor line and falls back to one `text` field per row value there | D1 §6, D2 §6 |
+| tiers, periods, day types, "applies to" | `object` selector with `fields`, `multiple`, `label_field` and `translation_key` - a form list, never the YAML editor (CTL-6, HUB-9). Each row is converted to the stored shape by the modifier's `from_options` (D1 §6), so `entry.data` does not change. HA's fix for nested selectors in object fields landed in core PR #170453, after the 2026.3 floor: U.2 checks the form on the floor line and falls back to one `text` field per row value there | D1 §6, D2 §6 |
 | quiet hours, ready-by, departures | in the flows, a `select` of whole and half hours, since HA's `time` selector has no options at all (H8; CTL-7). `time.<load>_ready_by` and `_deadline` stay `time` entities (INV-50) | D4 §6, §5.1 notifications |
 | intervals and durations | `duration` selector, `enable_second: false` (every `*_s` default in D4 §6 is a whole minute), stored in seconds as today (CTL-8) | D4 §6 |
 | country, currency, time zone, price area | taken from HA and hidden; the area from the Nord Pool entry (no lat/long → area map exists in the repository); shown only to correct, with region names as `selector.nordpool_area` translations (CTL-9) | D1, D3 |
 | meter and load roles | entity pickers filtered by `device_class`, unit and `state_class` - power W/kW, energy kWh `total_increasing`, temperature °C (CTL-10). The meter roles filter by device class only (`flow/steps.py:349-351`), the load roles by nothing (`flow/load.py:574`) | D3 §6, D4 §6 |
 | the device to add | a `select` built by the flow - HA's `DeviceSelector` cannot exclude an integration or mark a device (H8): devices with a switch, climate, water-heater, number, select or button entity, never PowerPlan's own, those already added marked and refused *before* submit (CTL-11) | §5.2, D4 §6 |
-| strictness (`risk`) | radio, three short labels (Streng (anbefalt) · Bruk betalte timer · Fleksibel), the default strict for a new site; the explanation in the field description, with the grammar's own numbers as placeholders ("dine tre høyeste timer") since a label cannot hold them for every preset (CTL-12) | D2 §6 |
+| strictness (`risk`) | radio, three short labels (Streng (anbefalt) · Bruk betalte timer · Fleksibel), the default strict for a new site; the explanation in the field description, with the tariff model's own numbers as placeholders ("dine tre høyeste timer") since a label cannot hold them for every preset (CTL-12) | D2 §6 |
 | heat pump COP | `object` list {outdoor °C, COP} or the type's preset; a curve must rise with outdoor temperature (CTL-13, CTL-16) | D4 §6 |
 | power | kW in every form, step 0.1; stored in W as today (`max_concurrent_w`, `unmetered_w`), so `entry.data` is unchanged (CTL-15) | D4 §6, D6 §6 |
 | a registry field that is required and has no default | `vol.Required` with no default: `render()` makes every field optional (`flow/questionnaire.py:127-134`), which is how Norgespris took an empty price (review §10) | D1 §6 |
@@ -474,7 +497,7 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | part | in code | decision |
 |---|---|---|
 | the words Python assembles | four `selector` vocabularies - `selector.text` (the conjunction, yes/no, "og N til", the grid-company escape hatches, the target labels, Home Assistant's own notify services), `.tariff_text`, `.review`, `.load_text` - read by `flow/text.py::Text` in `hass.config.language`; numbers `nb` (no-break-space thousands, decimal comma) or `en` for every other language, whose words are English too; money by symbol and minor unit for the currencies the presets use, a price at the scale it was written | D-0340 |
-| the tariff table | `loader.summarize()` → `TariffSummary` over every grammar root, not only the step table: the metric sentence, the step or tier table, Linear's price per kW, the windows that count and their weights, the contracted limits, the energy charge by hours in the minor unit, "some numbers are assumed"; `tariff.description` is neither written nor read. The country's generic grammar is offered only as "Finner ikke mitt nettselskap" | D-0341 |
+| the tariff table | `loader.summarize()` → `TariffSummary` over every tariff model root, not only the step table: the metric sentence, the step or tier table, Linear's price per kW, the windows that count and their weights, the contracted limits, the energy charge by hours in the minor unit, "some numbers are assumed"; `tariff.description` is neither written nor read. The country's generic tariff model is offered only as "Finner ikke mitt nettselskap" | D-0341 |
 | the target | options `auto`, `step_<i>` labelled "Trinn 2 · 2–5 kW · 244 kr/mnd"; `step:<i>` read in both spellings by one helper (`runtime.step_index`) wherever a target is read, and `entry.data` not migrated; the select's attributes `lower_kw`, `upper_kw`, `fee`, `currency`; state translations `step_0`…`step_19` | D-0342 |
 | advice, session | the advice state is the first warning, else the first info, else `all_good`; the session is read from the engine's last plug edge - `no_car` unless connected, `done` on the latch or when the car wants nothing, `charging` when it draws, else `waiting` | D-0343 |
 | add-ons and carriers | `modifier_<key>` and - for the same fault, a title filled with a key - `carrier_<key>`, both generated from their registries; add-ons still in ticked order (HUB-3 is U.3's) | D-0344 |
@@ -532,7 +555,7 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 | the fuse | in Norway the voltage as a radio 230 V · 400 V · Vet ikke (stored `assumed: ["system"]`, re-shown on reconfigure) | D3 §6 |
 | the contract | Nord Pool spot · Norgespris (NO) · spot from a sensor · fixed; Nord Pool labelled "via Nord Pool-integrasjonen" | HUB-20; D-0431 |
 | the grid company | a yes/no radio confirms the table; "no" shows the grid companies again, since HA flows have no back | HUB-4 |
-| strictness | a radio, Streng (anbefalt) · Bruk betalte timer · Fleksibel; `default_risk` returns 0 for every grammar; `risk_source` is `default` or `chosen`; an entry keeps its stored `risk` (INV-66); the help names the grammar's own `n` (`{hours}`) | CTL-12; D2 §6 |
+| strictness | a radio, Streng (anbefalt) · Bruk betalte timer · Fleksibel; `default_risk` returns 0 for every tariff model; `risk_source` is `default` or `chosen`; an entry keeps its stored `risk` (INV-66); the help names the tariff model's own `n` (`{hours}`) | CTL-12; D2 §6 |
 | add-ons | after the grid company, asked in listed order; what the preset prices is not offered and is named instead; Norgespris pre-ticks `fixed_price` | HUB-3; D-0430 |
 | prices | a per-kWh price below one øre is refused (`price_in_minor_unit`) | D-0433 |
 | review | "Klar til å starte"; the trial-mode toggle on a first setup only; a reconfigure keeps the entry's `active` and says so (`{first}`) | HUB-5 |
@@ -844,6 +867,15 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 ---
 
  `plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499). `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
+
+### 5.17 The price by party on screen *(D13 §6, §6.1, §7)*
+
+- **Titles are questions, by party.** Grid company: «Hvilket nettselskap har du?» - «Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg.» Supplier: «Hvilken strømavtale har du med strømleverandøren?», then «Hva legger strømleverandøren på, i tillegg til nettleien?», opening with «Nettleien fra {operator} er allerede med: {…}. Avgifter og moms tar vi med i neste steg.» State: «Hvilke støtteordninger gjelder deg?», stating «For {zone}: moms {25 %}, forbruksavgift {7,13 øre}, Enova {1 øre} per kWh ({source}, {date}).» English mirrors each.
+- **The credit note** under the grid-company list, in the grid summary, the diagnostics and the user docs - never a screen of its own: «Nettleiepriser fra {sources}. Takk!» / «Grid tariffs from {sources}. Thank you!», `{sources}` from the country module's credit list, linked, with the licence where one requires it (fri-nettleie: CC BY 4.0).
+- **Reasons by party.** `plan_status` and the dashboard's "why" name the party whose rule caused the decision (D13 §7's keys: «Venter til 22:00 - nettleien er 13 øre lavere da»).
+- **Diagnostics** carry the copy's provenance (source, tier, fetch date, next renewal) and never the postcode or a meter id.
+- **The options flow** holds the state overrides (O4): VAT and each levy, for a household that knows better (a VAT-registered farm).
+
 ## 6. Configuration schema
 
 This LLD *is* the rendering of every schema; the fields themselves are owned by D1 (prices), D2 (tariff), D3 (meter/electrical), D4 (questionnaires), D6 (group/zone/circuit), D7 (runtime Advanced), D10 (forecasts Advanced). D8 adds only: onboarding path, site name, presence, notifications, quiet hours.
@@ -905,6 +937,12 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 29. *(§5.16)* No setting appears both as an entity and in the gear flow: for every load of the reference house, the set of fields the reconfigure flow's schema asks for and the set of translation keys under `entity.*` for that load's device intersect in nothing; "Bruk de re-utledede verdiene" changes no level 1–2 entity's current state.
 30. *(§5.16)* The integration page: one row per appliance sub-entry, gear label "Endre oppsett"/"Change setup", type labels "Apparat"/"Sikringskurs"/"Gruppe"/"Rom med flere varmekilder"; a fallback-device appliance still shows one device row with a readable model.
 31. *(§5.16, flagged open)* The gear dialog's device link: a manual check (not automated, since the frontend's markdown-link navigation was not confirmed against source) that the relative `/config/devices/device/{id}` link in the reconfigure step's description opens the right device page from a running dev instance, in-app if HA's markdown renderer supports it, as a full navigation otherwise.
+32. *(INV-74)* The flow by party in en and nb: no screen after the grid company offers a grid or state component; the supplier step opens by naming what the grid tariff covers.
+33. The country step is not shown when `hass.config.country` is set; without it `Europe/Oslo` pre-selects Norway (D13 §19 13).
+34. The postcode reaches only the country's official directory; with it unreachable the step is skipped and the list and zone are asked.
+35. `refresh_tariff` answers what it did; on a failed source it raises `tariff_refresh_failed` and the entry is unchanged; `powerplan_tariff_updated` fires only when the copy changed.
+36. `tariff_stale` after the last version ends with the renewal failing; `tariff_review` on a disagreement with a confirmed field; `preset_outdated` for a retired file.
+37. The credit note is rendered for every country with a source and names each source's licence where one is required; diagnostics contain no postcode and no meter id.
 
 ---
 

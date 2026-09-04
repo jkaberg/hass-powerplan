@@ -673,6 +673,16 @@ Common in the Nordics: an air-to-water or ground-source heat pump feeds a manifo
 - Banking: `heat_capacitor` raises loop setpoints in cheap hours; the pump answers with more electricity *if its grant allows*. Shedding at stage ≥ 2 lowers loop setpoints (the manifold closes) before touching the pump's own setpoint at stage 3 - the loops are the cheap lever, the compressor the expensive one.
 - Unknowns to settle with a real installation: whether the pump exposes a flow/curve setpoint (extra `SETPOINT` role), whether loop actuator state is readable (for reservation and for learning which loops draw), and how DHW priority on the same pump interacts. Until then the pump alone is controllable in v1 and loops are configured as observe-only setpoint loads.
 
+### 5.16 A load behind its own grid tariff, or switched by the grid *(D13 §18 G13–G15)*
+
+| case | where | what the load carries | what follows |
+|---|---|---|---|
+| **its own tariff** | DE §14a Modul 3 (and Modul 2), HU H-tarifa, IS electricity for heating (11 % VAT), BE exclusive night, AU controlled load | `grid_tariff: str \| None` - the key of a `GridTariff.per_load` entry in the site's copy, chosen in the load's flow ("Har dette apparatet egen måler eller egen nettleie?") and pre-selected where the device type fits (a heat pump under §14a) | D1 builds its curve (D1 §5.3); D5 plans it on that curve; D11 bills it on its own meter (`LoadMeter` register, D3) |
+| **switched by the grid** | CZ, SK (HDO) | `switched: str \| None` - the HDO code or signal from the copy's `GridTariff.switched`; asked with where to read it (the code on the meter's label; ČEZ's EAN goes only to ČEZ) | an allowed-window constraint: D5 plans nothing outside it (cap 0), D6 grants nothing outside it (a `Constraint` of kind `switched`, reason `grid_switched`) |
+| **controlled circuit, times unpublished** | HU (vezérelt) | `switched = "unknown"` | not plannable: the load is `delegated`-like for planning - its nameplate reserved while the relay is closed, nothing written - and accounted on its meter; the flow says so |
+
+A `delegated` §14a device whose DSO dims it keeps `ExternalLimit` (§6.4 of the HLD); the tariff binding is independent of it.
+
 ---
 
 ## 6. Configuration schema - questionnaires and derivations
@@ -862,6 +872,10 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 28. *(D-0497: `GateState.recent_context_ids` - the 8 write contexts before the last - and a parent context of any of them are ours too; a context with a `user_id` is the household's at once; a change with neither is adopted only if it still stands `OVERRIDE_GRACE`, 2 min, later.)* Comfort override: a device setpoint changed by the WriteGate's own last write (matching `last_context_id`) is never adopted as a new target; a setpoint changed by anything else, once `reconciled`, is; a setpoint observed before `reconciled` is held, not adopted, not treated as our own (INV-27).
 29. Priority migration: a free-numbered load at 22, 23, 37 and 38 rounds to Lav, Normal, Normal and Høy respectively (the D-0411 midpoints); every type's own default (§6) lands on the level this LLD states for it.
 30. `generic_switch`'s sauna/hot_tub/other keep `control = auto` and `strategy = always` through migration, never `control = off`, even though `strategy == "always"` is stored (§6.7, D-0412); a floor-heating or EV load with strategy `always` does migrate to `control = off` (the type has a real price-steering alternative).
+31. *(G13)* A heat pump bound to a §14a Modul 3 tariff: its plan follows its own curve; the house's other loads follow the house's.
+32. *(G14)* An HDO-switched water heater is never granted power outside its allowed windows, at any stage, and its constraint's reason is `grid_switched`.
+33. *(G15)* A controlled circuit with unknown times is never written to, is reserved while drawing, and its energy is accounted.
+
 ---
 
 ## 10. Deliberately deferred

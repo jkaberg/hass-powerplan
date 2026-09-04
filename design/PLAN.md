@@ -83,6 +83,20 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | **A.2 The entity set and `plan_status`** | the consolidated entity set for all eight types; `plan_status` derived from the snapshot with every merged attribute kept | D8 §5.16 (entity set, `plan_status`, icons) | D8 §9 24, 28; a per-type entity-count test | A.1 |
 | **A.3 Settings by level and the gear flow** | the gear flow asks level 3 only; re-derive never touches an entity; priority as Low/Normal/High; the integration page's labels | D8 §5.16 (setting levels, gear flow); INV-66 | D8 §9 29, 30, 31 | A.2 |
 
+### 3.0e The household's price by party
+
+[D13](lld/D13-tariff-sources.md): a grid company's tariff is fetched from the best source tier and never shipped (INV-70, INV-75); VAT and levies live in each country module and are never asked where it knows them (INV-71); every component has one party (INV-72); no fetch at start, a monthly renewal and `powerplan.refresh_tariff` (INV-73); the flow asks by party (INV-74). Replaces 4.6b and 4.6c (dec. 39). The tariff model's additions (D13 §18 G1-G22) land with the country that needs them.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **TS.1 Model, composition, first cleanup** | `HouseholdPrice` by party; one country module per country with dated VAT and levies; the chain by party; `core/tariffs/rules/`; the tariff-model renames; stored copies migrated offline | D13 §3, §8, §9, §10, §12; D2 §3, §4; D1 §5.3; D11 §5.8 | D13 §19 6, 10, 11, 16; D1 §9 19, 20; D2 §9 42; D11 §9 21, 22 | 4.6 |
+| **TS.2 Source framework, flow by party, renewal** | the source registry and ladder with credits; directories and the postcode step; the flow's steps by party; reasons by party; the monthly renewal and `refresh_tariff`; the nightly canary | D13 §5.1-5.3, §5.6-5.7, §6, §7, §10; D8 §5.1, §5.17; D7 §5.9; D9 §5.15; D12 §5.13 | D13 §19 5, 12-15; D7 §9 24, 25; D8 §9 32-37; no HTTP at setup | TS.1 |
+| **TS.3 Norway** | `fri_nettleie` with its staleness guard and every method; NVE and Kartverket zones | D13 §5.4, §5.8, §5.11; D2 §9 34, 35 | D13 §19 1; every household tariff parses | TS.2 |
+| **TS.4 Sweden, Denmark** | `eltariff`, Ei's household file, `elpris_dk` with `datahub_pricelist` | D13 §5.5, §5.9, §5.11 | D13 §19 2, 3 | TS.2 |
+| **TS.5 Belgium, US, Australia, Finland's directory** | `vreg_xlsx`, the Walloon and Brussels comparators, `openei_urdb`, `cdr_energy`; several peak charges, nth-highest, per-day and kVA units | D13 §5.5, §5.9, §5.11; D2 §9 32, 33, 36, 38 | D13 §19 7-9 | TS.2 |
+| **TS.6 Retire shipped prices** | no company price in the repository; benchmark houses on fixtures | D13 §12 | INV-70; `nordic_detached` unchanged | TS.3, TS.4, TS.5 |
+| **TS.7 Europe** | per-load tariffs and grid-switched windows; priced soft limits; standard-time filters; PT's VAT band; adapters for CH, SK, RO, PL; templates for IT, PT, FR, IE | D13 §5.10, §18; D2 §5.8; D4 §5.16; D5 §5.1; D6; D1 §9 21-23 | D2 §9 37, 39-41; D4 §9 31-33; D5 §9 23-25; D6 §9 26, 27; D11 §9 23 | TS.6 |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -325,6 +339,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 36. **No migration for device attachment, and the brand marks the rows instead of a name prefix.** Nothing released needs migrating (D-0421); the brand icon is the entity picture (D-0418). *Rejected:* a "PowerPlan-" prefix - clutter in every row.
 37. **The dashboard is redesigned before it ships:** two tabs, a subview per appliance, History on the Energy picker (D12). *Rejected:* polishing four tabs - the problem was the shape, not the finish.
 38. **Grid tariffs come from the operators' data, not files in the repository.** Where a source publishes every company's household tariff, the flow fetches it, the entry keeps a copy, and the runtime renews it. *Superseded by dec. 39.*
+39. **The household's price by party** (D13). A company's tariff is fetched from the first source tier that passes the quality check, API before file before document (INV-75); company prices never ship (INV-70); national law ships in country modules; VAT is never asked where known; the flow asks by party; the copy renews monthly, never at start (INV-73); a priced contracted-power excess is a cost, not a hard limit. *Rejected:* shipped files where no source exists - staleness returns where nobody checks.
 
 ---
 
@@ -373,6 +388,13 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | A.1 | Attach | done |
 | A.2 | The entity set and `plan_status` | done |
 | A.3 | Settings by level and the gear flow | done |
+| TS.1 | Model, composition, first cleanup | todo |
+| TS.2 | Source framework, flow by party, renewal | todo |
+| TS.3 | Norway | todo |
+| TS.4 | Sweden, Denmark | todo |
+| TS.5 | Belgium, US, Australia, Finland's directory | todo |
+| TS.6 | Retire shipped prices | todo |
+| TS.7 | Europe | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -415,8 +437,8 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.3b | Market houses: FI, ES, FR | todo |
 | 4.4 | Entity format table | done |
 | 4.6 | Tariffs: verified facts only | done |
-| 4.6b | Tariff sources: NO, SE, DK | on hold |
-| 4.6c | Tariff sources: BE, US, AU | on hold |
+| 4.6b | Tariff sources: NO, SE, DK | replaced |
+| 4.6c | Tariff sources: BE, US, AU | replaced |
 | 4.7 | Price sources: every row through the flow | todo |
 | 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | todo |
