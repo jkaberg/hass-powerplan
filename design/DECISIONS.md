@@ -2197,3 +2197,13 @@ The appliances card, dialog, price card, forecast and status keep the prototype'
 
 D2's "grammar" becomes the tariff model (`grammar.py` → `model.py`, `Grammar` → `TariffRule`, `TariffVersion.grammar` → `.rules`), since "grammar" read as text parsing (D13 O25). The evaluator's protocol, already called `TariffModel`, becomes `TariffEvaluator`, so one term doesn't mean two things. D2 §9 42 asserts nothing imports the old names. Affects HLD §2, §6.2; D2 §3, §4.
 **Rejected:** "tariff rules" in `rules.py` - `core/tariffs/rules/` already holds the rule templates.
+
+### D-0531 · Only a changed setpoint value is a hand on the dial
+
+`_adopt_setpoint_overrides` remembers the last value seen, not `(value, context)`; a report with the same value is no change whatever its context. After a restart that found the tank's dial at 75 °C with our record at 45 °C, the next temperature report under a fresh context was adopted as a 75 °C comfort target, and the tank held 75 °C all day. Affects D4 §4.1, D8 §9 28.
+**Rejected:** asking `setpoint_origin` on every report - a fresh context isn't a change.
+
+### D-0532 · `max_age` is one day-ahead cycle: 36 h
+
+`compose.DEFAULT_MAX_AGE` goes from 12 h to 36 h. A day-ahead source is fetched once a day, so today's rows are ~11 h old at midnight, and 12 h marked every final auction price `STALE` from 01:00, doubling the hysteresis all day. Affects D1 §3, §6.
+**Rejected:** re-fetching today at every publication - a call a day to learn nothing, since the auction result is final.

@@ -1107,9 +1107,9 @@ class Runtime:
         self.sw_version: str | None = None
         #: The load types in words, a fallback appliance device's model (§5.16).
         self.type_names: dict[str, str] = {}
-        #: The setpoint each shared thermostat last showed, and under which
-        #: `Context` (amended INV-27): absent until the first read after a start.
-        self._setpoint_seen: dict[str, tuple[float, str]] = {}
+        #: The setpoint each shared thermostat last showed (amended INV-27):
+        #: absent until the first read after a start.
+        self._setpoint_seen: dict[str, float] = {}
         #: When a household's hand on the dial last became the comfort target.
         self.overridden_at: dict[str, datetime] = {}
         #: A change at the device waiting out `OVERRIDE_GRACE`: (value, first seen) (D-0497).
@@ -2353,8 +2353,9 @@ class Runtime:
     def _adopt_setpoint_overrides(self, now: datetime) -> None:
         """Take a hand on the thermostat's dial as the new comfort target (amended INV-27).
 
-        Read before each tick: the setpoint's value and the `Context` id of the
-        state that carries it. `setpoint_origin` says whose change it is. The
+        Read before each tick: the setpoint's value and the `Context` of the
+        state that carries it; only a changed value is looked at, and
+        `setpoint_origin` says whose change it is. The
         first value seen after a start is only recorded - nothing yet tells ours
         from theirs. A household change becomes configuration (the subentry's
         `comfort_c`, D8 §5.16), so it outlives a restart, and the next tick
@@ -2374,9 +2375,12 @@ class Runtime:
             if state is None or not isinstance(value, int | float):
                 continue
             seen = self._setpoint_seen.get(load.load_id)
-            self._setpoint_seen[load.load_id] = (float(value), state.context.id)
+            self._setpoint_seen[load.load_id] = float(value)
             pending = self._override_pending.get(load.load_id)
-            if seen is not None and seen == (float(value), state.context.id):
+            # Only a new value is a change: every attribute the device reports -
+            # a room temperature, an action - comes under a fresh context, and
+            # an unchanged dial is nobody's decision (D-0531).
+            if seen is not None and seen == float(value):
                 if pending is not None and now - pending[1] >= OVERRIDE_GRACE:
                     del self._override_pending[load.load_id]
                     self._adopt_comfort(load, pending[0], now)

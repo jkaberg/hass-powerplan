@@ -26,8 +26,11 @@ if TYPE_CHECKING:
     from .model import RawSlot
     from .modifiers.base import PriceModifier
 
-#: How old a fetch may be before its slots are `STALE` (D1 §6 Advanced).
-DEFAULT_MAX_AGE: Final = timedelta(hours=12)
+#: How old a fetch may be before its slots are `STALE` (D1 §6 Advanced): one
+#: day-ahead cycle - a fetch at the ~13:00 publication covers the next day to
+#: its midnight, 35 h on - so only a missed publication makes a slot stale
+#: (`design/DECISIONS.md` D-0532).
+DEFAULT_MAX_AGE: Final = timedelta(hours=36)
 
 
 class CoverageError(RuntimeError):

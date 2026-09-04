@@ -129,7 +129,7 @@ async def fetch_missing(sources: list[PriceSource], store: RawStore, now: dateti
 def build_curve(raw: Sequence[RawSlot], modifiers: Sequence[PriceModifier], forecaster: PriceForecaster,
                 ctx: PriceContext, horizon: timedelta, now: datetime, *,
                 carrier=Carrier.ELECTRICITY, direction=Direction.IMPORT, source_priority: Sequence[str] = (),
-                max_age: timedelta = 12 h, history: Sequence[Slot] = ()) -> PriceCurve   # raises CoverageError (§5.3)
+                max_age: timedelta = 36 h, history: Sequence[Slot] = ()) -> PriceCurve   # raises CoverageError (§5.3)
 class PriceCurve:                                          # the type lives in core/model.py (HLD §5, D-0030)
     def price_at(self, t: datetime) -> Slot | None
     def slots_between(self, a: datetime, b: datetime) -> tuple[Slot, ...]
@@ -358,7 +358,7 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 
 Review text (INV-67), by party: "Tomorrow's prices come from Nord Pool NO3 at about 13:00. Tonight at 23:00: grid 23 øre (Tensio) + power 71 øre (spot + your supplier's 4 øre) + taxes 32 øre (VAT 25 %, forbruksavgift, Enova). If Nord Pool is unreachable, powerplan keeps planning with yesterday's shape and the grid charge."
 
-Advanced: `max_age_h` (12), `horizon_h` (48), `fx_rate`, hysteresis policy fields, publication time override, retention days.
+Advanced: `max_age_h` (36, one day-ahead cycle - a fetch at the ~13:00 publication covers the next day to midnight 35 h on, so only a missed publication marks a slot stale, D-0532), `horizon_h` (48), `fx_rate`, the hysteresis fields, publication time override, retention days.
 
 Validation: currency mismatch without `fx_rate` refused, a VAT override > 30 % warns, a `tou_schedule` whose periods don't cover the week is refused ("a gap Tuesday 02:00–03:00"), `fixed_price` cap ≤ 0 refused, and `fixed_price` together with `subsidy_threshold` refused (Norgespris and strømstøtte are mutually exclusive by law).
 

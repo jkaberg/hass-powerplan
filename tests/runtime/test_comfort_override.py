@@ -8,14 +8,25 @@ adopted; a hand-turned dial is, and becomes the load's `comfort_c`.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from homeassistant.util import dt as dt_util
 
-from custom_components.powerplan.core.loads.gate import OVERRIDE_GRACE
+from custom_components.powerplan.core.loads import LoadState
+from custom_components.powerplan.core.loads.gate import OVERRIDE_GRACE, GateState
 from custom_components.powerplan.load_entities import plan_state
 from tests.runtime.conftest import FakeFloor, FakeMeter, advance, site_entry
-from tests.runtime.test_writes_on_record import COMFORT_C, LOAD_ID, TARGET_KW, meter, start_site
+from tests.runtime.test_writes_on_record import (
+    COMFORT_C,
+    LOAD_ID,
+    SHED_C,
+    TARGET_KW,
+    meter,
+    restart,
+    start_site,
+)
 
 if TYPE_CHECKING:
     from freezegun.api import FrozenDateTimeFactory
@@ -94,3 +105,36 @@ async def test_28_a_device_that_springs_back_within_the_grace_is_not_a_hand(
     await runtime.run_tick("test")
     assert runtime.load_params[LOAD_ID]["comfort_c"] == 23.0
     await runtime.stop("unload")
+
+
+@pytest.mark.inv("INV-27")
+async def test_28_a_fresh_context_on_an_unchanged_setpoint_is_not_a_hand(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    freezer: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+) -> None:
+    """A tank on the reference house: our last write on record differs from the dial after a restart.
+
+    The dial is only recorded at the start; a later report that changes nothing
+    but the room temperature arrives under a fresh context and must not make the
+    unchanged setpoint a hand on the dial.
+    """
+    floor = FakeFloor(hass, setpoint_c=COMFORT_C)
+    floor.register()
+    entry = site_entry(hass, target_kw=TARGET_KW)
+    runtime = await start_site(hass, entry, floor)
+    at = dt_util.utcnow() - timedelta(minutes=20)
+    record = LoadState(gate=GateState(last_write_at=at, last_value=SHED_C))
+    again = await restart(hass, runtime, entry, floor, hass_storage, record=record)
+    assert floor.setpoint_c == COMFORT_C
+    await advance(hass, freezer, again.build.loads[0].gate.verify_after_s + 1.0)
+
+    floor.report_temperature(floor.temp_c + 0.5)
+    await again.run_tick("test")
+    await advance(hass, freezer, OVERRIDE_GRACE.total_seconds() + 1.0)
+    await again.run_tick("test")
+
+    assert "comfort_c" not in again.load_params.get(LOAD_ID, {})
+    assert LOAD_ID not in again.overridden_at
+    await again.stop("unload")

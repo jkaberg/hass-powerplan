@@ -328,6 +328,11 @@ class FakeFloor:
         self.setpoint_c = setpoint_c
         self._publish(None if user_id is None else Context(user_id=user_id))
 
+    def report_temperature(self, temp_c: float) -> None:
+        """Report a new room temperature: the same setpoint under a fresh context."""
+        self.temp_c = temp_c
+        self._publish()
+
     # -- `LoadDevice` --------------------------------------------------------- #
 
     @property

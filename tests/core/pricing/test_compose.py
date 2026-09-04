@@ -235,6 +235,20 @@ def test_11_stale_after_max_age_doubles_the_hysteresis_threshold() -> None:
     assert policy.threshold(stale, ORDINARY, OSLO) == 2 * expected
 
 
+@pytest.mark.inv("INV-5")
+def test_11_a_day_ahead_fetch_stays_known_through_its_whole_day() -> None:
+    """Fetched at the 13:00 publication the day before, the day's last slot is still KNOWN.
+
+    A 12 h `max_age` against a once-a-day fetch
+    marked every one of the day's final auction prices STALE from 01:00 on.
+    """
+    start, end = day_bounds(ORDINARY)
+    raw = volatile_no3_day(fetched_at=start - timedelta(hours=11))
+    curve = compose_day(raw, norwegian_chain(), now=end - timedelta(minutes=15))
+
+    assert {slot.confidence for slot in curve.slots} == {Confidence.KNOWN}
+
+
 @pytest.mark.inv("INV-8")
 def test_11_the_floor_holds_on_a_flat_day() -> None:
     """A flat day falls back to the minor-unit floor, not to zero (INV-8)."""
