@@ -1,11 +1,10 @@
 """Norgespris is a flat 0.50, whatever order the entry stored.
 
-The reference house's entry stores `vat` before `fixed_price` - the order the household
-ticked them in. Composed in that order, VAT was taken on the spot that `fixed_price`
-then replaced: 0.40 + 25 % × spot, 0.50–1.02 NOK/kWh over two days, instead of the flat
-0.50 the household pays (the observe audit's F-2). A modifier that replaces the energy
-price now runs first in `chain_from` (D1 §5.3, D-0390), so the stored entry needs no
-migration.
+An entry can store `vat` before `fixed_price`, in the order the household ticked
+them. Composed in that order, VAT was taken on the spot that `fixed_price` then
+replaced: 0.40 + 25 % × spot instead of the flat 0.50 the household pays. A
+modifier that replaces the energy price now runs first in `chain_from` (D1 §5.3,
+D-0390), so the stored entry needs no migration.
 """
 
 from __future__ import annotations

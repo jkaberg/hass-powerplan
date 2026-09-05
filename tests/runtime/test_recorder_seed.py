@@ -1,9 +1,9 @@
 """The period and the baseline from the recorder, through the runtime.
 
-The reference house's observe audit found a
-site created on the 22nd pricing September on two days (F-5: 2–5 kW and 244 NOK
-against the recorder's 5–10 kW and 416 NOK) and a baseline that was never seeded
-(F-7: the startup guard `not baseline.state.bins` cannot be true). Everything
+A site created late in a month used to price the month on the days it had seen
+(2–5 kW and 244 NOK against the recorder's 5–10 kW and 416 NOK), and a fresh
+baseline was never seeded (the startup guard `not baseline.state.bins` cannot be
+true). Everything
 here runs a real Home Assistant with a real, in-memory recorder: the import
 register's hourly statistics are imported as the recorder would have compiled
 them, and the site is set up on top of them.

@@ -724,8 +724,8 @@ class Load:
         within one dwell of it). Only powerplan's own recorded writes are undone
         and the device returns to what it held before them: a device powerplan
         never wrote to keeps whatever it holds, because that value is somebody
-        else's (H.1 F-1: a charger's 10 A watchdog
-        overridden to 32 A on every start, `design/DECISIONS.md` D-0360). The record
+        else's (a charger's 10 A watchdog was overridden to 32 A on every
+        start before this, `design/DECISIONS.md` D-0360). The record
         is never powerplan's own write, so a start cannot walk a setpoint a band
         per restart.
         """

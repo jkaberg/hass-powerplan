@@ -19,7 +19,8 @@ import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.helpers import issue_registry as ir
 
-from .const import DOCS_URL, DOMAIN
+from .const import DOMAIN
+from .doclinks import doc_url
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -87,7 +88,7 @@ def registry_id(entry_id: str, issue_id: str) -> str:
 
 def learn_more_url(key: str) -> str:
     """Return the troubleshooting page's section for one catalogue row (D8 §5.9, §5.13)."""
-    return f"{DOCS_URL}/troubleshooting.md#{key}"
+    return doc_url("troubleshooting", key)
 
 
 def catalogue_key(issue_id: str) -> str:

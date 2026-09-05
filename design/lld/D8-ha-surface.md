@@ -392,7 +392,7 @@ Measured: 38 steps, 997 strings, 6 506 words, the longest step description 86 wo
 
 ### 5.15 The household's screens *(PLAN §7 dec. 28)*
 
-The review (`design/reviews/ux-review.md`, item IDs below are its own) looked at every screen through the eyes of a household that knows its bill, roughly what a fuse is and which appliances draw a lot, and nothing about IT networks, cumulative tiers, carriers, COP or baselines. Its findings bind this section; where it and an earlier rule disagree, the resolution is stated. A scoping pass checked every item against the code and against Home Assistant 2026.9.0 in `.venv`; the item map at the end is the result, and the text below is corrected where the first cut was wrong or HA cannot do what it asked.
+The review (`design/reviews/ux-review.md`, item IDs below are its own) looked at every screen through the eyes of a household that knows its bill, roughly what a fuse is and which appliances draw a lot, and nothing about IT networks, cumulative tiers, carriers, COP or baselines. Its findings bind this section; where it and an earlier rule disagree, the resolution is stated. A second pass checked every item against the code and against Home Assistant 2026.9.0; the item map at the end is the result, and the text below is corrected where the first cut was wrong or HA cannot do what it asked.
 
 **Rules for every screen** (review §1, adding to HLD §7.9 and §5.13 here):
 

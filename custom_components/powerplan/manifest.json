@@ -5,7 +5,7 @@
   "codeowners": ["@jkaberg"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/jkaberg/hass-powerplan/tree/main/docs",
+  "documentation": "https://github.com/jkaberg/hass-powerplan/blob/main/docs/README.md",
   "integration_type": "hub",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jkaberg/hass-powerplan/issues",

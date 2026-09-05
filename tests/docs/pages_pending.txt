@@ -1,0 +1,26 @@
+# The user pages no WP has written yet (D14 §9 3; PLAN §3.0f). The WP that
+# writes a page deletes its line, and every check that needs the page starts.
+get-started.md               # DOC.2
+setup.md                     # DOC.2
+circuits-groups-rooms.md     # DOC.2
+appliances/README.md         # DOC.3
+appliances/appliance_cycle.md
+appliances/battery.md
+appliances/ev.md
+appliances/floor_heating.md
+appliances/generic_switch.md
+appliances/heat_pump.md
+appliances/radiator.md
+appliances/water_heater.md
+strategies.md                # DOC.3
+devices.md                   # DOC.3
+tariffs.md                   # DOC.3
+prices.md                    # DOC.3
+how-it-works.md              # DOC.4
+capacity-tariffs.md          # DOC.4
+savings.md                   # DOC.4
+daily-use.md                 # DOC.4
+troubleshooting.md           # DOC.4
+limitations.md               # DOC.4
+examples.md                  # DOC.4
+dashboard.md                 # DOC.5: the page exists and is rewritten to the §4 frame

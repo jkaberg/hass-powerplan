@@ -5,8 +5,7 @@ hourly statistics row's `sum` is *placed*, and that depends on how the register
 reported, which only the recorder's own state rows know. A statistics row is
 filed under its hour's start; its `sum` is the register at the last report
 inside the hour - the start itself for an AMS meter that reports once, on the
-hour, the value at the boundary (the reference
-house's recorder backtest: "anchor `start`"), and the hour's end for a
+hour, the value at the boundary (the reference house's), and the hour's end for a
 register that reports every few seconds.
 """
 

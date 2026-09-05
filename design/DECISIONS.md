@@ -2207,3 +2207,30 @@ D2's "grammar" becomes the tariff model (`grammar.py` → `model.py`, `Grammar` 
 
 `compose.DEFAULT_MAX_AGE` goes from 12 h to 36 h. A day-ahead source is fetched once a day, so today's rows are ~11 h old at midnight, and 12 h marked every final auction price `STALE` from 01:00, doubling the hysteresis all day. Affects D1 §3, §6.
 **Rejected:** re-fetching today at every publication - a call a day to learn nothing, since the auction result is final.
+
+### D-0540 · The entity tables are read from the reference house's registry, through pytest
+
+`entities.md`'s `entities:home` and `entities:appliance` blocks come from the entity registry after `tests/docs/test_generated.py` adds the reference house's eight appliances through the flow; that test is their stale check, and `POWERPLAN_DOCS_WRITE=1` (via `tools/docs.py --write`) writes them. Unit, category and default are the registry entry's. Which entities exist and which are enabled is decided at setup in five places; only the registry holds the answer. Affects D14 §5.6.
+**Rejected:** introspecting descriptions statically - the per-runtime `enabled` callables can't be evaluated without a site.
+
+### D-0541 · The pending list is by page; the checks a page needs wait for it
+
+`tests/docs/pages_pending.txt` names pages, and each check skips what a pending page covers (built URLs, key families, a flow's step-link and budget rules; the option-label budget until no flow page is pending). No-URL and placeholder rules run now. `step_placeholders` takes the type, since an appliance's steps link its type's page; the `fields` block is `fields:<flow>.<step>`. The budget violations and missing links are the rewrite's work. Affects D14 §3.2, §5.5, §5.6, §9 1, 3, 4.
+**Rejected:** an allow-list of today's violations - 91 entries churned twice.
+
+### D-0542 · The move to `design/` is one idempotent command
+
+`HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/` and the design roster move from `docs/` to `design/` with `git mv`, `docs/brand/` to `docs/images/brand/`, and every citing file is rewritten by one command an open branch can re-run before it merges:
+
+```
+git grep -lE 'docs/(HLD|PLAN|DECISIONS)\.md|docs/(lld|reviews|benchmarks|brand)\b|"docs" / "(HLD\.md|PLAN\.md|DECISIONS\.md|lld|reviews|benchmarks)"' \
+  | xargs perl -pi -e 's#\bdocs/(HLD|PLAN|DECISIONS)\.md#design/$1.md#g; s#\bdocs/(lld|reviews|benchmarks)\b#design/$1#g; s#\bdocs/brand\b#docs/images/brand#g; s#"docs" / "(HLD\.md|PLAN\.md|DECISIONS\.md|lld|reviews|benchmarks)"#"design" / "$1"#g'
+```
+
+`docs/README.md` becomes the user index. Affects D14 decision 1, appendix A.
+**Rejected:** moving by hand per branch - 140 files.
+
+### D-0543 · American spelling on every English screen
+
+`en.json` and `strings.json` values use liters, meters, millimeters, program and recognizes (D14 appendix A); keys keep their spelling. `events.md` shows event labels verbatim, and the pages' spelling check would fail on "programme".
+**Rejected:** changing only the units - the pages quote the rest.

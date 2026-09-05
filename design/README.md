@@ -1,4 +1,6 @@
-# powerplan - documentation
+# PowerPlan - design documents
+
+The design of PowerPlan, for contributors. The household's documentation is [`docs/`](../docs/README.md) (D14).
 
 | Document | Purpose |
 |---|---|

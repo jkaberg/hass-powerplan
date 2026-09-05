@@ -16,13 +16,13 @@ last state of the period). When that report is depends on the meter:
 | once an hour, at the boundary (an AMS meter; D3 §5.5's latched mode) | the register at S | S |
 | every c seconds, c < 1 h | the register at S + 1 h − c | S + 1 h − c |
 
-So a row is placed at `S + 1 h − min(c, 1 h)`, with `c` the median gap between the register's
-own recent *changes of value*. The reference house reports at HH:00:10 (its recorder backtest:
-"anchor `start`"); a register read every few seconds lands a whole hour late without this. A
-value republished after `unavailable` - every restart does it, several times a day in the house -
-is not a report, or the restarts would pull the median under the hour (D3 §5.5's
-`near_boundary` lesson). With no changes to measure, D3 §5.3's default holds: latched until a
-cadence is known.
+So a row is placed at `S + 1 h − min(c, 1 h)`, with `c` the median gap between
+the register's own recent *changes of value*. The reference house reports at
+HH:00:10; a register read every few seconds lands a whole hour late without
+this. A value republished after `unavailable` - every restart does it, several
+times a day in the house - is not a report, or the restarts would pull the
+median under the hour (D3 §5.5's `near_boundary` lesson). With no changes to
+measure, D3 §5.3's default holds: latched until a cadence is known.
 """
 
 from __future__ import annotations

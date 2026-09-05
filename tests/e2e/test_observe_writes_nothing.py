@@ -1,25 +1,23 @@
-"""WP H.2 - an observe day with loads bound, through a restart and a reload: no device call.
+"""An observe day with loads bound, through a restart and a reload: no device call.
 
-The reference house's observe audit, F-1: in
-observe, every start of powerplan wrote the charger's current limit 10 → 32 A over
-the household's watchdog automation, and a heat pump's setpoint 21 → 22 °C. The
-rule since - nothing is written while the site is off, startup
-included (INV-26, INV-27 as amended) - is asserted here the way the house would
-show it: the site made through the real flow in observe, the charger and the heat
-pump bound through the real subentry flows, the fake house behind Home Assistant's
-service bus, one simulated day with Home Assistant restarting mid-morning - its
-`homeassistant_stop`, then the site set up again before `homeassistant_started` -
-and the entry reloading mid-afternoon. The watchdog puts the charger at 10 A a few
-minutes after each, and the heat pump's own remote holds it at 20 °C. The store is
-written through to its file on every save, as Home Assistant writes it, because the
-site reads its own file at setup (D-0091).
+In observe, a start of powerplan used to write the charger's current limit 10 → 32 A
+over the household's watchdog automation, and a heat pump's setpoint 21 → 22 °C.
+Nothing is written while the site is off, startup included (INV-26, INV-27), and this
+asserts it the way the house would show it: the site made through the real flow in
+observe, the charger and the heat pump bound through the real subentry flows, the fake
+house behind Home Assistant's service bus, one simulated day with Home Assistant
+restarting mid-morning - its `homeassistant_stop`, then the site set up again before
+`homeassistant_started` - and the entry reloading mid-afternoon. The watchdog puts the
+charger at 10 A a few minutes after each, and the heat pump's own remote holds it at
+20 °C. The store is written through to its file on every save, as Home Assistant writes
+it, because the site reads its own file at setup (D-0091).
 
 Every service call is spied at Home Assistant's registry, because once the site's
 own `number`, `select` and `switch` platforms load those domains' services are Home
 Assistant's, not the fake house's. The day must end with **zero** calls addressed
 to any entity of the house's devices, the watchdog's 10 A and the remote's 20 °C
-standing, the observe log reporting each load's would-be value once per change
-(F-4), and no ERROR - unload, reload and restart included (F-15, F-16).
+standing, the observe log reporting each load's would-be value once per change,
+and no ERROR - unload, reload and restart included.
 """
 
 from __future__ import annotations

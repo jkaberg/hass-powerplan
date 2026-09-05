@@ -83,6 +83,33 @@ At the end of a WP that touches `core/`, also run every scenario file, `tools/be
 
 The coverage floors are CI gates: `core/` 90 % of lines, `writegate.py` 100 %, 85 % overall. They are set in `pyproject.toml`, and `tools/coverage_gate.py` enforces them.
 
+## User documentation
+
+The pages under `docs/` are part of the surface (D14). A change that a household or an automation can see updates its page in the same PR, and the PR description's **Docs** line names the pages changed, or says "no user-visible change".
+
+| A change to | Updates |
+|---|---|
+| a flow step or field | its section on `setup.md`, `appliances/<type>.md` or `circuits-groups-rooms.md` |
+| a registry key (strategy, device type, country module, grid source, price format, modifier, profile) | its section, and the page's generated table |
+| a default | the section that states it |
+| an entity | `entities.md` |
+| an action or an event | `actions.md`, `events.md` |
+| a repair | its entry in `troubleshooting.md` |
+| a dashboard view or card | `dashboard.md` and its screenshot |
+| a limitation found or lifted | `limitations.md` |
+| the Home Assistant floor or a dependency | `install.md` |
+
+How a page is written:
+
+- The reader is a household that knows its bill, roughly what a fuse is, and which appliances draw a lot. Write in the second person and present tense, with at most 25 words to a sentence.
+- Use the glossary's words (home, appliance, circuit, capacity step, target, trial mode, and so on). The design's own words (site, load, shed, tick, allocator) appear only inside code spans, and INV numbers, D-numbers, WP ids and module paths not at all.
+- English only, American spelling, sentence-case headings. Screen labels exactly as `en.json` has them, in bold.
+- A generated block (`<!-- generated:begin … -->`) comes from its source: change the source and run `uv run python tools/docs.py --write`. Never edit the block by hand.
+- Screenshots come from a development instance with the example home, in the light theme, at most 250 KB, with alt text.
+- The root `README.md` is HACS's store page, so it uses absolute URLs only, and no alerts, mermaid or `<details>`.
+
+In code, every URL is built through `doclinks` over `const.DOCS_URL`. A translation string never holds a URL, only a `{docs}` placeholder.
+
 ## Commands
 
 ```

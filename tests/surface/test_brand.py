@@ -55,4 +55,7 @@ def test_20_manifest_name_and_documentation() -> None:
     manifest = _manifest()
     assert manifest["domain"] == "powerplan"
     assert manifest["name"] == "PowerPlan"
-    assert manifest["documentation"] == "https://github.com/jkaberg/hass-powerplan/tree/main/docs"
+    assert (
+        manifest["documentation"]
+        == "https://github.com/jkaberg/hass-powerplan/blob/main/docs/README.md"
+    )

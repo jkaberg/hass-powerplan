@@ -1,4 +1,4 @@
-"""No IANA zone is ever a literal in the flow (D-0120).
+"""No IANA zone is ever a literal in the flow.
 
 The site timezone is derived from the environment - `hass.config.time_zone` -
 and materialised into `entry.data` at creation; the flow asks only when Home

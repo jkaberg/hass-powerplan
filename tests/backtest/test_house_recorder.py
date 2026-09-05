@@ -4,7 +4,7 @@ A **house check**, not a gate (PLAN §3, D9 §1): it runs only when
 `POWERPLAN_RECORDER_COPY` points at a *copy* of the house's
 `home-assistant_v2.db`, and it is skipped otherwise - the one sanctioned skip in
 this suite, because external data is either there or it is not. What it produces
-is the log under `design/benchmarks/house/<date>-recorder-backtest.md`: the span
+is a log: the span
 actually present, the per-month numbers, how good the reconstruction was, and the
 phase-0 gate sentence answered per month with a count. Numbers, not judgement.
 
@@ -151,7 +151,7 @@ def _log(
     end: datetime,
     check: BacktestResult,
 ) -> str:
-    """Render the house check as `design/benchmarks/house/<date>.md` (D9 §5.12)."""
+    """Render the house check as markdown (D9 §5.12)."""
     whole = [key for key, row in result.months.items() if row.days >= 28]
     passed = [key for key in whole if result.months[key].gate]
     span_from = result.span[0].astimezone(OSLO).isoformat()

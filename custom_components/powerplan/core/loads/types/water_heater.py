@@ -119,7 +119,7 @@ ELEMENT_KW: Final = (1.5, 2.0, 3.0, 4.5, 6.0, 9.0)
 
 #: How much of a tank's charge is worth committing to in one block, minutes
 #: (`design/DECISIONS.md` D-0204). D5's `deadline_fill` uses it to refuse the
-#: 23-minute four-reversal window on the ancestor controller.
+#: flipping tank: four reversals in 23 minutes on the ancestor controller.
 MIN_BLOCK_MIN: Final = 30.0
 
 #: The temperature difference that counts as "there" for a tank, kelvin.

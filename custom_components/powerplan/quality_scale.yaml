@@ -53,20 +53,29 @@ rules:
       manifest.json's requirements list the integration's only third-party
       dependency (holidays>=0.84, core/pricing/holidays.py); core/ is pure
       Python and stdlib, providers/ use only HA's own helpers.
-  docs-actions: todo
+  docs-actions:
+    status: done
+    comment: >-
+      docs/actions.md: every action with its fields, generated from
+      services.yaml, and an example each.
   docs-conditions:
     status: exempt
     comment: >-
       powerplan provides no condition platform. Automations read the published
       entities and the powerplan_* bus events instead (D8 §5.6).
   docs-high-level-description: todo
-  docs-installation-instructions: todo
-  docs-removal-instructions: todo
+  docs-installation-instructions:
+    status: done
+    comment: docs/install.md, through HACS, with its My buttons.
+  docs-removal-instructions:
+    status: done
+    comment: docs/install.md, its Remove section.
   docs-triggers:
     status: exempt
     comment: >-
       powerplan provides no trigger platform. Every transition is fired on the
-      bus as a powerplan_* event with its reason attached (D8 §5.6).
+      bus as a powerplan_* event with its reason attached (D8 §5.6);
+      docs/events.md shows how to trigger on each.
   entity-event-setup:
     status: done
     comment: >-
@@ -181,7 +190,9 @@ rules:
   docs-supported-devices: todo
   docs-supported-functions: todo
   docs-troubleshooting: todo
-  docs-use-cases: todo
+  docs-use-cases:
+    status: done
+    comment: docs/README.md, what PowerPlan does for a home and "I want to…".
   dynamic-devices:
     status: exempt
     comment: >-

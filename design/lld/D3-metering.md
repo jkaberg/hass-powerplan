@@ -371,7 +371,7 @@ close: LoadSlot(kwh, source, confidence = "exact" if source ≠ ESTIMATED and ga
 
 The slot boundary is the **wall clock**, not a register report. A ±10 s boundary error at 11 kW is 30 Wh on a slot priced like its neighbour, so §5.4's seam discipline buys nothing here and isn't applied. Measured power is used even while a write is settling - the ledger wants what was drawn, not what was commanded, INV-18 is a budget rule and not a metering one. A load that switches source mid-slot closes the slot `estimated`. Slot length follows the curve's slot (15/30/60 min, D1). `lifetime_kwh` feeds `sensor.<load>_energy` (D8). It's powerplan's own monotone counter and not the device's register, so a device reset never shows as a drop.
 
-**WP0.10a** settled four things §5.12 left open (`design/DECISIONS.md` D-0171…D-0173):
+The rules the code settles (D-0171…D-0173):
 
 | | |
 |---|---|

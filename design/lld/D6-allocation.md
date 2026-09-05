@@ -86,23 +86,9 @@ class Ladder: def update(self, budget: Budget, *, p_total_w, hard: HardLimits, t
 def proportional_trim(loads, grants, deficit_w, protected, cfg, *, views, blunt, stop_ok) -> tuple[Grants, float]
 ```
 
-**WP0.7 amendments to these signatures** (`design/DECISIONS.md` D-0162, D-0163).
-`allocate` takes one frozen `AllocCtx` - `now`, `meter`, `budget`, `electrical`,
-`loads`, `plans`, `views` (D3's per-load `ControlledView`), `previous` (last tick's
-grants), `stage`, `blunt`, `frozen`, `hard`, `marginal_cost` - because §5.2, §5.3 and
-§5.5 need the meter, the per-load measurements and the previous grants, and §2
-already requires an `AllocCtx` for `prepare()`; `demands` is gone, since a `Demand`
-rides on its own `LoadView`. `Ladder.update` reads the five numbers §3 listed
-separately off the `Budget` that carries them, plus `p_allow_w` for the clean-tick
-test. `proportional_trim` returns the grants instead of writing into a report,
-because `AllocReport` is frozen (§4).
+`allocate` takes one frozen `AllocCtx` (`now`, `meter`, `budget`, `electrical`, `loads`, `plans`, `views` (D3's per-load `ControlledView`), `previous` (last tick's grants), `stage`, `blunt`, `frozen`, `hard`, `marginal_cost`), since §5.2, §5.3 and §5.5 need the meter, the per-load measurements and the previous grants, and `prepare()` needs a context anyway. A `Demand` rides on its own `LoadView`. `Ladder.update` reads its numbers off the `Budget` that carries them, plus `p_allow_w` for the clean-tick test. `proportional_trim` returns the grants instead of writing into a report, since `AllocReport` is frozen (§4, D-0162, D-0163).
 
-**WP5.2 amendment** (`design/DECISIONS.md` D-0319). `budget` grows a seventh,
-defaulted parameter - `controlled_planned_kwh: float = 0.0` - because §2's
-formula needs `Σ_controlled_planned` and nothing inside `core/allocation` has the
-plans to sum it from at the point `tick()` calls `budget()` (step 5, before
-`AllocCtx` exists at step 8); the default keeps every pre-WP5.2 positional call
-site unchanged.
+`budget`'s last parameter, `controlled_planned_kwh: float = 0.0`, exists because §2's formula needs `Σ_controlled_planned` and nothing inside `core/allocation` has the plans at the point `tick()` calls `budget()` (step 5, before `AllocCtx` exists at step 8). The default keeps callers without plans unchanged (D-0319).
 
 ---
 
@@ -114,29 +100,32 @@ class Budget:
     ceiling_kwh: float; eps_kwh: float; used_kwh: float; t_rem_h: float
     reserve_kwh: float; sigma_w: float; r_trim_kwh: float
     p_allow_w: float                # (ceiling − used − reserve)/t_rem, floored 0, capped by hard limit
-    p_hard_w: float                 # min over site hard limits now (fuse, contracted, external)
+    p_hard_w: float                 # min over site hard limits now (fuse, a tripping contracted power, external)
     p_free_w: float                 # p_allow − uncontrolled  (before any load asks; the report carries the residual)
     projected_kwh: float; projection_source: Literal["smooth", "baseline"]
     eligible: bool; free_ride: bool
 
 @dataclass(frozen=True)
 class Grant:  w: float; shed: bool; shed_reason: str | None; stop_ok: bool; stage: int; blunt: bool; capped_by: tuple[str, ...]
+              answer: SlotAnswer | None                                    # a battery's command for this slot (§5.3, D-0671)
 
 @dataclass(frozen=True)
-class AllocCtx:                     # WP0.7: one tick's inputs, and what constraints prepare() on (D-0162)
+class AllocCtx:                     # one tick's inputs, and what constraints prepare() on (D-0162)
     now; meter: MeterSnapshot; budget: Budget; electrical: ElectricalProfile
     loads: tuple[LoadView, ...]; plans: Mapping[str, Plan]; views: Mapping[str, ControlledView]
     previous: Mapping[str, Grant]; stage: int; blunt: bool; frozen: bool
     hard: HardLimits | None; marginal_cost: MarginalCost | None          # the v2 hook (§10)
-    priced: PricedLimit | None                                           # v0.1.14 (O23): D2 §5.8 - a limit whose excess is priced, never in `hard`
+    priced: PricedLimit | None                                           # D2 §5.8: a limit whose excess is priced, never in `hard` (O23)
+    circuits: Mapping[str, float | None]                                 # each sub-metered circuit's reading (D7 §3)
 
 # LoadView (D5 §4) carries what only the load knows: thermostatic, sheddable, min_on_s,
-# phase_names, phases and quantise() - WP0.7, design/DECISIONS.md D-0160.
+# phase_names, phases and quantise() (D-0160).
 
 @dataclass
 class AllocState:                   # persisted
     sticky_until: dict[str, datetime]; starved_since: dict[str, datetime]; zone_choice: dict[str, tuple[str, datetime]]
     ev_stop_latch: dict[str, datetime | None]; pi: PiState; ladder: LadderState
+    sun_since: dict[str, datetime]; import_since: dict[str, datetime]   # surplus-only start/stop clocks (§5.3)
 
 @dataclass(frozen=True)
 class LadderState:  stage: int; reason: str; blunt: bool; since: datetime; clear_ticks: int; fuse_hold_until: datetime | None
@@ -148,7 +137,7 @@ class AllocReport:
     reserved: tuple[ReservedRow, ...]        # load, granted, measured, nameplate, reserved
     rotation: Mapping[str, RotationReport]; zones: Mapping[str, ZoneReport]; circuits: Mapping[str, CircuitReport]; phases: PhaseReport | None
     breach_w: float; deficit_w: float; headroom_w: float; blunt: bool; frozen: bool; ev_stop_ok: Mapping[str, bool]
-    unconstrained_ask_w: float               # Σ what loads wanted this tick, unconstrained - diagnostic ("held back"); NOT the D11 counterfactual
+    unconstrained_ask_w: float               # Σ what loads wanted this tick, unconstrained; a diagnostic ("held back"), NOT the D11 counterfactual
 
 @dataclass(frozen=True)
 class Violation:  constraint: str; scope_id: str; excess_w: float; members: tuple[str, ...]; blunt: bool
@@ -185,16 +174,7 @@ P_free = max(0, P_allow − Σ reserved_w)
 ```
 That's why `p_free_w` can't read 8–9 kW while the house is 1.4 kW over, as the old controller's did: the tank reserves its element, not its paced grant.
 
-**WP0.7** (`design/DECISIONS.md` D-0164, D-0169). What the *walk* judges a load against
-is `P_allow − uncontrolled_w − Σ reserved(the loads decided BEFORE it)`. That is the
-same number as "P_free plus its own reservation" whenever the asking load is the only
-one holding power (§9 21), and the right one when it is not: subtracting a
-lower-priority load's current hold would deny a 3 kW tank because a 4.6 kW charger the
-walk is about to trim is still running. `uncontrolled_w` is explicit because the
-reserve covers the *deviation* of uncontrolled load, never its level. A shed on/off
-load whose relay is still closed keeps its reservation until the write lands, so the
-published `p_free_w` never hands the same watts to two loads; the trim credits itself
-with the whole reservation, because the relay *will* open.
+What the *walk* judges a load against is `P_allow − uncontrolled_w − Σ reserved(the loads decided BEFORE it)`. That's the same number as "P_free plus its own reservation" whenever the asking load is the only one holding power (§9 21), and the right one when it isn't: subtracting a lower-priority load's current hold would deny a 3 kW tank because a 4.6 kW charger the walk is about to trim is still running. `uncontrolled_w` is explicit since the reserve covers the *deviation* of uncontrolled load, never its level. A shed on/off load whose relay is still closed keeps its reservation until the write lands, so the published `p_free_w` never hands the same watts to two loads. The trim credits itself with the whole reservation, because the relay *will* open (D-0164, D-0169).
 
 ### 5.3 The allocator walk (INV-1, INV-25, INV-39, INV-42)
 
@@ -277,7 +257,7 @@ settle rule: a load written within its settle window is skipped (the deficit may
 
 `constraints/group.py::GroupCap`: its memory (`starved_since`) is seeded from `AllocState` before `prepare` and rebuilt after the walk, a member held back past `starve_seconds` sorts first in the queue, and the group is a preference that produces no `Violation` (D-0240, D-0248).
 
-**WP3.2 - groups as wired** (`design/DECISIONS.md` D-0292…D-0294). `runtime.build_groups(entry, load_ids)` builds one `GroupCap` per `group` subentry, members intersected with the site's load ids exactly as `build_circuits` does (INV-53); the constraint needs no live reading (`GroupCap.seed()`/`AllocState.starved_since` already round-trip through `allocate()`, D6 §7), so unlike a circuit it has no meter and no per-tick `Inputs` wiring. `flow/group.py::GroupSubentryFlow` is D8 §5.3's one step (name, members, `max_concurrent_w`; `from_stage`/`ceiling_fraction`/`starve_seconds` under Advanced) and review, `runtime._reload_relations` (renamed from WP2.6's `_reload_circuits`) rebuilds it beside the circuits on every load, circuit or group subentry change and re-adds a load's entities the moment some group first names it (D-0293). `sensor.<load>_starved_s` (D8 §5.5) is `LoadStatus.starved_s`, the allocator's own `starved_since` clock turned into seconds per load (D-0294) - built only for a load some group actually names.
+`runtime.build_groups(entry, load_ids)` builds one `GroupCap` per `group` subentry, members intersected with the site's load ids like `build_circuits` (INV-53). It needs no live reading (`GroupCap.seed()`/`AllocState.starved_since` already round-trip through `allocate()`, §7), so unlike a circuit it has no meter and no per-tick `Inputs` wiring. `flow/group.py::GroupSubentryFlow` is D8 §5.3's step and review, and `runtime._reload_relations` rebuilds it with the circuits on every load, circuit or group subentry change. `sensor.<load>_starved_s` (D8 §5.5) is `LoadStatus.starved_s`, the allocator's own `starved_since` clock in seconds per load, only built for a load some group names (D-0292…D-0294).
 
 ```
 rotation_active(group) = stage ≥ from_stage (1) OR projected ≥ ceiling_fraction (0.85) × ceiling      # below that the group makes NO decisions
@@ -312,22 +292,13 @@ Cross-carrier (hybrid heat pump): `gas boiler η 0.95 at 0.12 €/kWh gas ≈ 0.
 
 `PhaseLimit`: for each phase `headroom_a = limit_a − I_phase` (D3). A load with known phases gets `cap_w = min over its phases (headroom_a) × w_per_amp(load)`, unknown phases the min over all phases. Violations are blunt (a phase fuse is a fuse). Missing phase currents leave the constraint inactive instead of closed.
 
-**WP0.7** (`design/DECISIONS.md` D-0166, D-0167). A sub-meter and a phase current both
-already include the asking load, so each gives the load's own measured draw back
-before capping it - the §5.3 rule, one level in. Only a **circuit**, a **phase** and
-an `ExternalLimit` produce `Violation`s: a breached site limit is already a blunt
-ladder reason and stage 4 reaches every load through the ordinary walk, so a site
-violation would repeat it with no narrower scope, and a contracted trip needs the
-meter's tolerance over `tolerance_s / 2`, which is the ladder's judgement. A blunt
-violation re-decides its `members` at stage 4 with stage 4's own exemptions: a comfort
-violator stays, a heat pump stays, and a modulating load whose stop is vetoed is held
-at its floor.
+A sub-meter and a phase current both already include the asking load, so each gives the load's own measured draw back before capping it - the §5.3 rule, one level in. Only a **circuit**, a **phase** and an `ExternalLimit` produce `Violation`s. A breached site limit is already a blunt ladder reason and stage 4 reaches every load through the ordinary walk, so a site violation would only repeat it, and a contracted trip needs the meter's tolerance over `tolerance_s / 2`, which is the ladder's call. A blunt violation re-decides its `members` at stage 4 with stage 4's own exemptions: a comfort violator stays, a heat pump stays, and a modulating load whose stop is vetoed is held at its floor (D-0166, D-0167).
 
 `ExternalLimit`: from D1 `load_limit` events (§14a: `max_w = 4200` for the named loads while the event is active) → `cap_w` for those loads, and a site-wide event caps `P_hard`.
 
-**In code (D-0327).** `Engine._external_limits(events, now)` reads `Inputs.events`, keeps every `EventKind.LOAD_LIMIT` announcement that `is_active_at(now)`, and builds one `ExternalLimit` per match from its own `payload["max_w"]`/`payload["loads"]` - the same "not structural, synthesised fresh every tick" shape `_cycle_reservations` and `_zone_constraints` already use, spliced into the same `allocate()` call. Proven against a real `Engine.tick()` in `tests/core/engine/test_external_limits.py` (5 tests: an active named-load cap, an ended event's no-op, a site-wide cap, a non-`load_limit` event ignored, the uncapped baseline) - using a forced EV charger rather than a floor loop, since a `SETPOINT`-kind device (D4 §5.4) writes a temperature, not a wattage, and only a `MODULATE`-kind device's own grant is literally throttleable tick to tick. What this WP did not build: the event source itself. Nothing populates an `EventStore` in `runtime.py` today, for any of D1's five `EventKind`s, and the DSO/aggregator provider plus its configuration UI are D8's own v1.x deferral (`design/lld/D8-ha-surface.md`'s deferred-items list) - this bridge is exercised by a hand-built `Event`, standing in for whatever a future provider hands the engine.
+`Engine._external_limits(events, now)` reads `Inputs.events`, keeps every `EventKind.LOAD_LIMIT` announcement that `is_active_at(now)`, and builds one `ExternalLimit` per match from its `payload["max_w"]`/`payload["loads"]`, synthesised fresh every tick like `_cycle_reservations` and `_zone_constraints`. `tests/core/engine/test_external_limits.py` covers it through a real `Engine.tick()`: an active named-load cap, an ended event's no-op, a site-wide cap, a non-`load_limit` event ignored, and the uncapped baseline - with a forced EV charger, since a `SETPOINT` device (D4 §5.4) writes a temperature and only a `MODULATE` device's grant is throttleable tick to tick. A provider that announces `load_limit` events, with its configuration UI, is v1.x (D8 §10, D-0327).
 
-**WP2.5 - circuits as wired** (`design/DECISIONS.md` D-0283, D-0284; supersedes D-0167's circuit half). A circuit is budgeted the way the site is in §5.3, one level in:
+**Circuits** are budgeted the way the site is in §5.3, one level in (D-0283, D-0284):
 
 ```
 unseen_w              = max(0, sub_meter_w − Σ measured(members))            0 without a clamp; measured settling-aware (D3 §5.8)

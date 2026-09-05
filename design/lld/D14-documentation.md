@@ -401,10 +401,10 @@ All live in `tests/docs/` and run in the fast suite.
    - every non-review flow step id
    - every entity whose state or attributes the D8 §5.5 table marks as needing explanation
 
-   The page families not yet written are listed in `tests/docs/pages_pending.txt`, the same ratchet as the INV traceability list: the WP that writes a page deletes its line.
+Page families not written yet are listed in `tests/docs/pages_pending.txt`, the same ratchet as the INV traceability list: the WP that writes a page deletes its line.
 4. **Flow text:**
-   - every non-review step description ends with exactly one `{docs}` link, apart from the allow-list, which gives a reason for each entry
-   - a field carries at most one link
+   - every non-review step description ends with exactly one `{docs}` link, apart from the allow-list, which gives a reason per entry
+   - a field carries atmost one link
    - every placeholder a string uses is supplied
    - D8 §5.13's budgets hold
    - no string contains a URL (hassfest's rule, run offline)
@@ -413,14 +413,16 @@ All live in `tests/docs/` and run in the fast suite.
    - no word from the design's list outside code spans (S2)
    - no `INV-\d`, `D-\d{4}`, `WP\d` or module path (S7)
    - no "e.g." or "click", and none of the British spellings on the list (S4)
-   - only the five alert types; at most 3 alerts per page, none consecutive, none inside a list, table or `<details>`
+   - only the five alert types; atmost 3 alerts per page, none in a row, none inside a list, table or `<details>`
    - no anchor inside `<details>`; no YAML front matter
-   - the frame of §4: line 1 the kind comment, line 2 the breadcrumb, a lede of at most 2 sentences
+   - the frame of §4: line 1 the kind comment, line 2 the breadcrumb, a lede of atmost 2 sentences
 7. The root `README.md` has no relative link or image, and no `<picture>`, alert, mermaid block or `<details>`.
-8. **Images:** every referenced image exists, every file under `docs/images/` is referenced, each is at most 250 KB, and each has alt text.
+8. **Images:** every referenced image exists, every file under `docs/images/` is referenced, each is atmost 250 KB, and each has alt text.
 9. Every My link names a redirect on §5.3's list.
-10. Every `docs-*` rule in `quality_scale.yaml` is `done` with its page named in the comment, and that page exists, or it is `exempt` with a reason (this gates v1.0).
-11. **House check** (not pytest): someone other than the maintainer goes from HACS to a first planned run, reading only the flow and the pages it links (PLAN 6.2a's "two minutes" test).
+10. Every `docs-*` rule in `quality_scale.yaml` is `done` with its page named in the comment, and that page exists, or it's `exempt` with a reason (this gates v1.0).
+`tests/docs/`: `test_links.py` (§9 1, 2, 9), `test_coverage.py` (3), `test_flow_text.py` (4), `test_generated.py` (5), `test_style.py` (6–8), `test_quality_scale.py` (10); `pages.py` parses a page as GitHub renders it. `pages_pending.txt` names pages: §9 1 skips a URL into a pending page, §9 3 a family whose page is pending, and §9 4's link and budget rules a flow whose page is pending, while the no-URL and placeholder rules always run. The option-label budget runs once no flow page is pending. An appliance's steps link its type's page, so `step_placeholders` takes the type. On `circuits-groups-rooms.md` each flow's first step is anchored `circuit`, `group`, `room`. The `fields` block is `fields:<flow>.<step>`, since step ids repeat across flows. `entities:<device>` is `entities:home` and `entities:appliance`, read from the registry of the example home added through the flow. Entities that need a section: every one whose states are translated beyond on/off or whose attributes are, plus `level`, `stage` and `active` (D-0540, D-0541).
+
+11. **House check** (not pytest): someone who didn't build it goes from HACS to a first planned run, reading only the flow and the pages it links (the "two minutes" test).
 
 ---
 
@@ -461,13 +463,13 @@ All live in `tests/docs/` and run in the fast suite.
 |---|---|---|
 | `design/PLAN.md` | §1 Definition of done: `tests/docs/` green with an empty pending list, every `docs-*` rule `done` or `exempt`. §3.0f: DOC.1–DOC.5 (appendix B), replacing 6.2a and 6.2b. §5 Working method: "User-visible changes go through the user pages". §7: dec. 23 changed, dec. 40 added. §8: the steelmen of §11 1 and 4. §9: the checklist rows | design |
 | `design/HLD.md` | §6.14 D14, a summary; §7 a cross-cutting line: the user pages are part of the surface | design |
-| `docs/README.md` | D14 in the roster; the LLD template's items 6 and 8 gain the user pages and the troubleshooting entry | design |
+| `design/README.md` (then `docs/README.md`) | D14 in the roster; the LLD template's items 6 and 8 gain the user pages and the troubleshooting entry | design |
 | `D8` | §5.13 keeps the budgets and placeholders, and points to D14 for the pages and the link form; §5.12 `documentation` → `…/blob/main/docs/README.md`; §9 15 → D14 §9 1, 4 | design |
 | `D12` | §5.5 per-card `documentationURL` anchors; a new §5.14 for the help links; §9 23 | design |
 | `design/` (moved) | `HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/`; `docs/README.md`'s roster and template become `design/README.md`; the 137 citing files rewritten | DOC.1 |
 | `custom_components/powerplan/manifest.json` | `documentation` → `…/blob/main/docs/README.md` | DOC.1 |
 | `custom_components/powerplan/translations/en.json` | "litres" → "liters", "metres" → "meters" (S4; 8 occurrences) | DOC.1 |
-| `docs/brand/` | → `docs/images/brand/`; the root README links its image by absolute URL (§5.8) | DOC.1 |
+| `docs/images/brand/` | → `docs/images/brand/`; the root README links its image by absolute URL (§5.8) | DOC.1 |
 | `docs/dashboard.md` | rewritten to the §4 frame; "colour" → "color" | DOC.5 |
 
 ## Appendix B: work packages (PLAN §3)

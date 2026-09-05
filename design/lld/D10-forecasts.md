@@ -187,16 +187,7 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 | `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured | n ≥ 100 samples |
 | tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity | [20, 200] | n ≥ 3 |
 
-**The per-m² bounds and a two-node floor.** A coast fit turns the *store's* fall
-into watts, and on a real floor the screed is one mass and the room another: only
-the screed's share of the house's loss comes out of the screed, and that share is
-`C_screed / (C_screed + C_room)` ≈ 27 % at 50 mm (D4 §5.7's 0.0275 kWh/K·m² against
-the room's 0.075). A 2000s-envelope slab (0.7 W/m²K) therefore fits ≈ 0.19 W/K·m²,
-under this table's 0.5 floor, and the fit is **not applied** - the load keeps
-`configured`, which for a slab is `None`, and the loss term is skipped (D4 §5.7).
-That is the conservative outcome and INV-63 working, not a bug; the bounds are left
-as they are until a house says otherwise (`design/DECISIONS.md` D-0216). Leaky
-envelopes and heavy screeds land inside the bounds and are applied.
+**Per-m² bounds and the two-node floor.** A coast fit turns the *store's* fall into watts. On a real floor the screed is one mass and the room another, so only the screed's share of the house's loss comes out of the screed, `C_screed / (C_screed + C_room)` ≈ 27 % at 50 mm (D4 §5.7's 0.0275 kWh/K·m² against the room's 0.075). A slab in a 2000s envelope (0.7 W/m²K) therefore fits ≈ 0.19 W/K·m², under the 0.5 floor above, and the fit is **not applied**. The load keeps `configured`, which is `None` for a slab, and the loss term is skipped (D4 §5.7). That's INV-63 doing its job, not a bug. The bounds stay until a house says otherwise (D-0216). Leaky envelopes and heavy screeds land inside and are applied.
 
 **Wiring.** The runtime runs `fit_all` once a day in the planning loop (§5.7's 03:xx slot, D7 §5.2) over a `LoadHistory` per load, built by `recorder_baseline`'s shared recorder helper (60 days, the roles each fit names). The `Fit`s are stored in the `forecasts` section and `effective` goes to D4's `Learned` state and D11's shadows on the next plan.
 

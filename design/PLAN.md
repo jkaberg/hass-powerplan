@@ -409,7 +409,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TS.5 | Belgium, US, Australia, Finland's directory | todo |
 | TS.6 | Retire shipped prices | todo |
 | TS.7 | Europe | todo |
-| DOC.1 | Foundation | todo |
+| DOC.1 | Foundation | done |
 | DOC.2 | Start and setup | todo |
 | DOC.3 | Appliances and catalogues | todo |
 | DOC.4 | Understand and help | todo |
