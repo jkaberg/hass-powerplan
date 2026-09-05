@@ -281,7 +281,7 @@ Only built-in tile features and entity rows, which call the entity's own action 
 
 ### 5.5 Registration and versions
 
-`async_setup` (once per HA, not per entry): the websocket command; `hass.http.async_register_static_paths` for `/powerplan_frontend` → `frontend/dist` with caching; and, where the `frontend` component is loaded, `frontend.add_extra_js_url(hass, "/powerplan_frontend/powerplan.js?v=<first 12 hex of the module's SHA-256>")` - a content key, so a new build is never served stale, and the chunks' own names carry their hash (D-0448). The module registers the strategy element, the two cards (in `window.customCards` too, with `documentationURL` → `docs/dashboard.md`) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "PowerPlan", description, documentationURL}`.
+`async_setup` (once per HA, not per entry): the websocket command; `hass.http.async_register_static_paths` for `/powerplan_frontend` → `frontend/dist` with caching; and, where the `frontend` component is loaded, `frontend.add_extra_js_url(hass, "/powerplan_frontend/powerplan.js?v=<first 12 hex of the module's SHA-256>")` - a content key, so a new build is never served stale, and the chunks' own names carry their hash (D-0448). The module registers the strategy element, the two cards (in `window.customCards` too, with `documentationURL` → `docs/dashboard.md`; D14 §5.4:* → `docs/dashboard.md#<card type>`, each card its own anchor) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "PowerPlan", description, documentationURL}`.
 
 `layout.py` degrades by HA version:
 
@@ -424,6 +424,23 @@ The third iteration's mockups (rendered in Chromium on the reference house's dat
 
 The timeline's price band stacks D1's components **by party** - grid company · supplier · taxes - in that order, bottom to top, in HA's energy palette, with the legend in the household's words ("Nettleie", "Strøm", "Avgifter"); a tariffed load's lane shows its own curve's total (D4 §5.16). Every "why" the dashboard shows names the party (D13 §7's reason keys: «Venter til 22:00 - nettleien er 13 øre lavere da»). The overview's month card splits cost and savings by party (D11 §5.8). The sources' credit (D13 §6.1) is one line under the price card, from the site's copy; nothing else about sources is shown.
 
+### 5.14 Help links (D14 §5.4)
+
+The dashboard shows several ideas no card has room to explain: the capacity step, the target, savings and their confidence, and estimated prices. It links to the page that explains each one, quietly, and only where the idea is on screen. Python builds every URL through `doclinks.doc_url` (D14 §3.2). The layout hands the URLs to the cards in their config, so the frontend never assembles one; the two exceptions are the registration and the error card, which exist before any config does.
+
+| where | what | target |
+|---|---|---|
+| each view | one line of text at the end of the view, "How to read this page" | `dashboard.md#now`, `#history`, `#appliance` |
+| the window gauge | a `help_url` icon in the header | `capacity-tariffs.md#capacity-step` |
+| the timeline | a `help_url` icon | `dashboard.md#timeline` |
+| the period summary | a `help_url` icon | `savings.md` |
+| the price card | a `help_url` icon | `prices.md#estimated-prices` |
+| "Why this plan?" | a markdown link as its last line | `strategies.md#<strategy key>` |
+| the appliance dialog | a link beside the title | `appliances/<type>.md` |
+| the error card | a markdown link | `troubleshooting.md#dashboard` |
+
+The icon is `mdi:help-circle-outline` in the secondary text colour. It opens the page in a new tab (`target="_blank" rel="noreferrer"`), is keyboard-reachable, and has the translated label "How this works" as its accessible name. A card without a `help_url` in its config draws no icon. Cards that only show data (the appliances card, the Energy dashboard's own cards) get none.
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -477,6 +494,7 @@ None. The dashboard is generated on every open. A household that takes control o
 20. Iteration 3 (6.4i): Now's sections are hour · price · plan · appliances · capacity · month; the appliances card lists every appliance with its `plan_status`, entities and `{dashboard}` subview path (none with `hidden_views: [appliances]`); its `rail_width` equals the Plan timeline's; no tile, `distribution` or runs card on Now; `baseline_p90_kwh` is the baseline plus 1,2816 σ over the slot on a trained house; a price slot's `energy` is 0,50 and its grid part 0,23 for Norgespris 0,40 + grid 0,184 + 25 % VAT, and `reference` is the slot without the fixed price; `vitest`: `rawStatus` over the twelve states with `already_at` as the plan, the 90 s hold, `planRuns` merging 23:00–00:00 to 2,90 kWh, the cheap bands, `bucketize` into 60-minute windows, `nextClock` to tomorrow's 06:00, `readable`. (6.4i)
 21. The price band's three stacks sum to the slot's total for every slot of a captured `sensor.<site>_prices` attribute; a DK `stromligning` site (basis includes grid and taxes) shows one stack, not three.
 22. The credit line names the copy's sources and is absent for a template or custom tariff.
+23. *(§5.14)* The layout golden carries every help URL of §5.14's table - one line per view, one `help_url` on each of the four cards, the strategy's link in "Why this plan?" - and each one resolves (D14 §9 1). A card config without `help_url` renders no icon (vitest). `customCards` gives each card its own anchor.
 
 ## 10. Deliberately deferred
 

@@ -695,6 +695,16 @@ class CountryModule:            # registered, pure: VAT (dated, regional), levie
 
 ---
 
+### 6.14 D14 - User documentation
+
+**Responsibility.** The pages a household and an automator read, written in the glossary's words and linked from every screen that needs them. They are part of the surface: a change a household or an automation can see changes its page in the same PR.
+
+**Shape.** Plain markdown under `docs/`, read on GitHub (where the project lives), English only. Four kinds of page: start, guides, reference (a catalogue per registry, one section per entity, action and event), understand. The design documents move to `design/` so that `docs/` is the household's folder. Every non-review flow step, repair and action links to its own section, through `description_placeholders` or `learn_more_url`, and the dashboard carries at most one help link per card. A section that code links to is anchored by its registry key, with a heading in the household's words. Facts that mirror a registry are generated between markers by `tools/docs.py`.
+
+**Invariants.** No new INV. `tests/docs/` holds the line: every URL the integration builds resolves to a file and an anchor, every registry key has its section, and no generated block is stale.
+
+**Open for the LLD.** Settled in D14: the page set and the HA `docs-*` rule each page meets, the templates, the voice and the words, which GitHub markdown feature is for what, every link surface, generation, maintenance, and the work packages (PLAN §3.0f).
+
 ## 7. Cross-cutting concerns
 
 **7.1 Time.** All datetimes tz-aware; windows keyed by UTC start; slot length per slot; DST 23/25-hour days tested; `HH:00:00` is never a fetch or a full tick.
@@ -707,13 +717,15 @@ class CountryModule:            # registered, pure: VAT (dated, regional), levie
 
 **7.5 Safety invariants.** INV-1, 13–29, 34–48, 54–64, 68 are the product. A change that touches one MUST cite it in the PR.
 
-**7.6 i18n.** `strings.json` + `translations/{en,nb}.json` at launch; entity names translatable; Norwegian domain terms kept in `docs/` glossary only.
+**7.6 i18n.** `strings.json` + `translations/{en,nb}.json` at launch; entity names translatable; Norwegian domain terms stay in this document's Appendix B; the user pages are English only (D14).
 
 **7.7 Performance.** Tick < 50 ms with 20 loads; planning < 500 ms for 48 h × 15 min × 20 loads; no blocking I/O on the event loop.
 
 **7.8 Fail-safe states.** If Home Assistant dies mid-shed, devices stay where the controller left them. Every shed state MUST therefore be one the household can live in indefinitely: hardware floor limits are provisioned where the device supports them (the Heatit floor minimum), thermostat sheds are setpoints not relay cuts, a paused charger is parked at 0 A deliberately, and a tank's legionella protection is left to the hardware where it has one. **INV-64** No shed may put a device into a state that needs powerplan to come back to be safe.
 
 **7.9 Configuration UX.** Left alone, an integration with ten domains and sixty invariants becomes overwhelming to set up. So: (1) **describe, don't configure** - questions are about the physical thing (room, covering, heating type, area, litres, make and model), never about our model (kWh/K, dwell, tolerance); (2) **every answer has a default**, taken from the HA device and area wherever possible; (3) **derive and explain** - the flow shows what it decided and why before it saves (INV-67); (4) **progressive disclosure** - Advanced exists, is pre-filled, and is never required (INV-65); (5) **materialise** derived values so behaviour never changes behind the user's back (INV-66); (6) **few entities by default** - categorised, rarely used ones disabled; (7) **one vocabulary** - the same words in the flow, the entities, the events and the docs; (8) **say little, link the rest** - flow text is short, and what needs explaining lives in user pages under `docs/`, linked from the step that needs it (D8 §5.13); (9) **for someone who knows their bill, not the grid** - one question per screen in the household's words; detect first and ask only to confirm; "don't know" with a safe default; controls that make a wrong answer hard (sizes to pick, sliders, form lists, filtered pickers - never free text for a fuse or YAML for a tariff); no text built in code, no internal key on a screen; names and states that read as a sentence, and never "unknown" for a normal state (D8 §5.15). The derivation tables are data that live with each device type and are reviewed like presets.
+
+**7.10 User documentation.** The user pages under `docs/` are part of the surface (§6.14, D14). A change a household or an automation can see - a flow step, a registry key, a default, an entity, an action, an event, a repair, a dashboard card - updates its page in the same PR, and `tests/docs/` fails when it does not.
 
 ---
 

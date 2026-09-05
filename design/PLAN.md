@@ -97,6 +97,18 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | **TS.6 Retire shipped prices** | no company price in the repository; benchmark houses on fixtures | D13 §12 | INV-70; `nordic_detached` unchanged | TS.3, TS.4, TS.5 |
 | **TS.7 Europe** | per-load tariffs and grid-switched windows; priced soft limits; standard-time filters; PT's VAT band; adapters for CH, SK, RO, PL; templates for IT, PT, FR, IE | D13 §5.10, §18; D2 §5.8; D4 §5.16; D5 §5.1; D6; D1 §9 21-23 | D2 §9 37, 39-41; D4 §9 31-33; D5 §9 23-25; D6 §9 26, 27; D11 §9 23 | TS.6 |
 
+### 3.0f User documentation
+
+[D14](lld/D14-documentation.md): `docs/` becomes the household's folder and the design documents move to `design/`; four kinds of page; English only, in the glossary's words; every non-review flow step links to its section; facts generated from the registries; `tests/docs/` enforces it; and a change to a surface updates its page in the same PR. Replaces 6.2a and 6.2b (dec. 40).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **DOC.1 Foundation** | the design documents moved to `design/`; `doclinks.py`; `tools/docs.py`; `tests/docs/`; the start pages and the reference pages | D14 §2.2, §3.2, §5.5, §5.6, §5.8, §9 1-10 | D14 §9 1-10 with the pending list; hassfest | - |
+| **DOC.2 Start and setup** | `get-started.md`, `setup.md`, `circuits-groups-rooms.md`; the `{docs}` link on every home, circuit, group and room step | D14 §3.1, §4, §5.1-5.4; D8 §5.13 | D14 §9 3-4 for those flows | DOC.1, U.3, A.3, TS.2 |
+| **DOC.3 Appliances and catalogues** | the appliance pages, `strategies.md`, `devices.md`, `tariffs.md`, `prices.md`; the appliance flow's links | D14 §3.1, §5.6 | D14 §9 3-5 for every registry | DOC.2 |
+| **DOC.4 Understand and help** | `how-it-works.md`, `capacity-tariffs.md`, `savings.md`, `daily-use.md`, `troubleshooting.md`, `limitations.md`, `examples.md`; the actions' `{docs}` | D14 §3.1; HA's `docs-*` rules | D14 §9 10; every `docs-*` rule done or exempt | DOC.3 |
+| **DOC.5 Dashboard help** | `dashboard.md` per view and card; per-card help links | D14 §5.4, §5.7; D12 §5.14, §9 23 | D14 §9 1, 8, 11; D12 §9 23; the pending list empty | DOC.4, 6.4i |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -204,7 +216,6 @@ HLD §9 phase 6.
 | **6.1 Quality and performance gates** | CI that refuses regressions | D9 §2, §5.1; `quality_scale.yaml` | D9 §9 1, 2, 4, 5, 6; perf green | all |
 | **6.1a Suite speed** | the tick's cheap memos; the suite on `pytest-xdist` | D9 §5.1 | the suite unchanged | 6.1 |
 | **6.2a User pages** | moved into the documentation stream (dec. 40) | D8 §5.13 | - | - |
-| **6.2b Flow links** | moved into the documentation stream (dec. 40) | D8 §5.13 | - | - |
 | **6.4a Dashboard: layout, entities, built-in cards** | the strategy dashboard built from the registry; `calendar.<site>_planned_runs`, `sensor.<site>_plan` | D12 §2-§6, §9 1-6, 8; dec. 26 | D12 §9 1-6, 8 | 6.1 |
 | **6.4b Dashboard: timeline and window gauge** | `frontend/` in TypeScript with esbuild; the two custom cards | D12 §3, §5.2, §5.3, §9 7 | D12 §9 7 | 6.4a |
 | **6.4c Dashboard redesign: layout** | two views and a subview per appliance | D12 §5.1, §5.4-§5.10; dec. 37 | D12 §9 9-12, 18 | 6.4b |
@@ -340,6 +351,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 37. **The dashboard is redesigned before it ships:** two tabs, a subview per appliance, History on the Energy picker (D12). *Rejected:* polishing four tabs - the problem was the shape, not the finish.
 38. **Grid tariffs come from the operators' data, not files in the repository.** Where a source publishes every company's household tariff, the flow fetches it, the entry keeps a copy, and the runtime renews it. *Superseded by dec. 39.*
 39. **The household's price by party** (D13). A company's tariff is fetched from the first source tier that passes the quality check, API before file before document (INV-75); company prices never ship (INV-70); national law ships in country modules; VAT is never asked where known; the flow asks by party; the copy renews monthly, never at start (INV-73); a priced contracted-power excess is a cost, not a hard limit. *Rejected:* shipped files where no source exists - staleness returns where nobody checks.
+40. **User documentation is designed like a domain** (D14). A start path apart from the reference, catalogues per registry, one heading per entity, action and event, linkable troubleshooting, facts generated from the code; `docs/` for households, `design/` for the design; headings in the household's words with the registry key as anchor. *Rejected:* the design documents staying in `docs/` - a household would open the folder to three design files.
 
 ---
 
@@ -364,6 +376,8 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 **Ship first, then do the research items.** *For:* a released beta finds real problems faster. *Against:* a beta that mis-bills its own market's capacity steps teaches its first users not to trust the one number it exists to defend. **Decision:** verified Norwegian tariffs, every price source and the Nordic chargers before v0.x; the rest before v1.0.
 
 **Defer device attachment to v1.x.** *For:* v1.0 is already large and the current design works. *Against:* the old device-linking pattern is past its cutoff on current HA, and every appliance added meanwhile would migrate twice. **Decision:** now, before U.3 (dec. 35).
+
+**Write the user pages last, in one block.** *For:* surfaces still move, and pages written early get rewritten. *Against:* pages written at the end describe reasons nobody remembers, and until then nothing keeps them current. **Decision:** the docs foundation (tests, tools, generated reference) early; pages for moving surfaces once they settle.
 
 ---
 
@@ -395,6 +409,11 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TS.5 | Belgium, US, Australia, Finland's directory | todo |
 | TS.6 | Retire shipped prices | todo |
 | TS.7 | Europe | todo |
+| DOC.1 | Foundation | todo |
+| DOC.2 | Start and setup | todo |
+| DOC.3 | Appliances and catalogues | todo |
+| DOC.4 | Understand and help | todo |
+| DOC.5 | Dashboard help | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -453,8 +472,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 5.7 | Fits wired | done |
 | 6.1 | Quality and performance gates | done |
 | 6.1a | Suite speed | done |
-| 6.2a | User pages | todo |
-| 6.2b | Flow links | todo |
+| 6.2a | User pages | replaced |
 | 6.4a | Dashboard: layout, entities, built-in cards | done |
 | 6.4b | Dashboard: timeline and window gauge | done |
 | 6.4c | Dashboard redesign: layout | done |

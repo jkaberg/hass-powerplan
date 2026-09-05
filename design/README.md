@@ -26,6 +26,7 @@
 | D11 | Accounting - per-load and site ledgers, slot pricing, counterfactual shadows, savings, calibration | 6.11 | D1, D2, D3, D4, D10 | [D11-accounting.md](lld/D11-accounting.md) |
 | D12 | Dashboard - a strategy dashboard in the Energy dashboard's shape: past, present, future and the knobs, built-in cards plus a timeline and a window gauge | 6.12 | D1, D2, D5, D7, D8, D10, D11 | [D12-dashboard.md](lld/D12-dashboard.md) |
 | D13 | The household's price by party - grid company (fetched from the best source tier), supplier contract, state (VAT and levies from the country module); renewal; the flow's tariff steps | 6.13 | D1, D2, D7, D8 | [D13-tariff-sources.md](lld/D13-tariff-sources.md) |
+| D14 | User documentation - the pages under `docs/` for a household and an automator, their words and markdown, every link from the flows, repairs, actions and dashboard, the generated reference, and the rule that a change to the surface changes its page | 6.14 | D8, D12, D13, every registry | [D14-documentation.md](lld/D14-documentation.md) |
 
 Suggested order: D3 → D2 → D1 → D4 → D5 → D6 → D10 → D11 → D7 → D8 → D9. D3 first because the window is the unit everything else counts in; D2 next because its tariff model is the biggest change from effektstyring and D5/D6 both consume it; D10 after D6 because it only *feeds* the planner and the reserve, and its v1 build is small (weather entity + recorder baseline).
 
@@ -38,9 +39,9 @@ Each LLD uses the same headings so gaps are visible:
 3. Module layout (files, public API)
 4. Types (dataclasses / protocols, with field semantics and units)
 5. Algorithms (step lists or pseudocode; cite the INV numbers they enforce)
-6. Configuration schema - the plain-language questionnaire, the derivation to technical parameters with defaults and the source of each number, what Advanced exposes (HLD §7.9)
+6. Configuration schema - the plain-language questionnaire, the derivation to technical parameters with defaults and the source of each number, what Advanced exposes (HLD §7.9), and the user-page sections that document it (D14 §5.9)
 7. Persistence (what, when, migration)
-8. Failure modes and observability
+8. Failure modes and observability - and the troubleshooting entry for every failure a household sees (D14 §3.1)
 9. Tests that must exist before the code is merged
 10. What is deliberately deferred
 11. Alternatives considered (steelmanned) - for every decision, the strongest case for the road not taken, then why this one
