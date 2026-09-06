@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from datetime import datetime, tzinfo
 
     from ..metering import ElectricalProfile
-    from .grammar import ContractedPower, HolidayCalendar
+    from .model import ContractedPower, HolidayCalendar
 
 __all__ = ["HardLimit", "limit_now", "surcharge_for", "trip_imminent"]
 

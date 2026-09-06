@@ -58,7 +58,7 @@ from homeassistant.helpers.selector import (
 
 from custom_components.powerplan.const import SECTION_ADVANCED
 from custom_components.powerplan.core.pricing import FieldKind, modifiers
-from custom_components.powerplan.core.tariffs.grammar import HolidayMode
+from custom_components.powerplan.core.tariffs.model import HolidayMode
 
 from .text import minor_unit
 

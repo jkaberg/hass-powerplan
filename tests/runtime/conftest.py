@@ -54,7 +54,7 @@ from custom_components.powerplan.const import (
     TIMEZONE_FROM_HASS,
 )
 from custom_components.powerplan.core.loads.kinds.base import Role
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.storage import SiteStore
 from custom_components.powerplan.writegate import DeviceCall
 from tests.core.loads.conftest import reads as load_reads

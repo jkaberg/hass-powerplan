@@ -235,7 +235,7 @@ def no_peak() -> Evaluator:
 
 
 def tensio() -> Evaluator:
-    """Return an evaluator for the Norwegian grammar: 60 min, daily max, top 3."""
+    """Return an evaluator for the Norwegian tariff model: 60 min, daily max, top 3."""
     return evaluator(no_tariff())
 
 

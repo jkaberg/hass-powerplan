@@ -6,8 +6,8 @@ Nothing here starts Home Assistant: `tests/core/` is the pure half of the suite
 * `closed()` builds a `ClosedWindow` exactly as D3's meter hands one over, from a
   local wall-clock instant - because a tariff is a local-time object keyed in UTC
   (D2 §2) and a test that writes UTC by hand hides every DST question.
-* `spec()` wraps one grammar root in a one-version `TariffSpec`. WP0.3 built the
-  SE/FI/BE/ES/US/AU grammar inline through it, because those preset files did not
+* `spec()` wraps one tariff rule in a one-version `TariffSpec`. WP0.3 built the
+  SE/FI/BE/ES/US/AU tariff model inline through it, because those preset files did not
   exist yet; WP4.3a shipped them, so D2 §9 3, 4, 6, 8, 9 and 12 now run twice -
   inline for the arithmetic, and on the files through `market_golden()`.
 * `Holidays` is the site's calendar. D1's `HolidayCalendar` is a `Protocol` and so
@@ -31,15 +31,15 @@ from custom_components.powerplan.core.model import Money
 from custom_components.powerplan.core.tariffs import (
     AUTO,
     Evaluator,
-    Grammar,
     PeakTariff,
     Step,
     StepTable,
     Target,
+    TariffRule,
     TariffSpec,
     TariffVersion,
 )
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -87,7 +87,7 @@ ES_HOLIDAYS = Holidays(frozenset({date(2026, 1, 1), date(2026, 1, 6)}))
 
 
 def no_tariff(**overrides: Any) -> PeakTariff:
-    """Return the Norwegian grammar: 60 min, daily max, mean of the top 3 days."""
+    """Return the Norwegian tariff model: 60 min, daily max, mean of the top 3 days."""
     fields: dict[str, Any] = {
         "window_min": 60,
         "eligible": None,
@@ -104,12 +104,12 @@ def no_tariff(**overrides: Any) -> PeakTariff:
 
 
 def spec(
-    *grammar: Grammar,
+    *rules: TariffRule,
     currency: str = "NOK",
     preset_id: str = "test.inline",
     valid_from: date = date(2020, 1, 1),
 ) -> TariffSpec:
-    """Wrap `grammar` in a one-version `TariffSpec`, as the loader would."""
+    """Wrap `rules` in a one-version `TariffSpec`, as the loader would."""
     return TariffSpec(
         id=preset_id,
         name=preset_id,
@@ -123,23 +123,23 @@ def spec(
             TariffVersion(
                 valid_from=valid_from,
                 version_id=f"{preset_id}@{valid_from.isoformat()}",
-                grammar=tuple(grammar),
+                rules=tuple(rules),
             ),
         ),
     )
 
 
 def evaluator(
-    *grammar: Grammar,
+    *rules: TariffRule,
     tz: tzinfo = OSLO,
     calendar: Holidays | None = None,
     currency: str = "NOK",
     target: Target = AUTO,
     risk: float | None = None,
 ) -> Evaluator:
-    """Build an `Evaluator` over one inline grammar root."""
+    """Build an `Evaluator` over one inline tariff rule."""
     return Evaluator(
-        spec(*grammar, currency=currency),
+        spec(*rules, currency=currency),
         tz=tz,
         calendar=calendar if calendar is not None else Holidays(),
         target=target,
@@ -211,7 +211,7 @@ PRESET_DIR = (
     / "powerplan"
     / "core"
     / "tariffs"
-    / "presets"
+    / "rules"
 )
 
 
@@ -229,7 +229,7 @@ def preset_names() -> list[str]:
 
 
 def preset_raw(name: str) -> dict[str, Any]:
-    """Return the preset file as it is on disk, for fields the grammar does not carry.
+    """Return the preset file as it is on disk, for fields the tariff model does not carry.
 
     `tz` is the market's zone (D-0111): data in the file, read by D8's flow and by
     the golden files, and deliberately not a field of `TariffSpec`.

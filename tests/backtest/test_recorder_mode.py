@@ -22,7 +22,7 @@ from custom_components.powerplan.core.tariffs import (
     Target,
     seed_from_windows,
 )
-from custom_components.powerplan.core.tariffs.presets.loader import load
+from custom_components.powerplan.core.tariffs.rules.loader import load
 from tests.backtest.conftest import OSLO, House, Stat, States, flat_hours, september, write_recorder
 from tools.backtest import LoadSpec, read_recorder, run
 

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from custom_components.powerplan.core.tariffs import AUTO, Target
-from custom_components.powerplan.core.tariffs.presets.loader import load
+from custom_components.powerplan.core.tariffs.rules.loader import load
 from tests.backtest.conftest import OSLO, House, Stat, september, write_csv, write_recorder
 from tools.backtest import (
     LoadSpec,

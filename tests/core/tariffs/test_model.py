@@ -50,7 +50,7 @@ def matches(filter_: TimeFilter, when: datetime, holidays: Holidays | None = Non
 
 
 # --------------------------------------------------------------------------- #
-# the grammar D1 already borrows (D-0036)
+# the tariff model D1 already borrows (D-0036)
 # --------------------------------------------------------------------------- #
 
 

@@ -18,7 +18,7 @@ import pytest
 
 from custom_components.powerplan.core.model import Money
 from custom_components.powerplan.core.tariffs import Evaluator
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from tests.core.tariffs.conftest import NO_HOLIDAYS, OSLO, closed, golden, preset_names
 
 SHIPPED = [name for name in preset_names() if "/" in name]
@@ -161,7 +161,7 @@ def test_21_a_contracted_template_takes_the_households_kw() -> None:
 
 
 def test_22_tensio_ts_and_tn_classify_one_month_alike_and_bill_their_own_sheet() -> None:
-    """Two areas, one grammar: the same month lands in the same step at two prices."""
+    """Two areas, one tariff model: the same month lands in the same step at two prices."""
     rows = golden("no.tensio-ts.household")["windows"]
     fees = {}
     for name in ("no/tensio-ts", "no/tensio-tn"):

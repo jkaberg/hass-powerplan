@@ -6,7 +6,7 @@
   "currency": "NOK",
   "tz": "Europe/Oslo",
   "source_url": "https://lovdata.no/dokument/SF/forskrift/1999-03-11-302",
-  "verified": "2026-08-24",
+  "verified": "2026-09-06",
   "assumed": "§ 14-2 of the regulation requires only that the fixed fee follows the customer's demand for power; the metric here — the mean of the month's three highest hourly maxima on three different days — is the model the Norwegian DSOs adopted on 2022-07-01, read on Elvia's and Tensio's own sheets, and the steps and fees are each DSO's own, asked from the household's bill.",
   "versions": [
     {

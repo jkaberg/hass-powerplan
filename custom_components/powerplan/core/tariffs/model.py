@@ -1,9 +1,9 @@
-"""The grammar every market's peak rule parses into (D2 §3, §4).
+"""The tariff model every market's peak rule parses into (D2 §3, §4).
 
 The market survey (HLD §8) found eight distinct shapes and they combine: weights
 with top-3 and distinct days, a deductible with a monthly maximum, a rolling
 average with a per-month minimum. A class per combination is a class per DSO, so
-this is a grammar plus one generic evaluator instead (D2 §11).
+this is a tariff model plus one generic evaluator instead (D2 §11).
 
 Three roots: `PeakTariff` (a fee set by measured peaks), `ContractedPower` (a
 limit you buy and may not exceed) and `NoPeak` (neither). A site may carry a
@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ContractedPower",
-    "Grammar",
     "HolidayCalendar",
     "HolidayMode",
     "Linear",
@@ -41,6 +40,7 @@ __all__ = [
     "Ratchet",
     "Step",
     "StepTable",
+    "TariffRule",
     "TariffSpec",
     "TariffVersion",
     "Tiers",
@@ -279,12 +279,12 @@ class NoPeak:
     """
 
 
-Grammar = PeakTariff | ContractedPower | NoPeak
+TariffRule = PeakTariff | ContractedPower | NoPeak
 
 
 @dataclass(frozen=True, slots=True)
 class TariffVersion:
-    """One dated version of a preset's grammar (D2 §5.10, INV-52).
+    """One dated version of a preset's tariff model (D2 §5.10, INV-52).
 
     Prices change every 1 January and sometimes mid-year, so a preset is a list of
     versions and a window is always priced by the version valid at its start.
@@ -294,7 +294,7 @@ class TariffVersion:
 
     valid_from: date
     version_id: str
-    grammar: tuple[Grammar, ...]
+    rules: tuple[TariffRule, ...]
     energy_components: Mapping[str, Any] = field(default_factory=dict)
     verified: str | None = None
     assumed: str | None = None
@@ -304,7 +304,7 @@ class TariffVersion:
     @property
     def peak(self) -> PeakTariff | None:
         """The peak rule, or `None` on a site that has none."""
-        for root in self.grammar:
+        for root in self.rules:
             if isinstance(root, PeakTariff):
                 return root
         return None
@@ -312,7 +312,7 @@ class TariffVersion:
     @property
     def contracted(self) -> ContractedPower | None:
         """The contracted power, or `None` where the fuse is the only limit."""
-        for root in self.grammar:
+        for root in self.rules:
             if isinstance(root, ContractedPower):
                 return root
         return None

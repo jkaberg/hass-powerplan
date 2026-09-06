@@ -75,8 +75,8 @@ from custom_components.powerplan.core.metering.profile import (
     VoltageSystem,
 )
 from custom_components.powerplan.core.pricing import Carrier, modifiers
-from custom_components.powerplan.core.tariffs.grammar import PeakTariff, StepTable
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.model import PeakTariff, StepTable
+from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.core.tariffs.target import (
     CAP_MARGIN_KW,
     EPS_DEFAULT_KWH_PER_HOUR,
@@ -122,7 +122,7 @@ if TYPE_CHECKING:
 
     from homeassistant.core import HomeAssistant
 
-    from custom_components.powerplan.core.tariffs.grammar import TariffSpec, TariffVersion
+    from custom_components.powerplan.core.tariffs.model import TariffSpec, TariffVersion
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1083,7 +1083,7 @@ def filled_tariff(
 def preset_choice(preset_file: str | None, country: str | None) -> str | None:
     """Return the tariff step's answer a stored preset file means (the inverse of `preset_file`).
 
-    The country's generic grammar *is* "not listed" (D2 §6), so it is offered
+    The country's generic tariff model *is* "not listed" (D2 §6), so it is offered
     under that label and not a second time under its file's own name.
     """
     if preset_file is None:
@@ -1183,7 +1183,7 @@ def tariff_target_schema(
     """
     peak = peak_of(version)
     # Strict for a new site (D2 §6); a reconfigure shows the site's own.
-    default = default_risk(version.grammar)
+    default = default_risk(version.rules)
     values = values or {}
     fields: dict[Any, Any] = {
         vol.Optional("target", default=values.get("target", "auto")): SelectSelector(
@@ -1340,7 +1340,7 @@ def tariff_data(
     preset bills is not stored in words: the flow renders D2's `TariffSummary`
     whenever it is shown (HUB-12), and an older entry's `description` is ignored.
     """
-    default = risk_key(default_risk(version.grammar))
+    default = risk_key(default_risk(version.rules))
     chosen = str(answers.get("risk", default))
     risk = RISK_LABELS[chosen]
     return {

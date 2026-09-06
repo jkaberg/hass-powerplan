@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from custom_components.powerplan import repairs
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.engine import AccountingStatus, Engine, EngineHealth
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from tests.runtime.conftest import SITE_ENTRY_ID, site_data, site_entry
 
 if TYPE_CHECKING:

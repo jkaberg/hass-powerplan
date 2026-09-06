@@ -169,9 +169,9 @@ from .core.tariffs import (
     TariffVersion,
     seed_from_windows,
 )
-from .core.tariffs.grammar import StepTable
 from .core.tariffs.history import Override
-from .core.tariffs.presets import loader
+from .core.tariffs.model import StepTable
+from .core.tariffs.rules import loader
 from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
 from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
@@ -982,9 +982,7 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
             id=str(tariff.get("preset_id") or "no_peak"),
             name="No capacity component",
             versions=(
-                TariffVersion(
-                    valid_from=date(1970, 1, 1), version_id="no_peak", grammar=(NoPeak(),)
-                ),
+                TariffVersion(valid_from=date(1970, 1, 1), version_id="no_peak", rules=(NoPeak(),)),
             ),
             currency=currency,
         ), False

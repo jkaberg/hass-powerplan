@@ -1,6 +1,6 @@
 """D2 §9 2, 5, 6, 7, 8, 9, 15 - the period metric, slack, and the fee shapes.
 
-The presets for SE, FI, BE and the US are WP4.3, so the grammar for those markets
+The presets for SE, FI, BE and the US are WP4.3, so the tariff model for those markets
 is built inline here (D9 §3: a test states its own data). The Norwegian case runs
 against the shipped preset in `test_presets.py`; what is tested here is the
 arithmetic every market shares.
@@ -89,7 +89,7 @@ def fi_energiavirasto() -> PeakTariff:
 
 
 # --------------------------------------------------------------------------- #
-# 2 - the free ride is derived from the grammar's slack (INV-9)
+# 2 - the free ride is derived from the tariff model's slack (INV-9)
 # --------------------------------------------------------------------------- #
 
 
@@ -391,7 +391,7 @@ def test_tiers_integrate_marginally_by_band() -> None:
     """The third pricing shape: marginal €/kW by band, the last one open (D2 §2).
 
     No v1 preset uses it - US commercial demand charges do (HLD §8) and WP4.3
-    brings them - but a shape the grammar accepts and nothing exercises is a shape
+    brings them - but a shape the tariff model accepts and nothing exercises is a shape
     that is wrong the first time someone picks it. 5 kW at €3 + 5 at €2 + 2 at €1.
     """
     bands = Tiers(

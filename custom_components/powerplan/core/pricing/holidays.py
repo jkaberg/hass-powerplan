@@ -8,7 +8,7 @@ and the days the user removed.
 **Why this lives in `core/`.** The module imports a third party, which nothing
 else under `core/` does, but it imports no Home Assistant (INV-2) and reads
 nothing from the outside world: a holiday is a pure function of a date and a
-country. Its consumers are `TimeFilter.matches` (D2's grammar, via
+country. Its consumers are `TimeFilter.matches` (D2's tariff model, via
 `tou_schedule`) and `day_type`, both of them deep inside the composition, and
 its tests run with no HA. A `providers/` module would be an HA-facing adapter
 with no HA in it (`design/DECISIONS.md` D-0070).

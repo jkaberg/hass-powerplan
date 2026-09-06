@@ -1,4 +1,4 @@
-"""One generic evaluator over the whole grammar (D2 §3, §5).
+"""One generic evaluator over the whole tariff model (D2 §3, §5).
 
 History → weighted windows → daily entries → the period metric → the level; the
 ceiling for the current window at a target and a risk; the marginal cost; the
@@ -28,8 +28,8 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict
 from ..metering import window_bounds
 from ..model import Money
 from .contracted import HardLimit, limit_now
-from .grammar import ContractedPower, Linear, PeakTariff, StepTable
 from .history import MonthRec, PeakHistory, month_key
+from .model import ContractedPower, Linear, PeakTariff, StepTable
 from .target import (
     AUTO,
     CAP_MARGIN_KW,
@@ -48,8 +48,8 @@ if TYPE_CHECKING:
     from datetime import tzinfo
 
     from ..metering import ClosedWindow, ElectricalProfile
-    from .grammar import HolidayCalendar, TariffSpec, TariffVersion
     from .history import Provenance
+    from .model import HolidayCalendar, TariffSpec, TariffVersion
 
 __all__ = [
     "ADVICE_KEYS",
@@ -301,7 +301,7 @@ def _largest_under(metric_of: Callable[[float], float], limit: float, hi: float)
 def slack_bisect(metric_of: Callable[[float], float], target_kw: float, hi: float) -> float:
     """Bisect the evaluator itself for the reference slack (D2 §5.6).
 
-    Exact for every grammar, and the closed form above is tested against it on
+    Exact for every tariff model, and the closed form above is tested against it on
     10 000 random histories (D2 §9 5).
     """
     return max(
@@ -327,7 +327,7 @@ def _dec(value: float) -> Decimal:
 
 
 class Evaluator:
-    """`TariffModel` over any `TariffSpec` (D2 §3).
+    """`TariffEvaluator` over any `TariffSpec` (D2 §3).
 
     The evaluator holds the history, the target and the risk; `ceiling_kwh` takes
     the target and the risk as arguments as well, because D6 holds the live knobs
@@ -352,7 +352,7 @@ class Evaluator:
         self.target = target
         self.cap_margin_kw = cap_margin_kw
         latest = spec.versions[-1]
-        self.risk = default_risk(latest.grammar) if risk is None else risk
+        self.risk = default_risk(latest.rules) if risk is None else risk
         peak = latest.peak
         self.history = (
             history

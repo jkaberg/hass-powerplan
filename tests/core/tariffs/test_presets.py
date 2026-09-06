@@ -44,7 +44,7 @@ from custom_components.powerplan.core.tariffs import (
     WeightRule,
     seed_from_bills,
 )
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.houses import fixture_preset
 from tests.core.tariffs.conftest import (
     NO_HOLIDAYS,
@@ -292,12 +292,12 @@ def test_10b_period_spanning_two_versions_prices_each_windows_share() -> None:
             TariffVersion(
                 valid_from=date(2026, 9, 1),
                 version_id="test.midmonth@2026-09-01",
-                grammar=(no_tariff(pricing=table(400, 800)),),
+                rules=(no_tariff(pricing=table(400, 800)),),
             ),
             TariffVersion(
                 valid_from=date(2026, 9, 16),
                 version_id="test.midmonth@2026-09-16",
-                grammar=(no_tariff(pricing=table(500, 900)),),
+                rules=(no_tariff(pricing=table(500, 900)),),
             ),
         ),
     )
@@ -320,7 +320,7 @@ def test_10b_period_spanning_two_versions_prices_each_windows_share() -> None:
 
 @pytest.mark.parametrize("name", SHIPPED)
 def test_every_shipped_preset_validates_and_loads(name: str) -> None:
-    """Each file this WP ships passes its own schema and parses into the grammar.
+    """Each file this WP ships passes its own schema and parses into the tariff model.
 
     A template parses only once filled: evaluating one is refused (D2 §9 21).
     """
@@ -333,7 +333,7 @@ def test_every_shipped_preset_validates_and_loads(name: str) -> None:
     assert list(spec.versions) == sorted(spec.versions, key=lambda v: v.valid_from)
     for version in spec.versions:
         assert version.verified is not None or version.assumed, version.version_id
-        assert version.grammar
+        assert version.rules
 
 
 def test_custom_preset_is_a_no_peak_site() -> None:
@@ -476,7 +476,7 @@ def test_target_below_the_reached_step_is_still_honoured() -> None:
 
 
 def test_the_summary_describes_the_other_shapes() -> None:
-    """Every grammar root summarises, not only the Norwegian one (D2 §6, INV-67)."""
+    """Every tariff rule summarises, not only the Norwegian one (D2 §6, INV-67)."""
     finnish = loader.summarize(
         spec(
             PeakTariff(
@@ -708,14 +708,14 @@ def test_every_market_preset_declares_its_zone_and_the_golden_uses_it(name: str)
 # 6, 9, 12 - on the shipped preset files (D2 §9)
 # --------------------------------------------------------------------------- #
 #
-# WP0.3 built each of these markets' grammar inline, because its preset file did
+# WP0.3 built each of these markets' tariff model inline, because its preset file did
 # not exist yet. The inline tests stay: they are the arithmetic (§9 3, 4, 7, 8
 # live in `test_grammar.py` and `test_metric.py`). These are the same rules read
 # off the files a household will actually pick in the flow, which is where a
 # transcription error between the operator's sheet and the JSON shows up.
 #
 # WP4.6 removed the US, AU, FI and DK files and Ellevio's 2025 effect version:
-# none verified against the operator's own document as a whole year the grammar
+# none verified against the operator's own document as a whole year the tariff model
 # can say (D2 §2, §10; D-0522). WP4.6c fetches them instead.
 
 FLUVIUS = tuple(name for name in SHIPPED if name.startswith("be/fluvius-"))

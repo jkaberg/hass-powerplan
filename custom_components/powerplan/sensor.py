@@ -35,7 +35,7 @@ from .core.model import Carrier, Confidence, Snapshot
 from .core.pricing.modifiers.base import SPOT
 from .core.pricing.modifiers.vat import Vat
 from .core.tariffs.evaluator import ADVICE_KEYS
-from .core.tariffs.grammar import StepTable
+from .core.tariffs.model import StepTable
 from .entity import (
     PowerplanEntity,
     accrual_reset,

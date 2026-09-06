@@ -456,7 +456,7 @@ def nl_pv_negative_midday() -> Scenario:
     """Return the summer midday EPEX NL goes negative under (D9 §5.9 `nl_pv`, D-0312).
 
     No `target_kw`: `ContractedPower` answers a hard limit and no ceiling (D2's
-    own `TariffModel` docstring) - the household's flexible loads face a trip
+    own `TariffEvaluator` docstring) - the household's flexible loads face a trip
     risk, not a capacity step, so a Tensio-shaped target would test the wrong
     thing here.
     """

@@ -26,15 +26,15 @@ from homeassistant.helpers.selector import SelectOptionDict
 from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import DOMAIN
-from custom_components.powerplan.core.tariffs.grammar import HolidayMode, StepTable
+from custom_components.powerplan.core.tariffs.model import HolidayMode, StepTable
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from homeassistant.core import HomeAssistant
 
-    from custom_components.powerplan.core.tariffs.grammar import TariffVersion, TimeFilter
-    from custom_components.powerplan.core.tariffs.presets.loader import TariffSummary
+    from custom_components.powerplan.core.tariffs.model import TariffVersion, TimeFilter
+    from custom_components.powerplan.core.tariffs.rules.loader import TariffSummary
 
 __all__ = [
     "LANGUAGES",

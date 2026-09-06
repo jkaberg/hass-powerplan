@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from custom_components.powerplan.const import CONF_TARIFF
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from tests.flows.test_site_flow import (
     _answer,
     _configure,

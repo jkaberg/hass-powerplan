@@ -145,7 +145,7 @@ from .tariffs import (
     HardLimit,
     Level,
     Target,
-    TariffModel,
+    TariffEvaluator,
     TariffState,
     eps_for_window,
 )
@@ -1039,7 +1039,7 @@ class Engine:
         self,
         site: SiteConfig,
         meter: WindowMeter,
-        tariff: TariffModel,
+        tariff: TariffEvaluator,
         loads: Sequence[Load],
         *,
         constraints: Sequence[Constraint] = (),
@@ -2862,7 +2862,7 @@ def _warning_data(warning: SiteWarning, *, active: bool) -> dict[str, Any]:
 
 
 def _level_notification(
-    edges: dict[str, str], tariff: TariffModel, budget: Budget
+    edges: dict[str, str], tariff: TariffEvaluator, budget: Budget
 ) -> list[Notification]:
     """Return the "level about to step up" notification, once per edge (D8 §6.8)."""
     level = tariff.level()
@@ -3143,7 +3143,7 @@ def _shortfall_kwh(plan: Plan) -> float:
     return round(max(0.0, required * (1.0 - min(1.0, max(0.0, plan.coverage)))), 3)
 
 
-def _level_events(edges: dict[str, str], tariff: TariffModel, budget: Budget) -> list[HaEvent]:
+def _level_events(edges: dict[str, str], tariff: TariffEvaluator, budget: Budget) -> list[HaEvent]:
     """Return `level_changed` on the actual level's edge and on the projected one's (D8 §5.6)."""
     events: list[HaEvent] = []
     level = tariff.level()
@@ -3581,7 +3581,7 @@ def _accounting_status(state: EngineState) -> AccountingStatus:
     )
 
 
-def _top_entries(tariff: TariffModel, period_key: str) -> tuple[PeakEntry, ...]:
+def _top_entries(tariff: TariffEvaluator, period_key: str) -> tuple[PeakEntry, ...]:
     """Return the period's highest days, highest first (D2 §4)."""
     history = getattr(tariff, "history", None)
     if history is None:

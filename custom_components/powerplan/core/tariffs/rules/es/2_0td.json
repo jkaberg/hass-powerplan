@@ -6,7 +6,7 @@
   "currency": "EUR",
   "tz": "Europe/Madrid",
   "source_url": "https://www.boe.es/buscar/act.php?id=BOE-A-2020-1066",
-  "verified": "2026-08-24",
+  "verified": "2026-09-06",
   "assumed": "Nothing about the rule: 2.0TD's two power periods are Circular 3/2020 art. 7.4 as amended by Circular 1/2025 — punta-llano on working weekdays 08–24, valle the rest plus Saturdays, Sundays, 6 January and national holidays. The contracted kW per period is the household's own contract and is asked; the interruptor trips at the contract, with no tolerance assumed.",
   "versions": [
     {

@@ -1,6 +1,6 @@
 """The grid's energy charge by time of use (D1 §5.4).
 
-`TimeFilter` and `HolidayMode` are D2's grammar (`core/tariffs/grammar.py`,
+`TimeFilter` and `HolidayMode` are D2's tariff model (`core/tariffs/model.py`,
 D2 §2, §4) and are imported from there; WP0.4's temporary copy is gone
 (`design/DECISIONS.md` D-0036). They are re-exported here because a preset's
 `energy_components` builds a `TouSchedule` out of them and D1's callers should
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from ...tariffs.grammar import HolidayMode, TimeFilter
+from ...tariffs.model import HolidayMode, TimeFilter
 from ..model import Field, FieldKind, Schema
 from .base import GRID_ENERGY, with_component
 from .registry import register

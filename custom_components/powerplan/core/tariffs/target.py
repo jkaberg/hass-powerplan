@@ -13,12 +13,12 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from .grammar import Linear, StepTable, Tiers
+from .model import Linear, StepTable, Tiers
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from .grammar import Grammar
+    from .model import TariffRule
 
 __all__ = [
     "AUTO",
@@ -73,16 +73,15 @@ def eps_for_window(eps_base_kwh: float, window_min: int) -> float:
     return eps_base_kwh * window_min / 60.0
 
 
-def default_risk(grammar: Iterable[Grammar]) -> float:
-    """Return the risk a new site starts with: strict, on every grammar (D2 §6).
+def default_risk(rules: Iterable[TariffRule]) -> float:
+    """Return the risk a new site starts with: strict, on every tariff model (D2 §6).
 
-    The default (PLAN §7 dec. 18): never
-    exceed the target. The free ride (INV-9) is still derived from the
-    grammar's slack and used when the household picks 0.5 or 1.0; only the
-    default moved. An existing site keeps the risk its entry materialised
-    (INV-66). `grammar` stays the signature so a later grammar may differ.
+    The default (PLAN §7 dec. 28): never exceed the target. The free ride (INV-9) is
+    still derived from the tariff model's slack and used when the household picks 0.5 or
+    1.0; only the default moved. An existing site keeps the risk its entry materialised
+    (INV-66). `rules` stays the signature so a later tariff model may differ.
     """
-    del grammar
+    del rules
     return RISK_FLAT
 
 

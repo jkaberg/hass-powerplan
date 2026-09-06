@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 
 from ..metering import ClosedWindow, LoadSlot
 from ..model import Carrier, Mode, Money
-from ..tariffs import PeakHistory, TariffModel
+from ..tariffs import PeakHistory, TariffEvaluator
 from .ledger import (
     Ledger,
     LoadMonthRec,
@@ -121,7 +121,7 @@ class CloseCtx:
     """
 
     curves: Mapping[Carrier, CurvePair]
-    tariff: TariffModel
+    tariff: TariffEvaluator
     history: PeakHistory
     loads: Mapping[str, ShadowCtx]
     tz: tzinfo

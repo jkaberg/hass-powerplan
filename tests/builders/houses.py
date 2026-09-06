@@ -29,7 +29,7 @@ from custom_components.powerplan.core.loads.targets import ConstantSchedule
 from custom_components.powerplan.core.metering import ElectricalProfile, VoltageSystem
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS, calendar_for
 from custom_components.powerplan.core.tariffs import Evaluator, NoPeak, TariffSpec
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
 from tests.sim.charger_zaptec import ZaptecChargerSim
@@ -217,7 +217,7 @@ def no_peak(evaluator: Evaluator) -> Evaluator:
     no capacity control (HLD §10 decision 8).
     """
     spec = evaluator.spec
-    versions = tuple(replace(version, grammar=(NoPeak(),)) for version in spec.versions)
+    versions = tuple(replace(version, rules=(NoPeak(),)) for version in spec.versions)
     return Evaluator(
         replace(spec, id=f"{spec.id}+no_peak", versions=versions),
         tz=OSLO,

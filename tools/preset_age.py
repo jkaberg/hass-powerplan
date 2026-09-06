@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from custom_components.powerplan.core.tariffs.presets import loader  # noqa: E402
+from custom_components.powerplan.core.tariffs.rules import loader  # noqa: E402
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

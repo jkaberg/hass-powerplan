@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from custom_components.powerplan.core.tariffs.presets.loader import load
+from custom_components.powerplan.core.tariffs.rules.loader import load
 from tools.backtest import (
     BacktestMetrics,
     BacktestResult,

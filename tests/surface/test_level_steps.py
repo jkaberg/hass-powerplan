@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import DOMAIN
-from custom_components.powerplan.core.tariffs.grammar import StepTable
+from custom_components.powerplan.core.tariffs.model import StepTable
 from custom_components.powerplan.entity import money_text, unique_id
 from custom_components.powerplan.sensor import level_steps
 

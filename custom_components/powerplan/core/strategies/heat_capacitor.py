@@ -230,7 +230,7 @@ def _peaks(ctx: PlanContext, window: Sequence[Slot]) -> tuple[tuple[datetime, da
     """Return the eligible windows that are actually **peak** windows (§5.7 step 5).
 
     An eligible window is only a peak if some of the horizon is not one: the
-    Norwegian grammar is eligible around the clock, so every hour would be "peak"
+    Norwegian tariff model is eligible around the clock, so every hour would be "peak"
     and the strategy would coast for two days. Where weights differ, the heaviest
     windows are the peak - Ellevio's half-weight night is not what a store banks
     against (`design/DECISIONS.md` D-0196).

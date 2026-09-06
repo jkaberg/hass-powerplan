@@ -59,7 +59,7 @@ from .const import (
     OnboardingPath,
 )
 from .core.pricing import Carrier, modifiers
-from .core.tariffs.presets import loader
+from .core.tariffs.rules import loader
 from .flow import device_pick, review, steps
 from .flow.circuit import CircuitSubentryFlow
 from .flow.group import GroupSubentryFlow
@@ -87,8 +87,8 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigSubentryFlow
 
     from .core.metering.profile import ElectricalProfile
-    from .core.tariffs.grammar import TariffSpec, TariffVersion
-    from .core.tariffs.presets.loader import TariffSummary
+    from .core.tariffs.model import TariffSpec, TariffVersion
+    from .core.tariffs.rules.loader import TariffSummary
 
     type _Step = Callable[
         [PowerplanConfigFlow, dict[str, Any] | None], Coroutine[Any, Any, ConfigFlowResult]

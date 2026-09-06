@@ -4,7 +4,7 @@ The US has 3 700 utilities and one format that describes them all: the OpenEI
 Utility Rate Database gives a rate as `energyratestructure` - a list of periods,
 each a list of tiers - plus `energyweekdayschedule` and `energyweekendschedule`,
 two 12×24 matrices of month × hour naming the period in force. A user pastes the
-rate's JSON and gets the periods D1's grammar already evaluates; no new grammar,
+rate's JSON and gets the periods D1's tariff model already evaluates; no new tariff model,
 no US special case anywhere else (HLD §8).
 
 `from_urdb` is the importer. `to_urdb` is its inverse, which is what makes the
@@ -13,8 +13,8 @@ round trip either reproduces the document or names the cell where it did not
 (D1 §9 7).
 
 The module imports `TouSchedule`, `TouPeriod` and `TimeFilter` by name from
-`tou_schedule`, which is where the grammar lives until D2's `core/tariffs/
-grammar.py` lands (`design/DECISIONS.md` D-0036).
+`tou_schedule`, which is where the tariff model lives until D2's `core/tariffs/
+model.py` lands (`design/DECISIONS.md` D-0036).
 """
 
 from __future__ import annotations

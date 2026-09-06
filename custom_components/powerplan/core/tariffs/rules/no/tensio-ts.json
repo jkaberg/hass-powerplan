@@ -6,11 +6,11 @@
   "currency": "NOK",
   "tz": "Europe/Oslo",
   "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
-  "verified": "2026-08-24",
+  "verified": "2026-09-06",
   "versions": [
     {
       "valid_from": "2025-07-01",
-      "verified": "2026-08-24",
+      "verified": "2026-09-06",
       "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/81eebc86818a3eb75d1d1d46ced330c05b107616.pdf",
       "peak": {
         "window_min": 60,
@@ -126,7 +126,7 @@
     },
     {
       "valid_from": "2026-01-01",
-      "verified": "2026-08-24",
+      "verified": "2026-09-06",
       "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/1b6338b71ee4ae225082a95a2d596bb1297664f4.pdf",
       "peak": {
         "window_min": 60,
@@ -242,7 +242,7 @@
     },
     {
       "valid_from": "2026-07-01",
-      "verified": "2026-08-24",
+      "verified": "2026-09-06",
       "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
       "peak": {
         "window_min": 60,

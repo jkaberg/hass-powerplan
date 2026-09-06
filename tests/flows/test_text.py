@@ -52,8 +52,8 @@ from custom_components.powerplan.core.loads.questionnaire import QCtx, QuestionK
 from custom_components.powerplan.core.loads.types import base as device_types
 from custom_components.powerplan.core.pricing import Carrier, modifiers
 from custom_components.powerplan.core.tariffs.evaluator import ADVICE_KEYS
-from custom_components.powerplan.core.tariffs.grammar import StepTable
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.model import StepTable
+from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.flow import steps as site_steps
 from custom_components.powerplan.flow.load import explanation_text, option_key
 from custom_components.powerplan.flow.text import Text, preset_options, target_options, tariff_table

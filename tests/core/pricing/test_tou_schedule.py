@@ -9,7 +9,7 @@ Three markets whose grid energy charge is the whole price axis:
   which is how 3 700 utilities describe themselves (HLD §8).
 
 The prices are the published shape of each tariff, rounded: what is under test
-is the grammar, not the tariff sheet. D2's presets carry the sourced numbers.
+is the tariff model, not the tariff sheet. D2's presets carry the sourced numbers.
 """
 
 from __future__ import annotations

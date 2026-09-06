@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from .loads import Load
     from .loads.targets import TargetProfile
-    from .tariffs import PeakHistory, TariffModel
+    from .tariffs import PeakHistory, TariffEvaluator
 
 __all__ = ["AccountingAdapter", "params_of", "store_kind_of"]
 
@@ -114,7 +114,7 @@ class AccountingAdapter:
         self,
         cfg: AccountingConfig,
         loads: Sequence[Load],
-        tariff: TariffModel,
+        tariff: TariffEvaluator,
         history: PeakHistory,
         *,
         now: datetime,

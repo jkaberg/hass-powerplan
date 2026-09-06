@@ -89,10 +89,10 @@ from custom_components.powerplan.core.tariffs import (  # noqa: E402
     resolve_target_kw,
     seed_from_windows,
 )
-from custom_components.powerplan.core.tariffs.presets.loader import (  # noqa: E402
+from custom_components.powerplan.core.tariffs.rules.loader import (  # noqa: E402
     PresetError,
 )
-from custom_components.powerplan.core.tariffs.presets.loader import (  # noqa: E402
+from custom_components.powerplan.core.tariffs.rules.loader import (  # noqa: E402
     load as load_preset,
 )
 
@@ -101,7 +101,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger("powerplan.backtest")
 
-PRESET_DIR = REPO_ROOT / "custom_components" / "powerplan" / "core" / "tariffs" / "presets"
+PRESET_DIR = REPO_ROOT / "custom_components" / "powerplan" / "core" / "tariffs" / "rules"
 
 #: Units the tool reads as an energy register, and their factor to kWh.
 ENERGY_UNITS = {"Wh": 0.001, "kWh": 1.0, "MWh": 1000.0}

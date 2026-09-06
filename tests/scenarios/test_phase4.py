@@ -115,7 +115,7 @@ def test_the_days_run_clean(quarter_hour_week: ScenarioResult) -> None:
 def test_a_quiet_window_still_bills_against_the_floor() -> None:
     """`Linear.billable_kw` (D2 §5.3): under 2.5 kW bills as if it were exactly there."""
     house = be_quarter()
-    pricing = house.tariff.spec.versions[0].grammar[0].pricing  # type: ignore[union-attr]
+    pricing = house.tariff.spec.versions[0].rules[0].pricing  # type: ignore[union-attr]
     assert pricing.billable_kw(1.0) == pricing.min_kw == 2.5
     assert pricing.billable_kw(4.0) == 4.0
 

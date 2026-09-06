@@ -6,7 +6,7 @@
   "currency": "EUR",
   "tz": "Europe/Amsterdam",
   "source_url": "https://www.acm.nl/nl/publicaties/voorstel-codewijziging-volume-en-tijdsafhankelijke-transporttarieven-voor-kleinverbruikers",
-  "verified": "2026-08-24",
+  "verified": "2026-09-06",
   "assumed": "Nothing about the rule: a Dutch small consumer pays a fixed transport tariff by connection size and no measured capacity charge until the ACM's volume- and time-dependent tariffs (proposed for 2029); the connection size is the household's own and is asked, and the main fuse is treated as a trip at the limit.",
   "versions": [
     {

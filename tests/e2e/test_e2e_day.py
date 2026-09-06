@@ -46,7 +46,7 @@ from custom_components.powerplan.core.metering import ClosedWindow
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
 from custom_components.powerplan.core.tariffs import Evaluator
 from custom_components.powerplan.core.tariffs.evaluator import Period
-from custom_components.powerplan.core.tariffs.presets import loader
+from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.entity import unique_id
 from tests.benchmark.year import y2026_27
 from tests.builders.houses import OSLO, nordic_detached

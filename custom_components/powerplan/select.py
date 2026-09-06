@@ -14,7 +14,7 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .core.tariffs.grammar import StepTable
+from .core.tariffs.model import StepTable
 from .entity import PowerplanEntity
 from .load_entities import load_selects
 from .runtime import step_index

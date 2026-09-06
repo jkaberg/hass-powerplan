@@ -5,11 +5,11 @@
   "currency": "GBP",
   "tz": "Europe/London",
   "source_url": "https://media.umbraco.io/ukpn-cms/bqthjnqt/london-power-networks-lc14-statement-2026-v1-3.pdf",
-  "verified": "2026-08-24",
+  "verified": "2026-09-06",
   "versions": [
     {
       "valid_from": "2026-04-01",
-      "verified": "2026-08-24",
+      "verified": "2026-09-06",
       "source_url": "https://media.umbraco.io/ukpn-cms/bqthjnqt/london-power-networks-lc14-statement-2026-v1-3.pdf",
       "no_peak": true
     }

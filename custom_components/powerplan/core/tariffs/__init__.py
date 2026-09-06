@@ -11,8 +11,8 @@ It owns its history and computes the level itself; it never reads a "level
 reached" attribute from another integration, which is the ratchet bug that made
 the whole domain necessary (INV-11).
 
-The public API is what this module re-exports (D2 §3). `TariffModel` below is the
-protocol `Evaluator` satisfies for all three grammar roots - D6 and D7 depend on
+The public API is what this module re-exports (D2 §3). `TariffEvaluator` below is the
+protocol `Evaluator` satisfies for all three tariff rules - D6 and D7 depend on
 the protocol, not on the class.
 """
 
@@ -35,9 +35,9 @@ from .evaluator import (
     slack_bisect,
     slack_closed_form,
 )
-from .grammar import (
+from .history import DayRec, MonthRec, Override, PeakHistory, Provenance, WindowRec
+from .model import (
     ContractedPower,
-    Grammar,
     HolidayCalendar,
     HolidayMode,
     Linear,
@@ -47,13 +47,13 @@ from .grammar import (
     Ratchet,
     Step,
     StepTable,
+    TariffRule,
     TariffSpec,
     TariffVersion,
     Tiers,
     TimeFilter,
     WeightRule,
 )
-from .history import DayRec, MonthRec, Override, PeakHistory, Provenance, WindowRec
 from .target import (
     AUTO,
     CAP_MARGIN_KW,
@@ -75,10 +75,10 @@ if TYPE_CHECKING:
     from ..model import Money
 
 
-class TariffModel(Protocol):
+class TariffEvaluator(Protocol):
     """What D6, D5, D7 and D11 may ask a tariff (D2 §3).
 
-    Implemented by `Evaluator` over every grammar root: a `NoPeak` site answers
+    Implemented by `Evaluator` over every tariff rule: a `NoPeak` site answers
     "no ceiling, no level", a `ContractedPower` site answers with a hard limit and
     no ceiling, and a `PeakTariff` site answers all of it.
     """
@@ -188,7 +188,6 @@ __all__ = [
     "ContractedPower",
     "DayRec",
     "Evaluator",
-    "Grammar",
     "HardLimit",
     "HolidayCalendar",
     "HolidayMode",
@@ -206,7 +205,8 @@ __all__ = [
     "Step",
     "StepTable",
     "Target",
-    "TariffModel",
+    "TariffEvaluator",
+    "TariffRule",
     "TariffSpec",
     "TariffState",
     "TariffVersion",

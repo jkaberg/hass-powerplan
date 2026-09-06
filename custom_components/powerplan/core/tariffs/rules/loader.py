@@ -1,4 +1,4 @@
-"""Preset files in, grammar out - and the boundary that validates them (D2 §2, §6).
+"""Preset files in, tariff model out - and the boundary that validates them (D2 §2, §6).
 
 Presets are data, not code: a new DSO is a JSON file under `presets/<cc>/`, and
 neither this module nor the config flow changes with it. That only holds if the
@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...model import Money
-from ..grammar import (
+from ..model import (
     ContractedPower,
     HolidayMode,
     Linear,
@@ -53,7 +53,7 @@ from ..grammar import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from ..grammar import Grammar
+    from ..model import TariffRule
 
 __all__ = [
     "RETIRED",
@@ -79,7 +79,7 @@ class PresetError(ValueError):
     """A preset file that cannot be trusted (D2 §6, §8).
 
     Raised by the loader only. D8 turns it into a repair issue: the site falls
-    back to the grammar copied into its store at setup, which is why a broken
+    back to the tariff model copied into its store at setup, which is why a broken
     preset in a release can never move a live ceiling (INV-66, D2 §8).
     """
 
@@ -389,7 +389,7 @@ def fill_template(
 
     `steps` are `(upper_kw, fee)` rows from the bill, the last open-ended; `limits`
     are the contracted kW in the template's own order. The result is the same
-    grammar written by hand: no `template`, no source, `assumed` saying whose
+    tariff model written by hand: no `template`, no source, `assumed` saying whose
     numbers they are. A non-template is returned with its null-free numbers as
     they are, except that `limits`, when given, replace the contracted kW - the
     household's contract, not the file's.
@@ -447,7 +447,7 @@ def _version(
     entry: Mapping[str, Any], preset_id: str, currency: str, raw: Mapping[str, Any]
 ) -> TariffVersion:
     valid_from = date.fromisoformat(entry["valid_from"])
-    roots: list[Grammar] = []
+    roots: list[TariffRule] = []
     if "peak" in entry:
         roots.append(_peak(entry["peak"], currency))
     if "contracted" in entry:
@@ -457,7 +457,7 @@ def _version(
     return TariffVersion(
         valid_from=valid_from,
         version_id=f"{preset_id}@{valid_from.isoformat()}",
-        grammar=tuple(roots),
+        rules=tuple(roots),
         energy_components=entry.get("energy_components", {}),
         verified=entry.get("verified", raw.get("verified")),
         assumed=entry.get("assumed", raw.get("assumed")),

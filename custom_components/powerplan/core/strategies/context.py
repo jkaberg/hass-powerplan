@@ -57,7 +57,7 @@ __all__ = [
 class CeilingSource(Protocol):
     """The two questions the headroom builder asks a tariff (D2 §3, D5 §5.1).
 
-    A narrow view of D2's `TariffModel`: `Evaluator` satisfies it structurally,
+    A narrow view of D2's `TariffEvaluator`: `Evaluator` satisfies it structurally,
     and nothing in D5 can reach the rest of the tariff by accident.
     """
 
