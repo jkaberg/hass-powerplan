@@ -89,6 +89,8 @@ class HouseholdPrice:
     confirmed: Mapping[str, Any]  # every field a source left out, as the household confirmed it
 ```
 
+The types live in `core/tariffs/household.py`, the chain in `core/pricing/party.py`, and the copy is `entry.data.tariff.price` (config entry minor version 2). `GridTariff` also carries `currency` and its `basis` (D-0550, D-0554).
+
 Derived, never stored:
 
 | Derivation | Into | Rule |
@@ -361,7 +363,7 @@ Every price source (D1) declares its basis over {spot, grid, VAT, levies}:
 | a supplier's total-price entity | asked in step 2 ("totalprisen"), default from D1's format table |
 | `fixed` / Norgespris | the agreement's price, VAT as stated |
 
-The chain adds, in order: supplier components → the grid energy charge (if the source excludes grid) → the state stage on components that exclude VAT/levies. The old `vat`/`levy` add-ons become the state stage's overrides; the old `tou_schedule` add-on becomes the grid's energy charge (migration §10).
+The chain adds, in order: supplier components → the grid energy charge (if the source excludes grid) → the state stage on components that exclude VAT/levies. A grid charge published with VAT or levies has the national rates of its date taken out by the grid stage, and the state stage adds the zone's: the grid line is always the grid's own, both copies of one tariff compose to the same components, and a zone without VAT pays none on it (D-0551). The old `vat`/`levy` add-ons become the state stage's overrides, and the old `tou_schedule` add-on the grid's energy charge (migration §10).
 
 ## 9. Taxes
 
@@ -494,7 +496,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | `presets/custom.json` | the "describe it myself" start | **kept** as `rules/custom.json` | TS.1 |
 | `presets/schema.json` | preset schema (+ `template`) | split: `rules/schema.json` (rules, templates) and the `HouseholdPrice` schema (§3) | TS.1 |
 | `tests/golden/presets/*` (15) | a golden per shipped file | rule goldens stay (ES, NL, UK, NO template); company goldens become per-adapter fixture goldens | TS.3–TS.6 |
-| `tests/fixtures/presets/no/tensio-ts-2027.json` | the benchmark's synthetic 2027 version | **kept**, rebuilt as a `GridTariff` fixture | TS.1 |
+| `tests/fixtures/presets/no/tensio-ts-2027.json` | the benchmark's synthetic 2027 version | **kept**, rebuilt as a `GridTariff` fixture with the benchmark houses (the runner builds its curves from the fixture's energy components, D-0554) | TS.6 |
 | `tests/fixtures/tariff_sources/*` (parked branch) | fri-nettleie captures, hand-read tables | **kept** | TS.3 |
 
 ### 12.2 Code

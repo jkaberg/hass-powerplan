@@ -39,6 +39,7 @@ from .pricing import (
     CurvePair,
     PricedSlot,
     SlotPrice,
+    accrue_by_party,
     capacity_fee_to_date,
     export_credit,
     price_session,
@@ -348,6 +349,8 @@ class Accounting:
                 load_id, slot, shadow_ctx, price=price, measured=measured, rec=rec
             )
             cf_cost = price_slot(cf_kwh, price)
+            accrue_by_party(rec.savings_by_party, price, cf_kwh)
+            accrue_by_party(rec.savings_by_party, price, measured.kwh, -1)
             rec.cf_kwh += cf_kwh
             rec.cf_cost = plus(rec.cf_cost, cf_cost)
             rec.kwh_shifted += kwh_shifted(measured.kwh, cf_kwh)
@@ -449,6 +452,8 @@ class Accounting:
         )
         priced, total, _ = price_session(held, session_kwh, rate_w)
         rec.cf_cost = plus(rec.cf_cost, total)
+        for entry in priced:
+            accrue_by_party(rec.savings_by_party, entry.price, entry.cf_kwh)
         rec.cf_kwh += sum(entry.cf_kwh for entry in priced)
         rec.kwh_shifted += sum(kwh_shifted(entry.kwh, entry.cf_kwh) for entry in priced)
         self._state.ledger.lifetime.accrue_load(load_id, 0.0, zero(total.currency), total)
@@ -575,6 +580,10 @@ class Accounting:
             for row in applied:
                 rec.cost = plus(rec.cost, row.cost_delta)
                 rec.cf_cost = plus(rec.cf_cost, row.cf_cost_delta)
+                # The split moves with the price: the old one out, the known one in.
+                for price, sign in ((row.price, 1), (row.slot.price, -1)):
+                    accrue_by_party(rec.savings_by_party, price, row.slot.cf_kwh, sign)
+                    accrue_by_party(rec.savings_by_party, price, row.slot.kwh, -sign)
                 if row.slot.load_exact:
                     rec.estimated_slots = max(0, rec.estimated_slots - 1)
                 state.ledger.lifetime.accrue_load(

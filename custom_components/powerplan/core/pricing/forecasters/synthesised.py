@@ -5,12 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from ...model import Confidence
 from ..model import Field, FieldKind, Schema, Slot
 from ..modifiers.base import GRID_ENERGY, SPOT
-from ..modifiers.tou_schedule import TouSchedule
 from .base import missing_intervals
 from .registry import register
 
@@ -19,6 +18,14 @@ if TYPE_CHECKING:
 
     from ..context import PriceContext
     from ..model import PriceCurve
+
+
+class GridCharge(Protocol):
+    """What the tail adds for the grid: a `tou_schedule`, or the copy's share (D1 §5.3)."""
+
+    def price_at(self, when: datetime, ctx: PriceContext) -> Decimal:
+        """Return the grid-side charge at `when`."""
+        ...
 
 
 def _floor(when: datetime, minutes: int) -> datetime:
@@ -62,7 +69,7 @@ class Synthesised:
         Field("slot_minutes", FieldKind.NUMBER, default=15, unit="min", advanced=True),
     )
 
-    tou: TouSchedule | None = None
+    tou: GridCharge | None = None
     energy_default: Decimal = Decimal("0.50")
     history_days: int = 7
     slot_minutes: int = 15
@@ -104,7 +111,14 @@ class Synthesised:
                 continue
             if slot.confidence not in (Confidence.KNOWN, Confidence.STALE):
                 continue
-            weighted += (slot.total - slot.components.get(GRID_ENERGY, Decimal(0))) * slot.minutes
+            # The grid-side share where the chain put one on this slot: with a
+            # copy that is the grid charge with its levies and their VAT.
+            grid = (
+                self.tou.price_at(slot.start, ctx)
+                if self.tou is not None and GRID_ENERGY in slot.components
+                else slot.components.get(GRID_ENERGY, Decimal(0))
+            )
+            weighted += (slot.total - grid) * slot.minutes
             span += slot.minutes
         if span == 0:
             return self.energy_default
@@ -120,7 +134,7 @@ class Synthesised:
             stop = min(cursor + step, end)
             components = {SPOT: energy}
             if self.tou is not None:
-                components[self.tou.component] = self.tou.price_at(cursor, ctx)
+                components[GRID_ENERGY] = self.tou.price_at(cursor, ctx)
             yield Slot(
                 start=cursor,
                 end=stop,

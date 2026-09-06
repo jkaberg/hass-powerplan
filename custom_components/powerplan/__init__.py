@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
 from .const import (
     BRAND_ICON_URL,
@@ -29,6 +30,7 @@ from .entity import async_prepare_site_device
 from .flow.load import binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
+from .storage import ENTRY_MINOR_PRICE, migrate_tariff
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -67,6 +69,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             [StaticPathConfig(BRAND_ICON_URL, str(Path(__file__).parent / "brand" / "icon.png"))]
         )
     await async_setup_dashboard(hass)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:
+    """Bring an older entry to the current schema, offline (D13 §10, INV-73).
+
+    Minor version 2: the tariff becomes the copy by party (`tariff.price`), the
+    preset's energy charge leaves the add-ons for it, and an old VAT or levy
+    add-on becomes the state stage - dropped where the country module says the
+    same, kept (and raised as `tariff_review`) where it differs. Nothing is
+    fetched: the files it reads ship with the release.
+    """
+    if entry.version > 1:
+        return False
+    if entry.minor_version < ENTRY_MINOR_PRICE:
+        data, review = await hass.async_add_executor_job(
+            migrate_tariff, dict(entry.data), dt_util.now().date()
+        )
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=ENTRY_MINOR_PRICE)
+        _LOGGER.info(
+            "%s: tariff migrated to the copy by party%s",
+            entry.title,
+            f"; kept for review: {', '.join(review)}" if review else "",
+        )
     return True
 
 

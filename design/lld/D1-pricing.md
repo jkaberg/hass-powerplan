@@ -273,6 +273,8 @@ Modifiers are pure functions of `(slot, ctx)`, so composition is deterministic a
 | `grid_energy` | grid company |
 | `levy`, `vat`, `subsidy` | state |
 
+The grid component is the grid's own charge. Where the copy was published with VAT or levies, the national rates for its date are taken out and the state stage adds the zone's. `chain()` also returns the grid share the synthesising forecaster adds to its tail (§5.5, D-0551).
+
 A load with **its own tariff** (D13 §18 G13: a §14a Modul 3 device, an H-tarifa meter, a heating meter) gets its own curve: the same chain with that tariff's grid component, built per tariffed load and handed to D5 for that load only.
 
 ### 5.4 The v1 modifiers

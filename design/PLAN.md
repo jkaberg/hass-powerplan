@@ -402,7 +402,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | A.1 | Attach | done |
 | A.2 | The entity set and `plan_status` | done |
 | A.3 | Settings by level and the gear flow | done |
-| TS.1 | Model, composition, first cleanup | todo |
+| TS.1 | Model, composition, first cleanup | done |
 | TS.2 | Source framework, flow by party, renewal | todo |
 | TS.3 | Norway | todo |
 | TS.4 | Sweden, Denmark | todo |

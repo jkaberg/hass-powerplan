@@ -149,11 +149,12 @@ from .core.pricing import (
     next_fetch_at,
     next_hole_check_at,
     next_retry_at,
+    party,
 )
 from .core.pricing.context import HolidayCalendar
 from .core.pricing.forecasters.base import PriceForecaster, chain
 from .core.pricing.forecasters.carry_known import CarryKnown
-from .core.pricing.forecasters.synthesised import Synthesised
+from .core.pricing.forecasters.synthesised import GridCharge, Synthesised
 from .core.pricing.holidays import NoHolidays, UnknownCalendarError, calendar_for
 from .core.pricing.modifiers.base import SPOT, PriceModifier
 from .core.pricing.modifiers.fixed_price import FixedPrice
@@ -167,6 +168,7 @@ from .core.tariffs import (
     Target,
     TariffSpec,
     TariffVersion,
+    household,
     seed_from_windows,
 )
 from .core.tariffs.history import Override
@@ -207,7 +209,7 @@ from .providers.profiles import registry as profiles
 from .providers.profiles.base import LiveDevice
 from .providers.schedules import fetch_windows
 from .repairs import RepairsWatch, async_clear, async_report
-from .storage import Section, SiteStore
+from .storage import Section, SiteStore, migrate_tariff
 from .writegate import Actuation, WriteGate
 
 if TYPE_CHECKING:
@@ -228,6 +230,7 @@ if TYPE_CHECKING:
     from .core.loads.gate import TransportBudget
     from .core.loads.kinds.base import Reads, Value
     from .core.model import PriceCurve, Snapshot
+    from .core.tariffs.household import HouseholdPrice
     from .load_entities import StatusHold
     from .writegate import DeviceCall, Outcome
 
@@ -571,6 +574,8 @@ class SiteBuild:
     target_kw: float | None = None
     preset_file: str | None = None
     preset_outdated: bool = False
+    #: Old VAT/levy add-ons kept as the household's overrides until it confirms them (D13 §10).
+    tariff_review: tuple[str, ...] = ()
     notifications: Mapping[str, Any] = field(default_factory=dict)
     quiet_hours: QuietHours | None = None
 
@@ -590,7 +595,8 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     holidays = _holidays(country)
 
     tariff_data = data.get(CONF_TARIFF) or {}
-    spec, outdated = _spec(tariff_data, currency)
+    price, review, prices = _price(data)
+    spec, outdated = _spec(tariff_data, price, currency)
     target, risk, eps = _target_of(tariff_data)
     tariff = Evaluator(
         spec,
@@ -635,14 +641,20 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         else None
     )
 
-    prices = data.get(CONF_PRICES) or {}
     sources = tuple(
         _price_source(hass, row, currency=currency, tz=tz) for row in prices.get("sources") or ()
     )
-    price_modifiers = modifiers.chain_from(
+    added = modifiers.chain_from(
         [(row["key"], row.get("options") or {}) for row in prices.get("modifiers") or ()]
     )
-    tou = next((row for row in price_modifiers if isinstance(row, TouSchedule)), None)
+    tou: GridCharge | None
+    if price is not None:
+        # The chain by party: the household's add-ons, the copy's grid charge,
+        # the zone's levies and VAT at each slot's date (D1 §5.3, INV-72).
+        price_modifiers, tou = party.chain(price, added, _source_basis(prices))
+    else:
+        price_modifiers = added
+        tou = next((row for row in added if isinstance(row, TouSchedule)), None)
     forecaster = chain(CarryKnown(), Synthesised(tou=tou))
     export = prices.get("export") or {}
     export_modifier = (
@@ -700,6 +712,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
         preset_outdated=outdated,
+        tariff_review=review,
         notifications=dict(data.get(CONF_NOTIFICATIONS) or {}),
         quiet_hours=QuietHours.from_data(data.get(CONF_QUIET_HOURS)),
     )
@@ -965,19 +978,33 @@ def _holidays(country: str) -> HolidayCalendar:
         return NoHolidays()
 
 
-def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
-    """Load the chosen preset, or the `NoPeak` site a price-only house is.
+def _price(
+    data: Mapping[str, Any],
+) -> tuple[HouseholdPrice | None, tuple[str, ...], Mapping[str, Any]]:
+    """Return the site's tariff copy by party, what awaits review, and the prices (D13 §3, §10).
 
-    Returns the spec and whether the shipped preset's versions differ from the
-    ones the site was set up with (`preset_outdated`, D8 §5.9). The entry's own
-    copy wins when it has one (D2 §6, INV-66): a release that edits or retires
-    the file never moves the site's ceiling, it only raises the repair.
+    An entry migrated to minor version 2 holds the copy; one built any other way
+    (a test's entry, an entry HA has not migrated) is migrated here the same
+    way, offline, and nothing is written. A fuse-only site has no copy.
     """
-    preset_file = tariff.get("preset_file")
-    if tariff.get("spec"):
-        spec = loader.from_raw(tariff["spec"], source="entry")
-        return spec, _outdated(str(preset_file or ""), spec)
-    if not preset_file:
+    migrated, _ = migrate_tariff(data, dt_util.now().date())
+    tariff = migrated.get(CONF_TARIFF) or {}
+    prices = migrated.get(CONF_PRICES) or {}
+    if not tariff.get("price"):
+        return None, (), prices
+    return household.from_json(tariff["price"]), tuple(tariff.get("review") or ()), prices
+
+
+def _spec(
+    tariff: Mapping[str, Any], price: HouseholdPrice | None, currency: str
+) -> tuple[TariffSpec, bool]:
+    """Return D2's spec from the copy, or the `NoPeak` site a fuse-only house is.
+
+    Also whether the shipped file the copy was taken from has moved on since
+    (`preset_outdated`, D8 §5.9): the copy wins (D2 §6, INV-66), so a release that
+    edits or retires the file never moves the site's ceiling, it only says so.
+    """
+    if price is None:
         return TariffSpec(
             id=str(tariff.get("preset_id") or "no_peak"),
             name="No capacity component",
@@ -986,28 +1013,13 @@ def _spec(tariff: Mapping[str, Any], currency: str) -> tuple[TariffSpec, bool]:
             ),
             currency=currency,
         ), False
-    # An entry from before WP4.6 holds no copy and reads the file.
-    retired = loader.successor(str(preset_file))
-    if retired is not None:
-        _LOGGER.warning(
-            "preset %s was retired; the site runs on %s until it is reconfigured",
-            preset_file,
-            retired,
-        )
-    raw = loader.load_raw(retired or str(preset_file))
-    if raw.get("template"):
-        # `es/2_0td` or `nl/connection` before they became templates: the
-        # household's contracted kW were answered in the flow and kept here.
-        raw = loader.fill_template(raw, limits=list(tariff.get("contracted_kw") or ()))
-    spec = loader.from_raw(raw, source=f"{retired or preset_file}.json")
-    shipped = [version.version_id for version in spec.versions]
-    outdated = retired is not None or shipped != list(tariff.get("version_ids") or shipped)
+    spec = household.spec(price)
+    preset_file = str(tariff.get("preset_file") or "")
+    copied = [version.version_id for version in spec.versions]
+    outdated = _outdated(preset_file, spec) or copied != list(tariff.get("version_ids") or copied)
     if outdated:
         _LOGGER.warning(
-            "preset %s ships versions %s, the site was set up with %s (preset_outdated)",
-            preset_file,
-            shipped,
-            tariff.get("version_ids"),
+            "preset %s has moved on from the site's copy %s (preset_outdated)", preset_file, copied
         )
     return spec, outdated
 
@@ -1040,6 +1052,23 @@ def _target_of(tariff: Mapping[str, Any]) -> tuple[Target, float | None, float |
     risk = tariff.get("risk")
     eps = tariff.get("eps_kwh")
     return target, None if risk is None else float(risk), None if eps is None else float(eps)
+
+
+def _source_basis(prices: Mapping[str, Any]) -> frozenset[str]:
+    """Return what the primary price source already includes (D1 §5.3, O5).
+
+    A row may state it (a total-price entity, asked); otherwise the format says,
+    and a spot source or a fixed agreement includes the spot price alone.
+    """
+    rows = prices.get("sources") or ()
+    if not rows:
+        return formats.SPOT_ONLY
+    options: Mapping[str, Any] = rows[0].get("options") or {}
+    if options.get("basis") is not None:
+        return frozenset(str(key) for key in options["basis"]) & party.BASIS_KEYS
+    if rows[0].get("key") == "entity":
+        return formats.basis(str(options["format"]))
+    return formats.SPOT_ONLY
 
 
 def _price_source(

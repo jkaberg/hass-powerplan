@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from custom_components.powerplan.core.pricing import Schema
 
@@ -73,6 +73,16 @@ def build(key: str, options: Mapping[str, Any] | None = None) -> EntityFormat | 
     from it (D-0100).
     """
     return _REGISTRY[key].factory(**(options or {}))
+
+
+#: What a source's price includes when its adapter says nothing: spot alone (O5).
+SPOT_ONLY: Final = frozenset({"spot"})
+
+
+def basis(key: str) -> frozenset[str]:
+    """Return what a format's prices already include ⊆ {spot, grid, vat, levies} (D1 §5.3, O5)."""
+    found: frozenset[str] = getattr(_REGISTRY[key].factory, "basis", SPOT_ONLY)
+    return found
 
 
 def for_platform(platform: str) -> tuple[str, ...]:

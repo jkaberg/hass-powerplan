@@ -141,7 +141,11 @@ def test_04c_the_entities_publish_the_snapshot(
     assert float(state_of("sensor", "window_used")) >= 0.0
     assert float(state_of("sensor", "allowance")) > 0.0
     assert state_of("sensor", "stage") == "0"
-    assert state_of("sensor", "price") == "0.5", "the fixed 0.50 NOK/kWh source"
+    # The fixed 0.50 NOK/kWh contract with Norway's 25 % VAT, plus Tensio TS's
+    # night charge incl. VAT and levies (0.2292, the 2026-01-01 table): the test
+    # zone puts 09:59 UTC in the night, and the copy's charge now comes with the
+    # tariff, not as an add-on (D13 §8): 0.50 × 1.25 + 0.2292.
+    assert state_of("sensor", "price") == "0.8542"
     # ENT-19: "Priser kjent til" is a timestamp, not a slot count (S1: the same id).
     snapshot = runtime.snapshot
     assert snapshot is not None

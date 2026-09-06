@@ -548,14 +548,14 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            # Tensio prices the day/night charge itself, levies included, so
-            # neither is offered (D-0430, D-0523); both screens are walked on the
-            # price-only branch below.
+            # Tensio's copy prices the day/night charge and Norway's module the VAT
+            # and levies, so none is offered (D-0430, INV-71); their screens are
+            # walked on the price-only branch below, in a country with no module.
             "modifiers": {
                 "modifiers": [
                     k
                     for k in modifiers.keys()  # noqa: SIM118
-                    if k not in ("export_price", "tou_schedule", "levy")
+                    if k not in ("export_price", "tou_schedule", "levy", "vat")
                 ]
             },
             # Every add-on ticked: the required fields with no default (D8 §9
@@ -617,7 +617,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         },
     ),
     "price_only_fixed": (
-        {"country": "NO"},
+        # A country with no module: its VAT and levies are asked (D13 §9.1).
+        {"country": "CA"},
         {
             "user": {"next_step_id": "price_only"},
             "name": {"name": "Hjemme"},

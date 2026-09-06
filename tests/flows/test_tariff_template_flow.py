@@ -67,8 +67,9 @@ async def test_21_not_listed_asks_the_steps_and_keeps_the_households_table(
 
     tariff = result["data"][CONF_TARIFF]
     assert tariff["preset_file"] == "no/template"
-    spec = loader.from_raw(tariff["spec"])
-    assert spec.assumed == "from the household's bill"
+    spec = loader.from_raw(tariff["price"]["grid"]["capacity"])
+    # The copy keeps whose numbers they are on every version (D2 §9 21).
+    assert {version.assumed for version in spec.versions} == {"from the household's bill"}
     peak = spec.versions[0].peak
     assert peak is not None
     assert [step.fee_per_period.amount for step in peak.pricing.steps] == [150, 250, 420]  # type: ignore[union-attr]
@@ -101,7 +102,7 @@ async def test_21_no_bill_at_hand_is_the_safe_default_of_no_capacity_component(
     result = await _answer(hass, result, start_in_observe=True)
     tariff = result["data"][CONF_TARIFF]
     assert tariff["preset_file"] == "custom"
-    assert loader.from_raw(tariff["spec"]).versions[0].peak is None
+    assert loader.from_raw(tariff["price"]["grid"]["capacity"]).versions[0].peak is None
 
 
 @pytest.mark.inv("INV-66")
@@ -131,6 +132,6 @@ async def test_12_a_contracted_template_keeps_the_households_contract(
 
     tariff = result["data"][CONF_TARIFF]
     assert tariff["contracted_kw"] == [3.45, 6.9]
-    contracted = loader.from_raw(tariff["spec"]).versions[0].contracted
+    contracted = loader.from_raw(tariff["price"]["grid"]["capacity"]).versions[0].contracted
     assert contracted is not None
     assert [limit.limit_kw for limit in contracted.limits] == [3.45, 6.9]

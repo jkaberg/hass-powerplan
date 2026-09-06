@@ -1318,6 +1318,35 @@ def limits_schema(version: TariffVersion, *, values: Mapping[str, Any] | None = 
     )
 
 
+def override_rows(price: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return a stored copy's state overrides as the add-on rows they came from (D13 §10, O4).
+
+    The add-on step shows a kept VAT or levy ticked with its value, so the household
+    can keep it or drop it; `migrate_tariff` turns the rows back into overrides.
+    """
+    overrides = ((price.get("state") or {}).get("overrides")) or {}
+    rows: list[dict[str, Any]] = []
+    if "vat" in overrides:
+        rows.append(
+            {
+                "key": "vat",
+                "component": "vat",
+                "options": {"rate": str(overrides["vat"])},
+                "source": "user",
+            }
+        )
+    if "levy" in overrides:
+        rows.append(
+            {
+                "key": "levy",
+                "component": "levy",
+                "options": {"amount": str(overrides["levy"])},
+                "source": "user",
+            }
+        )
+    return rows
+
+
 def tariff_data(
     *,
     preset: str,

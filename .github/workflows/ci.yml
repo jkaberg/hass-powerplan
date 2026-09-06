@@ -163,7 +163,7 @@ jobs:
         # reason to read the operator's sheet again (D2 §2, PLAN §7 dec. 21).
         run: |
           {
-            echo '### Preset versions verified more than six months ago'
+            echo '### Rules, presets and tax rates verified more than six months ago'
             echo
             uv run python tools/preset_age.py
           } >> "$GITHUB_STEP_SUMMARY"

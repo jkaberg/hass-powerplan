@@ -1,0 +1,36 @@
+name: tax
+
+# D13 §9.1 (O21): once a month, every EU country module's VAT against the
+# Commission's TEDB. Warns in the job summary and never fails: a difference is
+# read at the national authority before any module changes, never copied blind.
+on:
+  schedule:
+    - cron: "23 4 2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  vat:
+    name: country modules against TEDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: VAT by country (D13 §9.1)
+        run: |
+          {
+            echo '### Country modules against TEDB'
+            echo
+            uv run python tools/vat_check.py
+          } >> "$GITHUB_STEP_SUMMARY"

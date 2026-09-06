@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import replace
+from decimal import Decimal
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import callback
@@ -36,10 +38,24 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.json import load_json
 
 from .const import DOMAIN
+from .core.tariffs import countries
+from .core.tariffs.household import (
+    ALL_LEVIES,
+    StateTerms,
+    SupplierContract,
+    TaxZone,
+    from_preset,
+    levies_at,
+    to_json,
+)
+from .core.tariffs.rules import loader
+
+#: The "describe it myself" rule file (flow/steps.py's `PRESET_CUSTOM`).
+PRESET_CUSTOM: Final = "custom"
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from datetime import datetime
+    from datetime import date, datetime
 
     from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
 
@@ -350,3 +366,114 @@ class SiteStore:
         _LOGGER.warning(
             "Store %s is unreadable (%s); moved it to %s and starting empty", path, reason, target
         )
+
+
+# --------------------------------------------------------------------------- #
+# The tariff copy by party (D13 §10) - config entry minor version 2
+# --------------------------------------------------------------------------- #
+
+#: The config entry's minor version from which `tariff.price` holds the copy (D13 §3).
+ENTRY_MINOR_PRICE: Final = 2
+
+
+def state_addons(
+    rows: list[dict[str, Any]], state: StateTerms, day: date
+) -> tuple[list[dict[str, Any]], dict[str, Decimal], list[str]]:
+    """Take the state's add-ons out of the household's list (D13 §10, O4).
+
+    The zone's VAT and levies are the state stage's now. A `vat` or `levy` add-on
+    equal to the country module's value on `day` is dropped - the module applies
+    it, and a kept copy would hide its next change; one that differs is kept as an
+    override, and where the module has a value of its own it is also returned for
+    `tariff_review`. Returns the rows left, the overrides and the keys to review.
+    """
+    module = countries.get(state.zone.country)
+    kept: list[dict[str, Any]] = []
+    overrides: dict[str, Decimal] = {}
+    review: list[str] = []
+    for row in rows:
+        options = row.get("options") or {}
+        if row.get("key") == "vat":
+            value = Decimal(str(options.get("rate", "0")))
+            known = None if module is None else module.vat_at(day, state.zone.key)
+            if known is None or value != known:
+                overrides["vat"] = value
+                review += [] if known is None else ["vat"]
+        elif row.get("key") == "levy":
+            value = Decimal(str(options.get("amount", "0")))
+            known_levies = levies_at(state, day)
+            plain = not options.get("months") and options.get("applies_above_mtd_kwh") is None
+            if not known_levies or not plain or value != sum(known_levies.values(), Decimal(0)):
+                overrides[ALL_LEVIES] = value
+                review += ["levy"] if known_levies else []
+        else:
+            kept.append(row)
+    return kept, overrides, review
+
+
+def migrate_tariff(data: Mapping[str, Any], today: date) -> tuple[dict[str, Any], list[str]]:
+    """Return `entry.data` with its tariff as the copy by party (D13 §10), offline.
+
+    A WP4.6 copy (`tariff.spec`) becomes the grid party with its basis; an entry
+    on a file without a copy takes the file (or a retired file's successor) as it
+    reads now; a price-only site gets a copy with no capacity. The preset's energy
+    charge leaves `prices.modifiers` for the copy, and the old `vat`/`levy` add-ons
+    become the state stage (`state_addons`). Returns the data and the override
+    keys that need the household's review.
+    """
+    migrated = dict(data)
+    tariff = data.get("tariff")
+    prices = data.get("prices")
+    if not tariff or tariff.get("price") or prices is None:
+        return migrated, []
+    country = str((data.get("electrical") or {}).get("country") or "")
+    currency = str(data.get("currency") or tariff.get("currency") or "")
+    zone = TaxZone(country=country)
+    preset = str(tariff.get("preset_file") or "")
+    raw: dict[str, Any]
+    if tariff.get("spec"):
+        raw = dict(tariff["spec"])
+    elif preset:
+        name = loader.successor(preset) or preset
+        raw = loader.load_raw(name)
+        if raw.get("template"):
+            raw = loader.fill_template(raw, limits=list(tariff.get("contracted_kw") or ()))
+    else:
+        raw = {
+            "id": str(tariff.get("preset_id") or "no_peak"),
+            "name": "No capacity component",
+            "currency": currency,
+            "verified": None,
+            "assumed": "a price-only site: no capacity component",
+            "versions": [{"valid_from": "1970-01-01", "no_peak": True}],
+        }
+    raw.setdefault("currency", currency)
+    typed = preset == PRESET_CUSTOM or bool(raw.get("assumed")) or not preset
+    source = (
+        "none"
+        if not preset
+        else "custom"
+        if preset == PRESET_CUSTOM
+        else ("template" if raw.get("assumed") else "shipped")
+    )
+    rows = [
+        dict(row) for row in prices.get("modifiers") or () if row.get("source", "user") == "user"
+    ]
+    sources = prices.get("sources") or ()
+    kind: Literal["spot", "fixed", "state_fixed", "total_entity"] = "spot"
+    if any(row.get("key") == "fixed_price" for row in rows):
+        kind = "state_fixed"
+    elif sources and sources[0].get("key") == "fixed":
+        kind = "fixed"
+    price = from_preset(
+        raw, source=source, zone=zone, supplier=SupplierContract(kind=kind), typed=typed
+    )
+    kept, overrides, review = state_addons(rows, price.state, today)
+    price = replace(price, state=replace(price.state, overrides=overrides))
+    migrated["tariff"] = {
+        **{key: value for key, value in tariff.items() if key != "spec"},
+        "price": to_json(price),
+        "review": review,
+    }
+    migrated["prices"] = {**prices, "modifiers": kept}
+    return migrated, review

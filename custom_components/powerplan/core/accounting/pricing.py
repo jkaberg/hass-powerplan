@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from ..model import Confidence, Money, PriceCurve
+from ..pricing.party import PARTY
 from .ledger import minus, zero
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ __all__ = [
     "PricedSlot",
     "Repriced",
     "SlotPrice",
+    "accrue_by_party",
     "capacity_fee_to_date",
     "export_credit",
     "price_slot",
@@ -54,6 +56,9 @@ class SlotPrice:
     amount: Decimal
     currency: str
     confidence: Confidence
+    #: The price per kWh by party - grid, supplier, state - summing to `amount`
+    #: (D11 §5.8, D1 §5.3). Empty for a slot the curve does not cover.
+    parts: tuple[tuple[str, Decimal], ...] = ()
 
     @property
     def known(self) -> bool:
@@ -115,7 +120,22 @@ def slot_price(curve: PriceCurve, start: datetime) -> SlotPrice:
     slot = curve.price_at(start)
     if slot is None:
         return SlotPrice(Decimal(0), curve.currency, Confidence.ESTIMATED)
-    return SlotPrice(slot.total, curve.currency, slot.confidence)
+    parts: dict[str, Decimal] = {}
+    for name, value in slot.components.items():
+        party = PARTY[name].value
+        parts[party] = parts.get(party, Decimal(0)) + value
+    return SlotPrice(slot.total, curve.currency, slot.confidence, tuple(sorted(parts.items())))
+
+
+def accrue_by_party(into: dict[str, Decimal], price: SlotPrice, kwh: float, sign: int = 1) -> None:
+    """Add `sign × kwh × price` to `into`, party by party (D11 §5.8).
+
+    The kWh is quantised as `price_slot` quantises it, so the parties sum to the
+    cost to the last øre.
+    """
+    energy = kwh_decimal(kwh)
+    for party, per_kwh in price.parts:
+        into[party] = into.get(party, Decimal(0)) + sign * energy * per_kwh
 
 
 def price_slot(kwh: float, price: SlotPrice) -> Money:

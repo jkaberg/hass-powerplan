@@ -2234,3 +2234,28 @@ git grep -lE 'docs/(HLD|PLAN|DECISIONS)\.md|docs/(lld|reviews|benchmarks|brand)\
 
 `en.json` and `strings.json` values use liters, meters, millimeters, program and recognizes (D14 appendix A); keys keep their spelling. `events.md` shows event labels verbatim, and the pages' spelling check would fail on "programme".
 **Rejected:** changing only the units - the pages quote the rest.
+
+### D-0550 · Where the copy by party lives, and how an entry reaches it
+
+`HouseholdPrice`, its codec, `spec()`, `from_preset()` and the state's dated rates are `core/tariffs/household.py`; the chain by party (`GridEnergy`, `StateLevies`, `StateVat`, `chain()`, `PARTY`) is `core/pricing/party.py`. The config entry goes to minor version 2: `tariff.price` holds the copy and `tariff.review` kept overrides; `tariff.spec` goes. One pure function, `storage.migrate_tariff`, migrates older entries and builds new ones in the flow, so both are alike. `presets/` becomes `rules/`, company files staying as the migration's source until removed. The copy's schema is its codec. Affects D13 §3, §10, §12; D2 §3.
+**Rejected:** keeping `tariff.spec` beside the copy for a release - two tariffs in one entry (INV-66).
+
+### D-0551 · A price published with the state's share is split, not left alone
+
+The grid stage writes the grid's own charge: a copy published incl. VAT and levies has them taken out at the national rates for the slot's date, and the state stage adds back the household zone's. `spec()` does the same to fees. Both copies of one tariff then give identical components, a Nord-Norge house pays Tensio's figures ex VAT, and the grid's VAT is the state's line. Source bases: `octopus_energy` and `amber` quote all four parts, other formats spot alone, and a row may state its own. Affects D1 §5.3, D13 §8, D11 §5.8.
+**Rejected:** adding only what's missing - a Nord-Norge household would pay VAT it doesn't owe.
+
+### D-0552 · Country modules: ISO codes, dated rates, conditions
+
+33 modules keyed by ISO 3166 as `hass.config.country` holds it (`GB`, `GR`), each with its TEDB code. A date before a module's first rate uses that rate. A rate may be limited to a contracted power (`upto_kw`: Spain's 10 %) and carry an announced end (`until`: Ireland's 9 %), which `preset_age.py` lists as it nears. Zones are keys (`NO`: `nord`, `tiltakssone`; `SE`: `norr`). Levies ship for NO (forbruksavgift, Enova) and SE (energiskatt). `vat_check.py` reads TEDB's electricity rate, ignoring exempted rows. Affects D13 §5.1, §9, §9.1.
+**Rejected:** refusing slots before the first rate - a backtest of older history would fail.
+
+### D-0553 · Savings by party: the grid's VAT is the state's; the flow stops offering VAT
+
+A slot's price carries its split by party (`SlotPrice.parts`); each load's month accrues savings by party at close, settlement and re-price, and capacity savings go to the grid. A Norgespris month saves on grid and state, never on the supplier. The add-on step no longer offers `vat` or `levy` where the module knows them, nor the grid charge the copy has (INV-71). Affects D11 §5.8, §9 21; D8 §5.1.
+**Rejected:** booking the grid's VAT to the grid - a VAT change would move the grid's savings.
+
+### D-0554 · What the first tariff-sources step leaves for later
+
+`GridTariff` gets `currency`, `basis` and `capacity_id` and leaves out `per_load`, `switched` and `feed_in` until they have types; `SupplierContract` carries kind, basis and provenance until the supplier step moves the markup and fee into it. The next-year Tensio fixture stays in the rule format: the scenario runner builds curves from it, and it moves with the benchmark houses. Affects D13 §3, §12.1, §19 11.
+**Rejected:** rebuilding the fixture now - changes every simulation for a file that's rewritten later.

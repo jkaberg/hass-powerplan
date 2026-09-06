@@ -51,16 +51,16 @@
 custom_components/powerplan/core/tariffs/
 ├── __init__.py
 ├── model.py         PeakTariff, ContractedPower, NoPeak, TimeFilter, WeightRule, StepTable, Linear, Tiers, Ratchet,
-│                    TariffRule, TariffVersion, TariffSpec   (was grammar.py - O25)
-├── history.py       PeakHistory: windows → days (or weeks) → months; coarse flags; overrides; rolling
+│                    TariffRule, TariffVersion, TariffSpec
+├── history.py       PeakHistory: windows → days (or weeks) → months, coarse flags, overrides, rolling
 ├── evaluator.py     Evaluator: metric(), level(), ceiling(), marginal_cost(), projected_level(), advice(), bill()
 ├── target.py        Target (step | kw | auto), risk semantics, ε scaling
-├── contracted.py    limit_now() for a limit that trips; priced_limit_now() for one whose excess is priced (O23)
-├── rules/           (was presets/, D13 §12) schema.json; loader.py - load(), validate(), summarize() → TariffSummary;
+├── contracted.py    limit_now() for a limit that trips, priced_limit_now() for one whose excess is priced (O23)
+├── rules/           schema.json; loader.py: load(), validate(), summarize() → TariffSummary, dump();
 │                    no/template.json, es/2_0td.json, nl/connection.json, uk/nopeak.json, custom.json
 ├── countries/       D13 §5.1: one module per country - VAT, levies, zones, directory, source ladder, rule template,
 │                    a national regulated tariff (O22), attribution
-├── sources/         D13 §5.11: each adapter's pure parser (documents → GridTariff); fetchers in providers/tariffs/
+├── sources/         D13 §5.11: each adapter's pure parser (documents → GridTariff), fetchers in providers/tariffs/
 └── backfill.py      seed_from_windows(), seed_from_bills()
 ```
 

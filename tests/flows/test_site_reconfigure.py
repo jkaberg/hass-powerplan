@@ -87,7 +87,7 @@ async def _to_review(
     result = await _answer(hass, result, confirm="yes")
     result = await _answer(hass, result, target="auto", risk="free_ride")
     result = await _answer(hass, result, mode="none")
-    result = await _answer(hass, result, modifiers=["vat"])
+    result = await _answer(hass, result, modifiers=["spot_scale"])
     result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, carriers=[])
     result = await _answer(hass, result, mode="auto")
@@ -176,11 +176,11 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_every_add_on(
     assert result["step_id"] == "export"
     result = await _answer(hass, result, mode="none")
     assert result["step_id"] == "modifiers"
-    assert result["data_schema"]({})["modifiers"] == ["vat"]
-    result = await _answer(hass, result, modifiers=["vat"])
-    assert result["step_id"] == "modifier_vat"
-    assert result["data_schema"]({})["rate"] == 25, "the add-on's stored option, pre-filled"
-    result = await _answer(hass, result, rate=25)
+    assert result["data_schema"]({})["modifiers"] == ["spot_scale"]
+    result = await _answer(hass, result, modifiers=["spot_scale"])
+    assert result["step_id"] == "modifier_spot_scale"
+    assert result["data_schema"]({})["mult"] == 1.1, "the add-on's stored option, pre-filled"
+    result = await _answer(hass, result, mult=1.1)
     assert result["step_id"] == "carriers"
     assert result["data_schema"]({})["carriers"] == []
     result = await _answer(hass, result, carriers=[])

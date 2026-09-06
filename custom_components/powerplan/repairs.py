@@ -55,6 +55,9 @@ CATALOGUE: dict[str, Issue] = {
     "scaling_mismatch": Issue(ir.IssueSeverity.WARNING),
     "price_source_dead": Issue(ir.IssueSeverity.ERROR),
     "preset_outdated": Issue(ir.IssueSeverity.WARNING),
+    # An old VAT or levy add-on that differs from the country module's, kept as
+    # the household's override until it confirms it (D13 §10, O4).
+    "tariff_review": Issue(ir.IssueSeverity.WARNING),
     "bound_helper_missing": Issue(ir.IssueSeverity.WARNING, fixable=True),
     "role_missing": Issue(ir.IssueSeverity.ERROR, fixable=True),
     "provision_refused": Issue(ir.IssueSeverity.WARNING),
@@ -164,11 +167,13 @@ class RepairsWatch:
             "price_source_dead": bool(self.runtime.dead_sources),
             "store_reset": self.runtime.store.corrupt_path is not None,
             "preset_outdated": self.runtime.build.preset_outdated,
+            "tariff_review": bool(self.runtime.build.tariff_review),
         }
         placeholders: dict[str, dict[str, Any]] = {
             "price_source_dead": {"source": ", ".join(sorted(self.runtime.dead_sources))},
             "store_reset": {"path": self.runtime.store.corrupt_path or ""},
             "preset_outdated": {"preset": str(self.runtime.build.preset_file or "")},
+            "tariff_review": {"kept": ", ".join(self.runtime.build.tariff_review)},
         }
         for load_id, wanted in self._savings_low_confidence(now, snapshot).items():
             issue_id = f"savings_low_confidence_{load_id}"

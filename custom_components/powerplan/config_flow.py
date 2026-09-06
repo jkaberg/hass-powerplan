@@ -59,6 +59,7 @@ from .const import (
     OnboardingPath,
 )
 from .core.pricing import Carrier, modifiers
+from .core.tariffs import countries
 from .core.tariffs.rules import loader
 from .flow import device_pick, review, steps
 from .flow.circuit import CircuitSubentryFlow
@@ -71,7 +72,6 @@ from .flow.questionnaire import (
     price_implausible,
     price_stored,
     seconds_of,
-    store_value,
     value_of,
 )
 from .flow.text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, target_label, tariff_table
@@ -79,6 +79,7 @@ from .flow.zone import ZoneSubentryFlow
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
 from .runtime import step_index
+from .storage import migrate_tariff
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Mapping
@@ -101,7 +102,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the config flow for one site (D8 §5.1)."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Start with an empty site and the environment's own answers."""
@@ -244,15 +245,15 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._sources = [dict(source) for source in prices.get("sources") or ()]
         if self._sources:
             self._price_source = self._sources[0]["key"]
-        # Preset-injected modifiers (`_preset_modifiers`, source = the preset's
-        # own id) are re-derived fresh from `self._spec`/`self._version` on
-        # save; only what the household chose through this step needs to
-        # survive the round trip, or `_assemble` would see it twice.
+        # Only what the household chose through this step survives the round
+        # trip: the grid's energy charge lives in the tariff copy, and a VAT or
+        # levy the household kept over the country module's (D13 §10, O4) comes
+        # back as the add-on it was, so the add-on step shows it ticked.
         self._modifiers = [
             dict(modifier)
             for modifier in prices.get("modifiers") or ()
-            if modifier.get("source") == "user"
-        ]
+            if modifier.get("source", "user") == "user"
+        ] + steps.override_rows((data.get(CONF_TARIFF) or {}).get("price") or {})
         self._modifier_keys = [modifier["key"] for modifier in self._modifiers]
         self._agreement = (
             steps.AGREEMENT_NORGESPRIS
@@ -276,8 +277,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._path is OnboardingPath.FULL and preset_file:
             self._preset_file = preset_file
             self._raw = await self.hass.async_add_executor_job(steps.preset_raw, preset_file)
-            if tariff.get("spec") and steps.needs_steps(self._raw):
-                self._steps = steps.step_answers(tariff["spec"])
+            copy = (tariff.get("price") or {}).get("grid", {}).get("capacity") or tariff.get("spec")
+            if copy and steps.needs_steps(self._raw):
+                self._steps = steps.step_answers(copy)
             self._preset_choice = steps.preset_choice(preset_file, self._country)
             # An entry from before WP U.1 holds `step:<i>` and an English
             # `description`; the first reads as `step_<i>` and the second is
@@ -624,7 +626,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask "Er strømavtalen din spesiell?" - the price add-ons, a follow-up (D1 §6)."""
-        included = self._preset_components()
+        included = self._covered()
         if user_input is None:
             chosen = self._modifier_keys or None
             also = ("fixed_price",) if self._agreement == steps.AGREEMENT_NORGESPRIS else ()
@@ -995,7 +997,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._path is not OnboardingPath.FUSE_ONLY:
             prices = {
                 "sources": self._sources,
-                "modifiers": [*self._modifiers, *self._preset_modifiers()],
+                "modifiers": self._modifiers,
                 "export": self._export,
                 "carriers": self._carriers,
             }
@@ -1016,7 +1018,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             )
         elif self._path is OnboardingPath.PRICE_ONLY:
             tariff = dict(steps.NO_PEAK_TARIFF)
-        return {
+        assembled = {
             CONF_PATH: self._path.value,
             CONF_NAME: self._name,
             CONF_TIMEZONE: self._timezone,
@@ -1031,55 +1033,35 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_QUIET_HOURS: self._quiet,
             CONF_ACTIVE: False,
         }
+        # The tariff becomes the copy by party the same way an older entry is
+        # migrated (D13 §3, §10); what the household chose here needs no review.
+        data, _ = migrate_tariff(assembled, dt_util.now().date())
+        if data.get(CONF_TARIFF):
+            data[CONF_TARIFF] = {**data[CONF_TARIFF], "review": []}
+        return data
 
-    def _preset_components(self) -> list[str]:
-        """Return the add-ons the chosen grid company's preset already prices (D2 §6, D-0126).
+    def _covered(self) -> list[str]:
+        """Return the add-ons the tariff copy and the state stage already price (D13 §8).
 
-        They come with the preset, so the add-on step does not offer them: a
-        household that ticked the day/night charge by hand used to replace the
-        preset's numbers with its own empty ones (D-0430).
+        Not offered, since HA cannot grey out one option, and named in the step's
+        text instead (D-0430): the grid company's energy charge when the copy has
+        one, and VAT and levies wherever the country's module knows them (INV-71,
+        INV-74). An override the household kept stays offered, ticked.
         """
-        if self._path is not OnboardingPath.FULL or self._version is None:
-            return []
-        registered = set(modifiers.keys())
-        # A grid charge published with the levies included already carries them,
-        # so the levy add-on is not offered on top (D-0523). VAT is: the preset's
-        # VAT covers its own charge, the household's VAT still taxes the spot price.
-        levies = [
-            key for key in self._version.energy_components.get("includes") or () if key == "levy"
-        ]
-        return [key for key in (*self._version.energy_components, *levies) if key in registered]
-
-    def _preset_modifiers(self) -> list[dict[str, Any]]:
-        """Hand the preset's own energy components to D1 as modifiers (D2 §6).
-
-        The grid's energy charge is the one modifier nobody should have to type:
-        the preset has the numbers, their source and their verification date. It
-        is added only for a component the household did not configure by hand, and
-        it carries the preset id so the review can say where it came from
-        (`design/DECISIONS.md` D-0126).
-        """
-        if self._version is None or self._spec is None:
-            return []
-        configured = {modifier["key"] for modifier in self._modifiers}
-        added: list[dict[str, Any]] = []
-        for key, options in self._version.energy_components.items():
-            if key in configured or key not in set(modifiers.keys()):
-                continue
-            schema = modifiers.entry(key).schema
-            added.append(
-                {
-                    "key": key,
-                    "component": modifiers.entry(key).component,
-                    "options": {
-                        field.key: store_value(field, options[field.key])
-                        for field in schema
-                        if field.key in options
-                    },
-                    "source": self._spec.id,
-                }
-            )
-        return added
+        covered: list[str] = []
+        if (
+            self._path is OnboardingPath.FULL
+            and self._version is not None
+            and (self._version.energy_components.get("tou_schedule") or {}).get("periods")
+        ):
+            covered.append("tou_schedule")
+        if self._path is not OnboardingPath.FUSE_ONLY:
+            module = countries.get(self._country)
+            if module is not None and module.vat:
+                covered.append("vat")
+            if module is not None and module.levies:
+                covered.append("levy")
+        return [key for key in covered if key not in self._modifier_keys]
 
     async def async_step_review(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """State what powerplan derived and what happens first (INV-67)."""

@@ -1183,6 +1183,10 @@
       "title": "Mangler strømpriser",
       "description": "{site}: {source} har ikke levert priser på 24 timer; PowerPlan anslår dem imens. Sjekk at prisintegrasjonen kjører."
     },
+    "tariff_review": {
+      "title": "Tariffen beholder en avgift du la inn",
+      "description": "{site}: den tidligere innstillingen for moms eller avgift ({kept}) er ulik det PowerPlan nå legger på for landet ditt, så den er beholdt som din egen. Var den bare den gamle standarden, fjerner du den under Endre oppsett; betaler du en annen sats, lar du den stå."
+    },
     "preset_outdated": {
       "title": "Tariffmalen er endret",
       "description": "{site}: nettleien {preset} er endret siden dette hjemmet ble satt opp, og hjemmet beholder den det har. For å bruke den nye, velg Endre oppsett på PowerPlan."

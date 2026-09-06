@@ -47,6 +47,8 @@ class Amber:
     platform: ClassVar[str | None] = "amber_electric"
     kind: ClassVar[FormatKind] = FormatKind.ATTRIBUTES
     schema: ClassVar[Schema] = ()
+    # `per_kwh` is the retail price: network charges and GST included (D13 §8, O5).
+    basis: ClassVar[frozenset[str]] = frozenset({"spot", "grid", "vat", "levies"})
 
     def parse(self, state: State) -> ParsedPrices:
         """Return the forecast intervals, with the NEM's second snapped off."""

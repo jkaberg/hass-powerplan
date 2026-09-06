@@ -25,6 +25,7 @@ def _python_files() -> list[Path]:
 
 
 def test_42_nothing_imports_the_old_names() -> None:
+    """No import or name of `grammar`, `Grammar` or `TariffModel` anywhere."""
     offenders: list[str] = []
     for path in _python_files():
         module = ast.parse(path.read_text(encoding="utf-8"))
@@ -52,11 +53,13 @@ def test_42_nothing_imports_the_old_names() -> None:
 
 
 def test_42_a_version_holds_rules() -> None:
+    """`TariffVersion.rules`, not `.grammar`."""
     assert "rules" in TariffVersion.__dataclass_fields__
     assert "grammar" not in TariffVersion.__dataclass_fields__
 
 
 def test_42_evaluator_satisfies_tariff_evaluator() -> None:
+    """Every member of the protocol exists on `Evaluator` with the same leading parameters."""
     members = {
         name
         for name, _ in inspect.getmembers(TariffEvaluator)

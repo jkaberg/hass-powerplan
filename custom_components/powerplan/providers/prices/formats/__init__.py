@@ -22,14 +22,16 @@ from . import (  # noqa: F401
     tibber_action,
 )
 from .base import ActionFormat, EntityFormat, FormatKind, ParsedPrices
-from .registry import FormatEntry, build, entry, for_platform, keys, register
+from .registry import SPOT_ONLY, FormatEntry, basis, build, entry, for_platform, keys, register
 
 __all__ = [
+    "SPOT_ONLY",
     "ActionFormat",
     "EntityFormat",
     "FormatEntry",
     "FormatKind",
     "ParsedPrices",
+    "basis",
     "build",
     "entry",
     "for_platform",

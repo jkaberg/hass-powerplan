@@ -62,6 +62,7 @@ __all__ = [
     "SummaryBand",
     "TariffSummary",
     "TemplateError",
+    "dump",
     "fill_template",
     "from_raw",
     "load",
@@ -550,6 +551,127 @@ def _require_filter(raw: Mapping[str, Any]) -> TimeFilter:
         hours=None if hours is None else tuple((int(start), int(end)) for start, end in hours),
         holidays=HolidayMode(raw.get("holidays", "ignore")),
     )
+
+
+# --------------------------------------------------------------------------- #
+# Dumping: the inverse of `_build`, so a copy is stored in the schema it is read by
+# --------------------------------------------------------------------------- #
+
+
+def dump(spec: TariffSpec) -> dict[str, Any]:
+    """Return `spec` as the JSON `from_raw` reads back into an equal spec (D13 §3).
+
+    A household's copy stores its capacity versions in this form, so every stored
+    copy passes the same validation a rule template does (D13 §19 4). Money goes
+    out as a number string's float, as the files hold it; `energy_components` is
+    not written - the grid's energy charge lives in the copy's own `energy`.
+    """
+    raw: dict[str, Any] = {
+        "id": spec.id,
+        "name": spec.name,
+        "versions": [_dump_version(version) for version in spec.versions],
+    }
+    for key in ("currency", "country", "operator", "source_url"):
+        if getattr(spec, key):
+            raw[key] = getattr(spec, key)
+    raw["verified"] = spec.verified
+    if spec.assumed:
+        raw["assumed"] = spec.assumed
+    return raw
+
+
+def _dump_version(version: TariffVersion) -> dict[str, Any]:
+    raw: dict[str, Any] = {"valid_from": version.valid_from.isoformat()}
+    for key in ("verified", "assumed", "source_url", "history_policy"):
+        if getattr(version, key) is not None:
+            raw[key] = getattr(version, key)
+    for rule in version.rules:
+        if isinstance(rule, PeakTariff):
+            raw["peak"] = _dump_peak(rule)
+        elif isinstance(rule, ContractedPower):
+            raw["contracted"] = _dump_contracted(rule)
+        elif "peak" not in raw and "contracted" not in raw:
+            raw["no_peak"] = True
+    return raw
+
+
+def _number(amount: Decimal) -> int | float:
+    return int(amount) if amount == amount.to_integral_value() else float(amount)
+
+
+def _dump_peak(peak: PeakTariff) -> dict[str, Any]:
+    pricing = peak.pricing
+    shape: dict[str, Any]
+    if isinstance(pricing, StepTable):
+        shape = {
+            "steps": [
+                [step.upper_kw, _number(step.fee_per_period.amount), step.name]
+                for step in pricing.steps
+            ]
+        }
+    elif isinstance(pricing, Linear):
+        shape = {
+            "linear": {
+                "price_per_kw": _number(pricing.price_per_kw.amount),
+                "free_kw": pricing.free_kw,
+                "min_kw": pricing.min_kw,
+            }
+        }
+    else:
+        shape = {"tiers": [[upto, _number(price.amount)] for upto, price in pricing.bands]}
+    raw: dict[str, Any] = {
+        "window_min": peak.window_min,
+        "per_day": peak.per_day,
+        "per_period": peak.per_period,
+        "n": peak.n,
+        "distinct_days": peak.distinct_days,
+        "period": peak.period,
+        "rolling_months": peak.rolling_months,
+        "price_period_unit": peak.price_period_unit,
+        "coarse_factor": peak.coarse_factor,
+        "pricing": shape,
+    }
+    if peak.eligible is not None:
+        raw["eligible"] = _dump_filter(peak.eligible)
+    if peak.weights:
+        raw["weights"] = [
+            {"when": _dump_filter(rule.when), "weight": rule.weight} for rule in peak.weights
+        ]
+    if peak.ratchet is not None:
+        raw["ratchet"] = {
+            "fraction": peak.ratchet.fraction,
+            "lookback_months": peak.ratchet.lookback_months,
+        }
+    return raw
+
+
+def _dump_contracted(contracted: ContractedPower) -> dict[str, Any]:
+    raw: dict[str, Any] = {
+        "limits": [
+            {"limit_kw": limit.limit_kw}
+            | ({} if limit.when is None else {"when": _dump_filter(limit.when)})
+            for limit in contracted.limits
+        ],
+        "on_exceed": contracted.on_exceed,
+        "tolerance_pct": contracted.tolerance_pct,
+        "tolerance_s": contracted.tolerance_s,
+        "unit": contracted.unit,
+        "power_factor": contracted.power_factor,
+    }
+    if contracted.surcharge_per_kw is not None:
+        raw["surcharge_per_kw"] = _number(contracted.surcharge_per_kw.amount)
+    return raw
+
+
+def _dump_filter(when: TimeFilter) -> dict[str, Any]:
+    raw: dict[str, Any] = {"holidays": when.holidays.value}
+    if when.months is not None:
+        raw["months"] = list(when.months)
+    if when.weekdays is not None:
+        raw["weekdays"] = list(when.weekdays)
+    if when.hours is not None:
+        raw["hours"] = [list(pair) for pair in when.hours]
+    return raw
 
 
 # --------------------------------------------------------------------------- #

@@ -18,12 +18,13 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from ..model import Money
+from ..tariffs.household import Party
 from .ledger import WORST_FIRST, SavingsConfidence, minus, plus, zero
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from ..model import Money
     from .ledger import LoadMonthRec, SiteMonthRec
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "calibration_error",
     "kwh_shifted",
     "load_savings",
+    "savings_by_party",
     "savings_confidence",
     "site_savings",
     "site_savings_confidence",
@@ -155,6 +157,24 @@ def site_savings(site: SiteMonthRec, loads: Iterable[LoadMonthRec]) -> tuple[Mon
             energy = plus(energy, rec.savings)
     capacity = site.capacity_savings
     return plus(energy, capacity), energy, capacity
+
+
+def savings_by_party(site: SiteMonthRec, loads: Iterable[LoadMonthRec]) -> dict[str, Money]:
+    """Return the site's savings by party - grid, supplier, state (D11 §5.8).
+
+    The loads' energy savings split by their slots' components, and the capacity
+    savings to the grid company, whose bill it is. The three sum to `site_savings`'s
+    total: nothing is attributed that was not saved.
+    """
+    currency = site.energy_cost.currency
+    split = {party.value: Decimal(0) for party in Party}
+    for rec in loads:
+        if rec.cost.currency != currency:
+            continue
+        for party, amount in rec.savings_by_party.items():
+            split[party] += amount
+    split[Party.GRID.value] += site.capacity_savings.amount
+    return {party: Money(amount, currency) for party, amount in split.items()}
 
 
 def site_savings_confidence(

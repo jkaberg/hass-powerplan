@@ -1183,6 +1183,10 @@
       "title": "Electricity prices are missing",
       "description": "{site}: {source} has not delivered prices for 24 hours; PowerPlan estimates them meanwhile. Check that the price integration is running."
     },
+    "tariff_review": {
+      "title": "The tariff keeps a tax you entered",
+      "description": "{site}: your earlier VAT or levy setting ({kept}) differs from what PowerPlan now applies for your country, so it is kept as your own setting. If it was only the old default, remove it under Reconfigure; if you pay a different rate, keep it."
+    },
     "preset_outdated": {
       "title": "The tariff preset has changed",
       "description": "{site}: the grid tariff {preset} has changed since this home was set up, and the home keeps the one it has. To use the new one, choose Reconfigure on PowerPlan."

@@ -387,10 +387,9 @@ Scenarios (D9 §5.3): `savings_vs_twin` - the controlled month vs the same month
 
 6, 8 and 9 are `tests/core/accounting/test_shadows_owed.py` (6 as five tests: a draw reheated at once at nameplate, a day of the D4 profile, the legionella cycle netting to zero through the ledger, the idle day against `tests/sim/tank.py`, the dial kept on `vacation`), the wiring is `tests/core/engine/test_shadow_wiring.py`, `legionella_expensive_week` asserts the tank's savings stated and unchanged across its cycle (`tests/scenarios/test_phase3.py`), and `observe_calibration` calibrates the tank with the other shadows.
 
-**WP0.10a** - what landed, and what did not. Items **1–5** and **10–17** are green, plus **16**'s import half (an AST walk over `core/strategies`, `core/allocation`, `core/loads` and `writegate.py`); items 6–9 are the tank, on-request, schedule and battery shadows and land with those device types (phase 5). **16**'s call-graph half - `close_slot` from `Engine.plan` and never from `Engine.tick` - needs WP0.8's engine. Both **scenarios** need D9 §5.2's runner and land with WP0.9 / WP0.11 (D-0170). Item **17** runs on a two-load synthetic October rather than `nordic_detached`, whose spec arrives with WP0.11; the golden's numbers are hand-computed from the NO3 shape and the Tensio table in the test file, and it becomes a row of the WP0.11 baseline.
-21. By party: a Norgespris month's savings are all grid-party (the energy charge's timing) and supplier-party zero; a spot month splits between the two; the three parties sum to the site's total.
-22. A VAT change mid-month (GB 2026-10-01) moves the actual and the counterfactual identically; no saving appears from it.
-23. *(O23)* LU: the actual and the counterfactual each carry their own surcharge line from their own windows; the difference is a grid-party saving.
+21. By party (D-0553): a Norgespris month's savings come from the grid's energy charge alone - the grid party's, plus the state's VAT on it - and the supplier's are zero; a spot month splits between grid and supplier; the three parties sum to the site's total.
+22. A VAT change mid-month moves the actual and the counterfactual the same way, and no saving comes from it.
+23. LU (O23): the actual and the counterfactual each carry their own surcharge line from their own windows, and the difference is a grid-party saving.
 
 ---
 

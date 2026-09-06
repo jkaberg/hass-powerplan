@@ -134,6 +134,9 @@ class LoadMonthRec:
     calib_kwh: float = 0.0
     calib_cf_kwh: float = 0.0
     kwh_shifted: float = 0.0
+    #: The energy savings by party - grid, supplier, state - in the rec's currency;
+    #: they sum to `savings` (D11 §5.8).
+    savings_by_party: dict[str, Decimal] = field(default_factory=dict)
 
     @classmethod
     def empty(cls, currency: str) -> LoadMonthRec:
