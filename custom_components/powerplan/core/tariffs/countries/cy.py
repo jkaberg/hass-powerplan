@@ -18,6 +18,7 @@ MODULE = register(
         code="CY",
         name="Cyprus",
         currency="EUR",
+        time_zones=("Asia/Nicosia", "Asia/Famagusta"),
         vat=(
             Rate(None, Decimal("0.09"), CABINET),
             Rate(date(2027, 4, 1), Decimal("0.19"), TEDB),

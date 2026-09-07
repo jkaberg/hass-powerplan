@@ -115,7 +115,8 @@ class Synthesised:
             # copy that is the grid charge with its levies and their VAT.
             grid = (
                 self.tou.price_at(slot.start, ctx)
-                if self.tou is not None and GRID_ENERGY in slot.components
+                if self.tou is not None
+                and (hasattr(self.tou, "components_at") or GRID_ENERGY in slot.components)
                 else slot.components.get(GRID_ENERGY, Decimal(0))
             )
             weighted += (slot.total - grid) * slot.minutes
@@ -132,8 +133,12 @@ class Synthesised:
         cursor = start
         while cursor < end:
             stop = min(cursor + step, end)
-            components = {SPOT: energy}
-            if self.tou is not None:
+            components: dict[str, Decimal] = {SPOT: energy}
+            parts = getattr(self.tou, "components_at", None)
+            if parts is not None:
+                # The copy's grid charge, levies and their VAT, each on its own line (D1 §5.3).
+                components.update(parts(cursor, ctx))
+            elif self.tou is not None:
                 components[GRID_ENERGY] = self.tou.price_at(cursor, ctx)
             yield Slot(
                 start=cursor,

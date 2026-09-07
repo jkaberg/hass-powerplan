@@ -14,6 +14,7 @@ from decimal import Decimal
 from custom_components.powerplan.core.accounting import (
     LoadParams,
     StoreKind,
+    cost_by_party,
     savings_by_party,
 )
 from custom_components.powerplan.core.model import (
@@ -142,3 +143,20 @@ def test_22_a_vat_change_mid_month_moves_both_worlds_and_saves_nothing() -> None
     assert rec.cf_cost == rec.cost
     assert rec.savings.amount == 0
     assert all(amount.amount == 0 for amount in savings_by_party(ledger.site, [rec]).values())
+
+
+def test_the_months_cost_by_party_sums_to_its_cost() -> None:
+    """The energy by its components, the capacity fee the grid's: the three are the cost."""
+    under_test = site(import_curve=composed(DAY, 1, norgespris=True))
+    for hour in range(24):
+        under_test.close(
+            closed_slot(local(2026, 9, 15, hour, 0).astimezone(UTC), uncontrolled_kwh=1.5)
+        )
+    ledger = under_test.accounting.state().ledger
+    split = cost_by_party(ledger.site)
+    assert sum(money.amount for money in split.values()) == ledger.site.cost.amount
+    # Norgespris: the supplier's energy is 0.40 NOK/kWh ex VAT on each kWh.
+    assert split["supplier"].amount == Decimal("0.40") * Decimal("1.5") * 24
+    status = under_test.accounting.status()
+    assert status.site.cost_by_party == split
+    assert set(status.site.savings_by_party) == {"grid", "supplier", "state"}

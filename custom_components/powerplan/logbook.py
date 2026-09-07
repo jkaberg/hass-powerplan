@@ -78,6 +78,7 @@ MESSAGES: Final[dict[EventKind, tuple[str, ...]]] = {
     ),
     EventKind.EV_CONNECTED: ("ev_connected", "ev_connected_off"),
     EventKind.BASELINE_READY: ("baseline_ready",),
+    EventKind.TARIFF_UPDATED: ("tariff_updated",),
 }
 
 _OPTIONS: Final = f"component.{DOMAIN}.selector.logbook.options."

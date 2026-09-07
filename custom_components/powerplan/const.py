@@ -195,3 +195,7 @@ PROMINENT_CATEGORIES: Final = ("peak_warning", "comfort_violation", "device_unhe
 #: D8 §2: quiet hours hold the non-urgent categories.
 QUIET_START_DEFAULT: Final = "22:00:00"
 QUIET_END_DEFAULT: Final = "07:00:00"
+
+#: The postcode the household gave (D13 §6 step 0, O17): sent only to the country's
+#: official directory, stored for a reconfigure, never in diagnostics (D8 §5.17).
+CONF_POSTCODE: Final = "postcode"

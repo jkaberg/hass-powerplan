@@ -48,6 +48,9 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
@@ -75,6 +78,9 @@ from custom_components.powerplan.core.metering.profile import (
     VoltageSystem,
 )
 from custom_components.powerplan.core.pricing import Carrier, modifiers
+from custom_components.powerplan.core.pricing.modifiers.base import SPOT
+from custom_components.powerplan.core.pricing.party import PARTY
+from custom_components.powerplan.core.tariffs.household import Party
 from custom_components.powerplan.core.tariffs.model import PeakTariff, StepTable
 from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.core.tariffs.target import (
@@ -103,6 +109,7 @@ from .questionnaire import (
     as_duration,
     duration_selector,
     fuse_selector,
+    percent_selector,
     price_selector,
     price_shown,
     render,
@@ -569,18 +576,6 @@ _NORDPOOL_COUNTRIES: Final = (
     "NO", "SE", "FI", "DK", "EE", "LV", "LT", "NL", "BE", "DE", "LU", "FR", "AT",
 )  # fmt: skip
 
-#: D1 §6's pre-tick per country, intersected with what may be pre-ticked at all.
-_RECOMMENDED: Final = {
-    "NO": ("vat", "tou_schedule", "levy", "fixed_price"),
-    "DK": ("vat", "tou_schedule", "levy"),
-    "SE": ("vat", "tou_schedule"),
-    "FI": ("vat", "tou_schedule"),
-    "ES": ("vat", "tou_schedule"),
-    "IT": ("vat", "tou_schedule"),
-    "FR": ("vat", "tou_schedule"),
-    "GB": ("vat", "tou_schedule"),
-}
-
 
 def default_price_source(country: str | None) -> str:
     """Return the source a country's houses usually have (D1 §6)."""
@@ -761,33 +756,28 @@ def pre_tickable(key: str) -> bool:
 
 
 def offered_modifiers() -> list[str]:
-    """Every add-on the follow-up offers, in the order it lists them (HUB-3)."""
-    # `modifiers.keys()` is the registry function, not a mapping method.
-    return [key for key in modifiers.keys() if key != "export_price"]  # noqa: SIM118
+    """Return what the supplier step offers "in addition to the grid tariff" (D13 §6 2a, INV-74).
 
-
-def modifiers_schema(
-    country: str | None,
-    chosen: Sequence[str] | None = None,
-    *,
-    also: Sequence[str] = (),
-    included: Sequence[str] = (),
-) -> vol.Schema:
-    """Every registered add-on, with the country's pre-ticked (D1 §6).
-
-    `also` is ticked on top - Norgespris's `fixed_price`, whose price has no
-    default and is therefore never pre-ticked on its own. `included` is what the
-    grid company's preset already prices (its day/night charge): not offered at
-    all, since HA cannot grey out one option, and named in the step's text
-    instead (D-0430).
+    The supplier's own lines only: a markup, tiers, day types, its own time of use.
+    The grid company's charge comes with its tariff copy, VAT and levies from the
+    country, strømstøtte in the state step, and Norgespris is the agreement itself.
     """
-    available = [key for key in offered_modifiers() if key not in included]
-    recommended = _RECOMMENDED.get(country or "", ())
-    default = (
-        [key for key in chosen if key in available]
-        if chosen is not None
-        else [key for key in available if (key in recommended and pre_tickable(key)) or key in also]
-    )
+    return [
+        key
+        for key in modifiers.keys()  # noqa: SIM118 - the registry function
+        if PARTY.get(modifiers.entry(key).component) is Party.SUPPLIER
+        and modifiers.entry(key).component != SPOT
+    ]
+
+
+def modifiers_schema(chosen: Sequence[str] | None = None) -> vol.Schema:
+    """Every supplier addition, the household's own ticked (D13 §6 step 2a).
+
+    Nothing is pre-ticked: an addition is a line in the household's contract,
+    which the flow cannot know (HLD §7.9 (2) - "none" is the default answer).
+    """
+    available = offered_modifiers()
+    default = [key for key in chosen or () if key in available]
     return vol.Schema(
         {
             vol.Optional("modifiers", default=default): SelectSelector(
@@ -977,7 +967,9 @@ def needs_steps(raw: Mapping[str, Any]) -> bool:
     )
 
 
-def steps_schema(currency: str, *, values: Mapping[str, Any] | None = None) -> vol.Schema:
+def steps_schema(
+    currency: str, *, values: Mapping[str, Any] | None = None, ask_vat: bool = False
+) -> vol.Schema:
     """Return the bill's steps as a form: "up to" kW and the fee per month, row by row (D2 §6).
 
     Rows left without a fee are ignored; the last row with one is the open top,
@@ -1004,6 +996,9 @@ def steps_schema(currency: str, *, values: Mapping[str, Any] | None = None) -> v
         fields[vol.Optional(f"fee_{row}", description={"suggested_value": fee})] = price_selector(
             currency
         )
+    if ask_vat:
+        # Only where the country's module knows no VAT (D13 §9.1, step 1c-prime).
+        fields[vol.Required("vat", default=values.get("vat", 0))] = percent_selector(slider=False)
     return vol.Schema(fields)
 
 
@@ -1650,3 +1645,92 @@ __all__ = [
     "timezone_schema",
     "validate_target",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# The price by party (D13 §6): postcode, product, zone, gaps, state
+# --------------------------------------------------------------------------- #
+
+
+def postcode_schema(values: Mapping[str, Any] | None = None) -> vol.Schema:
+    """Ask "Hva er postnummeret ditt?" - optional; empty skips it (D13 §6 step 0, O17)."""
+    postcode = (values or {}).get("postcode")
+    return vol.Schema(
+        {
+            vol.Optional("postcode", description={"suggested_value": postcode}): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.TEXT)
+            )
+        }
+    )
+
+
+def choice_schema(field: str, options: Sequence[tuple[str, str]], chosen: str | None) -> vol.Schema:
+    """One select of named options (a product, a tax zone), names as data (D13 steps 1a, 1b)."""
+    return vol.Schema(
+        {
+            vol.Required(field, default=chosen or options[0][0]): SelectSelector(
+                SelectSelectorConfig(
+                    options=[SelectOptionDict(value=key, label=name) for key, name in options],
+                    mode=SelectSelectorMode.LIST,
+                    sort=False,
+                )
+            )
+        }
+    )
+
+
+def questions_schema(questions: Sequence[Any], answers: Mapping[str, Any]) -> vol.Schema:
+    """One field per gap the source left, its default pre-selected (D13 §5.6, step 1c)."""
+    fields: dict[Any, Any] = {}
+    for question in questions:
+        value = answers.get(question.key, question.default)
+        selector: Any = (
+            NumberSelector(NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any"))
+            if isinstance(question.default, int | float)
+            else TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
+        )
+        fields[vol.Required(question.key, default=value)] = selector
+    return vol.Schema(fields)
+
+
+def state_schema(
+    schemes: Sequence[str],
+    chosen: Sequence[str],
+    *,
+    ask_vat: bool = False,
+    vat: float | None = None,
+) -> vol.Schema:
+    """Ask "Hvilke støtteordninger gjelder deg?" - the country's schemes only (D13 §6 step 3).
+
+    `ask_vat` only where the country has no module or no national rate and no
+    figure typed with the grid tariff asked it already (§9.1, step 1c-prime).
+    """
+    fields: dict[Any, Any] = {}
+    if schemes:
+        fields[vol.Optional("schemes", default=[key for key in chosen if key in schemes])] = (
+            SelectSelector(
+                SelectSelectorConfig(
+                    options=list(schemes),
+                    multiple=True,
+                    mode=SelectSelectorMode.LIST,
+                    translation_key="scheme",
+                )
+            )
+        )
+    if ask_vat:
+        fields[vol.Required("vat", default=vat or 0)] = percent_selector(slider=False)
+    return vol.Schema(fields)
+
+
+def overrides_schema(values: Mapping[str, Any], currency: str) -> vol.Schema:
+    """Return the state overrides a household that knows better may set (D13 O4, D8 §5.17)."""
+    return vol.Schema(
+        {
+            vol.Optional("vat", description={"suggested_value": values.get("vat")}): (
+                percent_selector(slider=False)
+            ),
+            vol.Optional("levy", description={"suggested_value": values.get("levy")}): (
+                price_selector(currency)
+            ),
+        }
+    )

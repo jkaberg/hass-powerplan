@@ -13,6 +13,7 @@ MODULE = register(
         code="CH",
         name="Switzerland",
         currency="CHF",
+        time_zones=("Europe/Zurich",),
         vat=(Rate(date(2024, 1, 1), Decimal("0.081"), ESTV),),
     )
 )

@@ -422,7 +422,7 @@ The third iteration's mockups (rendered in Chromium on the reference house's dat
 
 ### 5.13 The price by party *(D13 §7)*
 
-The timeline's price band stacks D1's components **by party** - grid company · supplier · taxes - in that order, bottom to top, in HA's energy palette, with the legend in the household's words ("Nettleie", "Strøm", "Avgifter"); a tariffed load's lane shows its own curve's total (D4 §5.16). Every "why" the dashboard shows names the party (D13 §7's reason keys: «Venter til 22:00 - nettleien er 13 øre lavere da»). The overview's month card splits cost and savings by party (D11 §5.8). The sources' credit (D13 §6.1) is one line under the price card, from the site's copy; nothing else about sources is shown.
+The timeline's price band stacks D1's components **by party** - grid company · supplier · taxes - in that order, bottom to top, in HA's energy palette, with the legend in the household's words ("Nettleie", "Strøm", "Avgifter"), and a tariffed load's lane shows its own curve's total (D4 §5.16). Every "why" the dashboard shows names the party (D13 §7's reason keys: «Venter til 22:00 - nettleien er 13 øre lavere da»), from `plan_status`'s `why_*`. The month card splits cost and savings by party (D11 §5.8), and the sources' credit (D13 §6.1) is one line under the price card, from the site's copy; nothing else about sources is shown. The strip splits each run's rectangle by party, by share (D-0558).
 
 ### 5.14 Help links (D14 §5.4)
 

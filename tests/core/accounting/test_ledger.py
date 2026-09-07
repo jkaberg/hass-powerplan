@@ -282,6 +282,7 @@ def _site_rec(raw: dict[str, Any]) -> SiteMonthRec:
         slots=raw["slots"],
         estimated_slots=raw["estimated_slots"],
         windows_cf=raw["windows_cf"],
+        energy_by_party={key: Decimal(value) for key, value in raw["energy_by_party"].items()},
     )
 
 
@@ -289,6 +290,7 @@ def _load_rec(raw: dict[str, Any]) -> LoadMonthRec:
     return LoadMonthRec(
         cost=_money(raw["cost"]),
         cf_cost=_money(raw["cf_cost"]),
+        savings_by_party={key: Decimal(value) for key, value in raw["savings_by_party"].items()},
         **{
             name: raw[name]
             for name in (

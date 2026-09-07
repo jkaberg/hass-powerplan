@@ -261,7 +261,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const runs = planRuns((planAttrs.slots as PlanSlot[] | undefined) ?? [], load.id).filter((run) => run.end > now);
     const planSlots = (planAttrs.slots as PlanSlot[] | undefined) ?? [];
     const holdNow = holdRuns(planSlots, load.id).some((run) => run.start <= now && run.end > now);
-    const view = rawStatus(status?.state, a, runs.some((run) => run.start <= now), runs.length > 0, labels, holdNow);
+    const view = rawStatus(status?.state, a, runs.some((run) => run.start <= now), runs.length > 0, labels, holdNow, (v) => `${money.format(v)}/kWh`);
     const row = (planAttrs.by_load as Record<string, ByLoad> | undefined)?.[load.id];
     const kwh = toNumber(row?.planned_kwh ?? a.planned_kwh);
     const cost = toNumber(String(row?.cost ?? a.cost ?? "").split(" ")[0]);

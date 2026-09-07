@@ -17,6 +17,7 @@ MODULE = register(
         code="PT",
         name="Portugal",
         currency="EUR",
+        time_zones=("Europe/Lisbon", "Atlantic/Azores", "Atlantic/Madeira"),
         vat=tedb("23"),
         tedb="PT",
         zones=(

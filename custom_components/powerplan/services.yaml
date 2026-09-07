@@ -123,3 +123,10 @@ dump_state:
       selector:
         config_entry:
           integration: powerplan
+refresh_tariff:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan

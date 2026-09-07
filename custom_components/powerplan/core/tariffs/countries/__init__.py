@@ -3,7 +3,7 @@
 Importing this package registers every country it ships - the EU's 27, Norway,
 Switzerland, the UK, Iceland, the US and Australia. A country is one module;
 `get(code)` answers `None` for one without, whose VAT the flow asks (§9.1).
-TS.2 adds each module's source ladder, time zones and credit.
+Each declares the time zones that pre-select it, its postcode directory and its schemes; its sources register themselves in `providers/tariffs/` with their country.
 """
 
 from . import (  # noqa: F401
@@ -41,7 +41,18 @@ from . import (  # noqa: F401
     sk,
     us,
 )  # fmt: skip
-from .base import CountryModule, Levy, Rate, Zone, pick
-from .registry import codes, get, register
+from .base import CountryModule, Levy, Rate, Scheme, Zone, pick
+from .registry import codes, for_time_zone, get, register
 
-__all__ = ["CountryModule", "Levy", "Rate", "Zone", "codes", "get", "pick", "register"]
+__all__ = [
+    "CountryModule",
+    "Levy",
+    "Rate",
+    "Scheme",
+    "Zone",
+    "codes",
+    "for_time_zone",
+    "get",
+    "pick",
+    "register",
+]

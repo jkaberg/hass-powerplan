@@ -4,5 +4,12 @@ from .base import CountryModule, tedb
 from .registry import register
 
 MODULE = register(
-    CountryModule(code="RO", name="Romania", currency="RON", vat=tedb("21"), tedb="RO")
+    CountryModule(
+        code="RO",
+        name="Romania",
+        currency="RON",
+        time_zones=("Europe/Bucharest",),
+        vat=tedb("21"),
+        tedb="RO",
+    )
 )

@@ -55,9 +55,12 @@ CATALOGUE: dict[str, Issue] = {
     "scaling_mismatch": Issue(ir.IssueSeverity.WARNING),
     "price_source_dead": Issue(ir.IssueSeverity.ERROR),
     "preset_outdated": Issue(ir.IssueSeverity.WARNING),
-    # An old VAT or levy add-on that differs from the country module's, kept as
-    # the household's override until it confirms it (D13 §10, O4).
-    "tariff_review": Issue(ir.IssueSeverity.WARNING),
+    # An old VAT or levy add-on that differs from the country module's, or a
+    # renewal that disagrees with a confirmed field: the household's own is kept
+    # until it confirms it (D13 §10, O4; D8 §5.9).
+    "tariff_review": Issue(ir.IssueSeverity.WARNING, fixable=True),
+    # The tariff copy's last version has ended and its renewal keeps failing (D13 §10).
+    "tariff_stale": Issue(ir.IssueSeverity.WARNING),
     "bound_helper_missing": Issue(ir.IssueSeverity.WARNING, fixable=True),
     "role_missing": Issue(ir.IssueSeverity.ERROR, fixable=True),
     "provision_refused": Issue(ir.IssueSeverity.WARNING),
@@ -168,12 +171,16 @@ class RepairsWatch:
             "store_reset": self.runtime.store.corrupt_path is not None,
             "preset_outdated": self.runtime.build.preset_outdated,
             "tariff_review": bool(self.runtime.build.tariff_review),
+            "tariff_stale": self.runtime.tariff_stale(
+                now.astimezone(self.runtime.build.cfg.tz).date()
+            ),
         }
         placeholders: dict[str, dict[str, Any]] = {
             "price_source_dead": {"source": ", ".join(sorted(self.runtime.dead_sources))},
             "store_reset": {"path": self.runtime.store.corrupt_path or ""},
             "preset_outdated": {"preset": str(self.runtime.build.preset_file or "")},
             "tariff_review": {"kept": ", ".join(self.runtime.build.tariff_review)},
+            "tariff_stale": {"operator": self.runtime.tariff_operator()},
         }
         for load_id, wanted in self._savings_low_confidence(now, snapshot).items():
             issue_id = f"savings_low_confidence_{load_id}"
@@ -279,6 +286,29 @@ class AcknowledgeSafeModeFlow(RepairsFlow):
         return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
 
 
+class ConfirmTariffReviewFlow(RepairsFlow):
+    """`tariff_review`: confirming keeps the household's own value and closes the review (D13 §10)."""
+
+    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        """Remember which site to confirm."""
+        self._hass = hass
+        self._entry_id = entry_id
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Show the confirmation."""
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(self, user_input: dict[str, Any] | None = None) -> Any:
+        """On confirmation, the runtime closes the review; the issue clears on the next tick."""
+        if user_input is not None:
+            entry = self._hass.config_entries.async_get_entry(self._entry_id)
+            runtime = getattr(entry, "runtime_data", None) if entry is not None else None
+            if runtime is not None:
+                runtime.confirm_tariff_review()
+            return self.async_create_entry(data={})
+        return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
@@ -287,4 +317,6 @@ async def async_create_fix_flow(
     key = catalogue_key(str((data or {}).get("issue_id", issue_id)))
     if key == "engine_failing":
         return AcknowledgeSafeModeFlow(hass, entry_id)
+    if key == "tariff_review":
+        return ConfirmTariffReviewFlow(hass, entry_id)
     return ConfirmRepairFlow()

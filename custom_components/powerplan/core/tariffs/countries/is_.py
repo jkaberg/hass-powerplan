@@ -11,6 +11,10 @@ SKATTURINN = (
 
 MODULE = register(
     CountryModule(
-        code="IS", name="Iceland", currency="ISK", vat=(Rate(None, Decimal("0.24"), SKATTURINN),)
+        code="IS",
+        name="Iceland",
+        currency="ISK",
+        time_zones=("Atlantic/Reykjavik",),
+        vat=(Rate(None, Decimal("0.24"), SKATTURINN),),
     )
 )

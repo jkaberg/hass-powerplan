@@ -128,6 +128,14 @@ SCHEMAS: dict[EventKind, vol.Schema] = {
     EventKind.PRESENCE_CHANGED: _schema(old=_maybe_str, new=str, source=str),
     EventKind.SAFE_MODE: _schema(entered=bool, reason=str),
     EventKind.BASELINE_READY: _schema(confidence=_number),
+    EventKind.TARIFF_UPDATED: _schema(
+        source=str,
+        fetched=_maybe_str,
+        added=list,
+        changed=list,
+        kept=list,
+        next_renewal=_maybe_str,
+    ),
 }
 
 #: The event entity's `event_types`: every kind, without the domain prefix.

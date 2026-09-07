@@ -191,7 +191,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
         const holds = holdRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
         const holdNow = holds.some((run) => run.start <= now && run.end > now);
         const pauses = pauseRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
-        const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels, holdNow));
+        const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels, holdNow, (v) => `${money.format(v)}/kWh`));
         const parts: string[] = [];
         const current = toNumber(a.current);
         const target = toNumber(a.target);
@@ -211,6 +211,8 @@ export class PowerplanAppliancesCard extends HTMLElement {
           if (deadline !== null) parts.push(fill(labels.due ?? "{time}", { time: clock.format(deadline) }));
         }
         if (view.kind === "paused" || view.kind === "manual") parts.splice(0, parts.length, view.reason ?? "");
+        // D13 §7: a wait says whose price makes it worth it.
+        else if ((view.kind === "waiting" || view.kind === "planned") && view.reason) parts.push(view.reason);
         const row = byLoad[load.id];
         const planned = toNumber(row?.planned_kwh ?? a.planned_kwh);
         const amount = toNumber(String(row?.cost ?? a.cost ?? "").split(" ")[0]);

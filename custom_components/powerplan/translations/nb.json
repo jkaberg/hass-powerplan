@@ -104,8 +104,8 @@
         }
       },
       "prices": {
-        "title": "Hvilken strømavtale har du?",
-        "description": "PowerPlan trenger morgendagens priser for å planlegge i natt.",
+        "title": "Hvilken strømavtale har du med strømleverandøren?",
+        "description": "Strømleverandøren selger deg energien; nettleien fra nettselskapet kommer i tillegg. PowerPlan trenger morgendagens priser for å planlegge i natt.",
         "data": {
           "source": "Strømavtale"
         },
@@ -162,35 +162,13 @@
         }
       },
       "modifiers": {
-        "title": "Er strømavtalen din spesiell?",
-        "description": "Kryss av det avtalen legger på prisen; hvert valg får sitt eget spørsmål etterpå. Allerede med fra nettselskapet: {included}.",
+        "title": "Hva legger strømleverandøren på, i tillegg til nettleien?",
+        "description": "Nettleien fra {operator} er allerede med: {covered}. Avgifter og moms tar vi med i neste steg. Kryss bare av det som står i avtalen med strømleverandøren.",
         "data": {
-          "modifiers": "Legges på toppen"
+          "modifiers": "Lagt på av leverandøren"
         },
         "data_description": {
-          "modifiers": "Alt som kan komme i tillegg til markedsprisen. Utelater du noe, er det bare ikke en del av prisen din."
-        }
-      },
-      "modifier_vat": {
-        "title": "Hvor stor er merverdiavgiften?",
-        "description": "Merverdiavgiften legges på det du betaler per kWh. Satsen står på strømregningen.",
-        "data": {
-          "rate": "Merverdiavgift"
-        },
-        "data_description": {
-          "rate": "Som brøk: 0,25 er 25 %."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Avansert",
-            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
-            "data": {
-              "applies_to": "Gjelder for"
-            },
-            "data_description": {
-              "applies_to": "Hvilke deler av prisen avgiften beregnes av. Tom betyr alle."
-            }
-          }
+          "modifiers": "Utelater du noe, er det bare ikke en del av prisen din."
         }
       },
       "modifier_spot_scale": {
@@ -205,30 +183,6 @@
           "offset": "Legges på hver kWh, i din valuta."
         }
       },
-      "modifier_levy": {
-        "title": "Hvilken avgift legges på per kWh?",
-        "description": "En avgift på hver kWh, som elavgiften. Den står på nettleiefakturaen.",
-        "data": {
-          "amount": "Beløp per kWh"
-        },
-        "data_description": {
-          "amount": "I din valuta, per kWh. Et negativt beløp er tillatt."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Avansert",
-            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
-            "data": {
-              "months": "Måneder",
-              "applies_above_mtd_kwh": "Bare over månedens forbruk"
-            },
-            "data_description": {
-              "months": "Månedsnumrene den gjelder i. Tom betyr hele året.",
-              "applies_above_mtd_kwh": "Antall kWh denne kalendermåneden før avgiften begynner. Tom betyr alltid."
-            }
-          }
-        }
-      },
       "modifier_fixed_price": {
         "title": "Hva er fastprisen din?",
         "description": "En statlig ordning som Norgespris erstatter spotprisen opp til et antall kWh per måned. Prisen står i avtalen din.",
@@ -239,42 +193,6 @@
         "data_description": {
           "price": "I øre per kWh, uten mva; mva legges på etterpå.",
           "cap_kwh_per_month": "Hvor mange kWh i måneden fastprisen dekker; over det gjelder spotpris."
-        }
-      },
-      "modifier_subsidy_threshold": {
-        "title": "Hvor begynner strømstøtten?",
-        "description": "Staten dekker en andel av prisen over en terskel. Myndighetene publiserer begge tallene.",
-        "data": {
-          "threshold": "Terskel",
-          "share": "Andel"
-        },
-        "data_description": {
-          "threshold": "Prisen per kWh der staten begynner å dekke en andel.",
-          "share": "Som brøk: 0,9 er 90 %."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Avansert",
-            "description": "Allerede utfylt. Åpne den bare hvis du vet at du vil noe annet.",
-            "data": {
-              "negative_rule": "Negative priser"
-            },
-            "data_description": {
-              "negative_rule": "Hva ordningen gjør når spotprisen er under null."
-            }
-          }
-        }
-      },
-      "modifier_tou_schedule": {
-        "title": "Hva tar nettselskapet per kWh?",
-        "description": "Energileddet i nettleien, ofte en dag- og en nattpris. Det står på nettleiefakturaen, og nettleien du velger senere fyller det ut.",
-        "data": {
-          "periods": "Perioder",
-          "fallback": "Pris for andre timer"
-        },
-        "data_description": {
-          "periods": "Periodene og prisene deres per kWh.",
-          "fallback": "Brukes for en time ingen periode dekker."
         }
       },
       "modifier_day_type": {
@@ -391,7 +309,7 @@
       },
       "tariff": {
         "title": "Hvilket nettselskap har du?",
-        "description": "Nettselskapet fakturerer effektdelen av nettleien. Neste steg viser hva PowerPlan tror de fakturerer, så du kan sjekke det mot fakturaen.",
+        "description": "Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg.\n\n{credit}",
         "data": {
           "country": "Land",
           "preset": "Nettselskap"
@@ -402,8 +320,8 @@
         }
       },
       "tariff_preset": {
-        "title": "Stemmer dette med nettleiefakturaen din?",
-        "description": "**{name}**\n\n{table}\n\nKilde: {source}",
+        "title": "Stemmer dette med nettleien din?",
+        "description": "**{name}**\n\n{table}\n\nDette bestemmer nettselskapet, og PowerPlan planlegger etter det:\n\n{plan}\n\nKilde: {source}\n\n{credit}",
         "data": {
           "confirm": "Stemmer det?"
         },
@@ -473,7 +391,7 @@
       },
       "tariff_steps": {
         "title": "Hvilke trinn har nettselskapet ditt?",
-        "description": "Nettselskapet ditt står ikke i listen, så fyll inn trinnene fra nettleiefakturaen: for hvert trinn effekten det går opp til og hva det koster per måned. La resten stå tomme; det siste trinnet du fyller inn, har ingen øvre grense.",
+        "description": "Nettselskapet ditt står ikke i listen, så fyll inn trinnene fra nettleiefakturaen: for hvert trinn effekten det går opp til og hva det koster per måned. La resten stå tomme; det siste trinnet du fyller inn, har ingen øvre grense. Skriv prisene slik de står på fakturaen, med moms.",
         "data": {
           "upper_1": "Trinn 1: opp til",
           "fee_1": "Trinn 1: per måned",
@@ -498,7 +416,8 @@
           "upper_11": "Trinn 11: opp til",
           "fee_11": "Trinn 11: per måned",
           "upper_12": "Trinn 12: opp til",
-          "fee_12": "Trinn 12: per måned"
+          "fee_12": "Trinn 12: per måned",
+          "vat": "Moms på disse prisene"
         },
         "data_description": {
           "upper_1": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
@@ -524,7 +443,8 @@
           "upper_11": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
           "fee_11": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
           "upper_12": "Effekten dette trinnet går opp til, slik det står på fakturaen.",
-          "fee_12": "Hva dette trinnet koster per måned, slik det står på fakturaen."
+          "fee_12": "Hva dette trinnet koster per måned, slik det står på fakturaen.",
+          "vat": "Prisene du legger inn er med moms; PowerPlan har ingen sats for landet ditt, så skriv den her."
         }
       },
       "tariff_limits": {
@@ -640,6 +560,58 @@
         "data_description": {
           "confirm": "Velg endre for å velge sensorene selv."
         }
+      },
+      "postcode": {
+        "title": "Hva er postnummeret ditt?",
+        "description": "Postnummeret finner avgiftene som gjelder der du bor. Det sendes bare til det offentlige adresseregisteret i landet ditt.",
+        "data": {
+          "postcode": "Postnummer"
+        },
+        "data_description": {
+          "postcode": "La det stå tomt for å hoppe over; da velger du fylke sammen med nettselskapet hvis det har noe å si."
+        }
+      },
+      "tariff_product": {
+        "title": "Hvilken nettleie har du hos {operator}?",
+        "description": "{operator} har flere nettleier for bolig. Det står hvilken på nettleiefakturaen.",
+        "data": {
+          "product": "Nettleie"
+        }
+      },
+      "tariff_zone": {
+        "title": "Hvilket fylke bor du i?",
+        "description": "{operator} dekker områder med ulike avgifter, så PowerPlan må vite hvor du bor.",
+        "data": {
+          "zone": "Fylke"
+        }
+      },
+      "tariff_confirm": {
+        "title": "Stemmer dette for {operator}?",
+        "description": "Kilden sier ikke alt om nettleien din. Sjekk disse verdiene mot nettleiefakturaen; forslaget er det vanlige.\n\n{why}"
+      },
+      "modifier_supplier_tou": {
+        "title": "Hva tar strømleverandøren etter tid på døgnet?",
+        "description": "Bare leverandørens egne dag- og nattpriser, hvis avtalen har det. Nettselskapets dag- og nattpris er allerede med.",
+        "data": {
+          "periods": "Perioder",
+          "fallback": "Pris for andre timer"
+        },
+        "data_description": {
+          "periods": "Periodene og prisene deres per kWh.",
+          "fallback": "Brukes for en time ingen periode dekker."
+        }
+      },
+      "state": {
+        "title": "Hvilke støtteordninger gjelder deg?",
+        "description": "{rates}\n\nDette legger PowerPlan på for deg. Kryss av ordningene du er med i.",
+        "data": {
+          "schemes": "Ordninger",
+          "vat": "Moms"
+        },
+        "data_description": {
+          "schemes": "Strømstøtte trekkes automatisk på nettleiefakturaen; den gjelder ikke med Norgespris.",
+          "vat": "PowerPlan har ingen momssats for landet ditt: skriv den som står på regningen."
+        }
       }
     },
     "error": {
@@ -655,7 +627,9 @@
       "price_in_minor_unit": "Det er under én øre per kWh. Feltet er i øre, ikke kroner.",
       "steps_too_few": "Fyll inn minst to trinn fra fakturaen.",
       "steps_not_rising": "Hvert trinn må gå opp til mer enn trinnet før.",
-      "limit_required": "Fyll inn effekten avtalen din gir deg."
+      "limit_required": "Fyll inn effekten avtalen din gir deg.",
+      "postcode_invalid": "Det ser ikke ut som et postnummer her.",
+      "tariff_source_unreachable": "Fikk ikke hentet nettselskapene nå. Velg Finner ikke mitt nettselskap eller Legg inn selv, eller prøv igjen senere."
     },
     "abort": {
       "already_configured": "Denne måleren er allerede satt opp som et hjem i PowerPlan.",
@@ -1124,7 +1098,8 @@
               "force": "Kjør nå",
               "presence_changed": "Tilstedeværelse endret",
               "ev_connected": "Bil koblet til eller fra",
-              "baseline_ready": "Vanlig forbruk er lært"
+              "baseline_ready": "Vanlig forbruk er lært",
+              "tariff_updated": "Nettleien oppdatert"
             }
           }
         }
@@ -1156,6 +1131,9 @@
     },
     "set_peak_needs_a_day_or_a_month": {
       "message": "Velg enten en dato eller en måned."
+    },
+    "tariff_refresh_failed": {
+      "message": "Kunne ikke oppdatere nettleien fra {source}: {reason}. Nettleien PowerPlan har, beholdes."
     }
   },
   "issues": {
@@ -1184,8 +1162,8 @@
       "description": "{site}: {source} har ikke levert priser på 24 timer; PowerPlan anslår dem imens. Sjekk at prisintegrasjonen kjører."
     },
     "tariff_review": {
-      "title": "Tariffen beholder en avgift du la inn",
-      "description": "{site}: den tidligere innstillingen for moms eller avgift ({kept}) er ulik det PowerPlan nå legger på for landet ditt, så den er beholdt som din egen. Var den bare den gamle standarden, fjerner du den under Endre oppsett; betaler du en annen sats, lar du den stå."
+      "title": "Bekreft en verdi du har satt",
+      "description": "{site}: din egen innstilling ({kept}) er ulik det PowerPlan ville brukt for landet ditt eller nettselskapet ditt, så den er beholdt som din. Velg Send for å beholde den; velg Endre oppsett for å endre den."
     },
     "preset_outdated": {
       "title": "Tariffmalen er endret",
@@ -1226,6 +1204,10 @@
     "device_missing": {
       "title": "Et apparats enhet er borte",
       "description": "Apparatet «{load}» finnes ikke lenger i Home Assistant. PowerPlan styrer det ikke før du velger en ny enhet: åpne PowerPlan, finn «{load}» og velg Endre oppsett."
+    },
+    "tariff_stale": {
+      "title": "Nettleien har gått ut",
+      "description": "{site}: nettleien fra {operator} har ingen priser etter siste periode, og det lykkes ikke å hente nye. PowerPlan bruker de siste prisene den har. Sjekk internettforbindelsen, eller velg Endre oppsett for å velge nettleien på nytt."
     }
   },
   "selector": {
@@ -1262,7 +1244,8 @@
         "subsidy_threshold": "Strømstøtte over en terskel",
         "spot_scale": "Påslag fra leverandøren",
         "cumulative_tier": "Trinn etter månedsforbruk",
-        "day_type": "Dagtypetariff (kritiske toppdager)"
+        "day_type": "Dagtypetariff (kritiske toppdager)",
+        "supplier_tou": "Leverandørens egne dag- og nattpriser"
       }
     },
     "export_mode": {
@@ -1601,7 +1584,15 @@
         "month_9": "september",
         "month_10": "oktober",
         "month_11": "november",
-        "month_12": "desember"
+        "month_12": "desember",
+        "credit": "Nettleiepriser fra {sources}. Takk!",
+        "plan_energy": "Fleksibelt forbruk flyttes til etter {time}, der energileddet er {difference} lavere.",
+        "plan_capacity": "Forbruket spres så du holder deg i effekttrinnet ditt.",
+        "plan_none": "Ingen del av denne nettleien endrer når det lønner seg å bruke strøm.",
+        "state_rates": "I {zone} er det {rates} per kWh.",
+        "state_vat": "moms {vat} %",
+        "state_levy": "{name} {amount}",
+        "state_asked": "PowerPlan har ingen avgiftssatser for landet ditt, så den bruker momsen du la inn med nettleien."
       }
     },
     "load_text": {
@@ -2018,7 +2009,14 @@
         "card_status_holding": "Holder",
         "card_count_holding": "{n} holder temperaturen",
         "card_holding_short": "holder",
-        "card_lowered_until": "Senket til {time}"
+        "card_lowered_until": "Senket til {time}",
+        "card_party_grid": "Nettleie",
+        "card_party_supplier": "Strøm",
+        "card_party_state": "Avgifter",
+        "card_credit": "Nettleiepriser fra {sources}. Takk!",
+        "card_why_grid": "Venter til {time} — nettleien er {difference} lavere da",
+        "card_why_supplier": "Venter til {time} — strømmen er {difference} billigere da",
+        "card_why_state": "Venter til {time} — avgiftene er {difference} lavere da"
       }
     },
     "logbook": {
@@ -2058,7 +2056,13 @@
         "presence_changed_vacation": "Tilstedeværelse endret til ferie",
         "ev_connected": "Bil koblet til",
         "ev_connected_off": "Bil koblet fra",
-        "baseline_ready": "Vanlig forbruk er lært"
+        "baseline_ready": "Vanlig forbruk er lært",
+        "tariff_updated": "Nettleien oppdatert"
+      }
+    },
+    "scheme": {
+      "options": {
+        "stromstotte": "Strømstøtte"
       }
     }
   },
@@ -2186,6 +2190,16 @@
     "dump_state": {
       "name": "Lag feilrapport",
       "description": "Returner siste øyeblikksbilde og de sammensatte inndataene til en feilrapport.",
+      "fields": {
+        "site": {
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
+        }
+      }
+    },
+    "refresh_tariff": {
+      "name": "Oppdater nettleien",
+      "description": "Hent nettleien fra nettselskapet ditt nå, og svar med hva som ble endret. Ingenting endres hvis kilden ikke svarer.",
       "fields": {
         "site": {
           "name": "Hjem",
@@ -3241,6 +3255,25 @@
         "not_enough_loads": "Legg til minst to apparater først: et rom trenger to apparater som varmer samme sted.",
         "reconfigure_successful": "Rommet ble oppdatert."
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Din egen moms og avgift",
+        "description": "La feltene stå tomme for å bruke satsene for landet ditt, som PowerPlan holder oppdatert. Sett en bare hvis du betaler noe annet, for eksempel et momsregistrert gårdsbruk.",
+        "data": {
+          "vat": "Moms",
+          "levy": "Avgifter"
+        },
+        "data_description": {
+          "vat": "Erstatter momssatsen for landet ditt.",
+          "levy": "Erstatter alle avgifter per kWh."
+        }
+      }
+    },
+    "abort": {
+      "no_tariff": "Dette hjemmet har ingen strømpris å justere."
     }
   }
 }

@@ -39,6 +39,7 @@ export function rawStatus(
   hasFutureRun: boolean,
   labels: Record<string, string>,
   holding = false,
+  perKwh: (value: number) => string = String,
 ): StatusView {
   // The integration's own 90 s hold, where it publishes one (D-0497).
   if (typeof attributes.display_status === "string" && state !== "unavailable" && state !== "unknown") {
@@ -64,10 +65,37 @@ export function rawStatus(
     return { kind: "paused", label: labels.status_paused ?? "", reason: labels.reason_paused ?? "" };
   }
   if (state === "running_plan" || hasRunNow) return { kind: "running", label: labels.status_running ?? "" };
-  if (hasFutureRun) return { kind: "planned", label: labels.status_planned ?? "" };
+  if (hasFutureRun) {
+    return { kind: "planned", label: labels.status_planned ?? "", reason: whyReason(attributes, labels, perKwh) };
+  }
   if (holding) return { kind: "holding", label: labels.status_holding ?? "" };
-  if (state === "waiting") return { kind: "waiting", label: labels.status_waiting ?? "" };
+  if (state === "waiting") {
+    return { kind: "waiting", label: labels.status_waiting ?? "", reason: whyReason(attributes, labels, perKwh) };
+  }
   return { kind: "idle", label: "" };
+}
+
+/**
+ * D13 §7: the party whose price makes the wait worth it, in the household's words -
+ * «Venter til 22:00 - nettleien er 13 øre lavere da». Undefined without one.
+ */
+export function whyReason(
+  attributes: Record<string, unknown>,
+  labels: Record<string, string>,
+  perKwh: (value: number) => string = String,
+): string | undefined {
+  const templates: Record<string, string | undefined> = {
+    grid: labels.why_grid,
+    supplier: labels.why_supplier,
+    state: labels.why_state,
+  };
+  const party = attributes.why_party;
+  const template = typeof party === "string" ? templates[party] : undefined;
+  if (!template) return undefined;
+  const difference = Number(attributes.why_difference);
+  return template
+    .replace("{time}", String(attributes.why_until ?? ""))
+    .replace("{difference}", Number.isFinite(difference) ? perKwh(difference) : "");
 }
 
 interface Memo {

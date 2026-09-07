@@ -3,4 +3,13 @@
 from .base import CountryModule, tedb
 from .registry import register
 
-MODULE = register(CountryModule(code="IT", name="Italy", currency="EUR", vat=tedb("10"), tedb="IT"))
+MODULE = register(
+    CountryModule(
+        code="IT",
+        name="Italy",
+        currency="EUR",
+        time_zones=("Europe/Rome",),
+        vat=tedb("10"),
+        tedb="IT",
+    )
+)

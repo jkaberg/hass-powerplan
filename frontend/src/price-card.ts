@@ -11,7 +11,7 @@
 import { escape, fill, toNumber } from "./appliances-card";
 import { type HomeAssistant, timeZone } from "./ha";
 import { ppStyles } from "./styles";
-import { cheapThreshold, currencyWord, localMidnight, type PriceSlot } from "./transforms";
+import { cheapThreshold, type Credit, creditHtml, currencyWord, localMidnight, type PriceSlot } from "./transforms";
 
 interface PriceConfig {
   entry_id: string;
@@ -295,11 +295,13 @@ export class PowerplanPriceCard extends HTMLElement {
       comp = `<div class="bar"><div class="fx" style="width:${width.toFixed(1)}%">${escape(energyText)}</div><div class="gr">${escape(fill(labels.grid_part ?? "", { v: nf.format(din - energy) }))}</div></div>`;
     }
     const tm = `<span class="tm"><ha-icon icon="${tomorrow ? "mdi:calendar-check" : "mdi:calendar-clock"}" class="${tomorrow ? "ok" : ""}"></ha-icon>${escape(tomorrow ? labels.tomorrow_ready : labels.tomorrow_pending)}</span>`;
+    // D12 §5.13: the grid tariff's source, credited in one line (D13 §6.1).
+    const credit = creditHtml(labels.credit, forecast.credit as Credit[] | undefined);
     const foot = compact
       ? `<div class="foot c">${comp}${tm}</div>`
       : `<div class="foot"><span class="lbl">${escape(labels.now)}</span>${comp}
           ${fee && level ? `<span class="lbl">${escape(fill(labels.capacity_fee ?? "", { fee: formatFee(fee, locale, config.currency), step: level.state }))}</span>` : ""}
-          <span class="grow"></span>${tm}</div>`;
+          <span class="grow"></span>${tm}</div>${credit ? `<div class="credit">${credit}</div>` : ""}`;
 
     this.shadowRoot!.innerHTML = `<style>${ppStyles}${CSS}</style>
       <ha-card class="${compact ? "compact" : ""}" style="height:${H}px">${svg}${head}${legend}${foot}<div class="tip" hidden></div></ha-card>`;
@@ -434,6 +436,9 @@ const CSS = `
   i.l { width: 14px; display: inline-block; } i.l.din { height: 3px; border-radius: 2px; background: var(--primary-color); }
   i.l.uten { height: 0; border-top: 2px dashed var(--warning-color, #ffa600); }
   i.sw { width: 12px; height: 10px; border-radius: 3px; background: rgba(67,160,71,.35); display: inline-block; }
+  .credit { position: absolute; left: var(--pp-pad); right: var(--pp-pad); bottom: 1px; font-size: 10px; line-height: 12px;
+    color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .credit a { color: inherit; }
   .foot { position: absolute; left: var(--pp-pad); right: var(--pp-pad); bottom: 14px; display: flex; align-items: center; gap: 14px;
           border-top: 1px solid var(--divider-color); padding-top: 12px; }
   .foot.c { left: 14px; right: 14px; flex-direction: column; align-items: stretch; gap: 6px; padding-top: 10px; bottom: 12px; }

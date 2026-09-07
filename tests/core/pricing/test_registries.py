@@ -24,6 +24,7 @@ D1_MODIFIERS = (
     "levy",
     "spot_scale",
     "subsidy_threshold",
+    "supplier_tou",
     "tou_schedule",
     "vat",
 )
@@ -31,7 +32,7 @@ D1_FORECASTERS = ("carry_known", "same_weekday_profile", "synthesised")
 
 
 def test_the_registries_hold_the_whole_d1_roster() -> None:
-    """D1 §5.4's nine modifiers and §5.5's three forecasters, and nothing else."""
+    """D1 §5.4's ten modifiers and §5.5's three forecasters, and nothing else."""
     assert modifiers.keys() == D1_MODIFIERS
     assert forecasters.keys() == D1_FORECASTERS
 
@@ -130,6 +131,7 @@ def _options(key: str) -> dict[str, object]:
         "spot_scale": {},
         "subsidy_threshold": {"threshold": Decimal("0.9125")},
         "tou_schedule": {},
+        "supplier_tou": {},
         "vat": {"rate": Decimal("0.25")},
     }
     return required[key]

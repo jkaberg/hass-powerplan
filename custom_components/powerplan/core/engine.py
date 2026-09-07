@@ -195,7 +195,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 7
+SnapshotSchema: int = 8
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -259,6 +259,7 @@ class EventKind(StrEnum):
     PRESENCE_CHANGED = "presence_changed"
     EV_CONNECTED = "ev_connected"
     BASELINE_READY = "baseline_ready"
+    TARIFF_UPDATED = "tariff_updated"
 
 
 # --------------------------------------------------------------------------- #
@@ -690,6 +691,8 @@ class AccountingStatus:
     lifetime_cost: Money | None = None
     lifetime_savings: Money | None = None
     per_load: Mapping[str, Any] = field(default_factory=dict)
+    #: Cost and savings by party, `{"cost": {party: "12.30"}, "savings": {…}}` (D11 §5.8).
+    by_party: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -3578,6 +3581,7 @@ def _accounting_status(state: EngineState) -> AccountingStatus:
         lifetime_cost=_money_of(status.get("lifetime_cost")),
         lifetime_savings=_money_of(status.get("lifetime_savings")),
         per_load=dict(status.get("per_load", {})),
+        by_party=dict(status.get("by_party", {})),
     )
 
 

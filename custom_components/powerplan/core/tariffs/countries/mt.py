@@ -9,6 +9,11 @@ MTCA = "https://mtca.gov.mt/docs/default-source/documents/business-tax/vat/faqs/
 
 MODULE = register(
     CountryModule(
-        code="MT", name="Malta", currency="EUR", vat=(Rate(None, Decimal("0.05"), MTCA),), tedb="MT"
+        code="MT",
+        name="Malta",
+        currency="EUR",
+        time_zones=("Europe/Malta",),
+        vat=(Rate(None, Decimal("0.05"), MTCA),),
+        tedb="MT",
     )
 )

@@ -8,6 +8,7 @@ MODULE = register(
         code="NL",
         name="Netherlands",
         currency="EUR",
+        time_zones=("Europe/Amsterdam",),
         vat=tedb("21"),
         tedb="NL",
         rule_template="nl/connection",

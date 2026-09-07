@@ -225,7 +225,7 @@ What one appliance is doing, and why, in one state. The first state in this list
 | **Running as planned** | Drawing power in a planned hour. |
 | **Waiting for cheap power** | It needs power, and the plan has it waiting for a cheaper hour. |
 
-The `reason_key` attribute says what PowerPlan last did to the device, for example **Sent, waiting for the device to confirm**. `next_start` is when the plan starts it next. Key: `plan_status`.
+The `reason_key` attribute says what PowerPlan last did to the device, for example **Sent, waiting for the device to confirm**. `next_start` is when the plan starts it next. While it waits, `why_party` says whose price makes the wait worth it: `grid` for your grid company, `supplier` for your electricity supplier, `state` for taxes. `why_difference` says how much lower that part of the price is then, per kWh. Key: `plan_status`.
 
 <a name="control"></a>
 ### Control

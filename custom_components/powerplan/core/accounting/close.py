@@ -51,7 +51,9 @@ from .savings import (
     CALIBRATION_THRESHOLD,
     CalibrationRec,
     calibration_error,
+    cost_by_party,
     kwh_shifted,
+    savings_by_party,
     savings_confidence,
     site_savings,
     site_savings_confidence,
@@ -203,6 +205,9 @@ class SiteFigures:
     estimated_share: float
     previous: tuple[Money, Money] | None
     lifetime: tuple[Money, Money]
+    #: Cost and savings by party - grid, supplier, state (D11 §5.8, D12 §5.13).
+    cost_by_party: Mapping[str, Money] = field(default_factory=dict)
+    savings_by_party: Mapping[str, Money] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,6 +481,7 @@ class Accounting:
         site.import_kwh += slot.import_kwh
         site.export_kwh += slot.export_kwh
         site.energy_cost = plus(site.energy_cost, energy)
+        accrue_by_party(site.energy_by_party, price, slot.import_kwh)
         site.export_credit = plus(site.export_credit, credit)
         site.cf_energy_cost = plus(
             site.cf_energy_cost, price_slot(slot.import_kwh + delta_kwh, price)
@@ -698,6 +704,8 @@ class Accounting:
             estimated_share=ledger.site.estimated_share,
             previous=ledger.previous_site(),
             lifetime=(ledger.lifetime.cost, ledger.lifetime.savings),
+            cost_by_party=cost_by_party(ledger.site),
+            savings_by_party=savings_by_party(ledger.site, ledger.loads.values()),
         )
         return AccountingStatus(
             month=ledger.month,

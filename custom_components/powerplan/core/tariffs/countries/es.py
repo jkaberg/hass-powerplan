@@ -19,6 +19,7 @@ MODULE = register(
         code="ES",
         name="Spain",
         currency="EUR",
+        time_zones=("Europe/Madrid", "Atlantic/Canary", "Africa/Ceuta"),
         vat=(
             Rate(None, Decimal("0.21"), TEDB),
             Rate(date(2026, 8, 1), Decimal("0.10"), TEDB, upto_kw=10.0),

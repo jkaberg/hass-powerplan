@@ -101,6 +101,8 @@ class Provenance:
     url: str | None = None
     fetched: date | None = None
     attribution: str | None = None
+    #: The source's tier (D13 §5.1), `None` for a copy no source fetched.
+    tier: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +164,11 @@ class GridTariff:
     events: tuple[str, ...] = ()
     renew_at: date | None = None
     capacity_id: str = "copy"
+    #: The last day the source publishes the copy for, where it says (`gyldig_til`).
+    valid_to: date | None = None
+    #: The source's own handles for the operator and the product, for the renewal (§10).
+    operator_key: str | None = None
+    product_key: str | None = None
 
     def energy_at(self, day: date) -> EnergyVersion | None:
         """Return the energy charge in force on `day`; before the first, the first."""
@@ -405,6 +412,9 @@ def to_json(price: HouseholdPrice) -> dict[str, Any]:
             ],
             "events": list(grid.events),
             "renew_at": None if grid.renew_at is None else grid.renew_at.isoformat(),
+            "valid_to": None if grid.valid_to is None else grid.valid_to.isoformat(),
+            "operator_key": grid.operator_key,
+            "product_key": grid.product_key,
         },
         "supplier": {
             "kind": price.supplier.kind,
@@ -461,6 +471,9 @@ def from_json(raw: Mapping[str, Any]) -> HouseholdPrice:
             events=tuple(grid.get("events") or ()),
             renew_at=None if not grid.get("renew_at") else date.fromisoformat(grid["renew_at"]),
             capacity_id=capacity.id,
+            valid_to=None if not grid.get("valid_to") else date.fromisoformat(grid["valid_to"]),
+            operator_key=grid.get("operator_key"),
+            product_key=grid.get("product_key"),
         ),
         supplier=SupplierContract(
             kind=supplier.get("kind", "spot"),
@@ -496,6 +509,7 @@ def _provenance_json(provenance: Provenance) -> dict[str, Any]:
         "url": provenance.url,
         "fetched": None if provenance.fetched is None else provenance.fetched.isoformat(),
         "attribution": provenance.attribution,
+        "tier": provenance.tier,
     }
 
 
@@ -506,6 +520,7 @@ def _provenance(raw: Mapping[str, Any]) -> Provenance:
         url=raw.get("url"),
         fetched=None if not fetched else date.fromisoformat(fetched),
         attribution=raw.get("attribution"),
+        tier=raw.get("tier"),
     )
 
 

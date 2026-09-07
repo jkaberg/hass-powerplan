@@ -33,7 +33,6 @@ from tests.flows.test_site_flow import (
     _configure,
     _start,
     _through_meter,
-    _through_prices,
     _through_tariff,
 )
 from tests.runtime.conftest import FakeMeter, site_data
@@ -51,14 +50,15 @@ if TYPE_CHECKING:
 
 
 async def _to_modifiers(hass: HomeAssistant, ams_meter: str, source: str) -> dict[str, Any]:
-    """Walk a full site to the add-ons, the follow-up after the grid company (HUB-3)."""
+    """Walk a full site to the supplier's additions: the grid company first (D13 §6)."""
     _configure(hass)
     result = await _through_meter(hass, await _start(hass, "full"), ams_meter)
+    result = await _through_tariff(hass, result)
     assert result["step_id"] == "prices"
     result = await _answer(hass, result, source=source)
-    result = await _through_tariff(hass, result)
-    assert result["step_id"] == "export"
-    return await _answer(hass, result, mode="none")
+    if result["step_id"] == "prices_nordpool":
+        result = await _answer(hass, result, **result["data_schema"]({}))
+    return result
 
 
 @pytest.mark.inv("INV-49")
@@ -73,11 +73,12 @@ async def test_a_norgespris_style_price_with_no_default_refuses_an_empty_submit(
     harness sends the dict a browser could not, and gets the same refusal
     voluptuous itself raises: `price` stays unfillable at 0.
     """
-    # Norgespris is an answer to the contract question, and ticks its add-on (D1 §6).
+    # Norgespris is an answer to the contract question: the agreement itself, so
+    # its price is asked whatever is ticked, and never offered as an addition (D13 §6 2).
     result = await _to_modifiers(hass, ams_meter, "norgespris")
     assert result["step_id"] == "modifiers"
-    assert "fixed_price" in result["data_schema"]({})["modifiers"]
-    result = await _answer(hass, result, modifiers=["fixed_price"])
+    assert "fixed_price" not in result["data_schema"]({})["modifiers"]
+    result = await _answer(hass, result, modifiers=[])
     assert result["step_id"] == "modifier_fixed_price"
 
     with pytest.raises(vol.Invalid):
@@ -187,7 +188,8 @@ async def test_a_tariff_target_above_the_fuse_is_refused_on_its_field(
     result = await _answer(hass, result, device=ams_meter)
     result = await _answer(hass, result, confirm="ok")
     result = await _answer(hass, result, **small_fuse)
-    result = await _through_prices(hass, result, nordpool_entry)
+    assert result["step_id"] == "postcode"
+    result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff"
     result = await _answer(hass, result, preset="no/tensio-ts")

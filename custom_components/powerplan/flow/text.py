@@ -26,15 +26,20 @@ from homeassistant.helpers.selector import SelectOptionDict
 from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import DOMAIN
+from custom_components.powerplan.core.tariffs import countries
+from custom_components.powerplan.core.tariffs.household import fee_factor, levies_at, vat_at
 from custom_components.powerplan.core.tariffs.model import HolidayMode, StepTable
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
+    from datetime import date
 
     from homeassistant.core import HomeAssistant
 
+    from custom_components.powerplan.core.tariffs.household import HouseholdPrice
     from custom_components.powerplan.core.tariffs.model import TariffVersion, TimeFilter
     from custom_components.powerplan.core.tariffs.rules.loader import TariffSummary
+    from custom_components.powerplan.core.tariffs.sources import Credit
 
 __all__ = [
     "LANGUAGES",
@@ -42,10 +47,13 @@ __all__ = [
     "PRESET_UNKNOWN",
     "Text",
     "band_range",
+    "credit_note",
     "device_name",
     "entity_name",
     "minor_unit",
+    "plan_lines",
     "preset_options",
+    "state_line",
     "target_label",
     "target_options",
     "tariff_table",
@@ -421,3 +429,77 @@ def _rates(text: Text, summary: TariffSummary) -> str:
             spans = text.join(text.span(start, end) for start, end in rate.hours)
             rates.append(text.word("tariff_text", "energy_hours", price=price, hours=spans))
     return ", ".join(rates)
+
+
+# --------------------------------------------------------------------------- #
+# The price by party (D13 §6, §6.1, §7)
+# --------------------------------------------------------------------------- #
+
+
+def credit_note(text: Text, sources: Sequence[Credit]) -> str:
+    """Return «Nettleiepriser fra {sources}. Takk!», each source linked, its licence named (§6.1)."""
+    if not sources:
+        return ""
+    names = [
+        f"[{credit.name}]({credit.url})" + (f" ({credit.licence})" if credit.licence else "")
+        for credit in sources
+    ]
+    return text.word("tariff_text", "credit", sources=text.join(names))
+
+
+def plan_lines(text: Text, price: HouseholdPrice, day: date) -> str:
+    """Return what the plan does with each of the grid company's rules, as a list (§6 1d, §7)."""
+    lines: list[str] = []
+    version = price.grid.energy_at(day)
+    periods = () if version is None else version.periods
+    if len(periods) > 1:
+        cheap = min(periods, key=lambda period: period.price)
+        dear = max(periods, key=lambda period: period.price)
+        start = _start_of(cheap.when, dear.when)
+        difference = (dear.price - cheap.price) * fee_factor(price, day)
+        if difference > 0 and start is not None:
+            lines.append(
+                text.word(
+                    "tariff_text",
+                    "plan_energy",
+                    time=text.clock(start),
+                    difference=text.minor_per_kwh(difference, price.grid.currency),
+                )
+            )
+    if price.grid.capacity_at(day).peak is not None:
+        lines.append(text.word("tariff_text", "plan_capacity"))
+    if not lines:
+        lines.append(text.word("tariff_text", "plan_none"))
+    return "\n".join(f"- {line}" for line in lines)
+
+
+def _start_of(cheap: TimeFilter | None, dear: TimeFilter | None) -> int | None:
+    """Return when the cheaper period starts: its own first hour, or the dearer's end."""
+    if cheap is not None and cheap.hours:
+        return cheap.hours[0][0]
+    if dear is not None and dear.hours:
+        return dear.hours[0][1] % (24 * _MINUTES_PER_HOUR)
+    return None
+
+
+def state_line(text: Text, price: HouseholdPrice, day: date) -> str:
+    """Return «For {zone}: moms 25 %, forbruksavgift 7,13 øre, Enova 1 øre per kWh» (§6 step 3)."""
+    module = countries.get(price.state.zone.country)
+    if module is None or not module.vat:
+        return text.word("tariff_text", "state_asked")
+    zone = module.zone(price.state.zone.key)
+    vat = vat_at(price.state, day)
+    parts = [text.word("tariff_text", "state_vat", vat=text.number(vat * 100))]
+    currency = price.grid.currency or module.currency
+    parts += [
+        text.word(
+            "tariff_text", "state_levy", name=key, amount=text.minor_per_kwh(amount, currency)
+        )
+        for key, amount in levies_at(price.state, day).items()
+    ]
+    return text.word(
+        "tariff_text",
+        "state_rates",
+        zone=zone.covers if zone is not None else module.name,
+        rates=text.join(parts),
+    )

@@ -375,6 +375,15 @@ class SiteStore:
 #: The config entry's minor version from which `tariff.price` holds the copy (D13 §3).
 ENTRY_MINOR_PRICE: Final = 2
 
+#: A price-only site's grid party: no capacity component at all (D13 §10).
+NO_PEAK_COPY: Final[dict[str, Any]] = {
+    "id": "no_peak",
+    "name": "No capacity component",
+    "verified": None,
+    "assumed": "a price-only site: no capacity component",
+    "versions": [{"valid_from": "1970-01-01", "no_peak": True}],
+}
+
 
 def state_addons(
     rows: list[dict[str, Any]], state: StateTerms, day: date
@@ -440,12 +449,9 @@ def migrate_tariff(data: Mapping[str, Any], today: date) -> tuple[dict[str, Any]
             raw = loader.fill_template(raw, limits=list(tariff.get("contracted_kw") or ()))
     else:
         raw = {
+            **NO_PEAK_COPY,
             "id": str(tariff.get("preset_id") or "no_peak"),
-            "name": "No capacity component",
             "currency": currency,
-            "verified": None,
-            "assumed": "a price-only site: no capacity component",
-            "versions": [{"valid_from": "1970-01-01", "no_peak": True}],
         }
     raw.setdefault("currency", currency)
     typed = preset == PRESET_CUSTOM or bool(raw.get("assumed")) or not preset

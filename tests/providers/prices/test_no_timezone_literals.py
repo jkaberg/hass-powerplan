@@ -21,8 +21,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION = REPO_ROOT / "custom_components" / "powerplan"
 
-#: The one module allowed to name a zone: D1 §5.1's market clocks, as data.
+#: The modules allowed to name a zone: D1 §5.1's market clocks, as data, and the
+#: country modules' zones, which only pre-select the country in the flow when HA
+#: has none (D13 §6 step 0-prime) - never a site's clock (D-0555).
 MARKET_DATA_TABLES = ("providers/prices/markets.py",)
+COUNTRY_MODULES = "core/tariffs/countries/"
 
 #: An IANA zone name in a string literal - `"Europe/Oslo"`, `ZoneInfo("UTC")`'s
 #: continental siblings, a `tz=` default someone typed in a hurry.
@@ -41,7 +44,7 @@ def test_only_the_market_table_names_a_timezone() -> None:
     offenders: list[str] = []
     for module in sorted(INTEGRATION.rglob("*.py")):
         rel = module.relative_to(INTEGRATION).as_posix()
-        if rel in MARKET_DATA_TABLES:
+        if rel in MARKET_DATA_TABLES or rel.startswith(COUNTRY_MODULES):
             continue
         for number, line in enumerate(module.read_text(encoding="utf-8").splitlines(), start=1):
             if ZONE_LITERAL.search(line):

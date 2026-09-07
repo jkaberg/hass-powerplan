@@ -22,7 +22,6 @@ from tests.flows.test_site_flow import (
     _start,
     _tail,
     _through_meter,
-    _through_prices,
 )
 
 if TYPE_CHECKING:
@@ -32,7 +31,11 @@ if TYPE_CHECKING:
 async def _to_review(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
     """Walk from the tariff's confirmation to the review on every default."""
     while result["step_id"] != "presence":
-        result = await _answer(hass, result, **result["data_schema"]({}))
+        # A fixed contract's price has no default: the household's own (D8 §9 21 (a)).
+        answer = (
+            {"price": 100} if result["step_id"] == "prices_fixed" else result["data_schema"]({})
+        )
+        result = await _answer(hass, result, **answer)
     return await _tail(hass, result)
 
 
@@ -40,7 +43,8 @@ async def _not_listed(hass: HomeAssistant, ams_meter: str, nordpool_entry: str) 
     _configure(hass)
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
+    assert result["step_id"] == "postcode"
+    result = await _answer(hass, result)
     assert result["step_id"] == "tariff"
     return await _answer(hass, result, preset="unknown")
 

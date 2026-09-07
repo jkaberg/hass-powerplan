@@ -254,3 +254,34 @@ def test_a_copy_with_no_energy_charge_adds_no_grid_component() -> None:
     chain, _ = party.chain(bare, (), frozenset({"spot"}))
     slot = compose(spot_slot(datetime(2026, 9, 15, 16, tzinfo=UTC), Decimal(1)), chain)
     assert GRID_ENERGY not in slot.components
+
+
+def test_the_tail_after_a_copy_without_an_energy_charge_counts_its_levies_once() -> None:
+    """A capacity-only copy: the share is levies and VAT; the synthesised tail adds them once."""
+    from custom_components.powerplan.core.model import (  # noqa: PLC0415
+        Carrier,
+        Direction,
+        PriceCurve,
+    )
+    from custom_components.powerplan.core.pricing.forecasters.synthesised import (  # noqa: PLC0415
+        Synthesised,
+    )
+
+    price = tensio()
+    bare = replace(price, grid=replace(price.grid, energy=()))
+    chain, share = party.chain(bare, (), frozenset({"spot"}))
+    start = datetime(2026, 9, 15, 10, tzinfo=UTC)
+    known = compose(spot_slot(start, Decimal("0.80")), chain)
+    curve = PriceCurve(
+        carrier=Carrier.ELECTRICITY,
+        direction=Direction.IMPORT,
+        currency="NOK",
+        slots=(known,),
+        built_at=start,
+        sources=("test",),
+    )
+    tail = Synthesised(tou=share, slot_minutes=60).extend(
+        curve, start + timedelta(hours=3), context(start), ()
+    )
+    assert tail.slots[-1].total == known.total, "same spot, same taxes: the same price"
+    assert "levy" in tail.slots[-1].components

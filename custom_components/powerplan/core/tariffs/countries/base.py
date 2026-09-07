@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-__all__ = ["TEDB", "CountryModule", "Levy", "Rate", "Zone", "pick", "tedb"]
+__all__ = ["TEDB", "CountryModule", "Levy", "Rate", "Scheme", "Zone", "pick", "tedb"]
 
 #: The Commission's Taxes in Europe Database - every EU row's cross-check (§9.1).
 TEDB = "https://ec.europa.eu/taxation_customs/tedb/"
@@ -81,6 +81,24 @@ class Zone:
     covers: str
     vat: tuple[Rate, ...] | None = None
     levies: tuple[Levy, ...] = ()
+    #: What settles the zone from a postcode's place (D13 §6 step 0): a municipality
+    #: number listed here, else its county's. Municipalities win over counties.
+    municipalities: tuple[str, ...] = ()
+    counties: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Scheme:
+    """A state scheme the household may be in (D13 §4 party 3): a subsidy above a threshold.
+
+    `threshold` is dated, excl. VAT; `share` what the state pays of the spot above it.
+    `excludes` names the supplier kinds it cannot join (Norgespris: `state_fixed`).
+    """
+
+    key: str
+    threshold: tuple[Rate, ...]
+    share: Decimal
+    excludes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +119,11 @@ class CountryModule:
     levies: tuple[Levy, ...] = ()
     zones: tuple[Zone, ...] = ()
     rule_template: str | None = None
+    #: IANA zones in the country: the flow pre-selects the country from HA's zone (D13 step 0-prime).
+    time_zones: tuple[str, ...] = ()
+    #: The official directory a postcode is sent to (O17), `None` where there is none yet.
+    postcode: str | None = None
+    schemes: tuple[Scheme, ...] = ()
 
     def zone(self, key: str | None) -> Zone | None:
         """Return the zone `key`, or `None` for the national rates."""
@@ -125,9 +148,21 @@ class CountryModule:
             amounts[levy.key] = Decimal(0) if rate is None else rate.value
         return amounts
 
+    def zone_of(self, municipality: str, county: str) -> str | None:
+        """Return the tax zone a postcode's municipality settles, `None` for the national rates."""
+        for zone in self.zones:
+            if municipality in zone.municipalities:
+                return zone.key
+        return next((zone.key for zone in self.zones if county in zone.counties), None)
+
+    def scheme(self, key: str) -> Scheme | None:
+        """Return the scheme `key`, if the country has it."""
+        return next((scheme for scheme in self.schemes if scheme.key == key), None)
+
     def dated(self) -> tuple[Rate, ...]:
         """Every rate the module ships - what `preset_age.py` ages (D13 §12.2)."""
         rates = [*self.vat, *(rate for levy in self.levies for rate in levy.rates)]
+        rates += [rate for scheme in self.schemes for rate in scheme.threshold]
         for zone in self.zones:
             rates += [*(zone.vat or ()), *(rate for levy in zone.levies for rate in levy.rates)]
         return tuple(rates)

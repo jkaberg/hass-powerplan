@@ -2259,3 +2259,28 @@ A slot's price carries its split by party (`SlotPrice.parts`); each load's month
 
 `GridTariff` gets `currency`, `basis` and `capacity_id` and leaves out `per_load`, `switched` and `feed_in` until they have types; `SupplierContract` carries kind, basis and provenance until the supplier step moves the markup and fee into it. The next-year Tensio fixture stays in the rule format: the scenario runner builds curves from it, and it moves with the benchmark houses. Affects D13 §3, §12.1, §19 11.
 **Rejected:** rebuilding the fixture now - changes every simulation for a file that's rewritten later.
+
+### D-0555 · Where a country's time zones and its credit live
+
+Each country module lists the IANA zones that pre-select it; `test_no_timezone_literals.py` allows zone names in `core/tariffs/countries/` too, since they only choose a flow default. The credit note is built from the sources registered for the country, each declaring its `Credit`. The country is asked in the electrical step, only without HA's. Two lists of one fact drift. Affects D13 §5.1, §6, §6.1; D8 §5.1.
+**Rejected:** the zone table in `markets.py` - a market's clock and a country's zones are different facts.
+
+### D-0556 · The flow by party
+
+Electrical → `postcode` (where the module has a directory; Kartverket for NO) → `tariff` (the country's operators, then shipped rule files, then "not listed" and "enter it myself"; the credit under the list) → `tariff_product` → `tariff_zone` (when the operator spans zones and no postcode settled it) → `tariff_confirm` (the source's gaps) → `tariff_steps` (figures incl. VAT) → `tariff_preset` (the table, what the plan does, source and credit) → target → `prices` → `modifiers` (the supplier's own lines, including `supplier_tou`; Norgespris asked with the agreement) → `state` (VAT and levies stated, schemes asked) → export → carriers. State overrides (O4) are an options flow. An unresolved postcode skips the step; it's stored and redacted from diagnostics. Affects D13 §6; D8 §5.1, §5.17; D1 §5.4.
+**Rejected:** `tou_schedule` with a party switch - one add-on writing two parties' lines.
+
+### D-0557 · The renewal's clock and what it writes
+
+The timer fires at 03:17 local on `renew_at`, never within an hour of start (INV-73). A failed renewal retries after an hour, doubling to a day; `tariff_stale` when it has failed and `valid_to` has passed. The renewal walks the same ladder with the household's confirmed answers; a source that disagrees with a confirmed field keeps the household's answer and raises `tariff_review`. The entry is written with the runtime's `_known_data` set first, so the listener doesn't reload; spec and chain are swapped in place. Affects D7 §5.9, D13 §10.
+**Rejected:** reloading on renewal - releases and restores every load for no wiring change.
+
+### D-0558 · Reasons and money by party on the surface
+
+`plan_status` carries `why_party`, `why_until` and `why_difference` while a load waits: the party whose price falls most before its next start. Price slots carry `parties`, and the synthesising forecaster writes the grid charge, levies and VAT as components so the tail splits too. The month's cost by party puts capacity on the grid and export credit off the supplier; cost and savings sensors carry `by_party`. Affects D12 §5.13, D11 §5.8, D1 §5.5.
+**Rejected:** naming a party only when it explains the whole difference - on spot every wait mixes two.
+
+### D-0559 · The tariff canary is a tool and a scheduled workflow
+
+`tools/tariff_canary.py` fetches every registered source's live endpoint with the integration's User-Agent, requires operators and an accepted tariff, and compares each company across the tiers that list it, as the household pays it. It exits 1 on any finding; `tariff-sources.yml` runs it nightly and opens one issue per day of findings. Affects D9 §5.15, D13 §5.7.
+**Rejected:** comparing raw documents - sources publish on different bases.

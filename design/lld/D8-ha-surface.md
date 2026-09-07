@@ -877,6 +877,7 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 - **Reasons by party.** `plan_status` and the dashboard's "why" name the party whose rule caused the decision (D13 §7's keys: «Venter til 22:00 - nettleien er 13 øre lavere da»).
 - **Diagnostics** carry the copy's provenance (source, tier, fetch date, next renewal) and never the postcode or a meter id.
 - **The options flow** holds the state overrides (O4): VAT and each levy, for a household that knows better (a VAT-registered farm).
+- *(D-0555, D-0556.)* The country is asked in the electrical step, pre-selected from HA's zone; the steps are `postcode`, `tariff`, `tariff_product`, `tariff_zone`, `tariff_confirm`, `tariff_steps`, `tariff_preset`, the target, `prices`, `modifiers` (the supplier's lines and `supplier_tou`), `state`, `export`; an operator a source lists is the option `operator:<name>`; `tariff_review` is confirmable; `plan_status` carries `why_party`, `why_until`, `why_difference`.
 
 ## 6. Configuration schema
 

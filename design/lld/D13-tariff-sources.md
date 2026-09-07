@@ -323,6 +323,8 @@ Order and words. Titles are questions (D8 §5.15); every screen after the first 
 
 English mirrors it ("Which country do you live in?", "Which grid company do you have?", "What does your supplier add, on top of the grid tariff?", "Which support schemes apply to you?").
 
+The steps' ids and the country's place in the electrical step are D8 §5.17's. The VAT of a country without a rate is asked with typed figures, else in the state step. Strømstøtte's threshold and share are the NO module's (lov og forskrift om strømstønad), never typed (D-0555, D-0556).
+
 ### 6.1 Attribution
 
 As soon as the country is known, the flow credits the sources that serve it - a small note under the grid company step, repeated in the grid summary (1d), in the diagnostics and in the user docs, never a screen of its own. Each source in the registry declares its credit, `attribution = {name, url, licence}`, and the note is one translated template filled from the sources the country's ladder can use:

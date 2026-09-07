@@ -19,6 +19,7 @@ The actions PowerPlan adds to Home Assistant, for scripts, automations, and **De
 | `powerplan.reset_window_anchor` | Restart this hour's count (emergency) | Start counting this hour again from the meter's current reading. For emergencies only. | `site` |
 | `powerplan.set_peak` | Correct a peak | Correct one day's or one month's peak in the grid-fee history. | `date`, `month`, `kw` (required), `note`, `site` |
 | `powerplan.dump_state` | Make a bug report | Return the last snapshot and the assembled inputs for a bug report. | `site` |
+| `powerplan.refresh_tariff` | Refresh the grid tariff | Fetch your grid company's tariff now, and answer what changed. Nothing changes when the source cannot be reached. | `site` |
 <!-- generated:end actions -->
 
 `site` takes the home's name as you gave it, for example `YOUR_HOME`. `load` takes the appliance's id: the `load` value in its events, which [Events](events.md) shows how to see.
@@ -125,6 +126,20 @@ action: powerplan.dump_state
 data:
   site: YOUR_HOME
 response_variable: report
+```
+
+<a name="refresh_tariff"></a>
+## Refresh the grid tariff
+
+Fetches your grid company's tariff now, from the same source PowerPlan used when you set it up. The response lists the price periods it added, the ones it corrected, and the date of the next monthly refresh. If the source cannot be reached, PowerPlan keeps the tariff it has and the action fails with the reason.
+
+A tariff you entered yourself, or one from your country's rules, has nothing to fetch; the response says so.
+
+```yaml
+action: powerplan.refresh_tariff
+data:
+  site: YOUR_HOME
+response_variable: tariff
 ```
 
 **See also:** [Events](events.md) · [Entities](entities.md)

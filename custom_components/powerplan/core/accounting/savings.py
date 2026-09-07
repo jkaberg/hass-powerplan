@@ -34,6 +34,7 @@ __all__ = [
     "CalibDay",
     "CalibrationRec",
     "calibration_error",
+    "cost_by_party",
     "kwh_shifted",
     "load_savings",
     "savings_by_party",
@@ -174,6 +175,21 @@ def savings_by_party(site: SiteMonthRec, loads: Iterable[LoadMonthRec]) -> dict[
         for party, amount in rec.savings_by_party.items():
             split[party] += amount
     split[Party.GRID.value] += site.capacity_savings.amount
+    return {party: Money(amount, currency) for party, amount in split.items()}
+
+
+def cost_by_party(site: SiteMonthRec) -> dict[str, Money]:
+    """Return the month's cost by party - grid, supplier, state (D11 §5.8).
+
+    The energy by its components, the capacity fee to the grid company, the
+    export credit off the supplier's line; the three sum to the site's cost.
+    """
+    currency = site.energy_cost.currency
+    split = {party.value: Decimal(0) for party in Party}
+    for party, amount in site.energy_by_party.items():
+        split[party] += amount
+    split[Party.GRID.value] += site.capacity_fee.amount
+    split[Party.SUPPLIER.value] -= site.export_credit.amount
     return {party: Money(amount, currency) for party, amount in split.items()}
 
 

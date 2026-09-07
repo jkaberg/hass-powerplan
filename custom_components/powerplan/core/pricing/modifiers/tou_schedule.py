@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from ..context import PriceContext
     from ..model import Slot
 
-__all__ = ["HolidayMode", "TimeFilter", "TouPeriod", "TouSchedule"]
+__all__ = ["HolidayMode", "SupplierTou", "TimeFilter", "TouPeriod", "TouSchedule"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +80,20 @@ class TouSchedule:
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
         """Return `slot` with the grid energy component written (INV-4)."""
         return with_component(slot, self.component, self.price_at(slot.start, ctx))
+
+
+@register
+@dataclass(frozen=True, slots=True)
+class SupplierTou(TouSchedule):
+    """The supplier's own time-of-use offer - the supplier's line, never the grid's (D1 §5.4).
+
+    The same periods as the grid's energy charge, written as `supplier`: the grid
+    company's charge comes with its tariff copy (D13 §8), so the supplier step
+    offers only this (INV-74).
+    """
+
+    key: ClassVar[str] = "supplier_tou"
+    component: ClassVar[str] = "supplier"
 
 
 def _period_of(raw: TouPeriod | Mapping[str, Any]) -> TouPeriod:

@@ -19,6 +19,7 @@ from homeassistant.const import __version__ as ha_version
 from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
+from .providers import tariffs as tariff_sources
 from .storage import Section
 
 if TYPE_CHECKING:
@@ -37,9 +38,10 @@ __all__ = [
 ]
 
 #: D8 §5.10's redaction list. `persons` are `person.*` entity ids; `service`
-#: the notify target; `latitude`/`longitude` the home.
+#: the notify target; `latitude`/`longitude` the home; `postcode` where it is
+#: (D8 §5.17: never the postcode, never a meter id).
 TO_REDACT = frozenset(
-    {"persons", "service", "notify_service", "latitude", "longitude", "calendars"}
+    {"persons", "service", "notify_service", "latitude", "longitude", "calendars", "postcode"}
 )
 
 #: How much of the store and the trail a download carries.
@@ -65,6 +67,28 @@ def jsonable(value: Any) -> Any:  # noqa: PLR0911 - one branch per JSON type
     if isinstance(value, str | int | float | bool) or value is None:
         return value
     return str(value)
+
+
+def _tariff(runtime: Any) -> Mapping[str, Any] | None:
+    """Return the copy's provenance, next renewal and its sources' credit (D8 §5.17, §6.1)."""
+    price = runtime.build.price
+    if price is None:
+        return None
+    provenance = price.grid.provenance
+    credited = [
+        jsonable(cls.credit)
+        for cls in tariff_sources.for_country(price.state.zone.country)
+        if cls.credit is not None
+    ]
+    return {
+        "operator": price.grid.operator,
+        "source": provenance.source,
+        "tier": provenance.tier,
+        "fetched": jsonable(provenance.fetched),
+        "next_renewal": jsonable(price.grid.renew_at),
+        "zone": jsonable(price.state.zone),
+        "credit": credited,
+    }
 
 
 async def async_get_config_entry_diagnostics(
@@ -99,6 +123,7 @@ async def async_get_config_entry_diagnostics(
             )
             for subentry in entry.subentries.values()
         ],
+        "tariff": _tariff(runtime),
         "runtime": {
             "startup": list(runtime.startup),
             "ticks": runtime.ticks,

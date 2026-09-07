@@ -12,6 +12,14 @@ MODULE = register(
         code="FR",
         name="France",
         currency="EUR",
+        time_zones=(
+            "Europe/Paris",
+            "America/Guadeloupe",
+            "America/Martinique",
+            "Indian/Reunion",
+            "America/Cayenne",
+            "Indian/Mayotte",
+        ),
         vat=tedb("20"),
         tedb="FR",
         zones=(

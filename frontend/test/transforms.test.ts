@@ -170,6 +170,7 @@ function slot(startIso: string, minutes: number, extra: Partial<TimelineSlot> = 
     hours: minutes / 60,
     price: 0.8604,
     estimated: false,
+    parties: [],
     ceilingKw: 10,
     baselineKw: null,
     productionKw: null,

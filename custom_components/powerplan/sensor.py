@@ -30,11 +30,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
+from homeassistant.util import dt as dt_util
 
 from .core.model import Carrier, Confidence, Snapshot
 from .core.pricing.modifiers.base import SPOT
 from .core.pricing.modifiers.vat import Vat
+from .core.pricing.party import split
 from .core.tariffs.evaluator import ADVICE_KEYS
+from .core.tariffs.household import vat_at
 from .core.tariffs.model import StepTable
 from .entity import (
     PowerplanEntity,
@@ -44,6 +47,7 @@ from .entity import (
     window_translation_key,
 )
 from .load_entities import load_sensors
+from .providers import tariffs as tariff_sources
 from .runtime import Runtime
 
 if TYPE_CHECKING:
@@ -116,11 +120,38 @@ def _slots(
             "total": str(slot.total),
             "confidence": slot.confidence.value,
             "energy": _energy_part(slot.components, slot.total),
+            # The price by party, for the timeline's stack (D12 §5.13, D1 §5.3).
+            "parties": by_party(slot.components),
         }
         if slot.start in without:
             row["reference"] = str(without[slot.start])
         rows.append(row)
     return rows if limit is None else rows[:limit]
+
+
+def by_party(components: Mapping[str, Decimal]) -> dict[str, str]:
+    """Return a slot's components summed by party - grid, supplier, state (D12 §5.13, INV-72)."""
+    return {party: str(value) for party, value in split(components).items()}
+
+
+def site_vat(runtime: Runtime) -> float | None:
+    """Return the VAT the site pays today: the state stage's, else a typed add-on's (D13 §9.1)."""
+    price = runtime.build.price
+    if price is not None:
+        return float(vat_at(price.state, dt_util.now().date()))
+    return next((float(m.rate) for m in runtime.build.price_modifiers if isinstance(m, Vat)), None)
+
+
+def tariff_credit(runtime: Runtime) -> list[dict[str, str | None]]:
+    """Return the credit of the source the copy came from, none for a template (D12 §9 22)."""
+    price = runtime.build.price
+    if price is None or not runtime.renewable():
+        return []
+    return [
+        {"name": cls.credit.name, "url": cls.credit.url, "licence": cls.credit.licence}
+        for cls in tariff_sources.for_country(price.state.zone.country)
+        if cls.credit is not None and cls.key == price.grid.provenance.source
+    ]
 
 
 def _energy_part(components: Mapping[str, Decimal], total: Decimal) -> str | None:
@@ -487,9 +518,9 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
                 (area for source in r.build.sources if (area := getattr(source, "area", None))),
                 None,
             ),
-            "vat": next(
-                (float(m.rate) for m in r.build.price_modifiers if isinstance(m, Vat)), None
-            ),
+            "vat": site_vat(r),
+            # The grid tariff's source, credited under the price card (D13 §6.1, D12 §5.13).
+            "credit": tariff_credit(r),
         },
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
@@ -778,6 +809,8 @@ class SiteCostSensor(_SiteMoneySensor):
         snapshot = self.snapshot
         status = None if snapshot is None else snapshot.accounting
         return {
+            # D11 §5.8, D12 §5.13: the month's cost by party.
+            "by_party": None if status is None else dict(status.by_party.get("cost") or {}),
             "energy_cost": None if status is None else money_text(status.energy_cost),
             "export_credit": None if status is None else money_text(status.export_credit),
             "capacity_fee": None if status is None else money_text(status.capacity_fee),
@@ -809,6 +842,8 @@ class SiteSavingsSensor(_SiteMoneySensor):
         snapshot = self.snapshot
         status = None if snapshot is None else snapshot.accounting
         return {
+            # D11 §5.8, D12 §5.13: the month's savings by party.
+            "by_party": None if status is None else dict(status.by_party.get("savings") or {}),
             "energy_savings": None if status is None else money_text(status.energy_savings),
             "capacity_savings": None if status is None else money_text(status.capacity_savings),
             "counterfactual_cost": None if status is None else money_text(status.cf_cost),

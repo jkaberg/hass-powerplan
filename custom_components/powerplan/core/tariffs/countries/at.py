@@ -8,6 +8,7 @@ MODULE = register(
         code="AT",
         name="Austria",
         currency="EUR",
+        time_zones=("Europe/Vienna",),
         vat=tedb("20"),
         tedb="AT",
         zones=(Zone("jungholz_mittelberg", "Jungholz, Mittelberg", vat=tedb("19")),),

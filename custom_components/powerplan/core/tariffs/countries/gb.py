@@ -23,6 +23,7 @@ MODULE = register(
         code="GB",
         name="United Kingdom",
         currency="GBP",
+        time_zones=("Europe/London", "Europe/Belfast"),
         vat=(
             Rate(None, Decimal("0.05"), NOTICE),
             Rate(date(2026, 10, 1), Decimal(0), BRIEF),

@@ -98,6 +98,8 @@ SAME_IN_BOTH = frozenset(
         "September",
         "November",
         "Norgespris",  # the state's fixed-price scheme, a name (D1 §6)
+        "Strømstøtte",  # the state's subsidy, a name (D13 §4)
+        "{name} {amount}",  # a levy's own name and amount, data in both (D13 §6 step 3)
         # Nord Pool areas whose region is spelled alike in both (CTL-9)
         "SE1 – Luleå",
         "SE2 – Sundsvall",
@@ -548,26 +550,27 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            # Tensio's copy prices the day/night charge and Norway's module the VAT
-            # and levies, so none is offered (D-0430, INV-71); their screens are
-            # walked on the price-only branch below, in a country with no module.
-            "modifiers": {
-                "modifiers": [
-                    k
-                    for k in modifiers.keys()  # noqa: SIM118
-                    if k not in ("export_price", "tou_schedule", "levy", "vat")
-                ]
-            },
-            # Every add-on ticked: the required fields with no default (D8 §9
-            # 21 (a)) each need one row or one number to get past their step.
-            "modifier_fixed_price": {"price": 40},
-            "modifier_subsidy_threshold": {"threshold": 90},
+            # The supplier's additions only (D13 §6 step 2a, INV-74): every one ticked,
+            # and the required fields with no default (D8 §9 21 (a)) answered.
+            "modifiers": {"modifiers": site_steps.offered_modifiers()},
             "modifier_cumulative_tier": {"tiers": [{"price": 100}]},
             "modifier_day_type": {"rates": [{"type": "weekday", "price": 50}]},
-            "modifier_tou_schedule": {"periods": [{"price": 60}]},
+            "modifier_supplier_tou": {"periods": [{"price": 60}]},
+            "state": {"schemes": ["stromstotte"]},
             "export": {"mode": "spot_minus"},
             "carriers": {"carriers": [str(c) for c in Carrier if c is not Carrier.ELECTRICITY]},
             "tariff": {"preset": "no/tensio-ts"},
+        },
+    ),
+    "full_norgespris": (
+        {"country": "NO"},
+        {
+            "user": {"next_step_id": "full"},
+            "name": {"name": "Hjemme"},
+            "tariff": {"preset": "no/tensio-ts"},
+            # Norgespris is the agreement: its price is asked, strømstøtte is not.
+            "prices": {"source": "norgespris"},
+            "modifier_fixed_price": {"price": 40},
         },
     ),
     "full_not_listed": (
@@ -625,9 +628,8 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "prices": {"source": "fixed"},
             # Required, no default (D8 §9 21 (a)): nothing to derive it from.
             "prices_fixed": {"price": 100},
-            "modifiers": {"modifiers": ["vat", "tou_schedule", "levy"]},
-            "modifier_levy": {"amount": 7},
-            "modifier_tou_schedule": {"periods": [{"price": 60}]},
+            # No module: the VAT is asked in the state step (D13 §9.1, 1c-prime).
+            "state": {"vat": 13},
         },
     ),
     "fuse_only": (

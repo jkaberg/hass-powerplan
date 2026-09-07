@@ -508,6 +508,9 @@ _ROWS: Final[Mapping[str, _Rows]] = {
     "modifier_tou_schedule.periods": _Rows(
         _period_fields, "price", _periods_to_rows, _periods_from_rows
     ),
+    "modifier_supplier_tou.periods": _Rows(
+        _period_fields, "price", _periods_to_rows, _periods_from_rows
+    ),
     "modifier_cumulative_tier.tiers": _Rows(
         _tier_fields, "price", _tiers_to_rows, _tiers_from_rows
     ),

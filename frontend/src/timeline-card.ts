@@ -18,6 +18,8 @@ import { fetchStatistics, followPeriod, gridHours, kwhScale, monthRanking, type 
 import { cssVar, type HomeAssistant, timeZone } from "./ha";
 import { ppStyles, tooltipStyle } from "./styles";
 import {
+  PARTIES,
+  partyStack,
   countingDays,
   currencyWord,
   type DayPeak,
@@ -459,7 +461,25 @@ export class PowerplanTimelineCard extends HTMLElement {
       items.push({ name: labels.limit ?? "", color: this.css("--error-color", "#db4437"), swatch: "line", series: true });
     }
     items.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
+    // D12 §5.13: the stack's parties, in the household's words, where the price has more than one.
+    if (this.slots.some((slot) => slot.parties.length > 1)) {
+      const names: Record<string, string | undefined> = {
+        grid: labels.party_grid,
+        supplier: labels.party_supplier,
+        state: labels.party_state,
+      };
+      for (const party of PARTIES) {
+        items.push({ name: names[party] ?? party, color: this.partyColor(party) });
+      }
+    }
     return items;
+  }
+
+  /** D12 §5.13: the parties in HA's energy palette. */
+  private partyColor(party: string): string {
+    if (party === "grid") return this.css("--energy-grid-consumption-color", "#488fc2");
+    if (party === "state") return this.css("--energy-gas-color", "#8e021b");
+    return this.css("--energy-non-fossil-color", "#0f9d58");
   }
 
   private drawLegend(items: LegendEntry[]): void {
@@ -812,6 +832,21 @@ export class PowerplanTimelineCard extends HTMLElement {
         const r = [index === 0 ? 6 : 0, index === last ? 6 : 0, index === last ? 6 : 0, index === 0 ? 6 : 0];
         const shape = { x: x0!, y: y0!, width, height: y1! - y0!, r };
         const children: Record<string, unknown>[] = [{ type: "rect", shape, style: { fill: withAlpha(primary, api.value(3)) } }];
+        // D12 §5.13: the price by party, grid at the bottom, each by its share.
+        const parts = runs[index]?.parties ?? [];
+        if (parts.length > 1) {
+          const sum = parts.reduce((total, part) => total + Math.abs(part.value), 0);
+          let bottom = y1!;
+          for (const part of parts) {
+            const height = sum > 0 ? ((y1! - y0!) * Math.abs(part.value)) / sum : 0;
+            bottom -= height;
+            children.push({
+              type: "rect",
+              shape: { x: x0!, y: bottom, width, height },
+              style: { fill: withAlpha(this.partyColor(part.party), api.value(3)) },
+            });
+          }
+        }
         if (api.value(4) && hatch) children.push({ type: "rect", shape, style: { fill: hatch } });
         if (width >= 34) {
           children.push({
@@ -1059,7 +1094,7 @@ export class PowerplanTimelineCard extends HTMLElement {
       // The price strip: the forecast's slots, else hourly means without a first partial hour.
       const priceSlots: TimelineSlot[] = covered
         ? forecast
-            .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known" }))
+            .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known", parties: partyStack(slot) }))
             .filter((slot) => slot.end > start && slot.start < end)
             .map((slot) => ({ ...slot, hours: (slot.end - slot.start) / HOUR_MS, ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {} }))
         : (() => {
@@ -1068,7 +1103,7 @@ export class PowerplanTimelineCard extends HTMLElement {
             // A statistic with no row the hour before began inside its first hour: that mean is partial.
             const kept = first && first.start >= start ? rows.slice(1) : rows.filter((row) => row.start >= start);
             return kept.map((row) => ({
-              start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
+              start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false, parties: [],
               ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {},
             }));
           })();

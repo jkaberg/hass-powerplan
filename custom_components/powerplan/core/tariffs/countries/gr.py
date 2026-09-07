@@ -20,6 +20,7 @@ MODULE = register(
         code="GR",
         name="Greece",
         currency="EUR",
+        time_zones=("Europe/Athens",),
         vat=tedb("6"),
         tedb="EL",
         zones=(

@@ -50,8 +50,8 @@ async def _full_site(
     """Build a full-path site through the real onboarding flow; return its entry id."""
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _through_prices(hass, result, nordpool_entry)
     result = await _followups(hass, result)
     result = await _tail(hass, result)
     result = await _answer(hass, result, start_in_observe=not active)
@@ -81,14 +81,16 @@ async def _to_review(
     result = await _answer(hass, result, device=ams_meter)
     result = await _answer(hass, result, confirm="ok")
     result = await _answer(hass, result, **(electrical or ELECTRICAL_NO))
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result)  # the postcode, skipped
     result = await _answer(hass, result, preset="no/tensio-ts")
     result = await _answer(hass, result, confirm="yes")
     result = await _answer(hass, result, target="auto", risk="free_ride")
-    result = await _answer(hass, result, mode="none")
+    result = await _answer(hass, result, source="nordpool_action")
+    result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, modifiers=["spot_scale"])
     result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, schemes=[])
+    result = await _answer(hass, result, mode="none")
     result = await _answer(hass, result, carriers=[])
     result = await _answer(hass, result, mode="auto")
     result = await _answer(hass, result, persons=["person.joel", "person.kari"])
@@ -138,6 +140,10 @@ async def test_reconfigure_pre_fills_the_meter_device_electrical_and_the_price_s
     assert result["step_id"] == "electrical"
     assert result["data_schema"]({})["main_fuse_a"] == "63"
     result = await _answer(hass, result, **ELECTRICAL_NO)
+    result = await _answer(hass, result)  # the postcode, skipped
+    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, confirm="yes")
+    result = await _answer(hass, result, target="auto", risk="free_ride")
 
     assert result["step_id"] == "prices"
     assert result["data_schema"]({})["source"] == "nordpool_action"
@@ -160,8 +166,8 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_every_add_on(
     result = await _answer(hass, result, device=ams_meter)
     result = await _answer(hass, result, confirm="ok")
     result = await _answer(hass, result, **ELECTRICAL_NO)
-    result = await _answer(hass, result, source="nordpool_action")
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    assert result["step_id"] == "postcode"
+    result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff"
     assert result["data_schema"]({})["preset"] == "no/tensio-ts"
@@ -173,14 +179,19 @@ async def test_reconfigure_pre_fills_the_tariff_target_and_every_add_on(
     assert result["data_schema"]({})["risk"] == "free_ride", "the site's own, not the new default"
     result = await _answer(hass, result, target="auto", risk="free_ride")
 
-    assert result["step_id"] == "export"
-    result = await _answer(hass, result, mode="none")
+    assert result["step_id"] == "prices"
+    result = await _answer(hass, result, source="nordpool_action")
+    result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "modifiers"
     assert result["data_schema"]({})["modifiers"] == ["spot_scale"]
     result = await _answer(hass, result, modifiers=["spot_scale"])
     assert result["step_id"] == "modifier_spot_scale"
     assert result["data_schema"]({})["mult"] == 1.1, "the add-on's stored option, pre-filled"
     result = await _answer(hass, result, mult=1.1)
+    assert result["step_id"] == "state"
+    result = await _answer(hass, result, schemes=[])
+    assert result["step_id"] == "export"
+    result = await _answer(hass, result, mode="none")
     assert result["step_id"] == "carriers"
     assert result["data_schema"]({})["carriers"] == []
     result = await _answer(hass, result, carriers=[])

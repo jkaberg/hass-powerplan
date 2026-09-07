@@ -15,6 +15,7 @@ MODULE = register(
         code="DE",
         name="Germany",
         currency="EUR",
+        time_zones=("Europe/Berlin", "Europe/Busingen"),
         vat=tedb("19"),
         tedb="DE",
         zones=(

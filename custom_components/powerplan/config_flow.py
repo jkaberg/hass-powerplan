@@ -24,9 +24,11 @@ Three things are deliberate:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Final
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
@@ -38,6 +40,7 @@ from .const import (
     CONF_NAME,
     CONF_NOTIFICATIONS,
     CONF_PATH,
+    CONF_POSTCODE,
     CONF_PRESENCE,
     CONF_PRICES,
     CONF_QUIET_HOURS,
@@ -59,12 +62,15 @@ from .const import (
     OnboardingPath,
 )
 from .core.pricing import Carrier, modifiers
-from .core.tariffs import countries
+from .core.tariffs import countries, household
+from .core.tariffs.household import TaxZone
 from .core.tariffs.rules import loader
+from .core.tariffs.sources import Credit, Fetched, Operator, SourceError, renew_at
 from .flow import device_pick, review, steps
 from .flow.circuit import CircuitSubentryFlow
 from .flow.group import GroupSubentryFlow
 from .flow.load import LoadSubentryFlow
+from .flow.options import StateOverridesFlow
 from .flow.questionnaire import (
     DONT_KNOW,
     implausible_price,
@@ -74,12 +80,24 @@ from .flow.questionnaire import (
     seconds_of,
     value_of,
 )
-from .flow.text import PRESET_CUSTOM, PRESET_UNKNOWN, Text, target_label, tariff_table
+from .flow.text import (
+    PRESET_CUSTOM,
+    PRESET_UNKNOWN,
+    Text,
+    credit_note,
+    plan_lines,
+    state_line,
+    target_label,
+    tariff_table,
+)
 from .flow.zone import ZoneSubentryFlow
+from .providers import tariffs as tariff_sources
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
+from .providers.tariffs import directory
+from .providers.tariffs import ladder as tariff_ladder
 from .runtime import step_index
-from .storage import migrate_tariff
+from .storage import NO_PEAK_COPY, migrate_tariff
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Mapping
@@ -103,6 +121,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     MINOR_VERSION = 2
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the state overrides flow: a household that knows better (D13 O4, D8 §5.17)."""
+        return StateOverridesFlow()
 
     def __init__(self) -> None:
         """Start with an empty site and the environment's own answers."""
@@ -156,6 +180,20 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._phase_suggestion: float | None = None
         self._notifications: dict[str, Any] = {}
         self._quiet: list[str] = []
+        #: The price by party (D13 §6): the postcode's place and tax zone, the
+        #: operators the country's sources list, the chosen operator and product,
+        #: what a source gave and the gaps the household confirmed, the schemes
+        #: the household is in, and a VAT typed where no module knows one.
+        self._postcode: str | None = None
+        self._zone: TaxZone | None = None
+        self._operators: dict[str, Operator] = {}
+        self._operator: Operator | None = None
+        self._product: str | None = None
+        self._fetched: Fetched | None = None
+        self._confirmed: dict[str, Any] = {}
+        self._schemes: list[str] = []
+        self._typed_vat: Decimal | None = None
+        self._unreachable = False
 
     # ----------------------------------------------------------------- helpers
 
@@ -305,6 +343,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 for index, value in enumerate(tariff.get("contracted_kw") or ())
             }
             await self._apply_tariff()
+        self._restore_price(data)
 
         self._presence = dict(data.get(CONF_PRESENCE) or {})
         self._notifications = dict(data.get(CONF_NOTIFICATIONS) or {})
@@ -406,7 +445,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     def _electrical_form(
         self, values: Mapping[str, Any], errors: Mapping[str, str] | None = None
     ) -> ConfigFlowResult:
-        country = values.get("country") or self._country
+        # Pre-selected from HA's time zone where HA has no country (D13 step 0-prime).
+        country = (
+            values.get("country")
+            or self._country
+            or countries.for_time_zone(self._timezone or self.hass.config.time_zone)
+        )
         self._phase_suggestion = steps.phase_limit_suggestion(country, values)
         return self._form(
             "electrical",
@@ -435,6 +479,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._electrical = steps.electrical_data(answers, profile)
         if self._path is OnboardingPath.FUSE_ONLY:
             return await self.async_step_presence()
+        if self._path is OnboardingPath.FULL:
+            # The grid company first, then the supplier, then the state (D13 §6).
+            return await self.async_step_postcode()
         return await self.async_step_prices()
 
     # ------------------------------------------------------------------- meter
@@ -617,31 +664,35 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self._after_source()
 
     async def _after_source(self) -> ConfigFlowResult:
-        """Go on to the grid company, then the follow-ups (D8 §5.15; the grid charge after it, HUB-3)."""
-        if self._path is OnboardingPath.FULL:
-            return await self.async_step_tariff()
-        return await self.async_step_export()
+        """Go on to what the supplier adds, "in addition to the grid tariff" (D13 §6 step 2a)."""
+        return await self.async_step_modifiers()
 
     async def async_step_modifiers(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask "Er strømavtalen din spesiell?" - the price add-ons, a follow-up (D1 §6)."""
-        included = self._covered()
+        """Ask "Hva legger strømleverandøren på, i tillegg til nettleien?" (D13 §6 step 2a).
+
+        Opens by naming what the grid company's tariff already covers, and offers
+        only the supplier's own lines (INV-74).
+        """
         if user_input is None:
-            chosen = self._modifier_keys or None
-            also = ("fixed_price",) if self._agreement == steps.AGREEMENT_NORGESPRIS else ()
             text = await Text.load(self.hass)
             return self._form(
                 "modifiers",
-                steps.modifiers_schema(self._country, chosen, also=also, included=included),
+                steps.modifiers_schema(self._modifier_keys or None),
                 placeholders={
-                    "included": text.join(text.word("modifier", key) for key in included)
-                    or text.word("text", "none")
+                    "operator": self._operator_name(text),
+                    "covered": text.join(text.word("modifier", key) for key in self._covered())
+                    or text.word("text", "none"),
                 },
             )
-        ticked = set(user_input.get("modifiers") or []) - set(included)
-        # Asked in the order they are listed, not the order they were ticked (HUB-3).
-        self._modifier_keys = [key for key in steps.offered_modifiers() if key in ticked]
+        ticked = set(user_input.get("modifiers") or [])
+        # Asked in the order they are listed, not the order they were ticked (HUB-3);
+        # Norgespris is the agreement itself, so its price is asked first (D13 §6 step 2).
+        keys = [key for key in steps.offered_modifiers() if key in ticked]
+        if self._agreement == steps.AGREEMENT_NORGESPRIS:
+            keys = ["fixed_price", *keys]
+        self._modifier_keys = keys
         self._modifier_index = 0
         self._modifiers = []
         return await self._next_modifier()
@@ -651,7 +702,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             key = self._modifier_keys[self._modifier_index]
             step: _Step = getattr(type(self), f"async_step_modifier_{key}")
             return await step(self, None)
-        return await self.async_step_carriers()
+        return await self.async_step_state()
 
     async def _modifier_step(self, key: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
         """One step per add-on, `modifier_<key>`, rendered from its schema (D1 §6).
@@ -692,6 +743,68 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._modifier_index += 1
         return await self._next_modifier()
 
+    async def async_step_state(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ask "Hvilke støtteordninger gjelder deg?" - and state the VAT and levies (D13 §6 step 3).
+
+        The rates are the country module's for the household's zone, stated with
+        their source and never asked (INV-71); the step asks only the schemes, and
+        hides one the agreement excludes (strømstøtte with Norgespris).
+        """
+        schemes = self._offered_schemes()
+        if user_input is None:
+            text = await Text.load(self.hass)
+            return self._form(
+                "state",
+                steps.state_schema(
+                    schemes,
+                    self._schemes,
+                    ask_vat=self._asks_vat(),
+                    vat=None if self._typed_vat is None else float(self._typed_vat * 100),
+                ),
+                placeholders={
+                    "rates": state_line(text, self._draft_price(), await self._local_today())
+                },
+            )
+        self._schemes = [key for key in user_input.get("schemes") or () if key in schemes]
+        if "vat" in user_input:
+            self._typed_vat = Decimal(str(user_input["vat"] or 0)) / 100
+        return await self.async_step_export()
+
+    def _offered_schemes(self) -> list[str]:
+        module = countries.get(self._country)
+        if module is None:
+            return []
+        kind = "state_fixed" if self._agreement == steps.AGREEMENT_NORGESPRIS else "spot"
+        return [scheme.key for scheme in module.schemes if kind not in scheme.excludes]
+
+    def _asks_vat(self) -> bool:
+        """VAT is asked with typed figures only where no module knows the rate (§9.1, 1c-prime)."""
+        module = countries.get(self._country)
+        return module is None or not module.vat
+
+    def _draft_price(self) -> household.HouseholdPrice:
+        """Return the copy as the answers so far make it, for the summary and the state step."""
+        zone = self._zone or TaxZone(self._country or "")
+        if self._fetched is not None:
+            grid = self._fetched.grid
+        elif self._copy is not None:
+            typed = PRESET_CUSTOM in (self._preset_file, self._preset_choice) or bool(
+                self._copy.get("assumed")
+            )
+            grid = household.from_preset(self._copy, source="flow", zone=zone, typed=typed).grid
+        else:
+            grid = household.from_preset(
+                NO_PEAK_COPY | {"currency": self._currency}, source="none", zone=zone, typed=True
+            ).grid
+        overrides = {"vat": self._typed_vat} if self._typed_vat is not None else {}
+        return household.HouseholdPrice(
+            grid=grid,
+            supplier=household.SupplierContract(),
+            state=household.StateTerms(
+                zone=zone, overrides=overrides, schemes=tuple(self._schemes)
+            ),
+        )
+
     async def async_step_export(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Ask "Selger du strøm tilbake?" - whether, and how, an exported kWh is paid (D1 §6).
 
@@ -703,7 +816,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         mode = str(user_input.get("mode", steps.EXPORT_NONE))
         if mode == steps.EXPORT_NONE:
             self._export = None
-            return await self.async_step_modifiers()
+            return await self.async_step_carriers()
         if (self._export or {}).get("mode") != mode:
             self._export = {"key": "export_price", "options": {}, "mode": mode}
         if not steps.EXPORT_FIELDS.get(mode, ("amount",)):
@@ -730,7 +843,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         options = value_of(schema, answers, prefix="export", currency=self._currency)
         options["mode"] = mode
         self._export = {"key": "export_price", "options": options, "mode": mode}
-        return await self.async_step_modifiers()
+        return await self.async_step_carriers()
 
     async def async_step_carriers(
         self, user_input: dict[str, Any] | None = None
@@ -775,25 +888,83 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
     # ------------------------------------------------------------------ tariff
 
+    async def async_step_postcode(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask "Hva er postnummeret ditt?" - optional; the tax zone from it (D13 §6 step 0, O17).
+
+        Shown only where the country has an official directory; the postcode goes
+        there and nowhere else. Skipped, or unreachable, and the zone is asked with
+        the grid company instead (§13).
+        """
+        module = countries.get(self._country)
+        if module is None or module.postcode is None:
+            return await self.async_step_tariff()
+        if user_input is None:
+            return self._form("postcode", steps.postcode_schema({"postcode": self._postcode}))
+        postcode = str(user_input.get("postcode") or "").strip()
+        if not postcode:
+            self._postcode = None
+            return await self.async_step_tariff()
+        if not directory.valid(module, postcode):
+            return self._form(
+                "postcode",
+                steps.postcode_schema(user_input),
+                errors={"postcode": "postcode_invalid"},
+            )
+        try:
+            place = await directory.place_for(tariff_sources.Http(self.hass), module, postcode)
+        except SourceError as err:
+            _LOGGER.info("postcode directory could not say: %s", err)
+            self._postcode = None
+            return await self.async_step_tariff()
+        self._postcode = postcode
+        self._zone = TaxZone(
+            country=module.code,
+            key=module.zone_of(place.municipality, place.county),
+            settled="postcode",
+        )
+        return await self.async_step_tariff()
+
     async def async_step_tariff(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Ask "Hvilket nettselskap har du?" - the preset select of D2 §6."""
+        """Ask "Hvilket nettselskap har du?" - the country's grid companies, fetched now (D13 §6 1).
+
+        The operators the country's sources list, then the rule files a release
+        still ships; "not listed" and "enter it myself" pinned last. The sources
+        are credited under the list (§6.1).
+        """
+        text = await Text.load(self.hass)
         if user_input is None:
             self._presets = await self.hass.async_add_executor_job(
                 steps.discover_presets, self._country
             )
+            await self._list_operators()
             return self._form(
                 "tariff",
                 steps.tariff_schema(
                     country=self._country,
-                    presets=self._presets,
-                    chosen=self._preset_file,
-                    text=await Text.load(self.hass),
+                    presets=[
+                        *self._presets,
+                        *((key, op.name) for key, op in self._operators.items()),
+                    ],
+                    chosen=self._operator_choice(),
+                    text=text,
                     ask_country=self._asks_country,
                 ),
+                errors={"base": "tariff_source_unreachable"} if self._unreachable else None,
+                placeholders={"credit": credit_note(text, self._credits())},
             )
         country = user_input.get("country") or self._country
         self._electrical["country"] = country
         self._preset_choice = str(user_input["preset"])
+        operator = self._operators.get(self._preset_choice)
+        if operator is not None:
+            self._operator = operator
+            if len(operator.products) > 1:
+                return await self.async_step_tariff_product()
+            self._product = operator.products[0].key if operator.products else None
+            return await self._after_product()
+        self._operator, self._fetched = None, None
         chosen = steps.preset_file(self._preset_choice, country)
         if chosen != self._preset_file:
             # Another company's table: the last one's numbers are not this one's.
@@ -804,6 +975,163 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_tariff_steps()
         await self._apply_tariff()
         return await self.async_step_tariff_preset()
+
+    async def _list_operators(self) -> None:
+        """Fetch the operators of the country's sources, once per flow (§5.2 rule 2)."""
+        if self._operators or self._unreachable:
+            return
+        http = tariff_sources.Http(self.hass)
+        found = False
+        for cls in tariff_sources.for_country(self._country):
+            try:
+                listed = await cls().operators(http)
+            except SourceError as err:
+                _LOGGER.info("tariff source %s lists no operators: %s", cls.key, err)
+                continue
+            found = True
+            for operator in listed:
+                self._operators.setdefault(f"{OPERATOR_PREFIX}{operator.name}", operator)
+        self._unreachable = bool(tariff_sources.for_country(self._country)) and not found
+
+    def _credits(self) -> list[Credit]:
+        """Return the credit of every source the country's ladder can use (§6.1)."""
+        return [cls.credit for cls in tariff_sources.for_country(self._country) if cls.credit]
+
+    def _operator_choice(self) -> str | None:
+        """Return the list's answer for the site's current tariff: its operator, or its file."""
+        if self._operator is not None:
+            return f"{OPERATOR_PREFIX}{self._operator.name}"
+        return self._preset_file
+
+    def _operator_name(self, text: Text) -> str:
+        """Name the grid company as the flow shows it."""
+        if self._operator is not None:
+            return self._operator.name
+        if self._spec is not None:
+            return self._tariff_name(text)
+        return text.word("text", "none")
+
+    async def async_step_tariff_product(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask "Hvilken nettleie har du hos {operator}?" - only when it has several (step 1a)."""
+        assert self._operator is not None
+        options = [(product.key, product.name) for product in self._operator.products]
+        if user_input is None:
+            return self._form(
+                "tariff_product",
+                steps.choice_schema("product", options, self._product),
+                placeholders={"operator": self._operator.name},
+            )
+        self._product = str(user_input["product"])
+        return await self._after_product()
+
+    async def _after_product(self) -> ConfigFlowResult:
+        assert self._operator is not None
+        if len(self._operator.zones) > 1 and (
+            self._zone is None or self._zone.settled != "postcode"
+        ):
+            return await self.async_step_tariff_zone()
+        return await self._fetch_operator()
+
+    async def async_step_tariff_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask "Hvilket fylke bor du i?" - only where the company spans zones (step 1b)."""
+        assert self._operator is not None
+        options = [(key, self._zone_name(key)) for key in self._operator.zones]
+        if user_input is None:
+            return self._form(
+                "tariff_zone",
+                steps.choice_schema("zone", options, self._zone.key if self._zone else None),
+                placeholders={"operator": self._operator.name},
+            )
+        key = str(user_input["zone"]) or None
+        self._zone = TaxZone(country=self._country or "", key=key, settled="asked")
+        return await self._fetch_operator()
+
+    def _zone_name(self, key: str) -> str:
+        """Name a tax zone as the law does; the national rates by the country's name."""
+        module = countries.get(self._country)
+        if module is None:
+            return key
+        zone = module.zone(key or None)
+        return zone.covers if zone is not None else module.name
+
+    async def _fetch_operator(self) -> ConfigFlowResult:
+        """Fetch the chosen company's tariff down the ladder (INV-75); its gaps next (step 1c)."""
+        assert self._operator is not None
+        try:
+            resolved = await tariff_ladder.resolve(
+                tariff_sources.Http(self.hass),
+                self._country or "",
+                self._operator.key,
+                self._product,
+                answers=self._confirmed,
+            )
+        except SourceError as err:
+            _LOGGER.info("no tier answered for %s: %s", self._operator.name, err)
+            self._unreachable = True
+            self._operators.clear()
+            self._operator = None
+            return await self.async_step_tariff()
+        self._fetched = resolved.fetched
+        if self._fetched.questions:
+            return await self.async_step_tariff_confirm()
+        await self._apply_fetched()
+        return await self.async_step_tariff_preset()
+
+    async def async_step_tariff_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """One question per field the source left out, the default pre-selected (§5.6, step 1c)."""
+        assert self._fetched is not None
+        questions = self._fetched.questions
+        if user_input is None:
+            return self._form(
+                "tariff_confirm",
+                steps.questions_schema(questions, self._confirmed),
+                placeholders={
+                    "operator": self._operator.name if self._operator else "",
+                    "why": "\n".join(f"- {question.why}" for question in questions),
+                },
+            )
+        self._confirmed = {**self._confirmed, **user_input}
+        # The copy is built with the household's answers: fetched again, from the cache.
+        return await self._fetch_confirmed()
+
+    async def _fetch_confirmed(self) -> ConfigFlowResult:
+        assert self._operator is not None
+        try:
+            resolved = await tariff_ladder.resolve(
+                tariff_sources.Http(self.hass),
+                self._country or "",
+                self._operator.key,
+                self._product,
+                answers=self._confirmed,
+            )
+        except SourceError:
+            self._unreachable = True
+            return await self.async_step_tariff()
+        self._fetched = resolved.fetched
+        await self._apply_fetched()
+        return await self.async_step_tariff_preset()
+
+    async def _apply_fetched(self) -> None:
+        """Take the fetched copy as the tariff this site keeps; the summary reads it."""
+        assert self._fetched is not None
+        price = household.HouseholdPrice(
+            grid=self._fetched.grid,
+            supplier=household.SupplierContract(),
+            state=household.StateTerms(zone=self._zone or TaxZone(self._country or "")),
+        )
+        self._preset_file = None
+        self._copy = loader.dump(household.spec(price))
+        self._raw = self._copy
+        self._spec = loader.from_raw(self._copy, source="flow")
+        today = await self._local_today()
+        self._version = self._spec.version_at(today)
+        self._summary = loader.summarize(self._spec, today)
 
     async def _apply_tariff(self) -> None:
         """Build the tariff this site keeps from the preset and the household's numbers."""
@@ -820,19 +1148,24 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask the steps from the bill - the country's rule has no numbers of its own (D2 §6)."""
+        ask_vat = self._asks_vat()
         if user_input is None:
             return self._form(
-                "tariff_steps", steps.steps_schema(self._currency, values=self._steps)
+                "tariff_steps",
+                steps.steps_schema(self._currency, values=self._steps, ask_vat=ask_vat),
             )
         try:
             rows = steps.step_rows(user_input)
         except steps.StepError as err:
             return self._form(
                 "tariff_steps",
-                steps.steps_schema(self._currency, values=user_input),
+                steps.steps_schema(self._currency, values=user_input, ask_vat=ask_vat),
                 errors={err.field: err.key},
             )
-        self._steps = dict(user_input)
+        self._steps = {key: value for key, value in user_input.items() if key != "vat"}
+        if ask_vat:
+            # Typed figures are incl. VAT; where no module knows the rate, it is asked (1c-prime).
+            self._typed_vat = Decimal(str(user_input.get("vat") or 0)) / 100
         if not rows:
             # No bill at hand: the safe default is no capacity component, as
             # `custom` - the summary says so, and a reconfigure can add it later.
@@ -846,6 +1179,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     def _tariff_name(self, text: Text) -> str:
         """Name the tariff as the household chose it: the operator's own name, or the escape hatch."""
         assert self._spec is not None
+        if self._operator is not None:
+            return self._operator.name
         if self._preset_choice == PRESET_UNKNOWN:
             return text.word("text", "preset_unknown")
         if PRESET_CUSTOM in (self._preset_choice, self._preset_file):
@@ -867,6 +1202,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                     "name": self._tariff_name(text),
                     "table": tariff_table(text, self._summary),
                     "source": self._summary.source_url or text.word("text", "none"),
+                    "plan": plan_lines(text, self._draft_price(), await self._local_today()),
+                    "credit": credit_note(text, self._credits()) if self._fetched else "",
                 },
             )
         if user_input.get("confirm") == steps.TARIFF_NO:
@@ -903,7 +1240,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_tariff_bills()
         if steps.needs_limits(self._version):
             return await self.async_step_tariff_limits()
-        return await self.async_step_export()
+        return await self.async_step_prices()
 
     async def async_step_tariff_bills(
         self, user_input: dict[str, Any] | None = None
@@ -917,7 +1254,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._bills = dict(user_input)
         if steps.needs_limits(self._version):
             return await self.async_step_tariff_limits()
-        return await self.async_step_export()
+        return await self.async_step_prices()
 
     async def async_step_tariff_limits(
         self, user_input: dict[str, Any] | None = None
@@ -931,7 +1268,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._limits = dict(user_input)
         # The household's contract, not the starting value, is what the site keeps.
         await self._apply_tariff()
-        return await self.async_step_export()
+        return await self.async_step_prices()
 
     # ------------------------------------------------- presence, notifications
     # The hard-limit step is gone: its answer was read by nothing, and the grense
@@ -1035,25 +1372,63 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         # The tariff becomes the copy by party the same way an older entry is
         # migrated (D13 §3, §10); what the household chose here needs no review.
-        data, _ = migrate_tariff(assembled, dt_util.now().date())
-        if data.get(CONF_TARIFF):
-            data[CONF_TARIFF] = {**data[CONF_TARIFF], "review": []}
+        today = dt_util.now().date()
+        data, _ = migrate_tariff(assembled, today)
+        tariff = data.get(CONF_TARIFF)
+        if tariff and tariff.get("price"):
+            price = household.from_json(tariff["price"])
+            if self._fetched is not None:
+                # What the source gave, as published, with its basis (INV-71), and
+                # renewed from here on (D13 §10).
+                grid = replace(
+                    self._fetched.grid,
+                    provenance=replace(self._fetched.grid.provenance, fetched=today),
+                )
+                price = replace(price, grid=replace(grid, renew_at=renew_at(grid, today)))
+                tariff["preset_file"] = None
+            overrides = dict(price.state.overrides)
+            if self._typed_vat is not None:
+                overrides["vat"] = self._typed_vat
+            state = replace(
+                price.state,
+                zone=self._zone or price.state.zone,
+                schemes=tuple(self._schemes),
+                overrides=overrides,
+            )
+            price = replace(price, state=state, confirmed=dict(self._confirmed))
+            data[CONF_TARIFF] = {**tariff, "price": household.to_json(price), "review": []}
+        if self._postcode:
+            data[CONF_POSTCODE] = self._postcode
         return data
 
-    def _covered(self) -> list[str]:
-        """Return the add-ons the tariff copy and the state stage already price (D13 §8).
+    def _restore_price(self, data: Mapping[str, Any]) -> None:
+        """Restore the answers by party a reconfigure starts from (D13 §6)."""
+        stored = (data.get(CONF_TARIFF) or {}).get("price")
+        if not stored:
+            return
+        state = stored.get("state") or {}
+        zone = state.get("zone") or {}
+        if zone.get("settled") in ("postcode", "asked"):
+            self._zone = TaxZone(
+                country=zone.get("country") or "", key=zone.get("key"), settled=zone["settled"]
+            )
+        self._schemes = list(state.get("schemes") or ())
+        self._confirmed = dict(stored.get("confirmed") or {})
+        self._postcode = data.get(CONF_POSTCODE)
 
-        Not offered, since HA cannot grey out one option, and named in the step's
-        text instead (D-0430): the grid company's energy charge when the copy has
-        one, and VAT and levies wherever the country's module knows them (INV-71,
-        INV-74). An override the household kept stays offered, ticked.
+    def _covered(self) -> list[str]:
+        """Return what the grid company's tariff and the state already price (D13 §8, INV-74).
+
+        Named where the supplier step opens («Nettleien fra … er allerede med»): the
+        grid's energy charge when the copy has one, and VAT and levies where the
+        country's module knows them. None of them is offered there.
         """
         covered: list[str] = []
-        if (
-            self._path is OnboardingPath.FULL
-            and self._version is not None
-            and (self._version.energy_components.get("tou_schedule") or {}).get("periods")
-        ):
+        has_energy = (self._fetched is not None and bool(self._fetched.grid.energy)) or (
+            self._version is not None
+            and bool((self._version.energy_components.get("tou_schedule") or {}).get("periods"))
+        )
+        if self._path is OnboardingPath.FULL and has_energy:
             covered.append("tou_schedule")
         if self._path is not OnboardingPath.FUSE_ONLY:
             module = countries.get(self._country)
@@ -1061,7 +1436,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 covered.append("vat")
             if module is not None and module.levies:
                 covered.append("levy")
-        return [key for key in covered if key not in self._modifier_keys]
+        return covered
 
     async def async_step_review(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """State what powerplan derived and what happens first (INV-67)."""
@@ -1188,9 +1563,10 @@ def _carrier_step_for(carrier: str) -> _Step:
 
 # One step id per registered add-on and per carrier, from the registries: a new
 # modifier is one module and gets its own step, with its own strings (D1 §6).
-for _key in modifiers.keys():  # noqa: SIM118 - the registry's function
-    if _key != "export_price":
-        setattr(PowerplanConfigFlow, f"async_step_modifier_{_key}", _modifier_step_for(_key))
+# The supplier's additions, and Norgespris's price (D13 §6 steps 2, 2a): the grid's
+# and the state's add-ons are no screen of this flow any more (INV-74).
+for _key in (*steps.offered_modifiers(), "fixed_price"):
+    setattr(PowerplanConfigFlow, f"async_step_modifier_{_key}", _modifier_step_for(_key))
 for _carrier in Carrier:
     if _carrier is not Carrier.ELECTRICITY:
         setattr(
@@ -1198,3 +1574,7 @@ for _carrier in Carrier:
         )
 
 __all__ = ["PowerplanConfigFlow"]
+
+
+#: The grid-company list's value for an operator a source lists (never a file stem).
+OPERATOR_PREFIX: Final = "operator:"

@@ -17,10 +17,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
+from .core.tariffs.sources import SourceError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -38,6 +39,7 @@ SERVICE_SET_PRESENCE = "set_presence"
 SERVICE_RESET_WINDOW_ANCHOR = "reset_window_anchor"
 SERVICE_SET_PEAK = "set_peak"
 SERVICE_DUMP_STATE = "dump_state"
+SERVICE_REFRESH_TARIFF = "refresh_tariff"
 
 PRESENCE_MODES = ("auto", "home", "away", "vacation")
 
@@ -70,6 +72,7 @@ SCHEMAS: dict[str, vol.Schema] = {
         }
     ),
     SERVICE_DUMP_STATE: vol.Schema(_SITE),
+    SERVICE_REFRESH_TARIFF: vol.Schema(_SITE),
 }
 
 #: The services and whether they answer.
@@ -83,6 +86,7 @@ SERVICES: dict[str, SupportsResponse] = {
     SERVICE_RESET_WINDOW_ANCHOR: SupportsResponse.NONE,
     SERVICE_SET_PEAK: SupportsResponse.NONE,
     SERVICE_DUMP_STATE: SupportsResponse.ONLY,
+    SERVICE_REFRESH_TARIFF: SupportsResponse.OPTIONAL,
 }
 
 
@@ -167,6 +171,24 @@ def async_setup_services(hass: HomeAssistant) -> None:
         }
         return cast("ServiceResponse", {"sites": dumps})
 
+    async def refresh_tariff(call: ServiceCall) -> ServiceResponse:
+        """Fetch the grid tariff now and answer what changed (D13 §10); a failure changes nothing."""
+        answers: dict[str, Any] = {}
+        for runtime in runtimes_for(hass, call.data.get("site")):
+            try:
+                answers[runtime.entry.entry_id] = await runtime.async_renew_tariff("service")
+            except SourceError as err:
+                price = runtime.build.price
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="tariff_refresh_failed",
+                    translation_placeholders={
+                        "source": "" if price is None else price.grid.provenance.source,
+                        "reason": str(err),
+                    },
+                ) from err
+        return cast("ServiceResponse", {"sites": answers})
+
     handlers: dict[str, Callable[[ServiceCall], Coroutine[Any, Any, Any]]] = {
         SERVICE_REPLAN: replan,
         SERVICE_REBUILD_BASELINE: rebuild_baseline,
@@ -177,6 +199,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_RESET_WINDOW_ANCHOR: reset_window_anchor,
         SERVICE_SET_PEAK: set_peak,
         SERVICE_DUMP_STATE: dump_state,
+        SERVICE_REFRESH_TARIFF: refresh_tariff,
     }
     for name, handler in handlers.items():
         if hass.services.has_service(DOMAIN, name):

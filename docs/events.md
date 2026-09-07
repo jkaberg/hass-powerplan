@@ -28,6 +28,7 @@ PowerPlan fires an event on Home Assistant's event bus whenever something change
 | `powerplan_presence_changed` | Presence changed | `new`, `old`, `source` |
 | `powerplan_safe_mode` | Fallback mode | `entered`, `reason` |
 | `powerplan_baseline_ready` | Normal usage learned | `confidence` |
+| `powerplan_tariff_updated` | Grid tariff updated | `added`, `changed`, `fetched`, `kept`, `next_renewal`, `source` |
 <!-- generated:end events -->
 
 Every event also carries `site`, the home's name, and `entity_id`, the appliance's **Plan status** entity or the home's **Events** entity. The logbook uses `entity_id` to file the event under its appliance.
@@ -266,6 +267,17 @@ PowerPlan has learned your home's normal usage well enough to plan with, for the
 triggers:
   - trigger: event
     event_type: powerplan_baseline_ready
+```
+
+<a name="tariff_updated"></a>
+### Grid tariff updated
+
+PowerPlan fetched your grid company's tariff and it changed: `added` lists the new price periods by their start date, `changed` the corrected ones. It fires on the monthly refresh and on **Refresh the grid tariff**, only when something changed.
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: powerplan_tariff_updated
 ```
 
 <a name="event_entity"></a>

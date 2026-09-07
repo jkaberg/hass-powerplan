@@ -28,3 +28,10 @@ def get(code: str | None) -> CountryModule | None:
 def codes() -> tuple[str, ...]:
     """Return every registered country code, sorted."""
     return tuple(sorted(_REGISTRY))
+
+
+def for_time_zone(zone: str | None) -> str | None:
+    """Return the country whose module lists HA's time zone, for the flow's pre-selection (step 0-prime)."""
+    return next(
+        (code for code, module in sorted(_REGISTRY.items()) if zone in module.time_zones), None
+    )

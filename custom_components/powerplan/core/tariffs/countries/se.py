@@ -22,6 +22,7 @@ MODULE = register(
         code="SE",
         name="Sweden",
         currency="SEK",
+        time_zones=("Europe/Stockholm",),
         vat=tedb("25"),
         tedb="SE",
         levies=(Levy("energiskatt", (Rate(date(2026, 1, 1), Decimal("0.360"), ENERGISKATT),)),),

@@ -104,8 +104,8 @@
         }
       },
       "prices": {
-        "title": "What electricity contract do you have?",
-        "description": "PowerPlan needs tomorrow's prices to plan tonight.",
+        "title": "What contract do you have with your electricity supplier?",
+        "description": "Your supplier sells you the energy; your grid company's tariff comes on top. PowerPlan needs tomorrow's prices to plan tonight.",
         "data": {
           "source": "Contract"
         },
@@ -162,35 +162,13 @@
         }
       },
       "modifiers": {
-        "title": "Is your electricity contract special?",
-        "description": "Tick what your contract adds to the price; each asks its own question next. Already included from your grid company: {included}.",
+        "title": "What does your supplier add, on top of the grid tariff?",
+        "description": "The grid tariff from {operator} is already included: {covered}. Taxes and VAT come in the next step. Tick only what your contract with the supplier adds.",
         "data": {
-          "modifiers": "Added on top"
+          "modifiers": "Added by the supplier"
         },
         "data_description": {
-          "modifiers": "Everything that can come on top of the market price. Leave one out and it is simply not part of your price."
-        }
-      },
-      "modifier_vat": {
-        "title": "What is the VAT rate on electricity?",
-        "description": "VAT is added to what you pay per kWh. The rate is on your electricity bill.",
-        "data": {
-          "rate": "VAT rate"
-        },
-        "data_description": {
-          "rate": "As a fraction: 0.25 is 25 %."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Advanced",
-            "description": "Already filled in. Open it only if you know you want something else.",
-            "data": {
-              "applies_to": "Applies to"
-            },
-            "data_description": {
-              "applies_to": "Which parts of the price VAT is charged on. Empty means all."
-            }
-          }
+          "modifiers": "Leave one out and it is simply not part of your price."
         }
       },
       "modifier_spot_scale": {
@@ -205,30 +183,6 @@
           "offset": "Added to every kWh, in your currency."
         }
       },
-      "modifier_levy": {
-        "title": "Which tax is added per kWh?",
-        "description": "A tax charged on every kWh, such as the electricity tax. It is on your grid bill.",
-        "data": {
-          "amount": "Amount per kWh"
-        },
-        "data_description": {
-          "amount": "In your currency, per kWh. A negative amount is allowed."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Advanced",
-            "description": "Already filled in. Open it only if you know you want something else.",
-            "data": {
-              "months": "Months",
-              "applies_above_mtd_kwh": "Only above this month's use"
-            },
-            "data_description": {
-              "months": "The month numbers it applies in. Empty means the whole year.",
-              "applies_above_mtd_kwh": "kWh this calendar month before the tax starts. Empty means always."
-            }
-          }
-        }
-      },
       "modifier_fixed_price": {
         "title": "What is your fixed price?",
         "description": "A state scheme such as Norgespris replaces the spot price up to a monthly cap. The price is in your agreement.",
@@ -239,42 +193,6 @@
         "data_description": {
           "price": "In øre (or cents) per kWh, without VAT; VAT is added on top.",
           "cap_kwh_per_month": "How many kWh a month the fixed price covers; spot applies above it."
-        }
-      },
-      "modifier_subsidy_threshold": {
-        "title": "Where does electricity support start?",
-        "description": "The state pays a share of the price above a threshold. The government publishes both numbers.",
-        "data": {
-          "threshold": "Threshold",
-          "share": "Share"
-        },
-        "data_description": {
-          "threshold": "The price per kWh above which the state pays a share.",
-          "share": "As a fraction: 0.9 is 90 %."
-        },
-        "sections": {
-          "advanced": {
-            "name": "Advanced",
-            "description": "Already filled in. Open it only if you know you want something else.",
-            "data": {
-              "negative_rule": "Negative prices"
-            },
-            "data_description": {
-              "negative_rule": "What the scheme does when the spot price is below zero."
-            }
-          }
-        }
-      },
-      "modifier_tou_schedule": {
-        "title": "What does your grid company charge per kWh?",
-        "description": "The grid energy charge, often a day and a night price. It is on your grid bill, and the tariff you choose later fills it in.",
-        "data": {
-          "periods": "Periods",
-          "fallback": "Price for other hours"
-        },
-        "data_description": {
-          "periods": "The periods and their prices per kWh.",
-          "fallback": "Used for an hour no period covers."
         }
       },
       "modifier_day_type": {
@@ -391,7 +309,7 @@
       },
       "tariff": {
         "title": "Which grid company do you have?",
-        "description": "Your grid company bills the capacity part of your grid fee. The next step shows what PowerPlan thinks they bill, to check against your invoice.",
+        "description": "Your grid company owns the power lines where you live. You do not choose it yourself, and PowerPlan fetches its prices for you.\n\n{credit}",
         "data": {
           "country": "Country",
           "preset": "Grid company"
@@ -403,7 +321,7 @@
       },
       "tariff_preset": {
         "title": "Does this match your grid bill?",
-        "description": "**{name}**\n\n{table}\n\nSource: {source}",
+        "description": "**{name}**\n\n{table}\n\nYour grid company decides this, and PowerPlan plans by it:\n\n{plan}\n\nSource: {source}\n\n{credit}",
         "data": {
           "confirm": "Does it match?"
         },
@@ -473,7 +391,7 @@
       },
       "tariff_steps": {
         "title": "What steps does your grid company have?",
-        "description": "Your grid company is not in the list, so enter the steps from your grid bill: for each step, the power it goes up to and what it costs per month. Leave the rest empty; the last step you fill in has no upper limit.",
+        "description": "Your grid company is not in the list, so enter the steps from your grid bill: for each step, the power it goes up to and what it costs per month. Leave the rest empty; the last step you fill in has no upper limit. Enter the prices as they are on your bill, including VAT.",
         "data": {
           "upper_1": "Step 1: up to",
           "fee_1": "Step 1: per month",
@@ -498,7 +416,8 @@
           "upper_11": "Step 11: up to",
           "fee_11": "Step 11: per month",
           "upper_12": "Step 12: up to",
-          "fee_12": "Step 12: per month"
+          "fee_12": "Step 12: per month",
+          "vat": "VAT on these prices"
         },
         "data_description": {
           "upper_1": "The power this step goes up to, as on your bill.",
@@ -524,7 +443,8 @@
           "upper_11": "The power this step goes up to, as on your bill.",
           "fee_11": "What this step costs per month, as on your bill.",
           "upper_12": "The power this step goes up to, as on your bill.",
-          "fee_12": "What this step costs per month, as on your bill."
+          "fee_12": "What this step costs per month, as on your bill.",
+          "vat": "The prices you enter include VAT; PowerPlan has no rate for your country, so enter it here."
         }
       },
       "tariff_limits": {
@@ -640,6 +560,58 @@
         "data_description": {
           "confirm": "Choose change to pick the sensors yourself."
         }
+      },
+      "postcode": {
+        "title": "What is your postcode?",
+        "description": "Your postcode tells PowerPlan which taxes apply where you live. It is sent only to your country's official address register.",
+        "data": {
+          "postcode": "Postcode"
+        },
+        "data_description": {
+          "postcode": "Leave it empty to skip; you then pick your county with your grid company if it matters."
+        }
+      },
+      "tariff_product": {
+        "title": "Which grid tariff do you have with {operator}?",
+        "description": "{operator} has more than one tariff for homes. It says which on your grid bill.",
+        "data": {
+          "product": "Tariff"
+        }
+      },
+      "tariff_zone": {
+        "title": "Which county do you live in?",
+        "description": "{operator} covers areas with different taxes, so PowerPlan needs to know where you live.",
+        "data": {
+          "zone": "County"
+        }
+      },
+      "tariff_confirm": {
+        "title": "Is this right for {operator}?",
+        "description": "The source does not say everything about your tariff. Check these values against your grid bill; the suggested one is the usual.\n\n{why}"
+      },
+      "modifier_supplier_tou": {
+        "title": "What does your supplier charge by time of day?",
+        "description": "Only your supplier's own day and night prices, if your contract has them. Your grid company's day and night charge is already included.",
+        "data": {
+          "periods": "Periods",
+          "fallback": "Price for other hours"
+        },
+        "data_description": {
+          "periods": "The periods and their prices per kWh.",
+          "fallback": "Used for an hour no period covers."
+        }
+      },
+      "state": {
+        "title": "Which support schemes apply to you?",
+        "description": "{rates}\n\nPowerPlan applies these for you. Tick the schemes you are in.",
+        "data": {
+          "schemes": "Schemes",
+          "vat": "VAT"
+        },
+        "data_description": {
+          "schemes": "Strømstøtte is paid automatically on your grid bill; it does not apply with Norgespris.",
+          "vat": "PowerPlan has no VAT rate for your country: enter the one on your bill."
+        }
       }
     },
     "error": {
@@ -655,7 +627,9 @@
       "price_in_minor_unit": "That is less than one øre or cent per kWh. The box is in øre (or cents), not kroner.",
       "steps_too_few": "Enter at least two steps from your bill.",
       "steps_not_rising": "Each step must go up to more than the one before it.",
-      "limit_required": "Enter the power your contract gives you."
+      "limit_required": "Enter the power your contract gives you.",
+      "postcode_invalid": "That does not look like a postcode here.",
+      "tariff_source_unreachable": "Could not fetch the grid companies right now. Pick Grid company not listed or Enter it myself, or try again later."
     },
     "abort": {
       "already_configured": "This meter is already set up as a home in PowerPlan.",
@@ -1124,7 +1098,8 @@
               "force": "Run now",
               "presence_changed": "Presence changed",
               "ev_connected": "Car connected or disconnected",
-              "baseline_ready": "Normal usage learned"
+              "baseline_ready": "Normal usage learned",
+              "tariff_updated": "Grid tariff updated"
             }
           }
         }
@@ -1156,6 +1131,9 @@
     },
     "set_peak_needs_a_day_or_a_month": {
       "message": "Choose either a date or a month."
+    },
+    "tariff_refresh_failed": {
+      "message": "Could not refresh the grid tariff from {source}: {reason}. The tariff PowerPlan has is kept."
     }
   },
   "issues": {
@@ -1184,8 +1162,8 @@
       "description": "{site}: {source} has not delivered prices for 24 hours; PowerPlan estimates them meanwhile. Check that the price integration is running."
     },
     "tariff_review": {
-      "title": "The tariff keeps a tax you entered",
-      "description": "{site}: your earlier VAT or levy setting ({kept}) differs from what PowerPlan now applies for your country, so it is kept as your own setting. If it was only the old default, remove it under Reconfigure; if you pay a different rate, keep it."
+      "title": "Confirm a tariff value you set",
+      "description": "{site}: your own setting ({kept}) differs from what PowerPlan would use for your country or your grid company, so it is kept as yours. Select Submit to keep it; choose Reconfigure to change it."
     },
     "preset_outdated": {
       "title": "The tariff preset has changed",
@@ -1226,6 +1204,10 @@
     "device_missing": {
       "title": "An appliance's device is gone",
       "description": "The appliance «{load}» no longer exists in Home Assistant. PowerPlan does not control it until you pick a new device: open PowerPlan, find «{load}» and choose Change setup."
+    },
+    "tariff_stale": {
+      "title": "The grid tariff has run out",
+      "description": "{site}: the grid tariff from {operator} has no prices after its last period, and fetching new ones keeps failing. PowerPlan keeps using the last prices it has. Check your internet connection, or choose Reconfigure to pick the tariff again."
     }
   },
   "selector": {
@@ -1262,7 +1244,8 @@
         "subsidy_threshold": "State subsidy above a threshold (strømstøtte)",
         "spot_scale": "Supplier markup",
         "cumulative_tier": "Tiered by monthly use",
-        "day_type": "Day-type tariff (critical peak days)"
+        "day_type": "Day-type tariff (critical peak days)",
+        "supplier_tou": "Supplier's own day and night prices"
       }
     },
     "export_mode": {
@@ -1601,7 +1584,15 @@
         "month_9": "September",
         "month_10": "October",
         "month_11": "November",
-        "month_12": "December"
+        "month_12": "December",
+        "credit": "Grid tariffs from {sources}. Thank you!",
+        "plan_energy": "Flexible use moves to after {time}, when the grid charge is {difference} lower.",
+        "plan_capacity": "Use is spread out so you stay in your capacity step.",
+        "plan_none": "No part of this tariff changes when it is best to use power.",
+        "state_rates": "For {zone}: {rates} per kWh.",
+        "state_vat": "VAT {vat} %",
+        "state_levy": "{name} {amount}",
+        "state_asked": "PowerPlan has no tax rates for your country, so it uses the VAT you entered with your grid tariff."
       }
     },
     "load_text": {
@@ -2018,7 +2009,14 @@
         "card_status_holding": "Holding",
         "card_count_holding": "{n} holding",
         "card_holding_short": "holding",
-        "card_lowered_until": "Turned down until {time}"
+        "card_lowered_until": "Turned down until {time}",
+        "card_party_grid": "Grid tariff",
+        "card_party_supplier": "Energy",
+        "card_party_state": "Taxes",
+        "card_credit": "Grid tariffs from {sources}. Thank you!",
+        "card_why_grid": "Waiting until {time} — the grid tariff is {difference} lower then",
+        "card_why_supplier": "Waiting until {time} — the energy is {difference} cheaper then",
+        "card_why_state": "Waiting until {time} — the taxes are {difference} lower then"
       }
     },
     "logbook": {
@@ -2058,7 +2056,13 @@
         "presence_changed_vacation": "Presence changed to vacation",
         "ev_connected": "Car connected",
         "ev_connected_off": "Car disconnected",
-        "baseline_ready": "Normal usage learned"
+        "baseline_ready": "Normal usage learned",
+        "tariff_updated": "Grid tariff updated"
+      }
+    },
+    "scheme": {
+      "options": {
+        "stromstotte": "Strømstøtte"
       }
     }
   },
@@ -2186,6 +2190,16 @@
     "dump_state": {
       "name": "Make a bug report",
       "description": "Return the last snapshot and the assembled inputs for a bug report.",
+      "fields": {
+        "site": {
+          "name": "Home",
+          "description": "The home; every home when empty."
+        }
+      }
+    },
+    "refresh_tariff": {
+      "name": "Refresh the grid tariff",
+      "description": "Fetch your grid company's tariff now, and answer what changed. Nothing changes when the source cannot be reached.",
       "fields": {
         "site": {
           "name": "Home",
@@ -3241,6 +3255,25 @@
         "not_enough_loads": "Add at least two appliances first: a room needs two appliances that heat the same space.",
         "reconfigure_successful": "The room was updated."
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Your own VAT and taxes",
+        "description": "Leave these empty to use your country's rates, which PowerPlan keeps up to date. Set one only if you pay something else, for example a VAT-registered farm.",
+        "data": {
+          "vat": "VAT",
+          "levy": "Taxes and levies"
+        },
+        "data_description": {
+          "vat": "Replaces your country's VAT rate.",
+          "levy": "Replaces all taxes and levies per kWh."
+        }
+      }
+    },
+    "abort": {
+      "no_tariff": "This home has no electricity price to adjust."
     }
   }
 }

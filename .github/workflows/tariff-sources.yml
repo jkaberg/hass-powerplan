@@ -1,0 +1,46 @@
+name: tariff-sources
+
+# D13 §5.7, D9 §5.15: every night, every tariff source's live endpoint with its
+# named User-Agent - the contract of what each adapter reads, and each company
+# compared across the tiers that list it. Never in a household's Home Assistant
+# and never in the PR suite. A finding opens an issue for the maintainer.
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  canary:
+    name: tariff sources, live
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: Fetch and cross-check every source
+        id: canary
+        run: |
+          set +e
+          uv run python tools/tariff_canary.py > canary.md
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat canary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Open an issue on a finding
+        if: steps.canary.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Tariff sources: findings on $(date -u +%F)"
+          gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' | grep -q . \
+            || gh issue create --title "$title" --body-file canary.md --label tariff-sources

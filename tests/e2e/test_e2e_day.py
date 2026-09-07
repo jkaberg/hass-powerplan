@@ -176,7 +176,9 @@ async def _through_meter(
 
 
 async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
-    """Tensio, and the 5–10 kW step as the target."""
+    """No postcode, Tensio, and the 5–10 kW step as the target (D13 §6: the grid company first)."""
+    assert result["step_id"] == "postcode"
+    result = await _answer(hass, result)
     assert result["step_id"] == "tariff"
     result = await _answer(hass, result, preset="no/tensio-ts")
     assert result["step_id"] == "tariff_preset"
@@ -191,8 +193,8 @@ async def _create_site(hass: HomeAssistant, ams_meter: str, nordpool_entry: str)
     """Create the site through the full onboarding path, in observe."""
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _through_prices(hass, result, nordpool_entry)
     result = await _followups(hass, result)
     result = await _tail(hass, result)
     result = await _answer(hass, result, start_in_observe=True)

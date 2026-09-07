@@ -1136,15 +1136,15 @@ def test_20_a_price_slot_carries_its_energy_part_and_its_price_without_the_fixed
             sources=("nordpool",),
         )
 
-    fixed = _price_slot("0.7300", spot="0.40", grid="0.184", vat="0.146")
-    spot = _price_slot("1.2725", spot="0.834", grid="0.184", vat="0.2545")
+    fixed = _price_slot("0.7300", spot="0.40", grid_energy="0.184", vat="0.146")
+    spot = _price_slot("1.2725", spot="0.834", grid_energy="0.184", vat="0.2545")
     [row] = _slots(curve(fixed), reference=curve(spot))
     assert float(row["energy"]) == pytest.approx(0.50, abs=1e-4)
     assert float(row["total"]) - float(row["energy"]) == pytest.approx(0.23, abs=1e-4)
     assert row["reference"] == "1.2725"
     [plain] = _slots(curve(fixed))
     assert "reference" not in plain
-    no_vat = _slots(curve(_price_slot("0.584", spot="0.40", grid="0.184")))[0]
+    no_vat = _slots(curve(_price_slot("0.584", spot="0.40", grid_energy="0.184")))[0]
     assert float(no_vat["energy"]) == pytest.approx(0.40)
 
 

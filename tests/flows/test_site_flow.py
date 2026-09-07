@@ -126,8 +126,18 @@ async def _through_prices(
     return await _answer(hass, result, source="nordpool_action")
 
 
+async def _to_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
+    """Skip the postcode (optional, D13 §6 step 0): the grid company is next."""
+    assert result["step_id"] == "postcode"
+    result = await _answer(hass, result)
+    assert result["step_id"] == "tariff"
+    return result
+
+
 async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
-    """Answer the grid company, confirm the table, then target and strictness."""
+    """Answer the grid company, confirm the table, then target and strictness (D13 §6 1)."""
+    if result["step_id"] == "postcode":
+        result = await _to_tariff(hass, result)
     assert result["step_id"] == "tariff"
     assert "country" not in result["data_schema"]({}), "asked once, and HA has it (HUB-2)"
     result = await _answer(hass, result, preset="no/tensio-ts")
@@ -149,13 +159,10 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
 
 
 async def _followups(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
-    """Answer export, the add-ons and the heat sources - the follow-ups after the grid company."""
-    assert result["step_id"] == "export"
-    result = await _answer(hass, result, mode="none")
-
+    """Answer the supplier's additions, the state, export and heat sources (D13 §6 2a–4)."""
     assert result["step_id"] == "modifiers"
     # Norway's VAT and levies are its country module's, never asked (INV-71), and
-    # nothing with a required field and no default is pre-ticked (HLD §7.9 (2)).
+    # nothing is pre-ticked: an addition is a line in the household's own contract.
     assert result["data_schema"]({})["modifiers"] == []
     result = await _answer(hass, result, modifiers=["spot_scale"])
 
@@ -163,6 +170,14 @@ async def _followups(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, A
     assert result["step_id"] == "modifier_spot_scale"
     assert not result["description_placeholders"]
     result = await _answer(hass, result, mult=1.1)
+
+    # D13 §6 step 3: the rates stated, strømstøtte asked.
+    assert result["step_id"] == "state"
+    assert "25" in result["description_placeholders"]["rates"]
+    result = await _answer(hass, result, schemes=[])
+
+    assert result["step_id"] == "export"
+    result = await _answer(hass, result, mode="none")
 
     assert result["step_id"] == "carriers"
     return await _answer(hass, result, carriers=[])
@@ -197,8 +212,8 @@ async def test_the_full_path_creates_a_site_in_observe(
 
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _through_prices(hass, result, nordpool_entry)
     result = await _followups(hass, result)
     result = await _tail(hass, result)
 
@@ -269,8 +284,8 @@ async def test_the_unique_id_is_the_meters_own_register(
 
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _through_prices(hass, result, nordpool_entry)
     result = await _followups(hass, result)
     result = await _tail(hass, result)
     await _answer(hass, result, start_in_observe=True)
@@ -368,7 +383,7 @@ async def test_a_guard_band_in_watts_is_refused_inline(
 
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _to_tariff(hass, result)
 
     assert result["step_id"] == "tariff"
     result = await _answer(hass, result, preset="no/tensio-ts")
@@ -458,8 +473,8 @@ async def test_the_review_explains_what_was_derived(
 
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
+    result = await _through_prices(hass, result, nordpool_entry)
     result = await _followups(hass, result)
     result = await _tail(hass, result)
 
@@ -532,7 +547,7 @@ async def test_a_guard_band_of_zero_is_refused_inline(
 
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
+    result = await _to_tariff(hass, result)
 
     assert result["step_id"] == "tariff"
     result = await _answer(hass, result, preset="no/tensio-ts")
@@ -548,17 +563,17 @@ async def test_a_guard_band_of_zero_is_refused_inline(
 async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
     hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
 ) -> None:
-    """The preset prices the day/night charge; the add-on step names it and does not offer it.
+    """INV-74: after the grid company, no screen offers a grid or state component.
 
-    Asked after the grid company (HUB-3), so the step knows what the preset has
-    (D-0430). A tick for it cannot replace the preset's numbers with empty ones.
+    The supplier step opens by naming what the grid tariff covers (D13 §6 step
+    2a); it offers only the supplier's own lines - never the grid's day/night
+    charge, VAT, levies, strømstøtte or Norgespris (D-0430, D13 §12.2).
     """
     _configure(hass)
     result = await _start(hass, "full")
     result = await _through_meter(hass, result, ams_meter)
-    result = await _through_prices(hass, result, nordpool_entry)
     result = await _through_tariff(hass, result)
-    result = await _answer(hass, result, mode="none")
+    result = await _through_prices(hass, result, nordpool_entry)
 
     assert result["step_id"] == "modifiers"
     offered = [
@@ -567,14 +582,15 @@ async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
         if hasattr(value, "config")
         for option in value.config["options"]
     ]
-    assert "tou_schedule" not in offered, "the grid company's copy already prices it"
-    # Norway's VAT and levies are its country module's (INV-71): never offered.
-    assert "levy" not in offered
-    assert "vat" not in offered
-    assert result["description_placeholders"]["included"] == (
-        "Grid energy charge (day/night), VAT and Taxes and levies"
-    )
+    assert offered == ["cumulative_tier", "day_type", "spot_scale", "supplier_tou"]
+    assert result["description_placeholders"] == {
+        "operator": "Tensio TS – privatkunde",
+        "covered": "Grid energy charge (day/night), VAT and Taxes and levies",
+    }
     result = await _answer(hass, result, modifiers=[])
+    assert result["step_id"] == "state"
+    result = await _answer(hass, result)
+    result = await _answer(hass, result, mode="none")
     result = await _answer(hass, result, carriers=[])
     result = await _tail(hass, result)
     result = await _answer(hass, result, start_in_observe=True)

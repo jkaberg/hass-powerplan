@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.button import ButtonEntity
@@ -54,7 +55,8 @@ from .core.loads import Load, Role
 from .core.loads.stores.energy import EnergyStore
 from .core.loads.stores.thermal import RoomStore, SlabStore, TankStore
 from .core.loads.types import base as device_types
-from .core.model import Mode
+from .core.model import Carrier, Mode
+from .core.pricing.party import split
 from .entity import LoadEntity, accrual_reset, digest_of, money_text
 from .runtime import Runtime
 
@@ -670,6 +672,32 @@ def _comfort_state(status: LoadStatus) -> str | None:
     return "at_target"
 
 
+def _why(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
+    """Return the party whose price falls most by the plan's next start (D13 §7, D8 §5.17).
+
+    «Venter til 22:00 - nettleien er 13 øre lavere da»: the party, the start, and
+    the difference per kWh in major units. Nothing when the load is not waiting
+    for a start, or when nothing is cheaper then.
+    """
+    snapshot = runtime.snapshot
+    plan = None if snapshot is None else snapshot.plans.get(status.load_id)
+    curves = getattr(runtime, "curves", None)
+    curve = None if curves is None else curves.import_.get(Carrier.ELECTRICITY)
+    if snapshot is None or plan is None or plan.next_start is None or curve is None:
+        return {}
+    if plan.next_start <= snapshot.at:
+        return {}
+    now, then = curve.price_at(snapshot.at), curve.price_at(plan.next_start)
+    if now is None or then is None:
+        return {}
+    before, after = split(now.components), split(then.components)
+    falls = {party: before[party] - after.get(party, Decimal(0)) for party in before}
+    party, fall = max(falls.items(), key=lambda row: row[1], default=("", Decimal(0)))
+    if fall <= 0:
+        return {}
+    return {"why_party": party, "why_until": _clock(plan.next_start), "why_difference": str(fall)}
+
+
 def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     """Return what the merged rows said: the next slot, the plan, the shed, comfort, the session.
 
@@ -685,6 +713,8 @@ def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, An
         "reason_key": None if status.action_key is None else status.action_key.value,
         "reason_params": dict(status.action_params),
         "shed_reason": status.shed_reason if status.shed else None,
+        # D13 §7: whose price makes the wait worth it, and by how much.
+        **_why(status, runtime),
         "shed_since": _iso(status.latches.shed_since),
         "blunt": status.blunt,
     }

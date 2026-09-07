@@ -21,6 +21,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from ..model import Confidence
+from ..tariffs import countries
 from ..tariffs.household import (
     HouseholdPrice,
     Party,
@@ -44,9 +45,11 @@ __all__ = [
     "GridEnergy",
     "GridShare",
     "StateLevies",
+    "StateScheme",
     "StateVat",
     "chain",
     "party_of",
+    "split",
 ]
 
 LEVY: Final = "levy"
@@ -72,6 +75,15 @@ PARTY: Final[Mapping[str, Party]] = {
 def party_of(component: str) -> Party:
     """Return the party a component belongs to."""
     return PARTY[component]
+
+
+def split(components: Mapping[str, Decimal]) -> dict[str, Decimal]:
+    """Return a slot's components summed by party - what D11 and D12 split by (INV-72)."""
+    parts: dict[str, Decimal] = {}
+    for name, value in components.items():
+        party = PARTY[name].value
+        parts[party] = parts.get(party, Decimal(0)) + value
+    return parts
 
 
 def _day(when: datetime, ctx: PriceContext) -> date:
@@ -162,6 +174,35 @@ class StateVat:
 
 
 @dataclass(frozen=True, slots=True)
+class StateScheme:
+    """A scheme the household is in: the state pays `share` of the spot above a dated threshold.
+
+    Norway's strømstøtte (D13 §4 party 3), from the country module at the slot's
+    date; the household types nothing. Written as `subsidy`, before VAT, as the
+    add-on it replaces was (D-0551).
+    """
+
+    key: ClassVar[str] = "state_scheme"
+    component: ClassVar[str] = SUBSIDY
+    schema: ClassVar[Schema] = ()
+
+    price: HouseholdPrice
+    scheme: str
+
+    def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
+        """Return `slot` with the subsidy component written (INV-4)."""
+        module = countries.get(self.price.state.zone.country)
+        found = None if module is None else module.scheme(self.scheme)
+        rate = None if found is None else countries.pick(found.threshold, _day(slot.start, ctx))
+        if found is None or rate is None:
+            return with_component(slot, self.component, Decimal(0))
+        above = slot.components.get(SPOT, Decimal(0)) - rate.value
+        return with_component(
+            slot, self.component, -found.share * above if above > 0 else Decimal(0)
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class GridShare:
     """What the copy adds to a slot on top of the energy: grid, its levies, their VAT.
 
@@ -171,14 +212,18 @@ class GridShare:
 
     stages: tuple[PriceModifier, ...]
 
-    def price_at(self, when: datetime, ctx: PriceContext) -> Decimal:
-        """Return the copy's share of the price at `when`."""
+    def components_at(self, when: datetime, ctx: PriceContext) -> Mapping[str, Decimal]:
+        """Return the copy's share at `when`, component by component - each keeps its party."""
         slot = Slot(
             start=when, end=when, total=Decimal(0), components={}, confidence=Confidence.KNOWN
         )
         for stage in self.stages:
             slot = stage.apply(slot, ctx)
-        return slot.total
+        return slot.components
+
+    def price_at(self, when: datetime, ctx: PriceContext) -> Decimal:
+        """Return the copy's share of the price at `when`."""
+        return sum(self.components_at(when, ctx).values(), Decimal(0))
 
 
 def chain(
@@ -202,6 +247,13 @@ def chain(
         if price.grid.energy:
             grid.append(GridEnergy(price))
     levies: list[PriceModifier] = [] if "levies" in source_basis else [StateLevies(price)]
+
+    module = countries.get(price.state.zone.country)
+    for key in price.state.schemes:
+        scheme = None if module is None else module.scheme(key)
+        # A scheme the supplier's kind excludes (strømstøtte beside Norgespris) is never paid.
+        if scheme is not None and price.supplier.kind not in scheme.excludes:
+            schemes.append(StateScheme(price, key))
 
     taxed = {GRID_ENERGY, LEVY, SUBSIDY}
     if "vat" not in source_basis:

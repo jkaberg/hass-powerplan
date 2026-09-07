@@ -168,6 +168,8 @@ class SiteMonthRec:
     capacity_fee: Money
     cf_capacity_fee: Money
     cf_energy_cost: Money
+    #: The imported energy's cost by party - grid, supplier, state (D11 §5.8).
+    energy_by_party: dict[str, Decimal] = field(default_factory=dict)
     import_kwh: float = 0.0
     export_kwh: float = 0.0
     slots: int = 0

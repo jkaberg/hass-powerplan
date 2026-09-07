@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { DEBOUNCE_MS, rawStatus, StatusDebouncer } from "../src/status";
-import { bucketize, cheapBands, forecastTotals, holdRuns, nextClock, pauseRuns, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
+import { DEBOUNCE_MS, rawStatus, StatusDebouncer, whyReason } from "../src/status";
+import { bucketize, cheapBands, creditHtml, partyLine, partyStack, forecastTotals, holdRuns, nextClock, pauseRuns, type PlanSlot, planRuns, type PriceSlot, readable } from "../src/transforms";
 
 const LABELS = {
   status_running: "Går",
@@ -179,5 +179,59 @@ describe("a planned pause (D-0507)", () => {
     expect(pauses).toEqual([{ start: T0 + Q, end: T0 + 3 * Q, kwh: 0 }]);
     expect(pauseRuns(slots, "bath")).toEqual([{ start: T0 + 2 * Q, end: T0 + 3 * Q, kwh: 0 }]);
     expect(planRuns(slots, "hall")).toHaveLength(1);
+  });
+});
+
+// D12 §9 21, 22 and D13 §7 (TS.2): the price by party on the dashboard.
+
+describe("the price by party (D12 §5.13)", () => {
+  // A `sensor.<site>_price_forecast` slot as TS.2's backend writes it: Norgespris
+  // 0.40 + Tensio's day charge net 0.22102 + levies 0.0813 + VAT on all three.
+  const tensio = {
+    start: "2026-09-24T16:00:00+00:00",
+    end: "2026-09-24T17:00:00+00:00",
+    total: "0.8779",
+    confidence: "known",
+    parties: { supplier: "0.40", grid: "0.22102", state: "0.25688" },
+  };
+
+  it("stacks grid, supplier and taxes, and the stack sums to the total", () => {
+    const stack = partyStack(tensio);
+    expect(stack.map((part) => part.party)).toEqual(["grid", "supplier", "state"]);
+    expect(stack.reduce((sum, part) => sum + part.value, 0)).toBeCloseTo(0.8779, 10);
+  });
+
+  it("draws one stack where the source includes the grid and the taxes (stromligning)", () => {
+    const total = { ...tensio, total: "2.31", parties: { supplier: "2.31" } };
+    expect(partyStack(total)).toEqual([{ party: "total", value: 2.31 }]);
+    expect(partyStack({ ...tensio, parties: undefined })).toEqual([{ party: "total", value: 0.8779 }]);
+  });
+
+  it("credits the copy's sources, and nothing for a template (D12 §9 22)", () => {
+    const credit = [{ name: "Fri Nettleie", url: "https://github.com/kraftsystemet/fri-nettleie", licence: "CC BY 4.0" }];
+    expect(creditHtml("Nettleiepriser fra {sources}. Takk!", credit)).toBe(
+      'Nettleiepriser fra <a href="https://github.com/kraftsystemet/fri-nettleie" target="_blank" rel="noreferrer">Fri Nettleie</a> (CC BY 4.0). Takk!',
+    );
+    expect(creditHtml("Nettleiepriser fra {sources}. Takk!", [])).toBe("");
+  });
+
+  it("says whose price makes a wait worth it (D13 §7)", () => {
+    const labels = { why_grid: "Venter til {time} — nettleien er {difference} lavere da" };
+    const attributes = { why_party: "grid", why_until: "22:00", why_difference: "0.13" };
+    expect(whyReason(attributes, labels, (v) => `${Math.round(v * 100)} øre`)).toBe(
+      "Venter til 22:00 — nettleien er 13 øre lavere da",
+    );
+    expect(whyReason({}, labels)).toBeUndefined();
+  });
+});
+
+describe("the month by party (D12 §5.13, D11 §5.8)", () => {
+  it("writes the month's cost as one line, grid first, and nothing without a split", () => {
+    const names = { grid: "Nettleie", supplier: "Strøm", state: "Avgifter" };
+    const money = (v: number) => `${v} kr`;
+    expect(partyLine({ supplier: "540", grid: "312", state: "230" }, names, money)).toBe(
+      "Nettleie 312 kr · Strøm 540 kr · Avgifter 230 kr",
+    );
+    expect(partyLine(undefined, names, money)).toBe("");
   });
 });

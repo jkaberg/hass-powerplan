@@ -9,6 +9,19 @@ GST = "https://www5.austlii.edu.au/au/legis/cth/consol_act/antsasta1999402/s9.70
 
 MODULE = register(
     CountryModule(
-        code="AU", name="Australia", currency="AUD", vat=(Rate(None, Decimal("0.10"), GST),)
+        code="AU",
+        name="Australia",
+        currency="AUD",
+        time_zones=(
+            "Australia/Sydney",
+            "Australia/Melbourne",
+            "Australia/Brisbane",
+            "Australia/Adelaide",
+            "Australia/Perth",
+            "Australia/Hobart",
+            "Australia/Darwin",
+            "Australia/Canberra",
+        ),
+        vat=(Rate(None, Decimal("0.10"), GST),),
     )
 )

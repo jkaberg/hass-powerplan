@@ -282,6 +282,12 @@ class AccountingAdapter:
                 }
                 for load_id, row in figures.loads.items()
             },
+            by_party={
+                "cost": {party: str(money.amount) for party, money in site.cost_by_party.items()},
+                "savings": {
+                    party: str(money.amount) for party, money in site.savings_by_party.items()
+                },
+            },
         )
 
     def month_figures(self) -> dict[str, dict[str, Any]]:
@@ -347,6 +353,7 @@ def _status_data(status: AccountingStatus) -> dict[str, Any]:
         "savings": None if status.savings is None else encode(status.savings),
         "confidence": status.confidence,
         "per_load": dict(status.per_load),
+        "by_party": {kind: dict(parts) for kind, parts in status.by_party.items()},
         "month_start": encode(status.month_start),
         "since": encode(status.since),
         "pricing_confidence": status.pricing_confidence,

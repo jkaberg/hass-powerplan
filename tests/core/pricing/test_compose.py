@@ -275,6 +275,7 @@ def test_12_negative_prices_pass_through_every_modifier_unclamped() -> None:
         "fixed_price": {"price": Decimal("0.40"), "cap_kwh_per_month": 5000.0},
         "subsidy_threshold": {"threshold": Decimal("0.9125")},
         "tou_schedule": {"fallback": TENSIO_NIGHT},
+        "supplier_tou": {"fallback": TENSIO_NIGHT},
         "day_type": {"rates": {"cpp": DayTypeRate(multiplier=Decimal("3"))}},
         "cumulative_tier": {"tiers": (Tier(upto_kwh=None, price=Decimal("0.08")),)},
         "export_price": {"mode": ExportMode.SPOT_MINUS, "amount": Decimal("0.05")},

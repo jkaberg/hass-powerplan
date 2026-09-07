@@ -11,6 +11,31 @@ export interface PriceSlot {
   energy?: string;
   /** The same slot without the fixed-price modifier (Norgespris), where one is configured (P3). */
   reference?: string;
+  /** The price by party - grid, supplier, state (D12 §5.13); absent before TS.2. */
+  parties?: Record<string, string>;
+}
+
+/** D12 §5.13: the stack's order, bottom to top. */
+export const PARTIES = ["grid", "supplier", "state"] as const;
+export type Party = (typeof PARTIES)[number];
+
+export interface PartyPart {
+  /** `total` when the slot has one part only: a source that includes every party (stromligning). */
+  party: Party | "total";
+  value: number;
+}
+
+/**
+ * D12 §5.13, §9 21: a slot's price as its stack of parties, grid first. A slot
+ * whose price source already includes the grid and the taxes has one part -
+ * the whole price - and draws as one stack, not three.
+ */
+export function partyStack(slot: PriceSlot): PartyPart[] {
+  const total = Number(slot.total);
+  const parts = PARTIES.filter((party) => slot.parties?.[party] !== undefined)
+    .map((party) => ({ party, value: Number(slot.parties![party]) }))
+    .filter((part) => part.value !== 0);
+  return parts.length > 1 ? parts : [{ party: "total", value: total }];
 }
 
 /** One row of `sensor.<site>_plan`'s `slots` (D12 §5.6). */
@@ -37,6 +62,8 @@ export interface TimelineSlot {
   price: number | null;
   /** The price is not yet published: `estimated` or `synthesised` (D1), drawn as provisional. */
   estimated: boolean;
+  /** The price by party, grid first (D12 §5.13). */
+  parties: PartyPart[];
   ceilingKw: number | null;
   baselineKw: number | null;
   productionKw: number | null;
@@ -72,6 +99,7 @@ export function timelineSlots(
       end: Date.parse(slot.end),
       price: Number(slot.total),
       estimated: slot.confidence !== "known",
+      parties: partyStack(slot),
     }))
     .sort((a, b) => a.start - b.start);
   const grid: Array<{ start: number; end: number; row?: PlanSlot }> = plan.length
@@ -103,6 +131,7 @@ export function timelineSlots(
       hours: slotHours,
       price: covers ? price.price : null,
       estimated: covers ? price.estimated : false,
+      parties: covers ? price.parties : [],
       ceilingKw: row?.ceiling_kwh == null ? null : row.ceiling_kwh / windowHours,
       baselineKw: row?.baseline_kwh == null ? null : row.baseline_kwh / slotHours,
       productionKw: row?.production_kwh == null ? null : row.production_kwh / slotHours,
@@ -209,6 +238,7 @@ export interface PriceRun {
   end: number;
   price: number;
   estimated: boolean;
+  parties: PartyPart[];
   /** Rule 5: the fill's alpha, 0,28 at the window's cheapest to 0,62 at its dearest. */
   alpha: number;
 }
@@ -219,10 +249,11 @@ export function priceRuns(slots: readonly TimelineSlot[]): PriceRun[] {
   for (const slot of slots) {
     if (slot.price === null) continue;
     const last = runs[runs.length - 1];
-    if (last && last.end === slot.start && last.price === slot.price && last.estimated === slot.estimated) {
+    const sameParts = last !== undefined && JSON.stringify(last.parties) === JSON.stringify(slot.parties);
+    if (last && last.end === slot.start && last.price === slot.price && last.estimated === slot.estimated && sameParts) {
       last.end = slot.end;
     } else {
-      runs.push({ start: slot.start, end: slot.end, price: slot.price, estimated: slot.estimated });
+      runs.push({ start: slot.start, end: slot.end, price: slot.price, estimated: slot.estimated, parties: slot.parties });
     }
   }
   const prices = runs.map((run) => run.price);
@@ -931,4 +962,46 @@ export function readable(hex: string, dark: boolean): string {
     rgb = rgb.map((v) => Math.round(v + (255 - v) * 0.18));
   }
   return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+
+/** A tariff source's credit, as `sensor.<site>_price_forecast` carries it (D13 §6.1). */
+export interface Credit {
+  name: string;
+  url: string;
+  licence?: string | null;
+}
+
+const html = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * D12 §5.13, §9 22: «Nettleiepriser fra {sources}. Takk!» — each source linked,
+ * its licence named. Empty for a copy no source fetched (a template, custom).
+ */
+export function creditHtml(template: string | undefined, credits: readonly Credit[] | undefined, and = "&"): string {
+  if (!template || !credits?.length) return "";
+  const names = credits.map(
+    (credit) =>
+      `<a href="${html(credit.url)}" target="_blank" rel="noreferrer">${html(credit.name)}</a>${credit.licence ? ` (${html(credit.licence)})` : ""}`,
+  );
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} ${html(and)} ${names[names.length - 1]}` : names[0]!;
+  const [before, after] = html(template).split("{sources}");
+  return `${before ?? ""}${joined}${after ?? ""}`;
+}
+
+
+/**
+ * D12 §5.13: a month's cost or savings by party, as one line —
+ * «Nettleie 312 kr · Strøm 540 kr · Avgifter 230 kr». Empty without a split.
+ */
+export function partyLine(
+  byParty: Record<string, string> | null | undefined,
+  names: Record<Party, string | undefined>,
+  money: (value: number) => string,
+): string {
+  if (!byParty) return "";
+  return PARTIES.filter((party) => byParty[party] !== undefined && Number(byParty[party]) !== 0)
+    .map((party) => `${names[party] ?? party} ${money(Number(byParty[party]))}`)
+    .join(" · ");
 }

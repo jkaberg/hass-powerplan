@@ -226,6 +226,9 @@
     },
     "dump_state": {
       "service": "mdi:bug-outline"
+    },
+    "refresh_tariff": {
+      "service": "mdi:cloud-refresh-outline"
     }
   }
 }

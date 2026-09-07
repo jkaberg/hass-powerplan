@@ -1,6 +1,11 @@
 {
   "fields": {
     "accounting": {
+      "by_party": {
+        "mapping": {
+          "mapping": "str"
+        }
+      },
       "capacity_fee": {
         "one_of": [
           "Money",
@@ -981,5 +986,5 @@
       }
     }
   },
-  "schema": 7
+  "schema": 8
 }

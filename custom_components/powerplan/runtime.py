@@ -20,10 +20,10 @@ import math
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, date, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
 from random import Random
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
@@ -172,8 +172,10 @@ from .core.tariffs import (
     seed_from_windows,
 )
 from .core.tariffs.history import Override
+from .core.tariffs.household import HouseholdPrice
 from .core.tariffs.model import StepTable
 from .core.tariffs.rules import loader
+from .core.tariffs.sources import SourceError, merge, renew_at
 from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
 from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
@@ -181,6 +183,7 @@ from .events import event_name
 from .flow.load import binding_from_data
 from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
+from .providers import tariffs as tariff_sources
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
 from .providers.forecasts.recorder_baseline import (
     LoadSource,
@@ -208,6 +211,7 @@ from .providers.prices import (
 from .providers.profiles import registry as profiles
 from .providers.profiles.base import LiveDevice
 from .providers.schedules import fetch_windows
+from .providers.tariffs import ladder as tariff_ladder
 from .repairs import RepairsWatch, async_clear, async_report
 from .storage import Section, SiteStore, migrate_tariff
 from .writegate import Actuation, WriteGate
@@ -230,7 +234,6 @@ if TYPE_CHECKING:
     from .core.loads.gate import TransportBudget
     from .core.loads.kinds.base import Reads, Value
     from .core.model import PriceCurve, Snapshot
-    from .core.tariffs.household import HouseholdPrice
     from .load_entities import StatusHold
     from .writegate import DeviceCall, Outcome
 
@@ -247,6 +250,14 @@ __all__ = [
 ]
 
 _LOGGER = logging.getLogger(__name__)
+
+#: The tariff renewal's local hour on its day - early, off the hour (D7 §5.9, INV-6's spirit).
+RENEW_AT_LOCAL: Final = time(3, 17)
+#: Never at start (INV-73): an overdue renewal waits at least this long.
+RENEW_NOT_BEFORE: Final = timedelta(hours=1)
+#: A failed renewal retries after an hour, doubling, at most a day apart.
+RENEW_RETRY_BASE: Final = timedelta(hours=1)
+RENEW_RETRY_MAX: Final = timedelta(hours=24)
 
 #: How far a mode-steered thermostat's setpoint moves before it is a hand on
 #: the dial (D-0435): the setpoint kind's own generic tolerance (D4 §5.10).
@@ -576,6 +587,11 @@ class SiteBuild:
     preset_outdated: bool = False
     #: Old VAT/levy add-ons kept as the household's overrides until it confirms them (D13 §10).
     tariff_review: tuple[str, ...] = ()
+    #: The tariff copy by party (D13 §3), the household's own add-ons and what the
+    #: primary price source already includes - what a renewal rebuilds the chain from.
+    price: HouseholdPrice | None = None
+    added_modifiers: tuple[PriceModifier, ...] = ()
+    source_basis: frozenset[str] = frozenset({"spot"})
     notifications: Mapping[str, Any] = field(default_factory=dict)
     quiet_hours: QuietHours | None = None
 
@@ -647,15 +663,8 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     added = modifiers.chain_from(
         [(row["key"], row.get("options") or {}) for row in prices.get("modifiers") or ()]
     )
-    tou: GridCharge | None
-    if price is not None:
-        # The chain by party: the household's add-ons, the copy's grid charge,
-        # the zone's levies and VAT at each slot's date (D1 §5.3, INV-72).
-        price_modifiers, tou = party.chain(price, added, _source_basis(prices))
-    else:
-        price_modifiers = added
-        tou = next((row for row in added if isinstance(row, TouSchedule)), None)
-    forecaster = chain(CarryKnown(), Synthesised(tou=tou))
+    basis = _source_basis(prices)
+    price_modifiers, forecaster = _chain_of(price, added, basis)
     export = prices.get("export") or {}
     export_modifier = (
         modifiers.build("export_price", export)
@@ -713,6 +722,9 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         preset_file=tariff_data.get("preset_file"),
         preset_outdated=outdated,
         tariff_review=review,
+        price=price,
+        added_modifiers=tuple(added),
+        source_basis=basis,
         notifications=dict(data.get(CONF_NOTIFICATIONS) or {}),
         quiet_hours=QuietHours.from_data(data.get(CONF_QUIET_HOURS)),
     )
@@ -1054,6 +1066,21 @@ def _target_of(tariff: Mapping[str, Any]) -> tuple[Target, float | None, float |
     return target, None if risk is None else float(risk), None if eps is None else float(eps)
 
 
+def _chain_of(
+    price: HouseholdPrice | None, added: Sequence[PriceModifier], basis: frozenset[str]
+) -> tuple[tuple[PriceModifier, ...], PriceForecaster]:
+    """Return the price chain and the forecaster built on it (D1 §5.3, §5.5)."""
+    tou: GridCharge | None
+    if price is not None:
+        # The chain by party: the household's add-ons, the copy's grid charge,
+        # the zone's levies and VAT at each slot's date (D1 §5.3, INV-72).
+        price_modifiers, tou = party.chain(price, added, basis)
+    else:
+        price_modifiers = tuple(added)
+        tou = next((row for row in added if isinstance(row, TouSchedule)), None)
+    return price_modifiers, chain(CarryKnown(), Synthesised(tou=tou))
+
+
 def _source_basis(prices: Mapping[str, Any]) -> frozenset[str]:
     """Return what the primary price source already includes (D1 §5.3, O5).
 
@@ -1231,6 +1258,9 @@ class Runtime:
         self._pending_trigger: str | None = None
         self._fetch_attempts: dict[str, int] = {}
         self._retry_timers: dict[str, CALLBACK_TYPE] = {}
+        #: The tariff copy's renewal timer, and how many renewals in a row failed (D7 §5.9).
+        self._renewal: CALLBACK_TYPE | None = None
+        self._renewal_failures = 0
         self._issues: set[str] = set()
         self._gate_states: dict[str, Any] = {}
         self._stopped = False
@@ -1352,6 +1382,8 @@ class Runtime:
             )
         self._log_step("platforms")
         self._subscribe()
+        # The tariff copy's renewal is armed, never run: no fetch at start (INV-73).
+        self._arm_renewal(dt_util.utcnow())
         self._log_step("triggers")
         # The planning cycle starts after the first tick (D7 §5.5 step 8): the
         # first fetch is I/O and runs outside the lock (INV-46).
@@ -3000,6 +3032,159 @@ class Runtime:
                 },
             )
         del now
+
+    # -- the tariff copy's renewal (D7 §5.9, D13 §10) ------------------------ #
+
+    def renewable(self) -> bool:
+        """Whether the copy came from a registered source, and so can be fetched again."""
+        price = self.build.price
+        return price is not None and price.grid.provenance.source in tariff_sources.keys()  # noqa: SIM118 - the registry function
+
+    def _arm_renewal(self, now: datetime, *, retry: int = 0) -> None:
+        """Arm the renewal at `renew_at`, planning side; an overdue one waits an hour (INV-73)."""
+        if self._renewal is not None:
+            self._renewal()
+            self._renewal = None
+        price = self.build.price
+        if price is None or not self.renewable():
+            return
+        if retry:
+            due = now + min(RENEW_RETRY_BASE * 2 ** (retry - 1), RENEW_RETRY_MAX)
+        else:
+            day = price.grid.renew_at or renew_at(
+                price.grid,
+                price.grid.provenance.fetched or now.astimezone(self.build.cfg.tz).date(),
+            )
+            due = datetime.combine(day, RENEW_AT_LOCAL, tzinfo=self.build.cfg.tz).astimezone(UTC)
+            due = max(due, now + RENEW_NOT_BEFORE)
+
+        async def fire(at: datetime) -> None:
+            self._renewal = None
+            try:
+                await self.async_renew_tariff("timer", at)
+            except SourceError as err:
+                self._renewal_failures += 1
+                _LOGGER.warning(
+                    "site %s: tariff renewal failed (%s); the copy is kept, retry %s",
+                    self.entry.title,
+                    err,
+                    self._renewal_failures,
+                )
+                self._arm_renewal(at, retry=self._renewal_failures)
+
+        self._renewal = async_track_point_in_utc_time(self.hass, fire, due)
+        self._track(self._cancel_renewal)
+
+    def _cancel_renewal(self) -> None:
+        if self._renewal is not None:
+            self._renewal()
+            self._renewal = None
+
+    def tariff_operator(self) -> str:
+        """Return the grid company the copy is for, as its source names it."""
+        price = self.build.price
+        return "" if price is None else price.grid.operator
+
+    def confirm_tariff_review(self) -> None:
+        """Close `tariff_review`: the household's own values stay; nothing reloads (D13 §10)."""
+        tariff = {**(self.entry.data.get(CONF_TARIFF) or {}), "review": []}
+        data = {**self.entry.data, CONF_TARIFF: tariff}
+        self._known_data = dict(data)
+        self.hass.config_entries.async_update_entry(self.entry, data=data)
+        self.build.tariff_review = ()
+
+    def tariff_stale(self, today: date) -> bool:
+        """`tariff_stale`: the copy's last version has ended and the renewal keeps failing (§10)."""
+        price = self.build.price
+        return (
+            price is not None
+            and self._renewal_failures > 0
+            and price.grid.valid_to is not None
+            and today > price.grid.valid_to
+        )
+
+    async def async_renew_tariff(self, reason: str, now: datetime | None = None) -> dict[str, Any]:
+        """Fetch the copy again, merge it, write it without a reload (D13 §10, D7 §5.9).
+
+        The same operator and product, down the same ladder. Runs outside the tick
+        lock (INV-46): the entry is written and the evaluator's spec and the price
+        chain swapped in place, for the next planning call. Raises `SourceError`
+        and changes nothing when no tier answers. Returns what it did.
+        """
+        now = now or dt_util.utcnow()
+        price = self.build.price
+        if price is None or not self.renewable():
+            source = "none" if price is None else price.grid.provenance.source
+            kept = (
+                []
+                if price is None
+                else sorted({v.valid_from.isoformat() for v in price.grid.capacity})
+            )
+            return {
+                "source": source,
+                "fetched": None,
+                "added": [],
+                "changed": [],
+                "kept": kept,
+                "next_renewal": None,
+            }
+        grid = price.grid
+        today = now.astimezone(self.build.cfg.tz).date()
+        resolved = await tariff_ladder.resolve(
+            tariff_sources.Http(self.hass),
+            price.state.zone.country,
+            grid.operator_key or grid.operator,
+            grid.product_key,
+            answers=price.confirmed,
+        )
+        fetched = resolved.fetched
+        disagree = sorted(
+            key
+            for key, value in price.confirmed.items()
+            if key in fetched.stated and fetched.stated[key] != value
+        )
+        merged = merge(grid, fetched.grid)
+        renewed = replace(
+            merged.grid,
+            provenance=replace(merged.grid.provenance, fetched=today),
+            renew_at=None,
+        )
+        renewed = replace(renewed, renew_at=renew_at(renewed, today))
+        new_price = replace(price, grid=renewed)
+        for day in merged.changed:
+            _LOGGER.warning(
+                "site %s: %s corrected the tariff version of %s",
+                self.entry.title,
+                resolved.source.key,
+                day,
+            )
+        tariff = dict(self.entry.data.get(CONF_TARIFF) or {})
+        review = sorted({*(tariff.get("review") or ()), *disagree})
+        tariff.update(price=household.to_json(new_price), review=review)
+        data = {**self.entry.data, CONF_TARIFF: tariff}
+        # Our own write: the update listener must not reload for it (D7 §5.9).
+        self._known_data = dict(data)
+        self.hass.config_entries.async_update_entry(self.entry, data=data)
+        self.build.price = new_price
+        self.build.tariff_review = tuple(review)
+        self.build.tariff.spec = household.spec(new_price)
+        self.build.price_modifiers, self.build.forecaster = _chain_of(
+            new_price, self.build.added_modifiers, self.build.source_basis
+        )
+        self._renewal_failures = 0
+        answer = {
+            "source": resolved.source.key,
+            "fetched": today.isoformat(),
+            "added": [day.isoformat() for day in merged.added],
+            "changed": [day.isoformat() for day in merged.changed],
+            "kept": [day.isoformat() for day in merged.kept],
+            "next_renewal": renewed.renew_at.isoformat() if renewed.renew_at else None,
+        }
+        if merged.changes:
+            self.fire_event(EventKind.TARIFF_UPDATED, answer)
+        _LOGGER.info("site %s: tariff renewed (%s): %s", self.entry.title, reason, answer)
+        self._arm_renewal(now)
+        return answer
 
     def _schedule_retry(self, source_key: str, now: datetime, attempt: int) -> None:
         source = next(
