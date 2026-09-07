@@ -138,11 +138,12 @@ A country-wide **partial** source (NVE: every company, steps only to ≈ 10 kW, 
 
 ### 5.2 Undocumented endpoints - conduct
 
-1. Only what the company's own public page loads for any visitor: no login, no key, nothing a browser would not fetch.
-2. A User-Agent naming the integration and its repository; one listing call when the flow opens, one document call per renewal; responses cached for the flow's life.
+1. Only what the company's own public page loads for any visitor: no login, no key, nothing a browser wouldn't fetch.
+2. A User-Agent naming the integration and its repository; one listing call when the flow opens, one document call per renewal; responses cached in memory for the flow's life.
 3. No circumvention of anything: a 401/403, a captcha or a `robots.txt` disallow ends the adapter, which falls to the next tier.
-4. Every adapter has a captured fixture and a contract test (what fields it reads, which paths), and a nightly canary (§5.7) that tells the maintainer when the page changes - the household sees only "not supported" and the next tier.
-5. The terms of use of the site are read and recorded per adapter (O14).
+4. Every adapter has a captured fixture and a contract test (the fields it reads, which paths), and a nightly canary (§5.7) that tells the maintainer when the page changes - the household only sees "not supported" and the next tier.
+5. The site's terms of use are read and recorded per adapter (O14).
+6. **Downloads are transient.** A response lives in the memory of the one flow or renewal that fetched it (`Http`'s cache) - no file, no temporary directory, no extraction: an archive is read member by member. The flow releases it once the copy is taken or the flow ends, a renewal when it returns, and the copy in `entry.data` is the only thing kept. `tests/providers/tariffs/test_fri_nettleie_fetcher.py` checks that `providers/tariffs/` writes no file.
 
 ### 5.3 Operator identity and the directory
 
@@ -164,7 +165,7 @@ The flow lists operators from the country's **directory** - an official list wit
 
 ### 5.4 Norway, by customers (NVE counts via Strømpriseridag's list)
 
-**Norway's source (revised the same day): fri-nettleie, fetched from GitHub, for every company.** It is the data every Norwegian aggregator is built from, complete where Strømpriseridag is lossy (the rules by hour, `virkedag`/`helg`/holidays and months; every version with `gyldig_fra`/`gyldig_til`; household, cabin and small-business groups; the operator's own page per file), and actively maintained: ≥ 100 commits in 2026 (32 in August), 9 authors this year and 15 contributors, an automated job; 45 of its 75 files updated since December 2025 (each file carries `sist_oppdatert`). The national overview itself counts "a data file on a known format and location" as an API, so it ranks as **T1b** (country-wide, third-party), fetched as one tarball when the flow opens (405 kB, 0.5 s). The `fri_nettleie` adapter reads its basis as published (excluding VAT and levies - no correction needed), credits it (CC BY 4.0), and guards staleness: a company whose file has no version valid today, or whose `sist_oppdatert` is older than twelve months, is shown with that date and its tariff confirmed by the household (rule 8). Strømpriseridag (the same data, lossy, mislabelled) and the per-company APIs (Digin at Elvia and Glitre, Tensio's page) are **nightly cross-checks only**; no household key is needed (O13).
+**Norway's source: fri-nettleie, fetched from GitHub, for every company.** It's the data every Norwegian aggregator is built from, complete where Strømpriseridag is lossy (the rules by hour, `virkedag`/`helg`/holidays and months; every version with `gyldig_fra`/`gyldig_til`; household, cabin and small-business groups; the operator's own page per file), and actively maintained - an automated job, over a dozen contributors, most files updated within the year (each carries `sist_oppdatert`). The national overview itself counts "a data file on a known format and location" as an API, so it ranks as **T1b** (country-wide, third-party), fetched as one tarball when the flow opens (405 kB, 0.5 s). The `fri_nettleie` adapter reads its basis as published (excluding VAT and levies, no correction needed), credits it (CC BY 4.0), and guards staleness: a company whose file has no version valid today, or whose `sist_oppdatert` is older than twelve months, is shown with that date and its tariff confirmed by the household (rule 8). Strømpriseridag (the same data, lossy, mislabelled) and the per-company APIs (Digin at Elvia and Glitre, Tensio's page) are **nightly cross-checks only**, and no household key is needed (O13). The canary checks fri-nettleie's contract - every company in the archive gives a copy. Strømpriseridag names fri-nettleie as its source, so it's no second opinion; Tensio's `robots.txt` signals `ai-input=no`, so its adapter waits; Digin needs the maintainer's keys as CI secrets (D-0564). The archive is read member by member: `tariffer/*.yml` (74 files, 199 household tariffs) and Elhub's `grid_owners.json` (GLN → organisation number, to find the company in NVE's list); `tariffer/old/` is skipped (D-0560).
 
 | company | customers | cumulative | its own API - a cross-check (§5.7), not the source | status |
 |---|---|---|---|---|
@@ -445,41 +446,41 @@ Every domain and cross-cutting concern: what the three-party model changes, and 
 
 | area | finding | disposition |
 |---|---|---|
-| D1 pricing | modifiers mix parties (F10); a price source's basis is implicit (F6) | chain by party (§8); `Basis` on every source; add-on keys regrouped by party - TS.1 |
-| D1 events | a grid company's critical-peak days are the operator's events, not the supplier's | `GridTariff.events`; WP4.9's event sources wired to them - TS.2, 4.9 |
-| D1 15-min energy prices | Nordic day-ahead prices are quarter-hourly; grid charges and NO capacity windows stay hourly | slot length per slot (INV-7); the grid component per slot - no change |
-| D2 tariff model | a source needs a `day` price unit and a power factor (AU), nth-highest (FI Helen); seasonal price inside a version (URDB) is solved by dated versions | `day` and power factor in TS.5; nth-highest (D2 §10) |
-| D2 history on a tariff change | a household changing product or company mid-period (moving, opting into a TOU product) | a new tariff starts a new segment: the metric continues on D3's windows, the level on the new rule; D2 §5.10's `history_policy` decides - TS.2 |
-| D2 holidays | an operator's "helligdager" may not be the national calendar we use | the source's own definition where it states one, else national, noted in the summary - checked per operator in TS.3 |
-| D3 metering | windows 15/30/60 per rule; a tariff change may change the window | D2 §5.1 (coarse history) - no change |
-| D4 loads | nothing directly; reasons gain the party | `plan_status` reason keys by party - TS.2 |
-| D5 strategies | plan on the total price; on a flat supplier price the grid TOU is the only signal (F11) | no change in D5; §7's reasons; a test that a Norgespris house still moves the EV to the grid's night - TS.1 |
+| D1 pricing | modifiers mix parties (F10); a price source's basis is implicit (F6) | chain by party (§8); `Basis` on every source; add-on keys regrouped by party (TS.1) |
+| D1 events | a grid company's critical-peak days are the operator's events, not the supplier's | `GridTariff.events`; WP4.9's event sources wired to them (TS.2, 4.9) |
+| D1 15-min energy prices | Nordic day-ahead prices are quarter-hourly; grid charges and NO capacity windows stay hourly | slot length per slot (INV-7); the grid component per slot, no change |
+| D2 tariff model | a source needs a `day` price unit and a power factor (AU), nth-highest (FI Helen); seasonal prices inside a version (URDB) are dated versions | `day` and power factor in TS.5; nth-highest (D2 §10) |
+| D2 history on a tariff change | a household changing product or company mid-period (moving, opting into a TOU product) | a new tariff starts a new segment: the metric continues on D3's windows, the level on the new rule; D2 §5.10's `history_policy` decides (TS.2) |
+| D2 holidays | an operator's "helligdager" may not be the national calendar | the source's own definition where it states one, else national, noted in the summary; checked per operator in TS.3 |
+| D3 metering | windows 15/30/60 per rule; a tariff change may change the window | D2 §5.1 (coarse history), no change |
+| D4 loads | nothing directly; reasons gain the party | `plan_status` reason keys by party (TS.2) |
+| D5 strategies | plan on the total price; on a flat supplier price the grid TOU is the only signal (F11) | no change in D5; §7's reasons; a test that a Norgespris house still moves the EV to the grid's night (TS.1) |
 | D6 allocation | the ceiling from the grid party; contracted kW from the household (ES, NL) | no change (D-0520 bills the answer) |
 | D7 runtime | the monthly renewal timer, no fetch at start, entry writes without reload | TS.2 |
-| D8 flow and surface | §6's order and words; the service `powerplan.refresh_tariff` (D8 §5.7, with `services.yaml` and translations); repairs `tariff_stale`, `tariff_review`, `tariff_source_unreachable`; diagnostics carry the copy's provenance and next renewal (no personal data) | TS.2 |
+| D8 flow and surface | §6's order and words; the action `powerplan.refresh_tariff` (D8 §5.7, with `services.yaml` and translations); repairs `tariff_stale`, `tariff_review`, `tariff_source_unreachable`; diagnostics carry the copy's provenance and next renewal (no personal data) | TS.2 |
 | D9 testing | no network in tests: captured fixtures per source, fake sources in the flow, a setup test that fails on any HTTP call; the 12 hand-read NO tables; benchmark houses on fixtures | every TS |
 | D10 forecasts | not affected | - |
-| D11 accounting | savings by party; the counterfactual on the same copy and taxes (INV-69); bills as the household pays them | TS.1, D11 amendment |
-| D12 dashboard | the price stack by party; the grid's day/night bands on the timeline; the party in every "why" | TS.2, D12 amendment |
-| export (plusskunde) | grid feed-in terms (Tensio: negative energy charge = spot × marginal-loss rate, 6 % winter / 4 % summer); export pays no VAT or levies | `GridTariff.feed_in` where published (fri-nettleie does not; Tensio's PDF does) - Phase 7 |
-| state schemes | Norgespris (settled by the grid company, replaces spot, excludes strømstøtte), strømstøtte (threshold, share) | party 3's schemes, asked; exclusions enforced - TS.1 |
-| customer groups | fri-nettleie has `husholdning`, `fritid` (cabins), `liten_næring`; Norgespris limits differ for cabins | the site asks bolig/hytte once (O12); the group filters products - TS.3 |
-| per-load tariffs | DE §14a Modul 3, HU H-tarifa, CZ/SK HDO price or switch one load's consumption (§5.10) | `GridTariff.per_load`; a price curve per load (D1, D4); HDO windows as an external constraint - TS.7 |
-| location | a coordinate is not an answer; a postcode is, and every regulator's consumer site keys on it (F14) | step 0 (O17): the grid company, the municipality (tax zone), the price area - TS.2 |
-| moving / changing grid company | a new operator is a reconfigure | history continues on windows, level on the new rule - TS.2 |
+| D11 accounting | savings by party; the counterfactual on the same copy and taxes (INV-69); bills as the household pays them | TS.1 |
+| D12 dashboard | the price stack by party; the grid's day/night bands on the timeline; the party in every "why" | TS.2 |
+| export (plusskunde) | grid feed-in terms (Tensio: negative energy charge = spot × marginal-loss rate, 6 % winter / 4 % summer); export pays no VAT or levies | `GridTariff.feed_in` where published (fri-nettleie doesn't; Tensio's PDF does), Phase 7 |
+| state schemes | Norgespris (settled by the grid company, replaces spot, excludes strømstøtte), strømstøtte (threshold, share) | party 3's schemes, asked; exclusions enforced (TS.1) |
+| customer groups | fri-nettleie has `husholdning`, `fritid` (cabins), `liten_næring`; Norgespris limits differ for cabins | the site asks bolig/hytte once (O12); the group filters products (TS.3) |
+| per-load tariffs | DE §14a Modul 3, HU H-tarifa, CZ/SK HDO price or switch one load's consumption (§5.10) | `GridTariff.per_load`; a price curve per load (D1, D4); HDO windows as an external constraint (TS.7) |
+| location | a coordinate isn't an answer; a postcode is, and every regulator's consumer site keys on it (F14) | step 0 (O17): the grid company, the municipality (tax zone), the price area (TS.2) |
+| moving / changing grid company | a new operator is a reconfigure | history continues on windows, the level on the new rule (TS.2) |
 | multi-site | each site its own entry and copy | no change |
-| VAT over time | rates change (CY 2027-03-31, GB 2026-10-01 to 2027-03-31, ES Aug–Sep 2026) | dated rates in the module; each slot at its date's rate; `vat_check.py` warns on TEDB drift - TS.1 |
-| a VAT-registered site (farm, sole trader) | pays VAT but deducts it | the state override (O4) sets VAT 0; no question in the flow - TS.1 |
-| NO cabins and the Nord-Norge exemption | mval. § 6-6 exempts "husholdningsbruk"; whether a cabin (`fritid`) counts is the forskrift's | read in TS.3 with the customer group (O12) |
-| a country without a module, or no country in HA | a tariff typed by hand; VAT asked (1c′); no credit note | the flow works everywhere; the module list grows by registry - TS.2 |
+| VAT over time | rates change (CY, GB, ES's temporary reductions) | dated rates in the module; each slot at its date's rate; `vat_check.py` warns on TEDB drift (TS.1) |
+| a VAT-registered site (farm, sole trader) | pays VAT but deducts it | the state override (O4) sets VAT 0; no question in the flow (TS.1) |
+| NO cabins and the Nord-Norge exemption | mval. § 6-6 exempts "husholdningsbruk"; [mval-forskriften § 6-6-1](https://lovdata.no/forskrift/2009-12-15-1540/§6-6-1) a) counts "fritidsboliger, herunder hytter, setrer, koier o.l." as household use | a cabin in Finnmark, Troms or Nordland is exempt like a home; the `nord` zone holds for either product (D-0565) |
+| a country without a module, or no country in HA | a tariff typed by hand; VAT asked (1c′); no credit note | the flow works everywhere; the module list grows by registry (TS.2) |
 | currency and units | øre/kWh, kr/year, SEK, EUR, $/kW, c/kVA/day | parsers convert to major units and the tariff model's per-month/per-year; the summary shows the household's units (D8 §5.15) |
-| licences and attribution | fri-nettleie and Strømpriseridag are CC BY 4.0 ("fri bruk med lenke"); URDB and CDR have terms of use | every source declares `attribution`; the flow credits the country's sources under the grid company step, in the summary, diagnostics and docs (§6.1); terms read per source in its WP |
-| network, privacy, security | outbound calls to GitHub, NVE, Kartverket, Eltariff hosts, Energinet, the regulators' comparators, OpenEI, CDR hosts; the postcode only to an official directory (O17); a meter id (CZ HDO) only to the household's own grid company; untrusted input | TLS, timeouts, size caps (≤ 5 MB), `yaml.safe_load`, every parsed tariff through the loader (D2 §2) - TS.2 |
-| source failure or abandonment | a community dataset can stop | the copy keeps working; `tariff_stale` after its last version; the template path always exists; `preset_age.py`'s CI step extended to the country modules' dated facts |
+| licences and attribution | fri-nettleie and Strømpriseridag are CC BY 4.0 ("fri bruk med lenke"); URDB and CDR have terms of use | every source declares `attribution`; the flow credits the country's sources under the grid company step, in the summary, diagnostics and docs (§6.1); terms read per source |
+| network, privacy, security | outbound calls to GitHub, NVE, Kartverket, Eltariff hosts, Energinet, the regulators' comparators, OpenEI, CDR hosts; the postcode only to an official directory (O17); a meter id (HDO) only to the household's own grid company; untrusted input | TLS, timeouts, size caps (≤ 5 MB), `yaml.safe_load`, every parsed tariff through the loader (D2 §2); downloads in memory only, released after the copy (§5.2 rule 6) |
+| source failure or abandonment | a community dataset can stop | the copy keeps working; `tariff_stale` after its last version; the template path always exists; `preset_age.py` extended to the country modules' dated facts |
 | rate limits | URDB `DEMO_KEY` 50/day; the rest open | one listing + one document per flow; one renewal per copy |
 | HA quality scale | iot_class stays `calculated` (a tariff is configuration, not device polling) | outbound calls documented in `docs/` |
-| backtest | `tools/backtest.py --preset` reads shipped files | takes a stored copy or a fixture - TS.6 |
-| user docs | one page per party: "Nettleie", "Strømavtale", "Avgifter" | 6.2a |
+| backtest | `tools/backtest.py` reads a tariff file | takes a stored copy or a fixture (TS.6) |
+| user docs | one page per party: "Nettleie", "Strømavtale", "Avgifter" | D14 |
 | translations | every new step and reason in en and nb | each TS |
 
 ## 12. Cleanup of what exists before this LLD
@@ -645,7 +646,7 @@ A household's price has three owners, and only one of them - the grid company - 
 |---|---|---|
 | TS.1 Model, composition, first cleanup | `HouseholdPrice` by party, `Basis`, the country registry and one module per country with its VAT (dated, regional), levies and tax zones (§5.1, §9.1, O3, O21), `tools/vat_check.py` against TEDB, the chain by party (§8) with the state stage by the slot's date (§18 G16), D2 `spec()`, fixed fees per day (G21); price-source basis (O5); rules moved to `core/tariffs/rules/`; WP4.6 copies and add-ons migrated (§10); `_preset_components`/`_preset_modifiers` and `includes` removed (§12); D11 savings by party | one Tensio TS month billed and composed identically from excl-VAT and incl-VAT copies; no component counted twice across every D1 source × basis; a Norgespris house still moves the EV to the grid's night; the reference house migrates offline |
 | TS.2 Source framework, flow by party, renewal | the ladder and registry (§5.1), each country module's source ladder and time zones (the country's pre-selection, 0′), price fields labelled incl. VAT and the VAT dialog only without a country module (1c′) with each source's `attribution` and the credit note (§6.1), the monthly renewal timer and the `refresh_tariff` service (§10), directories (§5.3), the postcode step and its resolvers (O17), the nightly canary (§5.7), §6's steps and words (en, nb), the grid summary's "what the plan does", reasons by party (§7), renewal and repairs (§10), `_RECOMMENDED` and the grid/state add-ons removed from the supplier step (§12); D12's price stack by party | the three-party walk in both languages; `refresh_tariff` appends a new version, replaces a corrected one, keeps the rest and answers what it did, and leaves the copy untouched when the source fails; the timer fires one month after the last fetch or seven days before the last version ends, whichever is first; the credit note shown under the grid company step for every country with a source, and a registry test that no licence-requiring source lacks its credit; no screen offers an earlier party's component (INV-74); no HTTP at setup; a fake source at each tier falls to the next |
-| TS.3 Norway | `fri_nettleie` (T1b, the parked parser) with its staleness guard and every method (G6 weekly groups, G7 exclusive thresholds, G8 `MND_MAX`, `OV_TREFASE`), NVE and Kartverket zones; the nightly cross-check against Strømpriseridag, Digin (Elvia, Glitre - the maintainer's own keys, CI only) and Tensio's page; customer group | the 12 hand-read tables reproduced; all 199 household tariffs parse, none refused; Elvia's 17 May priced at the holiday rate; a stale file shown with its date and confirmed; Tensio TN asks the county, Elvia does not |
+| TS.3 Norway | `fri_nettleie` (T1b, the parked parser) with its staleness guard and every method (G6 weekly groups, G7 exclusive thresholds, G8 `MND_MAX`, `OV_TREFASE`), NVE and Kartverket zones; the nightly cross-check against Strømpriseridag, Digin (Elvia, Glitre - the maintainer's own keys, CI only) and Tensio's page (*in code: fri-nettleie's contract only - D-0564*); customer group; downloads held in memory and released (§5.2 rule 6) | the 12 hand-read tables reproduced; all 199 household tariffs parse, none refused; Elvia's 17 May priced at the holiday rate; a stale file shown with its date and confirmed; Tensio TN asks the county, Elvia does not |
 | TS.4 Sweden, Denmark | `eltariff` (T1a), `elpris_dk` (T1a: grid areas and national taxes) with `datahub_pricelist` (T1a) as its cross-check; Elpriskollen and SE non-Eltariff companies investigated for T1–T4 | Göteborg's seasonal peak tariff; Radius's winter table |
 | TS.5 Belgium, US, Australia | Fluvius areas (T1a) and VREG's XLSX for their rates (T6, O15); one adapter for the CWaPE/Brugel platform (T1a: Wallonia's 13 grid companies and Sibelga, by postcode and meter type, Wallonia's Impact bands as a rule template); sahkonhinta.fi's directory for FI (postcode → grid company); `openei_urdb`, `cdr_energy` (T1a); D2's `day` unit (G9), power factor (G10), `nth` (G5) and several peak charges per version (G4); `tou_urdb` paste removed | VREG rates equal the eight PDFs; APS summer and winter; a CDR plan with its confirmations |
 | TS.6 Retire shipped prices | §12's removals; backtest and benchmark houses on fixtures; `preset_age.py` on rules and tax data | the house on its fetched copy; no company price in the repository (INV-70) |
@@ -653,13 +654,13 @@ A household's price has three owners, and only one of them - the grid company - 
 
 ## 18. Can the engine say every tariff?
 
-Every variation this survey found (§5, §9, §5.10) and every household tariff in fri-nettleie (199), checked against the code on `main`: D2's tariff model and evaluator (`core/tariffs/grammar.py`, `evaluator.py`, `contracted.py`), D1's modifiers (`core/pricing/modifiers/`), and D6's ladder (`core/allocation/ladder.py`).
+Every variation this survey found (§5, §9, §5.10) and every household tariff in fri-nettleie (199; `tariffer/old/` - three companies merged away - not counted), checked against the code: D2's tariff model and evaluator (`core/tariffs/model.py`, `evaluator.py`, `contracted.py`), D1's modifiers (`core/pricing/modifiers/`), and D6's ladder (`core/allocation/ladder.py`).
 
 ### 18.1 Already said
 
 | variation | who | how |
 |---|---|---|
-| mean of the month's top-N daily maxima, distinct days, steps | NO (192 of 199 household tariffs: `TRE_DØGNMAX_MND`) | `PeakTariff(per_day="max", per_period="mean_top_n", n=3)` + `StepTable` |
+| mean of the month's top-N daily maxima, distinct days, steps | NO (186 of 199 household tariffs: `TRE_DØGNMAX_MND`) | `PeakTariff(per_day="max", per_period="mean_top_n", n=3)` + `StepTable` |
 | the month's highest hour | NO (`MND_MAX`, 2 of 199) | `per_period="max"` - only fri-nettleie's parser refuses it today (§18.2 G8) |
 | a fee by main-fuse size | NO (`OV_TREFASE`, 5 of 199), CZ, SK, LV | a fixed fee; the fuse itself is D3's hard limit |
 | peaks only in high-load hours, weighted windows, a season | SE Eltariff companies, Ellevio (night at half) | `eligible` + `WeightRule`; a seasonal price as dated versions the adapter emits a season ahead (the monthly renewal keeps them ahead) |
@@ -707,7 +708,7 @@ Every variation this survey found (§5, §9, §5.10) and every household tariff 
 
 **Not gaps**: ES's toll term as an hourly series (the 2.0TD periods carry it; the series is the cross-check); NL and CZ connections in amps (the main fuse is already D3's limit); a US coincident-peak demand charge (not residential; out of scope); an operator's own holiday list (§11).
 
-**Verdict.** The tariff model says the capacity rules of every country that bills them today - 192 of 199 Norwegian household tariffs as-is, the other 7 with G6–G8 - and D1 says every energy-charge shape surveyed except the four marked above (G11, G12, G17, G19). What it cannot say is **structural in two places**: a load with its own tariff (G13) and a limit that is priced rather than tripped (G1). Both are TS.7's and in v1 (O24); G1 is decided (O23: a priced soft limit, INV-36 narrowed to tripping limits). TS.1–TS.5 need only G4–G10, G16 and G21 - small additions.
+**Verdict.** The tariff model says the capacity rules of every country that bills them - 186 of 199 Norwegian household tariffs as they are, 12 of the other 13 with G6–G8 and Tinfos's `UKJENT` asked (§5.6) - and D1 says every energy-charge shape surveyed except the four marked above (G11, G12, G17, G19). What it can't say is **structural in two places**: a load with its own tariff (G13) and a limit that's priced rather than tripped (G1). Both are TS.7's and in v1 (O24), and G1 is decided (O23: a priced soft limit, INV-36 narrowed to tripping limits). TS.1–TS.5 only need G4–G10, G16 and G21 - small additions.
 
 ## 19. Tests that must exist before merge
 

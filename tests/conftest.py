@@ -8,8 +8,12 @@ request `hass` and therefore get `enable_custom_integrations`.
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 pytest_plugins = ("pytest_homeassistant_custom_component",)
 
@@ -22,6 +26,25 @@ def auto_enable_custom_integrations(request: pytest.FixtureRequest) -> None:
     """Load `custom_components/powerplan` for every test that starts HA."""
     if "hass" in request.fixturenames:
         request.getfixturevalue("enable_custom_integrations")
+
+
+@pytest.fixture(autouse=True)
+def only_the_tariff_sources_a_test_registers() -> Iterator[None]:
+    """Show a test the tariff sources it registers, never a shipped adapter (D9 §5.15).
+
+    The shipped adapters fetch the network; a test that wants one registers it and
+    serves its captured documents (`tests/builders/tariff_sources.py`).
+    """
+    from custom_components.powerplan.providers.tariffs import base  # noqa: PLC0415
+
+    shipped = [base.get(key) for key in base.keys()]  # noqa: SIM118 - the registry's own call
+    for cls in shipped:
+        base.unregister(cls.key)
+    yield
+    for key in base.keys():  # noqa: SIM118 - the registry's own call
+        base.unregister(key)
+    for cls in shipped:
+        base.register(cls)
 
 
 def _group(item: pytest.Item) -> str | None:

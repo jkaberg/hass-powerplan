@@ -136,6 +136,11 @@ module = "custom_components.powerplan.core.*"
 strict = true
 
 [[tool.mypy.overrides]]
+# PyYAML ships with Home Assistant, without stubs; fri-nettleie's fetcher reads it.
+module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = ["tests.*", "tools.*"]
 disallow_untyped_defs = false
 

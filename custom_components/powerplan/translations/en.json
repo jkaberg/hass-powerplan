@@ -587,7 +587,13 @@
       },
       "tariff_confirm": {
         "title": "Is this right for {operator}?",
-        "description": "The source does not say everything about your tariff. Check these values against your grid bill; the suggested one is the usual.\n\n{why}"
+        "description": "The source does not say everything about your tariff. Check these values against your grid bill; the suggested one is the usual.\n\n{why}",
+        "data": {
+          "method": "How your power step is worked out",
+          "inclusive": "A peak exactly on a step's limit belongs to the step above",
+          "checked": "These prices match my latest grid bill",
+          "main_fuse_a": "Main fuse (A)"
+        }
       },
       "modifier_supplier_tou": {
         "title": "What does your supplier charge by time of day?",
@@ -2063,6 +2069,14 @@
     "scheme": {
       "options": {
         "stromstotte": "Strømstøtte"
+      }
+    },
+    "tariff_method": {
+      "options": {
+        "TRE_DØGNMAX_MND": "Mean of the month's 3 highest hours, on different days",
+        "MND_MAX": "The month's highest hour",
+        "FEM_VEKTET_ÅR": "The year's 5 highest weeks, weighted by month",
+        "OV_TREFASE": "By the size of the main fuse"
       }
     }
   },

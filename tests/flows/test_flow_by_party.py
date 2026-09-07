@@ -21,10 +21,13 @@ from custom_components.powerplan.core.tariffs.sources import (
     Question,
     Tier,
     UnreachableError,
+    fri_nettleie,
+    nve,
 )
 from custom_components.powerplan.diagnostics import async_get_config_entry_diagnostics
 from custom_components.powerplan.providers.tariffs import base
-from tests.builders.tariff_sources import fake
+from custom_components.powerplan.providers.tariffs.fri_nettleie import FriNettleie
+from tests.builders.tariff_sources import FRI_ARCHIVE, NVE_COUNTIES, fake
 from tests.flows.test_site_flow import (
     ELECTRICAL_NO,
     _answer,
@@ -81,6 +84,46 @@ def directory(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
     monkeypatch.setattr(base.Http, "get", get)
     return asked
+
+
+@pytest.fixture
+def fri(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, list[Any]]]:
+    """Register fri-nettleie, answered from its captured archive and NVE's county list.
+
+    Only the download is replaced: `Http`'s cache and its release run as shipped.
+    """
+    seen: dict[str, list[Any]] = {"downloaded": [], "released": []}
+
+    async def download(self: Any, url: str, headers: Any) -> bytes:
+        seen["downloaded"].append(url)
+        if url == fri_nettleie.TARBALL:
+            return FRI_ARCHIVE.read_bytes()
+        if url.startswith(nve.URL.split("?", maxsplit=1)[0]):
+            return NVE_COUNTIES.read_bytes()
+        raise UnreachableError(url)
+
+    release = base.Http.release
+
+    def released(self: Any) -> None:
+        seen["released"].append(len(self._cache))
+        release(self)
+
+    monkeypatch.setattr(base.Http, "_download", download)
+    monkeypatch.setattr(base.Http, "release", released)
+    base.register(FriNettleie)
+    yield seen
+    base.unregister(fri_nettleie.KEY)
+
+
+def _options(result: dict[str, Any], field: str) -> list[str]:
+    """Return a select's values, as the form offers them."""
+    for key, selector in result["data_schema"].schema.items():
+        if key == field:
+            return [
+                option if isinstance(option, str) else option["value"]
+                for option in selector.config["options"]
+            ]
+    raise KeyError(field)
 
 
 async def _to_postcode(hass: HomeAssistant, ams_meter: str) -> dict[str, Any]:
@@ -343,3 +386,45 @@ async def test_37_diagnostics_carry_the_copys_provenance_and_never_the_postcode(
     assert diagnostics["tariff"]["credit"][0]["licence"] == "CC BY 4.0"
     assert "7010" not in str(diagnostics)
     await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_1_tensio_tn_asks_the_county_and_the_flow_lets_its_downloads_go(
+    hass: HomeAssistant,
+    ams_meter: str,
+    nordpool_entry: str,
+    persons: list[str],
+    fri: dict[str, list[Any]],
+) -> None:
+    """D13 §19 1: NVE puts Tensio TN in Nordland and Trøndelag - the county is asked.
+
+    The archive is downloaded once for the list and the copy, and released as soon
+    as the copy is taken (§5.2 rule 6).
+    """
+    result = await _to_postcode(hass, ams_meter)
+    result = await _answer(hass, result)
+    assert "operator:Tensio TN AS" in _options(result, "preset")
+    result = await _answer(hass, result, preset="operator:Tensio TN AS")
+    assert result["step_id"] == "tariff_zone"
+    assert _options(result, "zone") == ["Nordland", "Trøndelag"]
+    result = await _answer(hass, result, zone="Nordland")
+    assert result["step_id"] == "tariff_preset"
+    assert fri["downloaded"].count(fri_nettleie.TARBALL) == 1
+    assert fri["released"] == [2], "the archive and NVE's list, dropped once the copy is taken"
+    result = await _finish(hass, result)
+    price = household.from_json(result["data"][CONF_TARIFF]["price"])
+    assert (price.grid.provenance.source, price.grid.operator_key) == ("fri_nettleie", "tensio-tn")
+    assert (price.state.zone.key, price.state.zone.settled) == ("nord", "asked")
+
+
+async def test_1_elvia_serves_one_zone_and_asks_no_county(
+    hass: HomeAssistant,
+    ams_meter: str,
+    nordpool_entry: str,
+    persons: list[str],
+    fri: dict[str, list[Any]],
+) -> None:
+    """Elvia is one tax zone in NVE's list: straight from the company to its summary."""
+    result = await _to_postcode(hass, ams_meter)
+    result = await _answer(hass, result)
+    result = await _answer(hass, result, preset="operator:Elvia AS")
+    assert result["step_id"] == "tariff_preset"

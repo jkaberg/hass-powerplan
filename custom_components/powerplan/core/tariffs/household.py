@@ -354,11 +354,12 @@ def _scaled(rule: TariffRule, factor: Decimal) -> TariffRule:
     pricing = rule.pricing
     scaled: StepTable | Linear | Tiers
     if isinstance(pricing, StepTable):
-        scaled = StepTable(
+        scaled = replace(
+            pricing,
             steps=tuple(
                 replace(step, fee_per_period=_money(step.fee_per_period, factor))
                 for step in pricing.steps
-            )
+            ),
         )
     elif isinstance(pricing, Linear):
         scaled = replace(pricing, price_per_kw=_money(pricing.price_per_kw, factor))

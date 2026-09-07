@@ -20,7 +20,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -48,18 +48,43 @@ from custom_components.powerplan.core.tariffs.sources import (  # noqa: E402
 from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 TIMEOUT_S = 30.0
 
 
 class CanaryHttp:
-    """`Http`'s conduct outside Home Assistant: the named User-Agent, the size cap, a cache."""
+    """`Http`'s conduct outside Home Assistant: the named User-Agent, the size cap, a cache.
 
-    def __init__(self, session: aiohttp.ClientSession) -> None:
-        """Use one session for the run."""
+    What it downloads is held in memory for the run and released at its end (§5.2 rule 6).
+    """
+
+    def __init__(self, session: aiohttp.ClientSession, day: date) -> None:
+        """Use one session for the run, dated `day`."""
         self._session = session
+        self._day = day
         self._cache: dict[str, bytes] = {}
+        self._parsed: dict[tuple[str, Callable[[bytes], Any]], Any] = {}
+
+    def today(self) -> date:
+        """Return the run's day: what every fetch is dated by."""
+        return self._day
+
+    async def executor[T](self, job: Callable[..., T], *args: Any) -> T:
+        """Run a parse off the event loop."""
+        return await asyncio.to_thread(job, *args)
+
+    def release(self) -> None:
+        """Drop every download."""
+        self._cache.clear()
+        self._parsed.clear()
+
+    async def document(self, url: str, parse: Callable[[bytes], Any]) -> Any:
+        """Return `url` parsed, once for the run."""
+        key = (url, parse)
+        if key not in self._parsed:
+            self._parsed[key] = await self.executor(parse, await self.get(url))
+        return self._parsed[key]
 
     async def get(self, url: str, **headers: str) -> bytes:
         """Return `url`'s body, or raise `UnreachableError`."""
@@ -143,30 +168,41 @@ async def run(countries_: Sequence[str], day: date, time_zone: str) -> list[Find
     findings: list[Finding] = []
     zone = ZoneInfo(time_zone)
     async with aiohttp.ClientSession() as session:
-        http = CanaryHttp(session)
-        for country in countries_:
-            by_operator: dict[str, list[tuple[str, GridTariff]]] = {}
-            for cls in base.for_country(country):
+        http = CanaryHttp(session, day)
+        try:
+            findings.extend(await _cross_check(http, countries_, day, zone))
+        finally:
+            http.release()
+    return findings
+
+
+async def _cross_check(
+    http: CanaryHttp, countries_: Sequence[str], day: date, zone: ZoneInfo
+) -> list[Finding]:
+    findings: list[Finding] = []
+    for country in countries_:
+        by_operator: dict[str, list[tuple[str, GridTariff]]] = {}
+        for cls in base.for_country(country):
+            try:
+                operators = await cls().operators(http)  # type: ignore[arg-type]
+            except SourceError as err:
+                findings.append(Finding(cls.key, "—", f"no operators: {err}"))
+                continue
+            if not operators:
+                findings.append(Finding(cls.key, "—", "lists no operator"))
+            for operator in operators:
                 try:
-                    operators = await cls().operators(http)  # type: ignore[arg-type]
+                    fetched = await cls().fetch(http, operator.key, None, {})  # type: ignore[arg-type]
                 except SourceError as err:
-                    findings.append(Finding(cls.key, "—", f"no operators: {err}"))
+                    findings.append(Finding(cls.key, operator.name, str(err)))
                     continue
-                if not operators:
-                    findings.append(Finding(cls.key, "—", "lists no operator"))
-                for operator in operators:
-                    try:
-                        fetched = await cls().fetch(http, operator.key, None, {})  # type: ignore[arg-type]
-                    except SourceError as err:
-                        findings.append(Finding(cls.key, operator.name, str(err)))
-                        continue
-                    by_operator.setdefault(operator.name, []).append((cls.key, fetched.grid))
-            for name, copies in by_operator.items():
-                for (key_a, grid_a), (key_b, grid_b) in pairwise(copies):
-                    findings.extend(
-                        Finding(f"{key_a} / {key_b}", name, what)
-                        for what in disagreements(grid_a, grid_b, country, day, zone)
-                    )
+                by_operator.setdefault(operator.name, []).append((cls.key, fetched.grid))
+        for name, copies in by_operator.items():
+            for (key_a, grid_a), (key_b, grid_b) in pairwise(copies):
+                findings.extend(
+                    Finding(f"{key_a} / {key_b}", name, what)
+                    for what in disagreements(grid_a, grid_b, country, day, zone)
+                )
     return findings
 
 

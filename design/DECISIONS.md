@@ -2284,3 +2284,38 @@ The timer fires at 03:17 local on `renew_at`, never within an hour of start (INV
 
 `tools/tariff_canary.py` fetches every registered source's live endpoint with the integration's User-Agent, requires operators and an accepted tariff, and compares each company across the tiers that list it, as the household pays it. It exits 1 on any finding; `tariff-sources.yml` runs it nightly and opens one issue per day of findings. Affects D9 §5.15, D13 §5.7.
 **Rejected:** comparing raw documents - sources publish on different bases.
+
+### D-0560 · fri-nettleie as one archive, held in memory for one flow
+
+`fri_nettleie.py` downloads the repository tarball (405 kB) and reads `tariffer/*.yml` and Elhub's `grid_owners.json` member by member without extracting, skipping `tariffer/old/`. The YAML is parsed in the executor once per `Http`, so a flow's list, copy and confirmation share one download. Every download is released once the copy is taken, a renewal returns or the flow ends; nothing reaches disk (D13 §5.2 rule 6). NVE's county list for the month gives each company its zones. Affects D13 §5.2, §5.4, §11.
+**Rejected:** caching the archive in `.storage` - downloaded data doesn't outlive its use, and the copy in `entry.data` already survives an outage.
+
+### D-0561 · A yearly step fee per month, to 1/100 øre
+
+fri-nettleie prices steps per year; the copy stores them per month, rounded to 0.0001 NOK, since `Decimal(1214)/12` doesn't terminate and the copy read back must equal the copy written (D13 §19 4).
+**Rejected:** storing the yearly figure - every other source gives monthly steps.
+
+### D-0562 · What fri-nettleie leaves out is asked once; the site's fuse never
+
+An unknown method is asked as a choice of four (`TRE_DØGNMAX_MND` pre-selected), a missing threshold rule as yes/no, a stale file as "these match my latest bill". An answered gap isn't asked again. `OV_TREFASE`'s fee is chosen by the main fuse the electrical step already holds; only a site without one is asked. Affects D13 §5.6.
+**Rejected:** sending such companies to the template - asks more than the one missing fact.
+
+### D-0563 · A company across tax zones asks the county
+
+Where NVE lists a company in counties of several zones, step 1b offers those counties and stores the chosen one's zone; a postcode that settled it skips the step. NVE's county names are trimmed. Households know their county, not zone names. Affects D13 §6.
+**Rejected:** asking the postcode again - a household that skipped it chose not to give it (O17).
+
+### D-0564 · Norway's cross-checks: fri-nettleie's contract only, for now
+
+The canary checks every company in the archive gives a copy the model accepts. D13 §5.4's cross-checks aren't built: Strømpriseridag sources its data from fri-nettleie, so comparing them checks fri-nettleie against itself; Tensio's price page carries content signals in its `robots.txt` that restrict automated use, so no adapter reads it; Digin (Elvia, Glitre) needs API keys as CI secrets that don't exist yet, and without them no fixture can be captured (§5.2 rule 4). Affects D13 §5.4, §17.
+**Rejected:** building the Strømpriseridag comparison - it would flag lag as error every time fri-nettleie publishes first.
+
+### D-0565 · A cabin in Nord-Norge is exempt like a home
+
+Merverdiavgiftsforskriften § 6-6-1 a) counts holiday homes and cabins as household use, so the Nord-Norge exemption (mval. § 6-6) covers a cabin exactly as a home. Affects D13 §9.
+**Rejected:** a cabin zone - the regulation doesn't separate them.
+
+### D-0566 · A test sees only the tariff sources it registers
+
+An autouse fixture takes every shipped adapter out of the registry per test; a test that wants fri-nettleie registers it and serves the captured archive (`tests/builders/tariff_sources.py`). Otherwise every Norwegian flow test would reach GitHub with sockets closed. Affects D9 §5.15.
+**Rejected:** serving every adapter's fixtures to every test - 73 real companies bury the named fakes.

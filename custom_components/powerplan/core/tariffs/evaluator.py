@@ -630,6 +630,88 @@ class Evaluator:
                 groups[extra_day] = [max([extra_kw, *current])]
         return groups, coarse
 
+    def _week_values(
+        self,
+        period_key: str,
+        tariff: PeakTariff,
+        *,
+        counterfactual: bool = False,
+        inflate: bool = True,
+        extra_day: date | None = None,
+        extra_kw: float = 0.0,
+    ) -> tuple[list[tuple[date, float]], bool]:
+        """Every ISO week's highest window over the tariff's period (D2 §4 G6).
+
+        A week counts once, at its highest hour weighted by the week's **Monday** -
+        Fjellnett's rule for a week that spans two months (fellesbestemmelser
+        2026). The days' raw maxima are kept 13 months (`KEEP_DAYS_MONTHS`), which
+        a rolling year of weeks needs.
+        """
+        span = tariff.rolling_months if tariff.period == "rolling_months" else 1
+        keys = {_months_before(period_key, index) for index in range(span)}
+        days = self.history.counterfactual_days if counterfactual else self.history.days
+        weeks: dict[date, float] = {}
+        coarse = False
+        for day, rec in days.items():
+            if month_key(day) not in keys:
+                continue
+            monday = day - timedelta(days=day.weekday())
+            override = self.history.override_for("day", day.isoformat())
+            coarse = coarse or rec.coarse
+            factor = tariff.coarse_factor if (rec.coarse and inflate) else 1.0
+            value = (
+                override
+                if override is not None
+                else rec.max_raw_kw * self._day_weight(monday, tariff) * factor
+            )
+            weeks[monday] = max(weeks.get(monday, 0.0), value)
+        if extra_day is not None and extra_kw > 0.0 and month_key(extra_day) in keys:
+            monday = extra_day - timedelta(days=extra_day.weekday())
+            weeks[monday] = max(weeks.get(monday, 0.0), extra_kw)
+        return [(monday, value) for monday, value in weeks.items() if value > 0.0], coarse
+
+    def _ratcheted(
+        self, raw: float, period_key: str, tariff: PeakTariff, kwargs: Mapping[str, Any]
+    ) -> float:
+        """Return the billed metric: `raw`, held up by a ratchet on the months before (D2 §5.2)."""
+        if tariff.ratchet is None:
+            return raw
+        peaks = []
+        for index in range(tariff.ratchet.lookback_months):
+            value, _, _, known = self._month_metric(
+                _months_before(period_key, index), tariff, **kwargs
+            )
+            if known:
+                peaks.append(value)
+        return max(raw, tariff.ratchet.fraction * max(peaks)) if peaks else raw
+
+    def _week_metric(
+        self, period_key: str, tariff: PeakTariff, kwargs: Mapping[str, Any]
+    ) -> tuple[float, bool, tuple[tuple[str, float], ...], bool]:
+        """Return `(kW, partial, entries, coarse)` for a weekly tariff (D2 §4 G6)."""
+        weeks, coarse = self._week_values(period_key, tariff, **kwargs)
+        values = [value for _, value in weeks]
+        if not values:
+            raw = 0.0
+        elif tariff.per_period == "max":
+            raw = max(values)
+        else:
+            raw = mean_top_n(values, tariff.n)
+        partial = tariff.per_period == "mean_top_n" and len(values) < tariff.n
+        entries = tuple(
+            (monday.isoformat(), value)
+            for monday, value in sorted(weeks, key=lambda row: (-row[1], row[0]))
+        )
+        return raw, partial, entries, coarse
+
+    def _day_weight(self, day: date, tariff: PeakTariff) -> float:
+        """Return the weight a whole day takes: the first rule matching its local noon."""
+        noon = datetime.combine(day, datetime.min.time().replace(hour=12), tzinfo=self.tz)
+        for rule in tariff.weights:
+            if rule.when.matches(noon, self.tz, self.calendar):
+                return rule.weight
+        return 1.0
+
     def _entry_list(self, groups: Mapping[date, list[float]], tariff: PeakTariff) -> list[float]:
         if tariff.per_period == "mean_top_n" and tariff.distinct_days:
             return [max(values) for values in groups.values() if values]
@@ -723,8 +805,11 @@ class Evaluator:
             "extra_kw": extra_kw,
         }
         coarse = False
-        if tariff.period == "rolling_months":
-            monthly: list[float] = []
+        monthly: list[float] = []
+        if tariff.group == "week":
+            raw, partial, entries, coarse = self._week_metric(period_key, tariff, kwargs)
+            missing = 0
+        elif tariff.period == "rolling_months":
             for index in range(tariff.rolling_months):
                 value, month_coarse, _, known = self._month_metric(
                     _months_before(period_key, index), tariff, **kwargs
@@ -739,7 +824,6 @@ class Evaluator:
             )
             partial = missing > 0
         else:
-            monthly = []
             groups: dict[date, list[float]] = {}
             for key in self._month_keys(period_key):
                 month_groups, month_coarse = self._day_values(key, tariff, **kwargs)
@@ -757,17 +841,7 @@ class Evaluator:
             missing = 0
             entries = tuple(self._month_entries(period_key, tariff, inflate=inflate))
 
-        billed = raw
-        if tariff.ratchet is not None:
-            peaks = []
-            for index in range(tariff.ratchet.lookback_months):
-                value, _, _, known = self._month_metric(
-                    _months_before(period_key, index), tariff, **kwargs
-                )
-                if known:
-                    peaks.append(value)
-            if peaks:
-                billed = max(raw, tariff.ratchet.fraction * max(peaks))
+        billed = self._ratcheted(raw, period_key, tariff, kwargs)
         return _Metric(
             kw=billed,
             raw_kw=raw,
@@ -1009,6 +1083,7 @@ class Evaluator:
         today = now.astimezone(self.tz).date()
         if (
             tariff.per_day == "max"
+            and tariff.group == "day"
             and tariff.per_period == "mean_top_n"
             and tariff.distinct_days
             and tariff.period == "month"

@@ -92,12 +92,18 @@ class Product:
 
 @dataclass(frozen=True, slots=True)
 class Operator:
-    """A grid company as a source lists it; `zones` are the tax zones it spans (step 1b)."""
+    """A grid company as a source lists it; `zones` are the tax zones it spans (step 1b).
+
+    `counties` names the counties it serves with each one's zone (`""` for the
+    national rates), where the source knows them - the county question lists
+    those names rather than the zones'.
+    """
 
     key: str
     name: str
     products: tuple[Product, ...] = ()
     zones: tuple[str, ...] = ()
+    counties: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +113,8 @@ class Question:
     key: str
     default: Any
     why: str
+    #: The answers there are, where the field is a choice (a selector's translation key names them).
+    options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

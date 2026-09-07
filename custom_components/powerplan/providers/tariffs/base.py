@@ -21,7 +21,8 @@ from custom_components.powerplan.core.tariffs.sources import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
+    from datetime import date
 
     from homeassistant.core import HomeAssistant
 
@@ -46,19 +47,51 @@ TIMEOUT_S: Final = 20.0
 
 
 class Http:
-    """One flow's or one renewal's requests, cached for its life (§5.2 rule 2)."""
+    """One flow's or one renewal's requests, cached in memory for its life (§5.2 rules 2, 6).
+
+    Nothing is written to disk; `release()` drops every response once the copy is taken.
+    """
 
     def __init__(self, hass: HomeAssistant) -> None:
         """Use Home Assistant's shared session."""
         from homeassistant.helpers.aiohttp_client import async_get_clientsession  # noqa: PLC0415
 
+        self._hass = hass
         self._session = async_get_clientsession(hass)
         self._cache: dict[str, bytes] = {}
+        self._parsed: dict[tuple[str, Callable[[bytes], Any]], Any] = {}
+
+    def today(self) -> date:
+        """Return the site's date: what a fetch is dated by."""
+        from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+        return dt_util.now().date()
+
+    async def executor[T](self, job: Callable[..., T], *args: Any) -> T:
+        """Run a parse too heavy for the event loop in Home Assistant's executor."""
+        return await self._hass.async_add_executor_job(job, *args)
+
+    def release(self) -> None:
+        """Drop every response held: the copy is taken, the downloads are not kept (rule 6)."""
+        self._cache.clear()
+        self._parsed.clear()
+
+    async def document[T](self, url: str, parse: Callable[[bytes], T]) -> T:
+        """Return `url` parsed, in the executor, once for this flow or renewal."""
+        key = (url, parse)
+        if key not in self._parsed:
+            self._parsed[key] = await self.executor(parse, await self.get(url))
+        result: T = self._parsed[key]
+        return result
 
     async def get(self, url: str, **headers: str) -> bytes:
-        """Return `url`'s body; `UnreachableError` on anything but a plain answer."""
-        if url in self._cache:
-            return self._cache[url]
+        """Return `url`'s body, downloaded once for this flow or renewal (rule 2)."""
+        if url not in self._cache:
+            self._cache[url] = await self._download(url, headers)
+        return self._cache[url]
+
+    async def _download(self, url: str, headers: Mapping[str, str]) -> bytes:
+        """Fetch `url`; `UnreachableError` on anything but a plain answer."""
         try:
             async with self._session.get(
                 url,
@@ -74,7 +107,6 @@ class Http:
         if len(body) > MAX_BYTES:
             msg = f"{url}: larger than {MAX_BYTES} bytes"
             raise UnreachableError(msg)
-        self._cache[url] = body
         return body
 
 

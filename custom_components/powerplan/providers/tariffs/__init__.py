@@ -6,6 +6,7 @@ conduct and hands them over. Nothing here runs at start (INV-73): the flow, the
 monthly renewal and `powerplan.refresh_tariff` are the only callers.
 """
 
+from . import fri_nettleie
 from .base import (
     MAX_BYTES,
     USER_AGENT,
@@ -25,6 +26,7 @@ __all__ = [
     "Resolved",
     "TariffSource",
     "for_country",
+    "fri_nettleie",
     "get",
     "keys",
     "register",

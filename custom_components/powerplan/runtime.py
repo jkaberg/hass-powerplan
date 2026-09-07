@@ -3103,6 +3103,10 @@ class Runtime:
             and today > price.grid.valid_to
         )
 
+    def _source_answers(self, price: household.HouseholdPrice) -> dict[str, Any]:
+        """Return what a source may lack: the main fuse (NO `OV_TREFASE`), the household's answers."""
+        return {"main_fuse_a": self.build.cfg.electrical.main_fuse_a, **price.confirmed}
+
     async def async_renew_tariff(self, reason: str, now: datetime | None = None) -> dict[str, Any]:
         """Fetch the copy again, merge it, write it without a reload (D13 §10, D7 §5.9).
 
@@ -3130,13 +3134,18 @@ class Runtime:
             }
         grid = price.grid
         today = now.astimezone(self.build.cfg.tz).date()
-        resolved = await tariff_ladder.resolve(
-            tariff_sources.Http(self.hass),
-            price.state.zone.country,
-            grid.operator_key or grid.operator,
-            grid.product_key,
-            answers=price.confirmed,
-        )
+        http = tariff_sources.Http(self.hass)
+        try:
+            resolved = await tariff_ladder.resolve(
+                http,
+                price.state.zone.country,
+                grid.operator_key or grid.operator,
+                grid.product_key,
+                answers=self._source_answers(price),
+            )
+        finally:
+            # §5.2 rule 6: the renewal's downloads end with it.
+            http.release()
         fetched = resolved.fetched
         disagree = sorted(
             key

@@ -315,6 +315,8 @@ def _nulls(raw: Mapping[str, Any]) -> list[str]:
 def _validate_peak(peak: Mapping[str, Any], path: str, source: str, raw: Mapping[str, Any]) -> None:
     pricing = peak["pricing"]
     shapes = [key for key in ("steps", "linear", "tiers") if key in pricing]
+    if "inclusive" in pricing and "steps" not in pricing:
+        _fail(f"{path}.pricing", "inclusive applies to steps only", source)
     if len(shapes) != 1:
         _fail(f"{path}.pricing", "needs exactly one of steps, linear or tiers", source)
     if not raw.get("currency"):
@@ -479,7 +481,8 @@ def _peak(raw: Mapping[str, Any], currency: str) -> PeakTariff:
                     name=name,
                 )
                 for upper, fee, name in pricing["steps"]
-            )
+            ),
+            inclusive=bool(pricing.get("inclusive", True)),
         )
     elif "linear" in pricing:
         linear = pricing["linear"]
@@ -518,6 +521,7 @@ def _peak(raw: Mapping[str, Any], currency: str) -> PeakTariff:
             lookback_months=int(ratchet["lookback_months"]),
         ),
         coarse_factor=float(raw.get("coarse_factor", 1.15)),
+        group=raw.get("group", "day"),
     )
 
 
@@ -609,6 +613,8 @@ def _dump_peak(peak: PeakTariff) -> dict[str, Any]:
                 for step in pricing.steps
             ]
         }
+        if not pricing.inclusive:
+            shape["inclusive"] = False
     elif isinstance(pricing, Linear):
         shape = {
             "linear": {
@@ -631,6 +637,8 @@ def _dump_peak(peak: PeakTariff) -> dict[str, Any]:
         "coarse_factor": peak.coarse_factor,
         "pricing": shape,
     }
+    if peak.group != "day":
+        raw["group"] = peak.group
     if peak.eligible is not None:
         raw["eligible"] = _dump_filter(peak.eligible)
     if peak.weights:

@@ -1684,11 +1684,21 @@ def questions_schema(questions: Sequence[Any], answers: Mapping[str, Any]) -> vo
     fields: dict[Any, Any] = {}
     for question in questions:
         value = answers.get(question.key, question.default)
-        selector: Any = (
-            NumberSelector(NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any"))
-            if isinstance(question.default, int | float)
-            else TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
-        )
+        selector: Any
+        if question.options:
+            selector = SelectSelector(
+                SelectSelectorConfig(
+                    options=list(question.options),
+                    mode=SelectSelectorMode.LIST,
+                    translation_key=f"tariff_{question.key}",
+                )
+            )
+        elif isinstance(question.default, bool):
+            selector = BooleanSelector()
+        elif isinstance(question.default, int | float):
+            selector = NumberSelector(NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any"))
+        else:
+            selector = TextSelector(TextSelectorConfig(type=TextSelectorType.TEXT))
         fields[vol.Required(question.key, default=value)] = selector
     return vol.Schema(fields)
 

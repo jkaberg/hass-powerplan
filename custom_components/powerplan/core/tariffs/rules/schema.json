@@ -86,6 +86,7 @@
         "eligible": {"$ref": "#/$defs/time_filter"},
         "weights": {"type": "array", "items": {"$ref": "#/$defs/weight_rule"}},
         "per_day": {"type": "string", "enum": ["max", "all"]},
+        "group": {"type": "string", "enum": ["day", "week"], "description": "D2 §4 G6: what one entry is the highest of — a day, or an ISO week weighted by its Monday."},
         "per_period": {"type": "string", "enum": ["max", "mean_top_n"]},
         "n": {"type": "integer", "minimum": 1, "maximum": 31},
         "distinct_days": {"type": "boolean"},
@@ -102,6 +103,7 @@
       "additionalProperties": false,
       "description": "Exactly one of steps, linear or tiers (D2 §4).",
       "properties": {
+        "inclusive": {"type": "boolean", "description": "D2 §4 G7: false keeps a metric equal to a bound in the lower step."},
         "steps": {
           "type": ["array", "null"],
           "minItems": 1,

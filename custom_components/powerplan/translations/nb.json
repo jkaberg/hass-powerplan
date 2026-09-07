@@ -587,7 +587,13 @@
       },
       "tariff_confirm": {
         "title": "Stemmer dette for {operator}?",
-        "description": "Kilden sier ikke alt om nettleien din. Sjekk disse verdiene mot nettleiefakturaen; forslaget er det vanlige.\n\n{why}"
+        "description": "Kilden sier ikke alt om nettleien din. Sjekk disse verdiene mot nettleiefakturaen; forslaget er det vanlige.\n\n{why}",
+        "data": {
+          "method": "Hvordan effekttrinnet ditt beregnes",
+          "inclusive": "En topp nøyaktig på trinnets grense hører til trinnet over",
+          "checked": "Prisene stemmer med siste nettleiefaktura",
+          "main_fuse_a": "Hovedsikring (A)"
+        }
       },
       "modifier_supplier_tou": {
         "title": "Hva tar strømleverandøren etter tid på døgnet?",
@@ -2063,6 +2069,14 @@
     "scheme": {
       "options": {
         "stromstotte": "Strømstøtte"
+      }
+    },
+    "tariff_method": {
+      "options": {
+        "TRE_DØGNMAX_MND": "Snittet av månedens 3 høyeste timer, på ulike døgn",
+        "MND_MAX": "Månedens høyeste time",
+        "FEM_VEKTET_ÅR": "Årets 5 høyeste uker, vektet etter måned",
+        "OV_TREFASE": "Etter størrelsen på hovedsikringen"
       }
     }
   },

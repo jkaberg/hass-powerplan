@@ -689,7 +689,7 @@ class CountryModule:            # registered, pure: VAT (dated, regional), levie
 - **INV-74** No flow screen asks for a component an earlier party already supplied, and every screen after the grid company names what is already covered.
 - **INV-75** A company's tariff comes from the first source tier that exists and passes the quality check, country-wide before company-specific, an API before a file, a file before a document.
 
-**Conduct.** An undocumented endpoint is used only as any visitor's browser uses it - no login, no key, no captcha, a named User-Agent, one call per flow and renewal; a 401/403, a captcha or a `robots.txt` disallow ends the adapter. A postcode goes only to an official directory; a meter id only to the household's own grid company.
+**Conduct.** An undocumented endpoint is used only as any visitor's browser uses it - no login, no key, no captcha, a named User-Agent, one call per flow and renewal; a 401/403, a captcha or a `robots.txt` disallow ends the adapter. A postcode goes only to an official directory; a meter id only to the household's own grid company. Whatever a source returns is held in memory for the one flow or renewal that fetched it and released once the copy is taken - nothing is written to disk, and the site's copy in the config entry is all that is kept (D13 §5.2 rule 6).
 
 **Open for the LLD.** Settled in D13 v1.0: the sources per country (§5), the flow's words (§6), taxes and VAT (§9), renewal and migration (§10), the cleanup (§12), the engine's additions (§18).
 

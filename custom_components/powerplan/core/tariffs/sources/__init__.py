@@ -6,7 +6,7 @@ HTTP through Home Assistant's shared session and nothing else - lives in
 (TS.3–TS.7); this package holds their common ground and the directories.
 """
 
-from . import kartverket
+from . import fri_nettleie, kartverket, nve
 from .base import (
     Credit,
     Fetched,
@@ -33,7 +33,9 @@ __all__ = [
     "SourceError",
     "Tier",
     "UnreachableError",
+    "fri_nettleie",
     "kartverket",
     "merge",
+    "nve",
     "renew_at",
 ]

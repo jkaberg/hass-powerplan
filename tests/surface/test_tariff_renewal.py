@@ -291,3 +291,30 @@ async def test_22_a_fetched_copy_credits_its_source(
         await hass.config_entries.async_unload(entry.entry_id)
     finally:
         base.unregister(KEY)
+
+
+async def test_05_a_renewal_lets_its_downloads_go_and_names_the_fuse(
+    hass: HomeAssistant,
+    frozen: datetime,
+    meter: FakeMeter,
+    source: type,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D13 §5.2 rule 6: released when the renewal returns; the site's fuse is answered."""
+    released: list[int] = []
+    monkeypatch.setattr(base.Http, "release", lambda self: released.append(1))
+    answers: list[dict[str, Any]] = []
+    fetch = source.fetch
+
+    async def spy(self: Any, http: Any, operator: str, product: Any, given: Any) -> Any:
+        answers.append(dict(given))
+        return await fetch(self, http, operator, product, given)
+
+    monkeypatch.setattr(source, "fetch", spy)
+    entry = await _site(hass, _copy(hass))
+    await hass.services.async_call(
+        DOMAIN, "refresh_tariff", {}, blocking=True, return_response=True
+    )
+    assert released == [1]
+    assert answers[0]["main_fuse_a"] == entry.runtime_data.build.cfg.electrical.main_fuse_a
+    await hass.config_entries.async_unload(entry.entry_id)

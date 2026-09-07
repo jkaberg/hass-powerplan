@@ -121,6 +121,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
     MINOR_VERSION = 2
+    #: The flow's downloads, in memory, shared by its steps; released once the
+    #: copy is taken or the flow ends (D13 §5.2 rules 2, 6).
+    _http_cache: tariff_sources.Http | None = None
 
     @staticmethod
     @callback
@@ -196,6 +199,23 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._unreachable = False
 
     # ----------------------------------------------------------------- helpers
+
+    @property
+    def _http(self) -> tariff_sources.Http:
+        if self._http_cache is None:
+            self._http_cache = tariff_sources.Http(self.hass)
+        return self._http_cache
+
+    def _release_downloads(self) -> None:
+        """Drop what the sources returned: the copy is all the site keeps (§5.2 rule 6)."""
+        if self._http_cache is not None:
+            self._http_cache.release()
+            self._http_cache = None
+
+    @callback
+    def async_remove(self) -> None:
+        """Let the flow's downloads go when it ends, finished or abandoned (§5.2 rule 6)."""
+        self._release_downloads()
 
     @property
     def _country(self) -> str | None:
@@ -913,7 +933,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors={"postcode": "postcode_invalid"},
             )
         try:
-            place = await directory.place_for(tariff_sources.Http(self.hass), module, postcode)
+            place = await directory.place_for(self._http, module, postcode)
         except SourceError as err:
             _LOGGER.info("postcode directory could not say: %s", err)
             self._postcode = None
@@ -980,7 +1000,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         """Fetch the operators of the country's sources, once per flow (§5.2 rule 2)."""
         if self._operators or self._unreachable:
             return
-        http = tariff_sources.Http(self.hass)
+        http = self._http
         found = False
         for cls in tariff_sources.for_country(self._country):
             try:
@@ -992,6 +1012,11 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             for operator in listed:
                 self._operators.setdefault(f"{OPERATOR_PREFIX}{operator.name}", operator)
         self._unreachable = bool(tariff_sources.for_country(self._country)) and not found
+
+    def _source_answers(self) -> dict[str, Any]:
+        """Return what a source may lack: the main fuse (NO `OV_TREFASE`), the household's answers."""
+        fuse = self._profile.main_fuse_a if self._profile is not None else None
+        return {**({"main_fuse_a": fuse} if fuse else {}), **self._confirmed}
 
     def _credits(self) -> list[Credit]:
         """Return the credit of every source the country's ladder can use (§6.1)."""
@@ -1039,14 +1064,25 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask "Hvilket fylke bor du i?" - only where the company spans zones (step 1b)."""
         assert self._operator is not None
-        options = [(key, self._zone_name(key)) for key in self._operator.zones]
+        # By county where the source names them (NVE: Tensio TN is Nordland and
+        # Trøndelag); by zone otherwise. The answer is the county's zone.
+        counties = dict(self._operator.counties)
+        options = (
+            [(county, county) for county in counties]
+            if counties
+            else [(key, self._zone_name(key)) for key in self._operator.zones]
+        )
+        current = self._zone.key or "" if self._zone else None
+        if counties and current is not None:
+            current = next((c for c, zone in counties.items() if zone == current), None)
         if user_input is None:
             return self._form(
                 "tariff_zone",
-                steps.choice_schema("zone", options, self._zone.key if self._zone else None),
+                steps.choice_schema("zone", options, current),
                 placeholders={"operator": self._operator.name},
             )
-        key = str(user_input["zone"]) or None
+        answer = str(user_input["zone"])
+        key = counties.get(answer, answer) or None
         self._zone = TaxZone(country=self._country or "", key=key, settled="asked")
         return await self._fetch_operator()
 
@@ -1063,11 +1099,11 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._operator is not None
         try:
             resolved = await tariff_ladder.resolve(
-                tariff_sources.Http(self.hass),
+                self._http,
                 self._country or "",
                 self._operator.key,
                 self._product,
-                answers=self._confirmed,
+                answers=self._source_answers(),
             )
         except SourceError as err:
             _LOGGER.info("no tier answered for %s: %s", self._operator.name, err)
@@ -1079,6 +1115,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._fetched.questions:
             return await self.async_step_tariff_confirm()
         await self._apply_fetched()
+        self._release_downloads()
         return await self.async_step_tariff_preset()
 
     async def async_step_tariff_confirm(
@@ -1104,17 +1141,18 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._operator is not None
         try:
             resolved = await tariff_ladder.resolve(
-                tariff_sources.Http(self.hass),
+                self._http,
                 self._country or "",
                 self._operator.key,
                 self._product,
-                answers=self._confirmed,
+                answers=self._source_answers(),
             )
         except SourceError:
             self._unreachable = True
             return await self.async_step_tariff()
         self._fetched = resolved.fetched
         await self._apply_fetched()
+        self._release_downloads()
         return await self.async_step_tariff_preset()
 
     async def _apply_fetched(self) -> None:

@@ -81,3 +81,19 @@ def test_the_report_names_each_finding() -> None:
     text = tariff_canary.report(rows, DAY)
     assert "| `fri_nettleie / tensio_page` | Tensio TS | energy at … |" in text
     assert tariff_canary.report([], DAY).startswith("Every tariff source answered")
+
+
+async def test_fri_nettleies_contract_holds_on_the_captured_archive() -> None:
+    """Every company the archive lists gives a copy: no finding, and the downloads let go."""
+    from custom_components.powerplan.core.tariffs.sources import fri_nettleie  # noqa: PLC0415
+    from custom_components.powerplan.providers.tariffs import base  # noqa: PLC0415
+    from custom_components.powerplan.providers.tariffs.fri_nettleie import (  # noqa: PLC0415
+        FriNettleie,
+    )
+    from tests.builders.tariff_sources import fri_http  # noqa: PLC0415
+
+    base.register(FriNettleie)
+    http = fri_http()
+    findings = await tariff_canary._cross_check(http, ["NO"], DAY, OSLO)  # type: ignore[arg-type]
+    assert findings == []
+    assert http.asked.count(fri_nettleie.TARBALL) == 1, "one download, one parse, 73 copies"

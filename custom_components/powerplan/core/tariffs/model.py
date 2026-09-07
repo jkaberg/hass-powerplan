@@ -151,11 +151,16 @@ class StepTable:
     """
 
     steps: tuple[Step, ...]
+    #: D2 §4 G7: `False` keeps a metric exactly at a bound in the lower step
+    #: (fri-nettleie's `terskel_inkludert: false`, 2,01–5 kW).
+    inclusive: bool = True
 
     def index_for(self, metric_kw: float) -> int:
         """Return the index of the step a metric falls in (D2 §5.3, amended)."""
         for index, step in enumerate(self.steps):
-            if step.upper_kw is None or metric_kw < step.upper_kw:
+            if step.upper_kw is None:
+                return index
+            if metric_kw < step.upper_kw or (not self.inclusive and metric_kw == step.upper_kw):
                 return index
         return len(self.steps) - 1
 
@@ -237,6 +242,9 @@ class PeakTariff:
     price_period_unit: Literal["month", "year"] = "month"
     ratchet: Ratchet | None = None
     coarse_factor: float = 1.15
+    #: D2 §4 G6: `week` takes each ISO week's highest window, weighted by the week's
+    #: Monday - Fjellnett's five weekly maxima over twelve months (FEM_VEKTET_ÅR).
+    group: Literal["day", "week"] = "day"
 
     @property
     def window_h(self) -> float:

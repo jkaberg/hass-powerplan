@@ -1,0 +1,287 @@
+{
+ "_": "Tables read by hand from each operator's own document on 2026-09-23 (WP4.6): fixed fees NOK/month incl. 25 % VAT; energy NOK/kWh incl. VAT, forbruksavgift and Enova. D2 §9 23: the fri_nettleie parser, with VAT at 25 %, must reproduce every fee to the øre; the energy check adds the 2026 levies (8.91 + 1.25 øre incl. VAT) to the parser's VAT-inclusive rate.",
+ "levies_2026_incl_vat": 0.1016,
+ "operators": {
+  "tensio-ts": {
+   "versions": [
+    {
+     "valid_from": "2025-07-01",
+     "source": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/81eebc86818a3eb75d1d1d46ced330c05b107616.pdf",
+     "fees": [
+      130,
+      232,
+      395,
+      582,
+      770,
+      959,
+      1646,
+      2584,
+      3523,
+      5087,
+      6963,
+      10088,
+      13845,
+      17595,
+      21349
+     ],
+     "day": 0.4441,
+     "night": 0.3054
+    },
+    {
+     "valid_from": "2026-01-01",
+     "source": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/1b6338b71ee4ae225082a95a2d596bb1297664f4.pdf",
+     "fees": [
+      122,
+      218,
+      371,
+      547,
+      724,
+      901,
+      1547,
+      2429,
+      3312,
+      4782,
+      6545,
+      9483,
+      13014,
+      16539,
+      20068
+     ],
+     "day": 0.3604,
+     "night": 0.2292
+    },
+    {
+     "valid_from": "2026-07-01",
+     "source": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
+     "fees": [
+      131,
+      233,
+      397,
+      585,
+      775,
+      964,
+      1655,
+      2599,
+      3544,
+      5117,
+      7003,
+      10147,
+      13925,
+      17697,
+      21473
+     ],
+     "day": 0.3779,
+     "night": 0.2379
+    }
+   ]
+  },
+  "tensio-tn": {
+   "versions": [
+    {
+     "valid_from": "2025-07-01",
+     "source": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/82999f6aedb9325d09e5f737d04b7e03d191c6db.pdf",
+     "fees": [
+      140,
+      281,
+      508,
+      770,
+      1032,
+      1295,
+      2256,
+      3570,
+      4882,
+      7067,
+      9693,
+      14063,
+      19313,
+      24562,
+      29807
+     ],
+     "day": 0.5066,
+     "night": 0.3379
+    },
+    {
+     "valid_from": "2026-01-01",
+     "source": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/09adbe4bd2eded08c99c2b6b5b2eb2cd6b08a8bf.pdf",
+     "fees": [
+      134,
+      270,
+      488,
+      739,
+      991,
+      1243,
+      2166,
+      3427,
+      4687,
+      6784,
+      9305,
+      13500,
+      18540,
+      23580,
+      28615
+     ],
+     "day": 0.4254,
+     "night": 0.2642
+    },
+    {
+     "valid_from": "2026-07-01",
+     "source": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
+     "fees": [
+      141,
+      284,
+      512,
+      776,
+      1041,
+      1305,
+      2274,
+      3598,
+      4921,
+      7123,
+      9770,
+      14175,
+      19467,
+      24759,
+      30046
+     ],
+     "day": 0.4416,
+     "night": 0.2729
+    }
+   ]
+  },
+  "elvia": {
+   "versions": [
+    {
+     "valid_from": "2026-07-01",
+     "source": "https://www.elvia.no/siteassets/dokumenter/priser/2026/1-juli-2026/tariffblad_1_0_standard-tariff_privat_20260701.pdf",
+     "fees": [
+      150,
+      250,
+      420,
+      585,
+      755,
+      925,
+      1760,
+      2600,
+      3440,
+      6800
+     ],
+     "day": 0.464,
+     "night": 0.314
+    }
+   ]
+  },
+  "bkk": {
+   "versions": [
+    {
+     "valid_from": "2026-01-01",
+     "source": "https://www.bkk.no/nettleiepriser/priser-privatkunder",
+     "fees": [
+      155,
+      250,
+      415,
+      600,
+      770,
+      940,
+      1800,
+      2650,
+      3500,
+      6900
+     ],
+     "day": 0.4613,
+     "night": 0.2329
+    }
+   ]
+  },
+  "lede": {
+   "versions": [
+    {
+     "valid_from": "2026-05-01",
+     "source": "https://lede.no/getfile.php/1360533-1776247188/Lede/Filer/Prislister/Pris%20nettleie%2001.05.2026%20%281%29.pdf",
+     "fees": [
+      268.75,
+      458.75,
+      647.5,
+      837.5,
+      1027.5,
+      1596.25,
+      2545.0,
+      3492.5,
+      4915.0,
+      6810.0,
+      9655.0
+     ],
+     "flat": 0.1426
+    }
+   ],
+   "energy_includes_levies": false,
+   "_": "Lede's PDF prints the energy charge (14,26 øre incl. VAT) and the levies (8,91; 1,25) on separate lines."
+  },
+  "glitre": {
+   "versions": [
+    {
+     "valid_from": "2026-07-01",
+     "source": "https://www.glitrenett.no/kunde/nettleie-og-priser/nettleiepriser-privatkunde",
+     "fees": [
+      160,
+      232.5,
+      390,
+      730,
+      965,
+      1210,
+      1885,
+      2990,
+      3990,
+      6665
+     ],
+     "day": 0.4216,
+     "night": 0.2716
+    }
+   ]
+  },
+  "foie": {
+   "versions": [
+    {
+     "valid_from": "2026-01-01",
+     "source": "https://www.foie.no/nettleie/priser",
+     "fees": [
+      237.5,
+      293.8,
+      418.8,
+      662.5,
+      837.5,
+      1075,
+      1437.5,
+      2375,
+      3000
+     ],
+     "day": 0.3079,
+     "night": 0.2266
+    }
+   ],
+   "printed_decimals": 1,
+   "_": "foie.no prints the fee incl. VAT to one decimal (293,8); its own excl.-VAT column (235) is exact: 235 x 1.25 = 293.75."
+  },
+  "lnett": {
+   "versions": [
+    {
+     "valid_from": "2026-01-01",
+     "source": "https://www.l-nett.no/getfile.php/131569206-1764934863/Tariffhefte%20fra%201.%20januar%202026.pdf",
+     "fees": [
+      150,
+      250,
+      400,
+      650,
+      900,
+      1150,
+      2150,
+      3150,
+      4150,
+      7000
+     ],
+     "day": 0.4216,
+     "night": 0.2716
+    }
+   ]
+  }
+ }
+}
