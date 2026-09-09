@@ -6,7 +6,7 @@ HTTP through Home Assistant's shared session and nothing else - lives in
 (TS.3–TS.7); this package holds their common ground and the directories.
 """
 
-from . import fri_nettleie, kartverket, nve
+from . import datahub_pricelist, ei_household, elpris_dk, eltariff, fri_nettleie, kartverket, nve
 from .base import (
     Credit,
     Fetched,
@@ -20,6 +20,7 @@ from .base import (
     UnreachableError,
     merge,
     renew_at,
+    slug,
 )
 
 __all__ = [
@@ -33,9 +34,14 @@ __all__ = [
     "SourceError",
     "Tier",
     "UnreachableError",
+    "datahub_pricelist",
+    "ei_household",
+    "elpris_dk",
+    "eltariff",
     "fri_nettleie",
     "kartverket",
     "merge",
     "nve",
     "renew_at",
+    "slug",
 ]

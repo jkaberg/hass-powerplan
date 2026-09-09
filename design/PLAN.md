@@ -405,7 +405,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TS.1 | Model, composition, first cleanup | done |
 | TS.2 | Source framework, flow by party, renewal | done |
 | TS.3 | Norway | done |
-| TS.4 | Sweden, Denmark | todo |
+| TS.4 | Sweden, Denmark | done |
 | TS.5 | Belgium, US, Australia, Finland's directory | todo |
 | TS.6 | Retire shipped prices | todo |
 | TS.7 | Europe | todo |

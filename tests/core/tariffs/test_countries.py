@@ -154,6 +154,15 @@ def test_norways_levies_by_date_and_the_tiltakssone() -> None:
     assert norway.levies_at(date(2026, 1, 1), "nord")["forbruksavgift"] == Decimal("0.0713")
 
 
+@pytest.mark.inv("INV-70")
+def test_denmarks_elafgift_falls_to_the_eu_minimum_for_2026_and_2027() -> None:
+    """Elafgift: 72.0 øre in 2025, 0.8 øre from 2026-01-01 (skat.dk; elpris.dk EA-001)."""
+    denmark = countries.get("DK")
+    assert denmark is not None
+    assert denmark.levies_at(date(2025, 6, 1)) == {"elafgift": Decimal("0.720")}
+    assert denmark.levies_at(date(2026, 9, 24)) == {"elafgift": Decimal("0.008")}
+
+
 def test_swedens_energiskatt_is_lower_in_the_north() -> None:
     """Energiskatt 2026: 36.0 öre, 26.4 in the northern zone."""
     sweden = countries.get("SE")

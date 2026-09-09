@@ -1,0 +1,2 @@
+Captured 2026-09-09 from https://api.energidataservice.dk/dataset/DatahubPricelist, filter ChargeOwner "Radius Elnet A/S", ChargeTypeCode DT_C_01, ChargeType D03, start 2026-09-01 (Energinet, open, no key): Radius's winter C tariff from 2026-10-01. D13 §5.11, §19 3.
+Also captured the same day with start 2026-04-01 (radius-DT_C_01-from-2026-04-01.json): the season in force and the next, for the canary's elpris.dk ↔ Datahub comparison (§5.7).

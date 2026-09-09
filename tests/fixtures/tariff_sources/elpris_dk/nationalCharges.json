@@ -1,0 +1,34 @@
+{
+    "nationalCharges": [
+        {
+            "chargeType": "systemTariff",
+            "chargeId": "41000",
+            "chargeDescription": "Systemtarif",
+            "amount": 0.072
+        },
+        {
+            "chargeType": "tsoAbonnement",
+            "chargeId": "41004",
+            "chargeDescription": "TSO Abonement",
+            "amount": 15.5833
+        },
+        {
+            "chargeType": "reduceretElAfgift",
+            "chargeId": "EA-002",
+            "chargeDescription": "Reduceret El-afgift",
+            "amount": 0.008
+        },
+        {
+            "chargeType": "transmissionTariff",
+            "chargeId": "40000",
+            "chargeDescription": "Transmission nettarif",
+            "amount": 0.043
+        },
+        {
+            "chargeType": "elAfgift",
+            "chargeId": "EA-001",
+            "chargeDescription": "El-afgift",
+            "amount": 0.008
+        }
+    ]
+}

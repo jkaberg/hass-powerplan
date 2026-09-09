@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -44,6 +45,8 @@ from custom_components.powerplan.core.tariffs.household import (  # noqa: E402
 from custom_components.powerplan.core.tariffs.sources import (  # noqa: E402
     SourceError,
     UnreachableError,
+    datahub_pricelist,
+    elpris_dk,
 )
 from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 
@@ -176,10 +179,71 @@ async def run(countries_: Sequence[str], day: date, time_zone: str) -> list[Find
     return findings
 
 
+async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
+    """Compare each Danish area's tariff in force on elpris.dk with Datahub's row (§5.7)."""
+    findings: list[Finding] = []
+    static = json.loads(await http.get(elpris_dk.STATIC))
+    for operator in elpris_dk.operators(static):
+        try:
+            area_doc = json.loads(await http.get(elpris_dk.AREA.format(area=operator.key)))
+        except SourceError as err:
+            findings.append(Finding(elpris_dk.KEY, operator.name, str(err)))
+            continue
+        code, owner = elpris_dk.charge_code(area_doc), elpris_dk.owner(static, operator.key)
+        tariffs = [
+            c for c in area_doc.get("distributionAreaCharges") or () if c.get("chargeId") == code
+        ]
+        if not code or not owner or not tariffs:
+            continue
+        since = date.fromisoformat(str(tariffs[-1]["validFrom"]))
+        try:
+            answer = json.loads(await http.get(datahub_pricelist.query(owner, code, since)))
+        except SourceError as err:
+            findings.append(Finding("datahub_pricelist", operator.name, str(err)))
+            continue
+        theirs = {
+            v.valid_from: v
+            for v, _ in datahub_pricelist.versions(answer.get("records") or (), code)
+        }
+        hours = {
+            int(h["hoursFrom"]): Decimal(str(h["amount"]))
+            for h in tariffs[-1]["distributionAreaChargeHours"]
+        }
+        ours = datahub_pricelist.hourly(since, [hours[h] for h in range(datahub_pricelist.HOURS)])
+        other = theirs.get(since)
+        if other is None:
+            findings.append(
+                Finding(
+                    "elpris_dk / datahub_pricelist",
+                    operator.name,
+                    f"Datahub has no {code} from {since}",
+                )
+            )
+        elif _rounded(other) != _rounded(ours):
+            findings.append(
+                Finding(
+                    "elpris_dk / datahub_pricelist", operator.name, f"{code} from {since} differs"
+                )
+            )
+    del day
+    return findings
+
+
+def _rounded(version):  # type: ignore[no-untyped-def]
+    """Datahub prices to six decimals, elpris.dk to four: compare at four."""
+    quantum = Decimal("0.0001")
+    return (
+        version.fallback.quantize(quantum),
+        tuple((p.when, p.price.quantize(quantum)) for p in version.periods),
+    )
+
+
 async def _cross_check(
     http: CanaryHttp, countries_: Sequence[str], day: date, zone: ZoneInfo
 ) -> list[Finding]:
     findings: list[Finding] = []
+    if "DK" in countries_:
+        findings.extend(await datahub_check(http, day))
     for country in countries_:
         by_operator: dict[str, list[tuple[str, GridTariff]]] = {}
         for cls in base.for_country(country):

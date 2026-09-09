@@ -2319,3 +2319,33 @@ Merverdiavgiftsforskriften § 6-6-1 a) counts holiday homes and cabins as househ
 
 An autouse fixture takes every shipped adapter out of the registry per test; a test that wants fri-nettleie registers it and serves the captured archive (`tests/builders/tariff_sources.py`). Otherwise every Norwegian flow test would reach GitHub with sockets closed. Affects D9 §5.15.
 **Rejected:** serving every adapter's fixtures to every test - 73 real companies bury the named fakes.
+
+### D-0567 · Eltariff: which tariffs a household can have, and where a version starts
+
+Household tariffs are `consumption` tariffs whose name names a fuse up to 63 A or a flat, not high voltage, with no reactive-power charge. A version starts wherever a non-tax component's validity does; a cut where nothing paid changes is merged; the copy ends where energy prices stop being published, so renewal fetches the rest in time. Prices are `priceExVat`; `reference: "tax"` components are the SE module's; two priced power components are refused until multiple peaks exist. Validity to 2100 or later is open-ended. The standard has no customer-type field. Affects D13 §5.11.
+**Rejected:** offering every consumption tariff - E.ON lists 38, eight of them high voltage.
+
+### D-0568 · A Swedish household is asked whether it pays the northern energy tax
+
+Every Swedish company from Eltariff or Ei's file lists both SE tax zones, so step 1b asks once: the national rate or the reduced northern one. Neither source places customers by municipality, and Sweden has no postcode directory in v1. Affects D13 §5.3, §9.
+**Rejected:** asking only for companies known to serve the north - nothing published says which.
+
+### D-0569 · Ei's household file is a T6 source
+
+`ei_household` reads Ei's `Hushållskunder.xlsx` (link read from Ei's page each time, parsed with the standard library) as a document source, below every API (INV-75): per company and network area and customer group, authority and fixed fees per year, one or two energy rates, excl. VAT. One version per year from last year; the power fee is asked; two rates ask the first one's hours. D13 §5.5 names this file as Sweden's source for companies without Eltariff, which is O15's sign-off for this adapter. Affects D13 §5.1, §5.5, §5.11.
+**Rejected:** leaving 130 companies on the template - the file is published and the adapter is one registration to remove.
+
+### D-0570 · A grid charge on a share of spot (D13 §18 G22)
+
+`EnergyVersion.spot_share`: the grid energy charge adds that share of the slot's spot price excl. VAT, taxed with the rest of the grid charge. Kraftringen and Skånska Energi charge 5 % of spot, E.ON's capacity tariffs 1.6 %. Affects D13 §18.2, D1 §5.3.
+**Rejected:** folding it into a fixed rate at the mean spot - the share is what makes an expensive hour dearer on the grid too.
+
+### D-0571 · Denmark: elpris.dk for the directory and the tariff in force, Datahub for the next season
+
+`elpris_dk` lists the 34 grid areas (postcode → area), builds the area's tariff hour by hour, adds Energinet's system and transmission tariffs and subscription, and appends each later season Datahub has registered (`DatahubPricelist`); Datahub down leaves the season in force. elpris.dk shows only the tariff in force, and a copy without the next season would price winter at summer rates until renewal. Affects D13 §5.3, §5.9, §5.11, §19 3.
+**Rejected:** Datahub alone - no postcode directory and no subscriptions.
+
+### D-0572 · Elafgift in the DK module; Energinet's tariffs in the copy
+
+The DK module carries elafgift with its dated rates (skat.dk; elpris.dk agrees) and its announced end. Energinet's tariffs and subscription are company prices and come with the copy (INV-70). Affects D13 §9.
+**Rejected:** fetching elafgift - a fetched levy changes silently.

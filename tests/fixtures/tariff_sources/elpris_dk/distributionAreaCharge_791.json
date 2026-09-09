@@ -1,0 +1,145 @@
+{
+    "distributionAreaCharges": [
+        {
+            "chargeId": "DA_C_F_01",
+            "validFrom": "2026-04-01",
+            "validTo": "2027-04-01",
+            "chargeType": "subscription",
+            "billingType": "flex",
+            "price": 40.8351,
+            "distributionAreaChargeHours": []
+        },
+        {
+            "chargeId": "DT_C_01",
+            "validFrom": "2026-04-01",
+            "validTo": "2026-10-01",
+            "chargeType": "tariff",
+            "billingType": "flex",
+            "price": 0.1062,
+            "distributionAreaChargeHours": [
+                {
+                    "hoursFrom": 1,
+                    "hoursTo": 2,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 3,
+                    "hoursTo": 4,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 5,
+                    "hoursTo": 6,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 22,
+                    "hoursTo": 23,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 6,
+                    "hoursTo": 7,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 8,
+                    "hoursTo": 9,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 10,
+                    "hoursTo": 11,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 12,
+                    "hoursTo": 13,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 14,
+                    "hoursTo": 15,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 16,
+                    "hoursTo": 17,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 17,
+                    "hoursTo": 18,
+                    "amount": 0.4141
+                },
+                {
+                    "hoursFrom": 19,
+                    "hoursTo": 20,
+                    "amount": 0.4141
+                },
+                {
+                    "hoursFrom": 0,
+                    "hoursTo": 1,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 2,
+                    "hoursTo": 3,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 4,
+                    "hoursTo": 5,
+                    "amount": 0.1062
+                },
+                {
+                    "hoursFrom": 23,
+                    "hoursTo": 24,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 7,
+                    "hoursTo": 8,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 9,
+                    "hoursTo": 10,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 11,
+                    "hoursTo": 12,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 13,
+                    "hoursTo": 14,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 15,
+                    "hoursTo": 16,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 21,
+                    "hoursTo": 22,
+                    "amount": 0.1593
+                },
+                {
+                    "hoursFrom": 18,
+                    "hoursTo": 19,
+                    "amount": 0.4141
+                },
+                {
+                    "hoursFrom": 20,
+                    "hoursTo": 21,
+                    "amount": 0.4141
+                }
+            ]
+        }
+    ],
+    "distributionAreaGridArea": "791",
+    "area": "DK2"
+}

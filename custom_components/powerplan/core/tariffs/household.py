@@ -121,6 +121,9 @@ class EnergyVersion:
     valid_from: date
     periods: tuple[EnergyPeriod, ...]
     fallback: Decimal = Decimal(0)
+    #: A share of the hour's spot price the grid charges on top (SE's "rörlig
+    #: energiavgift", loss compensation: Kraftringen 5 %; D13 §18 G22).
+    spot_share: Decimal = Decimal(0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,6 +403,7 @@ def to_json(price: HouseholdPrice) -> dict[str, Any]:
                     "valid_from": version.valid_from.isoformat(),
                     "fallback": str(version.fallback),
                     "periods": [_period_json(period) for period in version.periods],
+                    **({"spot_share": str(version.spot_share)} if version.spot_share else {}),
                 }
                 for version in grid.energy
             ],
@@ -458,6 +462,7 @@ def from_json(raw: Mapping[str, Any]) -> HouseholdPrice:
                     valid_from=date.fromisoformat(version["valid_from"]),
                     periods=tuple(_period(period) for period in version["periods"]),
                     fallback=Decimal(str(version.get("fallback") or 0)),
+                    spot_share=Decimal(str(version.get("spot_share") or 0)),
                 )
                 for version in grid.get("energy") or ()
             ),

@@ -16,6 +16,7 @@ whichever comes first.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from enum import StrEnum
@@ -37,6 +38,7 @@ __all__ = [
     "UnreachableError",
     "merge",
     "renew_at",
+    "slug",
 ]
 
 #: A copy is fetched again this long before its last version runs out (D13 §10).
@@ -203,3 +205,8 @@ def _plus_month(day: date) -> date:
         except ValueError:
             continue
     raise AssertionError  # pragma: no cover - every month has a 28th
+
+
+def slug(*parts: str) -> str:
+    """Return a copy id the loader accepts: lower case, `[a-z0-9._-]`, parts joined by dots."""
+    return ".".join(re.sub(r"[^a-z0-9_-]+", "-", part.lower()).strip("-") for part in parts)

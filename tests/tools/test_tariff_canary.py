@@ -97,3 +97,13 @@ async def test_fri_nettleies_contract_holds_on_the_captured_archive() -> None:
     findings = await tariff_canary._cross_check(http, ["NO"], DAY, OSLO)  # type: ignore[arg-type]
     assert findings == []
     assert http.asked.count(fri_nettleie.TARBALL) == 1, "one download, one parse, 73 copies"
+
+
+async def test_denmarks_elpris_and_datahub_agree_on_the_captured_documents() -> None:
+    """D13 §5.7: Radius's summer table on elpris.dk is Datahub's, to four decimals."""
+    from tests.builders.tariff_sources import denmark_http  # noqa: PLC0415
+
+    findings = await tariff_canary.datahub_check(denmark_http(), DAY)  # type: ignore[arg-type]
+    radius = [f for f in findings if f.operator == "Radius Elnet A/S"]
+    assert radius == []
+    assert findings, "areas 131 and 145 have no Datahub rows captured: said so, not skipped"

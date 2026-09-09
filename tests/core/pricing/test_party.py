@@ -285,3 +285,40 @@ def test_the_tail_after_a_copy_without_an_energy_charge_counts_its_levies_once()
     )
     assert tail.slots[-1].total == known.total, "same spot, same taxes: the same price"
     assert "levy" in tail.slots[-1].components
+
+
+# --------------------------------------------------------------------------- #
+# D13 §18 G22 - a grid charge on a share of spot
+# --------------------------------------------------------------------------- #
+
+
+def _loss_share(price: HouseholdPrice) -> HouseholdPrice:
+    """Tensio's copy with a 5 % share of spot on its energy charge (Kraftringen's rule)."""
+    energy = tuple(replace(v, spot_share=Decimal("0.05")) for v in price.grid.energy)
+    return replace(price, grid=replace(price.grid, energy=energy))
+
+
+@pytest.mark.inv("INV-72")
+def test_g22_a_spot_share_is_added_to_the_grid_charge_once() -> None:
+    """Spot 1.20 NOK: the grid adds 0.06 on top of its own rate, and VAT taxes it once."""
+    price = _loss_share(excl(tensio()))
+    when = datetime(2026, 9, 24, 10, tzinfo=UTC)
+    plain = compose(
+        spot_slot(when, Decimal("1.20")), party.chain(excl(tensio()), (), frozenset({"spot"}))[0]
+    )
+    shared = compose(
+        spot_slot(when, Decimal("1.20")), party.chain(price, (), frozenset({"spot"}))[0]
+    )
+    added = shared.components[GRID_ENERGY] - plain.components[GRID_ENERGY]
+    assert added == Decimal("0.06")
+    assert shared.total - plain.total == Decimal("0.06") * Decimal("1.25")
+
+
+def test_g22_a_spot_quoted_with_vat_is_shared_without_it() -> None:
+    """A price source that includes VAT: the share is of spot excl. VAT."""
+    price = _loss_share(excl(tensio()))
+    when = datetime(2026, 9, 24, 10, tzinfo=UTC)
+    basis = frozenset({"spot", "vat"})
+    plain = compose(spot_slot(when, Decimal("1.25")), party.chain(excl(tensio()), (), basis)[0])
+    shared = compose(spot_slot(when, Decimal("1.25")), party.chain(price, (), basis)[0])
+    assert shared.components[GRID_ENERGY] - plain.components[GRID_ENERGY] == Decimal("0.05")

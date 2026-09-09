@@ -103,6 +103,8 @@ class GridEnergy:
     schema: ClassVar[Schema] = ()
 
     price: HouseholdPrice
+    #: The price source quotes spot with VAT: a spot share is taken of spot without it.
+    spot_incl_vat: bool = False
 
     def price_at(self, when: datetime, ctx: PriceContext) -> Decimal:
         """Return the grid's own charge at `when`, excl. VAT and levies."""
@@ -125,8 +127,20 @@ class GridEnergy:
         return published - published_levies_at(state, day, grid.basis)
 
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:
-        """Return `slot` with the grid energy component written (INV-4)."""
-        return with_component(slot, self.component, self.price_at(slot.start, ctx))
+        """Return `slot` with the grid energy component written (INV-4).
+
+        A version with a `spot_share` adds that share of the slot's spot price,
+        excl. VAT (D13 §18 G22).
+        """
+        charge = self.price_at(slot.start, ctx)
+        day = _day(slot.start, ctx)
+        version = self.price.grid.energy_at(day)
+        if version is not None and version.spot_share:
+            spot = slot.components.get(SPOT, Decimal(0))
+            if self.spot_incl_vat:
+                spot /= Decimal(1) + vat_at(self.price.state, day)
+            charge += spot * version.spot_share
+        return with_component(slot, self.component, charge)
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,7 +259,7 @@ def chain(
     if "grid" not in source_basis:
         grid += grid_typed
         if price.grid.energy:
-            grid.append(GridEnergy(price))
+            grid.append(GridEnergy(price, spot_incl_vat="vat" in source_basis))
     levies: list[PriceModifier] = [] if "levies" in source_basis else [StateLevies(price)]
 
     module = countries.get(price.state.zone.country)
