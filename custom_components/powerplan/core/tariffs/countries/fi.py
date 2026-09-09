@@ -11,5 +11,6 @@ MODULE = register(
         time_zones=("Europe/Helsinki",),
         vat=tedb("25.5"),
         tedb="FI",
+        postcode="sahkonhinta",
     )
 )

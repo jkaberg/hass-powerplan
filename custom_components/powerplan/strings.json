@@ -592,7 +592,15 @@
           "method": "How your power step is worked out",
           "inclusive": "A peak exactly on a step's limit belongs to the step above",
           "checked": "These prices match my latest grid bill",
-          "main_fuse_a": "Main fuse (A)"
+          "main_fuse_a": "Main fuse (A)",
+          "window_min": "Demand measured over",
+          "no_power_fee": "My bill has no power fee",
+          "rate_1_hours": "Hours of the first rate (from-to)",
+          "rate_1_months": "Months of the first rate (from-to)",
+          "measurement": "How the demand charge is measured",
+          "demand_price": "Price per kW per day",
+          "power_factor": "Power factor",
+          "connection_kw": "Connection power (kVA)"
         }
       },
       "modifier_supplier_tou": {
@@ -2077,6 +2085,20 @@
         "MND_MAX": "The month's highest hour",
         "FEM_VEKTET_ÅR": "The year's 5 highest weeks, weighted by month",
         "OV_TREFASE": "By the size of the main fuse"
+      }
+    },
+    "tariff_window_min": {
+      "options": {
+        "15": "15 minutes",
+        "30": "30 minutes",
+        "60": "60 minutes"
+      }
+    },
+    "tariff_measurement": {
+      "options": {
+        "day": "Each day at its own highest",
+        "month": "The month's highest",
+        "year": "The highest of the last 12 months"
       }
     }
   },

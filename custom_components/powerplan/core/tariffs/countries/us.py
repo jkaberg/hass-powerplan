@@ -22,5 +22,6 @@ MODULE = register(
             "America/Kentucky/Louisville",
         ),
         vat=(),
+        postcode="openei",
     )
 )

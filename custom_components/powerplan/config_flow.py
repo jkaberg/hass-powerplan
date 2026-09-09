@@ -124,6 +124,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     #: The flow's downloads, in memory, shared by its steps; released once the
     #: copy is taken or the flow ends (D13 §5.2 rules 2, 6).
     _http_cache: tariff_sources.Http | None = None
+    #: The grid companies the postcode's directory named (FI: sahkonhinta.fi).
+    _place_companies: tuple[str, ...] = ()
 
     @staticmethod
     @callback
@@ -812,6 +814,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._copy.get("assumed")
             )
             grid = household.from_preset(self._copy, source="flow", zone=zone, typed=typed).grid
+            if self._place_companies:
+                # FI: sahkonhinta.fi named the company; the household typed its table.
+                grid = replace(grid, operator=self._place_companies[0])
         else:
             grid = household.from_preset(
                 NO_PEAK_COPY | {"currency": self._currency}, source="none", zone=zone, typed=True
@@ -939,6 +944,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             self._postcode = None
             return await self.async_step_tariff()
         self._postcode = postcode
+        self._place_companies = place.grid_companies
         self._zone = TaxZone(
             country=module.code,
             key=module.zone_of(place.municipality, place.county),
@@ -979,6 +985,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._preset_choice = str(user_input["preset"])
         operator = self._operators.get(self._preset_choice)
         if operator is not None:
+            operator = await self._with_products(operator)
             self._operator = operator
             if len(operator.products) > 1:
                 return await self.async_step_tariff_product()
@@ -1004,19 +1011,44 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         found = False
         for cls in tariff_sources.for_country(self._country):
             try:
-                listed = await cls().operators(http)
+                listed = await cls().operators(http, self._postcode)
             except SourceError as err:
                 _LOGGER.info("tariff source %s lists no operators: %s", cls.key, err)
                 continue
             found = True
             for operator in listed:
-                self._operators.setdefault(f"{OPERATOR_PREFIX}{operator.name}", operator)
+                self._operators.setdefault(
+                    f"{OPERATOR_PREFIX}{operator.name}", replace(operator, source=cls.key)
+                )
         self._unreachable = bool(tariff_sources.for_country(self._country)) and not found
+
+    async def _with_products(self, operator: Operator) -> Operator:
+        """Return the operator with its products, asked of its source where it lists none (1a)."""
+        if operator.products or not operator.source:
+            return operator
+        lister = getattr(tariff_sources.get(operator.source), "products", None)
+        if lister is None:
+            return operator
+        try:
+            products = await lister(
+                tariff_sources.get(operator.source)(), self._http, operator.key, self._postcode
+            )
+        except SourceError as err:
+            _LOGGER.info("no products for %s: %s", operator.name, err)
+            return operator
+        return replace(operator, products=tuple(products))
 
     def _source_answers(self) -> dict[str, Any]:
         """Return what a source may lack: the main fuse (NO `OV_TREFASE`), the household's answers."""
-        fuse = self._profile.main_fuse_a if self._profile is not None else None
-        return {**({"main_fuse_a": fuse} if fuse else {}), **self._confirmed}
+        profile = self._profile
+        site: dict[str, Any] = {}
+        if profile is not None and profile.main_fuse_a:
+            # BE (Brussels) prices the connection's power: the fuse over its phases.
+            site = {
+                "main_fuse_a": profile.main_fuse_a,
+                "connection_kw": profile.main_fuse_a * profile.w_per_amp(profile.phases) / 1000,
+            }
+        return {**site, **self._confirmed}
 
     def _credits(self) -> list[Credit]:
         """Return the credit of every source the country's ladder can use (§6.1)."""
@@ -1029,9 +1061,11 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         return self._preset_file
 
     def _operator_name(self, text: Text) -> str:
-        """Name the grid company as the flow shows it."""
+        """Name the grid company as the flow shows it; the directory's where no source has it."""
         if self._operator is not None:
             return self._operator.name
+        if self._place_companies:
+            return self._place_companies[0]
         if self._spec is not None:
             return self._tariff_name(text)
         return text.word("text", "none")
@@ -1104,6 +1138,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._operator.key,
                 self._product,
                 answers=self._source_answers(),
+                postcode=self._postcode,
             )
         except SourceError as err:
             _LOGGER.info("no tier answered for %s: %s", self._operator.name, err)
@@ -1146,6 +1181,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._operator.key,
                 self._product,
                 answers=self._source_answers(),
+                postcode=self._postcode,
             )
         except SourceError:
             self._unreachable = True

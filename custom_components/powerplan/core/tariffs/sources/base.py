@@ -30,6 +30,7 @@ __all__ = [
     "Fetched",
     "Merged",
     "Operator",
+    "Place",
     "Product",
     "QualityError",
     "Question",
@@ -93,6 +94,23 @@ class Product:
 
 
 @dataclass(frozen=True, slots=True)
+class Place:
+    """Where a postcode is, as far as the country's directory says (D13 §5.3, O17).
+
+    Kartverket names the municipality and county (Norway's tax zone); Finland's
+    directory names the grid companies that serve the postcode; a directory that
+    only keys a source's list (URDB, CWaPE) returns the postcode alone.
+    """
+
+    postcode: str
+    municipality: str = ""
+    municipality_name: str = ""
+    county: str = ""
+    county_name: str = ""
+    grid_companies: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Operator:
     """A grid company as a source lists it; `zones` are the tax zones it spans (step 1b).
 
@@ -106,6 +124,8 @@ class Operator:
     products: tuple[Product, ...] = ()
     zones: tuple[str, ...] = ()
     counties: tuple[tuple[str, str], ...] = ()
+    #: The adapter that listed it - the flow asks that one for products on demand.
+    source: str = ""
 
 
 @dataclass(frozen=True, slots=True)

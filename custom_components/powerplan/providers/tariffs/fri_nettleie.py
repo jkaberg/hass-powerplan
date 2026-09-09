@@ -98,7 +98,7 @@ class FriNettleie:
     async def _bundle(self, http: Http) -> Bundle:
         return await http.document(fri_nettleie.TARBALL, unpack)
 
-    async def operators(self, http: Http) -> list[Operator]:
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return every company with a household tariff, each with its counties' zones."""
         bundle = await self._bundle(http)
         month = http.today().replace(day=1)

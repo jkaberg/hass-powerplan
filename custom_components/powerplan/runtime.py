@@ -53,6 +53,7 @@ from .const import (
     CONF_METER,
     CONF_NOTIFICATIONS,
     CONF_PATH,
+    CONF_POSTCODE,
     CONF_PRESENCE,
     CONF_PRICES,
     CONF_QUIET_HOURS,
@@ -163,11 +164,13 @@ from .core.state_codec import decode, encode
 from .core.strategies.context import Curves
 from .core.tariffs import (
     AUTO,
+    Combined,
     Evaluator,
     NoPeak,
     Target,
     TariffSpec,
     TariffVersion,
+    evaluator_for,
     household,
     seed_from_windows,
 )
@@ -552,7 +555,7 @@ class SiteBuild:
     """
 
     cfg: SiteConfig
-    tariff: Evaluator
+    tariff: Evaluator | Combined
     holidays: HolidayCalendar
     meter: HaSensorsMeter | None
     meter_entities: Mapping[str, str]
@@ -614,7 +617,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     price, review, prices = _price(data)
     spec, outdated = _spec(tariff_data, price, currency)
     target, risk, eps = _target_of(tariff_data)
-    tariff = Evaluator(
+    tariff = evaluator_for(
         spec,
         tz=tz,
         calendar=holidays,
@@ -3105,7 +3108,14 @@ class Runtime:
 
     def _source_answers(self, price: household.HouseholdPrice) -> dict[str, Any]:
         """Return what a source may lack: the main fuse (NO `OV_TREFASE`), the household's answers."""
-        return {"main_fuse_a": self.build.cfg.electrical.main_fuse_a, **price.confirmed}
+        electrical = self.build.cfg.electrical
+        return {
+            "main_fuse_a": electrical.main_fuse_a,
+            "connection_kw": electrical.main_fuse_a
+            * electrical.w_per_amp(electrical.phases)
+            / 1000,
+            **price.confirmed,
+        }
 
     async def async_renew_tariff(self, reason: str, now: datetime | None = None) -> dict[str, Any]:
         """Fetch the copy again, merge it, write it without a reload (D13 §10, D7 §5.9).
@@ -3142,6 +3152,7 @@ class Runtime:
                 grid.operator_key or grid.operator,
                 grid.product_key,
                 answers=self._source_answers(price),
+                postcode=self.entry.data.get(CONF_POSTCODE),
             )
         finally:
             # §5.2 rule 6: the renewal's downloads end with it.

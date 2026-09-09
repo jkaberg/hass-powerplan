@@ -47,6 +47,7 @@ async def resolve(
     *,
     answers: Mapping[str, Any] | None = None,
     sources: list[type[TariffSource]] | None = None,
+    postcode: str | None = None,
 ) -> Resolved:
     """Return the operator's tariff from the first tier that answers well (INV-75).
 
@@ -57,7 +58,7 @@ async def resolve(
     for cls in sources if sources is not None else for_country(country):
         source = cls()
         try:
-            listed = await source.operators(http)
+            listed = await source.operators(http, postcode)
             found = next(
                 (one for one in listed if operator in (one.key, one.name)),
                 None,

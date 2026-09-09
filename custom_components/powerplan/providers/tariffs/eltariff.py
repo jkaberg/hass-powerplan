@@ -73,7 +73,7 @@ class Eltariff:
                 _LOGGER.info("eltariff endpoint %s did not answer: %s", url, err)
         return catalogue, documents
 
-    async def operators(self, http: Http) -> list[Operator]:
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return each company in the catalogue whose endpoint answered."""
         catalogue, documents = await self._documents(http)
         return eltariff.operators(catalogue, documents, zones(self.country))

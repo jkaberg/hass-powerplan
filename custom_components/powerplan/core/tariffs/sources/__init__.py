@@ -6,12 +6,22 @@ HTTP through Home Assistant's shared session and nothing else - lives in
 (TS.3–TS.7); this package holds their common ground and the directories.
 """
 
-from . import datahub_pricelist, ei_household, elpris_dk, eltariff, fri_nettleie, kartverket, nve
+from . import (
+    datahub_pricelist,
+    ei_household,
+    elpris_dk,
+    eltariff,
+    fri_nettleie,
+    kartverket,
+    nve,
+    sahkonhinta,
+)
 from .base import (
     Credit,
     Fetched,
     Merged,
     Operator,
+    Place,
     Product,
     QualityError,
     Question,
@@ -28,12 +38,15 @@ __all__ = [
     "Fetched",
     "Merged",
     "Operator",
+    "Place",
     "Product",
     "QualityError",
     "Question",
     "SourceError",
     "Tier",
     "UnreachableError",
+    "cdr_energy",
+    "cwape",
     "datahub_pricelist",
     "ei_household",
     "elpris_dk",
@@ -42,6 +55,9 @@ __all__ = [
     "kartverket",
     "merge",
     "nve",
+    "openei_urdb",
     "renew_at",
+    "sahkonhinta",
     "slug",
+    "vreg_xlsx",
 ]

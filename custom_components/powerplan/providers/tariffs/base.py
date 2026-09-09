@@ -9,6 +9,7 @@ captcha page ends the adapter rather than being worked around (§5.2).
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Protocol
 
 import aiohttp
@@ -84,6 +85,36 @@ class Http:
         result: T = self._parsed[key]
         return result
 
+    async def post(self, url: str, body: Mapping[str, Any]) -> bytes:
+        """Return a JSON POST's answer, sent once for this flow or renewal (§5.2 rule 1).
+
+        Only where the regulator's own page posts the same for any visitor
+        (CompaCWaPE's `offer_simulations`).
+        """
+        key = f"POST {url} {json.dumps(body, sort_keys=True)}"
+        if key not in self._cache:
+            self._cache[key] = await self._send(url, body)
+        return self._cache[key]
+
+    async def _send(self, url: str, body: Mapping[str, Any]) -> bytes:
+        try:
+            async with self._session.post(
+                url,
+                json=dict(body),
+                headers={"User-Agent": USER_AGENT},
+                timeout=aiohttp.ClientTimeout(total=TIMEOUT_S),
+            ) as answer:
+                if answer.status not in {200, 201}:
+                    msg = f"{url}: HTTP {answer.status}"
+                    raise UnreachableError(msg)
+                data = await answer.content.read(MAX_BYTES + 1)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise UnreachableError(f"{url}: {err}") from err
+        if len(data) > MAX_BYTES:
+            msg = f"{url}: larger than {MAX_BYTES} bytes"
+            raise UnreachableError(msg)
+        return data
+
     async def get(self, url: str, **headers: str) -> bytes:
         """Return `url`'s body, downloaded once for this flow or renewal (rule 2)."""
         if url not in self._cache:
@@ -120,9 +151,17 @@ class TariffSource(Protocol):
     #: A licence that asks for credit (fri-nettleie: CC BY 4.0), or `None`.
     licence: ClassVar[str | None]
 
-    async def operators(self, http: Http) -> list[Operator]:
-        """Return the operators this source serves, for the flow's list."""
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
+        """Return the operators this source serves, for the flow's list.
+
+        `postcode` is the household's, where the country's source keys its list by
+        it (URDB, CWaPE: D13 §5.3); a source that does not ignores it.
+        """
         ...
+
+    # A source whose products are too many to list with every operator (CDR:
+    # a brand's plans) also defines `products(http, operator, postcode)`; the flow
+    # asks it once the household has chosen the operator (D13 §6 step 1a).
 
     async def fetch(
         self,

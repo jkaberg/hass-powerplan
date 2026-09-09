@@ -54,7 +54,7 @@ class ElprisDk:
         "elpris.dk (Forsyningstilsynet)", "https://elpris.dk", None
     )
 
-    async def operators(self, http: Http) -> list[Operator]:
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return every grid area elpris.dk lists."""
         return elpris_dk.operators(await http.document(elpris_dk.STATIC, _json))
 

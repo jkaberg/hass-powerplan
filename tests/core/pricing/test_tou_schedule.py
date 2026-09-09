@@ -1,12 +1,11 @@
-"""D1 §9 item 7 - `tou_schedule` outside Norway, and the URDB importer.
+"""D1 §9 item 7 - `tou_schedule` outside Norway.
 
-Three markets whose grid energy charge is the whole price axis:
+Markets whose grid energy charge is the whole price axis (the URDB importer is
+`openei_urdb`'s since TS.5: `tests/core/tariffs/test_openei_urdb.py`):
 
 * **ES 2.0TD** - three periods, and national holidays priced as Sunday, which
   is the only reason the holiday calendar exists (D1 §2);
 * **DK 3.0** - the same three windows all year at winter and summer prices;
-* **US URDB** - 12×24 weekday/weekend matrices into `energyratestructure`,
-  which is how 3 700 utilities describe themselves (HLD §8).
 
 The prices are the published shape of each tariff, rounded: what is under test
 is the tariff model, not the tariff sheet. D2's presets carry the sourced numbers.
@@ -14,12 +13,10 @@ is the tariff model, not the tariff sheet. D2's presets carry the sourced number
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from zoneinfo import ZoneInfo
-
-import pytest
 
 from custom_components.powerplan.core.pricing.holidays import calendar_for
 from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
@@ -28,22 +25,14 @@ from custom_components.powerplan.core.pricing.modifiers.tou_schedule import (
     TouPeriod,
     TouSchedule,
 )
-from custom_components.powerplan.core.pricing.modifiers.tou_urdb import (
-    WEEKDAYS,
-    WEEKEND,
-    UrdbImportError,
-    from_urdb,
-    to_urdb,
-)
 from tests.builders.curves import context
-
-if TYPE_CHECKING:
-    from custom_components.powerplan.core.pricing import PriceContext
 
 MADRID = ZoneInfo("Europe/Madrid")
 COPENHAGEN = ZoneInfo("Europe/Copenhagen")
 #: Arizona keeps no DST, which is why APS' 12×24 matrices mean one thing.
 PHOENIX = ZoneInfo("America/Phoenix")
+WEEKDAYS = (0, 1, 2, 3, 4)
+WEEKEND = (5, 6)
 
 # --------------------------------------------------------------------------- #
 # ES 2.0TD - peaje + cargo per period, €/kWh, rounded from the BOE table
@@ -169,109 +158,3 @@ def test_07_danish_3_0_switches_between_winter_and_summer() -> None:
         for hour in range(24):
             when = at(date(2027, month, 1), hour, tz=COPENHAGEN)
             assert schedule.price_at(when, ctx) != schedule.fallback, (month, hour)
-
-
-# --------------------------------------------------------------------------- #
-# URDB - an APS-shaped TOU rate: summer on-peak 15–20 on weekdays
-# --------------------------------------------------------------------------- #
-SUMMER = (5, 6, 7, 8, 9, 10)  # May–October, 1-based months
-OFF_PEAK, MID_PEAK, ON_PEAK = 0, 1, 2
-URDB_RATES = (Decimal("0.0765"), Decimal("0.1122"), Decimal("0.2480"))
-
-
-def urdb_doc() -> dict[str, Any]:
-    """Return a URDB rate document: 12×24 weekday and weekend matrices.
-
-    `energyratestructure` holds one tier per period with a `rate` and an `adj`
-    (the adjustment URDB keeps separate and every bill adds), which is why the
-    importer sums them.
-    """
-    weekday: list[list[int]] = []
-    weekend: list[list[int]] = []
-    for month in range(1, 13):
-        summer = month in SUMMER
-        weekday.append(
-            [
-                ON_PEAK if summer and 15 <= hour < 20 else MID_PEAK if 7 <= hour < 22 else OFF_PEAK
-                for hour in range(24)
-            ]
-        )
-        weekend.append([OFF_PEAK] * 24)
-    return {
-        "energyratestructure": [
-            [{"rate": 0.0745, "adj": 0.002, "unit": "kWh"}],
-            [{"rate": 0.1102, "adj": 0.002, "unit": "kWh"}],
-            [{"rate": 0.246, "adj": 0.002, "unit": "kWh"}],
-        ],
-        "energyweekdayschedule": weekday,
-        "energyweekendschedule": weekend,
-    }
-
-
-def phoenix_context() -> PriceContext:
-    """Return a context in Arizona: no DST, so a local hour is one hour."""
-    return context(at(date(2027, 1, 4), 0, tz=PHOENIX), tz=PHOENIX)
-
-
-def test_07_urdb_12x24_import_prices_every_cell_as_the_document_says() -> None:
-    """Every (month, hour, day kind) of the matrices maps to its own rate."""
-    doc = urdb_doc()
-    schedule = from_urdb(doc)
-    ctx = phoenix_context()
-
-    for month in range(1, 13):
-        for hour in range(24):
-            weekday = _first_day_of(2027, month, WEEKDAYS)
-            weekend = _first_day_of(2027, month, WEEKEND)
-            expected_weekday = URDB_RATES[doc["energyweekdayschedule"][month - 1][hour]]
-            expected_weekend = URDB_RATES[doc["energyweekendschedule"][month - 1][hour]]
-            assert schedule.price_at(at(weekday, hour, tz=PHOENIX), ctx) == expected_weekday, (
-                month,
-                hour,
-            )
-            assert schedule.price_at(at(weekend, hour, tz=PHOENIX), ctx) == expected_weekend, (
-                month,
-                hour,
-            )
-
-
-def test_07_urdb_12x24_round_trips() -> None:
-    """Exporting the imported schedule gives the matrices and rates back."""
-    doc = urdb_doc()
-    ctx = phoenix_context()
-
-    exported = to_urdb(from_urdb(doc), ctx)
-
-    assert exported["energyweekdayschedule"] == doc["energyweekdayschedule"]
-    assert exported["energyweekendschedule"] == doc["energyweekendschedule"]
-    assert exported["energyratestructure"] == [[{"rate": rate}] for rate in URDB_RATES]
-    # And once more around: the second import prices identically to the first.
-    assert to_urdb(from_urdb(exported), ctx) == exported
-
-
-def _first_day_of(year: int, month: int, weekdays: tuple[int, ...]) -> date:
-    """Return the first day of the month whose weekday is in `weekdays`."""
-    day = date(year, month, 1)
-    while day.weekday() not in weekdays:
-        day += timedelta(days=1)
-    return day
-
-
-def test_07_a_malformed_urdb_document_is_refused_by_name() -> None:
-    """A pasted rate is user input: each way it can be wrong says which (D1 §6)."""
-    doc = urdb_doc()
-
-    with pytest.raises(UrdbImportError, match="energyratestructure"):
-        from_urdb({key: value for key, value in doc.items() if key != "energyratestructure"})
-
-    short_year = {**doc, "energyweekdayschedule": doc["energyweekdayschedule"][:11]}
-    with pytest.raises(UrdbImportError, match="12 rows"):
-        from_urdb(short_year)
-
-    short_day = {**doc, "energyweekendschedule": [[0] * 23 for _ in range(12)]}
-    with pytest.raises(UrdbImportError, match="23 hours, not 24"):
-        from_urdb(short_day)
-
-    unknown_period = {**doc, "energyweekdayschedule": [[9] * 24 for _ in range(12)]}
-    with pytest.raises(UrdbImportError, match="names period 9"):
-        from_urdb(unknown_period)

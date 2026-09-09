@@ -233,18 +233,23 @@ class PeakTariff:
     eligible: TimeFilter | None
     weights: tuple[WeightRule, ...]
     per_day: Literal["max", "all"]
-    per_period: Literal["max", "mean_top_n"]
+    per_period: Literal["max", "mean_top_n", "nth"]
     period: Literal["month", "rolling_months", "year"]
     pricing: StepTable | Linear | Tiers
     n: int = 1
     distinct_days: bool = True
     rolling_months: int = 12
-    price_period_unit: Literal["month", "year"] = "month"
+    #: `day` (G9): the rate × the days of the period - Ausgrid's c/kVA/day.
+    price_period_unit: Literal["month", "year", "day"] = "month"
     ratchet: Ratchet | None = None
     coarse_factor: float = 1.15
     #: D2 §4 G6: `week` takes each ISO week's highest window, weighted by the week's
     #: Monday - Fjellnett's five weekly maxima over twelve months (FEM_VEKTET_ÅR).
     group: Literal["day", "week"] = "day"
+    #: D2 §4 G10: a charge in kVA, measured in kW and divided by a fixed power
+    #: factor the household confirms (AU: Ausgrid's kVA demand).
+    unit: Literal["kw", "kva"] = "kw"
+    power_factor: float = 1.0
 
     @property
     def window_h(self) -> float:
@@ -316,6 +321,11 @@ class TariffVersion:
             if isinstance(root, PeakTariff):
                 return root
         return None
+
+    @property
+    def peaks(self) -> tuple[PeakTariff, ...]:
+        """Every peak rule - several at once for a US all-hours + on-peak rate (G4)."""
+        return tuple(root for root in self.rules if isinstance(root, PeakTariff))
 
     @property
     def contracted(self) -> ContractedPower | None:

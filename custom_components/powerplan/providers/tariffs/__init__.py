@@ -6,7 +6,16 @@ conduct and hands them over. Nothing here runs at start (INV-73): the flow, the
 monthly renewal and `powerplan.refresh_tariff` are the only callers.
 """
 
-from . import ei_household, elpris_dk, eltariff, fri_nettleie
+from . import (
+    cdr_energy,
+    cwape,
+    ei_household,
+    elpris_dk,
+    eltariff,
+    fri_nettleie,
+    openei_urdb,
+    vreg_xlsx,
+)
 from .base import (
     MAX_BYTES,
     USER_AGENT,
@@ -25,6 +34,8 @@ __all__ = [
     "Http",
     "Resolved",
     "TariffSource",
+    "cdr_energy",
+    "cwape",
     "ei_household",
     "elpris_dk",
     "eltariff",
@@ -32,6 +43,8 @@ __all__ = [
     "fri_nettleie",
     "get",
     "keys",
+    "openei_urdb",
     "register",
     "resolve",
+    "vreg_xlsx",
 ]

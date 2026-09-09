@@ -18,9 +18,10 @@ Two things carry the money:
 
 from __future__ import annotations
 
+import calendar
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, TypedDict
@@ -29,7 +30,7 @@ from ..metering import window_bounds
 from ..model import Money
 from .contracted import HardLimit, limit_now
 from .history import MonthRec, PeakHistory, month_key
-from .model import ContractedPower, Linear, PeakTariff, StepTable
+from .model import ContractedPower, Linear, NoPeak, PeakTariff, StepTable
 from .target import (
     AUTO,
     CAP_MARGIN_KW,
@@ -57,11 +58,14 @@ __all__ = [
     "Bill",
     "BillRow",
     "Ceiling",
+    "Combined",
     "Evaluator",
     "Level",
     "Period",
     "TariffState",
+    "evaluator_for",
     "mean_top_n",
+    "reduce_period",
     "slack_bisect",
     "slack_closed_form",
 ]
@@ -182,6 +186,8 @@ class TariffState:
     risk: float
     history: dict[str, Any]
     last_bill: BillRow | None
+    #: D2 §4 G4: the further peak charges' own sections, in the version's order.
+    others: tuple[dict[str, Any], ...] = ()
 
     @property
     def seeded_from(self) -> Mapping[str, str]:
@@ -202,6 +208,7 @@ class TariffState:
             "risk": self.risk,
             "history": self.history,
             "last_bill": self.last_bill,
+            **({"others": list(self.others)} if self.others else {}),
         }
 
     @classmethod
@@ -217,6 +224,7 @@ class TariffState:
             risk=raw["risk"],
             history=raw["history"],
             last_bill=raw["last_bill"],
+            others=tuple(raw.get("others") or ()),
         )
 
 
@@ -236,6 +244,35 @@ class _Metric:
 # --------------------------------------------------------------------------- #
 # The arithmetic the fast path and the bisection share (D2 §5.2, §5.6)
 # --------------------------------------------------------------------------- #
+
+
+def _days_in(period_key: str) -> int:
+    """Return the days a period key spans: a month `YYYY-MM`, or a year `YYYY` (G9)."""
+    if len(period_key) == len("YYYY"):
+        year = int(period_key)
+        return (date(year + 1, 1, 1) - date(year, 1, 1)).days
+    year, month = (int(part) for part in period_key[:7].split("-"))
+    return calendar.monthrange(year, month)[1]
+
+
+def reduce_period(values: Sequence[float], tariff: PeakTariff) -> float:
+    """Reduce a period's entries by the tariff's `per_period` (D2 §5.2).
+
+    `nth` (G5) is the n-th largest entry, or the smallest that exists when there
+    are fewer - Helen's third-highest hour.
+    """
+    if not values:
+        return 0.0
+    if tariff.per_period == "max":
+        return max(values)
+    if tariff.per_period == "nth":
+        ordered = sorted(values, reverse=True)
+        return ordered[min(tariff.n, len(ordered)) - 1]
+    return mean_top_n(values, tariff.n)
+
+
+def _partial(values: Sequence[float], tariff: PeakTariff) -> bool:
+    return tariff.per_period != "max" and 0 < len(values) < tariff.n
 
 
 def mean_top_n(values: Sequence[float], n: int) -> float:
@@ -691,13 +728,8 @@ class Evaluator:
         """Return `(kW, partial, entries, coarse)` for a weekly tariff (D2 §4 G6)."""
         weeks, coarse = self._week_values(period_key, tariff, **kwargs)
         values = [value for _, value in weeks]
-        if not values:
-            raw = 0.0
-        elif tariff.per_period == "max":
-            raw = max(values)
-        else:
-            raw = mean_top_n(values, tariff.n)
-        partial = tariff.per_period == "mean_top_n" and len(values) < tariff.n
+        raw = reduce_period(values, tariff)
+        partial = tariff.per_period != "max" and len(values) < tariff.n
         entries = tuple(
             (monday.isoformat(), value)
             for monday, value in sorted(weeks, key=lambda row: (-row[1], row[0]))
@@ -713,7 +745,7 @@ class Evaluator:
         return 1.0
 
     def _entry_list(self, groups: Mapping[date, list[float]], tariff: PeakTariff) -> list[float]:
-        if tariff.per_period == "mean_top_n" and tariff.distinct_days:
+        if tariff.per_period != "max" and tariff.distinct_days:
             return [max(values) for values in groups.values() if values]
         return [value for values in groups.values() for value in values]
 
@@ -748,9 +780,7 @@ class Evaluator:
         )
         values = self._entry_list(groups, tariff)
         if values:
-            if tariff.per_period == "max":
-                return max(values), coarse, len(values), True
-            return mean_top_n(values, tariff.n), coarse, len(values), True
+            return reduce_period(values, tariff), coarse, len(values), True
         rec = self.history.months.get(key)
         if rec is not None:
             factor = tariff.coarse_factor if (rec.coarse and inflate) else 1.0
@@ -833,11 +863,8 @@ class Evaluator:
                 if known:
                     monthly.append(value)
             values = self._entry_list(groups, tariff)
-            if values:
-                raw = max(values) if tariff.per_period == "max" else mean_top_n(values, tariff.n)
-            else:
-                raw = monthly[0] if monthly else 0.0
-            partial = tariff.per_period == "mean_top_n" and 0 < len(values) < tariff.n
+            raw = reduce_period(values, tariff) if values else (monthly[0] if monthly else 0.0)
+            partial = _partial(values, tariff)
             missing = 0
             entries = tuple(self._month_entries(period_key, tariff, inflate=inflate))
 
@@ -861,36 +888,43 @@ class Evaluator:
 
     # ------------------------------------------------------- classification
 
-    def _fee(self, info: _Metric, tariff: PeakTariff, currency: str) -> Money:
+    def _fee(self, info: _Metric, tariff: PeakTariff, currency: str, period_key: str) -> Money:
         pricing = tariff.pricing
+        # G10: a kVA charge prices the kW metric at the confirmed power factor.
+        scale = 1.0 / tariff.power_factor if tariff.unit == "kva" else 1.0
+        metric = info.kw * scale
         if isinstance(pricing, StepTable):
-            amount = pricing.fee(info.kw).amount
-            currency = pricing.fee(info.kw).currency or currency
+            amount = pricing.fee(metric).amount
+            currency = pricing.fee(metric).currency or currency
         elif isinstance(pricing, Linear):
-            billable = pricing.billable_kw(info.kw)
+            billable = pricing.billable_kw(metric)
             if tariff.period == "rolling_months" and info.monthly:
-                rolling = sum(pricing.billable_kw(value) for value in info.monthly) / len(
+                rolling = sum(pricing.billable_kw(value * scale) for value in info.monthly) / len(
                     info.monthly
                 )
                 billable = max(rolling, billable if tariff.ratchet is not None else 0.0)
             amount = _dec(billable) * pricing.price_per_kw.amount
             currency = pricing.price_per_kw.currency or currency
         else:
-            amount = pricing.fee_amount(info.kw)
+            amount = pricing.fee_amount(metric)
             currency = pricing.currency or currency
         if tariff.price_period_unit == "year" and tariff.period != "year":
             amount /= MONTHS
+        elif tariff.price_period_unit == "day":
+            amount *= _days_in(period_key)
         return Money(amount, currency)
 
-    def _classify(self, info: _Metric, tariff: PeakTariff) -> Level:
+    def _classify(self, info: _Metric, tariff: PeakTariff, period_key: str) -> Level:
         confidence: Literal["exact", "partial", "coarse"] = "exact"
         if info.partial:
             confidence = "partial"
         elif info.coarse:
             confidence = "coarse"
-        fee = self._fee(info, tariff, self.spec.currency)
+        fee = self._fee(info, tariff, self.spec.currency, period_key)
         if isinstance(tariff.pricing, StepTable):
-            index = tariff.pricing.index_for(info.kw)
+            index = tariff.pricing.index_for(
+                info.kw / tariff.power_factor if tariff.unit == "kva" else info.kw
+            )
             return Level(
                 kind="step",
                 index=index,
@@ -919,7 +953,8 @@ class Evaluator:
         key = ("level", id(tariff))
         found: Level | None = cache.get(key)
         if found is None:
-            found = self._classify(self._evaluate(tariff, self._period_key()), tariff)
+            key_ = self._period_key()
+            found = self._classify(self._evaluate(tariff, key_), tariff, key_)
             cache[key] = found
         return found
 
@@ -946,7 +981,7 @@ class Evaluator:
             extra_day=self._now.astimezone(self.tz).date(),
             extra_kw=today_projected_kwh / tariff.window_h * weight,
         )
-        found = self._classify(info, tariff)
+        found = self._classify(info, tariff, self._period_key())
         cache["projected",] = (asked, found)
         return found
 
@@ -983,14 +1018,14 @@ class Evaluator:
                 currency = self.spec.currency
                 for version, share in segments:
                     part = version.peak or tariff
-                    fee = self._fee(info, part, self.spec.currency)
+                    fee = self._fee(info, part, self.spec.currency, period.key)
                     currency = fee.currency
                     amount += fee.amount if len(segments) == 1 else fee.amount * _dec(share / total)
                 bill = Bill(
                     period=period,
                     capacity_fee=Money(amount, currency),
                     metric_kw=info.kw,
-                    level=self._classify(info, tariff),
+                    level=self._classify(info, tariff, period.key),
                     version_id="+".join(version.version_id for version, _ in segments),
                     windows_priced=len(self.history.windows_in(period.key)),
                 )
@@ -1171,7 +1206,7 @@ class Evaluator:
             return Money(Decimal(0), self.spec.currency)
         key = self._period_key()
         info = self._evaluate(tariff, key)
-        before = self._fee(info, tariff, self.spec.currency)
+        before = self._fee(info, tariff, self.spec.currency, key)
         neutral = self.slack_kw(now, info.kw)
         day = now.astimezone(self.tz).date()
         weight = self.weight_now(now) or 1.0
@@ -1179,6 +1214,7 @@ class Evaluator:
             self._evaluate(tariff, key, extra_day=day, extra_kw=neutral + kw_over * weight),
             tariff,
             self.spec.currency,
+            key,
         )
         return Money(after.amount - before.amount, after.currency)
 
@@ -1208,7 +1244,7 @@ class Evaluator:
     def _peak_advice(self, tariff: PeakTariff) -> list[Advice]:
         key = self._period_key()
         info = self._evaluate(tariff, key)
-        level = self._classify(info, tariff)
+        level = self._classify(info, tariff, key)
         out = [
             Advice(
                 key="top_entries",
@@ -1383,3 +1419,222 @@ class Evaluator:
                 version_id=row["version_id"],
                 windows_priced=row["windows_priced"],
             )
+
+
+# --------------------------------------------------------------------------- #
+# Several peak charges at once (D2 §4 G4)
+# --------------------------------------------------------------------------- #
+
+
+def _narrowed(spec: TariffSpec, index: int) -> TariffSpec:
+    """Return `spec` with each version keeping only its `index`-th peak charge.
+
+    The first keeps the version's other rules (a contracted power); a version with
+    fewer charges has none for this index.
+    """
+    versions = []
+    for version in spec.versions:
+        peaks = version.peaks
+        if index == 0:
+            rules = tuple(
+                rule
+                for rule in version.rules
+                if not isinstance(rule, PeakTariff) or (peaks and rule is peaks[0])
+            )
+            versions.append(replace(version, rules=rules))
+            continue
+        rule: PeakTariff | NoPeak = peaks[index] if index < len(peaks) else NoPeak()
+        versions.append(replace(version, rules=(rule,), version_id=f"{version.version_id}#{index}"))
+    return replace(spec, versions=tuple(versions))
+
+
+class Combined:
+    """`TariffEvaluator` for a tariff with several peak charges in one version (G4).
+
+    One `Evaluator` per charge, each with its own history - the eligible hours and
+    weights differ, and a window is weighed when it is recorded. The bill is their
+    sum, a ceiling or a slack their lowest, the level and the metric the first
+    charge's (US: the all-hours demand), the advice every charge's.
+    """
+
+    def __init__(
+        self,
+        spec: TariffSpec,
+        tz: tzinfo,
+        calendar: HolidayCalendar,
+        *,
+        target: Target = AUTO,
+        risk: float | None = None,
+        cap_margin_kw: float = CAP_MARGIN_KW,
+    ) -> None:
+        """Build one evaluator per peak charge."""
+        count = max(len(version.peaks) for version in spec.versions)
+        self._spec = spec
+        self.parts = [
+            Evaluator(
+                _narrowed(spec, index),
+                tz,
+                calendar,
+                target=target if index == 0 else AUTO,
+                risk=risk,
+                cap_margin_kw=cap_margin_kw,
+            )
+            for index in range(count)
+        ]
+
+    @property
+    def spec(self) -> TariffSpec:
+        """The whole spec, every charge in it."""
+        return self._spec
+
+    @spec.setter
+    def spec(self, spec: TariffSpec) -> None:
+        self._spec = spec
+        for index, part in enumerate(self.parts):
+            part.spec = _narrowed(spec, index)
+
+    @property
+    def primary(self) -> Evaluator:
+        """The first charge's evaluator: the one the level and the target speak of."""
+        return self.parts[0]
+
+    @property
+    def history(self) -> PeakHistory:
+        """The first charge's history (the one the surface shows)."""
+        return self.primary.history
+
+    @history.setter
+    def history(self, history: PeakHistory) -> None:
+        self.primary.history = history
+
+    def record_window(self, window: ClosedWindow, *, source: Provenance = "live") -> None:
+        """Record the window in every charge's history."""
+        for part in self.parts:
+            part.record_window(window, source=source)
+
+    def record_counterfactual(self, window: ClosedWindow, *, source: Provenance = "live") -> None:
+        """Record the shadow window in every charge's counterfactual book."""
+        for part in self.parts:
+            part.record_counterfactual(window, source=source)
+
+    def ceiling_kwh(self, now: datetime, target: Target, risk: float, eps_kwh: float) -> Ceiling:
+        """Return the lowest of the charges' ceilings: every charge is defended."""
+        ceilings = [
+            part.ceiling_kwh(now, target if index == 0 else AUTO, risk, eps_kwh)
+            for index, part in enumerate(self.parts)
+        ]
+        return min(ceilings, key=lambda ceiling: ceiling.kwh)
+
+    def limit_now_w(self, now: datetime, profile: ElectricalProfile) -> HardLimit | None:
+        """Return the contracted limit - the first charge carries it."""
+        return self.primary.limit_now_w(now, profile)
+
+    def eligible_now(self, now: datetime) -> bool:
+        """Return whether any charge measures this instant."""
+        return any(part.eligible_now(now) for part in self.parts)
+
+    def weight_now(self, now: datetime) -> float:
+        """Return the heaviest weight any charge gives this instant."""
+        return max(part.weight_now(now) for part in self.parts)
+
+    def eligible_windows(
+        self, start: datetime, end: datetime
+    ) -> list[tuple[datetime, datetime, float]]:
+        """Return every window some charge measures, at its heaviest weight."""
+        found: dict[tuple[datetime, datetime], float] = {}
+        for part in self.parts:
+            for window_start, window_end, weight in part.eligible_windows(start, end):
+                key = (window_start, window_end)
+                found[key] = max(found.get(key, 0.0), weight)
+        return [(a, b, weight) for (a, b), weight in sorted(found.items())]
+
+    def target_w_at(self, t: datetime, target: Target) -> float:
+        """Return the lowest target any charge sets at `t`."""
+        return min(
+            part.target_w_at(t, target if index == 0 else AUTO)
+            for index, part in enumerate(self.parts)
+        )
+
+    def marginal_cost(self, kw_over: float, now: datetime) -> Money:
+        """Return what `kw_over` costs across every charge."""
+        costs = [part.marginal_cost(kw_over, now) for part in self.parts]
+        return Money(sum((cost.amount for cost in costs), Decimal(0)), costs[0].currency)
+
+    def metric(self) -> float:
+        """Return the first charge's metric."""
+        return self.primary.metric()
+
+    def slack_kw(self, now: datetime, target_kw: float) -> float:
+        """Return the smallest slack: the first charge's to `target_kw`, the others' to their own."""
+        slacks = [self.primary.slack_kw(now, target_kw)]
+        slacks.extend(part.slack_kw(now, part.metric()) for part in self.parts[1:])
+        return min(slacks)
+
+    def active_version(self) -> TariffVersion:
+        """Return the whole version in force, every charge in it."""
+        return self._spec.version_at(self.primary.active_version().valid_from)
+
+    def level(self) -> Level:
+        """Return the first charge's level."""
+        return self.primary.level()
+
+    def projected_level(self, today_projected_kwh: float | None) -> Level:
+        """Return the first charge's projected level."""
+        return self.primary.projected_level(today_projected_kwh)
+
+    def advice(self) -> list[Advice]:
+        """Return every charge's advice."""
+        return [advice for part in self.parts for advice in part.advice()]
+
+    def bill(self, period: Period, history: PeakHistory | None = None) -> Bill:
+        """Return the charges' bills summed; `history` is the first's or its counterfactual."""
+        counterfactual = history is not None and history is not self.primary.history
+        bills = [self.primary.bill(period, history)]
+        bills.extend(
+            part.bill(period, part.history.counterfactual() if counterfactual else None)
+            for part in self.parts[1:]
+        )
+        first = bills[0]
+        return replace(
+            first,
+            capacity_fee=Money(
+                sum((bill.capacity_fee.amount for bill in bills), Decimal(0)),
+                first.capacity_fee.currency,
+            ),
+        )
+
+    def period(self, now: datetime) -> Period:
+        """Return the first charge's period."""
+        return self.primary.period(now)
+
+    def period_bounds(self, now: datetime) -> tuple[datetime, datetime]:
+        """Return the first charge's period bounds."""
+        return self.primary.period_bounds(now)
+
+    def state(self) -> TariffState:
+        """Return the first charge's section with the others' inside it."""
+        return replace(
+            self.primary.state(),
+            others=tuple(part.state().as_dict() for part in self.parts[1:]),
+        )
+
+    def restore(self, state: TariffState) -> None:
+        """Restore every charge; a charge added since the state was written starts empty."""
+        self.primary.restore(state)
+        for part, raw in zip(self.parts[1:], state.others, strict=False):
+            part.restore(TariffState.from_dict(raw))
+
+
+def evaluator_for(
+    spec: TariffSpec,
+    tz: tzinfo,
+    calendar: HolidayCalendar,
+    *,
+    target: Target = AUTO,
+    risk: float | None = None,
+    cap_margin_kw: float = CAP_MARGIN_KW,
+) -> Evaluator | Combined:
+    """Return the evaluator a spec needs: one, or one per peak charge (G4)."""
+    if max(len(version.peaks) for version in spec.versions) > 1:
+        return Combined(spec, tz, calendar, target=target, risk=risk, cap_margin_kw=cap_margin_kw)
+    return Evaluator(spec, tz, calendar, target=target, risk=risk, cap_margin_kw=cap_margin_kw)

@@ -16,18 +16,16 @@ file's bytes in, a copy out.
 
 from __future__ import annotations
 
-import io
 import re
-import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final
-from xml.etree import ElementTree as ET
 
 from ..household import EXCL, EnergyPeriod, EnergyVersion, FeeVersion, GridTariff, Provenance
 from ..model import HolidayMode, NoPeak, TariffVersion, TimeFilter
+from . import xlsx
 from .base import Fetched, Operator, Product, QualityError, Question, slug
 
 if TYPE_CHECKING:
@@ -49,7 +47,6 @@ PRODUCTS: Final = (
     ("NT50", "villa25", "Villa 25 A"),
 )
 _OREN_PER_KRONA: Final = 100
-_NS: Final = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 #: The file's first year a copy keeps: the one before the fetch's.
 _YEARS_KEPT: Final = 2
 
@@ -75,15 +72,7 @@ def workbook_url(page: bytes) -> str:
 
 def read(workbook: bytes) -> list[Row]:
     """Return the workbook's rows; `QualityError` when its layout is not Ei's."""
-    try:
-        with zipfile.ZipFile(io.BytesIO(workbook)) as archive:
-            strings = _strings(archive)
-            sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
-    except (zipfile.BadZipFile, KeyError, ET.ParseError) as err:
-        msg = f"{KEY}: not Ei's workbook: {err}"
-        raise QualityError(msg) from err
-    data = sheet.find("m:sheetData", _NS)
-    grid = [] if data is None else [_cells(row, strings) for row in data]
+    grid = xlsx.sheet(workbook)
     if len(grid) < 4 or grid[2].get("A") != "ReNamn":  # noqa: PLR2004 - three header rows
         msg = f"{KEY}: the workbook's header is not Ei's"
         raise QualityError(msg)
@@ -95,29 +84,10 @@ def read(workbook: bytes) -> list[Row]:
             code, year = codes.get(column, ""), years.get(column, "")
             if not code.startswith("NT") or not year.isdigit() or value == "":
                 continue
-            figures[code, int(year)] = Decimal(value)
+            figures[code, int(year)] = xlsx.number(value)
         if cells.get("A"):
             rows.append(Row(cells["A"], cells.get("B", ""), cells.get("C", ""), figures))
     return rows
-
-
-def _strings(archive: zipfile.ZipFile) -> list[str]:
-    try:
-        root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
-    except KeyError:
-        return []
-    return ["".join(t.text or "" for t in item.iter(f"{{{_NS['m']}}}t")) for item in root]
-
-
-def _cells(row: ET.Element, strings: Sequence[str]) -> dict[str, str]:
-    found: dict[str, str] = {}
-    for cell in row:
-        column = re.sub(r"\d", "", cell.get("r", ""))
-        value = cell.find("m:v", _NS)
-        if value is None or value.text is None:
-            continue
-        found[column] = strings[int(value.text)] if cell.get("t") == "s" else value.text
-    return found
 
 
 # --------------------------------------------------------------------------- #

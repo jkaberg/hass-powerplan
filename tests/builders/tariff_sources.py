@@ -70,7 +70,7 @@ def fake(
     class Fake:
         calls: ClassVar[list[str]] = []
 
-        async def operators(self, http: Http) -> list[Operator]:
+        async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
             if behaviour == "down":
                 raise UnreachableError(f"{key}: HTTP 503")
             return list(operators)
@@ -110,6 +110,10 @@ class FixtureHttp:
     asked: list[str] = field(default_factory=list)
     released: int = 0
     parsed: dict[str, Any] = field(default_factory=dict)
+
+    async def post(self, url: str, body: Mapping[str, Any]) -> bytes:
+        """Return the captured answer to a POST, keyed as `Http.post` keys it."""
+        return await self.get(f"POST {url} {json.dumps(body, sort_keys=True)}")
 
     async def get(self, url: str, **headers: str) -> bytes:
         """Return the captured document; a URL not captured is unreachable."""
@@ -205,3 +209,77 @@ def denmark_http() -> FixtureHttp:
             folder / f"distributionAreaCharge_{area}.json"
         ).read_bytes()
     return FixtureHttp(documents)
+
+
+def post_key(url: str, body: Mapping[str, Any]) -> str:
+    """Return the key `FixtureHttp.post` looks a captured answer up by."""
+    return f"POST {url} {json.dumps(body, sort_keys=True)}"
+
+
+def belgium_http() -> FixtureHttp:
+    """Serve VREG's page and 2026 sheet, and CompaCWaPE's and BruSim's captured answers."""
+    from custom_components.powerplan.core.tariffs.sources import cwape, vreg_xlsx  # noqa: PLC0415
+
+    sheet = FIXTURES / "vreg" / "Distributienettarieven elektriciteit 2026.xlsx"
+    link = (
+        "https://assets.vlaamsenutsregulator.be/2025-11/Distributienettarieven%20elektriciteit"
+        "%202026.xlsx?VersionId=yIPLVXG9cytG2_k0HI0ZF_BF4Fa27nV7"
+    )
+    folder = FIXTURES / "cwape"
+    documents = {
+        vreg_xlsx.PAGE: f'<a href="{link}">2026</a>'.encode(),
+        link: sheet.read_bytes(),
+    }
+    for key, host, _ in cwape.HOSTS:
+        code = {"compacwape": "5000", "brusim": "1000"}[key]
+        documents[f"{host}/postal_codes?code={code}"] = (
+            folder / f"{key}-postal-{code}.json"
+        ).read_bytes()
+        documents[f"{host}/distribution_network_managers"] = (
+            folder / f"{key}-dnms.json"
+        ).read_bytes()
+        documents[f"{host}/connection_power_segments"] = (
+            folder / f"{key}-segments.json"
+        ).read_bytes()
+        segment = None if key == "compacwape" else "/connection_power_segments/3"
+        for entry in json.loads((folder / f"{key}-postal-{code}.json").read_bytes()):
+            for product in ("single", "dual"):
+                answer = folder / f"{key}-sim-{entry['id']}-{product}.json"
+                documents[
+                    post_key(
+                        f"{host}/offer_simulations", cwape.body(str(entry["id"]), product, segment)
+                    )
+                ] = answer.read_bytes()
+    return FixtureHttp(documents)
+
+
+def australia_http() -> FixtureHttp:
+    """Serve the CDR register, GEE Energy's plans and its captured demand plan."""
+    from custom_components.powerplan.core.tariffs.sources import cdr_energy  # noqa: PLC0415
+
+    folder = FIXTURES / "cdr"
+    base = "https://cdr.energymadeeasy.gov.au/gee-energy"
+    return FixtureHttp(
+        {
+            cdr_energy.REGISTER: (folder / "register-brands.json").read_bytes(),
+            cdr_energy.plans_url(base): (folder / "gee-plans.json").read_bytes(),
+            cdr_energy.plan_url(base, "GEE1037096MRE1@EME"): (
+                folder / "gee-GEE1037096MRE1.json"
+            ).read_bytes(),
+        }
+    )
+
+
+def us_http() -> FixtureHttp:
+    """Serve URDB's rates for ZIP 85004 and APS's R-3 in full."""
+    from custom_components.powerplan.core.tariffs.sources import openei_urdb  # noqa: PLC0415
+
+    folder = FIXTURES / "openei"
+    return FixtureHttp(
+        {
+            openei_urdb.rates_url("85004"): (folder / "rates-85004.json").read_bytes(),
+            openei_urdb.rate_url("69a718961822c9da260daf1b"): (
+                folder / "aps-r3-69a718961822c9da260daf1b.json"
+            ).read_bytes(),
+        }
+    )

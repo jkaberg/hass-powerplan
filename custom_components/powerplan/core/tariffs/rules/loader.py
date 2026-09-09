@@ -264,6 +264,7 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset", shipped: bool = 
         roots = [key for key in ("peak", "contracted", "no_peak") if key in version]
         if not roots:
             _fail(path, "needs one of peak, contracted or no_peak", source)
+        _validate_extra_peaks(version, path, source, raw)
         peak = version.get("peak")
         if peak is not None:
             _validate_peak(peak, f"{path}.peak", source, raw)
@@ -280,6 +281,16 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset", shipped: bool = 
                     source,
                 )
             previous_period = period
+
+
+def _validate_extra_peaks(
+    version: Mapping[str, Any], path: str, source: str, raw: Mapping[str, Any]
+) -> None:
+    """D2 §4 G4: more peak charges beside the first, each valid on its own."""
+    for position, extra in enumerate(version.get("peaks") or ()):
+        if "peak" not in version:
+            _fail(path, "peaks come beside a peak, never instead of one", source)
+        _validate_peak(extra, f"{path}.peaks[{position}]", source, raw)
 
 
 def _check_provenance(
@@ -328,8 +339,8 @@ def _validate_peak(peak: Mapping[str, Any], path: str, source: str, raw: Mapping
             _fail(f"{path}.pricing.steps", "upper bounds must be strictly ascending", source)
     if "tiers" in pricing:
         _validate_open_ended(pricing["tiers"], f"{path}.pricing.tiers", source, index=0)
-    if peak["per_period"] == "mean_top_n" and peak.get("n", 1) < 1:
-        _fail(path, "mean_top_n needs n >= 1", source)
+    if peak["per_period"] in {"mean_top_n", "nth"} and peak.get("n", 1) < 1:
+        _fail(path, f"{peak['per_period']} needs n >= 1", source)
 
 
 def _validate_open_ended(rows: Sequence[Any], path: str, source: str, *, index: int) -> None:
@@ -453,6 +464,7 @@ def _version(
     roots: list[TariffRule] = []
     if "peak" in entry:
         roots.append(_peak(entry["peak"], currency))
+    roots.extend(_peak(extra, currency) for extra in entry.get("peaks") or ())
     if "contracted" in entry:
         roots.append(_contracted(entry["contracted"], currency))
     if entry.get("no_peak") or not roots:
@@ -522,6 +534,8 @@ def _peak(raw: Mapping[str, Any], currency: str) -> PeakTariff:
         ),
         coarse_factor=float(raw.get("coarse_factor", 1.15)),
         group=raw.get("group", "day"),
+        unit=raw.get("unit", "kw"),
+        power_factor=float(raw.get("power_factor", 1.0)),
     )
 
 
@@ -590,7 +604,9 @@ def _dump_version(version: TariffVersion) -> dict[str, Any]:
         if getattr(version, key) is not None:
             raw[key] = getattr(version, key)
     for rule in version.rules:
-        if isinstance(rule, PeakTariff):
+        if isinstance(rule, PeakTariff) and "peak" in raw:
+            raw.setdefault("peaks", []).append(_dump_peak(rule))
+        elif isinstance(rule, PeakTariff):
             raw["peak"] = _dump_peak(rule)
         elif isinstance(rule, ContractedPower):
             raw["contracted"] = _dump_contracted(rule)
@@ -639,6 +655,9 @@ def _dump_peak(peak: PeakTariff) -> dict[str, Any]:
     }
     if peak.group != "day":
         raw["group"] = peak.group
+    if peak.unit != "kw":
+        raw["unit"] = peak.unit
+        raw["power_factor"] = peak.power_factor
     if peak.eligible is not None:
         raw["eligible"] = _dump_filter(peak.eligible)
     if peak.weights:

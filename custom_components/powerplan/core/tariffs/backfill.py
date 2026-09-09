@@ -23,6 +23,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from .evaluator import Combined
 from .history import MonthRec
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ __all__ = ["seed_from_bills", "seed_from_windows"]
 
 
 def seed_from_windows(
-    evaluator: Evaluator, closed: Iterable[ClosedWindow], *, replace: bool = True
+    evaluator: Evaluator | Combined, closed: Iterable[ClosedWindow], *, replace: bool = True
 ) -> int:
     """Record reconstructed windows with provenance `recorder` (D2 §5.12).
 
@@ -45,6 +46,11 @@ def seed_from_windows(
     False a window the history already holds (live, or seeded before) is left
     alone. Returns how many windows were recorded.
     """
+    if isinstance(evaluator, Combined):
+        # G4: every charge weighs the same windows its own way.
+        windows = list(closed)
+        counts = [seed_from_windows(part, windows, replace=replace) for part in evaluator.parts]
+        return counts[0]
     history = evaluator.history
     before = set(history.windows)
     count = 0

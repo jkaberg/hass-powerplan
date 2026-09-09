@@ -1,9 +1,8 @@
 """The v1 price modifiers and their registry (D1 §5.4, §6).
 
 Importing this package registers every modifier it ships - all nine of D1 §5.4
-after WP4.2, which added three without the registry changing. `tou_urdb` is not
-a modifier but the importer that builds a `tou_schedule` out of a URDB rate's
-12×24 matrices; the config flow imports it by name.
+after WP4.2, which added three without the registry changing. A URDB rate's
+12×24 matrices are the `openei_urdb` source's (D13 §12), not a modifier.
 """
 
 from . import (  # noqa: F401

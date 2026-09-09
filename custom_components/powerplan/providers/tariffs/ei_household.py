@@ -41,7 +41,7 @@ class EiHousehold:
         url = ei_household.workbook_url(await http.get(ei_household.PAGE))
         return url, await http.document(url, ei_household.read)
 
-    async def operators(self, http: Http) -> list[Operator]:
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return every company with figures for this year."""
         _, rows = await self._rows(http)
         return ei_household.operators(rows, http.today().year, zones(self.country))

@@ -68,6 +68,7 @@
           "enum": ["reset", "carry"]
         },
         "peak": {"$ref": "#/$defs/peak"},
+        "peaks": {"type": "array", "items": {"$ref": "#/$defs/peak"}, "description": "D2 §4 G4: more peak charges billed beside `peak` (a US all-hours and an on-peak demand charge)."},
         "contracted": {"$ref": "#/$defs/contracted"},
         "no_peak": {"type": "boolean", "description": "true: no capacity component at all."},
         "energy_components": {
@@ -87,12 +88,14 @@
         "weights": {"type": "array", "items": {"$ref": "#/$defs/weight_rule"}},
         "per_day": {"type": "string", "enum": ["max", "all"]},
         "group": {"type": "string", "enum": ["day", "week"], "description": "D2 §4 G6: what one entry is the highest of — a day, or an ISO week weighted by its Monday."},
-        "per_period": {"type": "string", "enum": ["max", "mean_top_n"]},
+        "per_period": {"type": "string", "enum": ["max", "mean_top_n", "nth"]},
         "n": {"type": "integer", "minimum": 1, "maximum": 31},
         "distinct_days": {"type": "boolean"},
         "period": {"type": "string", "enum": ["month", "rolling_months", "year"]},
         "rolling_months": {"type": "integer", "minimum": 2, "maximum": 36},
-        "price_period_unit": {"type": "string", "enum": ["month", "year"]},
+        "price_period_unit": {"type": "string", "enum": ["month", "year", "day"]},
+        "unit": {"type": "string", "enum": ["kw", "kva"], "description": "D2 §4 G10: a kVA charge, the kW metric divided by power_factor."},
+        "power_factor": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
         "coarse_factor": {"type": "number", "minimum": 1.0, "maximum": 2.0},
         "ratchet": {"$ref": "#/$defs/ratchet"},
         "pricing": {"$ref": "#/$defs/pricing"}

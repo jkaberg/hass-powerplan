@@ -11,5 +11,6 @@ MODULE = register(
         time_zones=("Europe/Brussels",),
         vat=tedb("6"),
         tedb="BE",
+        postcode="cwape",
     )
 )

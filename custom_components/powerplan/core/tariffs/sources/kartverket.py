@@ -10,26 +10,14 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass
 from typing import Final
 
-from .base import QualityError
+from .base import Place, QualityError
 
 __all__ = ["ADDRESSES", "MUNICIPALITY", "Place", "municipality_of", "place_of"]
 
 ADDRESSES: Final = "https://ws.geonorge.no/adresser/v1/sok?postnummer={postcode}&treffPerSide=10"
 MUNICIPALITY: Final = "https://ws.geonorge.no/kommuneinfo/v1/kommuner/{number}"
-
-
-@dataclass(frozen=True, slots=True)
-class Place:
-    """Where a postcode is: the municipality and county, numbers and names."""
-
-    postcode: str
-    municipality: str
-    municipality_name: str
-    county: str
-    county_name: str
 
 
 def municipality_of(addresses: bytes) -> str:

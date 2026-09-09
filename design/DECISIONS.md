@@ -2349,3 +2349,38 @@ Every Swedish company from Eltariff or Ei's file lists both SE tax zones, so ste
 
 The DK module carries elafgift with its dated rates (skat.dk; elpris.dk agrees) and its announced end. Energinet's tariffs and subscription are company prices and come with the copy (INV-70). Affects D13 §9.
 **Rejected:** fetching elafgift - a fetched levy changes silently.
+
+### D-0573 · Several peak charges by composition; nth, per day, kVA
+
+G4: a spec with more than one `PeakTariff` gets a `Combined` evaluator, one `Evaluator` per charge over the spec narrowed to it, each with its own history. The bill is the sum; ceiling, target and slack are the lowest; eligible windows the union at the heaviest weight; level and period the first charge's; the others' histories ride in the first's store section. The rule file carries them as `peaks`. G5: `per_period = "nth"`. G9: `price_period_unit = "day"`. G10: `unit = "kva"` divides by `power_factor`. Helen's rule (the month's third-highest hour, night at 80 %) is checked on a hand-computed month. Affects D2 §3, §4, §5.2, §5.3, §9.
+**Rejected:** a tuple of charges inside `Evaluator` - every method branches, and the one-charge case pays.
+
+### D-0574 · A bundled US rate or Australian retail plan is the grid party whole
+
+URDB rates and CDR plans price supply and delivery together; the copy holds them whole as the grid party, excl. (the AU module adds GST). The household's supplier step adds only its own extras. Affects D13 §3, §5.11.
+**Rejected:** inventing a split - neither document says whose each charge is.
+
+### D-0575 · Wallonia and Brussels from the regulators' comparators
+
+`cwape` covers CompaCWaPE and BruSim: the postcode's entries, each entry's grid company from one single-rate simulation (the same request the pages send, supplier offers dropped), and a copy from one simulation per meter type, rates as each line's yearly amount over its kWh, excl. VAT. Grid and transmission lines are included; excise and the energy contribution wait for the BE module's levies. BruSim prices a connection-power segment picked from the site's fuse. Affects D13 §5.9, §5.11, §9.
+**Rejected:** the price tables directly - they need a supplier login.
+
+### D-0576 · A source's list keyed by the postcode, and products on demand
+
+`TariffSource.operators(http, postcode=None)`: URDB (ZIP) and the CWaPE platform list by postcode, passed by the flow and taken from `entry.data` on renewal; the US and BE modules name their postcode directory (O17). A source may define `products(http, operator, postcode)`, asked once an operator without products is chosen (CDR brands). `Operator.source` names the adapter; `Http.post` sends JSON under the same conduct. Affects D13 §5.1, §5.3, §6.
+**Rejected:** a directory step per country - the postcode step already asks it.
+
+### D-0577 · VREG's sheet as a document source; one workbook reader
+
+`vreg_xlsx` reads the year's distribution-tariff workbook linked from VREG's tariff page, overview sheet only: per area and meter, rows excl. VAT. The digital meter's capacity rule is the regulator's (15-minute windows, the month's highest, a 12-month mean, `min_kw` 2.5); the analogue meter a fixed term. O15 names VREG's XLSX as a candidate. `core/tariffs/sources/xlsx.py` reads a sheet with the standard library for both workbook adapters, rounding number cells to nine decimals to return what was typed. Fluvius areas are listed by name. Affects D13 §5.1, §5.11.
+**Rejected:** a private copy of Ei's reader - the same parsing and float noise fixed twice.
+
+### D-0578 · URDB: a version per season, the window asked, the importer moved
+
+`openei_urdb` (`DEMO_KEY`: 50 requests a day, a flow is two) lists the utilities serving a ZIP with their rates in force; a rate's demand becomes a version per season over the next twelve months (all-hours and time-of-use charges; several in a month are several peak charges, G4); block demand is refused; a missing `demandwindow` is asked (60 pre-selected); the fixed charge is the fee (G21). The 12 × 24 energy importer moves from `core/pricing/modifiers/tou_urdb.py` into the adapter, since tariff sources mustn't import pricing. Affects D1 §3, §9 7; D13 §5.11, §12.
+**Rejected:** keeping the paste importer - every approved rate is in URDB, and a pasted document skips the checks.
+
+### D-0579 · CDR: the demand measurement always asked, 30-minute windows
+
+`cdr_energy` lists the register's 84 brands; a brand's residential plans for the postcode come once chosen (D-0576), and tariff periods become versions from the season in force. A demand charge's measurement (day, month, last 12 months) is always asked with the description's reading pre-selected, because the structured field contradicts the description on the captured plan. A charge named in cents asks the per-kW-per-day price; a kVA charge asks the power factor (0.9). The window is 30 minutes, the NEM's metering interval. Affects D13 §5.6, §5.11, §19 9.
+**Rejected:** trusting `measurementPeriod` - bills a twelve-month maximum as a daily one.
