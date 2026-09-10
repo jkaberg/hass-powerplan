@@ -136,7 +136,7 @@ async def test_10d_the_entrys_own_copy_wins_over_the_file(
 
     A WP4.6 copy (`tariff.spec`, no `price` yet) migrates to the copy by party and
     bills as it was stored. Since TS.6 the company's file is gone: nothing to be
-    outdated against, and the renewal fetches the company's tables (D-0580).
+    outdated against, and the renewal fetches the company's tables (D-0600).
     """
     data = site_data(hass)
     data["tariff"] = {k: v for k, v in data["tariff"].items() if k not in {"price", "review"}}

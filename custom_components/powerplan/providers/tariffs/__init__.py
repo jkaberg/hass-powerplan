@@ -7,14 +7,19 @@ monthly renewal and `powerplan.refresh_tariff` are the only callers.
 """
 
 from . import (
+    anre,
     cdr_energy,
     cwape,
     ei_household,
+    elcom,
     elpris_dk,
     eltariff,
+    esios,
     fri_nettleie,
     openei_urdb,
+    tauron,
     vreg_xlsx,
+    zsdis,
 )
 from .base import (
     MAX_BYTES,
@@ -34,11 +39,14 @@ __all__ = [
     "Http",
     "Resolved",
     "TariffSource",
+    "anre",
     "cdr_energy",
     "cwape",
     "ei_household",
+    "elcom",
     "elpris_dk",
     "eltariff",
+    "esios",
     "for_country",
     "fri_nettleie",
     "get",
@@ -46,5 +54,7 @@ __all__ = [
     "openei_urdb",
     "register",
     "resolve",
+    "tauron",
     "vreg_xlsx",
+    "zsdis",
 ]

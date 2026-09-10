@@ -1,0 +1,25 @@
+{
+  "id": "pt.contracted",
+  "template": true,
+  "name": "Portugal – potência contratada (ERSE, kVA)",
+  "country": "PT",
+  "currency": "EUR",
+  "tz": "Europe/Lisbon",
+  "source_url": "https://www.erse.pt/atividade/regulacao/tarifas-e-precos-eletricidade/",
+  "verified": null,
+  "assumed": "The contracted kVA is the household's own and asked; the meter's breaker trips at it with no tolerance assumed; ERSE's access tariffs (TAR) and their daily or weekly time cycles are national and come with the supplier's offer, so the rule holds no capacity charge.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "contracted": {
+        "limits": [
+          {
+            "limit_kw": null
+          }
+        ],
+        "on_exceed": "trip",
+        "unit": "kva"
+      }
+    }
+  ]
+}

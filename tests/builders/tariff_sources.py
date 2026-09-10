@@ -253,6 +253,55 @@ def belgium_http() -> FixtureHttp:
     return FixtureHttp(documents)
 
 
+def switzerland_http() -> FixtureHttp:
+    """Serve ElCom's captured answers: Bern's postcode, every municipality, Bern and Basel."""
+    from custom_components.powerplan.core.tariffs.sources import elcom  # noqa: PLC0415
+
+    folder = FIXTURES / "elcom"
+    empty = b'{"data":{"observations":[]}}'
+    documents = {
+        post_key(elcom.API, elcom.search_query("3011")): (folder / "search-3011.json").read_bytes(),
+        post_key(elcom.API, elcom.municipalities_query()): (
+            folder / "municipalities.json"
+        ).read_bytes(),
+    }
+    for municipality, category in (("351", "H4"), ("2701", "H2")):
+        documents[post_key(elcom.API, elcom.observations_query(municipality, category, 2026))] = (
+            folder / f"observations-{municipality}-{category}-2026.json"
+        ).read_bytes()
+        documents[post_key(elcom.API, elcom.observations_query(municipality, category, 2027))] = (
+            empty
+        )
+    return FixtureHttp(documents)
+
+
+def romania_http() -> FixtureHttp:
+    """Serve ANRE's counties and two zones' captured offers (trimmed to five each)."""
+    from custom_components.powerplan.core.tariffs.sources import anre  # noqa: PLC0415
+
+    folder = FIXTURES / "anre"
+    documents = {anre.COUNTIES: (folder / "judete.json").read_bytes()}
+    for zone in ("4", "7"):
+        documents[anre.offers_url(zone, CAPTURED)] = (
+            folder / f"comparator-electric-{zone}.json"
+        ).read_bytes()
+    return FixtureHttp(documents)
+
+
+def slovakia_http() -> FixtureHttp:
+    """Serve ZSDIS's switching-times page, trimmed to its household literal."""
+    from custom_components.powerplan.core.tariffs.sources import zsdis  # noqa: PLC0415
+
+    return FixtureHttp({zsdis.PAGE: (FIXTURES / "zsdis" / "casy-prepinania.html").read_bytes()})
+
+
+def poland_http() -> FixtureHttp:
+    """Serve Tauron Dystrybucja's calculator page as captured."""
+    from custom_components.powerplan.core.tariffs.sources import tauron  # noqa: PLC0415
+
+    return FixtureHttp({tauron.PAGE: (FIXTURES / "tauron" / "taniej.html").read_bytes()})
+
+
 def australia_http() -> FixtureHttp:
     """Serve the CDR register, GEE Energy's plans and its captured demand plan."""
     from custom_components.powerplan.core.tariffs.sources import cdr_energy  # noqa: PLC0415

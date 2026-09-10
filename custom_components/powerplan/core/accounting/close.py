@@ -21,8 +21,8 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta, tzinfo
 
 from ..metering import ClosedWindow, LoadSlot
-from ..model import Carrier, Mode, Money
-from ..tariffs import PeakHistory, TariffEvaluator
+from ..model import Carrier, Mode, Money, PriceCurve
+from ..tariffs import PeakHistory, TariffEvaluator, surcharge_for_window
 from .ledger import (
     Ledger,
     LoadMonthRec,
@@ -128,6 +128,10 @@ class CloseCtx:
     history: PeakHistory
     loads: Mapping[str, ShadowCtx]
     tz: tzinfo
+    #: A load on its own grid tariff's meter (D4 §5.16, G13): the import curve it
+    #: is billed on, by load id. The site's line takes its kWh off the house's
+    #: price and onto this one, so the site's cost is still what the bills say.
+    load_curves: Mapping[str, PriceCurve] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +246,8 @@ class Accounting:
         """Build the accounting for `cfg`, resuming `state` when a store had one."""
         self.config = cfg
         self._state = state if state is not None else _fresh_state(cfg)
+        #: This slot's loads on their own meter: kWh, counterfactual kWh, own and house price.
+        self._own_meter: list[tuple[float, float, SlotPrice, SlotPrice]] = []
 
     # -- state ------------------------------------------------------------- #
 
@@ -335,12 +341,13 @@ class Accounting:
         """
         ledger = self._state.ledger
         delta = 0.0
+        self._own_meter = []
         for load_id, measured in slot.loads.items():
             shadow_ctx = ctx.loads.get(load_id)
             if shadow_ctx is None:
                 continue
-            pair = ctx.curves[shadow_ctx.params.carrier]
-            price = slot_price(pair.import_curve, slot.start_utc)
+            curve = _import_curve(ctx, load_id, shadow_ctx.params.carrier)
+            price = slot_price(curve, slot.start_utc)
             rec = ledger.load_rec(load_id, price.currency)
 
             cost = price_slot(measured.kwh, price)
@@ -360,6 +367,9 @@ class Accounting:
             rec.cf_cost = plus(rec.cf_cost, cf_cost)
             rec.kwh_shifted += kwh_shifted(measured.kwh, cf_kwh)
             delta += cf_kwh - measured.kwh
+            if load_id in ctx.load_curves:
+                house = slot_price(ctx.curves[Carrier.ELECTRICITY].import_curve, slot.start_utc)
+                self._own_meter.append((measured.kwh, cf_kwh, price, house))
 
             if not price.known:
                 self._defer_reprice(
@@ -476,16 +486,21 @@ class Accounting:
         pair = ctx.curves[Carrier.ELECTRICITY]
         price = slot_price(pair.import_curve, slot.start_utc)
         energy = price_slot(slot.import_kwh, price)
+        cf_energy = price_slot(slot.import_kwh + delta_kwh, price)
         credit = export_credit(slot.export_kwh, pair, slot.start_utc)
+        accrue_by_party(site.energy_by_party, price, slot.import_kwh)
+        # A load on its own meter is billed at its own tariff, not the house's (G13).
+        for kwh, cf_kwh, own, house in self._own_meter:
+            energy = plus(energy, minus(price_slot(kwh, own), price_slot(kwh, house)))
+            cf_energy = plus(cf_energy, minus(price_slot(cf_kwh, own), price_slot(cf_kwh, house)))
+            accrue_by_party(site.energy_by_party, house, kwh, -1)
+            accrue_by_party(site.energy_by_party, own, kwh)
 
         site.import_kwh += slot.import_kwh
         site.export_kwh += slot.export_kwh
         site.energy_cost = plus(site.energy_cost, energy)
-        accrue_by_party(site.energy_by_party, price, slot.import_kwh)
         site.export_credit = plus(site.export_credit, credit)
-        site.cf_energy_cost = plus(
-            site.cf_energy_cost, price_slot(slot.import_kwh + delta_kwh, price)
-        )
+        site.cf_energy_cost = plus(site.cf_energy_cost, cf_energy)
         site.slots += 1
         exact = slot.site_confidence is SlotConfidence.EXACT and price.known
         site.estimated_slots += 0 if exact else 1
@@ -507,6 +522,18 @@ class Accounting:
             if window.start_utc <= datetime.fromisoformat(key) < end
         }
         cf_kwh = max(0.0, window.kwh + sum(inside.values()))
+        was_charge = site.capacity_charge
+        was_savings = site.capacity_savings
+        # A priced limit bills each window's excess (LU, O23): each world its own.
+        priced = ctx.tariff.priced_limit_now(window.start_utc)
+        if priced is not None and priced.per_kwh is not None:
+            hours = window.window_min / 60.0
+            site.surcharge += surcharge_for_window(
+                replace(priced, window_min=window.window_min), window.kwh / hours
+            ).amount
+            site.cf_surcharge += surcharge_for_window(
+                replace(priced, window_min=window.window_min), cf_kwh / hours
+            ).amount
         ctx.tariff.record_counterfactual(
             replace(window, kwh=cf_kwh, avg_kw=cf_kwh / (window.window_min / 60.0))
         )
@@ -529,14 +556,12 @@ class Accounting:
         if state.cf_fee_at_month_start is None:
             state.cf_fee_at_month_start = zero(cf_bill.capacity_fee.currency)
 
-        was_fee = site.capacity_fee
-        was_savings = site.capacity_savings
         site.capacity_fee = capacity_fee_to_date(actual_bill, state.fee_at_month_start)
         site.cf_capacity_fee = capacity_fee_to_date(cf_bill, state.cf_fee_at_month_start)
         # The capacity figures are re-stated per window rather than accumulated, so
         # the lifetime takes the change and never the whole fee twice.
         state.ledger.lifetime.accrue_site(
-            minus(site.capacity_fee, was_fee), minus(site.capacity_savings, was_savings)
+            minus(site.capacity_charge, was_charge), minus(site.capacity_savings, was_savings)
         )
 
     # -- re-pricing (D11 §2, §5.1 step 6) ---------------------------------- #
@@ -572,7 +597,7 @@ class Accounting:
             shadow_ctx = ctx.loads.get(load_id)
             if shadow_ctx is None:
                 continue
-            curve = ctx.curves[shadow_ctx.params.carrier].import_curve
+            curve = _import_curve(ctx, load_id, shadow_ctx.params.carrier)
             kept, applied = reprice(
                 pending, curve, slot.start_utc, max_age_days=self.config.reprice_days
             )
@@ -694,11 +719,11 @@ class Accounting:
             cost=ledger.site.cost,
             energy_cost=ledger.site.energy_cost,
             export_credit=ledger.site.export_credit,
-            capacity_fee=ledger.site.capacity_fee,
+            capacity_fee=ledger.site.capacity_charge,
             savings=total,
             energy_savings=energy,
             capacity_savings=capacity,
-            cf_cost=plus(ledger.site.cf_energy_cost, ledger.site.cf_capacity_fee),
+            cf_cost=plus(ledger.site.cf_energy_cost, ledger.site.cf_capacity_charge),
             confidence=ledger.site.confidence,
             savings_confidence=site_savings_confidence(rows, total),
             estimated_share=ledger.site.estimated_share,
@@ -747,3 +772,9 @@ def _last_slot_of_the_day(slot: ClosedSlot, tz: tzinfo) -> bool:
 def _fresh_state(cfg: AccountingConfig) -> AccountingState:
     """Build the state of a site with no store; the first slot opens the ledger."""
     return AccountingState(ledger=Ledger.opened(_EPOCH, cfg.tz, cfg.currency))
+
+
+def _import_curve(ctx: CloseCtx, load_id: str, carrier: Carrier) -> PriceCurve:
+    """Return the curve a load is billed on: its own tariff's, else its carrier's (G13)."""
+    own = ctx.load_curves.get(load_id)
+    return own if own is not None else ctx.curves[carrier].import_curve

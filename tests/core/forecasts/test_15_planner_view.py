@@ -33,6 +33,10 @@ class _Ceiling:
         """Return the same ceiling for every window."""
         return CEILING_W
 
+    def priced_limit_now(self, now: datetime) -> None:
+        """Return no priced limit: this tariff has none."""
+        return
+
     def eligible_windows(
         self, start: datetime, end: datetime
     ) -> list[tuple[datetime, datetime, float]]:

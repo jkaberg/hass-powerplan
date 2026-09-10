@@ -1,0 +1,952 @@
+<script>
+        var household_rates = [{
+              code: 145,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '13:45',
+                     t_to: '15:45',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:45',
+                     t_to: '5:45',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 146,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '13:30',
+                     t_to: '15:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, Akumulačné vykurovanie',
+                     for_rate: 'iba s 159',
+                     tarification: ''
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '5:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, Akumulačné vykurovanie',
+                     for_rate: 'iba s 159',
+                     tarification: ''
+              }]
+       },
+       {
+              code: 149,
+              intervals: [{
+                     telegram: 'A1B4DP1',
+                     t_type: 'nt',
+                     t_from: '22:00',
+                     t_to: '6:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 150,
+              intervals: [{
+                     telegram: 'A1B4DP2',
+                     t_type: 'nt',
+                     t_from: '13:50',
+                     t_to: '15:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B4DP2',
+                     t_type: 'nt',
+                     t_from: '23:50',
+                     t_to: '5:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 151,
+              intervals: [{
+                     telegram: 'A1B4DP3',
+                     t_type: 'nt',
+                     t_from: '13:50',
+                     t_to: '15:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'iba s 159',
+                     tarification: ''
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:50',
+                     t_to: '5:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'iba s 159',
+                     tarification: ''
+              }]
+       },
+       {
+              code: 159,
+              intervals: [{
+                     telegram: 'A1B4D11',
+                     t_type: 'nt',
+                     t_from: '8:30',
+                     t_to: '9:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '10:30',
+                     t_to: '20:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '21:30',
+                     t_to: '22:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D5',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '7:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D5',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 160,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '0:00',
+                     t_to: '7:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '8:30',
+                     t_to: '9:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '10:30',
+                     t_to: '20:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '21:30',
+                     t_to: '23:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 162,
+              intervals: [{
+                     telegram: 'A1B4D14',
+                     t_type: 'nt',
+                     t_from: '7:00',
+                     t_to: '9:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Akumulačné, hybridné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '14:00',
+                     t_to: '17:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Akumulačné, hybridné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:00',
+                     t_to: '4:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Akumulačné, hybridné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }]
+       },
+       {
+              code: 246,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '13:00',
+                     t_to: '15:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'Iba s 259, 559',
+                     tarification: ''
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '00:30',
+                     t_to: '6:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'Iba s 259, 559',
+                     tarification: ''
+              }]
+       },
+       {
+              code: 259,
+              intervals: [{
+                     telegram: 'A1B4D11',
+                     t_type: 'nt',
+                     t_from: '9:30',
+                     t_to: '10:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '11:30',
+                     t_to: '21:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '22:30',
+                     t_to: '23:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '0:30',
+                     t_to: '8:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 152,
+              intervals: [{
+                     telegram: 'A1B4DP4',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '05:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B4DP4',
+                     t_type: 'nt',
+                     t_from: '13:30',
+                     t_to: '15:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 153,
+              intervals: [{
+                     telegram: 'A1B4DP5',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '05:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B4DP5',
+                     t_type: 'nt',
+                     t_from: '13:30',
+                     t_to: '15:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 154,
+              intervals: [{
+                     telegram: 'A1B4DP6',
+                     t_type: 'nt',
+                     t_from: '00:00',
+                     t_to: '06:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B4DP6',
+                     t_type: 'nt',
+                     t_from: '14:10',
+                     t_to: '16:10',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 158,
+              intervals: [{
+                     telegram: 'A1B4DP10',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '07:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: 'A1B4DP10',
+                     t_type: 'nt',
+                     t_from: '08:30',
+                     t_to: '09:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: 'A1B4DP10',
+                     t_type: 'nt',
+                     t_from: '10:30',
+                     t_to: '20:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: 'A1B4DP10',
+                     t_type: 'nt',
+                     t_from: '21:30',
+                     t_to: '22:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: '',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 161,
+              intervals: [{
+                     telegram: 'A1B4DP13',
+                     t_type: 'nt',
+                     t_from: '23:40',
+                     t_to: '05:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'X3',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B4DP13',
+                     t_type: 'nt',
+                     t_from: '13:40',
+                     t_to: '15:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'X3',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 168,
+              intervals: [{
+                     telegram: 'A1B5DP4',
+                     t_type: 'nt',
+                     t_from: '22:00',
+                     t_to: '06:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 169,
+              intervals: [{
+                     telegram: 'A1B5DP5',
+                     t_type: 'nt',
+                     t_from: '00:00',
+                     t_to: '06:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B5DP5',
+                     t_type: 'nt',
+                     t_from: '13:00',
+                     t_to: '15:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 179,
+              intervals: [{
+                     telegram: 'A1B5DP15',
+                     t_type: 'nt',
+                     t_from: '22:00',
+                     t_to: '06:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 184,
+              intervals: [{
+                     telegram: 'A1B6DP4',
+                     t_type: 'nt',
+                     t_from: '23:40',
+                     t_to: '05:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B6DP4',
+                     t_type: 'nt',
+                     t_from: '13:40',
+                     t_to: '15:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 185,
+              intervals: [{
+                     telegram: 'A1B6DP5',
+                     t_type: 'nt',
+                     t_from: '23:40',
+                     t_to: '05:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B6DP5',
+                     t_type: 'nt',
+                     t_from: '13:40',
+                     t_to: '15:40',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 190,
+              intervals: [{
+                     telegram: 'A1B6DP10',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '08:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: 'A1B6DP10',
+                     t_type: 'nt',
+                     t_from: '09:30',
+                     t_to: '10:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '11:30',
+                     t_to: '20:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '21:30',
+                     t_to: '22:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 202,
+              intervals: [{
+                     telegram: 'A1B7DP6',
+                     t_type: 'nt',
+                     t_from: '23:35',
+                     t_to: '05:35',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B7DP6',
+                     t_type: 'nt',
+                     t_from: '16:13',
+                     t_to: '18:13',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 203,
+              intervals: [{
+                     telegram: 'A1B7DP7',
+                     t_type: 'nt',
+                     t_from: '23:52',
+                     t_to: '05:52',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B7DP7',
+                     t_type: 'nt',
+                     t_from: '15:28',
+                     t_to: '17:28',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 206,
+              intervals: [{
+                     telegram: 'A1B7DP10',
+                     t_type: 'nt',
+                     t_from: '23:35',
+                     t_to: '05:35',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }, {
+                     telegram: 'A1B7DP10',
+                     t_type: 'nt',
+                     t_from: '16:13',
+                     t_to: '18:13',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }]
+       },
+       {
+              code: 208,
+              intervals: [{
+                     telegram: 'A1B7DP12',
+                     t_type: 'nt',
+                     t_from: '22:00',
+                     t_to: '06:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 217,
+              intervals: [{
+                     telegram: 'A1B8DP5',
+                     t_type: 'nt',
+                     t_from: '23:50',
+                     t_to: '05:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }, {
+                     telegram: 'A1B8DP5',
+                     t_type: 'nt',
+                     t_from: '13:50',
+                     t_to: '15:50',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Ohrev teplej úžitkovej vody, Akumulačné vykurovanie',
+                     for_rate: 'D3 Aktiv (DD3*)',
+                     tarification: '2T'
+              }]
+       },
+       {
+              code: 346,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:30',
+                     t_to: '05:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'iba s 359, 659',
+                     tarification: ''
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '12:30',
+                     t_to: '14:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'iba s 359, 659',
+                     tarification: ''
+              }]
+       },
+       {
+              code: 359,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:15',
+                     t_to: '05:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '06:30',
+                     t_to: '08:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '09:00',
+                     t_to: '19:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '20:15',
+                     t_to: '22:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 262,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '19:45',
+                     t_to: '21:45',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Akumulačné, hybridné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '23:00',
+                     t_to: '07:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Akumulačné, hybridné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD4*)',
+                     tarification: '2A'
+              }]
+       },
+       {
+              code: 459,
+              intervals: [{
+                     telegram: 'A1B4D11',
+                     t_type: 'nt',
+                     t_from: '23:45',
+                     t_to: '6:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '7:15',
+                     t_to: '8:00',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '8:45',
+                     t_to: '11:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '12:00',
+                     t_to: '21:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '22:15',
+                     t_to: '23:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 559,
+              intervals: [{
+                     telegram: 'A1B4D11',
+                     t_type: 'nt',
+                     t_from: '23:00',
+                     t_to: '7:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '8:00',
+                     t_to: '9:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '10:15',
+                     t_to: '11:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '12:15',
+                     t_to: '20:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '21:15',
+                     t_to: '22:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       },
+       {
+              code: 659,
+              intervals: [{
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '00:15',
+                     t_to: '06:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '07:30',
+                     t_to: '08:45',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '09:15',
+                     t_to: '10:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '11:15',
+                     t_to: '21:30',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }, {
+                     telegram: '',
+                     t_type: 'nt',
+                     t_from: '22:00',
+                     t_to: '23:15',
+                     weekday: true,
+                     weekend: true,
+                     meaning: 'Priamovýhrevné vykurovanie, nabíjacia stanica',
+                     for_rate: 'D3 Aktiv (DD5*)',
+                     tarification: '2P'
+              }]
+       }];
+</script>

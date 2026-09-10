@@ -22,6 +22,7 @@ MODULE = register(
         ),
         vat=tedb("20"),
         tedb="FR",
+        rule_template="fr/kva",
         zones=(
             Zone(
                 "gpmr", "Guadeloupe, Martinique, Réunion", vat=(Rate(None, Decimal("0.021"), DOM),)

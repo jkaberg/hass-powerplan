@@ -16,5 +16,6 @@ MODULE = register(
         time_zones=("Europe/Dublin",),
         vat=(Rate(None, Decimal("0.09"), BUDGET, until=date(2030, 12, 31)),),
         tedb="IE",
+        rule_template="ie/nopeak",
     )
 )

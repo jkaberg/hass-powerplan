@@ -10,8 +10,9 @@ and is left to the SE module (INV-72). Pure: the documents in, a copy out.
 
 A version starts wherever any component's validity starts, so a winter power
 price is a version (Göteborg: November to March). Two power prices at once -
-Tekniska verken's day and night peak - wait for D13 §18 G4 and are
-refused; a reactive-power charge is a business tariff's, and never offered.
+Tekniska verken's day and night peak - are two peak charges in one version,
+each on its own hours (D13 §18 G4); a reactive-power charge is a business
+tariff's, and never offered.
 """
 
 from __future__ import annotations
@@ -162,7 +163,7 @@ def parse(
                 # and the renewal fetches the rest before it is needed (§10).
                 last = since
                 break
-            rules = (_power(active["powerPrice"], patterns, org),)
+            rules = _power(active["powerPrice"], patterns, org)
             charge = _energy(active["energyPrice"], since, patterns, org)
             fee = _summed(_fees(active["fixedPrice"], since))
             last = until
@@ -272,15 +273,22 @@ def _price(component: Mapping[str, Any]) -> Decimal:
 
 def _power(
     components: Sequence[Mapping[str, Any]], patterns: Mapping[str, _Pattern], org: str
-) -> PeakTariff | NoPeak:
-    """Return the version's power price; a zero-priced component bills nothing."""
+) -> tuple[PeakTariff, ...] | tuple[NoPeak]:
+    """Return the version's power prices, one peak charge each; none priced is `NoPeak`.
+
+    Several at once (Tekniska verken's day and night peak) are several charges,
+    each measured on its own hours and billed side by side (D13 §18 G4).
+    """
     priced = [component for component in components if _price(component) > 0]
     if not priced:
-        return NoPeak()
-    if len(priced) > 1:
-        msg = f"{KEY}: {org} bills {len(priced)} power prices at once (D13 §18 G4, TS.5)"
-        raise QualityError(msg)
-    component = priced[0]
+        return (NoPeak(),)
+    return tuple(_one_power(component, patterns, org) for component in priced)
+
+
+def _one_power(
+    component: Mapping[str, Any], patterns: Mapping[str, _Pattern], org: str
+) -> PeakTariff:
+    """Return one power price as a peak charge."""
     settings = component.get("peakIdentificationSettings") or {}
     function = _PEAK_FUNCTION.match(str(settings.get("peakFunction") or "peak(main)"))
     window = _DURATION_MIN.get(str(settings.get("peakDuration") or "PT1H"))
@@ -312,7 +320,7 @@ def _eligible(
     if not filters:
         return None
     if len({(f.weekdays, f.holidays) for f in filters}) > 1:
-        msg = f"{KEY}: {org}'s power hours differ by day type (D13 §18 G4, TS.5)"
+        msg = f"{KEY}: {org}'s power hours differ by day type (one TimeFilter per charge)"
         raise QualityError(msg)
     hours = tuple(h for f in filters for h in (f.hours or ()))
     merged = TimeFilter(

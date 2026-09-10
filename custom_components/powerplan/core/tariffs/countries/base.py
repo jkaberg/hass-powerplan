@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-__all__ = ["TEDB", "CountryModule", "Levy", "Rate", "Scheme", "Zone", "pick", "tedb"]
+__all__ = ["TEDB", "CountryModule", "Levy", "Rate", "Scheme", "VatBand", "Zone", "pick", "tedb"]
 
 #: The Commission's Taxes in Europe Database - every EU row's cross-check (§9.1).
 TEDB = "https://ec.europa.eu/taxation_customs/tedb/"
@@ -102,6 +102,41 @@ class Scheme:
 
 
 @dataclass(frozen=True, slots=True)
+class VatBand:
+    """A reduced VAT rate on the first kWh of each 30 days (D13 §18 G17; Portugal).
+
+    `upto_kwh` of each month at `rates` (dated), `large_upto_kwh` for a large
+    household (five or more, confirmed in the copy); only at or below `upto_kw` of
+    contracted power. A zone with its own reduced rate names it in `zones`.
+    """
+
+    upto_kwh: float
+    rates: tuple[Rate, ...]
+    large_upto_kwh: float | None = None
+    upto_kw: float | None = None
+    zones: tuple[tuple[str, tuple[Rate, ...]], ...] = ()
+
+    def rate_at(
+        self,
+        day: date,
+        zone: str | None,
+        contracted_kw: float | None,
+        kwh_so_far: float,
+        *,
+        large: bool,
+    ) -> Decimal | None:
+        """Return the band's rate for the next kWh, `None` where the band does not apply."""
+        if self.upto_kw is not None and contracted_kw is not None and contracted_kw > self.upto_kw:
+            return None
+        limit = self.large_upto_kwh if large and self.large_upto_kwh is not None else self.upto_kwh
+        if kwh_so_far >= limit:
+            return None
+        rates = dict(self.zones).get(zone or "", self.rates)
+        found = pick(rates, day)
+        return None if found is None else found.value
+
+
+@dataclass(frozen=True, slots=True)
 class CountryModule:
     """Everything national about one country (D13 §5.1, O21).
 
@@ -124,6 +159,8 @@ class CountryModule:
     #: The official directory a postcode is sent to (O17), `None` where there is none yet.
     postcode: str | None = None
     schemes: tuple[Scheme, ...] = ()
+    #: A reduced rate on a period's first kWh (G17), `None` where the country has none.
+    vat_band: VatBand | None = None
 
     def zone(self, key: str | None) -> Zone | None:
         """Return the zone `key`, or `None` for the national rates."""

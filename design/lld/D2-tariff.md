@@ -435,40 +435,40 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 
 ## 9. Tests that must exist before merge
 
-1. Golden per preset: a synthetic month/period of windows → expected metric, level, fee (hand-computed in the test file with the source of each number).
-2. Free ride is derived: NO preset, today's max set → `slack ≥ today_max`; BE preset → `slack == month max` and `marginal_cost` is 1/12-scaled.
-3. Weights before daily max: Ellevio night 10 kW → 5 kW entry; a 6 kW day entry beats it.
-4. Eligibility: SRP on-peak window; an 8 kW off-peak window never enters the metric; `ceiling = +inf` outside eligibility.
+1. Golden per rule: a synthetic month of windows → expected metric, level, fee (hand-computed in the test file with the source of each number).
+2. The free ride is derived: NO, today's max set → `slack ≥ today_max`. BE → `slack == month max` and `marginal_cost` scaled by 1/12.
+3. Weights before daily max: Ellevio night 10 kW → 5 kW entry, a 6 kW day entry beats it.
+4. Eligibility: SRP on-peak window. An 8 kW off-peak window never enters the metric, `ceiling = +inf` outside eligibility.
 5. Fast path == bisection on 10 000 random histories (Norwegian tariff model).
-6. Rolling-12: adding a month drops the oldest; partial confidence with missing months; `seed_from_bills` fills them.
+6. Rolling-12: adding a month drops the oldest, partial confidence with missing months, `seed_from_bills` fills them.
 7. Ratchet: 80 %/11 months keeps the billed metric up after a quiet month.
-8. FI deductible: 7 kW peak → fee 0; 9 kW → 1 kW billed.
-9. BE minimum applies per month before the rolling mean: two months at 1.0 and 2.6 kW → floored to 2.5 and 2.6 → billed 2.55, not `max(1.8, 2.5) = 2.5`.
-10. Version change: two versions, period spanning both, `bill` prices each window under its version; classification on the current one.
-11. DST: autumn repeated hour yields two windows; both recorded; spring gap yields none; daily max unaffected.
-12. `ContractedPower` ES: P1 limit weekdays 08–24, P2 otherwise; `limit_now_w` flips at 08:00 local; holidays as P2.
+8. FI deductible: 7 kW peak → fee 0, 9 kW → 1 kW billed.
+9. BE minimum per month before the rolling mean: months at 1.0 and 2.6 kW → floored to 2.5 and 2.6 → billed 2.55, not `max(1.8, 2.5) = 2.5`.
+10. Version change: two versions, a period spanning both, `bill` prices each window under its version, classification on the current one.
+11. DST: the repeated autumn hour gives two windows, both recorded; the spring gap gives none; daily max unaffected.
+12. `ContractedPower` ES: P1 weekdays 08–24, P2 otherwise, `limit_now_w` flips at 08:00 local, holidays as P2.
 13. Advice keys fire on the documented conditions.
-14. `auto` target defends the reached step; never aims above it.
+14. `auto` defends the reached step, never aims above it.
 15. Coarse history: hourly windows classified with `coarse_factor`, billed without.
 16. Overrides survive a re-seed.
-17. `ceiling` re-clamps to the new target on the very next read after a target change (INV-12).
-18. `bill` on a counterfactual history: the same windows with one evening window raised from 5 kW to 9 kW moves the NO preset one step up; `bill(actual)` and `bill(counterfactual)` use the same version and the same `coarse` rules (never inflated when billing); `record_counterfactual` never touches `days` (INV-11 for the real history).
-19. The free ride survives the cap: NO preset, target 10 kW, today's max 15 kW (exact), risk 0.5 → `ceiling ≈ 15 kWh − eps_small`, `free_ride = True`; the same with today's max `estimated` → flat target; lowering the target to 5 kW mid-day yields `cap = 15` (today's entry stands) and the next day `cap = 5.5` (INV-9, INV-12).
-20. Provenance: every version of every shipped preset has a `source_url`, a `verified` date, no `assumed`, and `valid_from ≤ verified`; a file violating any of the four fails to load; `custom.json` and templates are the only shipped files without prices.
-21. Templates: a template refuses to evaluate until every `null` price is filled; the tariff step completed from a template yields a spec equal to the same tariff model written by hand, with the household's numbers and `source_url = None`, `assumed = "from the household's bill"`.
-22. Tariff areas: `no/tensio-ts` and `no/tensio-tn` each classify the same synthetic month into the same step and bill it at their own sheet's fee; the golden cites the sheet.
+17. `ceiling` re-clamps to a new target on the very next read (INV-12).
+18. `bill` on a counterfactual history: the same windows with one evening window raised from 5 to 9 kW moves the NO bill one step up. `bill(actual)` and `bill(counterfactual)` use the same version and `coarse` rules (never inflated when billing), and `record_counterfactual` never touches `days` (INV-11).
+19. The free ride survives the cap: NO, target 10 kW, today's max 15 kW (exact), risk 0.5 → `ceiling ≈ 15 kWh − eps_small`, `free_ride = True`. With today's max `estimated` → flat target. Lowering the target to 5 kW mid-day gives `cap = 15` (today's entry stands), the next day `cap = 5.5` (INV-9, INV-12).
+20. Provenance: every version of every shipped rule has a `source_url`, a `verified` date, no `assumed`, and `valid_from ≤ verified`. A file breaking any of the four fails to load. `custom.json` and templates are the only shipped files without prices.
+21. Templates: a template refuses to evaluate until every `null` price is filled. The tariff step completed from a template gives a spec equal to the same model written by hand, with the household's numbers, `source_url = None` and `assumed = "from the household's bill"`.
+22. Tariff areas: `no/tensio-ts` and `no/tensio-tn` classify the same synthetic month into the same step and bill it at their own sheet's fee, the golden cites the sheet.
 23–31. Moved to D13 §19 (1–9) with the sources.
-32. `day` unit: a month of 30 days bills 30 × the rate; February 28.
-33. *(G5)* `nth`: the month's third-highest hour with night windows weighted 0.8 bills Helen's own example.
-34. *(G6)* `group = "week"`: five weekly maxima over twelve months, weighted by season, equal fri-nettleie's `FEM_VEKTET_ÅR` for Fjellnett's captured tariff.
-35. *(G7)* `inclusive = False`: a metric of exactly 5.00 kW stays in the 2–5 kW step; `True` moves it up.
-36. *(G4)* Two `PeakTariff`s in one version (US all-hours + on-peak demand): each bills its own metric; the ceiling is the lower of the two.
-37. *(G11)* `clock = "standard"`: IE's 23–08 night is 00–09 on the wall clock from the last Sunday of March to the last Sunday of October, exactly, with no month approximation.
-38. *(G9, G10)* A kVA demand charge per day at a power factor of 0.9 bills the hand-computed Ausgrid month.
-39. *(O23)* A priced limit: `limit_now_w` is `None`; `priced_limit_now` returns LU's 7 kW at 0.0765 €/kWh; an 11 kW window of 15 min bills (11 − 7) × 0.25 × 0.0765; stage 4 never follows from it (INV-36).
-40. *(G2)* `energy_surcharge` with a night limit 22–06: the right limit applies on each side of 22:00 and 06:00.
-41. *(G20)* An IT meter with two tolerance bands trips on the second band's time, not the first's - written once the regulation is read.
-42. Renames (O25): nothing imports `grammar`, `Grammar` or `TariffModel` after TS.1; `TariffEvaluator` is satisfied by `Evaluator`.
+32. `day` unit: a 30-day month bills 30 × the rate, February at 28 days bills 28 ×.
+33. `nth` (G5): the month's third-highest hour with night windows weighted 0.8 bills Helen's own example.
+34. `group = "week"` (G6): five weekly maxima over twelve months, weighted by season, equal fri-nettleie's `FEM_VEKTET_ÅR` for Fjellnett's captured tariff.
+35. `inclusive = False` (G7): exactly 5.00 kW stays in the 2–5 kW step, `True` moves it up.
+36. Two `PeakTariff`s in one version (G4, US all-hours + on-peak demand): each bills its own metric, the ceiling is the lower one.
+37. `clock = "standard"` (G11): IE's 23–08 night is 00–09 on the wall clock from the last Sunday of March to the last Sunday of October, exactly, no month approximation.
+38. A kVA demand charge per day at a power factor of 0.9 (G9, G10) bills the hand-computed Ausgrid month.
+39. A priced limit (O23): `limit_now_w` is `None`, `priced_limit_now` returns LU's 7 kW at 0.0765 €/kWh, an 11 kW window of 15 min bills (11 − 7) × 0.25 × 0.0765, and stage 4 never follows from it (INV-36).
+40. `energy_surcharge` with a night limit 22–06 (G2): the right limit applies on each side of 22:00 and 06:00.
+41. ARERA states one band (G20, D-0611): available power is contracted + 10 %, so the IT template's 3 kW gives `limit_now` 3 000 W with a 300 W tolerance and a trip imminent right past it. No second band until a regulation states one.
+42. Nothing imports `grammar`, `Grammar` or `TariffModel`, and `TariffEvaluator` is satisfied by `Evaluator` (O25).
 
 ---
 

@@ -17,6 +17,7 @@ by themselves.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -370,7 +371,12 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
         window_named=True,
-        value=lambda s, _r: None if s.budget is None else round(s.budget.ceiling_kwh, 3),
+        # No capacity component (NoPeak, a price-only site): no ceiling, not an infinite one.
+        value=lambda s, _r: (
+            None
+            if s.budget is None or math.isinf(s.budget.ceiling_kwh)
+            else round(s.budget.ceiling_kwh, 3)
+        ),
         attributes=lambda s, _r: (
             {}
             if s.tariff is None
@@ -571,7 +577,11 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         suggested_display_precision=2,
         # The tariff period's billed metric so far (D2 §5.2) - what the
         # dashboard's history graphs (D12 §5.6).
-        value=lambda s, _r: None if s.tariff is None else round(s.tariff.level.metric_kw, 3),
+        value=lambda s, _r: (
+            None
+            if s.tariff is None or s.tariff.level.metric_kw is None
+            else round(s.tariff.level.metric_kw, 3)
+        ),
     ),
     SiteSensorDescription(
         key="production",

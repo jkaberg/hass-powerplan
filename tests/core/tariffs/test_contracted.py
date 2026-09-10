@@ -116,11 +116,13 @@ def test_12d_the_trip_model_needs_both_the_excess_and_the_time() -> None:
 
 
 def test_12e_a_surcharge_limit_is_priced_not_tripped() -> None:
-    """`on_exceed = surcharge` is a soft cap D6 may exceed for a comfort floor (D2 §5.8)."""
+    """`on_exceed = surcharge` is no hard limit: a priced one, for D5 and D6 (O23, D2 §5.8)."""
     ev = es_evaluator("surcharge")
-    limit = ev.limit_now_w(local("2026-01-07T12:00:00", tz=MADRID), ES_PROFILE)
-    assert limit is not None
-    assert limit.reason == "contracted_surcharge"
+    at = local("2026-01-07T12:00:00", tz=MADRID)
+    assert ev.limit_now_w(at, ES_PROFILE) is None
+    priced = ev.priced_limit_now(at)
+    assert priced is not None
+    assert priced.per_kw is not None
     assert surcharge_for(es_2_0td("surcharge"), 2.0) == Money(Decimal("5.0"), "EUR")
 
 

@@ -63,9 +63,10 @@ __all__ = ["EV_MIN_STOP_S", "AllocCfg", "AllocState", "Grants", "allocate"]
 EV_MIN_STOP_S = 600.0
 
 #: The constraint scopes that bound a comfort violator: item 1 of the precedence
-#: plus the physical limits inside it. Groups and zones are preferences and do not
-#: apply to a floor (D6 §5.3 step 3).
-_HARD_SCOPES = frozenset({"site", "circuit", "phase"})
+#: plus the physical limits inside it - a grid-switched load's open relay among
+#: them (G14). Groups and zones are preferences and do not apply to a floor (D6
+#: §5.3 step 3).
+_HARD_SCOPES = frozenset({"site", "circuit", "phase", "switched"})
 
 #: Absorbs the float round trip when deciding which constraint bound a grant.
 _EPS_W = 1e-6

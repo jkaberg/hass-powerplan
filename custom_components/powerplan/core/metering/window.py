@@ -177,6 +177,10 @@ class WindowState:
     cadence_samples: tuple[float, ...]
     closing: PendingClose | None
     schema: int = 1
+    #: The local month (`YYYY-MM`) of `month_kwh`: what the closed windows of the
+    #: month imported so far - D1's month to date (D1 §2, `month_anchor_kwh`).
+    month_key: str | None = None
+    month_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +259,18 @@ class WindowMeter:
         self._warned_coarse = False
 
     # -- state ------------------------------------------------------------- #
+
+    def month_to_date_kwh(self, now: datetime) -> float:
+        """Return what the site imported this local month: the closed windows and this one's.
+
+        D1's month to date (D1 §2): the window in progress counts its energy so far;
+        a month with no closed window yet is that energy alone.
+        """
+        st = self._state
+        key = now.astimezone(self.config.tz).strftime("%Y-%m")
+        closed = st.month_kwh if st.month_key == key else 0.0
+        started = st.window_start_utc.astimezone(self.config.tz).strftime("%Y-%m") == key
+        return closed + (st.e_used_kwh if started else 0.0)
 
     def state(self) -> WindowState:
         """Return the state D7 persists (D3 §7).
@@ -390,6 +406,12 @@ class WindowMeter:
 
         # -- 11. the new state, for D7 to persist -------------------------- #
         pending_closed = (*st.pending_closed, *closed_now)
+        month_key, month_kwh = st.month_key, st.month_kwh
+        for window in closed_now:
+            key = window.start_utc.astimezone(cfg.tz).strftime("%Y-%m")
+            if key != month_key:
+                month_key, month_kwh = key, 0.0
+            month_kwh += window.kwh
         self._state = WindowState(
             window_min=work.window_min,
             window_start_utc=work.window_start,
@@ -408,6 +430,8 @@ class WindowMeter:
             pending_window_min=work.pending_window_min,
             cadence_samples=work.cadence_samples,
             closing=work.closing,
+            month_key=month_key,
+            month_kwh=month_kwh,
         )
 
         # -- 12. the snapshot --------------------------------------------- #

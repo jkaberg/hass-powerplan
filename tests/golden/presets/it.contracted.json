@@ -1,0 +1,41 @@
+{
+  "_": "Golden for the it.contracted preset — D2 §9 1, D9 §3 (TS.7). A contracted limit and no capacity charge.",
+  "preset": "it/contracted",
+  "id": "it.contracted",
+  "tz": "Europe/Rome",
+  "currency": "EUR",
+  "window_min": 15,
+  "period_key": "2026-01",
+  "at_local": "2026-01-07T12:00:00",
+  "sources": {
+    "no_peak": "ARERA: a household pays a power term on its contracted kW, not on a measured peak; the contract is the meter's limit (D13 §5.10).",
+    "windows_priced": "0: nothing is priced on a version with no peak."
+  },
+  "windows": [
+    {
+      "local": "2026-01-07T19:00:00",
+      "kwh": 1.0
+    }
+  ],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "ceiling_is_infinite_at": [
+    "2026-01-07T19:00:00"
+  ],
+  "describes": [
+    "No capacity charge"
+  ],
+  "fill": {
+    "limits": [
+      3.0
+    ],
+    "_": "The flow's starting value (flow/steps.py LIMIT_DEFAULTS); the household's own contract replaces it."
+  }
+}

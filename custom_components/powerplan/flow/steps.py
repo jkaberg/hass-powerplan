@@ -907,9 +907,16 @@ _GENERIC_PRESET: Final = {"NO": "no/template"}
 
 #: Where a template leaves the contracted kW to the household, the value the
 #: limits step starts from (D2 §6's table): 2.0TD's common 20 A / 25 A single
-#: phase (4.6 / 5.75 kW), a Dutch 3×25 A connection (17.25 kW). A starting value
-#: to change, never a fact about the household (D-0521).
-LIMIT_DEFAULTS: Final[Mapping[str, tuple[float, ...]]] = {"ES": (4.6, 5.75), "NL": (17.25,)}
+#: phase (4.6 / 5.75 kW), a Dutch 3×25 A connection (17.25 kW), Italy's 3 kW,
+#: Portugal's 6.9 kVA and France's 6 kVA - the common contracts. A
+#: starting value to change, never a fact about the household (D-0521).
+LIMIT_DEFAULTS: Final[Mapping[str, tuple[float, ...]]] = {
+    "ES": (4.6, 5.75),
+    "NL": (17.25,),
+    "IT": (3.0,),
+    "PT": (6.9,),
+    "FR": (6.0,),
+}
 
 #: The bill's step table as rows of "up to kW" and "per month" (D2 §6, the
 #: template's form). Twelve rows cover every Norwegian table read but

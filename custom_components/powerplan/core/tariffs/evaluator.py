@@ -28,7 +28,13 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from ..metering import window_bounds
 from ..model import Money
-from .contracted import HardLimit, limit_now
+from .contracted import (
+    HardLimit,
+    PricedLimit,
+    limit_now,
+    priced_limit_now,
+    surcharge_for_window,
+)
 from .history import MonthRec, PeakHistory, month_key
 from .model import ContractedPower, Linear, NoPeak, PeakTariff, StepTable
 from .target import (
@@ -74,6 +80,24 @@ __all__ = [
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 #: The bisection's precision (D2 §5.6): 10 Wh.
 SLACK_TOLERANCE_KW = 0.01
+#: LU measures the excess over its reference power in 15-minute means (D2 §5.8).
+PRICED_WINDOW_MIN = 15
+
+
+def window_min_of(version: TariffVersion) -> int:
+    """Return the metering window a version is measured in (D2 §5.1, O23).
+
+    The peak's own; with no peak, a priced limit's 15-minute mean (LU), else an
+    hour.
+    """
+    if version.peak is not None:
+        return version.peak.window_min
+    power = version.contracted
+    if power is not None and power.on_exceed == "energy_surcharge":
+        return PRICED_WINDOW_MIN
+    return 60
+
+
 #: A contracted site is told when the last window came this close to the limit.
 CONTRACTED_CLOSE = 0.9
 #: The store's schema for the evaluator's own fields; the history has its own.
@@ -390,11 +414,10 @@ class Evaluator:
         self.cap_margin_kw = cap_margin_kw
         latest = spec.versions[-1]
         self.risk = default_risk(latest.rules) if risk is None else risk
-        peak = latest.peak
         self.history = (
             history
             if history is not None
-            else PeakHistory(window_min=peak.window_min if peak else 60, period_start=EPOCH)
+            else PeakHistory(window_min=window_min_of(latest), period_start=EPOCH)
         )
         self._now = self.history.period_start
         self.last_bill: Bill | None = None
@@ -1197,13 +1220,13 @@ class Evaluator:
         bound - so `marginal_cost(0)` is always zero and the first kilowatt that
         costs anything is the first one that moves the bill. For a step table this
         is a staircase: nothing until a boundary, the whole step difference after
-        it. A contracted power is not priced here: it is a hard limit, item 1 of
-        the precedence, and D6 sees it through `limit_now_w`
-        (`design/DECISIONS.md` D-0056).
+        it. A contracted power that trips is not priced here: it is a hard limit,
+        item 1 of the precedence, and D6 sees it through `limit_now_w` (D-0056). A
+        priced one adds its surcharge for the part above it (D2 §5.8, O23).
         """
         tariff = self._peak(now)
         if tariff is None:
-            return Money(Decimal(0), self.spec.currency)
+            return self._surcharge_above(kw_over, now)
         key = self._period_key()
         info = self._evaluate(tariff, key)
         before = self._fee(info, tariff, self.spec.currency, key)
@@ -1216,7 +1239,15 @@ class Evaluator:
             self.spec.currency,
             key,
         )
-        return Money(after.amount - before.amount, after.currency)
+        surcharge = self._surcharge_above(neutral + kw_over, now)
+        return Money(after.amount - before.amount + surcharge.amount, after.currency)
+
+    def _surcharge_above(self, kw: float, now: datetime) -> Money:
+        """Return a priced limit's surcharge for one window at `kw`, zero without one."""
+        priced = self.priced_limit_now(now)
+        if priced is None or priced.per_kwh is None:
+            return Money(Decimal(0), self.spec.currency)
+        return surcharge_for_window(priced, kw)
 
     # -------------------------------------------------------------- limits
 
@@ -1226,6 +1257,15 @@ class Evaluator:
         if power is None:
             return None
         return limit_now(power, now, self.tz, self.calendar, profile)
+
+    def priced_limit_now(self, now: datetime) -> PricedLimit | None:
+        """Return the priced limit in force: what crossing it costs (D2 §5.8, O23)."""
+        power = self.spec.version_at(now).contracted
+        if power is None:
+            return None
+        peak = self._peak(now)
+        window = peak.window_min if peak is not None else PRICED_WINDOW_MIN
+        return priced_limit_now(power, now, self.tz, self.calendar, window)
 
     # -------------------------------------------------------------- advice
 
@@ -1338,7 +1378,9 @@ class Evaluator:
         if not recent:
             return []
         last = recent[-1][1]
-        limit = limit_now(power, self._now, self.tz, self.calendar)
+        limit = limit_now(power, self._now, self.tz, self.calendar) or self.priced_limit_now(
+            self._now
+        )
         if limit is None or last.kw_raw * 1000.0 < limit.w * CONTRACTED_CLOSE:
             return []
         return [
@@ -1528,6 +1570,10 @@ class Combined:
     def limit_now_w(self, now: datetime, profile: ElectricalProfile) -> HardLimit | None:
         """Return the contracted limit - the first charge carries it."""
         return self.primary.limit_now_w(now, profile)
+
+    def priced_limit_now(self, now: datetime) -> PricedLimit | None:
+        """Return the priced limit - the first charge carries it."""
+        return self.primary.priced_limit_now(now)
 
     def eligible_now(self, now: datetime) -> bool:
         """Return whether any charge measures this instant."""

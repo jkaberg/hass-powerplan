@@ -1,7 +1,8 @@
 """A postcode to a place, through the country's official directory only (D13 §5.3, O17).
 
-Norway: Kartverket. Finland: sahkonhinta.fi's grid companies. The US and Belgium
-(Wallonia, Brussels): the postcode keys the source's own list (URDB, CWaPE). A country with no directory has none here, and the flow asks
+Norway: Kartverket. Finland: sahkonhinta.fi's grid companies. The US, Belgium
+(Wallonia, Brussels) and Switzerland: the postcode keys the source's own list
+(URDB, CWaPE, ElCom's search). A country with no directory has none here, and the flow asks
 the grid company and the zone instead; so does an unreachable directory (§13).
 """
 
@@ -26,6 +27,7 @@ _FORMS: Final = {
     # A directory that only keys a source's list: the postcode goes to that source.
     "openei": re.compile(r"^\d{5}$"),
     "cwape": re.compile(r"^\d{4}$"),
+    "elcom": re.compile(r"^\d{4}$"),
 }
 
 

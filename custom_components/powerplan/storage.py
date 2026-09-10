@@ -382,7 +382,7 @@ ENTRY_MINOR_PRICE: Final = 2
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
 #: is fetched instead - source, the company's key there, the product, its name. An entry
 #: still on one migrates to a copy without a capacity rule that the renewal fetches an
-#: hour after start (INV-73; D-0580).
+#: hour after start (INV-73; D-0600).
 FETCHED_FILES: Final[dict[str, tuple[str, str, str | None, str]]] = {
     "no/tensio": ("fri_nettleie", "tensio-ts", None, "Tensio TS"),
     "no/tensio-ts": ("fri_nettleie", "tensio-ts", None, "Tensio TS"),

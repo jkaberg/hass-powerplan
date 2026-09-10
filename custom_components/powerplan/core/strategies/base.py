@@ -228,14 +228,14 @@ def plan_all(
                 room = room.reserve({slot.start: view.nameplate_w for slot in slots})
             continue
 
-        curve_in, curve_out = curves.pair(view.carrier)
+        curve_in, curve_out = curves.for_load(view)
         before = old.get(view.load_id)
         pctx = PlanContext(
             now=now,
             tz=ctx.tz,
             curve_in=with_rewards(curve_in, ctx.events, participates=view.participates_in_events),
             curve_out=curve_out,
-            headroom=room,
+            headroom=_switched(room, view, slots, ctx),
             hysteresis=ctx.hysteresis,
             load=view,
             tariff_eligible=eligible,
@@ -255,7 +255,7 @@ def plan_all(
             params,
             partner=_partner(view, pctx),
         )
-        plan = _with_desired(plan, view)
+        plan = _with_desired(_closed_outside(plan, view, ctx), view)
 
         take = before is None or should_adopt(
             before,
@@ -274,6 +274,35 @@ def plan_all(
         room = room.reserve(_reserved_by(chosen, view, slots))
 
     return SitePlan(plans=kept, headroom_left=room, adopted=frozenset(adopted), built_at=now)
+
+
+def _switched(room: Headroom, view: LoadView, slots: Sequence[Slot], ctx: SiteContext) -> Headroom:
+    """Return `room` closed outside the windows the grid switches `view` in (D4 §5.16, G14)."""
+    if view.allowed is None:
+        return room
+    return room.closed(
+        {slot.start for slot in slots if not view.allowed_at(slot.start, ctx.tz, ctx.holidays)}
+    )
+
+
+def _closed_outside(plan: Plan, view: LoadView, ctx: SiteContext) -> Plan:
+    """Return `plan` with nothing in a slot the grid has `view` switched off (G14).
+
+    Headroom closed there already steers the strategies that read it; a strategy
+    that does not (`always`, `schedule`) is held to the window here, so no plan
+    ever counts on a relay the grid has open.
+    """
+    if view.allowed is None:
+        return plan
+    slots = tuple(
+        slot
+        if view.allowed_at(slot.start, ctx.tz, ctx.holidays)
+        else replace(
+            slot, envelope_w=0.0, kwh=0.0, hold_kwh=0.0, desired_state=None, reason="grid_switched"
+        )
+        for slot in plan.slots
+    )
+    return replace(plan, slots=slots)
 
 
 def _reserved_by(chosen: Plan, view: LoadView, slots: Sequence[Slot]) -> dict[datetime, float]:

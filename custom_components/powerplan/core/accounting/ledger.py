@@ -175,6 +175,10 @@ class SiteMonthRec:
     slots: int = 0
     estimated_slots: int = 0
     windows_cf: int = 0
+    #: The month's energy surcharge above a priced limit, actual and counterfactual,
+    #: each from its own windows (D11 §5.4, O23): part of the grid's capacity line.
+    surcharge: Decimal = Decimal(0)
+    cf_surcharge: Decimal = Decimal(0)
 
     @classmethod
     def empty(cls, currency: str) -> SiteMonthRec:
@@ -189,13 +193,23 @@ class SiteMonthRec:
 
     @property
     def cost(self) -> Money:
-        """Return what the month cost: energy less export credit, plus the fee."""
-        return plus(minus(self.energy_cost, self.export_credit), self.capacity_fee)
+        """Return what the month cost: energy less export credit, plus the fee and surcharge."""
+        return plus(minus(self.energy_cost, self.export_credit), self.capacity_charge)
+
+    @property
+    def capacity_charge(self) -> Money:
+        """Return the grid's capacity line: the fee and any priced limit's surcharge."""
+        return Money(self.capacity_fee.amount + self.surcharge, self.capacity_fee.currency)
+
+    @property
+    def cf_capacity_charge(self) -> Money:
+        """Return the counterfactual's capacity line, fee and surcharge."""
+        return Money(self.cf_capacity_fee.amount + self.cf_surcharge, self.cf_capacity_fee.currency)
 
     @property
     def capacity_savings(self) -> Money:
-        """Return the capacity component of the savings (D11 §5.4)."""
-        return minus(self.cf_capacity_fee, self.capacity_fee)
+        """Return the capacity component of the savings, the surcharge's included (D11 §5.4)."""
+        return minus(self.cf_capacity_charge, self.capacity_charge)
 
     @property
     def confidence(self) -> SlotConfidence:

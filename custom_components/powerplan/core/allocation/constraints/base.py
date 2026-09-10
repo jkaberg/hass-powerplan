@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 __all__ = ["AllocCtx", "Constraint", "MarginalCost", "Scope", "Violation"]
 
 #: Where a constraint applies, in evaluation order (D6 §2).
-type Scope = Literal["site", "circuit", "phase", "group", "zone", "load"]
+type Scope = Literal["site", "circuit", "phase", "group", "zone", "load", "switched"]
 
 
 class MarginalCost(Protocol):

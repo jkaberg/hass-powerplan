@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -20,16 +20,21 @@ from custom_components.powerplan.core.model import Confidence, Money, Slot
 from custom_components.powerplan.core.pricing import party
 from custom_components.powerplan.core.pricing.modifiers.base import GRID_ENERGY, SPOT
 from custom_components.powerplan.core.pricing.modifiers.fixed_price import FixedPrice
-from custom_components.powerplan.core.tariffs import Evaluator, StepTable
+from custom_components.powerplan.core.tariffs import Evaluator, StepTable, TimeFilter
 from custom_components.powerplan.core.tariffs.household import (
     EXCL,
+    EnergyPeriod,
     EnergyVersion,
     HouseholdPrice,
+    LoadTariff,
     Party,
+    SwitchedWindow,
     TaxZone,
+    from_json,
     from_preset,
     published_levies_at,
     spec,
+    to_json,
 )
 from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.curves import OSLO, context, no3_shape
@@ -323,3 +328,51 @@ def test_g22_a_spot_quoted_with_vat_is_shared_without_it() -> None:
     plain = compose(spot_slot(when, Decimal("1.25")), party.chain(excl(tensio()), (), basis)[0])
     shared = compose(spot_slot(when, Decimal("1.25")), party.chain(price, (), basis)[0])
     assert shared.components[GRID_ENERGY] - plain.components[GRID_ENERGY] == Decimal("0.05")
+
+
+# --------------------------------------------------------------------------- #
+# D1 §9 23 (G13) - a load on its own grid tariff
+# --------------------------------------------------------------------------- #
+
+
+def _modul3(price: HouseholdPrice) -> HouseholdPrice:
+    """Tensio with a heat-pump tariff: 0.10 at night (22–06), 0.30 by day, as published."""
+    night = EnergyPeriod(when=TimeFilter(hours=((22 * 60, 6 * 60),)), price=Decimal("0.10"))
+    own = LoadTariff(
+        key="modul3",
+        name="Varmepumpe",
+        energy=(EnergyVersion(date(2026, 1, 1), (night,), Decimal("0.30")),),
+    )
+    return replace(price, grid=replace(price.grid, per_load=(own,)))
+
+
+def test_23_a_loads_curve_carries_its_own_grid_component_and_the_houses_does_not_change() -> None:
+    """The house composes as before; the load's grid line is its own, the rest identical."""
+    price = _modul3(tensio())
+    house, _ = party.chain(price, (), frozenset({"spot"}))
+    plain, _ = party.chain(tensio(), (), frozenset({"spot"}))
+    load = party.chain_for_load(price, "modul3", (), frozenset({"spot"}))
+    assert load is not None
+    assert party.chain_for_load(price, "none", (), frozenset({"spot"})) is None
+    for hour, published in ((2, Decimal("0.10")), (12, Decimal("0.30"))):
+        when = datetime(2026, 9, 24, hour, tzinfo=OSLO)
+        slot = spot_slot(when, Decimal("1.00"))
+        assert compose(slot, house) == compose(slot, plain)
+        own = compose(slot, load)
+        levies = published_levies_at(price.state, when.date(), price.grid.basis)
+        assert own.components[GRID_ENERGY] == published / Decimal("1.25") - levies
+        assert own.components[SPOT] == compose(slot, house).components[SPOT]
+        assert own.components["vat"] == (own.total - own.components["vat"]) * Decimal("0.25")
+
+
+def test_23_per_load_tariffs_and_switched_windows_survive_the_copy() -> None:
+    """`to_json` → `from_json` keeps both, and an old copy without them reads as none."""
+    hdo = SwitchedWindow(
+        key="A1B4DP6", name="HDO", windows=(TimeFilter(hours=((0, 180),), weekdays=(0, 1)),)
+    )
+    price = _modul3(tensio())
+    price = replace(price, grid=replace(price.grid, switched=(hdo,)))
+    again = from_json(to_json(price))
+    assert again.grid.per_load == price.grid.per_load
+    assert again.grid.switched == (hdo,)
+    assert from_json(to_json(tensio())).grid.per_load == ()

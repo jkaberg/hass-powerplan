@@ -257,6 +257,7 @@ class Site:
             history=self.tariff.history,
             loads=overrides.get("loads", self.loads),
             tz=self.tz,
+            load_curves=overrides.get("load_curves", {}),
         )
 
     def close(self, slot: ClosedSlot, **overrides: Any) -> Any:

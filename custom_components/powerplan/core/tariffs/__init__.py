@@ -21,7 +21,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 from .backfill import seed_from_bills, seed_from_windows
-from .contracted import HardLimit, limit_now, surcharge_for, trip_imminent
+from .contracted import (
+    HardLimit,
+    PricedLimit,
+    limit_now,
+    priced_limit_now,
+    surcharge_for,
+    surcharge_for_window,
+    trip_imminent,
+)
 from .evaluator import (
     Advice,
     Bill,
@@ -36,6 +44,7 @@ from .evaluator import (
     mean_top_n,
     slack_bisect,
     slack_closed_form,
+    window_min_of,
 )
 from .history import DayRec, MonthRec, Override, PeakHistory, Provenance, WindowRec
 from .model import (
@@ -99,6 +108,10 @@ class TariffEvaluator(Protocol):
 
     def limit_now_w(self, now: datetime, profile: ElectricalProfile) -> HardLimit | None:
         """Return the contracted hard limit in force - item 1 (INV-1)."""
+        ...
+
+    def priced_limit_now(self, now: datetime) -> PricedLimit | None:
+        """Return the limit whose excess is priced, in force now, or `None` (D2 §5.8, O23)."""
         ...
 
     def eligible_now(self, now: datetime) -> bool:
@@ -203,6 +216,7 @@ __all__ = [
     "PeakTariff",
     "Period",
     "PeriodLimit",
+    "PricedLimit",
     "Provenance",
     "Ratchet",
     "Step",
@@ -222,11 +236,14 @@ __all__ = [
     "evaluator_for",
     "limit_now",
     "mean_top_n",
+    "priced_limit_now",
     "resolve_target_kw",
     "seed_from_bills",
     "seed_from_windows",
     "slack_bisect",
     "slack_closed_form",
     "surcharge_for",
+    "surcharge_for_window",
     "trip_imminent",
+    "window_min_of",
 ]

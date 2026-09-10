@@ -1,0 +1,17 @@
+{
+  "id": "ie.nopeak",
+  "template": true,
+  "name": "Ireland – no capacity component (DUoS in the supplier's rate)",
+  "country": "IE",
+  "currency": "EUR",
+  "tz": "Europe/Dublin",
+  "source_url": "https://www.cru.ie/",
+  "verified": null,
+  "assumed": "An Irish household pays ESB Networks' DUoS inside its supplier's unit rate and no measured capacity charge; the night hours (23:00–08:00 on standard time, D13 §18 G11) are the supplier's offer's.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "no_peak": true
+    }
+  ]
+}

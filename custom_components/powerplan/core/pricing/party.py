@@ -16,7 +16,7 @@ VAT composes to the same slots as one stored incl. (D13 §19 10).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar, Final
 
@@ -25,6 +25,7 @@ from ..tariffs import countries
 from ..tariffs.household import (
     HouseholdPrice,
     Party,
+    band_vat_at,
     levies_at,
     published_levies_at,
     published_vat_at,
@@ -48,6 +49,7 @@ __all__ = [
     "StateScheme",
     "StateVat",
     "chain",
+    "chain_for_load",
     "party_of",
     "split",
 ]
@@ -179,7 +181,10 @@ class StateVat:
         day = _day(slot.start, ctx)
         contracted = self.price.grid.capacity_at(day).contracted
         kw = None if contracted is None else max(limit.limit_kw for limit in contracted.limits)
-        rate = vat_at(self.price.state, day, kw)
+        # Portugal's first 200 kWh of the month at 6 % (G17): the running total at
+        # the slot's start decides, the boundary belonging to the band above.
+        band = band_vat_at(self.price, day, kw, ctx.mtd_kwh_at(slot.start))
+        rate = vat_at(self.price.state, day, kw) if band is None else band
         base = sum(
             (value for name, value in slot.components.items() if name in self.taxed),
             Decimal(0),
@@ -277,3 +282,22 @@ def chain(
     vat = StateVat(price, frozenset(taxed))
     share = GridShare(stages=(*grid, *levies, vat))
     return (*supplier, *grid, *levies, *schemes, vat), share
+
+
+def chain_for_load(
+    price: HouseholdPrice,
+    key: str,
+    modifiers: Sequence[PriceModifier],
+    source_basis: frozenset[str],
+) -> tuple[PriceModifier, ...] | None:
+    """Return the chain of a load on its own grid tariff, `None` where the copy has none (G13).
+
+    The same chain with that tariff's grid component in place of the house's: the
+    household's own grid-party add-ons are the house's meter and are left out;
+    supplier and state stay as they are (D1 §5.3, D13 §18 G13).
+    """
+    grid = price.grid.for_load(key)
+    if grid is None:
+        return None
+    others = [m for m in modifiers if PARTY.get(m.component) is not Party.GRID]
+    return chain(replace(price, grid=grid), others, source_basis)[0]

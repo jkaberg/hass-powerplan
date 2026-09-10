@@ -2385,12 +2385,82 @@ URDB rates and CDR plans price supply and delivery together; the copy holds them
 `cdr_energy` lists the register's 84 brands; a brand's residential plans for the postcode come once chosen (D-0576), and tariff periods become versions from the season in force. A demand charge's measurement (day, month, last 12 months) is always asked with the description's reading pre-selected, because the structured field contradicts the description on the captured plan. A charge named in cents asks the per-kW-per-day price; a kVA charge asks the power factor (0.9). The window is 30 minutes, the NEM's metering interval. Affects D13 §5.6, §5.11, §19 9.
 **Rejected:** trusting `measurementPeriod` - bills a twelve-month maximum as a daily one.
 
-### D-0580 · The price refresher lives on the runtime and reports through the catalogue
+### D-0600 · No company's prices ship; an entry still on one is fetched
 
-`price_refresh.PriceRefresher` (back-off 60, 120, 300, 600, 900 s; `prices_stale` after 30 min; `powerplan/refresh_prices`) is `runtime.price_refresher`, fetches through `Runtime.refresh_prices` (fetch, then replan) and tests `prices_known_now`; the runtime's own fetches report to it, so startup doesn't fetch twice. The issue is a catalogue row with `{site}` and its learn-more link (D8 §5.9). The reference house once planned 37 minutes on estimates after a restart. Affects D12 §5.15 F12, D8 §5.9.
-**Rejected:** `hass.data[DOMAIN]` - integration state lives in `runtime_data`.
+The twelve company files (Tensio TS and TN, Elvia, eight Fluvius areas, Ellevio) move to `tests/fixtures/presets/`; the integration ships national rules and templates only (INV-70). An entry still naming one migrates offline to a copy naming where it's fetched (`storage.FETCHED_FILES`), `assumed`, with `renew_at` set so the renewal fetches an hour after start at the earliest (INV-73). Ellevio has no capacity charge and migrates to the no-capacity copy. `tools/backtest.py --tariff <file>` replaces `--preset`. The price: a site that skips the release carrying the migration runs up to an hour without capacity control after its first start. Affects D13 §10, §12; D2 §3; D9 §3, §5.4.
+**Rejected:** keeping the files a release longer - handled by merge order instead.
 
-### D-0581 · A price slot's energy part carries the VAT that covers the energy
+### D-0601 · The tests pick a grid company from a fixture source
 
-`slots[].energy` = `spot × (1 + r)`, `r` the summed rate of the `Vat` modifiers covering `spot` (`energy_vat_rate`). D-0495's total ÷ (total − VAT) is exact only when VAT covers every component; on the reference house VAT covers the energy alone (the grid tariff is entered incl. VAT), and the price card's split disagreed with the house's own sensors. Affects D12 §5.12, §5.15, §9 24.
-**Rejected:** keeping the ratio - wrong whenever VAT doesn't cover everything.
+`tests/builders/presets.py` reads the company files kept as fixtures, and the evaluator's goldens on real tables stay. Flow and e2e tests pick "Tensio TS" or "Fluvius Imewo" from fixture sources registered under fri-nettleie's and VREG's keys, the way a household picks from a source's list. Affects D9 §3, §5.15.
+**Rejected:** letting the loader search fixtures in tests - tests a path no household can take.
+
+### D-0602 · ElCom: the category's flat average, the local charges on the grid line
+
+`elcom` (CH) reads the price site's GraphQL: a postcode's municipality by the site's search, else all of them; per municipality, category (H4 first) and year, grid usage and charges become one flat rate and metering a yearly fee; next year joins once published. `aidfee` (the federal Netzzuschlag) is the CH module's levy; municipal and cantonal charges stay on the grid line since they differ by municipality. ElCom publishes no high/low split. Affects D13 §5.3, §5.10, §5.11.
+**Rejected:** asking high/low from the bill - makes the household type what ElCom doesn't publish.
+
+### D-0603 · RO: the grid lines from ANRE's comparator, the state's lines in the module
+
+`anre` reads eight distribution zones and one zone's low-voltage household offers; distribution, transport and system service (the same in every offer) are the grid copy excl. VAT. Cogeneration, green certificates and excise are the RO module's levies; the adapter logs when the comparator has moved on. INV-72 names each line's party. Affects D13 §9.1, §5.9.
+**Rejected:** carrying the three levies in the copy - they'd be billed as the grid company's.
+
+### D-0604 · ZSDIS: every HDO code a switched window; the two rates asked
+
+`zsdis` (SK) reads the switching-times page's 32 codes into `SwitchedWindow`s (G14); the meter's own code gives the grid's low-rate windows. High and low prices are asked from the bill, and a receiver on winter time all year is asked and read on standard time (G11). The page is the only open statement of the windows. Affects D13 §5.10, D4 §5.16.
+**Rejected:** only the meter's code - a water heater's relay often has its own.
+
+### D-0605 · ČEZ's HDO service asks a captcha: excluded
+
+ČEZ Distribuce's switching-times service now answers a request without a verification code with an error. D13 §5.2 ends an adapter at a captcha, so CZ has no HDO source; a CZ household types its windows (G15's `unknown` meanwhile). Affects D13 §5.10.
+**Rejected:** solving the captcha - the working-around §5.2 forbids.
+
+### D-0606 · Tauron: the card as published, incl. VAT; OZE and KOG in the PL module
+
+`tauron` reads the calculator page's rate card, which is incl. VAT (its own 23 % row), so the copy's basis is VAT and the OZE and KOG levies, whose net amounts the PL module holds. G11, G12 and G12w are offered, their hours checked against the page's own sentences on every fetch; G13's hours are an image and G14dynamic follows PSE's day-ahead (G19), so neither is offered. Affects D13 §5.10, §18 G19.
+**Rejected:** G13 with the commonly quoted hours - the page doesn't state them.
+
+### D-0607 · A load's own tariff: its curve per key, without the house's grid add-ons
+
+`GridTariff.per_load` (`LoadTariff`) and `switched` (`SwitchedWindow`) join the copy. `party.chain_for_load` swaps the grid energy for the load's and drops the household's grid-party add-ons; the runtime builds `Curves.per_load` only for keys a configured load names; `plan_all` plans a bound load on its curve, falling back to the house's. The load review offers `grid_tariff` and `switched` only where the copy has either. Affects D1 §5.3; D4 §5.16; D5 §4.
+**Rejected:** a curve per load always - a full composition per load per price tick.
+
+### D-0608 · A switched load: headroom closed, the plan clamped, the grant hard-capped
+
+Outside its windows a switched load's headroom is 0, its plan's slots 0 (`grid_switched`), and D6's `GridSwitched` (a hard scope, sorted first) grants 0 at every stage, a comfort floor included. An unknown code has no window (G15): the load is `delegated`, never written or planned, and reserves its nameplate only while it draws. The grid's relay is open whatever is granted. Affects D4 §5.16, D5 §5.1, D6 §2, §5.2.
+**Rejected:** a preference scope so a violated floor could try - the relay is physical.
+
+### D-0609 · The power tier on a flat day; LU's surcharge billed at window close
+
+On a flat day with a priced limit, `deadline_fill` fills by (price, index, tier), so the night fills under the limit first (D5 §9 23). D11 prices each world's excess at window close from `priced_limit_now` and the window's own kWh, actual and counterfactual, inside the capacity line. The counterfactual book keeps days, not windows, so D2's bill can't see the shadow's windows. Affects D2 §5.8, D5 §5.1, D11 §5.4.
+**Rejected:** the surcharge in D2's bill - only the actual world's windows exist there.
+
+### D-0610 · PT's VAT band on the month to date
+
+A country module may carry a `VatBand` (PT: 6 % on the first 200 kWh, 300 for a large household, up to 6.9 kVA; the islands 4 %), read by `StateVat` on `ctx.mtd_kwh_at`, the boundary belonging to the full rate. The runtime's month to date was still 0 (as for Norgespris's cap and `cumulative_tier`) until D-0612. Affects D1 §5.4, D13 §9.1.
+**Rejected:** feeding the month to date here - it touches every modifier that reads it.
+
+### D-0611 · Templates for IT, PT, FR and IE; AT, SI and DE Modul 3 wait
+
+Rule templates `it/contracted` (kW, +10 % tolerance per ARERA, G20), `pt/contracted` and `fr/kva` (kVA, trip) and `ie/nopeak`, each the module's `rule_template`. Not built: AT's SNE-VO tables (document source, O15), SI's five blocks (a union of season × day type × hours per block that one `PeriodLimit` per block can't express without asking a kW several times, G3), DE Modul 3 (a commercial API, O19). Affects D2 §9 41; D13 §5.10, §17, §18.
+**Rejected:** SI with repeated limits - asking one agreed power three times (INV-74).
+
+### D-0612 · D1's month to date comes from D3's closed windows
+
+`WindowState.month_key` and `month_kwh` sum the local month's closed windows; `WindowMeter.month_to_date_kwh(now)` adds the open one; `pricing.context.month_to_date` projects at the month's mean rate and restarts a later month from zero. The runtime's price contexts read it, so Norgespris's cap, `cumulative_tier` and PT's band see the month. No meter reads 0; year to date stays 0. Affects D1 §2, D3 §4.
+**Rejected:** the ledger's `import_kwh` - accounting feeding the planner, against INV-68's spirit.
+
+### D-0613 · A load on its own meter is billed on its own curve
+
+`CloseCtx.load_curves`: the load's cost, counterfactual and re-pricing read its own curve, and the site's line moves that load's kWh from the house's price to its own, by party too. D4 §5.16 promises D11 bills a tariffed load on its own meter (G13). Affects D11 §5.1, §5.8.
+**Rejected:** billing everything at the house's price - a §14a heat pump's cheap kWh would read as dear.
+
+### D-0614 · Eltariff's two power prices are two peak charges
+
+A version with several power prices (night and day) becomes several `PeakTariff`s on their own hours, billed side by side by the `Combined` evaluator (G4). Hours that differ by day type within one price are still refused. Affects D13 §5.11, §18 G4.
+**Rejected:** refusing until asked - households have the tariff today.
+
+### D-0615 · A site with no capacity component publishes no ceiling, not an infinite one
+
+The ceiling sensor is unknown when the ceiling is infinite, and `metric` when the level has none; a price-only or no-peak site failed to add both (`inf` into a numeric sensor, `round(None)`). Affects D8 §5.5.
+**Rejected:** publishing 0 - reads as a closed gate.

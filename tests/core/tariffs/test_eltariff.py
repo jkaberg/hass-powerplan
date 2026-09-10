@@ -13,8 +13,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-import pytest
-
 from custom_components.powerplan.core.tariffs.household import (
     EXCL,
     HouseholdPrice,
@@ -31,7 +29,7 @@ from custom_components.powerplan.core.tariffs.model import (
     PeakTariff,
     TimeFilter,
 )
-from custom_components.powerplan.core.tariffs.sources import QualityError, eltariff
+from custom_components.powerplan.core.tariffs.sources import eltariff
 from tests.builders.tariff_sources import CAPTURED, FIXTURES
 
 GOTEBORG = "556379-2729"
@@ -97,12 +95,21 @@ def test_2_loss_compensation_is_a_share_of_spot() -> None:
     assert from_json(json.loads(json.dumps(to_json(price)))).grid == energy.grid
 
 
-def test_2_two_power_prices_at_once_wait_for_g4() -> None:
-    """Tekniska verken's "alternativ" bills a day and a night peak: refused until TS.5."""
-    with pytest.raises(QualityError, match="G4"):
-        _parse(
-            "api-tekniskaverken-net-subscription-public-v0.json", LINKOPING, "net.lnk.cons.alt1.16A"
-        )
+def test_2_two_power_prices_at_once_are_two_peak_charges() -> None:
+    """Tekniska verken's "alternativ": night 23–06 and day 06–23, each its own charge (G4)."""
+    grid = _parse(
+        "api-tekniskaverken-net-subscription-public-v0.json", LINKOPING, "net.lnk.cons.alt1.16A"
+    ).grid
+    night, day = grid.capacity_at(date(2026, 1, 15)).rules
+    assert isinstance(night, PeakTariff)
+    assert isinstance(day, PeakTariff)
+    assert night.eligible is not None
+    assert day.eligible is not None
+    assert (night.eligible.hours, day.eligible.hours) == (((0, 360), (1380, 0)), ((360, 1380),))
+    assert night.pricing.price_per_kw.amount == Decimal("9.6")  # type: ignore[union-attr]
+    assert day.pricing.price_per_kw.amount == Decimal(36)  # type: ignore[union-attr]
+    price = HouseholdPrice(grid=grid, supplier=SupplierContract(), state=StateTerms(TaxZone("SE")))
+    assert from_json(json.loads(json.dumps(to_json(price)))).grid == grid
 
 
 def test_2_a_standard_tariff_takes_the_mean_of_five_days() -> None:

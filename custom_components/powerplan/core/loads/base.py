@@ -29,6 +29,7 @@ from typing import Any, Literal, Protocol
 
 from ..metering import ControlledView, ElectricalProfile
 from ..model import Carrier, ComfortState, Demand, Grant, Mode, Quality, Urgency
+from ..tariffs.model import TimeFilter
 from .gate import (
     TRANSIENT_GRACE_S,
     Action,
@@ -271,6 +272,13 @@ class LoadConfig:
     strategy_params: Mapping[str, Any] = field(default_factory=dict)
     phase_names: frozenset[str] | None = None
     command_min_interval_s: float = 0.0
+    #: The key of the copy's `GridTariff.per_load` entry this load is billed on (D4 §5.16, G13).
+    grid_tariff: str | None = None
+    #: The code of the copy's switched window (HDO), or `unknown` (D4 §5.16, G14, G15).
+    switched: str | None = None
+    #: The windows the grid lets it draw in, resolved from `switched` against the
+    #: copy by the adapter; `None` is not switched, `()` is times unknown (G15).
+    allowed: tuple[TimeFilter, ...] | None = None
 
     @classmethod
     def from_materialised(
@@ -307,6 +315,8 @@ class LoadConfig:
             strategy_params=dict(data.get("strategy_params", {})),
             phase_names=phase_names,
             command_min_interval_s=float(params.get("command_interval_s", 0.0)),
+            grid_tariff=data.get("grid_tariff") or None,
+            switched=data.get("switched") or None,
         )
 
 
@@ -625,8 +635,16 @@ class Load:
         return self.config.load_id
 
     def mode_now(self, state: LoadState, ctx: LoadCtx) -> Mode:
-        """Return this load's effective mode this tick (PLAN §7 dec. 20)."""
-        return effective_mode(state.mode, ctx.site_active)
+        """Return this load's effective mode this tick (PLAN §7 dec. 20).
+
+        A controlled circuit whose switching times are unpublished is `delegated`
+        whatever it was set to (D4 §5.16, G15): not plannable, never written, its
+        nameplate reserved while it draws and its energy accounted.
+        """
+        mode = effective_mode(state.mode, ctx.site_active)
+        if self.config.allowed == () and mode not in {Mode.OFF, Mode.OBSERVE}:
+            return Mode.DELEGATED
+        return mode
 
     # ------------------------------------------------------------------ ticks #
 

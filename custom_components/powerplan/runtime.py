@@ -94,7 +94,7 @@ from .const import (
 )
 from .core.accounting.close import AccountingConfig
 from .core.accounting_hook import AccountingAdapter
-from .core.allocation import CircuitSpec, GroupCap, ZoneSource, ZoneSpec
+from .core.allocation import CircuitSpec, GridSwitched, GroupCap, ZoneSource, ZoneSpec
 from .core.allocation.constraints.zone import (
     DEFAULT_CAPACITY_PENALTY,
     DEFAULT_MIN_COP,
@@ -152,7 +152,7 @@ from .core.pricing import (
     next_retry_at,
     party,
 )
-from .core.pricing.context import HolidayCalendar
+from .core.pricing.context import HolidayCalendar, month_to_date
 from .core.pricing.forecasters.base import PriceForecaster, chain
 from .core.pricing.forecasters.carry_known import CarryKnown
 from .core.pricing.forecasters.synthesised import GridCharge, Synthesised
@@ -173,6 +173,7 @@ from .core.tariffs import (
     evaluator_for,
     household,
     seed_from_windows,
+    window_min_of,
 )
 from .core.tariffs.history import Override
 from .core.tariffs.household import HouseholdPrice
@@ -230,7 +231,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.event import EventStateChangedData
     from homeassistant.util.event_type import EventType
 
-    from .core.allocation import Baseline
+    from .core.allocation import Baseline, Constraint
     from .core.forecasts.model import PlannerForecasts, Series
     from .core.loads import LoadState
     from .core.loads.base import ApplyResult
@@ -626,7 +627,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         cap_margin_kw=float(tariff_data.get("cap_margin_kw", 0.5)),
     )
     peak = spec.version_at(dt_util.utcnow()).peak
-    window_min = peak.window_min if peak is not None else 60
+    window_min = window_min_of(spec.version_at(dt_util.utcnow()))
 
     cfg = SiteConfig(
         site_id=entry.entry_id,
@@ -693,7 +694,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         persons=persons,
         away_delay=timedelta(minutes=int(presence_data.get("away_delay_min", 30))),
     )
-    loads, devices = build_loads(hass, entry, electrical)
+    loads, devices = build_loads(hass, entry, electrical, None if price is None else price.grid)
     load_ids = frozenset(load.load_id for load in loads)
     circuits, circuit_meters = build_circuits(hass, entry, load_ids)
     groups = build_groups(entry, load_ids)
@@ -734,7 +735,10 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
 
 
 def build_loads(
-    hass: HomeAssistant, entry: ConfigEntry, electrical: ElectricalProfile
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    electrical: ElectricalProfile,
+    grid: household.GridTariff | None = None,
 ) -> tuple[tuple[Load, ...], dict[str, LoadDevice]]:
     """Build every load subentry's `Load` and its bound device (D8 §4, D7 §5.5 step 2).
 
@@ -750,7 +754,9 @@ def build_loads(
             continue
         data = subentry.data
         try:
-            load = load_from_subentry(subentry.subentry_id, subentry.title, data, electrical)
+            load = load_from_subentry(
+                subentry.subentry_id, subentry.title, data, electrical, grid=grid
+            )
             device = device_from_subentry(hass, data)
         except KeyError, ValueError:
             _LOGGER.exception(
@@ -902,9 +908,19 @@ def build_zones(entry: ConfigEntry, loads: Sequence[Load]) -> tuple[ZoneSpec, ..
 
 
 def load_from_subentry(
-    subentry_id: str, title: str, data: Mapping[str, Any], electrical: ElectricalProfile
+    subentry_id: str,
+    title: str,
+    data: Mapping[str, Any],
+    electrical: ElectricalProfile,
+    *,
+    grid: household.GridTariff | None = None,
 ) -> Load:
-    """Return the pure `Load` a load subentry describes (INV-66)."""
+    """Return the pure `Load` a load subentry describes (INV-66).
+
+    A load the grid switches (D4 §5.16, G14) gets its windows from the site's
+    copy: `unknown`, or a code the copy no longer names, is a circuit whose times
+    are not known (G15) - never planned, never written.
+    """
     params = dict(data.get(LOAD_PARAMS) or {})
     device_type = device_types.get(str(data[LOAD_TYPE]))
     profile_key = str(data.get(LOAD_PROFILE) or "")
@@ -919,6 +935,9 @@ def load_from_subentry(
         transport=transport,
         phases=1 if phases == 1 else 3,
     )
+    if cfg.switched is not None:
+        window = None if grid is None else grid.switched_window(cfg.switched)
+        cfg = replace(cfg, allowed=() if window is None else window.windows)
     if "nameplate_w" not in params and cfg.nameplate_w == 0.0:
         # A type whose questionnaire gives no nameplate: the derived power, else the site cannot size it.
         power_w = params.get("power_w") or params.get("max_w")
@@ -1341,10 +1360,7 @@ class Runtime:
             ),
             build.tariff,
             build.loads,
-            constraints=(
-                *(spec.limit(build.cfg.electrical) for spec in build.circuits),
-                *build.groups,
-            ),
+            constraints=self._site_constraints(),
             zones=build.zones,
             accounting=adapter,
             forecasts=self.forecasts_adapter,
@@ -1733,7 +1749,7 @@ class Runtime:
             now=now,
             tz=tz,
             currency=build.cfg.currency,
-            mtd_kwh_at=lambda _t: 0.0,
+            mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
             day_type_at=lambda _d: None,
             holidays=build.holidays,
@@ -2106,13 +2122,21 @@ class Runtime:
         if self.engine is None:
             return
         self.engine.set_loads(self.build.loads)
-        self.engine.set_constraints(
-            (
-                *(spec.limit(self.build.cfg.electrical) for spec in self.build.circuits),
-                *self.build.groups,
-            )
-        )
+        self.engine.set_constraints(self._site_constraints())
         self.engine.set_zones(self.build.zones)
+
+    def _site_constraints(self) -> tuple[Constraint, ...]:
+        """Return the constraints beyond the site's own hard limits (D6 §2).
+
+        Its circuits and groups, and the grid's switch, which only a load with
+        HDO windows ever meets (D4 §5.16, G14).
+        """
+        build = self.build
+        return (
+            *(spec.limit(build.cfg.electrical) for spec in build.circuits),
+            *build.groups,
+            GridSwitched(build.cfg.tz, build.holidays),
+        )
 
     async def _hydrate_schedule(self, load: Load) -> Load:
         """Swap in one load's bound `schedule.*` helper, if it has one (D4 §4.4, D-0300).
@@ -2162,7 +2186,11 @@ class Runtime:
         """
         try:
             load = load_from_subentry(
-                subentry.subentry_id, subentry.title, subentry.data, self.build.cfg.electrical
+                subentry.subentry_id,
+                subentry.title,
+                subentry.data,
+                self.build.cfg.electrical,
+                grid=None if self.build.price is None else self.build.price.grid,
             )
             device = device_from_subentry(self.hass, subentry.data)
         except KeyError, ValueError:
@@ -2259,7 +2287,11 @@ class Runtime:
             return
         try:
             load = load_from_subentry(
-                load_id, subentry.title, subentry.data, self.build.cfg.electrical
+                load_id,
+                subentry.title,
+                subentry.data,
+                self.build.cfg.electrical,
+                grid=None if self.build.price is None else self.build.price.grid,
             )
             device = device_from_subentry(self.hass, subentry.data)
         except KeyError, ValueError:
@@ -3254,7 +3286,7 @@ class Runtime:
             now=now,
             tz=build.cfg.tz,
             currency=build.cfg.currency,
-            mtd_kwh_at=lambda _t: 0.0,
+            mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
             day_type_at=lambda _d: None,
             holidays=build.holidays,
@@ -3285,7 +3317,7 @@ class Runtime:
             now=now,
             tz=build.cfg.tz,
             currency=build.cfg.currency,
-            mtd_kwh_at=lambda _t: 0.0,
+            mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
             day_type_at=lambda _d: None,
             holidays=build.holidays,
@@ -3314,6 +3346,7 @@ class Runtime:
                     now,
                     direction=Direction.EXPORT,
                 )
+            per_load = self._per_load_curves(electricity, ctx, horizon, now)
             for carrier, source in build.carrier_sources.items():
                 import_[carrier] = build_curve(
                     [slot for slot in raw if slot.source == source.key],
@@ -3327,7 +3360,45 @@ class Runtime:
         except CoverageError as err:
             _LOGGER.warning("site %s: no price curve yet: %s", self.site_name, err)
             return self.curves
-        return Curves(import_=import_, export=export) if import_ else None
+        return Curves(import_=import_, export=export, per_load=per_load) if import_ else None
+
+    def _month_to_date(self, now: datetime) -> Callable[[datetime], float]:
+        """Return D1's month to date from D3's meter, projected linearly (D1 §2).
+
+        A site with no meter has none, and every modifier that reads it sees 0.
+        """
+        engine = self.engine
+        kwh = 0.0 if engine is None or self.build.meter is None else engine.month_to_date_kwh(now)
+        return month_to_date(now, self.build.cfg.tz, kwh)
+
+    def _per_load_curves(
+        self, electricity: Sequence[RawSlot], ctx: PriceContext, horizon: timedelta, now: datetime
+    ) -> dict[str, PriceCurve]:
+        """Return a curve per grid tariff a load is billed on (D1 §5.3, D4 §5.16, G13).
+
+        The same chain with that tariff's grid component; the house's curve does
+        not change. Only the tariffs a configured load names are built.
+        """
+        build = self.build
+        if build.price is None or not build.sources:
+            return {}
+        keys = {load.config.grid_tariff for load in build.loads} - {None}
+        curves: dict[str, PriceCurve] = {}
+        for key in sorted(k for k in keys if k is not None):
+            own = party.chain_for_load(build.price, key, build.added_modifiers, build.source_basis)
+            if own is None:
+                _LOGGER.warning("site %s: no grid tariff %r in the copy", self.site_name, key)
+                continue
+            curves[key] = build_curve(
+                electricity,
+                own,
+                build.forecaster,
+                ctx,
+                horizon,
+                now,
+                source_priority=[source.key for source in build.sources],
+            )
+        return curves
 
     # ---------------------------------------------------------- triggers #
 

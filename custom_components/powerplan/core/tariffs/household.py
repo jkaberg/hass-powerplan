@@ -41,16 +41,19 @@ from .rules import loader
 
 __all__ = [
     "SCHEMA",
+    "UNKNOWN_WINDOWS",
     "Basis",
     "EnergyPeriod",
     "EnergyVersion",
     "FeeVersion",
     "GridTariff",
     "HouseholdPrice",
+    "LoadTariff",
     "Party",
     "Provenance",
     "StateTerms",
     "SupplierContract",
+    "SwitchedWindow",
     "TaxZone",
     "energy_period",
     "fee_factor",
@@ -147,13 +150,48 @@ class FeeVersion:
 
 
 @dataclass(frozen=True, slots=True)
+class LoadTariff:
+    """A grid tariff on one load's meter or device (D13 §18 G13).
+
+    DE §14a Modul 3, HU H-tarifa, IS heating, BE exclusive night, AU controlled
+    load: the grid prices that load's kWh by its own energy charge and bills its
+    own fees; the house's capacity rule still counts it (one fuse, one peak).
+    `key` is what a load's `grid_tariff` names.
+    """
+
+    key: str
+    name: str
+    energy: tuple[EnergyVersion, ...]
+    fixed_fee: tuple[FeeVersion, ...] = ()
+
+
+#: A load's `switched` for a controlled circuit whose times are not published (G15).
+UNKNOWN_WINDOWS = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchedWindow:
+    """The windows the grid switches a load in (D13 §18 G14; CZ/SK HDO).
+
+    `key` is the code on the meter's label, what a load's `switched` names;
+    `windows` are the times the relay is closed, first match. Empty is a circuit
+    whose times are not published (G15): not plannable, accounted only.
+    """
+
+    key: str
+    name: str
+    windows: tuple[TimeFilter, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class GridTariff:
     """Party 1 - the grid company's rules, as its source published them (D13 §3).
 
     `capacity` is D2's versions (rules and prices per validity); `energy` the
     grid's energy charge by time; `fixed_fee` the fees. All three share `basis`.
-    The per-load tariffs, switched windows and feed-in terms of §3 are TS.7's and
-    Phase 7's and join this type with them.
+    `per_load` are the tariffs on one load's meter (G13) and `switched` the
+    windows the grid switches a load in (G14, G15), TS.7's; the feed-in terms
+    of §3 are Phase 7's.
     """
 
     operator: str
@@ -172,6 +210,19 @@ class GridTariff:
     #: The source's own handles for the operator and the product, for the renewal (§10).
     operator_key: str | None = None
     product_key: str | None = None
+    per_load: tuple[LoadTariff, ...] = ()
+    switched: tuple[SwitchedWindow, ...] = ()
+
+    def for_load(self, key: str) -> GridTariff | None:
+        """Return this grid with a load's own tariff as its energy charge and fees (G13)."""
+        own = next((row for row in self.per_load if row.key == key), None)
+        if own is None:
+            return None
+        return replace(self, energy=own.energy, fixed_fee=own.fixed_fee, per_load=())
+
+    def switched_window(self, key: str) -> SwitchedWindow | None:
+        """Return the switched window a load's `switched` code names (G14)."""
+        return next((row for row in self.switched if row.key == key), None)
 
     def energy_at(self, day: date) -> EnergyVersion | None:
         """Return the energy charge in force on `day`; before the first, the first."""
@@ -258,6 +309,30 @@ def vat_at(state: StateTerms, day: date, contracted_kw: float | None = None) -> 
     module = countries.get(state.zone.country)
     rate = None if module is None else module.vat_at(day, state.zone.key, contracted_kw)
     return Decimal(0) if rate is None else rate
+
+
+#: The confirmed key for a household of five or more (PT's larger VAT band, G17).
+LARGE_HOUSEHOLD = "large_household"
+
+
+def band_vat_at(
+    price: HouseholdPrice, day: date, contracted_kw: float | None, kwh_so_far: float
+) -> Decimal | None:
+    """Return the reduced rate a period's first kWh pay, `None` past the band (G17).
+
+    A household's own VAT override wins over the band as over any rate.
+    """
+    state = price.state
+    module = countries.get(state.zone.country)
+    if "vat" in state.overrides or module is None or module.vat_band is None:
+        return None
+    return module.vat_band.rate_at(
+        day,
+        state.zone.key,
+        contracted_kw,
+        kwh_so_far,
+        large=bool(price.confirmed.get(LARGE_HOUSEHOLD)),
+    )
 
 
 def published_vat_at(state: StateTerms, day: date) -> Decimal:
@@ -398,23 +473,37 @@ def to_json(price: HouseholdPrice) -> dict[str, Any]:
                     assumed=None,
                 )
             ),
-            "energy": [
+            "energy": _energy_json(grid.energy),
+            "fixed_fee": _fees_json(grid.fixed_fee),
+            **(
                 {
-                    "valid_from": version.valid_from.isoformat(),
-                    "fallback": str(version.fallback),
-                    "periods": [_period_json(period) for period in version.periods],
-                    **({"spot_share": str(version.spot_share)} if version.spot_share else {}),
+                    "per_load": [
+                        {
+                            "key": row.key,
+                            "name": row.name,
+                            "energy": _energy_json(row.energy),
+                            "fixed_fee": _fees_json(row.fixed_fee),
+                        }
+                        for row in grid.per_load
+                    ]
                 }
-                for version in grid.energy
-            ],
-            "fixed_fee": [
+                if grid.per_load
+                else {}
+            ),
+            **(
                 {
-                    "valid_from": fee.valid_from.isoformat(),
-                    "amount": str(fee.amount),
-                    "per": fee.per,
+                    "switched": [
+                        {
+                            "key": row.key,
+                            "name": row.name,
+                            "windows": [_filter_json(when) for when in row.windows],
+                        }
+                        for row in grid.switched
+                    ]
                 }
-                for fee in grid.fixed_fee
-            ],
+                if grid.switched
+                else {}
+            ),
             "events": list(grid.events),
             "renew_at": None if grid.renew_at is None else grid.renew_at.isoformat(),
             "valid_to": None if grid.valid_to is None else grid.valid_to.isoformat(),
@@ -457,22 +546,24 @@ def from_json(raw: Mapping[str, Any]) -> HouseholdPrice:
             currency=capacity.currency,
             basis=_basis(grid["basis"]),
             capacity=capacity.versions,
-            energy=tuple(
-                EnergyVersion(
-                    valid_from=date.fromisoformat(version["valid_from"]),
-                    periods=tuple(_period(period) for period in version["periods"]),
-                    fallback=Decimal(str(version.get("fallback") or 0)),
-                    spot_share=Decimal(str(version.get("spot_share") or 0)),
+            energy=_energy(grid.get("energy") or ()),
+            fixed_fee=_fees(grid.get("fixed_fee") or ()),
+            per_load=tuple(
+                LoadTariff(
+                    key=row["key"],
+                    name=row.get("name") or row["key"],
+                    energy=_energy(row.get("energy") or ()),
+                    fixed_fee=_fees(row.get("fixed_fee") or ()),
                 )
-                for version in grid.get("energy") or ()
+                for row in grid.get("per_load") or ()
             ),
-            fixed_fee=tuple(
-                FeeVersion(
-                    valid_from=date.fromisoformat(fee["valid_from"]),
-                    amount=Decimal(str(fee["amount"])),
-                    per=fee.get("per", "month"),
+            switched=tuple(
+                SwitchedWindow(
+                    key=row["key"],
+                    name=row.get("name") or row["key"],
+                    windows=tuple(_filter(when) for when in row.get("windows") or ()),
                 )
-                for fee in grid.get("fixed_fee") or ()
+                for row in grid.get("switched") or ()
             ),
             events=tuple(grid.get("events") or ()),
             renew_at=None if not grid.get("renew_at") else date.fromisoformat(grid["renew_at"]),
@@ -530,18 +621,77 @@ def _provenance(raw: Mapping[str, Any]) -> Provenance:
     )
 
 
+def _energy_json(versions: tuple[EnergyVersion, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "valid_from": version.valid_from.isoformat(),
+            "fallback": str(version.fallback),
+            "periods": [_period_json(period) for period in version.periods],
+            **({"spot_share": str(version.spot_share)} if version.spot_share else {}),
+        }
+        for version in versions
+    ]
+
+
+def _energy(raw: Any) -> tuple[EnergyVersion, ...]:
+    return tuple(
+        EnergyVersion(
+            valid_from=date.fromisoformat(version["valid_from"]),
+            periods=tuple(_period(period) for period in version["periods"]),
+            fallback=Decimal(str(version.get("fallback") or 0)),
+            spot_share=Decimal(str(version.get("spot_share") or 0)),
+        )
+        for version in raw
+    )
+
+
+def _fees_json(fees: tuple[FeeVersion, ...]) -> list[dict[str, Any]]:
+    return [
+        {"valid_from": fee.valid_from.isoformat(), "amount": str(fee.amount), "per": fee.per}
+        for fee in fees
+    ]
+
+
+def _fees(raw: Any) -> tuple[FeeVersion, ...]:
+    return tuple(
+        FeeVersion(
+            valid_from=date.fromisoformat(fee["valid_from"]),
+            amount=Decimal(str(fee["amount"])),
+            per=fee.get("per", "month"),
+        )
+        for fee in raw
+    )
+
+
+def _filter_json(when: TimeFilter) -> dict[str, Any]:
+    raw: dict[str, Any] = {"holidays": when.holidays.value}
+    for key in ("months", "weekdays"):
+        if getattr(when, key) is not None:
+            raw[key] = list(getattr(when, key))
+    if when.hours is not None:
+        raw["hours"] = [list(pair) for pair in when.hours]
+    if when.clock != "local":
+        raw["clock"] = when.clock
+    return raw
+
+
+def _filter(raw: Mapping[str, Any]) -> TimeFilter:
+    hours = raw.get("hours")
+    return TimeFilter(
+        months=None if raw.get("months") is None else tuple(int(m) for m in raw["months"]),
+        weekdays=None if raw.get("weekdays") is None else tuple(int(d) for d in raw["weekdays"]),
+        hours=None if hours is None else tuple((int(a), int(b)) for a, b in hours),
+        holidays=HolidayMode(raw.get("holidays", HolidayMode.IGNORE.value)),
+        clock=raw.get("clock", "local"),
+    )
+
+
 def _period_json(period: EnergyPeriod) -> dict[str, Any]:
     raw: dict[str, Any] = {"price": str(period.price)}
     if period.name is not None:
         raw["name"] = period.name
-    when = period.when
-    if when is not None:
-        raw["holidays"] = when.holidays.value
-        for key in ("months", "weekdays"):
-            if getattr(when, key) is not None:
-                raw[key] = list(getattr(when, key))
-        if when.hours is not None:
-            raw["hours"] = [list(pair) for pair in when.hours]
+    if period.when is not None:
+        raw.update(_filter_json(period.when))
     return raw
 
 
@@ -557,15 +707,7 @@ def _period(raw: Mapping[str, Any]) -> EnergyPeriod:
         None,
         HolidayMode.IGNORE.value,
     ):
-        hours = raw.get("hours")
-        when = TimeFilter(
-            months=None if raw.get("months") is None else tuple(int(m) for m in raw["months"]),
-            weekdays=(
-                None if raw.get("weekdays") is None else tuple(int(d) for d in raw["weekdays"])
-            ),
-            hours=None if hours is None else tuple((int(a), int(b)) for a, b in hours),
-            holidays=HolidayMode(raw.get("holidays", HolidayMode.IGNORE.value)),
-        )
+        when = _filter(raw)
     return EnergyPeriod(when=when, price=Decimal(str(raw["price"])), name=raw.get("name"))
 
 

@@ -128,6 +128,10 @@ class AccountingAdapter:
         self._profiles: dict[str, TargetProfile | None] = {
             load.load_id: load.config.target for load in loads
         }
+        #: Each load's own grid tariff (D4 §5.16, G13): billed on `Curves.per_load`.
+        self._grid_tariffs: dict[str, str] = {
+            load.load_id: load.config.grid_tariff for load in loads if load.config.grid_tariff
+        }
         restored = None
         if state and state.get(STATE_KEY):
             restored = decode(AccountingState, state[STATE_KEY])
@@ -153,6 +157,8 @@ class AccountingAdapter:
         params = params_of(load)
         self._params[load.load_id] = params
         self._profiles[load.load_id] = load.config.target
+        if load.config.grid_tariff:
+            self._grid_tariffs[load.load_id] = load.config.grid_tariff
         self.accounting.on_load_added(
             load.load_id, params.kind, None, now, ShadowCtx(params=params)
         )
@@ -162,6 +168,7 @@ class AccountingAdapter:
         self.accounting.on_load_removed(load_id, now)
         self._params.pop(load_id, None)
         self._profiles.pop(load_id, None)
+        self._grid_tariffs.pop(load_id, None)
 
     # ------------------------------------------------------------ the hook #
 
@@ -203,6 +210,11 @@ class AccountingAdapter:
                 if load_id in self._params
             },
             tz=self.config.tz,
+            load_curves={
+                load_id: close.curves.per_load[key]
+                for load_id, key in self._grid_tariffs.items()
+                if key in close.curves.per_load
+            },
         )
         report = self.accounting.close_slot(slot, ctx)
         status = self.status()
@@ -332,9 +344,9 @@ def _site_row(site: SiteMonthRec, loads: Any) -> dict[str, Any]:
     return {
         "cost": _money_data(site.cost),
         "energy_cost": _money_data(site.energy_cost),
-        "capacity_fee": _money_data(site.capacity_fee),
+        "capacity_fee": _money_data(site.capacity_charge),
         "cf_cost": _money_data(
-            Money(site.cf_energy_cost.amount + site.cf_capacity_fee.amount, site.cost.currency)
+            Money(site.cf_energy_cost.amount + site.cf_capacity_charge.amount, site.cost.currency)
         ),
         "savings": _money_data(total),
         "energy_savings": _money_data(energy),

@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -99,10 +99,15 @@ class TimeFilter:
     weekdays: tuple[int, ...] | None = None
     hours: tuple[tuple[int, int], ...] | None = None
     holidays: HolidayMode = HolidayMode.IGNORE
+    #: D2 §4 G11: `standard` reads the hours on the zone's standard time - IE's
+    #: 23–08 night is 00–09 on the wall clock while summer time is in force.
+    clock: Literal["local", "standard"] = "local"
 
     def matches(self, when: datetime, zone: tzinfo, calendar: HolidayCalendar) -> bool:
         """Return whether the instant `when` falls inside this filter."""
         local = when.astimezone(zone)
+        if self.clock == "standard":
+            local = local - (local.dst() or timedelta(0))
         holiday = calendar.is_holiday(local.date())
         if holiday and self.holidays is HolidayMode.EXCLUDE:
             return False
@@ -275,10 +280,14 @@ class ContractedPower:
     """
 
     limits: tuple[PeriodLimit, ...]
-    on_exceed: Literal["trip", "surcharge"]
+    #: `trip`: a breaker (a hard limit, INV-1 item 1). `surcharge` (SI, per kW of
+    #: excess) and `energy_surcharge` (LU, per kWh above the limit in each window's
+    #: mean): a priced limit, never a hard one (O23, D2 §5.8).
+    on_exceed: Literal["trip", "surcharge", "energy_surcharge"]
     tolerance_pct: float = 0.0
     tolerance_s: int = 0
     surcharge_per_kw: Money | None = None
+    surcharge_per_kwh: Money | None = None
     unit: Literal["kw", "kva"] = "kw"
     power_factor: float = 1.0
 

@@ -42,3 +42,28 @@ class PriceContext:
     ytd_kwh_at: Callable[[datetime], float]
     day_type_at: Callable[[date], str | None]
     holidays: HolidayCalendar
+
+
+def month_to_date(now: datetime, tz: tzinfo, kwh_now: float) -> Callable[[datetime], float]:
+    """Return `mtd_kwh_at`: the actual up to `now`, then the month's mean rate (D1 §2).
+
+    The past slots of this month read the actual scaled by elapsed time; a future
+    slot adds the month's mean rate so far per hour until then, and a slot in a
+    later month starts that month from zero at the same rate - the linear
+    extrapolation D1 §2 names where D10 projects nothing.
+    """
+    local = now.astimezone(tz)
+    start = datetime(local.year, local.month, 1, tzinfo=tz)
+    elapsed_h = max((now - start).total_seconds() / 3600.0, 1.0)
+    rate = kwh_now / elapsed_h
+
+    def at(when: datetime) -> float:
+        there = when.astimezone(tz)
+        if (there.year, there.month) != (local.year, local.month):
+            month_start = datetime(there.year, there.month, 1, tzinfo=tz)
+            return max(0.0, (when - month_start).total_seconds() / 3600.0) * rate
+        if when <= now:
+            return kwh_now * max(0.0, (when - start).total_seconds() / 3600.0) / elapsed_h
+        return kwh_now + (when - now).total_seconds() / 3600.0 * rate
+
+    return at

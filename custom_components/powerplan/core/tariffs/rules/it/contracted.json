@@ -1,0 +1,26 @@
+{
+  "id": "it.contracted",
+  "template": true,
+  "name": "Italia – potenza impegnata (ARERA, nessuna tariffa di capacità misurata)",
+  "country": "IT",
+  "currency": "EUR",
+  "tz": "Europe/Rome",
+  "source_url": "https://www.arera.it/consumatori/atlante-per-il-consumatore",
+  "verified": null,
+  "assumed": "The contracted power (3 kW typical) is the household's own and asked; the meter allows 10 % above it without limit and limits beyond that after a delay that is not modelled (D13 §18 G20, read 2026-09-24), so the site is held at the contract itself — the conservative side of the meter's own rule.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "contracted": {
+        "limits": [
+          {
+            "limit_kw": null
+          }
+        ],
+        "on_exceed": "trip",
+        "unit": "kw",
+        "tolerance_pct": 0.1
+      }
+    }
+  ]
+}

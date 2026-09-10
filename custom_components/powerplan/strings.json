@@ -1538,7 +1538,8 @@
         "per_month": "{fee}/month",
         "per_year": "{fee}/year",
         "notify_notify": "Every notify service",
-        "notify_persistent_notification": "A notification in Home Assistant"
+        "notify_persistent_notification": "A notification in Home Assistant",
+        "unknown_times": "Switched, times unknown"
       }
     },
     "tariff_text": {
@@ -2600,12 +2601,16 @@
           "data": {
             "name": "Name",
             "strategy": "Strategy",
-            "priority": "Priority"
+            "priority": "Priority",
+            "grid_tariff": "Own meter or grid tariff",
+            "switched": "Switched by the grid"
           },
           "data_description": {
             "name": "What to call this appliance. It names the device and prefixes its entities.",
             "strategy": "How this appliance is planned. Change it later on the device page.",
-            "priority": "Which appliance waits first when power is short: low waits first. Change it later on the device page."
+            "priority": "Which appliance waits first when power is short: low waits first. Change it later on the device page.",
+            "grid_tariff": "Whether this appliance has its own meter or its own grid tariff (a heat pump under §14a Modul 3, an H-tarifa meter). It is planned on that tariff's prices.",
+            "switched": "The code on the meter's label if the grid company switches this appliance (HDO): nothing is planned or granted outside its windows. \"Times unknown\" leaves it to the grid and only counts it."
           },
           "sections": {
             "advanced": {
@@ -2789,11 +2794,15 @@
           "description": "Setup for **[{device_name}]({device_url})**.\n\nOn the device page: {levels}.\n\nRe-deriving from your answers today would change:\n\n{diff}\n\nManual edits so far: {manual}.\n\n{explanation}",
           "data": {
             "name": "Name",
-            "rederive": "Apply the re-derived values"
+            "rederive": "Apply the re-derived values",
+            "grid_tariff": "Own meter or grid tariff",
+            "switched": "Switched by the grid"
           },
           "data_description": {
             "name": "What to call this appliance.",
-            "rederive": "Off keeps the stored parameters and your edits; on takes the values above."
+            "rederive": "Off keeps the stored parameters and your edits; on takes the values above.",
+            "grid_tariff": "Whether this appliance has its own meter or its own grid tariff (a heat pump under §14a Modul 3, an H-tarifa meter). It is planned on that tariff's prices.",
+            "switched": "The code on the meter's label if the grid company switches this appliance (HDO): nothing is planned or granted outside its windows. \"Times unknown\" leaves it to the grid and only counts it."
           },
           "sections": {
             "advanced": {

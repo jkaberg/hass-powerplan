@@ -7,14 +7,19 @@ HTTP through Home Assistant's shared session and nothing else - lives in
 """
 
 from . import (
+    anre,
     datahub_pricelist,
     ei_household,
+    elcom,
     elpris_dk,
     eltariff,
+    esios,
     fri_nettleie,
     kartverket,
     nve,
     sahkonhinta,
+    tauron,
+    zsdis,
 )
 from .base import (
     Credit,
@@ -45,12 +50,15 @@ __all__ = [
     "SourceError",
     "Tier",
     "UnreachableError",
+    "anre",
     "cdr_energy",
     "cwape",
     "datahub_pricelist",
     "ei_household",
+    "elcom",
     "elpris_dk",
     "eltariff",
+    "esios",
     "fri_nettleie",
     "kartverket",
     "merge",
@@ -59,5 +67,7 @@ __all__ = [
     "renew_at",
     "sahkonhinta",
     "slug",
+    "tauron",
     "vreg_xlsx",
+    "zsdis",
 ]

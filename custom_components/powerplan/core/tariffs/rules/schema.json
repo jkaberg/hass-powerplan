@@ -167,7 +167,7 @@
           "minItems": 1,
           "items": {"$ref": "#/$defs/period_limit"}
         },
-        "on_exceed": {"type": "string", "enum": ["trip", "surcharge"]},
+        "on_exceed": {"type": "string", "enum": ["trip", "surcharge", "energy_surcharge"]},
         "tolerance_pct": {
           "type": "number",
           "description": "A fraction of the limit: 0.10 is ten per cent (D2 §4).",
@@ -176,6 +176,7 @@
         },
         "tolerance_s": {"type": "integer", "minimum": 0},
         "surcharge_per_kw": {"type": "number", "minimum": 0},
+        "surcharge_per_kwh": {"type": "number", "minimum": 0, "description": "energy_surcharge: per kWh above the limit in each window's mean (LU, D2 §5.8)."},
         "unit": {"type": "string", "enum": ["kw", "kva"]},
         "power_factor": {"type": "number", "minimum": 0.1, "maximum": 1}
       }
@@ -222,7 +223,8 @@
             ]
           }
         },
-        "holidays": {"type": "string", "enum": ["ignore", "as_sunday", "exclude"]}
+        "holidays": {"type": "string", "enum": ["ignore", "as_sunday", "exclude"]},
+        "clock": {"type": "string", "enum": ["local", "standard"], "description": "D2 §4 G11: hours on the zone's standard time (IE)."}
       }
     }
   }

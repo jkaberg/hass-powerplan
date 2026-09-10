@@ -188,7 +188,7 @@ def cost_by_party(site: SiteMonthRec) -> dict[str, Money]:
     split = {party.value: Decimal(0) for party in Party}
     for party, amount in site.energy_by_party.items():
         split[party] += amount
-    split[Party.GRID.value] += site.capacity_fee.amount
+    split[Party.GRID.value] += site.capacity_charge.amount
     split[Party.SUPPLIER.value] -= site.export_credit.amount
     return {party: Money(amount, currency) for party, amount in split.items()}
 

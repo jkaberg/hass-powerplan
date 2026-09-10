@@ -84,8 +84,17 @@ def test_20_only_custom_and_templates_ship_without_prices() -> None:
     unpriced = sorted(
         name for name in preset_names() if name == "custom" or load_any(name).get("template")
     )
-    assert unpriced == ["custom", "es/2_0td", "nl/connection", "no/template"]
-    assert TEMPLATES == ["es/2_0td", "nl/connection", "no/template"]
+    assert unpriced == [
+        "custom",
+        "es/2_0td",
+        "fr/kva",
+        "ie/nopeak",
+        "it/contracted",
+        "nl/connection",
+        "no/template",
+        "pt/contracted",
+    ]
+    assert [name for name in unpriced if name != "custom"] == TEMPLATES
 
 
 def test_20_a_non_template_may_not_leave_a_number_to_fill() -> None:

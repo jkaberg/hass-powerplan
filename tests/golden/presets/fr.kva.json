@@ -1,0 +1,41 @@
+{
+  "_": "Golden for the fr.kva preset — D2 §9 1, D9 §3 (TS.7). A contracted limit and no capacity charge.",
+  "preset": "fr/kva",
+  "id": "fr.kva",
+  "tz": "Europe/Paris",
+  "currency": "EUR",
+  "window_min": 15,
+  "period_key": "2026-01",
+  "at_local": "2026-01-07T12:00:00",
+  "sources": {
+    "no_peak": "CRE's TURPE: the subscription is on the subscribed kVA, not a measured peak (D13 §5.10).",
+    "windows_priced": "0: nothing is priced on a version with no peak."
+  },
+  "windows": [
+    {
+      "local": "2026-01-07T19:00:00",
+      "kwh": 1.0
+    }
+  ],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "ceiling_is_infinite_at": [
+    "2026-01-07T19:00:00"
+  ],
+  "describes": [
+    "No capacity charge"
+  ],
+  "fill": {
+    "limits": [
+      6.0
+    ],
+    "_": "The flow's starting value (flow/steps.py LIMIT_DEFAULTS); the household's own contract replaces it."
+  }
+}

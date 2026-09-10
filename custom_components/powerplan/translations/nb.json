@@ -1538,7 +1538,8 @@
         "per_month": "{fee}/mnd",
         "per_year": "{fee}/år",
         "notify_notify": "Alle varslingstjenester",
-        "notify_persistent_notification": "Et varsel i Home Assistant"
+        "notify_persistent_notification": "Et varsel i Home Assistant",
+        "unknown_times": "Styrt, tider ukjent"
       }
     },
     "tariff_text": {
@@ -2616,12 +2617,16 @@
           "data": {
             "name": "Navn",
             "strategy": "Strategi",
-            "priority": "Prioritet"
+            "priority": "Prioritet",
+            "grid_tariff": "Egen måler eller egen nettleie",
+            "switched": "Styrt av nettselskapet"
           },
           "data_description": {
             "name": "Hva apparatet skal hete. Det navngir enheten og setter prefiks på entitetene.",
             "strategy": "Hvordan apparatet planlegges. Kan endres senere på enhetssiden.",
-            "priority": "Hvilket apparat som venter først når det er trangt: lav venter først. Kan endres senere på enhetssiden."
+            "priority": "Hvilket apparat som venter først når det er trangt: lav venter først. Kan endres senere på enhetssiden.",
+            "grid_tariff": "Om dette apparatet har egen måler eller egen nettleie (en varmepumpe under §14a Modul 3, en H-tarifa-måler). Det planlegges på den nettleiens priser.",
+            "switched": "Koden på målerens etikett hvis nettselskapet slår apparatet av og på (HDO): ingenting planlegges eller tildeles utenfor vinduene. «Tider ukjent» overlater det til nettselskapet og teller det bare."
           },
           "sections": {
             "advanced": {
@@ -2805,11 +2810,15 @@
           "description": "Oppsett for **[{device_name}]({device_url})**.\n\nStyres fra enhetssiden: {levels}.\n\nÅ utlede på nytt fra svarene dine i dag ville endre:\n\n{diff}\n\nManuelle endringer så langt: {manual}.\n\n{explanation}",
           "data": {
             "name": "Navn",
-            "rederive": "Bruk de re-utledede verdiene"
+            "rederive": "Bruk de re-utledede verdiene",
+            "grid_tariff": "Egen måler eller egen nettleie",
+            "switched": "Styrt av nettselskapet"
           },
           "data_description": {
             "name": "Hva apparatet skal hete.",
-            "rederive": "Av beholder de lagrede parametrene og endringene dine; på tar verdiene over."
+            "rederive": "Av beholder de lagrede parametrene og endringene dine; på tar verdiene over.",
+            "grid_tariff": "Om dette apparatet har egen måler eller egen nettleie (en varmepumpe under §14a Modul 3, en H-tarifa-måler). Det planlegges på den nettleiens priser.",
+            "switched": "Koden på målerens etikett hvis nettselskapet slår apparatet av og på (HDO): ingenting planlegges eller tildeles utenfor vinduene. «Tider ukjent» overlater det til nettselskapet og teller det bare."
           },
           "sections": {
             "advanced": {

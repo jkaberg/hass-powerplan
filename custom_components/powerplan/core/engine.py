@@ -70,6 +70,7 @@ from .allocation import (
     LadderCfg,
     LadderState,
     PhaseLimit,
+    PricedLimitCap,
     SiteFuse,
     Zone,
     ZoneSpec,
@@ -322,7 +323,7 @@ _TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_pr
 _STORE_KEYS: Final = ("loss_coeff_w_per_k", "heat_loss_w_per_k", "standby_loss_w", "charge_eff")
 
 #: D6 §2's evaluation order: outermost physical limit first, preferences last.
-_SCOPE_ORDER: Final = ("site", "circuit", "phase", "group", "zone", "load")
+_SCOPE_ORDER: Final = ("site", "switched", "circuit", "phase", "group", "zone", "load")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1105,6 +1106,10 @@ class Engine:
         )
         self._loads = self._configured
 
+    def month_to_date_kwh(self, now: datetime) -> float:
+        """Return D3's import this local month, for D1's `mtd_kwh_at` (D1 §2)."""
+        return self._meter.month_to_date_kwh(now)
+
     def set_constraints(self, constraints: Sequence[Constraint]) -> None:
         """Replace the constraints beyond the site's own hard limits (D7 §2).
 
@@ -1368,6 +1373,7 @@ class Engine:
             (
                 *self._constraints,
                 ContractedPowerLimit(hard.contracted),
+                PricedLimitCap(self._tariff.priced_limit_now(now)),
                 *self._cycle_reservations(load_states),
                 *self._zone_constraints(inputs.curves, inputs.outdoor_c),
                 *_external_limits(inputs.events, now),

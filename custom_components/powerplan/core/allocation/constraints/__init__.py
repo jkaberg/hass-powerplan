@@ -12,6 +12,8 @@ from .cycle import CycleReservation
 from .group import GroupCap, default_max_concurrent_w
 from .hard import ContractedPowerLimit, ExternalLimit, SiteFuse
 from .phase import PhaseLimit
+from .priced import PricedLimitCap
+from .switched import GridSwitched
 from .zone import Zone, ZoneChoice, ZoneSource, ZoneSpec
 
 __all__ = [
@@ -22,9 +24,11 @@ __all__ = [
     "ContractedPowerLimit",
     "CycleReservation",
     "ExternalLimit",
+    "GridSwitched",
     "GroupCap",
     "MarginalCost",
     "PhaseLimit",
+    "PricedLimitCap",
     "Scope",
     "SiteFuse",
     "Violation",

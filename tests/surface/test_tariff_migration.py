@@ -62,7 +62,7 @@ async def test_06_an_entry_on_no_tensio_starts_on_a_copy_the_renewal_fetches(
     """The reference house's first file, gone since TS.6: a copy that names its source.
 
     No capacity rule until the renewal - an hour after start at the earliest
-    (INV-73) - fetches fri-nettleie's Tensio TS (D-0580); the add-ons that equal the
+    (INV-73) - fetches fri-nettleie's Tensio TS (D-0600); the add-ons that equal the
     module are dropped as before.
     """
     data = site_data(hass)

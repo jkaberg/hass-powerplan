@@ -11,5 +11,6 @@ MODULE = register(
         time_zones=("Europe/Rome",),
         vat=tedb("10"),
         tedb="IT",
+        rule_template="it/contracted",
     )
 )

@@ -1,0 +1,38 @@
+{
+  "_": "Golden for the ie.nopeak preset — D2 §9 1, D9 §3 (TS.7): Ireland bills households no capacity component.",
+  "preset": "ie/nopeak",
+  "id": "ie.nopeak",
+  "tz": "Europe/Dublin",
+  "currency": "EUR",
+  "window_min": 30,
+  "period_key": "2026-01",
+  "at_local": "2026-01-20T12:00:00",
+  "sources": {
+    "no_peak": "D13 §5.10's IE row: DUoS national (CRU, ESB Networks) inside the supplier's unit rate; no household capacity charge.",
+    "window_min": "30 minutes, the settlement period.",
+    "metric_kw": "0.0 by construction on a NoPeak site."
+  },
+  "windows": [
+    {
+      "local": "2026-01-14T17:30:00",
+      "kwh": 4.2
+    }
+  ],
+  "expected": {
+    "metric_kw": 0.0,
+    "level_name": "none",
+    "fee": null,
+    "currency": "EUR",
+    "confidence": "exact",
+    "bill_fee": null,
+    "windows_priced": 0
+  },
+  "ceiling_is_infinite_at": [
+    "2026-01-14T17:45:00",
+    "2026-06-14T17:45:00"
+  ],
+  "describes": [
+    "No capacity charge",
+    "only the energy price matters"
+  ]
+}

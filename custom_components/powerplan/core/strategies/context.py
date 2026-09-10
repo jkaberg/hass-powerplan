@@ -34,7 +34,7 @@ from ..loads import CalendarEvent, PresenceMode, TargetProfile
 from ..loads.stores.base import StoreModel
 from ..model import Carrier, Demand, Mode, Plan, PriceCurve, Slot
 from ..pricing import Event, EventKind, HolidayCalendar, HysteresisPolicy
-from ..tariffs import AUTO, Target
+from ..tariffs import AUTO, PricedLimit, Target, TimeFilter
 
 if TYPE_CHECKING:
     from ..loads import Load
@@ -69,6 +69,10 @@ class CeilingSource(Protocol):
         self, start: datetime, end: datetime
     ) -> list[tuple[datetime, datetime, float]]:
         """Return the eligible windows of `[start, end)` and their weights."""
+        ...
+
+    def priced_limit_now(self, now: datetime) -> PricedLimit | None:
+        """Return a limit whose excess is priced, in force at `now` (D2 §5.8, O23)."""
         ...
 
 
@@ -126,6 +130,10 @@ class Headroom:
     """
 
     by_slot: Mapping[datetime, float] = field(default_factory=dict)
+    #: v0.2.2 (O23): the watts left under a priced limit per slot, and what a kWh above
+    #: it costs on top - D5 §5.1's power tier. Empty where no priced limit is in force.
+    tier: Mapping[datetime, float] = field(default_factory=dict)
+    surcharge: Mapping[datetime, Decimal] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -152,15 +160,21 @@ class Headroom:
         (`design/DECISIONS.md` D-0257).
         """
         room: dict[datetime, float] = {}
+        tier: dict[datetime, float] = {}
+        surcharge: dict[datetime, Decimal] = {}
         for slot in slots:
             ceiling = math.inf if tariff is None else tariff.target_w_at(slot.start, target)
             baseline = 0.0 if forecasts is None else forecasts.baseline_w(slot.start)
+            priced = None if tariff is None else tariff.priced_limit_now(slot.start)
+            if priced is not None and priced.per_kwh is not None:
+                tier[slot.start] = max(0.0, priced.w - baseline)
+                surcharge[slot.start] = priced.per_kwh.amount
             if math.isinf(ceiling):
                 room[slot.start] = ceiling
                 continue
             guarded = max(0.0, ceiling - eps_w) * fraction
             room[slot.start] = max(0.0, guarded - baseline)
-        return cls(by_slot=room)
+        return cls(by_slot=room, tier=tier, surcharge=surcharge)
 
     def w_at(self, start: datetime) -> float:
         """Return the watts available in the slot starting at `start`."""
@@ -171,9 +185,30 @@ class Headroom:
         if not taken:
             return self
         room = dict(self.by_slot)
+        tier = dict(self.tier)
         for start, watts in taken.items():
             room[start] = max(0.0, self.w_at(start) - watts)
-        return replace(self, by_slot=room)
+            if start in tier:
+                tier[start] = max(0.0, tier[start] - watts)
+        return replace(self, by_slot=room, tier=tier)
+
+    def closed(self, starts: set[datetime]) -> Headroom:
+        """Return this headroom with no watts in `starts` - a switched load's closed slots (G14)."""
+        if not starts:
+            return self
+        room = dict(self.by_slot)
+        tier = dict(self.tier)
+        for start in starts:
+            room[start] = 0.0
+            if start in tier:
+                tier[start] = 0.0
+        return replace(self, by_slot=room, tier=tier)
+
+    def tier_at(self, start: datetime) -> tuple[float, Decimal] | None:
+        """Return the watts left under a priced limit and its surcharge, or `None`."""
+        if start not in self.tier:
+            return None
+        return self.tier[start], self.surcharge[start]
 
 
 def with_rewards(curve: PriceCurve, events: Sequence[Event], *, participates: bool) -> PriceCurve:
@@ -229,10 +264,19 @@ class Curves:
 
     import_: Mapping[Carrier, PriceCurve]
     export: Mapping[Carrier, PriceCurve] = field(default_factory=dict)
+    #: v0.2.2 (G13): the import curve of each grid tariff on one load's meter, by its key.
+    per_load: Mapping[str, PriceCurve] = field(default_factory=dict)
 
     def pair(self, carrier: Carrier = Carrier.ELECTRICITY) -> tuple[PriceCurve, PriceCurve | None]:
         """Return `(import, export)` for `carrier`; export is `None` where there is none."""
         return self.import_[carrier], self.export.get(carrier)
+
+    def for_load(self, view: LoadView) -> tuple[PriceCurve, PriceCurve | None]:
+        """Return `(import, export)` a load plans on: its own tariff's curve where it has one."""
+        curve_in, curve_out = self.pair(view.carrier)
+        if view.grid_tariff is not None and view.grid_tariff in self.per_load:
+            return self.per_load[view.grid_tariff], curve_out
+        return curve_in, curve_out
 
     def has(self, carrier: Carrier) -> bool:
         """Return whether this carrier is priced at all - a gas load may not be."""
@@ -301,6 +345,11 @@ class LoadView:
     #: How many phases it is connected on, for `w_per_amp` (D3 §5.1).
     phases: Literal[1, 2, 3] = 1
     quantiser: Quantiser | None = None
+    #: The load's own grid tariff (D4 §5.16, G13): planned on `Curves.per_load`.
+    grid_tariff: str | None = None
+    #: The windows the grid switches it in (G14): nothing planned or granted
+    #: outside them. `None` is a load the grid does not switch.
+    allowed: tuple[TimeFilter, ...] | None = None
 
     @property
     def max_w(self) -> float:
@@ -311,6 +360,12 @@ class LoadView:
     def min_w(self) -> float:
         """The least it can run at - the 6 A cliff for a charger (INV-28)."""
         return self.demand.min_w
+
+    def allowed_at(self, when: datetime, tz: tzinfo, calendar: HolidayCalendar) -> bool:
+        """Whether the grid lets this load draw at `when` (G14); always, where it does not switch."""
+        if self.allowed is None:
+            return True
+        return any(window.matches(when, tz, calendar) for window in self.allowed)
 
     def quantise(self, w: float, *, stop_ok: bool = False, session_active: bool = False) -> float:
         """Return what this load will draw if granted `w` (D6 §5.3 step 5).
@@ -405,6 +460,8 @@ def _static_fields(load: Load) -> tuple[dict[str, Any], dict[str, Any]]:
         "min_on_s": load.kind.dwell_s()[0],
         "phase_names": load.config.phase_names,
         "phases": load.config.phases,
+        "grid_tariff": load.config.grid_tariff,
+        "allowed": load.config.allowed,
     }
     _STATIC[id(load)] = (load, static, params)
     return static, params

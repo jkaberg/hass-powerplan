@@ -160,15 +160,24 @@ async def test_setup_never_blocks_the_event_loop(
 
 
 async def test_a_price_only_site_has_no_meter_and_still_ticks(
-    hass: HomeAssistant, at_boundary_minus_one: datetime, ticks: list[tuple[datetime, str]]
+    hass: HomeAssistant,
+    at_boundary_minus_one: datetime,
+    ticks: list[tuple[datetime, str]],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """`NoPeak`, no meter: the capacity axis is off and the tick still publishes (INV-44)."""
+    """`NoPeak`, no meter: the capacity axis is off and the tick still publishes (INV-44).
+
+    Its ceiling is none, not infinite, and its metric none, not a rounding error:
+    every sensor is added.
+    """
     entry = site_entry(hass, meter=False, tariff=None)
     runtime = await _setup(hass, entry)
     assert runtime.build.meter is None
     assert runtime.build.cfg.window_min == 60
     assert ticks
     assert runtime.coordinator.data is not None
+    await hass.async_block_till_done()
+    assert "Error adding entity" not in caplog.text
     await hass.config_entries.async_unload(entry.entry_id)
 
 

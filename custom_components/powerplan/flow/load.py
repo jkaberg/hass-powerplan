@@ -48,6 +48,7 @@ from homeassistant.helpers.selector import (
 )
 
 from custom_components.powerplan.const import (
+    CONF_TARIFF,
     DOMAIN,
     ENTITY_SETTINGS,
     LOAD_BINDINGS,
@@ -76,6 +77,7 @@ from custom_components.powerplan.core.loads.questionnaire import (
     rederive,
 )
 from custom_components.powerplan.core.loads.types import base as device_types
+from custom_components.powerplan.core.tariffs import household
 from custom_components.powerplan.flow.questionnaire import (
     advanced_section,
     as_duration,
@@ -843,6 +845,67 @@ def added_devices(entry: ConfigEntry, *, but: str | None = None) -> set[str]:
     }
 
 
+#: The review's answers that bind a load to its own grid tariff or the grid's switch (D4 §5.16).
+GRID_TARIFF: Final = "grid_tariff"
+SWITCHED: Final = "switched"
+_NONE: Final = "none"
+#: Device types a per-load grid tariff is pre-selected for (§14a's controllable devices).
+_TARIFFED_BY_DEFAULT: Final = frozenset({"heat_pump", "ev"})
+
+
+def grid_binding_fields(
+    price: household.HouseholdPrice | None,
+    text: Text,
+    type_key: str,
+    stored: Mapping[str, Any] | None = None,
+) -> dict[Any, Any]:
+    """Return the review's own-tariff and HDO pickers, only where the site's copy has either.
+
+    "Har dette apparatet egen måler eller egen nettleie?" - the keys of the copy's
+    `per_load` tariffs, pre-selected for a heat pump or a charger (§14a); the
+    copy's HDO codes and "unknown" for a controlled circuit whose times are not
+    published (D4 §5.16, D13 §18 G13–G15).
+    """
+    if price is None:
+        return {}
+    grid = price.grid
+    stored = stored or {}
+    none = SelectOptionDict(value=_NONE, label=text.word("text", "none"))
+    fields: dict[Any, Any] = {}
+    if grid.per_load:
+        suggested = grid.per_load[0].key if type_key in _TARIFFED_BY_DEFAULT else _NONE
+        fields[vol.Optional(GRID_TARIFF, default=stored.get(GRID_TARIFF) or suggested)] = (
+            SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        none,
+                        *(SelectOptionDict(value=row.key, label=row.name) for row in grid.per_load),
+                    ],
+                    mode=SelectSelectorMode.DROPDOWN,
+                    sort=False,
+                )
+            )
+        )
+    if grid.switched:
+        fields[vol.Optional(SWITCHED, default=stored.get(SWITCHED) or _NONE)] = SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    none,
+                    *(
+                        SelectOptionDict(value=row.key, label=f"{row.name} ({row.key})")
+                        for row in grid.switched
+                    ),
+                    SelectOptionDict(
+                        value=household.UNKNOWN_WINDOWS, label=text.word("text", "unknown_times")
+                    ),
+                ],
+                mode=SelectSelectorMode.DROPDOWN,
+                sort=False,
+            )
+        )
+    return fields
+
+
 def device_options(hass: HomeAssistant, text: Text, added: set[str]) -> list[SelectOptionDict]:
     """Return the devices an appliance can be, by name - never PowerPlan's own (CTL-11).
 
@@ -1365,7 +1428,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 name=load_title(
                     self.hass, self._device_id, text.word("load_type", str(self._type))
                 ),
-            ),
+            ).extend(grid_binding_fields(self._site_price(), text, str(self._type))),
             description_placeholders={
                 "explanation": explanation_text(
                     text, self._derived, self._answers, str(self._type)
@@ -1402,7 +1465,18 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         data[LOAD_MANUAL_OVERRIDES] = list(manual)
         data["zone"] = None
         data["circuit"] = None
+        for key in (GRID_TARIFF, SWITCHED):
+            chosen = user_input.get(key, stored.get(key))
+            data[key] = None if chosen in {None, _NONE} else str(chosen)
         return data
+
+    def _site_price(self) -> household.HouseholdPrice | None:
+        """Return the site's tariff copy, for the review's tariff bindings (D4 §5.16)."""
+        raw = (self._get_entry().data.get(CONF_TARIFF) or {}).get("price")
+        try:
+            return household.from_json(raw) if raw else None
+        except KeyError, ValueError, TypeError:
+            return None
 
     # ------------------------------------------------------------- reconfigure
 
@@ -1516,7 +1590,10 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         ]
         subentry = self._get_reconfigure_subentry()
         schema = _review_schema(fresh, device_type, name=subentry.title, reconfigure=True).extend(
-            {vol.Optional("rederive", default=True): BooleanSelector()}
+            {
+                vol.Optional("rederive", default=True): BooleanSelector(),
+                **grid_binding_fields(self._site_price(), text, type_key, self._stored),
+            }
         )
         return self.async_show_form(
             step_id="reconfigure_review",

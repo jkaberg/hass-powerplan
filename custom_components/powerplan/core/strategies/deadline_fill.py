@@ -25,7 +25,7 @@ ceiling is a bug, not a feature (INV-1, INV-30).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
@@ -58,6 +58,9 @@ class _Candidate:
     index: int
     slot: Slot
     cap_w: float
+    #: D5 §5.1's power tier (O23): above `tier_w` a kWh costs `surcharge` more.
+    tier_w: float | None = None
+    surcharge: Decimal = Decimal(0)
 
     @property
     def hours(self) -> float:
@@ -103,7 +106,12 @@ def _candidates(
         cap_w = min(max_w, headroom.w_at(slot.start))
         if cap_w <= 0.0 or (min_w > 0.0 and cap_w < min_w):
             continue
-        out.append(_Candidate(index=index, slot=slot, cap_w=cap_w))
+        tier = headroom.tier_at(slot.start)
+        out.append(
+            _Candidate(index=index, slot=slot, cap_w=cap_w)
+            if tier is None or tier[0] >= cap_w
+            else _Candidate(index=index, slot=slot, cap_w=cap_w, tier_w=tier[0], surcharge=tier[1])
+        )
     return tuple(out)
 
 
@@ -114,12 +122,42 @@ def _fill_priced(
     min_w: float,
     prefer_late: bool,
 ) -> dict[int, float]:
-    """Fill the cheapest slots first, stable on `(price, index)` (§5.2, INV-32)."""
-    order = sorted(
-        candidates,
-        key=lambda row: (row.price, -row.index if prefer_late else row.index),
-    )
-    return _take(order, required, min_w=min_w)
+    """Fill the cheapest slots first, stable on `(price, index)` (§5.2, INV-32).
+
+    A slot with a priced limit is two candidates (D5 §5.1, O23): its capacity up to
+    the limit at the slot's price, and the rest at the price plus the surcharge.
+    `(slot, tier)` pairs sort on `(price, index, tier)`, so the greedy stays exact -
+    a slot's tiers are ordered by price - and crossing happens only where it is
+    still the cheapest energy left.
+    """
+    tiers: list[tuple[Decimal, int, int, _Candidate]] = []
+    for row in candidates:
+        index = -row.index if prefer_late else row.index
+        if row.tier_w is None:
+            tiers.append((row.price, index, 0, row))
+            continue
+        if row.tier_w > 0.0:
+            tiers.append((row.price, index, 0, replace(row, cap_w=row.tier_w)))
+        tiers.append(
+            (row.price + row.surcharge, index, 1, replace(row, cap_w=row.cap_w - row.tier_w))
+        )
+    tiers.sort(key=lambda entry: entry[:3])
+    taken: dict[int, float] = {}
+    remaining = required
+    for _, _, _, row in tiers:
+        if remaining <= _EPS_KWH:
+            break
+        part = _take((row,), remaining, min_w=0.0)
+        kwh = part.get(row.index, 0.0)
+        taken[row.index] = taken.get(row.index, 0.0) + kwh
+        remaining -= kwh
+    if min_w > 0.0:
+        # A partial slot is still raised to the floor the device can run at (§5.2).
+        by_index = {row.index: row for row in candidates}
+        for index, kwh in taken.items():
+            row = by_index[index]
+            taken[index] = min(row.cap_kwh, max(kwh, min_w * row.hours / 1000.0))
+    return taken
 
 
 def _fill_time_order(
@@ -418,6 +456,10 @@ def plan_one(
         taken = _fill_time_order(candidates, required_kwh, min_w=min_w)
     elif min_block_min > 0:
         taken = _fill_blocks(candidates, required_kwh, min_block_min=min_block_min, min_w=min_w)
+    elif flat and any(row.tier_w is not None for row in candidates):
+        # A flat price is not flat energy under a priced limit: the tier above it
+        # is dearer, so the night fills under the limit first, in time order (O23).
+        taken = _fill_priced(candidates, required_kwh, min_w=min_w, prefer_late=False)
     elif flat and flat_policy == "spread":
         taken = _fill_spread(candidates, required_kwh)
     elif flat:

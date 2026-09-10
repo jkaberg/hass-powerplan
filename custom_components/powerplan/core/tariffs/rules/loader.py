@@ -540,6 +540,7 @@ def _peak(raw: Mapping[str, Any], currency: str) -> PeakTariff:
 
 def _contracted(raw: Mapping[str, Any], currency: str) -> ContractedPower:
     surcharge = raw.get("surcharge_per_kw")
+    per_kwh = raw.get("surcharge_per_kwh")
     return ContractedPower(
         limits=tuple(
             PeriodLimit(when=_filter(limit.get("when")), limit_kw=float(limit["limit_kw"]))
@@ -549,6 +550,7 @@ def _contracted(raw: Mapping[str, Any], currency: str) -> ContractedPower:
         tolerance_pct=float(raw.get("tolerance_pct", 0.0)),
         tolerance_s=int(raw.get("tolerance_s", 0)),
         surcharge_per_kw=None if surcharge is None else Money(Decimal(str(surcharge)), currency),
+        surcharge_per_kwh=None if per_kwh is None else Money(Decimal(str(per_kwh)), currency),
         unit=raw.get("unit", "kw"),
         power_factor=float(raw.get("power_factor", 1.0)),
     )
@@ -567,6 +569,7 @@ def _require_filter(raw: Mapping[str, Any]) -> TimeFilter:
         weekdays=None if weekdays is None else tuple(int(day) for day in weekdays),
         hours=None if hours is None else tuple((int(start), int(end)) for start, end in hours),
         holidays=HolidayMode(raw.get("holidays", "ignore")),
+        clock=raw.get("clock", "local"),
     )
 
 
@@ -686,6 +689,8 @@ def _dump_contracted(contracted: ContractedPower) -> dict[str, Any]:
     }
     if contracted.surcharge_per_kw is not None:
         raw["surcharge_per_kw"] = _number(contracted.surcharge_per_kw.amount)
+    if contracted.surcharge_per_kwh is not None:
+        raw["surcharge_per_kwh"] = _number(contracted.surcharge_per_kwh.amount)
     return raw
 
 
@@ -697,6 +702,8 @@ def _dump_filter(when: TimeFilter) -> dict[str, Any]:
         raw["weekdays"] = list(when.weekdays)
     if when.hours is not None:
         raw["hours"] = [list(pair) for pair in when.hours]
+    if when.clock != "local":
+        raw["clock"] = when.clock
     return raw
 
 

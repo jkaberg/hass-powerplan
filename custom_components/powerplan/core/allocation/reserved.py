@@ -70,7 +70,10 @@ def reserved_w(
     measured = measured_w(view)
 
     if load.mode is Mode.DELEGATED:
-        return load.nameplate_w
+        # A controlled circuit whose times are unknown (G15): the grid's relay is
+        # open while it draws nothing, so it reserves only while it draws.
+        idle = load.allowed == () and measured is not None and measured <= on_w
+        return 0.0 if idle else load.nameplate_w
 
     if load.thermostatic:
         if measured is None:

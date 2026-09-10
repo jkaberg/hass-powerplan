@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
+
+import pytest
 
 from custom_components.powerplan.core.accounting import (
     LoadParams,
@@ -21,24 +24,37 @@ from custom_components.powerplan.core.model import (
     Carrier,
     Confidence,
     Direction,
+    Money,
     PriceCurve,
     Slot,
 )
 from custom_components.powerplan.core.pricing import party
 from custom_components.powerplan.core.pricing.modifiers.fixed_price import FixedPrice
+from custom_components.powerplan.core.tariffs import (
+    ContractedPower,
+    Evaluator,
+    NoPeak,
+    PeriodLimit,
+)
 from custom_components.powerplan.core.tariffs.household import TaxZone, from_preset
 from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.curves import context
 from tests.builders.presets import fixture_raw
 from tests.core.accounting.conftest import (
     OSLO,
+    Site,
     closed_slot,
+    config,
+    curve,
     demand,
     local,
     no3,
     shadow_ctx,
     site,
+    window,
 )
+from tests.core.tariffs.conftest import Holidays
+from tests.core.tariffs.conftest import spec as inline_spec
 
 MAX_W = 11000.0
 DAY = date(2026, 9, 15)
@@ -161,3 +177,85 @@ def test_the_months_cost_by_party_sums_to_its_cost() -> None:
     status = under_test.accounting.status()
     assert status.site.cost_by_party == split
     assert set(status.site.savings_by_party) == {"grid", "supplier", "state"}
+
+
+# --------------------------------------------------------------------------- #
+# D11 §9 23 (O23) - LU's energy surcharge in both worlds
+# --------------------------------------------------------------------------- #
+
+LUX = ZoneInfo("Europe/Luxembourg")
+
+
+def _lu_site() -> Site:
+    """Return a LU house: no peak, 7 kW reference power at 0.0765 €/kWh above it, 15-min windows."""
+    power = ContractedPower(
+        limits=(PeriodLimit(when=None, limit_kw=7.0),),
+        on_exceed="energy_surcharge",
+        surcharge_per_kwh=Money(Decimal("0.0765"), "EUR"),
+    )
+    tariff = Evaluator(inline_spec(NoPeak(), power, currency="EUR"), LUX, Holidays())
+    assert tariff.history.window_min == 15
+    prices = curve(DAY, 1, shape=lambda _h: Decimal("0.20"), minutes=15, tz=LUX, currency="EUR")
+    under_test = site(tariff=tariff, import_curve=prices, cfg=config(currency="EUR", tz=LUX))
+    under_test.tz = LUX
+    return under_test
+
+
+def test_23_actual_and_counterfactual_each_carry_their_own_surcharge() -> None:
+    """The EV charged at 5.5 kW under the limit; its shadow at once at 11 kW, over it.
+
+    The counterfactual's four windows are 12 kW: 5 kW over × ¼ h × 0.0765 each.
+    The actual's are 6.5 kW: none. The difference is the grid party's saving.
+    """
+    under_test = _lu_site()
+    under_test.with_load(
+        "ev",
+        shadow_ctx(
+            params=LoadParams(kind=StoreKind.ENERGY, nameplate_w=MAX_W, max_w=MAX_W),
+            demand=demand(wants=True, required_kwh=11.0, max_w=MAX_W),
+        ),
+    )
+    first = datetime(2026, 9, 15, 17, tzinfo=LUX).astimezone(UTC)
+    for index in range(8):
+        start = first + timedelta(minutes=15 * index)
+        closed = window(start, 1.375 + 0.25, window_min=15)
+        under_test.close(
+            closed_slot(
+                start, minutes=15, loads={"ev": 1.375}, uncontrolled_kwh=0.25, window_closed=closed
+            )
+        )
+    ledger = under_test.accounting.state().ledger
+    expected = Decimal(4) * Decimal("5.0") * Decimal("0.25") * Decimal("0.0765")
+    assert ledger.site.surcharge == 0
+    assert ledger.site.cf_surcharge == pytest.approx(expected)
+    split = savings_by_party(ledger.site, ledger.loads.values())
+    assert ledger.site.capacity_savings.amount == pytest.approx(expected)
+    assert split["grid"].amount >= ledger.site.capacity_savings.amount - Decimal("1e-9")
+
+
+# --------------------------------------------------------------------------- #
+# D4 §5.16, G13 - a load billed on its own meter
+# --------------------------------------------------------------------------- #
+
+
+def test_a_load_on_its_own_tariff_is_billed_at_it_and_the_site_with_it() -> None:
+    """A heat pump on a 0.10 tariff under a 1.00 house: 2 kWh cost 0.20, the site 1 + 0.20.
+
+    The site's line takes the pump's kWh off the house's price and onto its own,
+    so the site's cost is what the two bills say together.
+    """
+    house = curve(DAY, 1, shape=lambda _h: Decimal("1.00"))
+    own = curve(DAY, 1, shape=lambda _h: Decimal("0.10"))
+    under_test = site(import_curve=house)
+    under_test.with_load("hp", shadow_ctx(params=LoadParams(kind=StoreKind.NONE)))
+    start = local(2026, 9, 15, 12, 0).astimezone(UTC)
+    under_test.close(
+        closed_slot(start, loads={"hp": 2.0}, uncontrolled_kwh=1.0),
+        load_curves={"hp": own},
+    )
+    ledger = under_test.accounting.state().ledger
+    assert ledger.loads["hp"].cost.amount == Decimal("0.20")
+    assert ledger.site.energy_cost.amount == Decimal("1.20")
+    assert sum((m.amount for m in cost_by_party(ledger.site).values()), Decimal(0)) == Decimal(
+        "1.20"
+    )

@@ -69,6 +69,8 @@ class ShedReason(StrEnum):
     PHASE = "phase"
     EXTERNAL_LIMIT = "external_limit"
     TRIM = "trim"
+    #: The grid's relay has the load switched off (G14).
+    GRID_SWITCHED = "grid_switched"
 
 
 @dataclass(frozen=True, slots=True)

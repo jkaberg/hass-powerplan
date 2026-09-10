@@ -1,0 +1,25 @@
+{
+  "id": "fr.kva",
+  "template": true,
+  "name": "France – puissance souscrite (TURPE, kVA)",
+  "country": "FR",
+  "currency": "EUR",
+  "tz": "Europe/Paris",
+  "source_url": "https://www.cre.fr/electricite/reseaux-delectricite/tarifs-dacces-aux-reseaux.html",
+  "verified": null,
+  "assumed": "The subscribed kVA (6, 9, 12 …) is the household's own and asked, and the Linky meter cuts at it with no tolerance assumed; the HP/HC hours are the meter's own band and Tempo's colours arrive as day-type events (D1 §5.6), so the rule holds no capacity charge.",
+  "versions": [
+    {
+      "valid_from": "2026-01-01",
+      "contracted": {
+        "limits": [
+          {
+            "limit_kw": null
+          }
+        ],
+        "on_exceed": "trip",
+        "unit": "kva"
+      }
+    }
+  ]
+}

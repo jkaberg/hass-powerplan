@@ -49,6 +49,7 @@ __all__ = [
     "Levy",
     "Rate",
     "Scheme",
+    "VatBand",
     "Zone",
     "codes",
     "for_time_zone",
