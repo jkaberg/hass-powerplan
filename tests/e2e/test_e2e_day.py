@@ -46,10 +46,10 @@ from custom_components.powerplan.core.metering import ClosedWindow
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
 from custom_components.powerplan.core.tariffs import Evaluator
 from custom_components.powerplan.core.tariffs.evaluator import Period
-from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.entity import unique_id
 from tests.benchmark.year import y2026_27
 from tests.builders.houses import OSLO, nordic_detached
+from tests.builders.presets import fixture_preset
 from tests.e2e.fake_house import FakeHouse
 from tests.flows.test_site_flow import (
     ELECTRICAL_NO,
@@ -127,7 +127,7 @@ def _house() -> House:
     # benchmark's synthetic 2027 version is a test fixture neither side ships
     # (D-0524), so the pure side bills on the same file.
     return replace(
-        house, tariff=Evaluator(loader.load("no/tensio-ts"), tz=OSLO, calendar=NO_HOLIDAYS)
+        house, tariff=Evaluator(fixture_preset("no/tensio-ts"), tz=OSLO, calendar=NO_HOLIDAYS)
     )
 
 
@@ -180,7 +180,7 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
     assert result["step_id"] == "postcode"
     result = await _answer(hass, result)
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, preset="operator:Tensio TS")
     assert result["step_id"] == "tariff_preset"
     result = await _answer(hass, result, confirm="yes")
     assert result["step_id"] == "tariff_target"

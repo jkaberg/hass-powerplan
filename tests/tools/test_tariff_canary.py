@@ -19,7 +19,7 @@ from custom_components.powerplan.core.tariffs.household import (
     from_preset,
     published_levies_at,
 )
-from custom_components.powerplan.core.tariffs.rules import loader
+from tests.builders.presets import fixture_raw
 from tools import tariff_canary
 
 OSLO = ZoneInfo("Europe/Oslo")
@@ -27,7 +27,7 @@ DAY = date(2026, 9, 24)
 
 
 def _tensio():  # type: ignore[no-untyped-def]
-    return from_preset(loader.load_raw("no/tensio-ts"), source="page", zone=TaxZone("NO")).grid
+    return from_preset(fixture_raw("no/tensio-ts"), source="page", zone=TaxZone("NO")).grid
 
 
 def _excl(grid):  # type: ignore[no-untyped-def]

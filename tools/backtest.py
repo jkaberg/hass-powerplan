@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Replay real history through D3's window reconstruction and D2's bill (D9 §5.4).
 
-`uv run python tools/backtest.py --recorder <copy.db> --register <entity> --preset
-no/tensio-ts` reads a Home Assistant recorder database (a **copy**, opened
+`uv run python tools/backtest.py --recorder <copy.db> --register <entity> --tariff
+<tariff.json>` reads a Home Assistant recorder database (a **copy**, opened
 read-only), rebuilds the windows the tariff measures, bills them month by month
 and prints what the history would have cost. `--csv <dir>` does the same from an
 export, for a house whose recorder is gone or was never Norwegian.
@@ -40,8 +40,13 @@ meta.json                  {"tz": "Europe/Oslo", "window_min": 60}   (optional)
 ```
 
 **The zone is never guessed.** `--tz` wins, then `meta.json`, then a
-`.storage/core.config` next to the recorder database, then the `tz` the preset
-file carries (D-0111). With none of those the tool refuses rather than pick a
+`.storage/core.config` next to the recorder database, then the `tz` the tariff
+file carries (D-0111).
+
+**The tariff** is a JSON file (D13 §12.2): a stored copy - an entry's
+`tariff.price`, or the whole `tariff` section - or a rule-format file such as
+the test fixtures' `tests/fixtures/presets/no/tensio-ts.json`. The integration
+ships no company's prices (INV-70), so there is no name to look one up by. With none of those the tool refuses rather than pick a
 zone, and the report always says which source it used.
 """
 
@@ -89,11 +94,17 @@ from custom_components.powerplan.core.tariffs import (  # noqa: E402
     resolve_target_kw,
     seed_from_windows,
 )
+from custom_components.powerplan.core.tariffs.household import (  # noqa: E402
+    from_json as price_from_json,
+)
+from custom_components.powerplan.core.tariffs.household import (  # noqa: E402
+    spec as price_spec,
+)
 from custom_components.powerplan.core.tariffs.rules.loader import (  # noqa: E402
     PresetError,
 )
 from custom_components.powerplan.core.tariffs.rules.loader import (  # noqa: E402
-    load as load_preset,
+    from_raw as spec_from_raw,
 )
 
 if TYPE_CHECKING:
@@ -101,7 +112,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger("powerplan.backtest")
 
-PRESET_DIR = REPO_ROOT / "custom_components" / "powerplan" / "core" / "tariffs" / "rules"
 
 #: Units the tool reads as an energy register, and their factor to kWh.
 ENERGY_UNITS = {"Wh": 0.001, "kWh": 1.0, "MWh": 1000.0}
@@ -1256,22 +1266,35 @@ def _target_text(target: Target) -> str:
     return f"{target.kw} kW"
 
 
-def _preset_tz(name: str) -> str | None:
-    """Return the `tz` the preset file carries - data in the file, not in `TariffSpec` (D-0111)."""
-    path = (PRESET_DIR / f"{name}.json").resolve()
-    if not path.is_file():
-        return None
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    zone = raw.get("tz")
-    return str(zone) if zone else None
+def load_tariff(path: Path) -> tuple[TariffSpec, str | None]:
+    """Return the spec a tariff file holds and the zone it names, if it names one.
+
+    A stored copy (`HouseholdPrice` JSON, or the `tariff` section around it) is
+    priced as the household pays it; a rule-format file as it is written.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        raise SystemExit(f"--tariff {path}: {err}") from err
+    if isinstance(raw.get("price"), dict):
+        raw = raw["price"]
+    try:
+        if "grid" in raw:
+            return price_spec(price_from_json(raw)), None
+        zone = raw.get("tz")
+        return spec_from_raw(raw, source=str(path)), str(zone) if zone else None
+    except (PresetError, KeyError, ValueError) as err:
+        raise SystemExit(f"--tariff {path}: {err}") from err
 
 
-def resolve_tz(flag: str | None, history: SiteHistory, preset: str) -> tuple[tzinfo, str]:
+def resolve_tz(
+    flag: str | None, history: SiteHistory, tariff_zone: str | None, tariff: str
+) -> tuple[tzinfo, str]:
     """Return the zone and the name of the source it came from - never a default."""
     for name, source in (
         (flag, "--tz"),
         (history.tz_name, f"the {history.source.split()[0]} metadata"),
-        (_preset_tz(preset), f"the preset file {preset}.json"),
+        (tariff_zone, f"the tariff file {tariff}"),
     ):
         if name:
             try:
@@ -1280,7 +1303,7 @@ def resolve_tz(flag: str | None, history: SiteHistory, preset: str) -> tuple[tzi
                 raise SystemExit(f"{name!r} is not a time zone this system knows") from err
     raise SystemExit(
         "no time zone: the recorder database stores none, the export carries none and "
-        f"the preset {preset} names none. Pass --tz <IANA zone>."
+        f"the tariff {tariff} names none. Pass --tz <IANA zone>."
     )
 
 
@@ -1313,7 +1336,9 @@ def build_parser() -> argparse.ArgumentParser:
             "on the simulated house and report its metrics (D9 §5.2, §5.4)"
         ),
     )
-    parser.add_argument("--preset", help="a shipped tariff preset, e.g. no/tensio-ts")
+    parser.add_argument(
+        "--tariff", type=Path, help="a stored copy or a rule-format file (JSON), e.g. a fixture"
+    )
     parser.add_argument("--register", help="the grid import register entity (recorder mode)")
     parser.add_argument("--power", help="the grid power entity, for windows the register misses")
     parser.add_argument(
@@ -1326,7 +1351,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--from", dest="start", help="local date or datetime to start at")
     parser.add_argument("--to", dest="end", help="local date or datetime to stop at")
     parser.add_argument("--tz", help="IANA zone; overrides every other source")
-    parser.add_argument("--window-min", type=int, help="override the preset's window length")
+    parser.add_argument("--window-min", type=int, help="override the tariff's window length")
     parser.add_argument("--target", default="auto", help="auto | step:<n> | <kw>")
     parser.add_argument("--out", type=Path, help="write the full result as JSON here")
     parser.add_argument("-v", "--verbose", action="store_true", help="log at DEBUG")
@@ -1342,12 +1367,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.simulate is not None:
         return simulate(args.simulate, out=args.out)
-    if not args.preset:
-        raise SystemExit("--recorder and --csv need --preset <id> (the tariff)")
-    try:
-        spec = load_preset(args.preset)
-    except PresetError as err:
-        raise SystemExit(f"--preset {args.preset}: {err}") from err
+    if not args.tariff:
+        raise SystemExit("--recorder and --csv need --tariff <file> (the tariff)")
+    spec, tariff_zone = load_tariff(args.tariff)
 
     loads = parse_loads(args.loads) if args.loads else ()
     target = parse_target(args.target)
@@ -1358,7 +1380,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.recorder.is_file():
             raise SystemExit(f"{args.recorder} is not a file")
         probe = read_recorder(args.recorder, register=args.register)
-        tz, tz_source = resolve_tz(args.tz, probe, args.preset)
+        tz, tz_source = resolve_tz(args.tz, probe, tariff_zone, str(args.tariff))
         start = _local(args.start, tz) if args.start else None
         end = _local(args.end, tz) if args.end else None
         history = read_recorder(
@@ -1372,7 +1394,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         probe = read_csv(args.csv)
-        tz, tz_source = resolve_tz(args.tz, probe, args.preset)
+        tz, tz_source = resolve_tz(args.tz, probe, tariff_zone, str(args.tariff))
         start = _local(args.start, tz) if args.start else None
         end = _local(args.end, tz) if args.end else None
         history = read_csv(args.csv, loads=loads, start=start, end=end)
@@ -1393,7 +1415,7 @@ def simulate(name: str, *, out: Path | None = None) -> int:
 
     The scenarios and their simulators live in the test tree (D9 §3), so this
     imports them from the repository root; the engine they drive is the shipped
-    one. The house carries its own tariff, so `--preset` does not apply.
+    one. The house carries its own tariff, so `--tariff` does not apply.
     """
     root = Path(__file__).resolve().parents[1]
     if str(root) not in sys.path:

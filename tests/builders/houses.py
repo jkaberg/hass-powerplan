@@ -15,10 +15,8 @@ line (D9 §5.11).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, replace
 from datetime import date
-from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -28,8 +26,9 @@ from custom_components.powerplan.core.loads import Load, Transport
 from custom_components.powerplan.core.loads.targets import ConstantSchedule
 from custom_components.powerplan.core.metering import ElectricalProfile, VoltageSystem
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS, calendar_for
-from custom_components.powerplan.core.tariffs import Evaluator, NoPeak, TariffSpec
+from custom_components.powerplan.core.tariffs import Evaluator, NoPeak
 from custom_components.powerplan.core.tariffs.rules import loader
+from tests.builders.presets import fixture_preset
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.charger_ble import BleChargerSim
 from tests.sim.charger_zaptec import ZaptecChargerSim
@@ -186,16 +185,6 @@ def site_config(**overrides: Any) -> SiteConfig:
     }
     options.update(overrides)
     return SiteConfig(**options)
-
-
-#: Presets that exist for tests only - a synthetic version is never shipped (D2 §2).
-FIXTURE_PRESETS = Path(__file__).parents[1] / "fixtures" / "presets"
-
-
-def fixture_preset(name: str) -> TariffSpec:
-    """Load a test-only preset from `tests/fixtures/presets/` (e.g. `no/tensio-ts-2027`)."""
-    raw = json.loads((FIXTURE_PRESETS / f"{name}.json").read_text(encoding="utf-8"))
-    return loader.from_raw(raw, source=f"fixture {name}")
 
 
 def tensio() -> Evaluator:
@@ -894,7 +883,9 @@ def be_quarter(
     uncontrolled.scale_to_annual(start, DEFAULT_TARGET_ANNUAL_KWH)
     return House(
         cfg=cfg,
-        tariff=Evaluator(loader.load("be/fluvius-imewo"), tz=BRUSSELS, calendar=calendar_for("BE")),
+        tariff=Evaluator(
+            fixture_preset("be/fluvius-imewo"), tz=BRUSSELS, calendar=calendar_for("BE")
+        ),
         loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
         sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
         passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},

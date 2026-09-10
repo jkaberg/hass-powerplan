@@ -6,11 +6,11 @@
   "currency": "SEK",
   "tz": "Europe/Stockholm",
   "source_url": "https://www.ellevio.se/abonnemang/prismodell-utan-effektavgift/",
-  "verified": "2026-09-06",
+  "verified": "2026-09-10",
   "versions": [
     {
       "valid_from": "2026-06-01",
-      "verified": "2026-09-06",
+      "verified": "2026-09-10",
       "source_url": "https://www.ellevio.se/abonnemang/prismodell-utan-effektavgift/",
       "no_peak": true
     }

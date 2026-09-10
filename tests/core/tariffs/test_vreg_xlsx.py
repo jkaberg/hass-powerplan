@@ -1,8 +1,8 @@
 """Flanders from the Vlaamse Nutsregulator's 2026 sheet (D13 §19 7; §5.11; T6).
 
-Eight areas, each capacity rate equal to its area's PDF as WP4.6 read it
-(`rules/be/fluvius-*.json`, Imewo 54.2009816 EUR/kW/year
-excl. VAT), `min_kw` 2.5 checked against the sheet's own minimum contribution.
+Eight areas, each capacity rate equal to its area's PDF (`tests/fixtures/presets/be/fluvius-*.json`;
+Imewo 54.2009816 EUR/kW/year excl. VAT), `min_kw` 2.5 checked against the sheet's own minimum
+contribution.
 """
 
 from __future__ import annotations
@@ -10,27 +10,19 @@ from __future__ import annotations
 import json
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
 from custom_components.powerplan.core.tariffs.household import EXCL
 from custom_components.powerplan.core.tariffs.model import Linear, NoPeak, PeakTariff
 from custom_components.powerplan.core.tariffs.sources import QualityError, vreg_xlsx
+from tests.builders.presets import FIXTURE_PRESETS
 from tests.builders.tariff_sources import CAPTURED, FIXTURES
 
 SHEET = vreg_xlsx.read(
     (FIXTURES / "vreg" / "Distributienettarieven elektriciteit 2026.xlsx").read_bytes()
 )
-RULES = (
-    Path(__file__).resolve().parents[3]
-    / "custom_components"
-    / "powerplan"
-    / "core"
-    / "tariffs"
-    / "rules"
-    / "be"
-)
+RULES = FIXTURE_PRESETS / "be"
 FILES = {
     "fa": "antwerpen",
     "fhv": "halle-vilvoorde",

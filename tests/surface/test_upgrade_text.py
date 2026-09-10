@@ -99,6 +99,11 @@ async def test_22_the_reconfigure_pre_fills_the_new_key(
     hass: HomeAssistant, meter: FakeMeter
 ) -> None:
     """The site's reconfigure shows the stored `step:1` as the option `step_1`."""
+    from custom_components.powerplan.providers.tariffs import base  # noqa: PLC0415
+    from tests.builders.tariff_sources import NorwayFixture  # noqa: PLC0415
+
+    # The company's file left the integration: its source lists Tensio TS.
+    base.register(NorwayFixture)
     entry = _legacy_entry(hass, "step:1")
     result = dict(
         await hass.config_entries.flow.async_init(

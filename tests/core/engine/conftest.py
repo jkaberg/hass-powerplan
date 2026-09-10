@@ -36,7 +36,7 @@ from custom_components.powerplan.core.model import Carrier, Confidence, Directio
 from custom_components.powerplan.core.pricing.holidays import NO_HOLIDAYS
 from custom_components.powerplan.core.strategies import Curves
 from custom_components.powerplan.core.tariffs import Evaluator
-from tests.builders.houses import fixture_preset
+from tests.builders.presets import fixture_preset
 from tests.core.loads.conftest import ev_load, floor_load, reads
 
 if TYPE_CHECKING:

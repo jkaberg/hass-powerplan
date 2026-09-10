@@ -9,6 +9,7 @@ flow tests drive, against the same entities. The store's read side is real I/O
 from tests.flows.conftest import (  # noqa: F401 - fixtures re-exported for this package
     ams_meter,
     nordpool_entry,
+    norway_source,
     persons,
 )
 from tests.runtime.conftest import hass_config_dir  # noqa: F401

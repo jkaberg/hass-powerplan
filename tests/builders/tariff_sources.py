@@ -13,10 +13,9 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from custom_components.powerplan.core.tariffs.household import Provenance, TaxZone, from_preset
-from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.core.tariffs.sources import (
     Credit,
     Fetched,
@@ -27,6 +26,7 @@ from custom_components.powerplan.core.tariffs.sources import (
     Tier,
     UnreachableError,
 )
+from tests.builders.presets import fixture_raw
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -46,7 +46,7 @@ ELVIA = Operator("elvia", "Elvia", zones=("", "nord"))
 
 def tensio_grid(source: str = "fake", tier: Tier = Tier.T1B):  # type: ignore[no-untyped-def]
     """Return Tensio TS's copy as a fetched source gives it (excl. nothing: as published)."""
-    grid = from_preset(loader.load_raw("no/tensio-ts"), source=source, zone=TaxZone("NO")).grid
+    grid = from_preset(fixture_raw("no/tensio-ts"), source=source, zone=TaxZone("NO")).grid
     return replace(
         grid, provenance=Provenance(source=source, url="https://example.invalid", tier=tier.value)
     )
@@ -283,3 +283,83 @@ def us_http() -> FixtureHttp:
             ).read_bytes(),
         }
     )
+
+
+#: The Norwegian companies whose tables WP4.6 read by hand, as fri-nettleie lists them.
+NORWAY: Final = (
+    ("tensio-ts", "Tensio TS", "no/tensio-ts"),
+    ("tensio-tn", "Tensio TN", "no/tensio-tn"),
+    ("elvia", "Elvia", "no/elvia"),
+)
+
+
+class NorwayFixture:
+    """fri-nettleie's key, serving the fixture tables as fetched copies (D9 §5.15).
+
+    The flows pick a grid company the way a household does - from a source's list -
+    and get the table the tests always had, now a test fixture and not a shipped file.
+    """
+
+    key: ClassVar[str] = "fri_nettleie"
+    country: ClassVar[str] = "NO"
+    tier: ClassVar[Tier] = Tier.T1B
+    licence: ClassVar[str | None] = "CC BY 4.0"
+    credit: ClassVar[Credit | None] = Credit(
+        "Fri Nettleie", "https://github.com/kraftsystemet/fri-nettleie", "CC BY 4.0"
+    )
+
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
+        """List the three companies."""
+        return [Operator(key, name) for key, name, _ in NORWAY]
+
+    async def fetch(
+        self, http: Http, operator: str, product: str | None, answers: Mapping[str, Any]
+    ) -> Fetched:
+        """Return the company's fixture table as the copy fri-nettleie would give."""
+        from tests.builders.presets import fixture_raw  # noqa: PLC0415
+
+        name = next(file for key, _, file in NORWAY if key == operator)
+        grid = from_preset(fixture_raw(name), source="fri_nettleie", zone=TaxZone("NO")).grid
+        return Fetched(
+            grid=replace(
+                grid,
+                provenance=Provenance(
+                    source="fri_nettleie", url="https://example.invalid", tier="T1b"
+                ),
+                operator_key=operator,
+                product_key=product,
+            )
+        )
+
+
+class FlandersFixture:
+    """VREG's key, serving Fluvius Imewo's fixture table as the fetched copy."""
+
+    key: ClassVar[str] = "vreg_xlsx"
+    country: ClassVar[str] = "BE"
+    tier: ClassVar[Tier] = Tier.T6
+    licence: ClassVar[str | None] = None
+    credit: ClassVar[Credit | None] = Credit(
+        "Vlaamse Nutsregulator", "https://www.vlaamsenutsregulator.be", None
+    )
+
+    async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
+        """List Fluvius Imewo."""
+        return [Operator("fi", "Fluvius Imewo")]
+
+    async def fetch(
+        self, http: Http, operator: str, product: str | None, answers: Mapping[str, Any]
+    ) -> Fetched:
+        """Return Imewo's fixture table as the copy VREG's sheet would give."""
+        from tests.builders.presets import fixture_raw  # noqa: PLC0415
+
+        grid = from_preset(
+            fixture_raw("be/fluvius-imewo"), source="vreg_xlsx", zone=TaxZone("BE")
+        ).grid
+        return Fetched(
+            grid=replace(
+                grid,
+                provenance=Provenance(source="vreg_xlsx", url="https://example.invalid", tier="T6"),
+                operator_key=operator,
+            )
+        )

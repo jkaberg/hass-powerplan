@@ -29,6 +29,7 @@ from custom_components.powerplan.core.pricing.modifiers.fixed_price import Fixed
 from custom_components.powerplan.core.tariffs.household import TaxZone, from_preset
 from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.curves import context
+from tests.builders.presets import fixture_raw
 from tests.core.accounting.conftest import (
     OSLO,
     closed_slot,
@@ -48,7 +49,7 @@ def composed(
 ) -> PriceCurve:
     """Return hourly slots over `days` local days, composed by party."""
     if zone is None or zone.country == "NO":
-        raw = loader.load_raw("no/tensio-ts")
+        raw = fixture_raw("no/tensio-ts")
         price = from_preset(raw, source="shipped", zone=zone or TaxZone("NO"))
     else:
         raw = loader.load_raw("uk/nopeak") | {"currency": "GBP"}

@@ -495,15 +495,15 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 
 | file(s) | what it is today | fate | WP |
 |---|---|---|---|
-| `presets/no/tensio-ts.json`, `no/tensio-tn.json`, `no/elvia.json` | a company's prices, verified | kept only as the offline migration source for entries without a copy (§10); **removed** one release after TS.2 ships (INV-70); their tables become the TS.3 fixtures' expectations | TS.6 |
-| `presets/be/fluvius-<area>.json` (8) | a company's prices from VREG's sheets | **removed**; the eight rates become the `vreg` XLSX adapter's fixture expectations | TS.6 |
-| `presets/se/ellevio.json` | a company's fact (no capacity since 2026-06-01) | **removed**; Ellevio (not in Eltariff) falls to the SE rule template (`no_peak`) | TS.6 |
+| `presets/no/tensio-ts.json`, `no/tensio-tn.json`, `no/elvia.json` | a company's prices, verified | kept only as the offline migration source for entries without a copy (§10); **removed** one release after TS.2 ships (INV-70); their tables become the TS.3 fixtures' expectations | TS.6 - **done**: `tests/fixtures/presets/no/`; an entry still on one migrates to a copy fetched at the first renewal (D-0580) |
+| `presets/be/fluvius-<area>.json` (8) | a company's prices from VREG's sheets | **removed**; the eight rates become the `vreg` XLSX adapter's fixture expectations | TS.6 - **done** (D-0580) |
+| `presets/se/ellevio.json` | a company's fact (no capacity since 2026-06-01) | **removed**; Ellevio (not in Eltariff) falls to the SE rule template (`no_peak`) | TS.6 - **done** (D-0580) |
 | `presets/no/template.json`, `es/2_0td.json`, `nl/connection.json` | national rules without numbers | **kept**, moved to `core/tariffs/rules/<cc>.json` (the rule-template format, D2 §6); ES's numbers come from its module (O22) | TS.1 |
 | `presets/uk/nopeak.json` | a national rule (no measured capacity) | **kept** as `rules/uk.json` | TS.1 |
 | `presets/custom.json` | the "describe it myself" start | **kept** as `rules/custom.json` | TS.1 |
 | `presets/schema.json` | preset schema (+ `template`) | split: `rules/schema.json` (rules, templates) and the `HouseholdPrice` schema (§3) | TS.1 |
 | `tests/golden/presets/*` (15) | a golden per shipped file | rule goldens stay (ES, NL, UK, NO template); company goldens become per-adapter fixture goldens | TS.3–TS.6 |
-| `tests/fixtures/presets/no/tensio-ts-2027.json` | the benchmark's synthetic 2027 version | **kept**, rebuilt as a `GridTariff` fixture with the benchmark houses (the runner builds its curves from the fixture's energy components, D-0554) | TS.6 |
+| `tests/fixtures/presets/no/tensio-ts-2027.json` | the benchmark's synthetic 2027 version | **kept**, rebuilt as a `GridTariff` fixture with the benchmark houses (the runner builds its curves from the fixture's energy components, D-0554) | TS.6 - **done**: kept as a rule-format fixture beside the company files, read through `tests/builders/presets.py` (D-0581) |
 | `tests/fixtures/tariff_sources/*` (parked branch) | fri-nettleie captures, hand-read tables | **kept** | TS.3 |
 
 ### 12.2 Code
@@ -511,7 +511,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | where | today | fate | WP |
 |---|---|---|---|
 | `core/tariffs/grammar.py`, the `Grammar` union | D2's typed tariff model | renamed `core/tariffs/model.py`, `TariffRule` (O25); every import and doc follows | TS.1 |
-| `core/tariffs/presets/loader.py` - provenance rule, templates, `RETIRED`, `fill_template`, `from_raw`, `summarize` | loads shipped presets and the entry's copy | narrowed to rules and templates (+ tax data, same provenance rule); `summarize` reads a `HouseholdPrice`; `RETIRED` gains TS.6's removals | TS.1, TS.6 |
+| `core/tariffs/presets/loader.py` - provenance rule, templates, `RETIRED`, `fill_template`, `from_raw`, `summarize` | loads shipped presets and the entry's copy | narrowed to rules and templates (+ tax data, same provenance rule); `summarize` reads a `HouseholdPrice`; `RETIRED` gains TS.6's removals | TS.1, TS.6 - **done**: `RETIRED` loses `no/tensio` → `no/tensio-ts`; `storage.FETCHED_FILES` maps each removed file to its source (D-0580) |
 | `runtime.py::_spec`, `_outdated` | builds the spec from `tariff.spec` or the file | replaced by loading `HouseholdPrice` + migration (§10) | TS.1 |
 | `entry.data.tariff.spec` (WP4.6 copy, D-0520) | preset JSON + the household's kW | migrated to `HouseholdPrice` at start (§10) | TS.1 |
 | `config_flow.py::_preset_components`, `_preset_modifiers` (D-0126, D-0430, D-0523) | copy the preset's energy charge into `prices.modifiers` with `source` = preset; hide `levy` when included | **removed**: the grid's energy charge lives in the copy, the chain adds it (§8) | TS.1 |
@@ -525,11 +525,11 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 | `flow/steps.py::_GENERIC_PRESET`, `LIMIT_DEFAULTS`, `discover_presets`, `preset_raw` | "not listed" → the NO template; ES/NL starting kW; the preset list from disk | `_GENERIC_PRESET` → the rule template per country; `LIMIT_DEFAULTS` kept; `discover_presets` replaced by the directory (§5.3) | TS.2 |
 | the prices step (`prices`, `prices_nordpool`, `prices_entity`, `prices_fixed`) | "Hvilken strømavtale har du?" asked **before** the grid company | moved after it as step 2, with the price source's basis (O5) | TS.2 |
 | repairs `preset_outdated` | the file moved on | kept for legacy entries; new `tariff_stale`, `tariff_review` | TS.2 |
-| `tools/preset_age.py` + CI step | warns on shipped versions verified > 6 months ago | covers rules and the country modules' dated facts (no prices left to age); `tools/vat_check.py` beside it | TS.1, TS.6 |
+| `tools/preset_age.py` + CI step | warns on shipped versions verified > 6 months ago | covers rules and the country modules' dated facts (no prices left to age); `tools/vat_check.py` beside it | TS.1, TS.6 - **done** |
 | the country field (`flow/steps.py`, `CountrySelector(CountrySelectorConfig())`, asked only without `hass.config.country`) | full names, no pre-selection | kept; pre-selected from the time zone the country modules declare (0′) | TS.2 |
 | parked `sources/base.py`: `merge`, `next_check`, `Question` | renewal and gaps for fetched copies | reused by the renewal (§10) and the confirm step (1c); `RENEW_AFTER_DAYS` = one month | TS.2 |
-| `tools/backtest.py --preset` | loads a shipped file | `--tariff` takes a stored copy or a fixture | TS.6 |
-| `tests/builders/houses.py` (`tensio()`, `be_quarter`, `nl_pv`) | shipped files and the 2027 fixture | fixtures only | TS.6 |
+| `tools/backtest.py --preset` | loads a shipped file | `--tariff` takes a stored copy or a fixture | TS.6 - **done** (D-0580) |
+| `tests/builders/houses.py` (`tensio()`, `be_quarter`, `nl_pv`) | shipped files and the 2027 fixture | fixtures only | TS.6 - **done** (D-0581) |
 | parked branch `wp4.6b-tariff-sources` | fri-nettleie parser, `with_vat`, fixtures | parser and fixtures reused; `with_vat` dropped (O2) | TS.3 |
 
 ### 12.3 Documents

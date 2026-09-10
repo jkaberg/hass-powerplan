@@ -6,11 +6,11 @@
   "currency": "EUR",
   "tz": "Europe/Brussels",
   "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FZD%20-%202026%20-%20ELEK.pdf?VersionId=53MPAG7IanNZ1MVs6cwNO2bm2HLQHodC",
-  "verified": "2026-09-06",
+  "verified": "2026-09-10",
   "versions": [
     {
       "valid_from": "2026-01-01",
-      "verified": "2026-09-06",
+      "verified": "2026-09-10",
       "source_url": "https://assets.vlaamsenutsregulator.be/2025-11/FZD%20-%202026%20-%20ELEK.pdf?VersionId=53MPAG7IanNZ1MVs6cwNO2bm2HLQHodC",
       "peak": {
         "window_min": 15,

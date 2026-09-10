@@ -15,14 +15,14 @@ from custom_components.powerplan.core.pricing import party
 from custom_components.powerplan.core.pricing.modifiers.fixed_price import FixedPrice
 from custom_components.powerplan.core.strategies import plan_all
 from custom_components.powerplan.core.tariffs.household import TaxZone, from_preset
-from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.curves import ORDINARY, OSLO, context
+from tests.builders.presets import fixture_raw
 from tests.core.strategies.conftest import NOW, curves_of, ev_view, flat_curve, site_ctx
 
 
 def test_16_a_norgespris_house_charges_in_the_grids_night_hours() -> None:
     """Four cheapest hours on a flat supplier price are the grid's night hours."""
-    price = from_preset(loader.load_raw("no/tensio-ts"), source="shipped", zone=TaxZone("NO"))
+    price = from_preset(fixture_raw("no/tensio-ts"), source="shipped", zone=TaxZone("NO"))
     chain, _ = party.chain(price, (FixedPrice(price=Decimal("0.40")),), frozenset({"spot"}))
     flat = flat_curve()
     slots = []

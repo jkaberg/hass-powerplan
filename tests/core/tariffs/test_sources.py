@@ -22,7 +22,6 @@ from custom_components.powerplan.core.tariffs.household import (
     TaxZone,
     from_preset,
 )
-from custom_components.powerplan.core.tariffs.rules import loader
 from custom_components.powerplan.core.tariffs.sources import (
     QualityError,
     Tier,
@@ -30,13 +29,14 @@ from custom_components.powerplan.core.tariffs.sources import (
     merge,
     renew_at,
 )
+from tests.builders.presets import fixture_raw
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "tariff_sources" / "kartverket"
 
 
 def tensio():  # type: ignore[no-untyped-def]
     """Return Tensio TS's copy, as a source would store it."""
-    return from_preset(loader.load_raw("no/tensio-ts"), source="fake", zone=TaxZone("NO")).grid
+    return from_preset(fixture_raw("no/tensio-ts"), source="fake", zone=TaxZone("NO")).grid
 
 
 def test_the_tiers_are_ordered_as_the_ladder() -> None:

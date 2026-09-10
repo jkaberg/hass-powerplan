@@ -63,7 +63,8 @@ from custom_components.powerplan.providers.prices.formats import registry as for
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.select import PRESENCE_OPTIONS, RISK_OPTIONS
 from custom_components.powerplan.sensor import ADVICE_STATES
-from tests.core.tariffs.conftest import market_golden, preset_names, shipped_spec
+from tests.builders.presets import fixture_preset
+from tests.core.tariffs.conftest import load_any, market_golden, preset_names, shipped_spec
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -559,7 +560,7 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "state": {"schemes": ["stromstotte"]},
             "export": {"mode": "spot_minus"},
             "carriers": {"carriers": [str(c) for c in Carrier if c is not Carrier.ELECTRICITY]},
-            "tariff": {"preset": "no/tensio-ts"},
+            "tariff": {"preset": "operator:Tensio TS"},
         },
     ),
     "full_norgespris": (
@@ -567,7 +568,7 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            "tariff": {"preset": "no/tensio-ts"},
+            "tariff": {"preset": "operator:Tensio TS"},
             # Norgespris is the agreement: its price is asked, strømstøtte is not.
             "prices": {"source": "norgespris"},
             "modifier_fixed_price": {"price": 40},
@@ -596,7 +597,7 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
         {
             "user": {"next_step_id": "full"},
             "name": {"name": "Hjemme"},
-            "tariff": {"preset": "be/fluvius-imewo"},
+            "tariff": {"preset": "operator:Fluvius Imewo"},
         },
     ),
     "full_contracted": (
@@ -667,7 +668,10 @@ async def test_18c_every_site_step_renders_data_only_in_the_language(
     hass.config.time_zone = environment.get("time_zone", "Europe/Oslo")
     _phone(hass)
     # The grid companies' own names are data, in their own languages (D2 §6).
-    names = {"Hjemme", "NO3"} | {loader.load_raw(name)["name"] for name in preset_names()}
+    names = {"Hjemme", "NO3"} | {load_any(name)["name"] for name in preset_names()}
+    names |= {"Tensio TS", "Tensio TN", "Elvia", "Fluvius Imewo"}
+    # A source's credit names its licence ("CC BY 4.0"): data, as a name is (D13 §6.1).
+    names |= {"CC BY 4.0"}
     # So are the time zones' own names (`Swift_Current`, `Port_of_Spain`).
     names |= set(zoneinfo.available_timezones())
 
@@ -876,7 +880,7 @@ def test_18c_grid_companies_sort_in_the_alphabet_with_the_escape_hatches_last() 
 
 def test_18c_the_target_options_are_assembled_in_the_language() -> None:
     """HUB-13, ENT-2: "Automatisk", then "Trinn N · range · fee"; values `step_<i>`."""
-    version = loader.load("no/tensio-ts").version_at(date(2026, 9, 19))
+    version = fixture_preset("no/tensio-ts").version_at(date(2026, 9, 19))
     nb = target_options(text_for("nb"), version)
     assert nb[0] == {"value": "auto", "label": "Automatisk"}
     assert nb[2] == {"value": "step_1", "label": "Trinn 2 · 2–5 kW · 233 kr/mnd"}

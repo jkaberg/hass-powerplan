@@ -50,6 +50,11 @@ TENSIO = Operator(
 CREDIT = Credit("Fri Nettleie", "https://github.com/kraftsystemet/fri-nettleie", "CC BY 4.0")
 
 
+@pytest.fixture(autouse=True)
+def norway_source() -> None:
+    """Keep the flows' fixture source out: these tests register their own."""
+
+
 @pytest.fixture
 def source() -> Iterator[type]:
     """Register a Norwegian fake that lists Elvia and Tensio and asks one gap."""

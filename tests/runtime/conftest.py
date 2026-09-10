@@ -54,9 +54,11 @@ from custom_components.powerplan.const import (
     TIMEZONE_FROM_HASS,
 )
 from custom_components.powerplan.core.loads.kinds.base import Role
-from custom_components.powerplan.core.tariffs.rules import loader
+from custom_components.powerplan.core.tariffs import household
+from custom_components.powerplan.core.tariffs.household import TaxZone
 from custom_components.powerplan.storage import SiteStore
 from custom_components.powerplan.writegate import DeviceCall
+from tests.builders.presets import fixture_preset, fixture_raw
 from tests.core.loads.conftest import reads as load_reads
 
 if TYPE_CHECKING:
@@ -210,7 +212,12 @@ def site_data(
         {
             "preset_id": "no/tensio-ts",
             "preset_file": tariff,
-            "version_ids": [version.version_id for version in loader.load(tariff).versions],
+            # The copy an entry holds since TS.1; the company's file is a test fixture.
+            "price": household.to_json(
+                household.from_preset(fixture_raw(tariff), source="shipped", zone=TaxZone("NO"))
+            ),
+            "review": [],
+            "version_ids": [version.version_id for version in fixture_preset(tariff).versions],
             "target": "auto" if target_kw is None else "kw",
             "target_kw": target_kw,
             "risk": 0.0,

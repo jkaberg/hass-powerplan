@@ -192,7 +192,7 @@ async def test_a_tariff_target_above_the_fuse_is_refused_on_its_field(
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, preset="operator:Tensio TS")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"

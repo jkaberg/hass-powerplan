@@ -126,6 +126,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     _http_cache: tariff_sources.Http | None = None
     #: The grid companies the postcode's directory named (FI: sahkonhinta.fi).
     _place_companies: tuple[str, ...] = ()
+    #: A reconfigure's stored copy: its source and the company's key there, and its name.
+    _stored_operator: tuple[str, str] | None = None
+    _stored_operator_name: str = ""
 
     @staticmethod
     @callback
@@ -333,38 +336,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         # so not restored and not written back (D8 §5.15 S2, §9 22).
 
         tariff = data.get(CONF_TARIFF) or {}
-        preset_file = tariff.get("preset_file")
-        if self._path is OnboardingPath.FULL and preset_file:
-            self._preset_file = preset_file
-            self._raw = await self.hass.async_add_executor_job(steps.preset_raw, preset_file)
-            copy = (tariff.get("price") or {}).get("grid", {}).get("capacity") or tariff.get("spec")
-            if copy and steps.needs_steps(self._raw):
-                self._steps = steps.step_answers(copy)
-            self._preset_choice = steps.preset_choice(preset_file, self._country)
-            # An entry from before WP U.1 holds `step:<i>` and an English
-            # `description`; the first reads as `step_<i>` and the second is
-            # never read again (D8 §9 22).
-            target = str(tariff.get("target", "auto"))
-            index = step_index(target)
-            self._target = {
-                "target": target if index is None else f"step_{index}",
-                "target_kw": tariff.get("target_kw"),
-                "risk": steps.risk_key(tariff.get("risk", steps.RISK_LABELS["flat"])),
-                "eps_kwh": tariff.get("eps_kwh"),
-                "cap_margin_kw": tariff.get("cap_margin_kw"),
-            }
-            # `tariff_data()` keeps only the answered months/periods, in order,
-            # and drops which position each one was (D8 §5.1) - a household
-            # that left an early month blank sees its later ones shift back by
-            # the gap; INV-67's own review catches it before anything saves.
-            self._bills = {
-                f"month_{index + 1}": value for index, value in enumerate(tariff.get("bills") or ())
-            }
-            self._limits = {
-                f"limit_{index + 1}": value
-                for index, value in enumerate(tariff.get("contracted_kw") or ())
-            }
-            await self._apply_tariff()
+        if self._path is OnboardingPath.FULL and (tariff.get("preset_file") or tariff.get("price")):
+            await self._restore_tariff(tariff)
         self._restore_price(data)
 
         self._presence = dict(data.get(CONF_PRESENCE) or {})
@@ -373,6 +346,50 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._quiet = (
             list(stored_quiet) if stored_quiet else [QUIET_START_DEFAULT, QUIET_END_DEFAULT]
         )
+
+    async def _restore_tariff(self, tariff: Mapping[str, Any]) -> None:
+        """Restore the tariff step's answers: the file where one is still shipped, the target."""
+        preset_file = tariff.get("preset_file")
+        raw = None
+        if preset_file:
+            try:
+                raw = await self.hass.async_add_executor_job(steps.preset_raw, preset_file)
+            except loader.PresetError:
+                # A company's file that left the integration: its copy's source
+                # lists the company instead, and the tariff step pre-selects it there.
+                raw = None
+        if raw is not None:
+            self._preset_file = preset_file
+            self._raw = raw
+            copy = (tariff.get("price") or {}).get("grid", {}).get("capacity") or tariff.get("spec")
+            if copy and steps.needs_steps(self._raw):
+                self._steps = steps.step_answers(copy)
+            self._preset_choice = steps.preset_choice(preset_file, self._country)
+        # An entry from before WP U.1 holds `step:<i>` and an English
+        # `description`; the first reads as `step_<i>` and the second is
+        # never read again (D8 §9 22).
+        target = str(tariff.get("target", "auto"))
+        index = step_index(target)
+        self._target = {
+            "target": target if index is None else f"step_{index}",
+            "target_kw": tariff.get("target_kw"),
+            "risk": steps.risk_key(tariff.get("risk", steps.RISK_LABELS["flat"])),
+            "eps_kwh": tariff.get("eps_kwh"),
+            "cap_margin_kw": tariff.get("cap_margin_kw"),
+        }
+        # `tariff_data()` keeps only the answered months/periods, in order,
+        # and drops which position each one was (D8 §5.1) - a household
+        # that left an early month blank sees its later ones shift back by
+        # the gap; INV-67's own review catches it before anything saves.
+        self._bills = {
+            f"month_{index + 1}": value for index, value in enumerate(tariff.get("bills") or ())
+        }
+        self._limits = {
+            f"limit_{index + 1}": value
+            for index, value in enumerate(tariff.get("contracted_kw") or ())
+        }
+        if raw is not None:
+            await self._apply_tariff()
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
@@ -1058,6 +1075,18 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the list's answer for the site's current tariff: its operator, or its file."""
         if self._operator is not None:
             return f"{OPERATOR_PREFIX}{self._operator.name}"
+        if self._stored_operator is not None:
+            # A reconfigure: the company the stored copy was fetched for, as its source
+            # lists it; a copy of a file that left the integration, by its name.
+            for choice, operator in self._operators.items():
+                if (operator.source, operator.key) == self._stored_operator:
+                    return choice
+            for choice, operator in self._operators.items():
+                if self._stored_operator_name and operator.name == self._stored_operator_name:
+                    return choice
+        # A company's file that left the repository is no longer on the list.
+        if self._preset_file and self._preset_file not in {stem for stem, _ in self._presets}:
+            return None
         return self._preset_file
 
     def _operator_name(self, text: Text) -> str:
@@ -1489,6 +1518,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._schemes = list(state.get("schemes") or ())
         self._confirmed = dict(stored.get("confirmed") or {})
         self._postcode = data.get(CONF_POSTCODE)
+        grid = stored.get("grid") or {}
+        source = str((grid.get("provenance") or {}).get("source") or "")
+        self._stored_operator = (
+            (source, str(grid["operator_key"])) if grid.get("operator_key") else ("", "")
+        )
+        self._stored_operator_name = str(grid.get("operator") or "")
 
     def _covered(self) -> list[str]:
         """Return what the grid company's tariff and the state already price (D13 §8, INV-74).

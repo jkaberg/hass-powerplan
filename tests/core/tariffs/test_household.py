@@ -25,13 +25,14 @@ from custom_components.powerplan.core.tariffs.household import (
     to_json,
 )
 from custom_components.powerplan.core.tariffs.rules import loader
-from tests.core.tariffs.conftest import preset_names
+from tests.builders.presets import fixture_raw
+from tests.core.tariffs.conftest import load_any, preset_names
 
 
 @pytest.mark.parametrize("name", [n for n in preset_names() if n != "no/template"])
 def test_every_rule_file_round_trips_as_a_copy(name: str) -> None:
     """What `entry.data` holds reads back into the same copy - through JSON text."""
-    raw = loader.load_raw(name)
+    raw = load_any(name)
     if raw.get("template"):
         limits = raw["versions"][0].get("contracted", {}).get("limits", ())
         raw = loader.fill_template(raw, limits=[5.0] * len(limits))
@@ -46,7 +47,7 @@ def test_every_rule_file_round_trips_as_a_copy(name: str) -> None:
 
 def test_the_copy_keeps_tensios_basis_and_its_energy_by_version() -> None:
     """D-0523's `includes` becomes the copy's basis; the day/night charge its own versions."""
-    price = from_preset(loader.load_raw("no/tensio-ts"), source="shipped", zone=TaxZone("NO"))
+    price = from_preset(fixture_raw("no/tensio-ts"), source="shipped", zone=TaxZone("NO"))
     assert price.grid.basis == Basis(vat=True, levies=frozenset({"forbruksavgift", "enova"}))
     assert [version.valid_from for version in price.grid.energy] == [
         date(2025, 7, 1),
@@ -60,7 +61,7 @@ def test_the_copy_keeps_tensios_basis_and_its_energy_by_version() -> None:
 
 def test_a_fee_published_without_vat_gains_the_zones() -> None:
     """Fluvius's VREG rates are excl. VAT (D-0527): Belgium's 6 % is added once, in `spec()`."""
-    price = from_preset(loader.load_raw("be/fluvius-imewo"), source="shipped", zone=TaxZone("BE"))
+    price = from_preset(fixture_raw("be/fluvius-imewo"), source="shipped", zone=TaxZone("BE"))
     assert price.grid.basis == Basis(vat=False)
     published = price.grid.capacity[-1].peak
     paid = spec(price).versions[-1].peak

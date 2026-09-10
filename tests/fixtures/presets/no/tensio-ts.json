@@ -1,17 +1,17 @@
 {
-  "id": "no.tensio-tn.household",
-  "name": "Tensio TN – privatkunde",
+  "id": "no.tensio-ts.household",
+  "name": "Tensio TS – privatkunde",
   "country": "NO",
-  "operator": "Tensio TN",
+  "operator": "Tensio TS",
   "currency": "NOK",
   "tz": "Europe/Oslo",
   "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
-  "verified": "2026-09-06",
+  "verified": "2026-09-10",
   "versions": [
     {
       "valid_from": "2025-07-01",
-      "verified": "2026-09-06",
-      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/82999f6aedb9325d09e5f737d04b7e03d191c6db.pdf",
+      "verified": "2026-09-10",
+      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/81eebc86818a3eb75d1d1d46ced330c05b107616.pdf",
       "peak": {
         "window_min": 60,
         "per_day": "max",
@@ -23,77 +23,77 @@
           "steps": [
             [
               2,
-              140,
+              130,
               "0–2 kW"
             ],
             [
               5,
-              281,
+              232,
               "2–5 kW"
             ],
             [
               10,
-              508,
+              395,
               "5–10 kW"
             ],
             [
               15,
-              770,
+              582,
               "10–15 kW"
             ],
             [
               20,
-              1032,
+              770,
               "15–20 kW"
             ],
             [
               25,
-              1295,
+              959,
               "20–25 kW"
             ],
             [
               50,
-              2256,
+              1646,
               "25–50 kW"
             ],
             [
               75,
-              3570,
+              2584,
               "50–75 kW"
             ],
             [
               100,
-              4882,
+              3523,
               "75–100 kW"
             ],
             [
               150,
-              7067,
+              5087,
               "100–150 kW"
             ],
             [
               200,
-              9693,
+              6963,
               "150–200 kW"
             ],
             [
               300,
-              14063,
+              10088,
               "200–300 kW"
             ],
             [
               400,
-              19313,
+              13845,
               "300–400 kW"
             ],
             [
               500,
-              24562,
+              17595,
               "400–500 kW"
             ],
             [
               null,
-              29807,
+              21349,
               "over 500 kW"
             ]
           ]
@@ -108,7 +108,7 @@
           "periods": [
             {
               "name": "dag",
-              "price": 0.5066,
+              "price": 0.4441,
               "hours": [
                 [
                   360,
@@ -118,7 +118,7 @@
             },
             {
               "name": "natt",
-              "price": 0.3379
+              "price": 0.3054
             }
           ]
         }
@@ -126,8 +126,8 @@
     },
     {
       "valid_from": "2026-01-01",
-      "verified": "2026-09-06",
-      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/09adbe4bd2eded08c99c2b6b5b2eb2cd6b08a8bf.pdf",
+      "verified": "2026-09-10",
+      "source_url": "https://cdn.sanity.io/files/roorjgzz/tensio-prod/1b6338b71ee4ae225082a95a2d596bb1297664f4.pdf",
       "peak": {
         "window_min": 60,
         "per_day": "max",
@@ -139,77 +139,77 @@
           "steps": [
             [
               2,
-              134,
+              122,
               "0–2 kW"
             ],
             [
               5,
-              270,
+              218,
               "2–5 kW"
             ],
             [
               10,
-              488,
+              371,
               "5–10 kW"
             ],
             [
               15,
-              739,
+              547,
               "10–15 kW"
             ],
             [
               20,
-              991,
+              724,
               "15–20 kW"
             ],
             [
               25,
-              1243,
+              901,
               "20–25 kW"
             ],
             [
               50,
-              2166,
+              1547,
               "25–50 kW"
             ],
             [
               75,
-              3427,
+              2429,
               "50–75 kW"
             ],
             [
               100,
-              4687,
+              3312,
               "75–100 kW"
             ],
             [
               150,
-              6784,
+              4782,
               "100–150 kW"
             ],
             [
               200,
-              9305,
+              6545,
               "150–200 kW"
             ],
             [
               300,
-              13500,
+              9483,
               "200–300 kW"
             ],
             [
               400,
-              18540,
+              13014,
               "300–400 kW"
             ],
             [
               500,
-              23580,
+              16539,
               "400–500 kW"
             ],
             [
               null,
-              28615,
+              20068,
               "over 500 kW"
             ]
           ]
@@ -224,7 +224,7 @@
           "periods": [
             {
               "name": "dag",
-              "price": 0.4254,
+              "price": 0.3604,
               "hours": [
                 [
                   360,
@@ -234,7 +234,7 @@
             },
             {
               "name": "natt",
-              "price": 0.2642
+              "price": 0.2292
             }
           ]
         }
@@ -242,7 +242,7 @@
     },
     {
       "valid_from": "2026-07-01",
-      "verified": "2026-09-06",
+      "verified": "2026-09-10",
       "source_url": "https://www.tensio.no/no/kunde/nettleie/nettleiepriser-for-privat",
       "peak": {
         "window_min": 60,
@@ -255,77 +255,77 @@
           "steps": [
             [
               2,
-              141,
+              131,
               "0–2 kW"
             ],
             [
               5,
-              284,
+              233,
               "2–5 kW"
             ],
             [
               10,
-              512,
+              397,
               "5–10 kW"
             ],
             [
               15,
-              776,
+              585,
               "10–15 kW"
             ],
             [
               20,
-              1041,
+              775,
               "15–20 kW"
             ],
             [
               25,
-              1305,
+              964,
               "20–25 kW"
             ],
             [
               50,
-              2274,
+              1655,
               "25–50 kW"
             ],
             [
               75,
-              3598,
+              2599,
               "50–75 kW"
             ],
             [
               100,
-              4921,
+              3544,
               "75–100 kW"
             ],
             [
               150,
-              7123,
+              5117,
               "100–150 kW"
             ],
             [
               200,
-              9770,
+              7003,
               "150–200 kW"
             ],
             [
               300,
-              14175,
+              10147,
               "200–300 kW"
             ],
             [
               400,
-              19467,
+              13925,
               "300–400 kW"
             ],
             [
               500,
-              24759,
+              17697,
               "400–500 kW"
             ],
             [
               null,
-              30046,
+              21473,
               "over 500 kW"
             ]
           ]
@@ -340,7 +340,7 @@
           "periods": [
             {
               "name": "dag",
-              "price": 0.4416,
+              "price": 0.3779,
               "hours": [
                 [
                   360,
@@ -350,7 +350,7 @@
             },
             {
               "name": "natt",
-              "price": 0.2729
+              "price": 0.2379
             }
           ]
         }

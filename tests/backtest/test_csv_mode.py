@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from custom_components.powerplan.core.tariffs.rules.loader import load
 from tests.backtest.conftest import OSLO, House, Stat, september, write_csv, write_recorder
+from tests.builders.presets import fixture_preset
 from tools.backtest import LoadSpec, read_csv, read_recorder, resolve_tz, run
 
 if TYPE_CHECKING:
@@ -47,8 +47,8 @@ def test_csv_and_recorder_agree_on_the_same_history(tmp_path: Path) -> None:
     database = write_recorder(tmp_path / "r.db", (Stat(REGISTER, "kWh", home.register()),))
     directory = write_csv(tmp_path / "export", register=_instants(home))
 
-    from_db = run(read_recorder(database, register=REGISTER), load("no/tensio-ts"), OSLO)
-    from_csv = run(read_csv(directory), load("no/tensio-ts"), OSLO)
+    from_db = run(read_recorder(database, register=REGISTER), fixture_preset("no/tensio-ts"), OSLO)
+    from_csv = run(read_csv(directory), fixture_preset("no/tensio-ts"), OSLO)
 
     assert [window.closed for window in from_csv.windows] == [
         window.closed for window in from_db.windows
@@ -64,7 +64,7 @@ def test_meta_json_supplies_the_zone(tmp_path: Path) -> None:
         tmp_path / "export", register=_instants(home), meta={"tz": "Europe/Brussels"}
     )
     history = read_csv(directory)
-    zone, source = resolve_tz(None, history, "no/tensio-ts")
+    zone, source = resolve_tz(None, history, None, "tensio-ts.json")
 
     assert history.tz_name == "Europe/Brussels"
     assert str(zone) == "Europe/Brussels"
@@ -75,7 +75,7 @@ def test_meta_json_window_min_overrides_the_preset(tmp_path: Path) -> None:
     """A 15-minute export is read at 15 minutes even under an hourly preset."""
     home = house()
     directory = write_csv(tmp_path / "export", register=_instants(home), meta={"window_min": 15})
-    result = run(read_csv(directory), load("no/tensio-ts"), OSLO)
+    result = run(read_csv(directory), fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.window_min == 15
     # The rows are still hourly, so the reconstruction stays hourly and says so.
@@ -98,7 +98,7 @@ def test_a_missing_register_file_is_a_note_not_a_crash(tmp_path: Path) -> None:
     """Nothing to read is reported (PLAN §6 R8)."""
     directory = tmp_path / "export"
     directory.mkdir()
-    result = run(read_csv(directory), load("no/tensio-ts"), OSLO)
+    result = run(read_csv(directory), fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.windows == ()
     assert any("grid_register.csv" in note for note in result.notes)
@@ -111,7 +111,7 @@ def test_power_alone_reconstructs_every_window_as_estimated(tmp_path: Path) -> N
         tmp_path / "export",
         power=[(at, watts) for at, _, watts in _power_rows(home)],
     )
-    result = run(read_csv(directory), load("no/tensio-ts"), OSLO)
+    result = run(read_csv(directory), fixture_preset("no/tensio-ts"), OSLO)
 
     expected = home.window_kwh(60)
     assert {window.origin for window in result.windows} == {"power"}
@@ -148,7 +148,7 @@ def test_load_csvs_are_read_by_their_role(tmp_path: Path) -> None:
             LoadSpec("tank", "water_heater", "tank", nameplate_w=2000.0),
         ),
     )
-    month = run(history, load("no/tensio-ts"), OSLO).months["2026-09"]
+    month = run(history, fixture_preset("no/tensio-ts"), OSLO).months["2026-09"]
 
     assert month.load_quality == {"ev": "energy", "floor": "power", "tank": "on_fraction"}
     assert month.reconstruction == "partial"
@@ -161,7 +161,7 @@ def test_a_load_with_no_csv_is_missing(tmp_path: Path) -> None:
     home = house()
     directory = write_csv(tmp_path / "export", register=_instants(home))
     history = read_csv(directory, loads=(LoadSpec("ev", "ev", "ev", nameplate_w=11000.0),))
-    result = run(history, load("no/tensio-ts"), OSLO)
+    result = run(history, fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.months["2026-09"].load_quality == {"ev": "missing"}
     assert result.months["2026-09"].reconstruction == "none"

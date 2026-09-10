@@ -19,10 +19,11 @@ import pytest
 from custom_components.powerplan.core.model import Money
 from custom_components.powerplan.core.tariffs import Evaluator
 from custom_components.powerplan.core.tariffs.rules import loader
-from tests.core.tariffs.conftest import NO_HOLIDAYS, OSLO, closed, golden, preset_names
+from tests.builders.presets import fixture_preset, fixture_raw
+from tests.core.tariffs.conftest import NO_HOLIDAYS, OSLO, closed, golden, load_any, preset_names
 
 SHIPPED = [name for name in preset_names() if "/" in name]
-TEMPLATES = [name for name in SHIPPED if loader.load_raw(name).get("template")]
+TEMPLATES = [name for name in SHIPPED if load_any(name).get("template")]
 PRESETS = [name for name in SHIPPED if name not in TEMPLATES]
 
 
@@ -34,7 +35,7 @@ PRESETS = [name for name in SHIPPED if name not in TEMPLATES]
 @pytest.mark.parametrize("name", PRESETS)
 def test_20_every_shipped_version_names_its_source_and_the_day_it_was_read(name: str) -> None:
     """A source, a date, nothing assumed, and never a table before it is in force."""
-    raw = loader.load_raw(name)
+    raw = load_any(name)
     assert not raw.get("assumed"), name
     for version in raw["versions"]:
         verified = version.get("verified", raw.get("verified"))
@@ -45,7 +46,7 @@ def test_20_every_shipped_version_names_its_source_and_the_day_it_was_read(name:
 
 
 def _tensio() -> dict[str, Any]:
-    return copy.deepcopy(loader.load_raw("no/tensio-ts"))
+    return copy.deepcopy(fixture_raw("no/tensio-ts"))
 
 
 @pytest.mark.parametrize(
@@ -81,7 +82,7 @@ def test_20_a_shipped_file_breaking_any_of_the_four_fails_to_load(
 def test_20_only_custom_and_templates_ship_without_prices() -> None:
     """`custom` and the templates are the only files that make no claim about a bill."""
     unpriced = sorted(
-        name for name in preset_names() if name == "custom" or loader.load_raw(name).get("template")
+        name for name in preset_names() if name == "custom" or load_any(name).get("template")
     )
     assert unpriced == ["custom", "es/2_0td", "nl/connection", "no/template"]
     assert TEMPLATES == ["es/2_0td", "nl/connection", "no/template"]
@@ -165,7 +166,7 @@ def test_22_tensio_ts_and_tn_classify_one_month_alike_and_bill_their_own_sheet()
     rows = golden("no.tensio-ts.household")["windows"]
     fees = {}
     for name in ("no/tensio-ts", "no/tensio-tn"):
-        ev = Evaluator(loader.load(name), tz=OSLO, calendar=NO_HOLIDAYS)
+        ev = Evaluator(fixture_preset(name), tz=OSLO, calendar=NO_HOLIDAYS)
         for row in rows:
             ev.record_window(closed(datetime.fromisoformat(row["local"]), row["kwh"]))
         assert ev.level().name == "2–5 kW", name
@@ -180,7 +181,6 @@ def test_22_tensio_ts_and_tn_classify_one_month_alike_and_bill_their_own_sheet()
 @pytest.mark.parametrize(
     ("retired", "successor"),
     [
-        ("no/tensio", "no/tensio-ts"),
         ("no/generic-top3", "custom"),
         ("fi/energiavirasto-2026", "custom"),
         ("be/fluvius", "custom"),
@@ -193,3 +193,16 @@ def test_a_retired_file_names_what_its_sites_run_on(retired: str, successor: str
     assert loader.load(successor).versions
     with pytest.raises(loader.PresetError):
         loader.load_raw(retired)
+
+
+@pytest.mark.parametrize("name", ["no/tensio", "no/tensio-ts", "be/fluvius-imewo", "se/ellevio"])
+def test_a_companys_file_left_the_integration(name: str) -> None:
+    """INV-70, TS.6: no company's prices ship; the migration knows where each is fetched."""
+    from custom_components.powerplan.storage import (  # noqa: PLC0415
+        FETCHED_FILES,
+        NO_CAPACITY_FILES,
+    )
+
+    with pytest.raises(loader.PresetError):
+        loader.load_raw(name)
+    assert name in FETCHED_FILES or name in NO_CAPACITY_FILES

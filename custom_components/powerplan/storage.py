@@ -41,6 +41,8 @@ from .const import DOMAIN
 from .core.tariffs import countries
 from .core.tariffs.household import (
     ALL_LEVIES,
+    EXCL,
+    Provenance,
     StateTerms,
     SupplierContract,
     TaxZone,
@@ -49,6 +51,7 @@ from .core.tariffs.household import (
     to_json,
 )
 from .core.tariffs.rules import loader
+from .core.tariffs.sources import slug
 
 #: The "describe it myself" rule file (flow/steps.py's `PRESET_CUSTOM`).
 PRESET_CUSTOM: Final = "custom"
@@ -376,6 +379,32 @@ class SiteStore:
 ENTRY_MINOR_PRICE: Final = 2
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
+#: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
+#: is fetched instead - source, the company's key there, the product, its name. An entry
+#: still on one migrates to a copy without a capacity rule that the renewal fetches an
+#: hour after start (INV-73; D-0580).
+FETCHED_FILES: Final[dict[str, tuple[str, str, str | None, str]]] = {
+    "no/tensio": ("fri_nettleie", "tensio-ts", None, "Tensio TS"),
+    "no/tensio-ts": ("fri_nettleie", "tensio-ts", None, "Tensio TS"),
+    "no/tensio-tn": ("fri_nettleie", "tensio-tn", None, "Tensio TN"),
+    "no/elvia": ("fri_nettleie", "elvia", None, "Elvia"),
+    **{
+        f"be/fluvius-{area}": ("vreg_xlsx", code, "digital", f"Fluvius {title}")
+        for area, code, title in (
+            ("antwerpen", "fa", "Antwerpen"),
+            ("halle-vilvoorde", "fhv", "Halle-Vilvoorde"),
+            ("imewo", "fi", "Imewo"),
+            ("kempen", "fk", "Kempen"),
+            ("limburg", "fl", "Limburg"),
+            ("midden-vlaanderen", "fmv", "Midden-Vlaanderen"),
+            ("west", "fw", "West"),
+            ("zenne-dijle", "fzd", "Zenne-Dijle"),
+        )
+    },
+}
+#: A company's file whose company bills no capacity (Ellevio): no peak.
+NO_CAPACITY_FILES: Final = frozenset({"se/ellevio"})
+
 NO_PEAK_COPY: Final[dict[str, Any]] = {
     "id": "no_peak",
     "name": "No capacity component",
@@ -440,8 +469,19 @@ def migrate_tariff(data: Mapping[str, Any], today: date) -> tuple[dict[str, Any]
     zone = TaxZone(country=country)
     preset = str(tariff.get("preset_file") or "")
     raw: dict[str, Any]
+    fetched = None if tariff.get("spec") else FETCHED_FILES.get(preset)
     if tariff.get("spec"):
         raw = dict(tariff["spec"])
+    elif fetched is not None or preset in NO_CAPACITY_FILES:
+        # The file is gone: no capacity until the renewal fetches the copy.
+        raw = {
+            **NO_PEAK_COPY,
+            "id": slug(preset, "retired") if fetched is None else slug(fetched[0], fetched[1]),
+            "currency": currency,
+            "assumed": "the company's file left the repository: fetched at the next renewal",
+        }
+        if fetched is not None:
+            raw["operator"] = fetched[3]
     elif preset:
         name = loader.successor(preset) or preset
         raw = loader.load_raw(name)
@@ -474,6 +514,19 @@ def migrate_tariff(data: Mapping[str, Any], today: date) -> tuple[dict[str, Any]
     price = from_preset(
         raw, source=source, zone=zone, supplier=SupplierContract(kind=kind), typed=typed
     )
+    if fetched is not None:
+        source_key, operator, product, _ = fetched
+        price = replace(
+            price,
+            grid=replace(
+                price.grid,
+                provenance=Provenance(source=source_key),
+                basis=EXCL,
+                operator_key=operator,
+                product_key=product,
+                renew_at=today,
+            ),
+        )
     kept, overrides, review = state_addons(rows, price.state, today)
     price = replace(price, state=replace(price.state, overrides=overrides))
     migrated["tariff"] = {

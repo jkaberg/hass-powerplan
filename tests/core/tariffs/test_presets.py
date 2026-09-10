@@ -45,13 +45,14 @@ from custom_components.powerplan.core.tariffs import (
     seed_from_bills,
 )
 from custom_components.powerplan.core.tariffs.rules import loader
-from tests.builders.houses import fixture_preset
+from tests.builders.presets import fixture_preset
 from tests.core.tariffs.conftest import (
     NO_HOLIDAYS,
     OSLO,
     Holidays,
     closed,
     golden,
+    load_any,
     local,
     market_golden,
     no_tariff,
@@ -91,7 +92,9 @@ ANY_PROFILE = ElectricalProfile(system=VoltageSystem.SINGLE_230, phases=1, main_
 
 
 def _ev(preset: str, **kwargs: Any) -> Evaluator:
-    return Evaluator(loader.load(preset), tz=OSLO, calendar=NO_HOLIDAYS, **kwargs)
+    return Evaluator(
+        loader.from_raw(load_any(preset), source=preset), tz=OSLO, calendar=NO_HOLIDAYS, **kwargs
+    )
 
 
 def _with_2027() -> Evaluator:
@@ -101,7 +104,7 @@ def _with_2027() -> Evaluator:
 
 def _market_spec(name: str, data: Mapping[str, Any] | None = None) -> TariffSpec:
     """Load a market's file; a template is filled as the flow would, from the golden's `fill`."""
-    raw = loader.load_raw(name)
+    raw = load_any(name)
     if raw.get("template"):
         fill = (data or {}).get("fill") or {}
         raw = loader.fill_template(raw, limits=fill.get("limits", ()))
@@ -324,11 +327,11 @@ def test_every_shipped_preset_validates_and_loads(name: str) -> None:
 
     A template parses only once filled: evaluating one is refused (D2 §9 21).
     """
-    if loader.load_raw(name).get("template"):
+    if load_any(name).get("template"):
         with pytest.raises(loader.TemplateError):
-            loader.load(name)
+            loader.from_raw(load_any(name), source=name)
         return
-    spec = loader.load(name)
+    spec = loader.from_raw(load_any(name), source=name)
     assert spec.versions
     assert list(spec.versions) == sorted(spec.versions, key=lambda v: v.valid_from)
     for version in spec.versions:
@@ -349,7 +352,7 @@ def test_custom_preset_is_a_no_peak_site() -> None:
 
 def test_elvia_carries_the_energy_components_for_d1() -> None:
     """A preset may carry a `tou_schedule` for D1 to pre-fill; D2 never uses it (D2 §6)."""
-    version = loader.load("no/elvia").versions[-1]
+    version = fixture_preset("no/elvia").versions[-1]
     periods = version.energy_components["tou_schedule"]["periods"]
     assert [period["name"] for period in periods] == ["dag", "natt"]
     assert periods[0]["price"] == pytest.approx(0.4640)
@@ -421,7 +424,7 @@ def test_changing_the_period_needs_a_history_policy() -> None:
 
 def test_the_summary_describes_the_norwegian_rule_as_data() -> None:
     """The flow renders this before it saves (D2 §6, INV-67); core says no sentence (D8 §9 18)."""
-    summary = loader.summarize(loader.load("no/tensio-ts"), at=date(2026, 9, 19))
+    summary = loader.summarize(fixture_preset("no/tensio-ts"), at=date(2026, 9, 19))
     assert summary.operator == "Tensio TS"
     assert summary.peak
     assert (summary.n, summary.distinct_days, summary.window_min) == (3, True, 60)
@@ -726,7 +729,11 @@ def _fluvius(name: str, seed: list[list[Any]]) -> tuple[Evaluator, Any]:
     data = market_golden(name)
     assert data is not None
     zone = _zone(data)
-    ev = Evaluator(loader.load(data["preset"]), tz=zone, calendar=Holidays())
+    ev = Evaluator(
+        loader.from_raw(load_any(data["preset"]), source=data["preset"]),
+        tz=zone,
+        calendar=Holidays(),
+    )
     seed_from_bills(ev, [(key, float(kw)) for key, kw in seed])
     return ev, data
 
@@ -803,7 +810,7 @@ def test_6b_fluvius_ships_one_preset_per_vreg_area() -> None:
 @pytest.mark.parametrize("name", FLUVIUS)
 def test_6c_fluvius_preset_is_a_quarter_hour_tariff_on_a_rolling_twelve(name: str) -> None:
     """The shape the file must carry for BE at all (HLD §8, D2 §4)."""
-    peak = loader.load(name).versions[-1].peak
+    peak = loader.from_raw(load_any(name), source=name).versions[-1].peak
     assert peak is not None
     assert peak.window_min == 15
     assert peak.period == "rolling_months"

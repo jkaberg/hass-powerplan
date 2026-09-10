@@ -22,8 +22,8 @@ from custom_components.powerplan.core.tariffs import (
     Target,
     seed_from_windows,
 )
-from custom_components.powerplan.core.tariffs.rules.loader import load
 from tests.backtest.conftest import OSLO, House, Stat, States, flat_hours, september, write_recorder
+from tests.builders.presets import fixture_preset
 from tools.backtest import LoadSpec, read_recorder, run
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ def test_register_windows_are_the_traces_own_energy(tmp_path: Path) -> None:
     """Hourly LTS sums rebuild exactly the windows the trace holds (D3 §5.11)."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    result = run(history, load("no/tensio-ts"), OSLO)
+    result = run(history, fixture_preset("no/tensio-ts"), OSLO)
 
     expected = home.window_kwh(60)
     got = {window.closed.start_utc: window.closed.kwh for window in result.windows}
@@ -121,9 +121,9 @@ def test_monthly_metric_level_and_fee_agree_with_d2_on_the_same_windows(tmp_path
     """The tool reports D2's numbers, not its own (D2 §3 `bill`)."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    result = run(history, load("no/tensio-ts"), OSLO)
+    result = run(history, fixture_preset("no/tensio-ts"), OSLO)
 
-    reference = Evaluator(load("no/tensio-ts"), tz=OSLO, calendar=NoHolidays())
+    reference = Evaluator(fixture_preset("no/tensio-ts"), tz=OSLO, calendar=NoHolidays())
     seed_from_windows(reference, [window.closed for window in result.windows])
     bill = reference.bill(reference.period(result.windows[-1].closed.start_utc))
 
@@ -143,7 +143,7 @@ def test_max_window_and_days_describe_what_was_read(tmp_path: Path) -> None:
     """`max_window_kwh` and `days` come from the windows, not from the tariff."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    result = run(history, load("no/tensio-ts"), OSLO)
+    result = run(history, fixture_preset("no/tensio-ts"), OSLO)
 
     month = result.months["2026-09"]
     assert month.max_window_kwh == pytest.approx(max(home.window_kwh(60).values()))
@@ -161,7 +161,7 @@ def test_hourly_sums_are_coarse_for_a_quarter_hour_tariff(tmp_path: Path) -> Non
     """Hourly LTS can never yield 15-min windows; D2 marks them coarse (R8)."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    result = run(history, load("be/fluvius-imewo"), OSLO)
+    result = run(history, fixture_preset("be/fluvius-imewo"), OSLO)
 
     month = result.months["2026-09"]
     # Every hour was split four ways and every split is coarse (D2 §5.1).
@@ -169,7 +169,7 @@ def test_hourly_sums_are_coarse_for_a_quarter_hour_tariff(tmp_path: Path) -> Non
     assert month.coarse_windows == month.windows
     assert any("hourly" in note for note in result.notes)
     # D2's own flag, not the tool's counter: the evaluator marks each split part.
-    reference = Evaluator(load("be/fluvius-imewo"), tz=OSLO, calendar=NoHolidays())
+    reference = Evaluator(fixture_preset("be/fluvius-imewo"), tz=OSLO, calendar=NoHolidays())
     seed_from_windows(reference, [window.closed for window in result.windows])
     assert all(record.coarse for record in reference.history.windows.values())
     # Fluvius bills a rolling twelve months and one is known, so D2 says
@@ -188,7 +188,9 @@ def test_power_means_fill_a_register_gap(tmp_path: Path) -> None:
         register_rows=rows[:30] + rows[33:],
     )
 
-    result = run(read_recorder(path, register=REGISTER, power=POWER), load("no/tensio-ts"), OSLO)
+    result = run(
+        read_recorder(path, register=REGISTER, power=POWER), fixture_preset("no/tensio-ts"), OSLO
+    )
 
     from_power = [window for window in result.windows if window.origin == "power"]
     expected = home.window_kwh(60)
@@ -206,7 +208,7 @@ def test_a_gap_no_source_covers_is_reported_not_filled(tmp_path: Path) -> None:
     rows = home.register()
     path = recorder(tmp_path, home, register_rows=rows[:30] + rows[33:])
 
-    result = run(read_recorder(path, register=REGISTER), load("no/tensio-ts"), OSLO)
+    result = run(read_recorder(path, register=REGISTER), fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.months["2026-09"].windows == len(home.window_kwh(60)) - 4
     assert any("4 window" in note for note in result.notes)
@@ -215,7 +217,7 @@ def test_a_gap_no_source_covers_is_reported_not_filled(tmp_path: Path) -> None:
 def test_no_register_and_no_power_is_an_empty_run(tmp_path: Path) -> None:
     """Nothing to read is reported, never inferred."""
     path = write_recorder(tmp_path / "empty.db", ())
-    result = run(read_recorder(path, register=REGISTER), load("no/tensio-ts"), OSLO)
+    result = run(read_recorder(path, register=REGISTER), fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.windows == ()
     assert result.months == {}
@@ -245,7 +247,7 @@ def test_reconstruction_is_full_when_every_load_has_a_history(tmp_path: Path) ->
             LoadSpec("floor_stua", "floor_heating", FLOOR_POWER, nameplate_w=600.0),
         ),
     )
-    month = run(history, load("no/tensio-ts"), OSLO).months["2026-09"]
+    month = run(history, fixture_preset("no/tensio-ts"), OSLO).months["2026-09"]
 
     assert month.reconstruction == "full"
     assert month.load_quality == {"ev": "energy", "floor_stua": "power"}
@@ -276,7 +278,7 @@ def test_a_switch_only_load_is_nameplate_times_on_fraction_and_partial(tmp_path:
             LoadSpec("tank", "water_heater", TANK_SWITCH, nameplate_w=2000.0),
         ),
     )
-    month = run(history, load("no/tensio-ts"), OSLO).months["2026-09"]
+    month = run(history, fixture_preset("no/tensio-ts"), OSLO).months["2026-09"]
 
     assert month.reconstruction == "partial"
     assert month.load_quality["tank"] == "on_fraction"
@@ -291,7 +293,7 @@ def test_a_load_with_no_history_at_all_is_missing(tmp_path: Path) -> None:
         register=REGISTER,
         loads=(LoadSpec("ev", "ev", EV_ENERGY, nameplate_w=11000.0),),
     )
-    month = run(history, load("no/tensio-ts"), OSLO).months["2026-09"]
+    month = run(history, fixture_preset("no/tensio-ts"), OSLO).months["2026-09"]
 
     assert month.reconstruction == "none"
     assert month.load_quality == {"ev": "missing"}
@@ -302,7 +304,7 @@ def test_no_loads_mapped_is_reconstruction_none(tmp_path: Path) -> None:
     """The site's own windows are still billed; the loads are simply unknown."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    month = run(history, load("no/tensio-ts"), OSLO).months["2026-09"]
+    month = run(history, fixture_preset("no/tensio-ts"), OSLO).months["2026-09"]
 
     assert month.reconstruction == "none"
     assert month.level_reached == "5–10 kW"
@@ -319,7 +321,9 @@ def test_over_target_counts_the_windows_that_would_have_raised_the_step(
     """`auto`: the target is the step the month itself reached (D2 §5.5)."""
     home = house(FOUR_QUIET_DAYS)
     result = run(
-        read_recorder(recorder(tmp_path, home), register=REGISTER), load("no/tensio-ts"), OSLO
+        read_recorder(recorder(tmp_path, home), register=REGISTER),
+        fixture_preset("no/tensio-ts"),
+        OSLO,
     )
 
     month = result.months["2026-09"]
@@ -334,7 +338,9 @@ def test_every_window_under_target_is_the_gate_statement(tmp_path: Path) -> None
     """A month whose windows all sit under the step it reached passes (PLAN §3)."""
     home = house([1.0] * 49)
     result = run(
-        read_recorder(recorder(tmp_path, home), register=REGISTER), load("no/tensio-ts"), OSLO
+        read_recorder(recorder(tmp_path, home), register=REGISTER),
+        fixture_preset("no/tensio-ts"),
+        OSLO,
     )
 
     month = result.months["2026-09"]
@@ -348,10 +354,10 @@ def test_an_explicit_target_step_overrides_the_step_reached(tmp_path: Path) -> N
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
 
-    auto = run(history, load("no/tensio-ts"), OSLO, target=AUTO).months["2026-09"]
-    step0 = run(history, load("no/tensio-ts"), OSLO, target=Target("step", step_index=0)).months[
-        "2026-09"
-    ]
+    auto = run(history, fixture_preset("no/tensio-ts"), OSLO, target=AUTO).months["2026-09"]
+    step0 = run(
+        history, fixture_preset("no/tensio-ts"), OSLO, target=Target("step", step_index=0)
+    ).months["2026-09"]
 
     assert auto.target_kw == 10.0
     assert step0.target_kw == 2.0
@@ -362,9 +368,9 @@ def test_an_open_ended_step_can_never_be_exceeded(tmp_path: Path) -> None:
     """The top step's ceiling is `inf`, so `over_target` is 0 by construction."""
     home = house()
     history = read_recorder(recorder(tmp_path, home), register=REGISTER)
-    month = run(history, load("no/tensio-ts"), OSLO, target=Target("step", step_index=14)).months[
-        "2026-09"
-    ]
+    month = run(
+        history, fixture_preset("no/tensio-ts"), OSLO, target=Target("step", step_index=14)
+    ).months["2026-09"]
 
     assert month.target_kw == float("inf")
     assert month.over_target == 0
@@ -380,7 +386,9 @@ def test_the_autumn_dst_day_has_twenty_five_windows(tmp_path: Path) -> None:
     start = datetime(2026, 10, 24, 0, 0, tzinfo=OSLO).astimezone(UTC)
     home = House(trace=flat_hours(start, [1.0] * 74))
     result = run(
-        read_recorder(recorder(tmp_path, home), register=REGISTER), load("no/tensio-ts"), OSLO
+        read_recorder(recorder(tmp_path, home), register=REGISTER),
+        fixture_preset("no/tensio-ts"),
+        OSLO,
     )
 
     per_day: dict[str, int] = {}
@@ -397,7 +405,9 @@ def test_months_are_split_on_the_local_calendar(tmp_path: Path) -> None:
     start = datetime(2026, 8, 31, 20, 0, tzinfo=OSLO).astimezone(UTC)
     home = House(trace=flat_hours(start, [2.0] * 10))
     result = run(
-        read_recorder(recorder(tmp_path, home), register=REGISTER), load("no/tensio-ts"), OSLO
+        read_recorder(recorder(tmp_path, home), register=REGISTER),
+        fixture_preset("no/tensio-ts"),
+        OSLO,
     )
 
     assert set(result.months) == {"2026-08", "2026-09"}
@@ -415,7 +425,7 @@ def test_from_and_to_clip_the_span(tmp_path: Path) -> None:
         start=datetime(2026, 9, 3, 0, 0, tzinfo=OSLO),
         end=datetime(2026, 9, 4, 0, 0, tzinfo=OSLO),
     )
-    result = run(history, load("no/tensio-ts"), OSLO)
+    result = run(history, fixture_preset("no/tensio-ts"), OSLO)
 
     assert result.months["2026-09"].windows == 24
     assert result.total.max_window_kwh == pytest.approx(5.3)

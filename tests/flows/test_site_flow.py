@@ -140,7 +140,7 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
         result = await _to_tariff(hass, result)
     assert result["step_id"] == "tariff"
     assert "country" not in result["data_schema"]({}), "asked once, and HA has it (HUB-2)"
-    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, preset="operator:Tensio TS")
 
     assert result["step_id"] == "tariff_preset"
     # HUB-12: D2's `TariffSummary` rendered as a translated table, nothing stored.
@@ -148,7 +148,7 @@ async def _through_tariff(hass: HomeAssistant, result: dict[str, Any]) -> dict[s
     assert "3 highest hours on 3 different days" in table
     # Tensio TS's own table from 2026-07-01, fifteen steps to "over 500 kW".
     assert "| Above 500 kW | 21,473 kr |" in table
-    assert result["description_placeholders"]["name"] == "Tensio TS – privatkunde"
+    assert result["description_placeholders"]["name"] == "Tensio TS"
     result = await _answer(hass, result, confirm="yes")
 
     assert result["step_id"] == "tariff_target"
@@ -245,7 +245,7 @@ async def test_the_full_path_creates_a_site_in_observe(
 
     tariff = data[CONF_TARIFF]
     assert tariff["preset_id"] == "no.tensio-ts.household"
-    assert tariff["preset_file"] == "no/tensio-ts"
+    assert tariff["preset_file"] is None, "a fetched copy, no file (TS.6)"
     assert tariff["version_ids"] == [
         "no.tensio-ts.household@2025-07-01",
         "no.tensio-ts.household@2026-01-01",
@@ -386,7 +386,7 @@ async def test_a_guard_band_in_watts_is_refused_inline(
     result = await _to_tariff(hass, result)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, preset="operator:Tensio TS")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -479,7 +479,7 @@ async def test_the_review_explains_what_was_derived(
     result = await _tail(hass, result)
 
     placeholders = result["description_placeholders"]
-    assert placeholders["tariff"] == "Tensio TS – privatkunde · Automatic"
+    assert placeholders["tariff"] == "Tensio TS · Automatic"
     assert placeholders["timezone"] == SITE_TZ
     assert "Home Assistant" in placeholders["timezone_source"]
     assert "63" in placeholders["connection"]
@@ -550,7 +550,7 @@ async def test_a_guard_band_of_zero_is_refused_inline(
     result = await _to_tariff(hass, result)
 
     assert result["step_id"] == "tariff"
-    result = await _answer(hass, result, preset="no/tensio-ts")
+    result = await _answer(hass, result, preset="operator:Tensio TS")
     result = await _answer(hass, result)
 
     assert result["step_id"] == "tariff_target"
@@ -584,7 +584,7 @@ async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
     ]
     assert offered == ["cumulative_tier", "day_type", "spot_scale", "supplier_tou"]
     assert result["description_placeholders"] == {
-        "operator": "Tensio TS – privatkunde",
+        "operator": "Tensio TS",
         "covered": "Grid energy charge (day/night), VAT and Taxes and levies",
     }
     result = await _answer(hass, result, modifiers=[])

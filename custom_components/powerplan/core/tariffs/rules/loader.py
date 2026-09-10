@@ -93,7 +93,6 @@ class TemplateError(PresetError):
 #: is reconfigured (D2 §8, `preset_outdated`). A successor is a shipped file or
 #: `custom`; `custom` means the site keeps no capacity component (D-0522).
 RETIRED: Mapping[str, str] = {
-    "no/tensio": "no/tensio-ts",
     "no/generic-top3": "custom",
     "fi/energiavirasto-2026": "custom",
     "be/fluvius": "custom",

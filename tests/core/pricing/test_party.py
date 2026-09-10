@@ -33,6 +33,7 @@ from custom_components.powerplan.core.tariffs.household import (
 )
 from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.curves import OSLO, context, no3_shape
+from tests.builders.presets import fixture_raw
 from tests.core.tariffs.conftest import Holidays, closed
 
 if TYPE_CHECKING:
@@ -43,7 +44,7 @@ NO = TaxZone(country="NO")
 
 def tensio(zone: TaxZone = NO) -> HouseholdPrice:
     """Tensio TS's WP4.6 copy: published incl. VAT, forbruksavgift and Enova (D-0523)."""
-    return from_preset(loader.load_raw("no/tensio-ts"), source="shipped", zone=zone)
+    return from_preset(fixture_raw("no/tensio-ts"), source="shipped", zone=zone)
 
 
 def excl(price: HouseholdPrice) -> HouseholdPrice:

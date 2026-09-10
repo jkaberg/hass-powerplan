@@ -40,6 +40,7 @@ from custom_components.powerplan.core.tariffs import (
     TariffVersion,
 )
 from custom_components.powerplan.core.tariffs.rules import loader
+from tests.builders.presets import FIXTURE_PRESETS, fixture_raw
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -215,36 +216,55 @@ PRESET_DIR = (
 )
 
 
-def preset_names() -> list[str]:
-    """Every shipped preset's load name (`no/tensio-ts`, `custom`), sorted.
-
-    Discovered from disk rather than listed, so a file added without a golden
-    fails the suite instead of being ignored (D2 §9 1: a golden *per preset*).
-    """
-    return sorted(
-        path.relative_to(PRESET_DIR).with_suffix("").as_posix()
+def _files() -> dict[str, Path]:
+    """Every rule file and every company file kept as a fixture, by load name."""
+    found = {
+        path.relative_to(PRESET_DIR).with_suffix("").as_posix(): path
         for path in PRESET_DIR.rglob("*.json")
         if path.name != "schema.json"
+    }
+    found.update(
+        {
+            path.relative_to(FIXTURE_PRESETS).with_suffix("").as_posix(): path
+            for path in FIXTURE_PRESETS.rglob("*.json")
+            if "-2027" not in path.name
+        }
     )
+    return found
+
+
+def preset_names() -> list[str]:
+    """Every rule file's and company fixture's load name (`no/tensio-ts`, `custom`), sorted.
+
+    Discovered from disk rather than listed, so a file added without a golden
+    fails the suite instead of being ignored (D2 §9 1: a golden *per preset*). The
+    company files left the integration in TS.6 and are tested as fixtures.
+    """
+    return sorted(_files())
 
 
 def preset_raw(name: str) -> dict[str, Any]:
-    """Return the preset file as it is on disk, for fields the tariff model does not carry.
+    """Return the file as it is on disk, for fields the tariff model does not carry.
 
     `tz` is the market's zone (D-0111): data in the file, read by D8's flow and by
     the golden files, and deliberately not a field of `TariffSpec`.
     """
-    data: dict[str, Any] = json.loads((PRESET_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    data: dict[str, Any] = json.loads(_files()[name].read_text(encoding="utf-8"))
     return data
 
 
+def load_any(name: str) -> dict[str, Any]:
+    """Return a rule file's or a company fixture's validated JSON by load name."""
+    return loader.load_raw(name) if (PRESET_DIR / f"{name}.json").is_file() else fixture_raw(name)
+
+
 def shipped_spec(name: str) -> TariffSpec:
-    """Load a shipped preset; a template is filled from its golden's `fill`, as the flow would.
+    """Load a rule file or a company fixture; a template filled from its golden's `fill`.
 
     Only the contracted templates (ES, NL) have a golden and so something to fill;
     `no/template`'s steps are D2 §9 21's own test (`test_preset_provenance.py`).
     """
-    raw = loader.load_raw(name)
+    raw = load_any(name)
     if raw.get("template"):
         fill = (market_golden(name) or {}).get("fill") or {}
         raw = loader.fill_template(raw, limits=fill.get("limits", ()))

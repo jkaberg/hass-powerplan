@@ -2384,3 +2384,13 @@ URDB rates and CDR plans price supply and delivery together; the copy holds them
 
 `cdr_energy` lists the register's 84 brands; a brand's residential plans for the postcode come once chosen (D-0576), and tariff periods become versions from the season in force. A demand charge's measurement (day, month, last 12 months) is always asked with the description's reading pre-selected, because the structured field contradicts the description on the captured plan. A charge named in cents asks the per-kW-per-day price; a kVA charge asks the power factor (0.9). The window is 30 minutes, the NEM's metering interval. Affects D13 §5.6, §5.11, §19 9.
 **Rejected:** trusting `measurementPeriod` - bills a twelve-month maximum as a daily one.
+
+### D-0580 · The price refresher lives on the runtime and reports through the catalogue
+
+`price_refresh.PriceRefresher` (back-off 60, 120, 300, 600, 900 s; `prices_stale` after 30 min; `powerplan/refresh_prices`) is `runtime.price_refresher`, fetches through `Runtime.refresh_prices` (fetch, then replan) and tests `prices_known_now`; the runtime's own fetches report to it, so startup doesn't fetch twice. The issue is a catalogue row with `{site}` and its learn-more link (D8 §5.9). The reference house once planned 37 minutes on estimates after a restart. Affects D12 §5.15 F12, D8 §5.9.
+**Rejected:** `hass.data[DOMAIN]` - integration state lives in `runtime_data`.
+
+### D-0581 · A price slot's energy part carries the VAT that covers the energy
+
+`slots[].energy` = `spot × (1 + r)`, `r` the summed rate of the `Vat` modifiers covering `spot` (`energy_vat_rate`). D-0495's total ÷ (total − VAT) is exact only when VAT covers every component; on the reference house VAT covers the energy alone (the grid tariff is entered incl. VAT), and the price card's split disagreed with the house's own sensors. Affects D12 §5.12, §5.15, §9 24.
+**Rejected:** keeping the ratio - wrong whenever VAT doesn't cover everything.

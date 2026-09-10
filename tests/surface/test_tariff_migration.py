@@ -16,22 +16,22 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.powerplan import repairs
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.model import Confidence, Slot
 from custom_components.powerplan.core.pricing import modifiers, party
-from custom_components.powerplan.core.tariffs import household
-from custom_components.powerplan.core.tariffs.rules import loader
+from custom_components.powerplan.core.tariffs import NoPeak, household
 from custom_components.powerplan.storage import ENTRY_MINOR_PRICE, migrate_tariff
 from tests.builders.curves import OSLO, context, no3_shape
+from tests.builders.presets import fixture_raw
 from tests.runtime.conftest import site_data
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-    from custom_components.powerplan.runtime import Runtime
     from tests.runtime.conftest import FakeMeter
 
 VAT = {"key": "vat", "component": "vat", "options": {"rate": "0.25"}, "source": "user"}
@@ -56,33 +56,30 @@ async def _start(hass: HomeAssistant, entry_id: str, data: dict[str, Any]) -> Mo
 
 
 @pytest.mark.inv("INV-73")
-async def test_06_an_entry_on_no_tensio_starts_on_its_copy_offline(
+async def test_06_an_entry_on_no_tensio_starts_on_a_copy_the_renewal_fetches(
     hass: HomeAssistant, meter: FakeMeter
 ) -> None:
-    """The reference house's first file: retired, no copy - its successor, as a copy."""
+    """The reference house's first file, gone since TS.6: a copy that names its source.
+
+    No capacity rule until the renewal - an hour after start at the earliest
+    (INV-73) - fetches fri-nettleie's Tensio TS (D-0580); the add-ons that equal the
+    module are dropped as before.
+    """
     data = site_data(hass)
+    data["tariff"] = {k: v for k, v in data["tariff"].items() if k not in {"price", "review"}}
     data["tariff"].update(preset_file="no/tensio", version_ids=["no.tensio.household@2026-01-01"])
     data["prices"]["modifiers"] = [VAT, _levy("0.0813")]
     entry = await _start(hass, "TENSIO", data)
 
     assert entry.minor_version == ENTRY_MINOR_PRICE
     tariff = entry.data["tariff"]
-    assert "spec" not in tariff
     price = household.from_json(tariff["price"])
-    assert price.grid.capacity_id == "no.tensio-ts.household"
-    assert price.grid.provenance.source == "shipped"
-    assert price.grid.basis == household.Basis(
-        vat=True, levies=frozenset({"forbruksavgift", "enova"})
-    )
-    # Both add-ons equal Norway's module today: dropped, the module applies them.
+    assert (price.grid.provenance.source, price.grid.operator_key) == ("fri_nettleie", "tensio-ts")
+    assert price.grid.renew_at == dt_util.now().date()
+    assert all(isinstance(v.rules[0], NoPeak) for v in price.grid.capacity)
     assert entry.data["prices"]["modifiers"] == []
-    assert price.state.overrides == {}
     assert tariff["review"] == []
-
-    runtime: Runtime = entry.runtime_data
-    assert runtime.build.tariff.active_version().version_id.startswith("no.tensio-ts.household@")
-    assert _issue(hass, entry.entry_id, "preset_outdated") is not None
-    assert _issue(hass, entry.entry_id, "tariff_review") is None
+    assert _issue(hass, entry.entry_id, "preset_outdated") is None
     await hass.config_entries.async_unload(entry.entry_id)
 
 
@@ -92,7 +89,8 @@ async def test_06_a_vat_that_differs_is_kept_and_raises_tariff_review(
 ) -> None:
     """A WP4.6 copy with the household's own 0 % VAT (a Nord-Norge house): kept, reviewed."""
     data = site_data(hass)
-    data["tariff"]["spec"] = loader.load_raw("no/tensio-ts")
+    data["tariff"] = {k: v for k, v in data["tariff"].items() if k not in {"price", "review"}}
+    data["tariff"]["spec"] = fixture_raw("no/tensio-ts")
     data["prices"]["modifiers"] = [
         {**VAT, "options": {"rate": "0"}},
         {
@@ -117,7 +115,7 @@ async def test_06_a_vat_that_differs_is_kept_and_raises_tariff_review(
 
 def _old_house() -> dict[str, Any]:
     """Return the reference house's entry before the price-by-party migration, as it is stored."""
-    copy = loader.load_raw("no/tensio-ts")
+    copy = fixture_raw("no/tensio-ts")
     return {
         "currency": "NOK",
         "electrical": {"country": "NO"},

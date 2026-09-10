@@ -1029,6 +1029,9 @@ def _spec(
             currency=currency,
         ), False
     spec = household.spec(price)
+    if price.grid.provenance.source not in {"shipped", "template", "custom", "none"}:
+        # A fetched copy is renewed from its source (D13 §10), never compared with a file.
+        return spec, False
     preset_file = str(tariff.get("preset_file") or "")
     copied = [version.version_id for version in spec.versions]
     outdated = _outdated(preset_file, spec) or copied != list(tariff.get("version_ids") or copied)
@@ -1049,7 +1052,11 @@ def _outdated(preset_file: str, copy: TariffSpec) -> bool:
         return False
     if loader.successor(preset_file) is not None:
         return True
-    raw = loader.load_raw(preset_file)
+    try:
+        raw = loader.load_raw(preset_file)
+    except loader.PresetError:
+        # A company's file that left the repository: the copy is fetched instead.
+        return False
     if raw.get("template"):
         return False
     shipped = [version.version_id for version in loader.from_raw(raw).versions]

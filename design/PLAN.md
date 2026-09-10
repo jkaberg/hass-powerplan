@@ -407,7 +407,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TS.3 | Norway | done |
 | TS.4 | Sweden, Denmark | done |
 | TS.5 | Belgium, US, Australia, Finland's directory | done |
-| TS.6 | Retire shipped prices | todo |
+| TS.6 | Retire shipped prices | done |
 | TS.7 | Europe | todo |
 | DOC.1 | Foundation | done |
 | DOC.2 | Start and setup | todo |

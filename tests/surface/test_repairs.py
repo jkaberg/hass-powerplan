@@ -12,7 +12,7 @@ from homeassistant.helpers import issue_registry as ir
 from custom_components.powerplan import repairs
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.engine import AccountingStatus, Engine, EngineHealth
-from custom_components.powerplan.core.tariffs.rules import loader
+from tests.builders.presets import fixture_raw
 from tests.runtime.conftest import SITE_ENTRY_ID, site_data, site_entry
 
 if TYPE_CHECKING:
@@ -132,12 +132,21 @@ async def test_10d_a_retired_preset_runs_on_its_successor_and_is_reported(
 async def test_10d_the_entrys_own_copy_wins_over_the_file(
     hass: HomeAssistant, meter: FakeMeter
 ) -> None:
-    """INV-66, D2 §6: the tariff kept at setup is what bills, whatever the file now says."""
+    """INV-66, D2 §6: the tariff kept at setup is what bills, whatever became of the file.
+
+    A WP4.6 copy (`tariff.spec`, no `price` yet) migrates to the copy by party and
+    bills as it was stored. Since TS.6 the company's file is gone: nothing to be
+    outdated against, and the renewal fetches the company's tables (D-0580).
+    """
     data = site_data(hass)
-    copy = loader.load_raw("no/tensio-ts")
+    data["tariff"] = {k: v for k, v in data["tariff"].items() if k not in {"price", "review"}}
+    copy = fixture_raw("no/tensio-ts")
     copy["versions"] = copy["versions"][:2]
     copy["versions"][-1]["peak"]["pricing"]["steps"][0][1] = 999
     data["tariff"]["spec"] = copy
+    data["tariff"]["version_ids"] = [
+        f"no.tensio-ts.household@{version['valid_from']}" for version in copy["versions"]
+    ]
     from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: PLC0415
 
     entry = MockConfigEntry(domain=DOMAIN, title="Copy site", entry_id="COPYSITE", data=data)
@@ -149,8 +158,8 @@ async def test_10d_the_entrys_own_copy_wins_over_the_file(
     assert tariff.active_version().version_id == "no.tensio-ts.household@2026-01-01"
     first = tariff.active_version().peak.pricing.steps[0]  # type: ignore[union-attr]
     assert first.fee_per_period.amount == 999
-    # The file has a version the copy lacks: the household is told, nothing moves.
-    assert _issue(hass, entry.entry_id, "preset_outdated") is not None
+    # The company's file left the integration: nothing to be outdated against.
+    assert _issue(hass, entry.entry_id, "preset_outdated") is None
     await hass.config_entries.async_unload(entry.entry_id)
 
 

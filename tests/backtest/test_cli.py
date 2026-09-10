@@ -10,13 +10,13 @@ name the item it could not read.
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 
 from custom_components.powerplan.core.tariffs import AUTO, Target
-from custom_components.powerplan.core.tariffs.rules.loader import load
 from tests.backtest.conftest import OSLO, House, Stat, september, write_csv, write_recorder
+from tests.builders.presets import FIXTURE_PRESETS, fixture_preset
 from tools.backtest import (
     LoadSpec,
     build_parser,
@@ -28,13 +28,23 @@ from tools.backtest import (
     run,
 )
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 REGISTER = "sensor.dataskap_strommaler_energy"
 COPY = "copy.db"
 
 TWO_DAYS = [1.0] * 20 + [4.0, 6.5, 2.0, 1.0] + [1.0] * 20 + [4.0, 7.5, 2.0, 1.0] + [1.0]
+
+#: The reference house's tariff, kept as a test fixture (INV-70).
+TENSIO = FIXTURE_PRESETS / "no" / "tensio-ts.json"
+#: The "describe it myself" rule file: no zone of its own.
+CUSTOM = (
+    Path(__file__).resolve().parents[2]
+    / "custom_components"
+    / "powerplan"
+    / "core"
+    / "tariffs"
+    / "rules"
+    / "custom.json"
+)
 
 
 def _database(tmp_path: Path) -> Path:
@@ -62,8 +72,8 @@ def test_a_full_run_prints_a_table_and_writes_the_json(
         [
             "--recorder",
             str(_database(tmp_path)),
-            "--preset",
-            "no/tensio-ts",
+            "--tariff",
+            str(TENSIO),
             "--register",
             REGISTER,
             "--out",
@@ -88,15 +98,15 @@ def test_a_full_run_prints_a_table_and_writes_the_json(
     assert any("WP0.10" in note for note in written["notes"])
 
 
-def test_an_unknown_preset_is_refused(tmp_path: Path) -> None:
-    """A typo in `--preset` names the preset, and nothing is read."""
-    with pytest.raises(SystemExit, match="no/tensio-tss"):
+def test_an_unknown_tariff_file_is_refused(tmp_path: Path) -> None:
+    """A typo in `--tariff` names the file, and nothing is read."""
+    with pytest.raises(SystemExit, match="tensio-tss"):
         main(
             [
                 "--recorder",
                 str(_database(tmp_path)),
-                "--preset",
-                "no/tensio-tss",
+                "--tariff",
+                str(tmp_path / "tensio-tss.json"),
                 "--register",
                 REGISTER,
             ]
@@ -106,7 +116,7 @@ def test_an_unknown_preset_is_refused(tmp_path: Path) -> None:
 def test_recorder_mode_needs_a_register(tmp_path: Path) -> None:
     """Without `--register` there is nothing to reconstruct from."""
     with pytest.raises(SystemExit, match="--register"):
-        main(["--recorder", str(_database(tmp_path)), "--preset", "no/tensio-ts"])
+        main(["--recorder", str(_database(tmp_path)), "--tariff", str(TENSIO)])
 
 
 def test_a_missing_database_is_refused(tmp_path: Path) -> None:
@@ -116,8 +126,8 @@ def test_a_missing_database_is_refused(tmp_path: Path) -> None:
             [
                 "--recorder",
                 str(tmp_path / "nope.db"),
-                "--preset",
-                "no/tensio-ts",
+                "--tariff",
+                str(TENSIO),
                 "--register",
                 REGISTER,
             ]
@@ -130,17 +140,17 @@ def test_a_zone_no_source_knows_is_refused(tmp_path: Path) -> None:
     directory = write_csv(tmp_path / "export", register=list(home.register()))
 
     with pytest.raises(SystemExit, match="--tz"):
-        main(["--csv", str(directory), "--preset", "custom"])
+        main(["--csv", str(directory), "--tariff", str(CUSTOM)])
 
 
 def test_the_tz_flag_wins(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--tz` overrides the preset's own zone, and the report says so."""
+    """`--tz` overrides the tariff file's own zone, and the report says so."""
     code = main(
         [
             "--recorder",
             str(_database(tmp_path)),
-            "--preset",
-            "no/tensio-ts",
+            "--tariff",
+            str(TENSIO),
             "--register",
             REGISTER,
             "--tz",
@@ -159,8 +169,8 @@ def test_an_unknown_zone_is_refused(tmp_path: Path) -> None:
             [
                 "--recorder",
                 str(_database(tmp_path)),
-                "--preset",
-                "no/tensio-ts",
+                "--tariff",
+                str(TENSIO),
                 "--register",
                 REGISTER,
                 "--tz",
@@ -172,7 +182,7 @@ def test_an_unknown_zone_is_refused(tmp_path: Path) -> None:
 def test_two_sources_are_mutually_exclusive(tmp_path: Path) -> None:
     """`--recorder` and `--csv` answer the same question two ways."""
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["--recorder", "a.db", "--csv", "b", "--preset", "no/tensio-ts"])
+        build_parser().parse_args(["--recorder", "a.db", "--csv", "b", "--tariff", str(TENSIO)])
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +235,7 @@ def test_the_table_has_a_row_per_period_a_total_and_the_notes(tmp_path: Path) ->
             register=REGISTER,
             loads=(LoadSpec("ev", "ev", "sensor.missing", 11000.0),),
         ),
-        load("no/tensio-ts"),
+        fixture_preset("no/tensio-ts"),
         OSLO,
     )
     table = render_table(result)

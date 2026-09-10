@@ -29,7 +29,7 @@ from tests.e2e.fake_house import FakeHouse
 from tests.runtime.conftest import site_entry
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterator, Mapping
 
     from freezegun.api import FrozenDateTimeFactory
     from homeassistant.core import HomeAssistant
@@ -150,3 +150,16 @@ async def site(hass: HomeAssistant, charger: FakeHouse) -> MockConfigEntry:
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
     return entry
+
+
+@pytest.fixture(autouse=True)
+def norway_source() -> Iterator[type]:
+    """List Norway's companies and Fluvius Imewo from their fixture tables."""
+    from custom_components.powerplan.providers.tariffs import base  # noqa: PLC0415
+    from tests.builders.tariff_sources import FlandersFixture, NorwayFixture  # noqa: PLC0415
+
+    base.register(NorwayFixture)
+    base.register(FlandersFixture)
+    yield NorwayFixture
+    base.unregister(NorwayFixture.key)
+    base.unregister(FlandersFixture.key)
