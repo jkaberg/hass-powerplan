@@ -25,6 +25,7 @@ PowerPlan starts in trial mode. It shows what it would do, and changes nothing u
 |---|---|
 | install, update, or remove PowerPlan | [Install](install.md) |
 | know what a word on a screen means | [Glossary](glossary.md) |
+| check whether PowerPlan fetches my grid company's tariff | [Grid tariffs](tariffs.md) |
 | use PowerPlan's entities in a card or an automation | [Entities](entities.md) |
 | start or pause an appliance from an automation | [Actions](actions.md) |
 | react when PowerPlan changes something | [Events](events.md) |

@@ -14,7 +14,6 @@ appliances/radiator.md
 appliances/water_heater.md
 strategies.md                # DOC.3
 devices.md                   # DOC.3
-tariffs.md                   # DOC.3
 prices.md                    # DOC.3
 how-it-works.md              # DOC.4
 capacity-tariffs.md          # DOC.4

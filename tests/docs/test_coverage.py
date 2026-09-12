@@ -3,7 +3,7 @@
 Each family names the page it lives on. A page on `pages_pending.txt` is not
 checked until its WP writes it and deletes the line - the same ratchet as the
 INV traceability list. The country and grid-source keys of D13 join when their
-registries exist.
+registries exist; the grid sources have, on `tariffs.md`.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from custom_components.powerplan.dashboard.layout import CUSTOM_CARDS, VIEWS
 from custom_components.powerplan.events import EVENT_TYPES
 from custom_components.powerplan.providers.prices.formats import registry as formats
 from custom_components.powerplan.providers.profiles import registry as profiles
+from custom_components.powerplan.providers.tariffs import base as tariff_sources
 from custom_components.powerplan.repairs import CATALOGUE
 from tests.docs.pages import PAGES, is_pending, pending, read, strings
 
@@ -84,6 +85,14 @@ def _families() -> list[tuple[str, str, dict[str, str | None]]]:
         ),
         ("modifier", "prices.md", {k: _selector("modifier").get(k) for k in modifiers.keys()}),  # noqa: SIM118 - a registry, not a dict
         ("profile", "devices.md", dict.fromkeys(profiles.keys())),
+        (
+            "grid source",
+            "tariffs.md",
+            {
+                key: (credit.name if (credit := tariff_sources.get(key).credit) else None)
+                for key in tariff_sources.keys()  # noqa: SIM118 - a registry, not a dict
+            },
+        ),
         ("repair", "troubleshooting.md", {k: issues[k]["title"] for k in CATALOGUE}),
         ("action", "actions.md", {k: v["name"] for k, v in services.items()}),
         ("event type", "events.md", {k: events[k] for k in EVENT_TYPES}),

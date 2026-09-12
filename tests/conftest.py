@@ -29,14 +29,18 @@ def auto_enable_custom_integrations(request: pytest.FixtureRequest) -> None:
 
 
 @pytest.fixture(autouse=True)
-def only_the_tariff_sources_a_test_registers() -> Iterator[None]:
+def only_the_tariff_sources_a_test_registers(request: pytest.FixtureRequest) -> Iterator[None]:
     """Show a test the tariff sources it registers, never a shipped adapter (D9 §5.15).
 
     The shipped adapters fetch the network; a test that wants one registers it and
-    serves its captured documents (`tests/builders/tariff_sources.py`).
+    serves its captured documents (`tests/builders/tariff_sources.py`). The docs
+    tests read the shipped registry and never fetch: they keep it (D14 §5.6).
     """
     from custom_components.powerplan.providers.tariffs import base  # noqa: PLC0415
 
+    if "docs" in request.node.path.parts:
+        yield
+        return
     shipped = [base.get(key) for key in base.keys()]  # noqa: SIM118 - the registry's own call
     for cls in shipped:
         base.unregister(cls.key)

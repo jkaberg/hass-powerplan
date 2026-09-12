@@ -40,10 +40,12 @@ if str(REPO_ROOT) not in sys.path:
 from custom_components.powerplan.core.loads.types import base as device_types  # noqa: E402
 from custom_components.powerplan.core.pricing.modifiers import registry as modifiers  # noqa: E402
 from custom_components.powerplan.core.strategies import base as strategies  # noqa: E402
+from custom_components.powerplan.core.tariffs import countries  # noqa: E402
 from custom_components.powerplan.dashboard.layout import CUSTOM_CARDS, VIEWS  # noqa: E402
 from custom_components.powerplan.events import ENVELOPE, SCHEMAS, event_name  # noqa: E402
 from custom_components.powerplan.providers.prices.formats import registry as formats  # noqa: E402
 from custom_components.powerplan.providers.profiles import registry as profiles  # noqa: E402
+from custom_components.powerplan.providers.tariffs import base as tariff_sources  # noqa: E402
 from custom_components.powerplan.repairs import CATALOGUE  # noqa: E402
 
 if TYPE_CHECKING:
@@ -237,6 +239,88 @@ def render_modifiers(_arg: str | None) -> str:
     return _table(("Price add-on", "Asks for", "Key"), rows)
 
 
+#: Where a grid source's prices come from, in the household's words (D13 §5.1's tiers).
+_TIERS = {
+    "T1a": "the regulator's or the country's own open data",
+    "T1b": "a national data service",
+    "T2": "the grid company's open tariff service",
+    "T3": "your own account at the grid company",
+    "T4": "the grid company's own website",
+    "T5": "a community-kept list",
+    "T6": "the regulator's published tariff sheet",
+}
+
+
+def _source_name(cls: Any) -> str:
+    credit = cls.credit
+    if credit is None:
+        return _code(cls.key)
+    return f"[{credit.name}]({credit.url})"
+
+
+def _vat(module: Any) -> str:
+    """Every dated VAT rate of a module, as the table says it: `21 %; 10 % from 2026-08-01, to 10 kW`."""
+    if not module.vat:
+        return "asked"
+    parts = []
+    for rate in module.vat:
+        text = f"{(rate.value * 100).normalize():f} %"
+        if rate.valid_from is not None:
+            text += f" from {rate.valid_from.isoformat()}"
+        if rate.upto_kw is not None:
+            text += f", to {rate.upto_kw:g} kW"
+        parts.append(text)
+    return "; ".join(parts)
+
+
+def render_countries(_arg: str | None) -> str:
+    """`tariffs.md`: every country module, its grid sources in ladder order, VAT and what setup asks."""
+    rows = []
+    for code in sorted(countries.codes()):
+        module = countries.get(code)
+        assert module is not None
+        sources = [_source_name(cls) for cls in tariff_sources.for_country(code)]
+        asks = []
+        if module.postcode is not None:
+            asks.append("your postcode")
+        if module.zones:
+            asks.append("your region, where its taxes differ")
+        if not sources:
+            asks.append(
+                "the grid tariff from your bill"
+                if module.rule_template
+                else "your grid tariff, typed in"
+            )
+        rows.append(
+            (
+                module.name,
+                ", ".join(sources) or "—",
+                _vat(module),
+                "; ".join(asks) or "nothing more",
+            )
+        )
+    return _table(("Country", "Grid tariff fetched from", "VAT", "Setup also asks"), rows)
+
+
+def render_sources(_arg: str | None) -> str:
+    """`tariffs.md`: every grid source, its countries, where its prices come from, its credit."""
+    rows = []
+    for key in tariff_sources.keys():  # noqa: SIM118 - a registry, not a dict
+        cls = tariff_sources.get(key)
+        module = countries.get(cls.country)
+        credit = cls.credit
+        licence = "" if credit is None or credit.licence is None else f" ({credit.licence})"
+        rows.append(
+            (
+                _source_name(cls) + licence,
+                module.name if module is not None else cls.country,
+                _TIERS.get(cls.tier.value, cls.tier.value),
+                _code(key),
+            )
+        )
+    return _table(("Source", "Country", "Where the prices come from", "Key"), rows)
+
+
 def render_repairs(_arg: str | None) -> str:
     """`troubleshooting.md`: every repair's title and whether it offers a fix."""
     issues = strings()["issues"]
@@ -304,6 +388,8 @@ RENDERERS: dict[str, Callable[[str | None], str]] = {
     "profiles": render_profiles,
     "formats": render_formats,
     "modifiers": render_modifiers,
+    "countries": render_countries,
+    "sources": render_sources,
     "repairs": render_repairs,
     "actions": render_actions,
     "events": render_events,
