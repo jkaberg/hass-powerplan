@@ -7,11 +7,28 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
 from ..model import Field, FieldKind, Schema, Slot
-from .base import with_component
+from .base import SPOT, with_component
 from .registry import register
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from ..context import PriceContext
+
+
+def energy_vat_rate(modifiers: Iterable[object]) -> Decimal:
+    """Return the VAT rate on the energy component: Σ rate of every `Vat` whose `applies_to` covers `spot`.
+
+    The price card's energy part and fixed price carry this VAT and no other (D12 §5.15 F5, D-0581).
+    """
+    return sum(
+        (
+            m.rate
+            for m in modifiers
+            if isinstance(m, Vat) and (m.applies_to is None or SPOT in m.applies_to)
+        ),
+        Decimal(0),
+    )
 
 
 @register

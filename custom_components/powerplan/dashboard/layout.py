@@ -46,10 +46,22 @@ WINDOW_CARD = "custom:powerplan-window-card"
 SUMMARY_CARD = "custom:powerplan-period-summary"
 PRICE_CARD = "custom:powerplan-price-card"
 APPLIANCES_CARD = "custom:powerplan-appliances-card"
-CUSTOM_CARDS = frozenset({TIMELINE_CARD, WINDOW_CARD, SUMMARY_CARD, PRICE_CARD, APPLIANCES_CARD})
+ATTENTION_CARD = "custom:powerplan-attention-card"
+MONTH_BARS = "custom:powerplan-month-bars"
+CUSTOM_CARDS = frozenset(
+    {
+        TIMELINE_CARD,
+        WINDOW_CARD,
+        SUMMARY_CARD,
+        PRICE_CARD,
+        APPLIANCES_CARD,
+        ATTENTION_CARD,
+        MONTH_BARS,
+    }
+)
 #: The Plan card's rail and the appliances card's name column, in px: equal, so
-#: the two time axes line up one above the other (D12 §5.12 R2).
-RAIL = 300
+#: the two time axes line up one above the other (D12 §5.12 R2, §5.15 F13).
+RAIL = 256
 #: The keys `hidden_views` takes: the two tabs, and every appliance's subview.
 VIEWS: tuple[str, ...] = ("overview", "history", "appliances")
 #: The dashboard's own URL path; `strategy.ts` puts it in after the call (D12 §5.1).
@@ -57,7 +69,6 @@ DASHBOARD = "{dashboard}"
 #: The first HA release with each card or view feature (D12 §5.5): the frontend
 #: build each release pins, read at its tag (20260128.6, 20260304.0).
 FEATURES: Mapping[str, AwesomeVersion] = {
-    "repairs": AwesomeVersion("2026.3.0"),
     "footer": AwesomeVersion("2026.3.0"),
     "entity_color": AwesomeVersion("2026.6.0"),
 }
@@ -237,18 +248,13 @@ def _kept(sections: list[Card | None], hidden: Collection[str]) -> list[Card]:
 
 def _overview(site: _Site) -> list[Card | None]:
     s, t, e = site.site, site.texts, site.site.entities
-    meter = _tile(
-        e, "meter_health", t["card_meter_status"], icon="mdi:meter-electric", color="orange"
-    )
-    if meter is not None:
-        meter["visibility"] = [
-            {"condition": "state", "entity": e["meter_health"], "state_not": "ok"}
-        ]
-    repairs = {"type": "repairs", "hide_empty": True} if site.has["repairs"] else None
-    # No heading: a section whose cards all hide hides itself (HA 2026.9's grid section).
-    attention = [card for card in (_cols(repairs, 12), _cols(meter, 12)) if card is not None]
+    # (F13): one card lists PowerPlan's repairs and explains the meter status, in the
+    # household's language; it renders nothing when all is well, so the section needs no condition.
+    attention: Card = {"type": ATTENTION_CARD, "grid_options": {"columns": "full", "rows": "auto"}}
+    if "meter_health" in e:
+        attention["meter_status"] = e["meter_health"]
     sections: list[Card | None] = [
-        _grid(attention, span=3),
+        _grid([attention], span=3),
         _section(
             _heading(t["section_hour"]),
             _cols(_window_card(site), 12, 6),
@@ -261,7 +267,14 @@ def _overview(site: _Site) -> list[Card | None]:
         _section(
             _heading(
                 t["section_price"],
-                _entity_badge(e, "prices_tomorrow", show_state=True, show_icon=True, color="green"),
+                _entity_badge(
+                    e,
+                    "prices_tomorrow",
+                    show_state=True,
+                    show_icon=True,
+                    color="green",
+                    tap_action={"action": "more-info"},
+                ),
             ),
             _cols(_price_card(site), "full", "auto"),
             span=2,
@@ -295,23 +308,26 @@ def _overview(site: _Site) -> list[Card | None]:
                 _cols(_month_card(site), 12, 6),
             )
         )
+    # (F9): cost and savings so far over daily bars on a fixed 1..N axis - one card for
+    # two entity cards (which said "Ukjent") and the statistics graph that labelled days 4:00, 8:00.
     sections.append(
         _section(
             _heading(
                 t["section_month"],
-                {
-                    "type": "button",
-                    "icon": "mdi:chart-bar",
-                    "tap_action": {
+                _entity_badge(
+                    e,
+                    "cost",
+                    show_state=False,
+                    show_icon=True,
+                    icon="mdi:chart-bar",
+                    name=t["view_history"],
+                    tap_action={
                         "action": "navigate",
                         "navigation_path": f"{DASHBOARD}/{site.path('history')}",
                     },
-                },
+                ),
             ),
-            _cols(_entity(e, "cost", t["card_cost"], "mdi:cash"), 6, 2),
-            _cols(_entity(e, "savings", t["card_savings"], "mdi:piggy-bank"), 6, 2),
-            # The month's days: `cost` resets monthly, so a day's change is that day's cost.
-            _cols(_daily_cost(e), 12, 4),
+            _cols(_month_bars(e), 12, 5),
         )
     )
     if s.has_production:
@@ -836,6 +852,9 @@ def _timeline(
     if deadline is not None:
         entities["deadline"] = deadline
         show = ["plan", "price"]
+    elif rail is not None:
+        # (F3): the whole house per window, "Kan bli opptil" as a cap on each bar.
+        show = ["plan", "baseline", "reserve", "ceiling", "price"]
     else:
         show = ["plan", "baseline", "ceiling", "price"]
         if site.site.has_production:
@@ -858,6 +877,7 @@ def _timeline(
         card["narrow_hours"] = 12
     if rail is not None:
         card["rail_width"] = rail
+        card["bucket"] = "window"  # aggregate slots to window_min (60) → kWh/t
     return card
 
 
@@ -866,27 +886,29 @@ def _price_card(site: _Site) -> Card | None:
     e = site.site.entities
     if "price" not in e or "price_forecast" not in e:
         return None
+    # (F5): the household's card keeps its own words; the spot comes from `powerplan/spot_prices`.
+    names = {
+        "price": "price",
+        "price_forecast": "price_forecast",
+        "tomorrow": "prices_tomorrow",
+        "capacity_step": "level",
+    }
     return {
         "type": PRICE_CARD,
         "entry_id": site.site.entry_id,
-        "entities": {
-            key: e[key]
-            for key in (
-                "price",
-                "price_forecast",
-                "prices_tomorrow",
-                "level",
-                "fixed_price_savings",
-            )
-            if key in e
-        },
-        "currency": site.site.currency,
-        "labels": _labels(site.texts),
+        "entities": {key: e[source] for key, source in names.items() if source in e},
     }
 
 
-#: An appliance's entities the appliances card and its dialog read (D12 §5.12 R7).
-_LANE_KEYS = ("control", "ready_by", "cost_month", "savings_month", "energy", "next_legionella")
+#: An appliance's entities the appliances card and its dialog read, by the card's own names (§5.15 F2).
+_LANE_KEYS = {
+    "control": "control",
+    "deadline": "ready_by",
+    "cost": "cost_month",
+    "savings": "savings_month",
+    "energy": "energy",
+    "legionella": "next_legionella",
+}
 
 
 def _appliances_lanes(site: _Site) -> Card | None:
@@ -896,7 +918,7 @@ def _appliances_lanes(site: _Site) -> Card | None:
     appliance's dialog, whose "open details" goes to the subview while there are
     subviews.
     """
-    e, t = site.site.entities, site.texts
+    e = site.site.entities
     if "plan" not in e:
         return None
     loads = []
@@ -909,11 +931,11 @@ def _appliances_lanes(site: _Site) -> Card | None:
             "color": site.colors[load.subentry_id],
             "icon": load.icon,
             "kind": load.type,
-            "kind_name": t.get(f"type_{load.type}", ""),
-            "area": load.area,
             "status": load.entities["plan_status"],
-            **{key: load.entities[key] for key in _LANE_KEYS if key in load.entities},
+            **{key: load.entities[src] for key, src in _LANE_KEYS.items() if src in load.entities},
         }
+        if load.area:
+            row["area"] = load.area
         if site.subviews:
             row["path"] = f"{DASHBOARD}/{site.subview(load)}"
         loads.append(row)
@@ -930,28 +952,17 @@ def _appliances_lanes(site: _Site) -> Card | None:
         "hours": 24,
         "rail_width": RAIL,
         "currency": site.site.currency,
-        "strategies": {
-            key.removeprefix("strategy_"): value
-            for key, value in t.items()
-            if key.startswith("strategy_")
-        },
-        "labels": _labels(t),
     }
 
 
-def _daily_cost(e: Mapping[str, str]) -> Card | None:
-    """Return the month's cost per day, from `cost`'s statistics (N7's sensors, the right unit)."""
+def _month_bars(e: Mapping[str, str]) -> Card | None:
+    """Return the month's cost and savings over the cost per day, 1..N (D12 §5.15 F9)."""
     if "cost" not in e:
         return None
-    return {
-        "type": "statistics-graph",
-        "entities": [e["cost"]],
-        "stat_types": ["change"],
-        "period": "day",
-        "chart_type": "bar",
-        "days_to_show": 30,
-        "hide_legend": True,
-    }
+    card: Card = {"type": MONTH_BARS, "entity": e["cost"]}
+    if "savings" in e:
+        card["savings"] = e["savings"]
+    return card
 
 
 def _window_card(site: _Site) -> Card | None:

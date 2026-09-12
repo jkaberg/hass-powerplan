@@ -26,10 +26,21 @@ Nothing clamps a negative result. A window where the estimate exceeds the grid -
 an export hour, a nameplate that overstates a modulating load - comes back
 negative, exactly as D3's live `uncontrolled()` does, because pretending
 otherwise hides production and bias alike (D3 §5.8).
+
+(D12 §5.15 F11, D-0584). Two leaks seen on the reference house, "other usage" 3,46 kWh at 21:00
+and 2,60 at 22:00 against ≈ 1 kWh elsewhere:
+
+- a window before some load's history begins cannot be separated, so it is skipped rather than
+  counted whole as uncontrolled (the water heater's old timer, ≈ 3,5 kWh a night, leaked in);
+- the house meter's statistics may run one hour behind the loads' (an AMS/HAN register published
+  just after the hour); the lag, 0 or 1 h, is found from the data - the correlation of the hourly
+  meter with Σ controlled at each lag - and corrected before the subtraction.
 """
 
+from bisect import bisect_left, bisect_right
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
 from itertools import pairwise
@@ -41,12 +52,18 @@ __all__ = [
     "Reconstruction",
     "UncontrolledHistory",
     "UncontrolledWindow",
+    "detect_lag",
     "uncontrolled_history",
 ]
 
 MINUTES_PER_HOUR = 60.0
 W_PER_KW = 1000.0
 SECONDS_PER_HOUR = 3600.0
+#: The correlation gain a one-hour meter lag needs before it is applied (`LAG_MIN_GAIN`).
+LAG_MIN_GAIN = 0.10
+#: Fewer paired hours than this and there is no correlation to trust (`_pearson`).
+LAG_MIN_HOURS = 24
+HOUR = timedelta(hours=1)
 
 
 class Reconstruction(StrEnum):
@@ -81,6 +98,15 @@ class ControlledHistory:
     on_rows: tuple[tuple[datetime, bool], ...] = ()
 
     @property
+    def first_at(self) -> datetime | None:
+        """Return where this load's history begins, `None` without any."""
+        if self.power_rows:
+            return self.power_rows[0][0]
+        if self.on_rows:
+            return self.on_rows[0][0]
+        return None
+
+    @property
     def reconstruction(self) -> Reconstruction:
         """Return how this load can be taken off the meter (D10 §2)."""
         if self.power_rows:
@@ -106,6 +132,52 @@ class UncontrolledHistory:
     windows: tuple[UncontrolledWindow, ...] = ()
     reconstruction: Reconstruction = Reconstruction.NONE
     loads: Mapping[str, Reconstruction] = field(default_factory=dict)
+    #: The meter's lag behind the loads, in hours, as found or given.
+    lag_h: int = 0
+    #: Windows left out because some load's history had not begun.
+    skipped: int = 0
+
+
+def _pearson(xs: Sequence[float], ys: Sequence[float]) -> float:
+    n = len(xs)
+    if n < LAG_MIN_HOURS:
+        return 0.0
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx <= 0 or syy <= 0:
+        return 0.0
+    return float(sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / (sxx * syy) ** 0.5)
+
+
+def _hour(at: datetime) -> datetime:
+    return at.replace(minute=0, second=0, microsecond=0)
+
+
+def detect_lag(windows: Sequence[ClosedWindow], controlled: Sequence[ControlledHistory]) -> int:
+    """Return 1 when the meter reports one hour after the loads, else 0."""
+    meter: dict[datetime, float] = defaultdict(float)
+    for window in windows:
+        meter[_hour(window.start_utc)] += window.kwh
+    starts = [at for load in controlled if (at := load.first_at) is not None]
+    if not starts:
+        return 0
+    begin = _hour(max(starts))
+    managed = {
+        hour: sum(_load_kwh(load, hour, hour + HOUR) for load in controlled)
+        for hour in meter
+        if hour >= begin
+    }
+
+    def corr(lag: int) -> float:
+        pairs = [
+            (kwh, meter[hour + lag * HOUR])
+            for hour, kwh in managed.items()
+            if hour + lag * HOUR in meter
+        ]
+        return _pearson([x for x, _ in pairs], [y for _, y in pairs])
+
+    return 1 if corr(1) - corr(0) >= LAG_MIN_GAIN else 0
 
 
 def uncontrolled_history(
@@ -114,6 +186,7 @@ def uncontrolled_history(
     *,
     window_min: int,
     tz: tzinfo,
+    meter_lag_h: int | None = None,
 ) -> UncontrolledHistory:
     """Return the uncontrolled energy per historical window (D10 §2, §5.2).
 
@@ -127,9 +200,19 @@ def uncontrolled_history(
     marks = {load.load_id: load.reconstruction for load in controlled}
     if not windows:
         return UncontrolledHistory(reconstruction=Reconstruction.NONE, loads=marks)
+    lag = detect_lag(windows, controlled) if meter_lag_h is None else meter_lag_h
+    starts = [at for load in controlled if (at := load.first_at) is not None]
+    begin = max(starts) if starts else None
 
     out: list[UncontrolledWindow] = []
-    for window in windows:
+    skipped = 0
+    for metered in windows:
+        # The hour in which the energy was really used.
+        window = replace(metered, start_utc=metered.start_utc - lag * HOUR) if lag else metered
+        if begin is not None and window.start_utc < begin:
+            # Some load has no history yet: it cannot be taken off, so the window says nothing.
+            skipped += 1
+            continue
         end = window.start_utc + timedelta(minutes=window.window_min)
         steered = sum(_load_kwh(load, window.start_utc, end) for load in controlled)
         out.append(
@@ -140,7 +223,9 @@ def uncontrolled_history(
             )
         )
     worst = min(marks.values(), key=_QUALITY.index, default=Reconstruction.FULL)
-    return UncontrolledHistory(windows=tuple(out), reconstruction=worst, loads=marks)
+    return UncontrolledHistory(
+        windows=tuple(out), reconstruction=worst, loads=marks, lag_h=lag, skipped=skipped
+    )
 
 
 def _load_kwh(load: ControlledHistory, a: datetime, b: datetime) -> float:
@@ -153,10 +238,17 @@ def _load_kwh(load: ControlledHistory, a: datetime, b: datetime) -> float:
     return 0.0
 
 
+def _at(row: tuple[datetime, float]) -> datetime:
+    return row[0]
+
+
 def _integral_kwh(rows: tuple[tuple[datetime, float], ...], a: datetime, b: datetime) -> float:
     """Trapezoid energy of a `(at, W)` trace over `[a, b)`, in kWh (D3 §5.4)."""
     total = 0.0
-    for (t0, w0), (t1, w1) in pairwise(rows):
+    # Only the rows around `[a, b)`: the seed integrates 60 days of rows per window.
+    first = max(bisect_right(rows, a, key=_at) - 1, 0)
+    last = bisect_left(rows, b, key=_at) + 1
+    for (t0, w0), (t1, w1) in pairwise(rows[first:last]):
         left, right = max(t0, a), min(t1, b)
         if right <= left:
             continue

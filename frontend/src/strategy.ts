@@ -4,7 +4,21 @@
 // on, and shows why when it cannot.
 
 import type { HomeAssistant } from "./ha";
+import type { Hass } from "./r3-util";
 import { dashboardPath, resolvePaths } from "./transforms";
+import { guardUnknownCards, startVersionCheck } from "./version-check";
+
+/** Every card tag this bundle defines (`cards.ts`); a layout naming another gets a placeholder (iteration 4, F7). */
+export const KNOWN_TAGS = new Set([
+  "powerplan-timeline-card",
+  "powerplan-window-card",
+  "powerplan-period-summary",
+  "powerplan-runs-card",
+  "powerplan-appliances-card",
+  "powerplan-price-card",
+  "powerplan-attention-card",
+  "powerplan-month-bars",
+]);
 
 const TROUBLESHOOTING = "https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md";
 
@@ -30,8 +44,10 @@ export class PowerplanDashboardStrategy extends HTMLElement {
     for (const key of ["entry_id", "hidden_views", "hidden_cards"] as const) {
       if (config[key] !== undefined) message[key] = config[key];
     }
+    const ha = hass as unknown as Hass;
+    startVersionCheck(ha);
     try {
-      return resolvePaths(await hass.callWS(message), dashboardPath(location.pathname));
+      return guardUnknownCards(resolvePaths(await hass.callWS(message), dashboardPath(location.pathname)), KNOWN_TAGS, ha);
     } catch (err) {
       const base = (hass.language || "en").split("-")[0]!;
       const [failed, help] = FAILED[["no", "nn"].includes(base) ? "nb" : base] ?? FAILED.en!;

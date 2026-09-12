@@ -18,6 +18,9 @@ export interface Period {
 
 interface EnergyCollection {
   subscribe(callback: (data: { start: Date; end?: Date }) => void): () => void;
+  /** The picked period, known at once; the first emit waits for the whole energy dataset (iteration 4, F8). */
+  start?: Date;
+  end?: Date;
 }
 
 /** The picker's collection, or `undefined` while HA has not made it (it does on the picker's first render). */
@@ -48,13 +51,19 @@ export function statisticsPeriod(period: Period): "hour" | "day" | "month" {
 export function followPeriod(hass: HomeAssistant, onPeriod: (period: Period) => void): () => void {
   let unsubscribe: (() => void) | undefined;
   let stopped = false;
+  let last = NaN;
+  // Iteration 4 (F8, `followEnergyPeriod`): the collection only emits after `getEnergyData()` has loaded
+  // every source, the compare period and CO₂ - ≈ 25 s on the house. Its period is known at once.
+  const emit = (start: Date, end?: Date) => {
+    if (start.getTime() === last) return;
+    last = start.getTime();
+    onPeriod({ start, end: end ?? new Date(start.getTime() + 86_400_000) });
+  };
   const attach = (): boolean => {
     const collection = energyCollection(hass);
     if (!collection) return false;
-    unsubscribe = collection.subscribe((data) => {
-      const end = data.end ?? new Date(data.start.getTime() + 86_400_000);
-      onPeriod({ start: data.start, end });
-    });
+    if (collection.start instanceof Date) emit(collection.start, collection.end);
+    unsubscribe = collection.subscribe((data) => emit(data.start, data.end));
     return true;
   };
   if (!attach()) {
@@ -63,7 +72,8 @@ export function followPeriod(hass: HomeAssistant, onPeriod: (period: Period) => 
       if (stopped || attach()) window.clearInterval(poll);
       else if (Date.now() - started >= FALLBACK_MS) {
         window.clearInterval(poll);
-        onPeriod(calendarMonth(new Date()));
+        const month = calendarMonth(new Date());
+        emit(month.start, month.end);
       }
     }, 250);
     unsubscribe = () => window.clearInterval(poll);

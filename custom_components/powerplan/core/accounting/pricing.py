@@ -79,9 +79,10 @@ class PricedSlot:
     """One slot's arithmetic, kept so it can be repriced or priced late (D11 §2).
 
     Two uses, one shape: a slot priced from a synthesised price, waiting for the
-    known one; and a slot of an EV session whose `required_kwh` is unknown,
-    waiting for the session to end. Both carry the price they were closed with, so
-    a late pricing is still the price of *that* slot and not of today's curve.
+    known one; and a slot in a load's open reference buffer, waiting for its day,
+    session or run to settle (D11 §5.9). Both carry the price they were closed
+    with, so a late pricing is still the price of *that* slot and not of today's
+    curve.
     """
 
     start_utc: datetime
@@ -92,6 +93,10 @@ class PricedSlot:
     #: Whether the *measurement* was exact, so a re-price can make the slot exact.
     #: An unmetered load's slot stays an estimate however well its price is known.
     load_exact: bool = True
+    #: Whether the slot's reference has settled, so a re-price moves `cf_cost` too.
+    settled: bool = False
+    #: A run's shape: the on-request shadow's kWh for this slot (D11 §5.9.1, `run`).
+    shape_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

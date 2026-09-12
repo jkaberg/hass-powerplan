@@ -1,150 +1,102 @@
-// One appliance row's status, as the appliances card and its dialog show it
-// (D12 §5.12 R1, R2). Pure: `plan_status` and the plan in, a pill out.
+// Stable, human status for one appliance row (iteration 4).
 //
-// Why a mapping and a debounce: `plan_status` is the engine's truth each tick,
-// and on the live house it flapped - TV-stua changed 86 times in 6 h one
-// day, `running_plan` ⇄ `paused_peak` ⇄ `waiting` every few minutes - and
-// `manual_override` was raised with `reason_key: already_at`, the device
-// already where the plan wants it. The card shows a status only after it has
-// held for `DEBOUNCE_MS`; availability and the household's own changes show
-// at once.
+// Iteration 4 changes: the status is shown as plain secondary text ("Går · 23,8 → 24 °C"), like a
+// tile's state line, instead of a coloured pill. New kind "holding": a heating load that keeps
+// its temperature (hold_kwh in the current slot) without a run that PowerPlan moved.
+// The 90 s debounce from iteration 3 stays: planstatus sensors flap every few minutes.
 
-export type Kind = "running" | "planned" | "waiting" | "paused" | "holding" | "manual" | "idle" | "unavailable";
+import type { HassEntity } from "./r3-util";
+
+export type Kind = "running" | "holding" | "planned" | "waiting" | "paused" | "manual" | "idle" | "unavailable";
 
 export interface StatusView {
   kind: Kind;
-  /** The pill's text; "" draws no pill. */
-  label: string;
-  /** Why, for a paused or manual row: shown in the lane. */
-  reason?: string;
+  word: string;       // first word of the state line; "" = none
+  reason?: string;    // replaces the detail for paused/manual/off
 }
 
 export const DEBOUNCE_MS = 90_000;
 
-/** Row order: what is happening now first, what needs nothing last. */
-export const KIND_ORDER: readonly Kind[] = ["running", "waiting", "paused", "planned", "holding", "manual", "idle", "unavailable"];
+export const STATUS_LABELS: Record<string, Record<string, string>> = {
+  nb: {
+    running: "Går", charging: "Lader", forced: "Tvunget på", holding: "Holder", planned: "Planlagt", waiting: "Venter",
+    paused: "Strupet", manual: "Manuell", off: "Av", unavailable: "Utilgjengelig",
+    paused_reason: "pause for å holde effekttrinnet", manual_reason: "styres fra enheten", off_reason: "slått av i PowerPlan",
+    deadline: "frist {time}", target: "mål {v}", next: "Neste {time}",
+  },
+  en: {
+    running: "Running", charging: "Charging", forced: "Forced on", holding: "Holding", planned: "Planned", waiting: "Waiting",
+    paused: "Throttled", manual: "Manual", off: "Off", unavailable: "Unavailable",
+    paused_reason: "paused to protect the capacity step", manual_reason: "controlled by the device", off_reason: "turned off in PowerPlan",
+    deadline: "due {time}", target: "target {v}", next: "Next {time}",
+  },
+};
 
-/**
- * `plan_status` (D8 §5.16's twelve states) → what the row says.
- *
- * `hasRunNow` and `hasFutureRun` come from the plan's slots: a load the plan
- * runs this slot reads "running" even while the device still ramps, and one
- * waiting for a planned run reads "planned". `holding` is a thermal load the
- * plan leaves at its setpoint now, drawing its standing loss (D-0501): not idle.
- */
+/** Pure mapping, no debounce. */
 export function rawStatus(
-  state: string | undefined,
-  attributes: Record<string, unknown>,
-  hasRunNow: boolean,
-  hasFutureRun: boolean,
-  labels: Record<string, string>,
-  holding = false,
-  perKwh: (value: number) => string = String,
+  status: HassEntity | undefined,
+  control: HassEntity | undefined,
+  o: { runNow: boolean; futureRun: boolean; holdNow: boolean },
+  L: Record<string, string>,
 ): StatusView {
-  // The integration's own 90 s hold, where it publishes one (D-0497).
-  if (typeof attributes.display_status === "string" && state !== "unavailable" && state !== "unknown") {
-    state = attributes.display_status;
+  if (!status || status.state === "unavailable" || status.state === "unknown") {
+    return { kind: "unavailable", word: L.unavailable };
   }
-  if (state === undefined || state === "unavailable" || state === "unknown" || state === "device_unavailable") {
-    return { kind: "unavailable", label: labels.status_unavailable ?? "" };
+  const ctl = control?.attributes?.effective ?? control?.state;
+  if (ctl === "off") return { kind: "manual", word: L.off, reason: L.off_reason };
+  if (ctl === "observe" || ctl === "delegated") return { kind: "manual", word: L.manual, reason: L.manual_reason };
+  if (ctl === "force") return { kind: "running", word: L.forced };
+
+  const a = status.attributes ?? {};
+  const s: string = a.display_status ?? status.state;   // backend-debounced status when published (status_guard.py)
+  if (s === "paused_peak" || a.shed_reason) return { kind: "paused", word: L.paused, reason: L.paused_reason };
+  // "already_at" = the device already is where the plan wants it; that is not a manual override.
+  if (s === "manual_override" && a.reason_key && a.reason_key !== "already_at") {
+    return { kind: "manual", word: L.manual, reason: L.manual_reason };
   }
-  // A hand on the dial is one the integration did not cause. `already_at` is
-  // the device already where the plan wants it: the plan, not a person.
-  if (state === "manual_override" && attributes.reason_key !== "already_at") {
-    return { kind: "manual", label: labels.status_manual ?? "", reason: labels.reason_manual ?? "" };
-  }
-  if (state === "not_controlled") {
-    return { kind: "manual", label: labels.status_not_controlled ?? "", reason: labels.reason_not_controlled ?? "" };
-  }
-  if (state === "observing") {
-    return { kind: "manual", label: labels.status_observing ?? "", reason: labels.reason_observing ?? "" };
-  }
-  if (state === "run_now") return { kind: "running", label: labels.status_forced ?? "" };
-  if (state === "charging") return { kind: "running", label: labels.status_charging ?? "" };
-  if (state === "paused_peak") {
-    return { kind: "paused", label: labels.status_paused ?? "", reason: labels.reason_paused ?? "" };
-  }
-  if (state === "running_plan" || hasRunNow) return { kind: "running", label: labels.status_running ?? "" };
-  if (hasFutureRun) {
-    return { kind: "planned", label: labels.status_planned ?? "", reason: whyReason(attributes, labels, perKwh) };
-  }
-  if (holding) return { kind: "holding", label: labels.status_holding ?? "" };
-  if (state === "waiting") {
-    return { kind: "waiting", label: labels.status_waiting ?? "", reason: whyReason(attributes, labels, perKwh) };
-  }
-  return { kind: "idle", label: "" };
+  if (s === "charging") return { kind: "running", word: L.charging };
+  if (o.runNow || s.startsWith("running")) return { kind: "running", word: L.running };
+  if (s === "waiting") return { kind: "waiting", word: L.waiting };
+  if (o.holdNow) return { kind: "holding", word: L.holding };
+  if (o.futureRun) return { kind: "planned", word: L.planned };
+  return { kind: "idle", word: "" };
 }
 
-/**
- * D13 §7: the party whose price makes the wait worth it, in the household's words -
- * «Venter til 22:00 - nettleien er 13 øre lavere da». Undefined without one.
- */
-export function whyReason(
-  attributes: Record<string, unknown>,
-  labels: Record<string, string>,
-  perKwh: (value: number) => string = String,
-): string | undefined {
-  const templates: Record<string, string | undefined> = {
-    grid: labels.why_grid,
-    supplier: labels.why_supplier,
-    state: labels.why_state,
-  };
-  const party = attributes.why_party;
-  const template = typeof party === "string" ? templates[party] : undefined;
-  if (!template) return undefined;
-  const difference = Number(attributes.why_difference);
-  return template
-    .replace("{time}", String(attributes.why_until ?? ""))
-    .replace("{difference}", Number.isFinite(difference) ? perKwh(difference) : "");
-}
+interface Memo { shown: StatusView; cand: StatusView; since: number }
 
-interface Memo {
-  shown: StatusView;
-  candidate: StatusView;
-  since: number;
-}
-
-const same = (a: StatusView, b: StatusView) => a.kind === b.kind && a.label === b.label;
-
-/** Keeps each row's shown status steady; one per card. */
+/** Keeps the displayed status steady. One instance per card. */
 export class StatusDebouncer {
   private memo = new Map<string, Memo>();
 
-  public view(id: string, next: StatusView, now = Date.now()): StatusView {
-    const memo = this.memo.get(id);
-    if (!memo) {
-      this.memo.set(id, { shown: next, candidate: next, since: now });
+  view(id: string, next: StatusView, now = Date.now()): StatusView {
+    const m = this.memo.get(id);
+    if (!m) {
+      this.memo.set(id, { shown: next, cand: next, since: now });
       return next;
     }
-    // At once: availability, and a change the household made (the control select).
-    const immediate =
-      next.kind === "unavailable" ||
-      memo.shown.kind === "unavailable" ||
-      (next.kind === "manual") !== (memo.shown.kind === "manual") ||
-      same(next, memo.shown);
+    // Immediate: availability, anything the user caused via the control select, or no real change.
+    const immediate = next.kind === "unavailable" || m.shown.kind === "unavailable" ||
+      (next.kind === "manual") !== (m.shown.kind === "manual") || (next.kind === m.shown.kind && next.word === m.shown.word);
     if (immediate) {
-      memo.shown = next;
-      memo.candidate = next;
-      memo.since = now;
+      m.shown = next; m.cand = next; m.since = now;
       return next;
     }
-    if (!same(next, memo.candidate)) {
-      memo.candidate = next;
-      memo.since = now;
-    } else if (now - memo.since >= DEBOUNCE_MS) {
-      memo.shown = next;
+    if (next.kind !== m.cand.kind || next.word !== m.cand.word) {
+      m.cand = next; m.since = now;
+    } else if (now - m.since >= DEBOUNCE_MS) {
+      m.shown = next;
     }
-    return memo.shown;
+    return m.shown;
   }
 
-  /** The earliest instant a held change becomes visible, to schedule a redraw. */
-  public nextFlip(): number | null {
-    let due: number | null = null;
-    for (const memo of this.memo.values()) {
-      if (same(memo.candidate, memo.shown)) continue;
-      const at = memo.since + DEBOUNCE_MS;
-      due = due === null ? at : Math.min(due, at);
+  nextFlip(): number | null {
+    let t: number | null = null;
+    for (const m of this.memo.values()) {
+      if (m.cand.kind !== m.shown.kind || m.cand.word !== m.shown.word) {
+        const due = m.since + DEBOUNCE_MS;
+        t = t === null ? due : Math.min(t, due);
+      }
     }
-    return due;
+    return t;
   }
 }

@@ -59,6 +59,7 @@ from .core.model import Carrier, Mode
 from .core.pricing.party import split
 from .entity import LoadEntity, accrual_reset, digest_of, money_text
 from .runtime import Runtime
+from .savings_guard import NO_COST, Savings, guarded_savings
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -1196,23 +1197,53 @@ class LoadSavingsSensor(_LoadMoneySensor):
         super().__init__(runtime, load, "savings_month")
 
     @property
-    def native_value(self) -> float | None:
-        """Month-to-date savings, unclamped - negative is a real answer."""
+    def _guarded(self) -> Savings:
+        """(D-0583) No reference → `None` and `reason: no_reference`, never −cost.
+
+        Guarded on the **settled** cost (D11 §5.9.2, D-0591): an open day or
+        session has neither a cost nor a counterfactual in the figure yet, and
+        reads its settled part with `pending`, not `no_reference`.
+        """
         row = self._row
-        return None if row is None else _load_money(row.get("savings"))
+        if row is None:
+            return Savings(None, NO_COST)
+        guarded = guarded_savings(
+            _load_money(row.get("settled_cost")), _load_money(row.get("cf_cost"))
+        )
+        # The ledger's own figure where there is a reference: it is the one D11 computed.
+        saved = _load_money(row.get("savings"))
+        return guarded if guarded.value is None or saved is None else Savings(saved)
+
+    @property
+    def native_value(self) -> float | None:
+        """Month-to-date savings, unclamped - negative is a real answer; `None` without a reference."""
+        return self._guarded.value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """`counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `calibration_error`, `shadow`."""
+        """`counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `pending`, the model's, `reason`.
+
+        `model_savings` is the shadow's figure and is present only when its
+        `model_confidence` is `ok` (D11 §5.9.5).
+        """
         row = self._row
+        model = (
+            {}
+            if row is None or row.get("model_savings") is None
+            else {"model_savings": row.get("model_savings")}
+        )
         return {
+            **self._guarded.attributes,
             "counterfactual_cost": None if row is None else row.get("cf_cost"),
             "counterfactual_kwh": None if row is None else row.get("cf_kwh"),
             "kwh_shifted": None if row is None else row.get("kwh_shifted"),
             "previous_month": None if row is None else row.get("previous_savings"),
             "since_install": self._since_install(),
             "savings_confidence": None if row is None else row.get("savings_confidence"),
+            "pending": None if row is None else row.get("pending"),
+            "model_confidence": None if row is None else row.get("model_confidence"),
             "calibration_error": None if row is None else row.get("calibration_error"),
+            **model,
             "shadow": store_kind_of(self.load).value,
         }
 

@@ -1,6 +1,6 @@
 """D11 §9 4, 5, 14 - the counterfactual, against the simulators and the modes.
 
-The savings figure is a model, and it is the number a household will quote (PLAN §6
+The savings figure is a model, and it is the number people will quote (PLAN §6
 R10). So the shadows are checked against the `tests/sim` houses, which are
 deliberately one node richer than the store models the planner uses (D9 §2): the
 slab simulator separates the screed from the room air and loses heat downwards, the
@@ -10,6 +10,11 @@ agreed with itself would prove nothing.
 What the shadow honours is the household's intent - the target profile, the
 plug-in, a force. What it does not honour is powerplan's plan. That difference is
 the savings, and each test below pins one half of it.
+
+The shadows produce the **model** figure (`model_cf_kwh`,
+`model_cf_cost`, §5.9.5); the headline `cf_kwh` / `cf_cost` are the reference's
+and are booked when a session or run settles (§5.9). Where a test reads the
+headline, it ends the session so there is something settled to read.
 """
 
 from __future__ import annotations
@@ -290,10 +295,11 @@ def test_05_the_ev_shadow_charges_at_the_full_rate_from_plug_in() -> None:
         )
 
     rec = under_test.accounting.state().ledger.loads["ev"]
-    assert rec.cf_kwh == pytest.approx(30.0)
+    assert rec.model_cf_kwh == pytest.approx(30.0)
     # 11 × 1.25 (17) + 11 × 1.40 (18) + 8 × 1.10 (19) = 37.95 NOK, NO3 shape.
-    assert rec.cf_cost.amount == Decimal("37.950")
+    assert rec.model_cf_cost.amount == Decimal("37.950")
     assert rec.cost.amount == Decimal("0.000"), "powerplan has not charged it yet"
+    assert rec.cf_kwh == 0.0, "the session is open: the headline books nothing yet"
 
 
 def test_05b_the_savings_are_the_evening_the_plan_moved_to_the_night() -> None:
@@ -311,6 +317,8 @@ def test_05b_the_savings_are_the_evening_the_plan_moved_to_the_night() -> None:
                 local(2026, 12, 4, hour, 0).astimezone(UTC), loads={"ev": night.get(hour, 0.0)}
             )
         )
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(closed_slot(local(2026, 12, 4, 6, 0).astimezone(UTC), loads={"ev": 0.0}))
 
     rec = under_test.accounting.state().ledger.loads["ev"]
     assert rec.kwh == pytest.approx(30.0)
@@ -353,7 +361,7 @@ def test_05c_an_unknown_requirement_defers_the_session_and_prices_it_once() -> N
     assert status.loads["ev"].cf_kwh == pytest.approx(28.0), "what the session actually took"
     # 11 × 1.25 (17) + 11 × 1.40 (18) + 6 × 1.10 (19) = 35.75 NOK.
     assert status.loads["ev"].cf_cost.amount == Decimal("35.750")
-    assert not under_test.accounting.state().deferred
+    assert not under_test.accounting.state().open
 
 
 def test_05d_a_forced_charge_saves_nothing_and_says_so() -> None:
@@ -368,9 +376,12 @@ def test_05d_a_forced_charge_saves_nothing_and_says_so() -> None:
         under_test.close(
             closed_slot((PLUG_IN + timedelta(hours=index)).astimezone(UTC), loads={"ev": kwh})
         )
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(closed_slot((PLUG_IN + timedelta(hours=3)).astimezone(UTC), loads={"ev": 0.0}))
 
     rec = under_test.accounting.state().ledger.loads["ev"]
     assert rec.cf_kwh == pytest.approx(rec.kwh)
+    assert rec.model_cf_kwh == pytest.approx(rec.kwh)
     assert rec.savings.amount == 0
     assert rec.excluded_slots == 0, "a force is accounted, not excluded"
 
@@ -445,7 +456,7 @@ def test_07b_the_shadow_stops_at_its_own_duration_even_if_the_request_lingers() 
         )
 
     rec = under_test.accounting.state().ledger.loads["dishwasher"]
-    assert rec.cf_kwh == pytest.approx(CYCLE_ENERGY_KWH), "not a second programme's worth"
+    assert rec.model_cf_kwh == pytest.approx(CYCLE_ENERGY_KWH), "not a second programme's worth"
 
 
 def test_07c_a_cancelled_request_cancels_the_shadow_run() -> None:
@@ -462,7 +473,8 @@ def test_07c_a_cancelled_request_cancels_the_shadow_run() -> None:
     )
 
     rec = under_test.accounting.state().ledger.loads["dishwasher"]
-    assert rec.cf_kwh == pytest.approx(CYCLE_ENERGY_KWH / 3.0), "one of the three hours, no more"
+    assert rec.model_cf_kwh == pytest.approx(CYCLE_ENERGY_KWH / 3.0), "one of three hours, no more"
+    assert rec.cf_kwh == 0.0, "the run settled on the cancel, and nothing had run"
 
 
 # --------------------------------------------------------------------------- #

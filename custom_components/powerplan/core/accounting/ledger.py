@@ -121,10 +121,18 @@ class LoadMonthRec:
     `delegated`, `off`, or a store model with no shadow. There is deliberately no
     export field: surplus attribution per load is v1.x (D11 §10), so a load that
     eats PV is priced at the import price and the site figure is the right one.
+
+    `cost` accrues every slot as it closes; `cf_cost`, `cf_kwh` and
+    `settled_cost` only when the slot's day, session or run settles (D11 §5.9.2),
+    so `savings` never holds a slot's cost without its counterfactual. The
+    `model_*` fields are the shadow's figure, per slot (§5.9.5).
     """
 
     cost: Money
     cf_cost: Money
+    settled_cost: Money
+    model_cf_cost: Money
+    model_cost: Money
     kwh: float = 0.0
     cf_kwh: float = 0.0
     slots: int = 0
@@ -134,19 +142,31 @@ class LoadMonthRec:
     calib_kwh: float = 0.0
     calib_cf_kwh: float = 0.0
     kwh_shifted: float = 0.0
-    #: The energy savings by party - grid, supplier, state - in the rec's currency;
-    #: they sum to `savings` (D11 §5.8).
+    model_cf_kwh: float = 0.0
+    #: The settled energy savings by party - grid, supplier, state - in the rec's
+    #: currency; they sum to `savings` (D11 §5.8).
     savings_by_party: dict[str, Decimal] = field(default_factory=dict)
 
     @classmethod
     def empty(cls, currency: str) -> LoadMonthRec:
         """Return a fresh month for a load priced in `currency`."""
-        return cls(cost=zero(currency), cf_cost=zero(currency))
+        return cls(
+            cost=zero(currency),
+            cf_cost=zero(currency),
+            settled_cost=zero(currency),
+            model_cf_cost=zero(currency),
+            model_cost=zero(currency),
+        )
 
     @property
     def savings(self) -> Money:
-        """Return the energy-shift savings: `cf_cost − cost` (D11 §4)."""
-        return minus(self.cf_cost, self.cost)
+        """Return the settled timing savings: `cf_cost − settled_cost` (D11 §5.9.2)."""
+        return minus(self.cf_cost, self.settled_cost)
+
+    @property
+    def model_savings(self) -> Money:
+        """Return the shadow's savings over the slots it stepped (D11 §5.9.5)."""
+        return minus(self.model_cf_cost, self.model_cost)
 
     @property
     def confidence(self) -> SlotConfidence:
@@ -161,6 +181,10 @@ class SiteMonthRec:
     `capacity_fee` and `cf_capacity_fee` are this month's *share* of the period's
     fee - the bill as of now less the bill as of the month's start (D11 §2) - so a
     rolling-12 market reports the month's share of the rolling fee.
+
+    `capacity_fee` is live, for the cost. The savings set `cf_capacity_fee`
+    against `capacity_fee_settled`: both billed through the last settled day, so
+    an open day's peak never meets a counterfactual that lacks it (D11 §5.9.4).
     """
 
     energy_cost: Money
@@ -168,15 +192,16 @@ class SiteMonthRec:
     capacity_fee: Money
     cf_capacity_fee: Money
     cf_energy_cost: Money
-    #: The imported energy's cost by party - grid, supplier, state (D11 §5.8).
-    energy_by_party: dict[str, Decimal] = field(default_factory=dict)
+    capacity_fee_settled: Money
     import_kwh: float = 0.0
     export_kwh: float = 0.0
     slots: int = 0
     estimated_slots: int = 0
     windows_cf: int = 0
+    #: The imported energy's cost by party - grid, supplier, state (D11 §5.8).
+    energy_by_party: dict[str, Decimal] = field(default_factory=dict)
     #: The month's energy surcharge above a priced limit, actual and counterfactual,
-    #: each from its own windows (D11 §5.4, O23): part of the grid's capacity line.
+    #: each from its own settled windows (D11 §5.4, O23): part of the grid's capacity line.
     surcharge: Decimal = Decimal(0)
     cf_surcharge: Decimal = Decimal(0)
 
@@ -189,6 +214,7 @@ class SiteMonthRec:
             capacity_fee=zero(currency),
             cf_capacity_fee=zero(currency),
             cf_energy_cost=zero(currency),
+            capacity_fee_settled=zero(currency),
         )
 
     @property
@@ -198,7 +224,7 @@ class SiteMonthRec:
 
     @property
     def capacity_charge(self) -> Money:
-        """Return the grid's capacity line: the fee and any priced limit's surcharge."""
+        """Return the grid's capacity line: the live fee and any priced limit's surcharge."""
         return Money(self.capacity_fee.amount + self.surcharge, self.capacity_fee.currency)
 
     @property
@@ -208,8 +234,9 @@ class SiteMonthRec:
 
     @property
     def capacity_savings(self) -> Money:
-        """Return the capacity component of the savings, the surcharge's included (D11 §5.4)."""
-        return minus(self.cf_capacity_charge, self.capacity_charge)
+        """Return the capacity component of the savings, the surcharge's included (D11 §5.4, §5.9.4)."""
+        settled = self.capacity_fee_settled.amount + self.surcharge
+        return minus(self.cf_capacity_charge, Money(settled, self.capacity_fee_settled.currency))
 
     @property
     def confidence(self) -> SlotConfidence:

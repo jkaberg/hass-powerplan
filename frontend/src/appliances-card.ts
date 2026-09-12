@@ -1,550 +1,399 @@
-// `powerplan-appliances-card` (D12 §5.12 R1–R6): one row per appliance, each
-// with its next 24 h as a lane on the same time axis and the same left rail
-// width as the Plan card above it. A tap opens the appliance's dialog. It
-// replaces Now's ten tiles, the power split and the next-runs list: the lanes
-// show every run with its time, kWh and cost.
+// custom:powerplan-appliances-card - iteration 4.
 //
-// Data, all published already: `sensor.<site>_plan` (`slots`, `by_load`), each
-// `plan_status` (state, `current`, `target`, `comfort_state`, `granted_power`,
-// `deadline_time`), `sensor.<site>_price_forecast` for the cheap-hour bands.
+// One row per appliance with a 24 h lane on the same time axis (and rail width) as the Plan card.
+// Four encodings, explained once in the legend, never written inside a lane:
+//   solid block  = a run PowerPlan moved (slots[].planned_kwh)
+//   empty track  = holds temperature / nothing moved
+//   hatch        = lowered in expensive hours (slots[].paused, heating loads only)
+//   green column = cheap hours (lowest quarter of the price window)
+// Next to a lane: only the next start time(s). kWh and kr live in the dialog.
+// The state is plain secondary text like a tile ("Går · 23,8 → 24 °C"); the whole row is a button.
 
-import { openApplianceDialog } from "./appliance-dialog";
-import type { HomeAssistant } from "./ha";
-import { timeZone } from "./ha";
-import { KIND_ORDER, type Kind, rawStatus, StatusDebouncer, type StatusView } from "./status";
-import { ppStyles } from "./styles";
 import {
-  type ByLoad,
-  cheapBands,
-  holdRuns,
-  localHour,
-  pauseRuns,
-  moneyFormat,
-  nextClock,
-  type PlanSlot,
-  planRuns,
-  type PriceSlot,
-  readable,
-  type Run,
-  withAlpha,
-} from "./transforms";
+  Hass, esc, numFmt01, timeFmt, localHour, startOfHour, rgbaHex, readable, readPlan, runsFor, loweredFor,
+  newUid, fmtTemplate, pick, keepFocus, toNum, Win,
+} from "./r3-util";
+import { StatusDebouncer, StatusView, rawStatus, STATUS_LABELS, Kind } from "./status";
+import { openApplianceDialog } from "./appliance-dialog";
+import { TOKENS, SHARED, hatchDef, segmented, skeletonRows } from "./tokens";
 
-export interface ApplianceLoad {
+export interface LoadCfg {
   id: string;
   name: string;
   color: string;
   icon?: string;
-  /** The D4 type key, for the dialog's subtitle. */
-  kind?: string;
-  /** The type's name in the household's language. */
-  kind_name?: string;
-  /** The room, from the registries. */
   area?: string;
-  status: string;
-  control?: string;
-  ready_by?: string;
-  cost_month?: string;
-  savings_month?: string;
-  energy?: string;
-  next_legionella?: string;
-  /** The appliance's subview, `{dashboard}` already rewritten by the strategy. */
-  path?: string;
+  status: string;         // sensor.<load>_planstatus
+  control?: string;       // select.<load>_styring
+  deadline?: string;      // time.<load>_ferdig_til_kl
+  cost?: string;          // sensor.<load>_kostnad_denne_maneden
+  savings?: string;       // sensor.<load>_besparelse_denne_maneden
+  energy?: string;        // sensor.<load>_energi_totalt
+  legionella?: string;    // sensor.<load>_neste_legionellakjoring
+  path?: string;          // subview path
+  kind?: string;          // water_heater | floor_heating | heat_pump | ev | battery
 }
 
-export interface AppliancesConfig {
-  entry_id: string;
+export interface AppliancesCfg {
+  type: string;
+  entry_id?: string;
   entities: { plan: string; price_forecast?: string };
-  loads: ApplianceLoad[];
-  hours?: number;
-  /** Must equal the Plan card's rail so the two time axes line up (R2). */
-  rail_width?: number;
+  loads: LoadCfg[];
+  hours?: number;              // default 24
+  rail_width?: number;         // must equal the Plan card's rail (strategy passes 256)
   default_filter?: "active" | "all";
   currency?: string;
-  /** Each strategy's words, for the dialog's "why" (`strategy_<key>`). */
-  strategies?: Record<string, string>;
   labels?: Record<string, string>;
 }
 
+const ORDER: Kind[] = ["running", "waiting", "paused", "planned", "holding", "manual", "unavailable", "idle"];
+const FILTER_KEY = "powerplan-appliances-filter";
+
+const CARD_LABELS: Record<string, Record<string, string>> = {
+  nb: {
+    active: "Aktive", all: "Alle", show_all: "Vis alle", filter: "Vis apparater", n_active: "{n} aktive nå",
+    lg_run: "Kjører", lg_hold: "Holder temperaturen", lg_hold_short: "Holder", lg_low: "Senket i dyre timer", lg_low_short: "Senket",
+    lg_cheap: "Billige timer", now: "Nå", n_idle: "{n} uten behov", open: "Åpne detaljer", idle_state: "Ingen behov neste {h} t",
+  },
+  en: {
+    active: "Active", all: "All", show_all: "Show all", filter: "Show appliances", n_active: "{n} active now",
+    lg_run: "Running", lg_hold: "Holding temperature", lg_hold_short: "Holding", lg_low: "Lowered in expensive hours", lg_low_short: "Lowered",
+    lg_cheap: "Cheap hours", now: "Now", n_idle: "{n} idle", open: "Open details", idle_state: "Nothing needed in the next {h} h",
+  },
+};
+
+const DEFAULT_ICON: Record<string, string> = {
+  water_heater: "mdi:water-boiler", floor_heating: "mdi:heating-coil", heat_pump: "mdi:heat-pump", ev: "mdi:ev-station", battery: "mdi:home-battery",
+};
+
 interface Row {
-  load: ApplianceLoad;
+  load: LoadCfg;
   view: StatusView;
-  runs: Run[];
-  /** Holding its setpoint (D-0501): drawn as a faint band under the runs. */
-  holds: Run[];
-  /** Planned pauses - coasting, postponed (D-0507): a hatched band with its end. */
-  pauses: Run[];
-  sub: string;
-  /** "2,90 kWh · 2,11 kr" */
-  meta: string;
-  cost: string;
-  deadline: number | null;
+  runs: Win[];
+  lowered: Win[];
+  line: string;          // "Går · 23,8 → 24 °C"
+  deadline: Date | null;
   nextStart: number;
 }
 
-const FILTER_KEY = "powerplan-appliances-filter";
-const HOUR_MS = 3_600_000;
-
-export const escape = (value: unknown) =>
-  String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-export const fill = (text: string, values: Record<string, string | number>) =>
-  text.replace(/\{(\w+)\}/g, (whole, key: string) => (values[key] === undefined ? whole : String(values[key])));
-
-export const toNumber = (value: unknown): number | null => {
-  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""));
-  return Number.isFinite(n) ? n : null;
-};
-
 export class PowerplanAppliancesCard extends HTMLElement {
-  private config?: AppliancesConfig;
-  private hassRef?: HomeAssistant;
+  private config?: AppliancesCfg;
+  private hassRef?: Hass;
   private key: unknown[] = [];
   private width = 0;
-  private resize?: ResizeObserver;
-  private debouncer = new StatusDebouncer();
-  private uid = `ppa${Math.random().toString(36).slice(2, 8)}`;
+  private ro?: ResizeObserver;
+  private deb = new StatusDebouncer();
+  private uid = newUid("ppa");
   private filter: "active" | "all" = "active";
   private flipTimer?: number;
 
-  public setConfig(config: AppliancesConfig): void {
+  setConfig(config: AppliancesCfg): void {
     if (!config?.entities?.plan) throw new Error("powerplan-appliances-card needs entities.plan");
-    if (!Array.isArray(config.loads)) throw new Error("powerplan-appliances-card needs loads");
+    if (!Array.isArray(config.loads) || !config.loads.length) throw new Error("powerplan-appliances-card needs loads");
     this.config = config;
     let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(FILTER_KEY);
-    } catch {
-      // private mode: the default
-    }
-    this.filter = stored === "all" || stored === "active" ? stored : (config.default_filter ?? "active");
+    try { stored = localStorage.getItem(FILTER_KEY); } catch { /* private mode */ }
+    this.filter = stored === "all" || stored === "active" ? stored : config.default_filter ?? "active";
     this.key = [];
   }
 
-  public set hass(hass: HomeAssistant) {
+  set hass(hass: Hass) {
     this.hassRef = hass;
-    const config = this.config;
-    if (!config) return;
-    const ids = [config.entities.plan, config.entities.price_forecast, ...config.loads.flatMap((l) => [l.status, l.control, l.ready_by])];
-    const key = [
-      ...ids.map((id) => (id ? hass.states[id] : undefined)),
-      hass.language,
-      hass.themes.darkMode,
-      Math.floor(Date.now() / 60_000),
-      this.width,
-      this.filter,
-    ];
-    if (key.length === this.key.length && key.every((part, i) => part === this.key[i])) return;
-    this.key = key;
+    const c = this.config;
+    if (!c) return;
+    const ids = [c.entities.plan, c.entities.price_forecast, ...c.loads.flatMap((l) => [l.status, l.control, l.deadline])];
+    const k = [...ids.map((id) => (id ? hass.states[id] : undefined)), hass.language, hass.themes?.darkMode,
+      Math.floor(Date.now() / 60e3), this.width, this.filter];
+    if (k.length === this.key.length && k.every((v, i) => v === this.key[i])) return;
+    this.key = k;
     this.render();
   }
 
-  public connectedCallback(): void {
-    this.resize ??= new ResizeObserver((entries) => {
-      const width = Math.round(entries[0]!.contentRect.width);
-      if (width && width !== this.width) {
-        this.width = width;
-        this.redraw();
-      }
+  connectedCallback(): void {
+    this.style.display ||= "block";   // measurable before the first render (the observer needs a box)
+    this.ro ??= new ResizeObserver((e) => {
+      const w = Math.round(e[0].contentRect.width);
+      if (w && w !== this.width) { this.width = w; this.key = []; if (this.hassRef) this.hass = this.hassRef; }
     });
-    this.resize.observe(this);
+    this.ro.observe(this);
   }
 
-  public disconnectedCallback(): void {
-    this.resize?.disconnect();
+  disconnectedCallback(): void {
+    this.ro?.disconnect();
     if (this.flipTimer) clearTimeout(this.flipTimer);
   }
 
-  public getCardSize(): number {
-    return 2 + (this.config?.loads.length ?? 4);
+  getCardSize(): number { return 2 + (this.config?.loads.length ?? 4); }
+  getGridOptions() { return { columns: 12, rows: "auto", min_columns: 6 }; }
+  static getStubConfig() { return { entities: { plan: "" }, loads: [] }; }
+
+  // ------------------------------------------------------------------ data
+  private labels(): Record<string, string> {
+    const h = this.hassRef!;
+    return { ...pick(STATUS_LABELS, h), ...pick(CARD_LABELS, h), ...(this.config!.labels ?? {}) };
   }
 
-  public getGridOptions(): Record<string, number | string> {
-    return { columns: "full", rows: "auto" };
-  }
-
-  private redraw(): void {
-    this.key = [];
-    if (this.hassRef) this.hass = this.hassRef;
-  }
-
-  // ---------------------------------------------------------------- data
-
-  private rows(now: number, until: number): Row[] {
+  private rows(now: Date, a1: Date): Row[] {
     const hass = this.hassRef!;
-    const config = this.config!;
-    const labels = config.labels ?? {};
-    const zone = timeZone(hass);
-    const locale = hass.locale.language;
-    const plan = hass.states[config.entities.plan]?.attributes ?? {};
-    const slots = (plan.slots as PlanSlot[] | undefined) ?? [];
-    const byLoad = (plan.by_load as Record<string, ByLoad> | undefined) ?? {};
-    const kwh = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const one = new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
-    const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: zone });
-    const money = moneyFormat(locale, config.currency ?? "");
-    return config.loads
-      .map((load) => {
-        const status = hass.states[load.status];
-        const a = status?.attributes ?? {};
-        const runs = planRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
-        const runNow = runs.some((run) => run.start <= now && run.end > now);
-        const holds = holdRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
-        const holdNow = holds.some((run) => run.start <= now && run.end > now);
-        const pauses = pauseRuns(slots, load.id).filter((run) => run.end > now && run.start < until);
-        const view = this.debouncer.view(load.id, rawStatus(status?.state, a, runNow, runs.length > 0, labels, holdNow, (v) => `${money.format(v)}/kWh`));
-        const parts: string[] = [];
-        const current = toNumber(a.current);
-        const target = toNumber(a.target);
-        if (current !== null && target !== null) {
-          parts.push(
-            a.comfort_state === "below_target"
-              ? `${one.format(current)} → ${one.format(target)} °C`
-              : `${one.format(current)} °C · ${fill(labels.target_short ?? "{v}", { v: one.format(target) })}`,
-          );
-        } else if (view.kind === "running" && toNumber(a.granted_power)) {
-          parts.push(`${one.format(toNumber(a.granted_power)! / 1000)} kW`);
-        }
-        let deadline: number | null = null;
-        const due = String(a.deadline_time || (load.ready_by ? hass.states[load.ready_by]?.state : "") || "");
-        if (due && (view.kind === "running" || view.kind === "planned" || view.kind === "waiting")) {
-          deadline = nextClock(due, now, zone);
-          if (deadline !== null) parts.push(fill(labels.due ?? "{time}", { time: clock.format(deadline) }));
-        }
-        if (view.kind === "paused" || view.kind === "manual") parts.splice(0, parts.length, view.reason ?? "");
-        // D13 §7: a wait says whose price makes it worth it.
-        else if ((view.kind === "waiting" || view.kind === "planned") && view.reason) parts.push(view.reason);
-        const row = byLoad[load.id];
-        const planned = toNumber(row?.planned_kwh ?? a.planned_kwh);
-        const amount = toNumber(String(row?.cost ?? a.cost ?? "").split(" ")[0]);
-        const cost = amount === null ? "" : money.format(amount);
-        const meta = planned ? `${kwh.format(planned)} kWh${cost ? ` · ${cost}` : ""}` : "";
-        return {
-          load,
-          view,
-          runs,
-          holds,
-          pauses,
-          sub: parts.filter(Boolean).join(" · "),
-          meta,
-          cost,
-          deadline,
-          nextStart: runs.length ? runs[0]!.start : Number.MAX_SAFE_INTEGER,
-        };
-      })
-      .sort(
-        (x, y) =>
-          KIND_ORDER.indexOf(x.view.kind) - KIND_ORDER.indexOf(y.view.kind) ||
-          x.nextStart - y.nextStart ||
-          x.load.name.localeCompare(y.load.name),
-      );
-  }
-
-  // ---------------------------------------------------------------- render
-
-  private render(): void {
-    const hass = this.hassRef;
-    const config = this.config;
-    if (!hass || !config) return;
-    if (!this.shadowRoot) {
-      const root = this.attachShadow({ mode: "open" });
-      root.addEventListener("click", (event) => this.onClick(event));
-      root.addEventListener("keydown", (event) => {
-        const key = (event as KeyboardEvent).key;
-        if (key === "Enter" || key === " ") {
-          event.preventDefault();
-          this.onClick(event);
-        }
-      });
-    }
-    const W = this.width || this.getBoundingClientRect().width || 800;
-    const compact = W < 600;
-    const labels = config.labels ?? {};
-    const zone = timeZone(hass);
-    const hours = config.hours ?? 24;
-    const now = Date.now();
-    const a0 = Math.floor(now / HOUR_MS) * HOUR_MS;
-    const a1 = a0 + hours * HOUR_MS;
-    const rows = this.rows(now, a1);
-    const count = (kind: Kind) => rows.filter((row) => row.view.kind === kind).length;
-    const idle = rows.filter((row) => row.view.kind === "idle");
-    const shown = this.filter === "all" ? rows : rows.filter((row) => row.view.kind !== "idle");
-    const rail = compact ? 0 : (config.rail_width ?? (W >= 1000 ? 300 : 240));
-    const lx0 = compact ? 60 : rail + 8;
-    const lx1 = W - (compact ? 12 : 16);
-    const sx = (t: number) => lx0 + ((t - a0) / (a1 - a0)) * (lx1 - lx0);
-    const prices = (config.entities.price_forecast
-      ? (hass.states[config.entities.price_forecast]?.attributes.slots as PriceSlot[] | undefined)
-      : undefined) ?? [];
-    const bands = cheapBands(prices, a0, a1);
-    const clock = new Intl.DateTimeFormat(hass.locale.language, { hour: "2-digit", minute: "2-digit", timeZone: zone });
-    const dark = hass.themes.darkMode;
-    const U = this.uid;
-
-    // ---- the head: counters, the cheap-hours key, the filter
-    const counters = (
-      [
-        ["running", labels.count_running],
-        ["waiting", labels.count_waiting],
-        ["planned", labels.count_planned],
-        ["holding", labels.count_holding],
-        ["paused", labels.count_paused],
-        ["manual", labels.count_manual],
-        ["idle", labels.count_idle],
-      ] as Array<[Kind, string | undefined]>
-    )
-      .filter(([kind]) => count(kind) > 0 && (!compact || kind === "running" || kind === "planned"))
-      .map(([kind, text]) => `<span class="cnt"><i class="dot ${kind}"></i>${escape(fill(text ?? "{n}", { n: count(kind) }))}</span>`)
-      .join("");
-    const filters: Array<["active" | "all", string, number]> = [
-      ["active", labels.filter_active ?? "", rows.length - idle.length],
-      ["all", labels.filter_all ?? "", rows.length],
-    ];
-    const seg = filters
-      .map(
-        ([filter, text, n]) =>
-          `<button type="button" class="seg" data-filter="${filter}" aria-pressed="${this.filter === filter}">${escape(text)}${compact ? "" : ` (${n})`}</button>`,
-      )
-      .join("");
-    const legend = bands.length && !compact ? `<span class="legend"><i class="sw cheap"></i>${escape(labels.cheap_hours ?? "")}</span>` : "";
-
-    // ---- the time axis
-    const ticks: string[] = [];
-    const every = compact ? 6 : 3;
-    const xn = sx(now);
-    for (let t = a0; t <= a1; t += HOUR_MS) {
-      if (Math.round(localHour(t, zone)) % every) continue;
-      const x = sx(t);
-      if ((!compact && Math.abs(x - xn) < 38) || x < lx0 + 8 || x > lx1 - 8) continue;
-      ticks.push(`<text x="${x.toFixed(1)}" y="16" class="tick" text-anchor="middle">${escape(clock.format(t))}</text>`);
-    }
-    const axis = `<svg class="axis" width="${W}" height="26" viewBox="0 0 ${W} 26">${ticks.join("")}
-      ${compact ? "" : `<rect x="${(xn - 14).toFixed(1)}" y="3" width="28" height="16" rx="8" class="nowpill"/>
-      <text x="${xn.toFixed(1)}" y="14.5" class="nowtxt" text-anchor="middle">${escape(labels.now ?? "")}</text>`}</svg>`;
-
-    // ---- the rows
-    const RH = compact ? 70 : 56;
-    const laneH = compact ? 10 : 22;
-    const laneY = compact ? 50 : (RH - laneH) / 2;
-    const rowHtml = shown
-      .map((row) => {
-        const { load, view } = row;
-        const color = load.color || "#9e9e9e";
-        const icon = load.icon || "mdi:flash";
-        const rr = compact ? laneH / 2 : 5;
-        const bandsSvg = bands
-          .map(([s, e]) => {
-            const x0 = Math.max(sx(s), lx0);
-            const x1 = Math.min(sx(e), lx1);
-            return x1 > x0 ? `<rect x="${x0.toFixed(1)}" y="0" width="${(x1 - x0).toFixed(1)}" height="${RH}" class="band"/>` : "";
-          })
-          .join("");
-        let lane = `<rect x="${lx0}" y="${laneY}" width="${lx1 - lx0}" height="${laneH}" rx="${rr}" class="track"/>`;
-        const mid = laneY + laneH / 2 + 4;
-        if (view.kind === "manual") {
-          lane += `<rect x="${lx0}" y="${laneY}" width="${lx1 - lx0}" height="${laneH}" rx="${rr}" style="fill:url(#${U}-man)"/>`;
-          if (!compact) lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt dim" text-anchor="middle">${escape(view.reason)}</text>`;
-        } else if (view.kind === "idle" && !compact) {
-          lane += `<text x="${(lx0 + lx1) / 2}" y="${mid}" class="ltxt faint" text-anchor="middle">${escape(fill(labels.no_need ?? "", { h: hours }))}</text>`;
-        }
-        for (const run of row.pauses) {
-          // Turned down on purpose: hatched, and where it fits "Senket til 22:00" (D-0507).
-          const x0 = Math.max(sx(run.start), lx0);
-          const x1 = Math.min(sx(run.end), lx1);
-          if (x1 - x0 < 2) continue;
-          lane += `<rect x="${x0.toFixed(1)}" y="${laneY}" width="${(x1 - x0).toFixed(1)}" height="${laneH}" rx="${rr}" style="fill:url(#${U}-man)"/>`;
-          const text = fill(labels.lowered_until ?? "", { time: clock.format(run.end) });
-          if (!compact && text && (x1 - x0) > text.length * 6.3 + 16) {
-            lane += `<text x="${(x0 + 8).toFixed(1)}" y="${mid}" class="ltxt dim">${escape(text)}</text>`;
-          }
-        }
-        for (const run of row.holds) {
-          const x0 = Math.max(sx(run.start), lx0);
-          const x1 = Math.min(sx(run.end), lx1);
-          // Thinner and fainter than a run: the thermostat's own draw, not a decision (D-0501).
-          const h = Math.max(laneH * 0.4, 3);
-          if (x1 > x0) lane += `<rect x="${x0.toFixed(1)}" y="${(laneY + (laneH - h) / 2).toFixed(1)}" width="${(x1 - x0).toFixed(1)}" height="${h.toFixed(1)}" rx="${(h / 2).toFixed(1)}" style="fill:${withAlpha(color, 0.3)}"/>`;
-        }
-        for (const run of row.runs) {
-          const x0 = Math.max(sx(run.start), lx0);
-          const x1 = Math.min(sx(run.end), lx1);
-          lane += `<rect x="${(x0 + 0.5).toFixed(1)}" y="${laneY}" width="${Math.max(x1 - x0 - 1, 3).toFixed(1)}" height="${laneH}" rx="${rr}" style="fill:${color}"/>`;
-          if (run.start <= now && run.end > now) {
-            lane += `<rect x="${(x0 + 0.5).toFixed(1)}" y="${laneY}" width="${Math.max(xn - x0, 0).toFixed(1)}" height="${laneH}" rx="${rr}" class="elapsed"/>`;
-          }
-        }
-        if (view.kind === "paused") {
-          const half = (lx1 - lx0) * (10 / (hours * 60));
-          const x0 = Math.max(xn - half, lx0);
-          const x1 = Math.min(xn + half, lx1);
-          lane += `<rect x="${x0.toFixed(1)}" y="${laneY + 0.5}" width="${(x1 - x0).toFixed(1)}" height="${laneH - 1}" rx="${rr}" class="shed" style="fill:url(#${U}-shed)"/>`;
-          if (!compact) lane += `<text x="${(x1 + 8).toFixed(1)}" y="${mid}" class="ltxt warn">${escape(view.reason)}</text>`;
-        }
-        let dlx = Infinity;
-        if (row.deadline !== null && row.deadline > a0 && row.deadline < a1) {
-          dlx = sx(row.deadline);
-          lane += `<line x1="${dlx.toFixed(1)}" y1="${laneY - 5}" x2="${dlx.toFixed(1)}" y2="${laneY + laneH + 5}" class="deadline"/>`;
-          if (!compact) lane += `<text x="${(dlx + 6).toFixed(1)}" y="${mid}" class="ltxt amber">${escape(fill(labels.due ?? "{time}", { time: clock.format(row.deadline) }))}</text>`;
-        }
-        if (!compact && row.runs.length) {
-          const last = row.runs[row.runs.length - 1]!;
-          const xe = Math.min(sx(last.end), lx1);
-          const when =
-            row.runs.length === 1
-              ? `${clock.format(row.runs[0]!.start)}–${clock.format(row.runs[0]!.end)}`
-              : row.runs.slice(0, 2).map((run) => clock.format(run.start)).join(" · ") + (row.runs.length > 2 ? ` +${row.runs.length - 2}` : "");
-          let text = row.meta ? `${when}  ·  ${row.meta}` : when;
-          if (xe + 8 + text.length * 6.3 > dlx - 6) text = when;
-          if (xe + 8 + text.length * 6.3 > lx1) text = "";
-          if (text) lane += `<text x="${(xe + 8).toFixed(1)}" y="${mid}" class="ltxt">${escape(text)}</text>`;
-        }
-        lane += compact
-          ? `<line x1="${xn.toFixed(1)}" y1="${laneY - 3}" x2="${xn.toFixed(1)}" y2="${laneY + laneH + 3}" class="now"/>`
-          : `<line x1="${xn.toFixed(1)}" y1="0" x2="${xn.toFixed(1)}" y2="${RH}" class="now"/>`;
-        const extra = compact && row.cost && (view.kind === "running" || view.kind === "planned") ? `<span class="meta">${escape(row.cost)}</span>` : "";
-        const pill = view.label ? `<span class="pill ${view.kind}"><i></i>${escape(view.label)}</span>` : "";
-        const aria = `${load.name}: ${view.label || fill(labels.no_need ?? "", { h: hours })}${row.sub ? `, ${row.sub}` : ""}`;
-        const text = compact
-          ? `<div class="top"><div class="txt"><span class="name">${escape(load.name)}</span><span class="sub">${escape(row.sub)}</span></div><div class="right">${pill}${extra}</div></div>`
-          : `<div class="txt"><span class="name">${escape(load.name)}</span><span class="line2">${pill}<span class="sub">${escape(row.sub)}</span></span></div>`;
-        return `<div class="row ${view.kind}" role="button" tabindex="0" data-load="${escape(load.id)}" aria-label="${escape(aria)}" style="height:${RH}px">
-        <svg class="lane" width="${W}" height="${RH}" viewBox="0 0 ${W} ${RH}" aria-hidden="true">${bandsSvg}${lane}</svg>
-        <div class="rail" style="width:${compact ? W - 24 : rail - 24}px">
-          <div class="bubble" style="background:${withAlpha(color, 0.2)};color:${readable(color, dark)}"><ha-icon icon="${escape(icon)}"></ha-icon></div>${text}
-        </div></div>`;
-      })
-      .join("");
-
-    const foot =
-      this.filter === "active" && idle.length
-        ? `<button type="button" class="foot" data-filter="all">
-          <span class="avatars">${idle
-            .slice(0, 4)
-            .map(
-              (row) =>
-                `<span class="av" style="background:${withAlpha(row.load.color, 0.2)};color:${readable(row.load.color, dark)}"><ha-icon icon="${escape(row.load.icon || "mdi:flash")}"></ha-icon></span>`,
-            )
-            .join("")}</span>
-          <span class="ftxt">${escape(fill(labels.count_idle ?? "{n}", { n: idle.length }))}${compact ? "" : ` · ${escape(idle.map((row) => row.load.name).join(", "))}`}</span>
-          <span class="more">${escape(labels.show_all ?? "")}<ha-icon icon="mdi:chevron-down"></ha-icon></span></button>`
-        : "";
-
-    this.shadowRoot!.innerHTML = `
-      <style>${ppStyles}${CSS}</style>
-      <ha-card class="${compact ? "compact" : ""}">
-        <svg width="0" height="0" style="position:absolute">${hatchDefs(U)}</svg>
-        <div class="head"><div class="counters">${counters}</div><span class="grow"></span>${legend}
-          <div class="segs" role="group">${seg}</div></div>
-        ${axis}
-        <div class="rows">${rowHtml}</div>
-        ${foot}
-      </ha-card>`;
-
-    // Redraw when a held status change becomes visible (R5).
-    const due = this.debouncer.nextFlip();
-    if (this.flipTimer) clearTimeout(this.flipTimer);
-    if (due !== null) this.flipTimer = window.setTimeout(() => this.redraw(), Math.max(due - Date.now(), 1000));
-  }
-
-  private onClick(event: Event): void {
-    const target = event.target as HTMLElement;
-    const filter = target.closest<HTMLElement>("[data-filter]");
-    if (filter) {
-      this.filter = filter.dataset.filter === "all" ? "all" : "active";
-      try {
-        localStorage.setItem(FILTER_KEY, this.filter);
-      } catch {
-        // private mode
+    const c = this.config!;
+    const L = this.labels();
+    const plan = readPlan(hass.states[c.entities.plan]);
+    const nf1 = numFmt01(hass);
+    const tf = timeFmt(hass);
+    const cur = plan.slots.find((s) => s.start <= now && s.end > now);
+    return c.loads.map((load) => {
+      const st = hass.states[load.status];
+      const ctl = load.control ? hass.states[load.control] : undefined;
+      const runs = runsFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
+      const lowered = loweredFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
+      const view = this.deb.view(load.id, rawStatus(st, ctl, {
+        runNow: runs.some((r) => r.start <= now), futureRun: runs.length > 0, holdNow: (cur?.hold[load.id] ?? 0) > 0.0005,
+      }, L));
+      const a = st?.attributes ?? {};
+      const parts: string[] = [];
+      const t = toNum(a.current), tgt = toNum(a.target);
+      if (t !== null && tgt !== null) {
+        parts.push(a.comfort_state === "below_target" && tgt > t
+          ? `${nf1.format(t)} → ${nf1.format(tgt)} °C`
+          : `${nf1.format(t)} °C · ${fmtTemplate(L.target, { v: nf1.format(tgt) })}`);
+      } else if (view.kind === "running" && toNum(a.granted_power)) {
+        parts.push(`${nf1.format(toNum(a.granted_power)! / 1000)} kW`);
       }
-      this.redraw();
+      let deadline: Date | null = null;
+      const dl = (load.deadline && hass.states[load.deadline]?.state) || a.deadline_time;
+      if (dl && /^\d{1,2}:\d{2}/.test(dl) && ["running", "planned", "waiting"].includes(view.kind)) {
+        deadline = nextClock(dl, now, hass);
+        parts.push(fmtTemplate(L.deadline, { time: tf.format(deadline) }));
+      }
+      if (view.reason) parts.splice(0, parts.length, view.reason);
+      if (view.kind === "idle") parts.splice(0, parts.length, fmtTemplate(L.idle_state, { h: c.hours ?? 24 }));
+      return {
+        load, view, runs, lowered, deadline, line: [view.word, ...parts].filter(Boolean).join(" · "),
+        nextStart: runs.find((r) => r.start > now)?.start.getTime() ?? Number.MAX_SAFE_INTEGER,
+      };
+    }).sort((x, y) => ORDER.indexOf(x.view.kind) - ORDER.indexOf(y.view.kind) || x.nextStart - y.nextStart ||
+      x.load.name.localeCompare(y.load.name));
+  }
+
+  /** Cheap hours: lowest quarter of the price range inside the window. */
+  private cheapBands(a0: Date, a1: Date): [Date, Date][] {
+    const id = this.config!.entities.price_forecast;
+    const slots: any[] = (id && this.hassRef!.states[id]?.attributes?.slots) || [];
+    const win = slots.map((s) => ({ s: new Date(s.start), e: new Date(s.end), p: Number(s.total) }))
+      .filter((x) => x.e > a0 && x.s < a1 && Number.isFinite(x.p));
+    if (!win.length) return [];
+    const lo = Math.min(...win.map((x) => x.p)), hi = Math.max(...win.map((x) => x.p));
+    if (hi - lo < 1e-6) return [];
+    const thr = lo + (hi - lo) * 0.25;
+    const out: [Date, Date][] = [];
+    for (const x of win) {
+      if (x.p > thr) continue;
+      const last = out[out.length - 1];
+      if (last && Math.abs(last[1].getTime() - x.s.getTime()) < 1000) last[1] = x.e;
+      else out.push([x.s, x.e]);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------ render
+  private render(): void {
+    const hass = this.hassRef, c = this.config;
+    if (!hass || !c) return;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      this.shadowRoot!.addEventListener("click", (e) => this.onClick(e));
+    }
+    const W = this.width || Math.round(this.getBoundingClientRect().width);
+    const L = this.labels();
+    const planEnt = hass.states[c.entities.plan];
+    if (!W || !planEnt || planEnt.state === "unavailable" || !Array.isArray(planEnt.attributes?.slots)) {
+      // Skeleton keeps the final size while data or layout is not ready yet.
+      this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style><ha-card aria-busy="true">
+        <div class="head"><span class="skel" style="width:40%;height:14px"></span></div>${skeletonRows(Math.min(c.loads.length, 6), 56, c.rail_width ?? 256)}</ha-card>`;
       return;
     }
-    const row = target.closest<HTMLElement>("[data-load]");
+    const compact = W < 600;
+    const hours = c.hours ?? 24;
+    const now = new Date();
+    const a0 = startOfHour(now);
+    const a1 = new Date(a0.getTime() + hours * 3600e3);
+    const rows = this.rows(now, a1);
+    const idle = rows.filter((r) => r.view.kind === "idle");
+    const active = rows.length - idle.length;
+    const shown = this.filter === "all" ? rows : rows.filter((r) => r.view.kind !== "idle");
+    const rail = compact ? 0 : (c.rail_width ?? 256);
+    const lx0 = compact ? 60 : rail;
+    const lx1 = W - (compact ? 12 : 16);
+    const sx = (d: Date | number) => lx0 + (+d - a0.getTime()) / (a1.getTime() - a0.getTime()) * (lx1 - lx0);
+    const bands = this.cheapBands(a0, a1);
+    const tf = timeFmt(hass);
+    const dark = !!hass.themes?.darkMode;
+    const U = this.uid;
+    const xn = sx(now);
+
+    // ---- header: one legend line + filter (desktop); count + filter, legend below (phone)
+    const seg = segmented([
+      { key: "active", label: compact ? L.active : `${L.active} ${active}`, on: this.filter === "active" },
+      { key: "all", label: compact ? L.all : `${L.all} ${rows.length}`, on: this.filter === "all" },
+    ], "data-filter", L.filter);
+    const lg = (cls: string, t: string) => `<span class="legend"><i class="sw ${cls}"></i>${esc(t)}</span>`;
+    const legend = compact
+      ? lg("run", L.lg_run) + lg("hold", L.lg_hold_short) + lg("low", L.lg_low_short)
+      : lg("run", L.lg_run) + lg("hold", L.lg_hold) + lg("low", L.lg_low) + (bands.length ? lg("cheap", L.lg_cheap) : "");
+    const head = compact
+      ? `<div class="head"><span class="count">${esc(fmtTemplate(L.n_active, { n: active }))}</span><span class="grow"></span>${seg}</div>
+         <div class="legendrow">${legend}</div>`
+      : `<div class="head"><div class="legends">${legend}</div><span class="grow"></span>${seg}</div>`;
+
+    // ---- axis
+    const ticks: string[] = [];
+    const every = compact ? 6 : 3;
+    for (let t = new Date(a0); t <= a1; t = new Date(t.getTime() + 3600e3)) {
+      const h = Math.round(localHour(t, hass));
+      if (h % every) continue;
+      const x = sx(t);
+      if ((!compact && Math.abs(x - xn) < 40) || x < lx0 + 14 || x > lx1 - 14) continue;
+      ticks.push(`<text x="${x.toFixed(1)}" y="18" class="t-s" text-anchor="middle">${esc(tf.format(t))}</text>`);
+    }
+    const axisH = compact ? 24 : 30;
+    const axis = `<svg class="axis" width="${W}" height="${axisH}" viewBox="0 0 ${W} ${axisH}" aria-hidden="true">${ticks.join("")}
+      ${compact ? "" : `<rect x="${(xn - 16).toFixed(1)}" y="4" width="32" height="20" rx="10" class="nowpill"/>
+      <text x="${xn.toFixed(1)}" y="18" class="t-s nowtxt" text-anchor="middle">${esc(L.now)}</text>`}</svg>`;
+
+    // ---- rows
+    const RH = compact ? 72 : 56;
+    const laneH = compact ? 10 : 16;
+    const laneY = compact ? 52 : (RH - laneH) / 2;
+    const rowHtml = shown.map((r) => {
+      const { load, view } = r;
+      const col = load.color || "#9e9e9e";
+      const icon = load.icon || DEFAULT_ICON[load.kind ?? ""] || "mdi:flash";
+      const rr = laneH / 2;
+      const bandsSvg = bands.map(([s, e]) => {
+        const x0 = Math.max(sx(s), lx0), x1 = Math.min(sx(e), lx1);
+        return x1 > x0 ? `<rect x="${x0.toFixed(1)}" y="0" width="${(x1 - x0).toFixed(1)}" height="${RH}" class="band"/>` : "";
+      }).join("");
+      let lane = `<rect x="${lx0}" y="${laneY}" width="${lx1 - lx0}" height="${laneH}" rx="${rr}" class="track"/>`;
+      const block = (s: Date, e: Date, style: string, cls = "") => {
+        const x0 = Math.max(sx(s), lx0), x1 = Math.min(sx(e), lx1);
+        return x1 > x0 ? `<rect x="${x0.toFixed(1)}" y="${laneY}" width="${Math.max(x1 - x0, laneH).toFixed(1)}" height="${laneH}" rx="${rr}" class="${cls}" style="${style}"/>` : "";
+      };
+      if (view.kind === "manual") lane += block(a0, a1, `fill:url(#${U}-h)`);
+      for (const w of r.lowered) lane += block(w.start, w.end, `fill:url(#${U}-h)`);
+      for (const run of r.runs) lane += block(run.start, run.end, `fill:${col}`);
+      if (view.kind === "paused") {
+        const span = (a1.getTime() - a0.getTime()) * 0.012;
+        lane += block(new Date(now.getTime() - span), new Date(now.getTime() + span), `fill:url(#${U}-h)`, "shed");
+      }
+      if (r.deadline && r.deadline > a0 && r.deadline < a1) {
+        const dx = sx(r.deadline);
+        lane += `<line x1="${dx.toFixed(1)}" y1="${laneY - 5}" x2="${dx.toFixed(1)}" y2="${laneY + laneH + 5}" class="deadline"/>`;
+      }
+      if (!compact) {
+        const fut = r.runs.filter((x) => x.start > now);
+        if (fut.length) {
+          const lab = fut.slice(0, 2).map((x) => tf.format(x.start)).join(" · ");
+          const end = sx(fut[Math.min(fut.length, 2) - 1].end);
+          const w = lab.length * 6.8;
+          if (end + 8 + w < lx1) lane += `<text x="${(end + 8).toFixed(1)}" y="${laneY + laneH / 2 + 4.5}" class="t-s strong">${esc(lab)}</text>`;
+          else if (sx(fut[0].start) - 8 - w > lx0) lane += `<text x="${(sx(fut[0].start) - 8).toFixed(1)}" y="${laneY + laneH / 2 + 4.5}" class="t-s strong" text-anchor="end">${esc(lab)}</text>`;
+        }
+      }
+      lane += compact
+        ? `<line x1="${xn.toFixed(1)}" y1="${laneY - 3}" x2="${xn.toFixed(1)}" y2="${laneY + laneH + 3}" class="now"/>`
+        : `<line x1="${xn.toFixed(1)}" y1="0" x2="${xn.toFixed(1)}" y2="${RH}" class="now"/>`;
+      const next = r.runs.find((x) => x.start > now);
+      const right = compact && next ? `<span class="next">${esc(fmtTemplate(L.next, { time: tf.format(next.start) }))}</span>` : "";
+      const aria = `${load.name}: ${r.line}. ${L.open}`;
+      return `<button type="button" class="row ${view.kind}" data-load="${esc(load.id)}" data-focus-key="row-${esc(load.id)}" aria-label="${esc(aria)}" style="height:${RH}px">
+        <svg class="lane" width="${W}" height="${RH}" viewBox="0 0 ${W} ${RH}" aria-hidden="true">${bandsSvg}${lane}</svg>
+        <span class="rail" style="width:${compact ? W - 24 : rail - 24}px">
+          <span class="bubble" style="background:${rgbaHex(col, 0.2)};color:${readable(col, dark)}"><ha-icon icon="${esc(icon)}"></ha-icon></span>
+          <span class="txt"><span class="name">${esc(load.name)}</span><span class="state">${esc(r.line)}</span></span>${right}
+        </span></button>`;
+    }).join("");
+
+    const foot = this.filter === "active" && idle.length
+      ? `<div class="foot"><span class="avatars" aria-hidden="true">${idle.slice(0, 4).map((r) => `<span class="av" style="background:${rgbaHex(r.load.color, 0.2)};color:${readable(r.load.color, dark)}"><ha-icon icon="${esc(r.load.icon || DEFAULT_ICON[r.load.kind ?? ""] || "mdi:flash")}"></ha-icon></span>`).join("")}</span>
+          <span class="ftxt">${esc(fmtTemplate(L.n_idle, { n: idle.length }))}${compact ? "" : " · " + esc(idle.map((r) => r.load.name).join(", "))}</span>
+          <button type="button" class="tbtn" data-filter="all" data-focus-key="foot-all">${esc(L.show_all)}<ha-icon icon="mdi:chevron-down"></ha-icon></button></div>`
+      : "";
+
+    keepFocus(this.shadowRoot!, () => {
+      this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
+        <ha-card class="${compact ? "compact" : ""}">
+          <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${hatchDef(`${U}-h`)}</defs></svg>
+          ${head}${axis}<div class="rows">${rowHtml}</div>${foot}
+        </ha-card>`;
+    });
+
+    const due = this.deb.nextFlip();
+    if (this.flipTimer) clearTimeout(this.flipTimer);
+    if (due) this.flipTimer = window.setTimeout(() => { this.key = []; if (this.hassRef) this.hass = this.hassRef; }, Math.max(due - Date.now(), 1000));
+  }
+
+  private onClick(e: Event): void {
+    const t = e.target as HTMLElement;
+    const f = t.closest("[data-filter]") as HTMLElement | null;
+    if (f) {
+      this.filter = f.dataset.filter === "all" ? "all" : "active";
+      try { localStorage.setItem(FILTER_KEY, this.filter); } catch { /* ignore */ }
+      this.key = [];
+      this.render();
+      return;
+    }
+    const row = t.closest("[data-load]") as HTMLElement | null;
     if (!row || !this.hassRef || !this.config) return;
     const load = this.config.loads.find((l) => l.id === row.dataset.load);
     if (load) openApplianceDialog(this, this.hassRef, load, this.config);
   }
 }
 
-/** The hatch patterns, their ids unique per card (several cards can share a page). */
-function hatchDefs(uid: string): string {
-  return `<defs>
-    <pattern id="${uid}-man" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="2" height="6" style="fill:rgba(var(--rgb-primary-text-color,225,225,225),0.10)"/></pattern>
-    <pattern id="${uid}-shed" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="2" height="6" style="fill:rgba(255,166,0,0.30)"/></pattern>
-  </defs>`;
+/** Next occurrence of a HH:MM[:SS] wall-clock time after `now`, in the HA time zone. */
+export function nextClock(hhmm: string, now: Date, hass: Hass): Date {
+  const [h, m] = hhmm.split(":").map(Number);
+  let diffH = h + m / 60 - localHour(now, hass);
+  if (diffH <= 0) diffH += 24;
+  const d = new Date(now.getTime() + diffH * 3600e3);
+  d.setSeconds(0, 0);
+  return d;
 }
 
 const CSS = `
   ha-card { overflow: hidden; padding-bottom: 4px; }
-  .head { display: flex; align-items: center; gap: 18px; height: 52px; padding: 0 var(--pp-pad); }
-  .compact .head { gap: 12px; height: 46px; padding: 0 12px; }
-  .counters { display: flex; gap: 18px; flex-wrap: nowrap; overflow: hidden; }
-  .compact .counters { gap: 12px; }
-  .cnt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-  .dot.running { background: var(--success-color, #43a047); }
-  .dot.planned, .dot.waiting { background: var(--primary-color); }
-  .dot.holding { background: var(--success-color, #43a047); opacity: .55; }
-  .dot.paused { background: var(--warning-color, #ffa600); }
-  .dot.manual, .dot.idle { background: var(--disabled-text-color, #6f6f6f); }
+  .head { display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 0 var(--pp-pad); box-sizing: border-box; }
+  .compact .head { min-height: 56px; gap: 12px; padding: 0 12px; }
+  .legends { display: flex; gap: 20px; flex-wrap: wrap; min-width: 0; }
+  .legendrow { display: flex; gap: 14px; padding: 0 12px 4px; flex-wrap: wrap; }
+  .count { font-size: var(--pp-fs-m); color: var(--pp-text2); }
   .grow { flex: 1 1 auto; }
-  .legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--secondary-text-color); white-space: nowrap; }
-  .sw.cheap { width: 12px; height: 10px; border-radius: 3px; background: rgba(67,160,71,0.35); display: inline-block; }
-  .segs { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--pp-fill); flex: none; }
-  .seg { height: 28px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; cursor: pointer;
-         font: 500 12px var(--ha-font-family-body, Roboto, sans-serif); color: var(--secondary-text-color); }
-  .compact .seg { height: 26px; padding: 0 10px; }
-  .seg[aria-pressed="true"] { background: rgba(var(--rgb-primary-color, 0,154,199), 0.22); color: var(--primary-color); }
   .axis { display: block; }
-  .tick { font-size: 11px; fill: var(--secondary-text-color); }
-  .compact .tick { font-size: 10px; }
-  .nowpill { fill: var(--primary-text-color); }
-  .nowtxt { font-size: 10px; font-weight: 500; fill: var(--card-background-color, #1c1c1c); }
+  .nowpill { fill: var(--pp-text); }
+  .nowtxt { fill: var(--pp-card); font-weight: var(--pp-fw-m); }
   .rows { display: flex; flex-direction: column; }
-  .row { position: relative; border-top: 1px solid var(--divider-color); cursor: pointer; outline: none; }
-  .row:hover, .row:focus-visible { background: rgba(var(--rgb-primary-text-color, 225,225,225), 0.045); }
-  .row:focus-visible { box-shadow: inset 0 0 0 2px var(--primary-color); }
+  .row { position: relative; display: block; width: 100%; border: 0; border-top: 1px solid var(--pp-divider); margin: 0; padding: 0;
+         background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .row:hover { background: var(--pp-fill); }
+  .row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pp-focus); }
   .lane { position: absolute; inset: 0; display: block; pointer-events: none; }
-  .band { fill: rgba(67,160,71,0.075); }
-  .track { fill: rgba(var(--rgb-primary-text-color, 225,225,225), 0.045); }
-  .elapsed { fill: rgba(0,0,0,0.28); }
-  .shed { stroke: var(--warning-color, #ffa600); stroke-width: 1; }
-  .deadline { stroke: var(--amber-color, #ffc107); stroke-width: 2; stroke-linecap: round; }
-  .now { stroke: var(--primary-text-color); stroke-width: 1.5; stroke-linecap: round; }
-  .ltxt { font-size: 11px; fill: var(--primary-text-color); }
-  .ltxt.dim { fill: var(--secondary-text-color); }
-  .ltxt.faint { fill: var(--disabled-text-color, #6f6f6f); }
-  .ltxt.warn { fill: #ffc15c; }
-  .ltxt.amber { fill: #ffd54f; }
-  .rail { position: absolute; left: var(--pp-pad); top: 0; height: 100%; display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .compact .rail { left: 12px; align-items: flex-start; padding-top: 8px; box-sizing: border-box; }
-  .row.idle .rail { opacity: 0.72; }
+  .band { fill: var(--pp-cheap); }
+  .track { fill: var(--pp-track); }
+  .shed { stroke: var(--pp-warn); stroke-width: 1; }
+  .deadline { stroke: var(--pp-amber); stroke-width: 2; stroke-linecap: round; }
+  .now { stroke: var(--pp-text); stroke-width: 1.5; stroke-linecap: round; }
+  .rail { position: absolute; left: var(--pp-pad); top: 0; height: 100%; display: flex; align-items: center; gap: 12px; min-width: 0; box-sizing: border-box; }
+  .compact .rail { left: 12px; align-items: flex-start; padding-top: 8px; }
+  .row.idle .rail, .row.unavailable .rail { opacity: 0.72; }
   .bubble { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none; --mdc-icon-size: 20px; }
-  .txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
-  .compact .txt { gap: 0; }
-  .name { font-size: 14px; font-weight: 500; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .line2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .sub { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .top { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 auto; min-width: 0; }
-  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
-  .meta { font-size: 11px; color: var(--secondary-text-color); }
-  .pill { display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 8px 0 7px; border-radius: 9px;
-          font-size: 11px; font-weight: 500; letter-spacing: .2px; white-space: nowrap; flex: none; }
-  .pill i { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-  .pill.running { background: rgba(67,160,71,.16); color: #7ccf80; } .pill.running i { background: var(--success-color, #43a047); }
-  .pill.planned, .pill.waiting { background: rgba(var(--rgb-primary-color, 0,154,199), .16); color: #5cc8ea; }
-  .pill.planned i, .pill.waiting i { background: var(--primary-color); }
-  .pill.paused { background: rgba(255,166,0,.16); color: #ffc15c; } .pill.paused i { background: var(--warning-color, #ffa600); }
-  .pill.holding { background: rgba(67,160,71,.10); color: #9ad69d; } .pill.holding i { background: var(--success-color, #43a047); opacity: .55; }
-  .pill.manual, .pill.unavailable { background: rgba(158,158,158,.16); color: #c4c4c4; } .pill.manual i, .pill.unavailable i { background: #9e9e9e; }
-  .foot { display: flex; align-items: center; gap: 12px; width: 100%; height: 50px; padding: 0 var(--pp-pad); border: 0;
-          border-top: 1px solid var(--divider-color); background: transparent; cursor: pointer; color: inherit; font: inherit; text-align: left; }
-  .compact .foot { height: 48px; padding: 0 12px; }
-  .avatars { display: flex; }
-  .av { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 14px;
-        box-shadow: 0 0 0 2px var(--card-background-color, #1c1c1c); margin-left: -6px; }
+  .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+  .name { font-size: var(--pp-fs-m); font-weight: var(--pp-fw-m); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .state { font-size: var(--pp-fs-s); line-height: 16px; color: var(--pp-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .next { font-size: var(--pp-fs-s); color: var(--pp-text2); white-space: nowrap; flex: none; padding-top: 2px; }
+  .foot { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 8px 0 var(--pp-pad); border-top: 1px solid var(--pp-divider); box-sizing: border-box; }
+  .compact .foot { min-height: 56px; padding: 0 4px 0 12px; }
+  .avatars { display: flex; flex: none; }
+  .av { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 16px;
+        box-shadow: 0 0 0 2px var(--pp-card); margin-left: -6px; }
   .av:first-child { margin-left: 0; }
-  .ftxt { flex: 1 1 auto; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .more { display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--primary-color); --mdc-icon-size: 18px; white-space: nowrap; }
+  .ftxt { flex: 1 1 auto; font-size: var(--pp-fs-m); color: var(--pp-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;

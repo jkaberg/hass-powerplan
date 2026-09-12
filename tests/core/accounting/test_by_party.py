@@ -115,6 +115,13 @@ def _ev_evening(norgespris: bool) -> dict[str, Decimal]:
                 uncontrolled_kwh=2.0,
             )
         )
+    # The car is done: the session settles, and its savings with it (D11 §5.9).
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(
+        closed_slot(
+            local(2026, 9, 16, 0, 0).astimezone(UTC), loads={"ev": 0.0}, uncontrolled_kwh=2.0
+        )
+    )
     status = under_test.accounting.status()
     split = savings_by_party(
         under_test.accounting.state().ledger.site,
@@ -224,6 +231,18 @@ def test_23_actual_and_counterfactual_each_carry_their_own_surcharge() -> None:
                 start, minutes=15, loads={"ev": 1.375}, uncontrolled_kwh=0.25, window_closed=closed
             )
         )
+    # The charge is done: the session settles, and its windows with it (D11 §5.9.4).
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    end = first + timedelta(hours=2)
+    under_test.close(
+        closed_slot(
+            end,
+            minutes=15,
+            loads={"ev": 0.0},
+            uncontrolled_kwh=0.25,
+            window_closed=window(end, 0.25, window_min=15),
+        )
+    )
     ledger = under_test.accounting.state().ledger
     expected = Decimal(4) * Decimal("5.0") * Decimal("0.25") * Decimal("0.0765")
     assert ledger.site.surcharge == 0

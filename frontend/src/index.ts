@@ -7,6 +7,7 @@
 // appear, and a cold load of a deep path used to miss that (D12 §5.10, B1).
 // The cards and ECharts come behind a dynamic import.
 
+import "./bundle";
 import { PowerplanDashboardStrategy } from "./strategy";
 
 /** The cards' module, named by its content hash; the build puts the name in (esbuild `define`). */
@@ -65,6 +66,18 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
       type: "powerplan-price-card",
       name: "PowerPlan electricity price",
       description: "Your price today and tomorrow, and what it would be without a fixed price.",
+      documentationURL: DOCS,
+    },
+    {
+      type: "powerplan-attention-card",
+      name: "PowerPlan – Trenger oppmerksomhet",
+      description: "PowerPlan repairs and meter status, only when something is wrong.",
+      documentationURL: DOCS,
+    },
+    {
+      type: "powerplan-month-bars",
+      name: "PowerPlan – Kostnad per dag",
+      description: "Daily cost on a fixed axis for the whole month.",
       documentationURL: DOCS,
     },
   );

@@ -22,9 +22,12 @@ What it owns:
 * **savings** (`savings.py`) - counterfactual less actual, energy per load and
   energy plus capacity for the site, with the calibration that gates the
   confidence;
-* the **counterfactual** (`shadow/`) - one shadow store per load, the load's own
+* the **reference** (`reference.py`) - the headline counterfactual: each load's
+  own measured energy, placed where the uncontrolled device would have drawn it,
+  booked when its day, session or run settles (D11 §5.9);
+* the **model figure** (`shadow/`) - one shadow store per load, the load's own
   physics under the policy its uncontrolled thermostat or charger would follow,
-  with the load's own effective parameters (INV-69);
+  with the load's own effective parameters (INV-69), shown once calibrated;
 * **slot close** (`close.py`) - the one entry point, `Accounting.close_slot`.
 
 Importing `shadow` registers the shadows that ship (D11 §3).

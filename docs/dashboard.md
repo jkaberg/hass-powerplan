@@ -17,11 +17,15 @@ strategy:
 
 | tab | shows, top to bottom |
 |---|---|
-| Now | anything that needs your attention (repairs, a meter that is not reporting); this hour's usage against its limit; your electricity price today and tomorrow - with a fixed price such as Norgespris, also what it would be without it - and whether tomorrow's prices are in; the whole house for the next 24 hours, hour by hour, with a button to plan again; one row per appliance with its status and its next 24 hours - tap it for its controls, its plan and why, and from there its own page; your capacity step; this month's cost and savings, day by day |
+| Now | anything that needs your attention - PowerPlan's repairs and a meter that lags or is silent, each with one line of why and a button; nothing when all is well; this hour's usage against its limit; your electricity price today and tomorrow - with a fixed price such as Norgespris, also what it would be without it - and whether tomorrow's prices are in; when this hour's price is not known, why, and a button to fetch it again; the whole house for the next 24 hours, hour by hour, with a button to plan again; one row per appliance with its status and its next start - tap it for its controls, its plan and why, and from there its own page; your capacity step; this month's cost and savings over a bar for each day of the month |
 | History | a summary of the period - cost, savings, energy from the grid and your capacity basis or highest hour; your usage hour by hour or day by day, with a link to the Energy dashboard; each day's highest hour and whether it counts toward your capacity step; savings per appliance; cost per appliance; cost and savings over time; what happened. The period picker at the bottom sets every graph, as on the Energy dashboard |
 | an appliance's page | its control and status - with the reason for what it is doing now, its own settings (charge to, comfort, ready by, hours per day), its plan for the next 24 hours, why the plan looks the way it does, and this month's cost, savings and energy. The arrow at the top goes back to *Now* |
 
 The three buttons at the top of *Now* are automatic control, presence and your capacity target; tap one to change it. Each appliance keeps one colour on every card. The planned runs are also in Home Assistant's *Calendar* panel as **Planned runs**.
+
+In the Plan card on *Now*, each bar is an hour: grey is the rest of the house, the darker grey is what keeps rooms and water at temperature, and the coloured part is what PowerPlan moved in time. The dashed cap over a bar is what the hour *could reach* on a busy day, the red dashed line is your power target, and green columns are the cheapest hours. On a row in the appliances card, a solid block is a run PowerPlan moved, the empty track means it only holds its temperature, and a hatch means it is lowered in expensive hours.
+
+When PowerPlan is updated while a tab is open, Home Assistant shows **PowerPlan was updated. Reload the page to use the new version.** with a **Reload** button.
 
 Two cards are PowerPlan's own:
 
@@ -46,7 +50,7 @@ strategy:
 strategy:
   type: custom:powerplan
   hidden_views: [history]          # overview, history, appliances (every appliance page)
-  hidden_cards: [markdown, repairs] # any card type
+  hidden_cards: [markdown]         # any card type
 ```
 
 ## Taking control

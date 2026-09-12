@@ -13,13 +13,12 @@
 
 import type { ECharts, EChartsCoreOption } from "echarts/core";
 
-import { FORECAST_CSS, forecastOption, railHtml, summaryHtml } from "./forecast";
+import type { Hass } from "./r3-util";
+import { observePlanHost, renderPlanMode } from "./timeline-plan-mode";
 import { fetchStatistics, followPeriod, gridHours, kwhScale, monthRanking, type Period, statisticsPeriod, type StatRow } from "./energy";
 import { cssVar, type HomeAssistant, timeZone } from "./ha";
 import { ppStyles, tooltipStyle } from "./styles";
 import {
-  PARTIES,
-  partyStack,
   countingDays,
   currencyWord,
   type DayPeak,
@@ -39,7 +38,6 @@ import {
   slotReadout,
   stackOffsets,
   steps,
-  bucketize,
   type TimelineSlot,
   timelineSlots,
   windowHours,
@@ -70,6 +68,10 @@ interface TimelineConfig {
   currency?: string;
   /** Now's Plan card: the whole-house forecast with a rail this wide (D12 §5.12 F1–F6). */
   rail_width?: number;
+  /** Iteration 4: `window` sums the slots to the capacity window (kWh/h), `slot` keeps 15 min. */
+  bucket?: "window" | "slot";
+  /** Iteration 4: the plan mode's own words over its built-in tables (`FORECAST_LABELS`). */
+  plan_labels?: Record<string, string>;
   labels?: Record<string, string>;
 }
 
@@ -124,6 +126,8 @@ export class PowerplanTimelineCard extends HTMLElement {
     readout: HTMLDivElement;
     legend: HTMLDivElement;
     message: HTMLDivElement;
+    /** Now's Plan card (iteration 4): the host `renderPlanMode` draws into. */
+    fc: HTMLDivElement;
   };
   private key: unknown[] = [];
   private resize?: ResizeObserver;
@@ -137,6 +141,9 @@ export class PowerplanTimelineCard extends HTMLElement {
   private stripUnit = "";
 
   private period?: Period;
+  /** Now's Plan card's own chart and its resize observer (`timeline-plan-mode.ts`). */
+  private fcChart?: { dispose(): void };
+  private unobserveFc?: () => void;
   private unfollow?: () => void;
 
   public setConfig(config: TimelineConfig): void {
@@ -184,8 +191,8 @@ export class PowerplanTimelineCard extends HTMLElement {
           if (Math.abs(width - this.width) < 1) continue;
           const narrowBefore = this.narrow;
           this.width = width;
-          // The forecast lays its bars and rail out in pixels: redraw on any width.
-          if (this.narrow !== narrowBefore || !this.chart || this.forecast) {
+          // Now's Plan card resizes itself in place (`observePlanHost`); the rest redraws on a new width class.
+          if (this.narrow !== narrowBefore || (!this.chart && !this.forecast)) {
             if (this.config?.mode === "history") void this.renderHistory();
             else void this.render();
             continue;
@@ -218,6 +225,10 @@ export class PowerplanTimelineCard extends HTMLElement {
     this.resize?.disconnect();
     this.chart?.dispose();
     this.chart = undefined;
+    this.unobserveFc?.();
+    this.unobserveFc = undefined;
+    this.fcChart?.dispose();
+    this.fcChart = undefined;
   }
 
   public getCardSize(): number {
@@ -271,13 +282,15 @@ export class PowerplanTimelineCard extends HTMLElement {
         .tl.fc .head { position: absolute; top: 10px; right: 12px; z-index: 2; }
         .tl.fc .message { inset: 0; }
         .side:empty { display: none; }
-        ${FORECAST_CSS}
+        .pp-fc { position: relative; }
+        .pp-fc[hidden] { display: none; }
       </style>
       <ha-card><div class="tl">
         <div class="head"><div class="pp-toggle" role="group"></div></div>
         <div class="tl-chart"><div class="side"></div><div class="chart"></div><div class="message" hidden></div></div>
         <div class="pp-readout" hidden></div>
         <div class="pp-legend"></div>
+        <div class="pp-fc" hidden></div>
       </div></ha-card>`;
     this.els = {
       toggle: root.querySelector(".pp-toggle") as HTMLDivElement,
@@ -287,6 +300,7 @@ export class PowerplanTimelineCard extends HTMLElement {
       readout: root.querySelector(".pp-readout") as HTMLDivElement,
       legend: root.querySelector(".pp-legend") as HTMLDivElement,
       message: root.querySelector(".message") as HTMLDivElement,
+      fc: root.querySelector(".pp-fc") as HTMLDivElement,
     };
     this.resize?.observe(this.els.plot);
     return this.els;
@@ -349,6 +363,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     this.chart!.setOption(this.option(hass, config, this.slots, hours), { notMerge: true });
     for (const name of this.off) this.chart!.dispatchAction({ type: "legendUnSelect", name });
     this.chart!.resize();
+    this.markersOnFinish();
     this.drawMarkers();
     this.drawLegend(this.planLegend(config));
     this.drawReadout();
@@ -356,66 +371,29 @@ export class PowerplanTimelineCard extends HTMLElement {
 
   // ------------------------------------------------- the forecast (F1–F6)
 
-  /** Now's Plan card: the whole house per capacity window, the rail or the phone summary, the price under it. */
+  /** Now's Plan card (iteration 4): the whole house per capacity window, drawn by `renderPlanMode` as given. */
   private async renderForecast(hass: HomeAssistant, config: TimelineConfig): Promise<void> {
     const els = this.shell();
-    const compact = this.narrow || (this.width > 0 && this.width < 600);
-    els.plot.style.height = `${compact ? 468 : 440}px`;
+    for (const el of [els.plot, els.readout, els.legend]) el.hidden = true;
     (els.plot.parentElement as HTMLElement).classList.add("fc");
-    els.readout.hidden = true;
-    els.legend.hidden = true;
+    const host = els.fc;
+    host.hidden = false;
+    const compact = this.width > 0 && this.width < 600;
+    host.style.height = `${compact ? 420 : 440}px`;
+    this.unobserveFc ??= observePlanHost(host, () => void this.render());
     const hours = windowHours(this.width, config, this.chosen);
     this.drawToggle(hours);
-    const plan = hass.states[config.entities.plan];
-    const planSlots = (plan?.attributes.slots as PlanSlot[] | undefined) ?? [];
-    const priceSlots = (hass.states[config.entities.price_forecast]?.attributes.slots as PriceSlot[] | undefined) ?? [];
-    const windowMin = Number(plan?.attributes.window_min ?? 60);
-    const now = Date.now();
-    const width = windowMin * 60_000;
-    const from = Math.floor(now / width) * width;
-    const buckets = bucketize(planSlots, priceSlots, windowMin, from, hours);
-    const empty = !planSlots.length;
-    els.chart.hidden = empty;
-    els.message.hidden = !empty;
-    els.message.textContent = empty ? (config.labels?.no_plan ?? "") : "";
-    if (empty) {
-      els.side.replaceChildren();
-      return;
-    }
-    const W = this.width || this.getBoundingClientRect().width || 800;
-    const rail = compact ? 0 : config.rail_width!;
-    const f = this.formats();
-    const options = {
-      now,
-      from,
-      hours,
-      windowMin,
-      width: W,
-      height: compact ? 468 : 440,
-      rail,
-      compact,
-      zone: f.zone,
-      locale: hass.locale.language,
-      currency: f.unit,
-      labels: config.labels ?? {},
-      css: {
-        text: this.css("--primary-text-color", "#e1e1e1"),
-        text2: this.css("--secondary-text-color", "#9b9b9b"),
-        divider: this.css("--divider-color", "rgba(225,225,225,.12)"),
-        primary: this.css("--primary-color", "#009ac7"),
-        error: this.css("--error-color", "#db4437"),
-        card: this.css("--card-background-color", "#1c1c1c"),
-      },
-      tooltip: tooltipStyle((name, fallback) => this.css(name, fallback)),
-    };
+    const { echarts } = await import("./chart");
+    if (!this.isConnected) return;
     const loads = config.loads.map((load) => ({ id: load.id, name: load.name, color: this.colorOf(load.id) }));
-    els.side.style.cssText = compact ? "position:absolute;left:0;right:0;top:0" : `position:absolute;left:0;top:0;bottom:0;width:${rail}px`;
-    els.side.innerHTML = compact ? summaryHtml(buckets, loads, options) : railHtml(buckets, loads, options);
-    if (!(await this.ensureChart())) return;
-    this.markers = [];
-    this.stripUnit = "";
-    this.chart!.setOption(forecastOption(buckets, loads, options), { notMerge: true });
-    this.chart!.resize();
+    this.fcChart = renderPlanMode(
+      host,
+      hass as unknown as Hass,
+      { entities: config.entities, loads, rail_width: config.rail_width, bucket: config.bucket, currency: config.currency, labels: config.plan_labels },
+      hours,
+      this.fcChart,
+      echarts,
+    );
   }
 
   // --------------------------------------------------------- rule 1, T6
@@ -461,25 +439,7 @@ export class PowerplanTimelineCard extends HTMLElement {
       items.push({ name: labels.limit ?? "", color: this.css("--error-color", "#db4437"), swatch: "line", series: true });
     }
     items.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
-    // D12 §5.13: the stack's parties, in the household's words, where the price has more than one.
-    if (this.slots.some((slot) => slot.parties.length > 1)) {
-      const names: Record<string, string | undefined> = {
-        grid: labels.party_grid,
-        supplier: labels.party_supplier,
-        state: labels.party_state,
-      };
-      for (const party of PARTIES) {
-        items.push({ name: names[party] ?? party, color: this.partyColor(party) });
-      }
-    }
     return items;
-  }
-
-  /** D12 §5.13: the parties in HA's energy palette. */
-  private partyColor(party: string): string {
-    if (party === "grid") return this.css("--energy-grid-consumption-color", "#488fc2");
-    if (party === "state") return this.css("--energy-gas-color", "#8e021b");
-    return this.css("--energy-non-fossil-color", "#0f9d58");
   }
 
   private drawLegend(items: LegendEntry[]): void {
@@ -832,21 +792,6 @@ export class PowerplanTimelineCard extends HTMLElement {
         const r = [index === 0 ? 6 : 0, index === last ? 6 : 0, index === last ? 6 : 0, index === 0 ? 6 : 0];
         const shape = { x: x0!, y: y0!, width, height: y1! - y0!, r };
         const children: Record<string, unknown>[] = [{ type: "rect", shape, style: { fill: withAlpha(primary, api.value(3)) } }];
-        // D12 §5.13: the price by party, grid at the bottom, each by its share.
-        const parts = runs[index]?.parties ?? [];
-        if (parts.length > 1) {
-          const sum = parts.reduce((total, part) => total + Math.abs(part.value), 0);
-          let bottom = y1!;
-          for (const part of parts) {
-            const height = sum > 0 ? ((y1! - y0!) * Math.abs(part.value)) / sum : 0;
-            bottom -= height;
-            children.push({
-              type: "rect",
-              shape: { x: x0!, y: bottom, width, height },
-              style: { fill: withAlpha(this.partyColor(part.party), api.value(3)) },
-            });
-          }
-        }
         if (api.value(4) && hatch) children.push({ type: "rect", shape, style: { fill: hatch } });
         if (width >= 34) {
           children.push({
@@ -868,6 +813,17 @@ export class PowerplanTimelineCard extends HTMLElement {
     };
   }
 
+  /** F8: draw the markers once the chart has finished its first paint, not only on a resize. */
+  private markersOnFinish(): void {
+    const chart = this.chart;
+    if (!chart) return;
+    chart.off("finished");
+    chart.on("finished", () => {
+      chart.off("finished");
+      this.drawMarkers();
+    });
+  }
+
   /** T3: "Nå", midnight and the deadline as horizontal labels, and the strip's unit (T4), from the grid's pixels. */
   private drawMarkers(): void {
     const chart = this.chart;
@@ -884,8 +840,10 @@ export class PowerplanTimelineCard extends HTMLElement {
     const axis = height - GRID.bottom;
     const elements: Record<string, unknown>[] = [];
     for (const marker of this.markers) {
-      const [x] = chart.convertToPixel({ xAxisIndex: 0 }, [marker.at, 0]) as number[];
-      if (x === undefined || !Number.isFinite(x)) continue;
+      // An axis finder converts ONE value and returns a number; an array made it NaN (iteration 4, F8).
+      const p = chart.convertToPixel({ xAxisIndex: 0 }, marker.at) as number | number[];
+      const x = Array.isArray(p) ? p[0] : p;
+      if (typeof x !== "number" || !Number.isFinite(x)) continue;
       if (marker.kind === "now") {
         elements.push(
           { type: "line", silent: true, z: 50, shape: { x1: x, y1: Math.max(2, top - 10), x2: x, y2: axis }, style: { stroke: text, lineWidth: 1.5 } },
@@ -1094,7 +1052,7 @@ export class PowerplanTimelineCard extends HTMLElement {
       // The price strip: the forecast's slots, else hourly means without a first partial hour.
       const priceSlots: TimelineSlot[] = covered
         ? forecast
-            .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known", parties: partyStack(slot) }))
+            .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total), estimated: slot.confidence !== "known" }))
             .filter((slot) => slot.end > start && slot.start < end)
             .map((slot) => ({ ...slot, hours: (slot.end - slot.start) / HOUR_MS, ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {} }))
         : (() => {
@@ -1103,7 +1061,7 @@ export class PowerplanTimelineCard extends HTMLElement {
             // A statistic with no row the hour before began inside its first hour: that mean is partial.
             const kept = first && first.start >= start ? rows.slice(1) : rows.filter((row) => row.start >= start);
             return kept.map((row) => ({
-              start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false, parties: [],
+              start: row.start, end: row.end, hours: 1, price: row.mean ?? null, estimated: false,
               ceilingKw: null, baselineKw: null, productionKw: null, loadKw: {}, loadKwh: {}, holdKw: {},
             }));
           })();
@@ -1152,6 +1110,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     );
     for (const name of this.off) this.chart!.dispatchAction({ type: "legendUnSelect", name });
     this.chart!.resize();
+    this.markersOnFinish();
     this.drawMarkers();
     this.drawLegend(legend);
   }

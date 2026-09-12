@@ -109,6 +109,14 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | **DOC.4 Understand and help** | `how-it-works.md`, `capacity-tariffs.md`, `savings.md`, `daily-use.md`, `troubleshooting.md`, `limitations.md`, `examples.md`; the actions' `{docs}` | D14 §3.1; HA's `docs-*` rules | D14 §9 10; every `docs-*` rule done or exempt | DOC.3 |
 | **DOC.5 Dashboard help** | `dashboard.md` per view and card; per-card help links | D14 §5.4, §5.7; D12 §5.14, §9 23 | D14 §9 1, 8, 11; D12 §9 23; the pending list empty | DOC.4, 6.4i |
 
+### 3.0g Savings measure timing
+
+[D11 §5.9](lld/D11-accounting.md): the headline counterfactual is each load's own measured energy placed where the uncontrolled device would have drawn it, booked when its day, session or run settles; the shadows become a model figure shown once calibrated (dec. 41).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **ACC.1 The reference** | `core/accounting/reference.py`; settlement buffers, pending windows, capacity through the settled day; ledger schema 2; `pending`, `model_savings`, `model_confidence` | D11 §5.9, §3, §4, §5.1, §5.4, §5.5, §7, §8; D8 §5.5 | D11 §9 24-32 | - |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -225,6 +233,7 @@ HLD §9 phase 6.
 | **6.4g Dashboard redesign: reasons** | translatable reasons; the plan's 24 h state | D12 §5.6 | D12 §9 17 | 6.4f |
 | **6.4h Dashboard: polish** | shared styles; the runs card; clock strings on `plan_status` | D12 §5.11, §5.1, §5.3, §5.6 | D12 §9 19 | 6.4g |
 | **6.4i Dashboard: appliances and prices** | the appliances card and dialog, the price card, the forecast | D12 §5.12 | D12 §9 20 | 6.4h |
+| **6.4j Dashboard: price refresh and savings** | the price refresher, the savings guard, the meter-lag skip | D12 §5.15; D10 §5.2; D8 §5.5, §5.9 | D12 §9 24 | 6.4i |
 
 ### Phase 7 - Solar and the battery together
 
@@ -352,6 +361,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 38. **Grid tariffs come from the operators' data, not files in the repository.** Where a source publishes every company's household tariff, the flow fetches it, the entry keeps a copy, and the runtime renews it. *Superseded by dec. 39.*
 39. **The household's price by party** (D13). A company's tariff is fetched from the first source tier that passes the quality check, API before file before document (INV-75); company prices never ship (INV-70); national law ships in country modules; VAT is never asked where known; the flow asks by party; the copy renews monthly, never at start (INV-73); a priced contracted-power excess is a cost, not a hard limit. *Rejected:* shipped files where no source exists - staleness returns where nobody checks.
 40. **User documentation is designed like a domain** (D14). A start path apart from the reference, catalogues per registry, one heading per entity, action and event, linkable troubleshooting, facts generated from the code; `docs/` for households, `design/` for the design; headings in the household's words with the registry key as anchor. *Rejected:* the design documents staying in `docs/` - a household would open the folder to three design files.
+41. **Savings measure timing, not physics** (D11 §5.9). A load's measured energy priced where the uncontrolled device would have drawn it, booked when its day, session or run settles; observe saves nothing; the shadows stay as a model figure shown once calibrated. *Rejected:* fixing the shadows' inputs - every fix is one more parameter that must be right, and under a flat price the signal is smaller than the model error.
 
 ---
 
@@ -414,6 +424,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DOC.3 | Appliances and catalogues | todo |
 | DOC.4 | Understand and help | todo |
 | DOC.5 | Dashboard help | todo |
+| ACC.1 | The reference | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -482,6 +493,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4g | Dashboard redesign: reasons | done |
 | 6.4h | Dashboard: polish | done |
 | 6.4i | Dashboard: appliances and prices | done |
+| 6.4j | Dashboard: price refresh and savings | done |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |

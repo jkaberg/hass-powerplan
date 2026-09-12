@@ -35,8 +35,8 @@ from homeassistant.util import dt as dt_util
 
 from .core.model import Carrier, Confidence, Snapshot
 from .core.pricing.modifiers.base import SPOT
-from .core.pricing.modifiers.vat import Vat
-from .core.pricing.party import split
+from .core.pricing.modifiers.vat import Vat, energy_vat_rate
+from .core.pricing.party import StateVat, split
 from .core.tariffs.evaluator import ADVICE_KEYS
 from .core.tariffs.household import vat_at
 from .core.tariffs.model import StepTable
@@ -107,7 +107,10 @@ def _name(value: Any) -> str | None:
 
 
 def _slots(
-    curve: PriceCurve | None, limit: int | None = None, reference: PriceCurve | None = None
+    curve: PriceCurve | None,
+    limit: int | None = None,
+    reference: PriceCurve | None = None,
+    energy_vat: Decimal = Decimal(0),
 ) -> list[dict[str, Any]]:
     """Return the curve's slots; with `reference`, each slot's price without the fixed price too."""
     if curve is None:
@@ -120,7 +123,7 @@ def _slots(
             "end": slot.end.isoformat(),
             "total": str(slot.total),
             "confidence": slot.confidence.value,
-            "energy": _energy_part(slot.components, slot.total),
+            "energy": _energy_part(slot.components, energy_vat),
             # The price by party, for the timeline's stack (D12 §5.13, D1 §5.3).
             "parties": by_party(slot.components),
         }
@@ -155,19 +158,32 @@ def tariff_credit(runtime: Runtime) -> list[dict[str, str | None]]:
     ]
 
 
-def _energy_part(components: Mapping[str, Decimal], total: Decimal) -> str | None:
-    """Return the energy component with its share of VAT, for the price card (D12 §5.12 P3).
+def energy_vat(runtime: Runtime) -> Decimal:
+    """Return the VAT rate on the energy: the state stage's where it taxes spot (D13 §8).
 
-    VAT is a component over the others (D1 §5.4), so the energy's share is its
-    component scaled by total ÷ (total − VAT) - exact where VAT covers every
-    component, the modifier's default (D-0495).
+    A site on the chain by party has one `StateVat`, today's rate for its zone;
+    an older chain of typed add-ons sums its `Vat`s that cover spot (D-0581).
+    """
+    for modifier in runtime.build.price_modifiers:
+        if isinstance(modifier, StateVat):
+            if SPOT not in modifier.taxed:
+                return Decimal(0)
+            return vat_at(modifier.price.state, dt_util.now().date())
+    return energy_vat_rate(runtime.build.price_modifiers)
+
+
+def _energy_part(components: Mapping[str, Decimal], energy_vat: Decimal) -> str | None:
+    """Return the energy component with its own VAT, for the price card (D12 §5.12 P3, §5.15 F5).
+
+    `energy_vat` is the rate of the VAT modifiers whose `applies_to` covers the
+    energy (D1 §5.4). v0.6 scaled the energy by total ÷ (total − VAT), which is
+    exact only where VAT covers every component: on the house VAT covers the
+    energy alone, and Norgespris' 0,40 read 0,45142 instead of 0,50 (D-0581).
     """
     spot = components.get(SPOT)
     if spot is None:
         return None
-    vat = components.get("vat", Decimal(0))
-    base = total - vat
-    return str(round(spot if not vat or not base else spot * total / base, 5))
+    return str(round(spot * (1 + energy_vat), 5))
 
 
 #: `sensor.<site>_plan`'s state covers one day of the plan (D12 §5.6 v0.4).
@@ -517,7 +533,11 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value=lambda _s, r: known_until(_import_curve(r)),
         attributes=lambda _s, r: {
-            "slots": _slots(_import_curve(r), reference=r.reference_curve),
+            "slots": _slots(
+                _import_curve(r),
+                reference=r.reference_curve,
+                energy_vat=energy_vat(r),
+            ),
             "built_at": None if (curve := _import_curve(r)) is None else _iso(curve.built_at),
             # The price card's "Spot NO3" and its price without VAT (D12 §5.12 P1).
             "area": next(

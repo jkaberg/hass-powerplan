@@ -12,10 +12,10 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from homeassistant.components.logbook.models import LazyEventPartialState, async_event_to_row
 from homeassistant.core import Event, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.translation import async_get_translations
@@ -173,11 +173,9 @@ async def test_15_a_fired_event_is_described_on_the_appliance_s_plan_status(
     assert "entity_id" not in line
     assert line["name"] == "Charger"
     assert line["message"] == "Ny plan: 1,06 kWh fra 22:00 · ≈ 0,77 kr"
-    # The logbook's processor hands a `LazyEventPartialState`: `time_fired_ts`, no `time_fired`
-    # (D-0504).
-    lazy = SimpleNamespace(
-        data=plan.data, event_type=plan.event_type, time_fired_ts=plan.time_fired_timestamp
-    )
+    # The logbook's processor hands a `LazyEventPartialState`: no `time_fired`, the timestamp
+    # only in its row (D-0504).
+    lazy = LazyEventPartialState(async_event_to_row(plan), {})
     assert describers[plan.event_type](lazy) == line  # type: ignore[arg-type]
     line = describers[safe.event_type](safe)
     assert "entity_id" not in line

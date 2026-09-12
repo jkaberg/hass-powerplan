@@ -11,31 +11,6 @@ export interface PriceSlot {
   energy?: string;
   /** The same slot without the fixed-price modifier (Norgespris), where one is configured (P3). */
   reference?: string;
-  /** The price by party - grid, supplier, state (D12 §5.13); absent before TS.2. */
-  parties?: Record<string, string>;
-}
-
-/** D12 §5.13: the stack's order, bottom to top. */
-export const PARTIES = ["grid", "supplier", "state"] as const;
-export type Party = (typeof PARTIES)[number];
-
-export interface PartyPart {
-  /** `total` when the slot has one part only: a source that includes every party (stromligning). */
-  party: Party | "total";
-  value: number;
-}
-
-/**
- * D12 §5.13, §9 21: a slot's price as its stack of parties, grid first. A slot
- * whose price source already includes the grid and the taxes has one part -
- * the whole price - and draws as one stack, not three.
- */
-export function partyStack(slot: PriceSlot): PartyPart[] {
-  const total = Number(slot.total);
-  const parts = PARTIES.filter((party) => slot.parties?.[party] !== undefined)
-    .map((party) => ({ party, value: Number(slot.parties![party]) }))
-    .filter((part) => part.value !== 0);
-  return parts.length > 1 ? parts : [{ party: "total", value: total }];
 }
 
 /** One row of `sensor.<site>_plan`'s `slots` (D12 §5.6). */
@@ -62,8 +37,6 @@ export interface TimelineSlot {
   price: number | null;
   /** The price is not yet published: `estimated` or `synthesised` (D1), drawn as provisional. */
   estimated: boolean;
-  /** The price by party, grid first (D12 §5.13). */
-  parties: PartyPart[];
   ceilingKw: number | null;
   baselineKw: number | null;
   productionKw: number | null;
@@ -99,7 +72,6 @@ export function timelineSlots(
       end: Date.parse(slot.end),
       price: Number(slot.total),
       estimated: slot.confidence !== "known",
-      parties: partyStack(slot),
     }))
     .sort((a, b) => a.start - b.start);
   const grid: Array<{ start: number; end: number; row?: PlanSlot }> = plan.length
@@ -131,7 +103,6 @@ export function timelineSlots(
       hours: slotHours,
       price: covers ? price.price : null,
       estimated: covers ? price.estimated : false,
-      parties: covers ? price.parties : [],
       ceilingKw: row?.ceiling_kwh == null ? null : row.ceiling_kwh / windowHours,
       baselineKw: row?.baseline_kwh == null ? null : row.baseline_kwh / slotHours,
       productionKw: row?.production_kwh == null ? null : row.production_kwh / slotHours,
@@ -238,7 +209,6 @@ export interface PriceRun {
   end: number;
   price: number;
   estimated: boolean;
-  parties: PartyPart[];
   /** Rule 5: the fill's alpha, 0,28 at the window's cheapest to 0,62 at its dearest. */
   alpha: number;
 }
@@ -249,11 +219,10 @@ export function priceRuns(slots: readonly TimelineSlot[]): PriceRun[] {
   for (const slot of slots) {
     if (slot.price === null) continue;
     const last = runs[runs.length - 1];
-    const sameParts = last !== undefined && JSON.stringify(last.parties) === JSON.stringify(slot.parties);
-    if (last && last.end === slot.start && last.price === slot.price && last.estimated === slot.estimated && sameParts) {
+    if (last && last.end === slot.start && last.price === slot.price && last.estimated === slot.estimated) {
       last.end = slot.end;
     } else {
-      runs.push({ start: slot.start, end: slot.end, price: slot.price, estimated: slot.estimated, parties: slot.parties });
+      runs.push({ start: slot.start, end: slot.end, price: slot.price, estimated: slot.estimated });
     }
   }
   const prices = runs.map((run) => run.price);
@@ -757,251 +726,4 @@ export function runRows(
 export function gaugeFont(chars: number, radius: number, stroke: number, max = 36): number {
   const room = 2 * (radius - stroke / 2 - 12);
   return Math.max(20, Math.min(max, Math.floor(room / (0.56 * Math.max(chars, 1)))));
-}
-
-// --------------------------------------------------------------------------- //
-// Iteration 3: the appliances card, the price card and the whole-house forecast (D12 §5.12)
-// --------------------------------------------------------------------------- //
-
-export interface Run {
-  start: number;
-  end: number;
-  kwh: number;
-}
-
-/** One load's planned runs: consecutive slots with energy merged, in order (R3). */
-export function planRuns(slots: readonly PlanSlot[], id: string): Run[] {
-  const out: Run[] = [];
-  for (const slot of [...slots].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))) {
-    const kwh = Number(slot.planned_kwh[id] ?? 0);
-    if (!(kwh > 0.0005)) continue;
-    const start = Date.parse(slot.start);
-    const end = Date.parse(slot.end);
-    const last = out[out.length - 1];
-    if (last && Math.abs(last.end - start) < 1000) {
-      last.end = end;
-      last.kwh += kwh;
-    } else out.push({ start, end, kwh });
-  }
-  return out;
-}
-
-/** One load's holding stretches (D-0501): consecutive slots with holding energy, merged. */
-export function holdRuns(slots: readonly PlanSlot[], id: string): Run[] {
-  return planRuns(
-    slots.map((slot) => ({ ...slot, planned_kwh: { [id]: slot.hold_kwh?.[id] ?? 0 } })),
-    id,
-  );
-}
-
-/** One load's planned pauses (D-0507): consecutive slots where its plan stands still, merged. */
-export function pauseRuns(slots: readonly PlanSlot[], id: string): Run[] {
-  return planRuns(
-    slots.map((slot) => ({ ...slot, planned_kwh: { [id]: slot.paused?.includes(id) ? 1 : 0 } })),
-    id,
-  ).map((run) => ({ ...run, kwh: 0 }));
-}
-
-/** The cheap threshold: the lowest quarter of the prices' range, `null` for a flat curve (R4, P2, F4). */
-export function cheapThreshold(prices: readonly number[]): number | null {
-  const finite = prices.filter(Number.isFinite);
-  if (!finite.length) return null;
-  const lo = Math.min(...finite);
-  const hi = Math.max(...finite);
-  return hi - lo > 1e-4 ? lo + (hi - lo) * 0.25 : null;
-}
-
-/** The cheap hours inside `[from, to)` as merged `[start, end)` bands (R4, P2). */
-export function cheapBands(prices: readonly PriceSlot[], from: number, to: number): Array<[number, number]> {
-  const inside = prices
-    .map((slot) => ({ start: Date.parse(slot.start), end: Date.parse(slot.end), price: Number(slot.total) }))
-    .filter((slot) => slot.end > from && slot.start < to && Number.isFinite(slot.price))
-    .sort((a, b) => a.start - b.start);
-  const threshold = cheapThreshold(inside.map((slot) => slot.price));
-  if (threshold === null) return [];
-  const bands: Array<[number, number]> = [];
-  for (const slot of inside) {
-    if (slot.price > threshold) continue;
-    const last = bands[bands.length - 1];
-    if (last && Math.abs(last[1] - slot.start) < 1000) last[1] = slot.end;
-    else bands.push([slot.start, slot.end]);
-  }
-  return bands;
-}
-
-/** One bar of the whole-house forecast: a window's energy, so bars and the limit share kWh per window (F1). */
-export interface Bucket {
-  start: number;
-  end: number;
-  baseline: number | null;
-  p90: number | null;
-  loads: Record<string, number>;
-  /** Holding each thermal store's setpoint (D-0501). */
-  hold: Record<string, number>;
-  ceiling: number | null;
-  price: number | null;
-  estimated: boolean;
-}
-
-/** The plan's slots summed into `windowMin` buckets from `from`, each with its mean price (F1). */
-export function bucketize(
-  plan: readonly PlanSlot[],
-  prices: readonly PriceSlot[],
-  windowMin: number,
-  from: number,
-  hours: number,
-): Bucket[] {
-  const width = windowMin * 60_000;
-  const n = Math.round((hours * HOUR_MS) / width);
-  const out: Bucket[] = Array.from({ length: n }, (_, i) => ({
-    start: from + i * width,
-    end: from + (i + 1) * width,
-    baseline: null,
-    p90: null,
-    loads: {},
-    hold: {},
-    ceiling: null,
-    price: null,
-    estimated: false,
-  }));
-  for (const slot of plan) {
-    const bucket = out[Math.floor((Date.parse(slot.start) - from) / width)];
-    if (!bucket) continue;
-    if (slot.baseline_kwh != null) bucket.baseline = (bucket.baseline ?? 0) + slot.baseline_kwh;
-    if (slot.baseline_p90_kwh != null) bucket.p90 = (bucket.p90 ?? 0) + slot.baseline_p90_kwh;
-    for (const [id, kwh] of Object.entries(slot.planned_kwh)) {
-      if (kwh > 0) bucket.loads[id] = (bucket.loads[id] ?? 0) + kwh;
-    }
-    for (const [id, kwh] of Object.entries(slot.hold_kwh ?? {})) {
-      if (kwh > 0) bucket.hold[id] = (bucket.hold[id] ?? 0) + kwh;
-    }
-    // `ceiling_kwh` is the window's already, whichever slot of it carries it.
-    if (slot.ceiling_kwh != null) bucket.ceiling = slot.ceiling_kwh;
-  }
-  const priced = prices.map((slot) => ({
-    start: Date.parse(slot.start),
-    end: Date.parse(slot.end),
-    price: Number(slot.total),
-    estimated: slot.confidence !== "known",
-  }));
-  for (const bucket of out) {
-    const inside = priced.filter((p) => p.end > bucket.start && p.start < bucket.end && Number.isFinite(p.price));
-    if (!inside.length) continue;
-    bucket.price = inside.reduce((sum, p) => sum + p.price, 0) / inside.length;
-    bucket.estimated = inside.some((p) => p.estimated);
-  }
-  return out;
-}
-
-/** The forecast rail's figures: the rest of the house, each load, and the managed share in cheap hours (F3). */
-export function forecastTotals(
-  buckets: readonly Bucket[],
-  loadIds: readonly string[],
-): { other: number; loads: Record<string, number>; managed: number; cheapPct: number | null } {
-  const threshold = cheapThreshold(buckets.map((b) => b.price).filter((p): p is number => p !== null));
-  const loads: Record<string, number> = {};
-  let other = 0;
-  let cheap = 0;
-  let movable = 0;
-  for (const bucket of buckets) {
-    other += bucket.baseline ?? 0;
-    let moved = 0;
-    for (const id of loadIds) {
-      const kwh = bucket.loads[id] ?? 0;
-      loads[id] = (loads[id] ?? 0) + kwh + (bucket.hold[id] ?? 0);
-      moved += kwh;
-    }
-    movable += moved;
-    if (threshold !== null && bucket.price !== null && bucket.price <= threshold) cheap += moved;
-  }
-  const managed = Object.values(loads).reduce((sum, kwh) => sum + kwh, 0);
-  // The cheap share is of what the plan moves: holding follows the thermostat, not the price.
-  return {
-    other,
-    loads,
-    managed,
-    cheapPct: threshold !== null && movable > 0 ? Math.round((cheap / movable) * 100) : null,
-  };
-}
-
-/** Hours since local midnight in `timeZone` (the browser's when undefined). */
-export function localHour(instant: number, timeZone?: string): number {
-  const parts = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).formatToParts(instant);
-  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return part("hour") + part("minute") / 60;
-}
-
-/** The next time the wall clock reads `hh:mm[:ss]` after `now`, in `timeZone` (R3's deadline). */
-export function nextClock(clock: string, now: number, timeZone?: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})/.exec(clock);
-  if (!match) return null;
-  let hours = Number(match[1]) + Number(match[2]) / 60 - localHour(now, timeZone);
-  if (hours <= 0) hours += 24;
-  return Math.floor((now + hours * HOUR_MS) / 60_000) * 60_000;
-}
-
-/** The start of the local day holding `now`, in `timeZone` (P2's 48 h axis). */
-export function localMidnight(now: number, timeZone?: string): number {
-  return Math.floor((now - localHour(now, timeZone) * HOUR_MS) / 60_000) * 60_000;
-}
-
-function luminance(rgb: readonly number[]): number {
-  const [r, g, b] = rgb.map((v) => {
-    const c = v / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-}
-
-/** An appliance's icon colour on a dark card: its hue, lifted until it reads ≥ 3 : 1 on #1c1c1c (R1). */
-export function readable(hex: string, dark: boolean): string {
-  if (!dark || !/^#[0-9a-f]{6}$/i.test(hex)) return hex;
-  const card = luminance([28, 28, 28]);
-  let rgb = hex.slice(1).match(/../g)!.map((d) => parseInt(d, 16));
-  for (let i = 0; i < 12 && (luminance(rgb) + 0.05) / (card + 0.05) < 3; i++) {
-    rgb = rgb.map((v) => Math.round(v + (255 - v) * 0.18));
-  }
-  return `#${rgb.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
-
-
-/** A tariff source's credit, as `sensor.<site>_price_forecast` carries it (D13 §6.1). */
-export interface Credit {
-  name: string;
-  url: string;
-  licence?: string | null;
-}
-
-const html = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-/**
- * D12 §5.13, §9 22: «Nettleiepriser fra {sources}. Takk!» — each source linked,
- * its licence named. Empty for a copy no source fetched (a template, custom).
- */
-export function creditHtml(template: string | undefined, credits: readonly Credit[] | undefined, and = "&"): string {
-  if (!template || !credits?.length) return "";
-  const names = credits.map(
-    (credit) =>
-      `<a href="${html(credit.url)}" target="_blank" rel="noreferrer">${html(credit.name)}</a>${credit.licence ? ` (${html(credit.licence)})` : ""}`,
-  );
-  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} ${html(and)} ${names[names.length - 1]}` : names[0]!;
-  const [before, after] = html(template).split("{sources}");
-  return `${before ?? ""}${joined}${after ?? ""}`;
-}
-
-
-/**
- * D12 §5.13: a month's cost or savings by party, as one line —
- * «Nettleie 312 kr · Strøm 540 kr · Avgifter 230 kr». Empty without a split.
- */
-export function partyLine(
-  byParty: Record<string, string> | null | undefined,
-  names: Record<Party, string | undefined>,
-  money: (value: number) => string,
-): string {
-  if (!byParty) return "";
-  return PARTIES.filter((party) => byParty[party] !== undefined && Number(byParty[party]) !== 0)
-    .map((party) => `${names[party] ?? party} ${money(Number(byParty[party]))}`)
-    .join(" · ");
 }

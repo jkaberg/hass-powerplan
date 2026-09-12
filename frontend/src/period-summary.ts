@@ -27,7 +27,6 @@ import {
   formatSummary,
   inMonthOf,
   moneyFormat,
-  partyLine,
   periodKind,
   type PeriodKind,
   sumChanges,
@@ -285,15 +284,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
               icon,
               value: formatSummary(total, "money", locale),
               unit: String(hass.states[id]?.attributes.unit_of_measurement ?? ""),
-              // D12 §5.13: the month in progress, by party, from the sensor's own split.
-              sub:
-                fetched?.mode === "capacity"
-                  ? partyLine(
-                      hass.states[id]?.attributes.by_party as Record<string, string> | undefined,
-                      { grid: labels.party_grid, supplier: labels.party_supplier, state: labels.party_state },
-                      (v) => formatSummary(v, "money", locale),
-                    )
-                  : "",
+              sub: "",
               entity: id,
             },
       );

@@ -36,7 +36,10 @@ from custom_components.powerplan.core.accounting import (
     month_key,
     month_start_utc,
 )
+from custom_components.powerplan.core.accounting.reference import OpenBuffer, ReferenceKind
 from custom_components.powerplan.core.accounting.shadow.base import StoreKind
+from custom_components.powerplan.core.metering import ClosedWindow
+from custom_components.powerplan.core.metering.health import AnchorKind
 from custom_components.powerplan.core.model import Confidence, Money
 from tests.core.accounting.conftest import (
     NOK,
@@ -192,6 +195,34 @@ def test_15b_the_state_round_trips_and_decimal_comes_back_exact() -> None:
                 ),
             )
         },
+        open={
+            "floor": OpenBuffer(
+                reference=ReferenceKind.DAY,
+                key="2026-12-01",
+                slots=(
+                    PricedSlot(
+                        start_utc=datetime(2026, 12, 1, 1, tzinfo=UTC),
+                        minutes=60,
+                        kwh=0.6,
+                        cf_kwh=0.0,
+                        price=SlotPrice(Decimal("0.7379"), NOK, Confidence.KNOWN),
+                        shape_kwh=0.4,
+                    ),
+                ),
+            )
+        },
+        pending_windows=(
+            ClosedWindow(
+                start_utc=datetime(2026, 12, 1, 1, tzinfo=UTC),
+                window_min=60,
+                kwh=3.2,
+                avg_kw=3.2,
+                anchor_kind=AnchorKind.METER_WINDOW,
+                degraded=False,
+                confidence="exact",
+            ),
+        ),
+        settled_through=datetime(2026, 12, 1, 1, tzinfo=UTC),
         fee_at_month_start=Money(Decimal("416"), NOK),
         cf_fee_at_month_start=Money(Decimal("613"), NOK),
         slot_deltas={"2026-12-01T16:00:00+00:00": 1.25},
@@ -277,6 +308,7 @@ def _site_rec(raw: dict[str, Any]) -> SiteMonthRec:
         capacity_fee=_money(raw["capacity_fee"]),
         cf_capacity_fee=_money(raw["cf_capacity_fee"]),
         cf_energy_cost=_money(raw["cf_energy_cost"]),
+        capacity_fee_settled=_money(raw["capacity_fee_settled"]),
         import_kwh=raw["import_kwh"],
         export_kwh=raw["export_kwh"],
         slots=raw["slots"],
@@ -290,6 +322,9 @@ def _load_rec(raw: dict[str, Any]) -> LoadMonthRec:
     return LoadMonthRec(
         cost=_money(raw["cost"]),
         cf_cost=_money(raw["cf_cost"]),
+        settled_cost=_money(raw["settled_cost"]),
+        model_cf_cost=_money(raw["model_cf_cost"]),
+        model_cost=_money(raw["model_cost"]),
         savings_by_party={key: Decimal(value) for key, value in raw["savings_by_party"].items()},
         **{
             name: raw[name]
@@ -303,6 +338,7 @@ def _load_rec(raw: dict[str, Any]) -> LoadMonthRec:
                 "calib_kwh",
                 "calib_cf_kwh",
                 "kwh_shifted",
+                "model_cf_kwh",
             )
         },
     )
@@ -321,6 +357,20 @@ def _priced(raw: dict[str, Any]) -> PricedSlot:
             Confidence(price["confidence"]),
         ),
         load_exact=raw["load_exact"],
+        settled=raw["settled"],
+        shape_kwh=raw["shape_kwh"],
+    )
+
+
+def _window(raw: dict[str, Any]) -> ClosedWindow:
+    return ClosedWindow(
+        start_utc=datetime.fromisoformat(raw["start_utc"]),
+        window_min=raw["window_min"],
+        kwh=raw["kwh"],
+        avg_kw=raw["avg_kw"],
+        anchor_kind=AnchorKind(raw["anchor_kind"]),
+        degraded=raw["degraded"],
+        confidence=raw["confidence"],
     )
 
 
@@ -376,9 +426,18 @@ def _decode(raw: dict[str, Any]) -> AccountingState:
         pending_reprice={
             key: tuple(_priced(row) for row in rows) for key, rows in raw["pending_reprice"].items()
         },
-        deferred={
-            key: tuple(_priced(row) for row in rows) for key, rows in raw["deferred"].items()
+        open={
+            key: OpenBuffer(
+                reference=ReferenceKind(row["reference"]),
+                key=row["key"],
+                slots=tuple(_priced(item) for item in row["slots"]),
+            )
+            for key, row in raw["open"].items()
         },
+        pending_windows=tuple(_window(row) for row in raw["pending_windows"]),
+        settled_through=(
+            datetime.fromisoformat(raw["settled_through"]) if raw["settled_through"] else None
+        ),
         fee_at_month_start=(
             _money(raw["fee_at_month_start"]) if raw["fee_at_month_start"] else None
         ),

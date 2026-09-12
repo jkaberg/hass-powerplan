@@ -2235,6 +2235,71 @@ git grep -lE 'docs/(HLD|PLAN|DECISIONS)\.md|docs/(lld|reviews|benchmarks|brand)\
 `en.json` and `strings.json` values use liters, meters, millimeters, program and recognizes (D14 appendix A); keys keep their spelling. `events.md` shows event labels verbatim, and the pages' spelling check would fail on "programme".
 **Rejected:** changing only the units - the pages quote the rest.
 
+### D-0580 · The price refresher lives on the runtime and reports through the catalogue
+
+`price_refresh.PriceRefresher` (back-off 60, 120, 300, 600, 900 s; `prices_stale` after 30 min; `powerplan/refresh_prices`) is `runtime.price_refresher`, fetches through `Runtime.refresh_prices` (fetch, then replan) and tests `prices_known_now`; the runtime's own fetches report to it, so startup doesn't fetch twice. The issue is a catalogue row with `{site}` and its learn-more link (D8 §5.9). The reference house once planned 37 minutes on estimates after a restart. Affects D12 §5.15 F12, D8 §5.9.
+**Rejected:** `hass.data[DOMAIN]` - integration state lives in `runtime_data`.
+
+### D-0581 · A price slot's energy part carries the VAT that covers the energy
+
+`slots[].energy` = `spot × (1 + r)`, `r` the summed rate of the `Vat` modifiers covering `spot` (`energy_vat_rate`). D-0495's total ÷ (total − VAT) is exact only when VAT covers every component; on the reference house VAT covers the energy alone (the grid tariff is entered incl. VAT), and the price card's split disagreed with the house's own sensors. Affects D12 §5.12, §5.15, §9 24.
+**Rejected:** keeping the ratio - wrong whenever VAT doesn't cover everything.
+
+### D-0582 · `powerplan/spot_prices` answers from the runtime, not from Nord Pool
+
+The command returns area, currency, VAT, the fixed price and its source, `slots[{start, end, spot}]` for today and tomorrow, `tomorrow_available` and `effect`. `spot` is each slot's spot component on `Runtime.reference_curve` (D-0495); `fixed_price` is `FixedPrice.price × (1 + energy_vat_rate)`; `effect` is D-0499's saving. INV-3 keeps Nord Pool's action in `nordpool_action.py`, and the curves already hold spot and the fixed price. Affects D12 §5.15 F5.
+**Rejected:** its own option chain for a fixed-price entity - a second source that can only disagree.
+
+### D-0583 · A load's savings are unknown without a reference
+
+`sensor.<appliance>_savings_month` is `guarded_savings(cost, cf_cost)`: `unknown` with `reason: no_reference` when `cf_cost` is missing or ≤ 0 under a positive cost, `no_cost` without a ledger row, else the ledger's savings. Five loads read exactly −cost: a missing counterfactual reported as a loss. D11's counterfactual never yields 0 kWh for a load that ran. Affects D12 §5.15 F10, D8 §5.5.
+**Rejected:** treating 0 as a real reference - it's a missing one.
+
+### D-0584 · The seed finds the meter's lag and skips windows it can't separate
+
+`uncontrolled_history(..., meter_lag_h=None)` detects lag by correlating the hourly meter with the controlled sum at lag 0 and 1 (gain ≥ 0.10, ≥ 24 hours), and skips windows where every load starts. `_integral_kwh` bisects to the window's rows. An evening bump in "other usage" (3.5 kWh against ~1) came from a one-hour lag. Affects D10 §5.2, D12 §5.15 F11.
+**Rejected:** a second baseline to cross-check - D10's windows suffice.
+
+### D-0585 · The dashboard's price and appliance cards take the prototype's files as they are
+
+The eleven TypeScript files of the second dashboard prototype go into `frontend/src/` unchanged (one fallback, D-0586), with its compiler options (`strict`, `noUnusedLocals`, no `noUncheckedIndexedAccess`, which alone raised 187 errors) and its nb and en word tables. The cards that now carry their own words get no `labels`, and 92 `card_*` keys only the earlier cards read are removed. What the earlier cards had that these lack (holds and pauses in the lanes, strategy words, a third language) is listed in D12 §5.15. Affects D12 §5.15, §11.
+**Rejected:** porting the look onto the earlier cards - a rewrite of a design that was delivered as code.
+
+### D-0586 · The bundle's key is the loader's own `?v=`; the fee falls back to the level sensor
+
+`version-check.ts` reads `__PP_BUNDLE__`, which `bundle.ts` (the loader's first import) sets from `import.meta.url`'s `v` parameter; `powerplan/version` answers `dashboard.module_key()`, the same hash. The hash is of `powerplan.js` itself, so the build can't write it in. `price-card.ts` reads `capacity_fee`, else the level sensor's fee text. Affects D12 §5.15.
+**Rejected:** a fee sensor - a new entity for one number on one card.
+
+### D-0587 · Now's Plan card is `renderPlanMode` inside the timeline card
+
+`timeline-card.ts` keeps its element, config and 12/24/48 toggle; with `rail_width` it hands a host `<div>` to `observePlanHost` and `renderPlanMode`. ECharts gains its `SVGRenderer`. A new element would have changed the layout's card type for nothing. Affects D12 §5.15.
+**Rejected:** a separate plan element - same code, one more card type.
+
+### D-0588 · Observe is its own counterfactual
+
+A slot in `observe`, `delegated` or `off` settles with `cf := actual`, savings exactly 0; `observe` still steps and calibrates the shadow. In observe the device was uncontrolled, so any other figure would be the reference's own error credited to a plan that did nothing. Only `delegated`, `off` and kind `none` count as excluded slots. Affects D11 §5.9.1, §9 28.
+**Rejected:** placing observe slots too - shows savings to a household that switched control off.
+
+### D-0589 · Capacity savings are billed through the last settled day
+
+A closed window waits in `pending_windows` until none of its slots is in an open buffer, then is recorded and `settled_through` moves. Capacity savings bill both books through the last complete day before that, from a `PeakHistory` view cut in `close.py`; the live capacity fee stays for cost (D-0179). A thermal reference settles at midnight and an EV's when the car stops wanting, so an open day's new peak would otherwise read as a capacity loss. Affects D11 §5.9.4, §9 29.
+**Rejected:** cutting in D2 - only the ledger needs it.
+
+### D-0590 · A month closes with every buffer settled; a session over the 1st is split
+
+`_rollover` settles every open buffer into the closing month and flushes the windows that frees before freezing. An EV session open across midnight on the 1st settles with its energy so far and continues as a new session. A removed load's buffer settles at removal; one whose load stops arriving settles when over. A frozen month can't hold a cost without its counterfactual. Affects D11 §5.9.2.
+**Rejected:** carrying the session - October's cost with November's savings.
+
+### D-0591 · The savings sensor is the settled figure; the model figure is an attribute when trusted
+
+`sensor.<appliance>_savings_month` is `cf_cost − settled_cost`, guarded on `settled_cost`, so an open day reads 0 with `pending: true`. New attributes `pending`, `model_confidence` and `model_savings` (only when `ok`). Guarding the live cost would read `no_reference` most of every day, and a model figure shown before calibration was the red bar this replaces. Affects D8 §5.5, D12 §5.15.
+**Rejected:** the model figure as the state - uncalibrated numbers in the headline.
+
+### D-0592 · A schema-1 accounting section is discarded, not migrated
+
+`AccountingState.schema = 2`; an older section is logged and the ledger restarts, `partial`, on the next slot. Its month figures are the shadows' that the reference replaces, and its deferred EV slots have no settled counterfactual to migrate. Nothing released carries it (PLAN §7 dec. 36). HA's statistics take the restart as one negative change. Affects D11 §5.9.6, §9 32.
+**Rejected:** a migration - nothing to migrate into.
+
 ### D-0550 · Where the copy by party lives, and how an entry reaches it
 
 `HouseholdPrice`, its codec, `spec()`, `from_preset()` and the state's dated rates are `core/tariffs/household.py`; the chain by party (`GridEnergy`, `StateLevies`, `StateVat`, `chain()`, `PARTY`) is `core/pricing/party.py`. The config entry goes to minor version 2: `tariff.price` holds the copy and `tariff.review` kept overrides; `tariff.spec` goes. One pure function, `storage.migrate_tariff`, migrates older entries and builds new ones in the flow, so both are alike. `presets/` becomes `rules/`, company files staying as the migration's source until removed. The copy's schema is its codec. Affects D13 §3, §10, §12; D2 §3.
@@ -2464,3 +2529,8 @@ A version with several power prices (night and day) becomes several `PeakTariff`
 
 The ceiling sensor is unknown when the ceiling is infinite, and `metric` when the level has none; a price-only or no-peak site failed to add both (`inf` into a numeric sensor, `round(None)`). Affects D8 §5.5.
 **Rejected:** publishing 0 - reads as a closed gate.
+
+### D-0616 · The tariff-sources series joins main: the settled ledger and the new cards
+
+Merging the tariff-sources work with main: D11 is the settled-reference ledger, with the series' additions on top (savings by party as each slot settles, energy cost by party per slot, a priced limit's surcharge in both worlds, a tariffed load on its own curve). The frontend is the second card set as delivered: the price strip's party stack and source credit aren't drawn yet, though the sensors still carry `parties` and `credit`. The price card's energy part uses the state stage's VAT where the chain is by party. Affects D11 §5.4, §5.8, §5.9; D12 §5.13.
+**Rejected:** re-applying the party stack to the new cards in the merge - a card change belongs in its own step.

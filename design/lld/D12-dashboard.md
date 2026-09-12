@@ -48,6 +48,8 @@ custom_components/powerplan/
 │   ├── site_layout.py    SiteLayout from the entity and device registries and the entry's subentries (no hass.states - INV-3)
 │   ├── logbook.py        async_describe_events: every EventKind in words, on the appliance's plan_status (§5.6)
 │   ├── layout.py         build(sites: Sequence[SiteLayout], ha_version, texts, …) → the Lovelace dashboard config (§5.1); plain data in, plain data out
+│   ├── ws_spot.py        v0.7: powerplan/spot_prices {entry_id} → the price card's spot, fixed price and effect (§5.15 F5)
+│   ├── ws_version.py     v0.7: powerplan/version → the loader's key (§5.15 F7)
 │   └── ws.py             powerplan/dashboard/config {entry_id?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440)
 └── frontend/dist/           the committed build HACS installs, served at /powerplan_frontend (§5.5)
     ├── powerplan.js           the module every page loads (≈ 2 kB)
@@ -64,8 +66,15 @@ frontend/                      the sources, at the repository root so HACS and t
 ├── src/appliance-dialog.ts    the dialog a row opens (§5.12 R7)
 ├── src/price-card.ts          powerplan-price-card: the price now, today and tomorrow (§5.12 P1–P5)
 ├── src/forecast.ts            the timeline's whole-house forecast per window, its rail and phone summary (§5.12 F1–F6)
-├── src/status.ts              a row's status from plan_status, held 90 s (§5.12 R1, R5)
-├── src/styles.ts              the one style sheet every card starts from (§5.11)
+├── src/status.ts              a row's status from plan_status as a word, held 90 s (§5.12 R1, R5; v0.7 §5.15 F2)
+├── src/styles.ts              the style sheet the v0.5 cards start from (§5.11)
+├── src/tokens.ts              v0.7: the iteration-4 cards' theme tokens and shared parts (§5.15)
+├── src/r3-util.ts             v0.7: the iteration-4 cards' shared helpers - the plan's slots, runs, lowered hours, savings (§5.15)
+├── src/timeline-plan-mode.ts  v0.7: Now's Plan card, drawn inside the timeline card (§5.15 F3)
+├── src/attention-card.ts      v0.7: powerplan-attention-card (§5.15 F6)
+├── src/month-bars.ts          v0.7: powerplan-month-bars (§5.15 F9)
+├── src/version-check.ts       v0.7: the reload toast and the placeholder for an unknown card (§5.15 F7)
+├── src/bundle.ts              v0.7: the loader's own `?v=` key, for the version check (§5.15 F7)
 ├── src/energy.ts              the picker's collection, with the calendar-month fallback (§5.7)
 ├── src/chart.ts               ECharts 6.1.0 with the two charts and five components the timeline uses
 ├── src/transforms.ts          the pure halves: slots → timeline rows, the gauge's scale and colours (§9 7)
@@ -73,6 +82,8 @@ frontend/                      the sources, at the repository root so HACS and t
 ├── test/transforms.test.ts    vitest
 └── package.json, package-lock.json, tsconfig.json, esbuild.config.mjs
 ```
+
+*v0.7:* `price_refresh.py` (the price refresher and `powerplan/refresh_prices`, §5.15 F12) and `savings_guard.py` (§5.15 F10) sit beside `runtime.py`; `ws_spot.py` reads the site's runtime and the pricing core's `FixedPrice`, `SPOT` and `energy_vat_rate`.
 
 The dashboard package is HA-side and imports nothing from `core/` beyond enums (`Role`, for the battery's own state of charge); nothing in `core/` knows it exists. It calls no service (INV-3): every knob on the dashboard is an entity the household already has, changed through that entity's own service by the frontend.
 
@@ -169,13 +180,13 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 
 | # | section (heading key) | `column_span` | cards (`grid_options` columns of the section's 12 × span) |
 |---|---|---|---|
-| 1 | attention (no heading) | 3 | `repairs` (`hide_empty`) 12; `tile` `meter_health` (`card_meter_status`, `mdi:meter-electric`, orange, `visibility: state_not ok`) 12 - a section whose cards all hide hides itself (HA 2026.9's `hui-grid-section`) |
+| 1 | attention (no heading) | 3 | *v0.7:* `custom:powerplan-attention-card` (`meter_status: meter_health`) full × auto - PowerPlan's repairs and the meter in the household's words, nothing when all is well (§5.15 F6); v0.6: `repairs` (`hide_empty`) 12 and a `meter_health` tile 12 |
 | 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; `tile` `peak_warning` (`card_peak_warning`, `mdi:alert-outline`) 12 × 1 |
 | 3 | `section_price` | 2 | heading badge `prices_tomorrow` (state, green); `custom:powerplan-price-card` full × auto (v0.6 §5.12 P1–P5) |
 | 4 | `section_plan` | 3 | heading badges: `plan` (state) and `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 300` (the whole-house forecast, v0.6 F1), every load with its colour, full × auto |
 | 5 | `section_appliances` | 3 | `custom:powerplan-appliances-card`, every appliance with a `plan_status`, full × auto (v0.6 R1–R7; v0.5 had a `distribution` of `granted_power` and one tile per appliance); `no_loads` markdown without appliances |
 | 6 | `section_capacity` | 1 | heading badge `projected_level` (`mdi:stairs`); window card `mode: month` 12 × 6 - the section only where `metric` and `level` are shown |
-| 7 | `section_month` | 1 | heading badge `mdi:chart-bar` → `{dashboard}/history`; `entity` `cost`, `savings` (the month-to-date state, v0.5 N7) 6 × 2 each; `statistics-graph` of `cost`, `change` per day, 30 days, bars 12 × 4 (v0.5's plan, price and tomorrow tiles moved into the Plan heading and the price card) |
+| 7 | `section_month` | 1 | heading badge: `cost` as an entity badge, `mdi:chart-bar`, named `view_history`, → `{dashboard}/history`; *v0.7:* `custom:powerplan-month-bars` (`entity: cost`, `savings`) 12 × 5 (§5.15 F9); v0.6: `entity` `cost`, `savings` 6 × 2 each and a 30-day `statistics-graph` |
 | 8 | `section_solar` | 1 | Phase 7, only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
 
 **History - sections, in order** (every graph that can follows the picker)
@@ -285,12 +296,12 @@ Only built-in tile features and entity rows, which call the entity's own action 
 
 `layout.py` degrades by HA version:
 
-| feature | frontend merge | first HA release (frontend build) | below it |
-|---|---|---|---|
-| `repairs` card | 2026-02-11 | 2026.3.0 (`20260304.0`) | omitted |
-| view `footer` | 2026-02-24 | 2026.3.0 (`20260304.0`) | `energy-date-selection` as the view's first card |
-| "Add dashboard" listing | 2026-04-13 | 2026.5.0 (`20260429.3`) | `docs/dashboard.md`'s YAML |
-| `statistics-graph` `entities[].color` | - | 2026.6.0 | the option is left out; HA's palette by position |
+| feature | first HA release (frontend build) | below it |
+|---|---|---|
+| `repairs` card | 2026.3.0 (`20260304.0`) | not laid out; the attention card reads `repairs/list_issues`, which every supported release has |
+| view `footer` | 2026.3.0 (`20260304.0`) | `energy-date-selection` as the view's first card |
+| "Add dashboard" listing | 2026.5.0 (`20260429.3`) | `docs/dashboard.md`'s YAML |
+| `statistics-graph` `entities[].color` | 2026.6.0 | the option is left out, HA's palette by position |
 
 `header.badges_wrap`, tile `features_position: inline` and heading badges with `tap_action` and `state_content` are checked at the floor as well as on current releases.
 
@@ -441,6 +452,28 @@ The dashboard shows several ideas no card has room to explain: the capacity step
 
 The icon is `mdi:help-circle-outline` in the secondary text colour. It opens the page in a new tab (`target="_blank" rel="noreferrer"`), is keyboard-reachable, and has the translated label "How this works" as its accessible name. A card without a `help_url` in its config draws no icon. Cards that only show data (the appliances card, the Energy dashboard's own cards) get none.
 
+### 5.15 Iteration 4: the cards as delivered
+
+The fourth iteration's mockup code (rendered in Chromium on the reference house's data) is the look, and this time the code itself, as close a copy as the repo allows, with backend added wherever the cards need it. Its TypeScript files are the repository's byte for byte but for one fallback (F5), and the TypeScript options are the code's own (`strict`, `noUnusedLocals`, no `noUncheckedIndexedAccess`). The cards keep their own words - nb and en tables, `labels` only overriding - so the layout passes the new cards no `labels` (D-0585). The mockups' Python is ported in the integration's shape: `runtime_data`, not `hass.data`; the runtime's own curves, not a second Nord Pool call; the repairs catalogue; D10's reconstruction.
+
+| # | what | from the code | in the integration |
+|---|---|---|---|
+| tokens | every size from `--ha-font-size-*` / `--ha-space-*`, every colour a theme variable with HA's default as fallback, appliance colours only as fills | `tokens.ts`, `r3-util.ts` | as given |
+| F2 | the appliances card: four encodings (solid run, empty track = holding, hatch = lowered, green column = cheap), the next start only, the state as a tile's word line, 12–14 px text, a 40 px filter, every row a button; the idle footer | `appliances-card.ts`, `status.ts` | as given; `layout.py` maps each load's entities to the card's names (`deadline`, `cost`, `savings`, `legionella`) |
+| F3 | Now's Plan card: the whole house per window - other usage, holding, each moved load; "Kan bli opptil" a dashed cap at P90; the limit; cheap columns; the price track with estimates outlined; the rail's three groups and the cheap share; resized in place, never drawn at a guessed width | `forecast.ts`, `timeline-plan-mode.ts` | as given; `timeline-card.ts` hands its rail mode to `renderPlanMode` in a host 440 px high (420 under 600 px) and keeps its 12 / 24 / 48 toggle; `show` gains `reserve`, `bucket: window` |
+| F4 | the appliance dialog in HA's more-info shape: close top-left, breadcrumb, history, settings, ⋮; the hero; the control as HA's tile; one lane with the price track; "why" rows that say when prices are estimated; a bottom sheet ≤ 870 px | `appliance-dialog.ts` | as given |
+| F5 | the price card: tokens, estimates dashed, an alert with "Hent på nytt" when the slot in progress has no known price, the split from `fixed_price` | `price-card.ts`, `ws_spot.py` | `powerplan/spot_prices` from the runtime: the spot is each slot's `spot` on the curve without the fixed price, `fixed_price` the `FixedPrice` modifier's price with the VAT that covers the energy, the effect D-0499's saving (D-0582); the capacity fee from `level`'s `fee` where no fee entity is given (D-0586); the `energy` attribute's VAT fixed at the source (D-0581) |
+| F6 | `powerplan-attention-card`: PowerPlan's repairs (`repairs/list_issues`) and the meter's `degraded` / `stale` explained; nothing when all is well | `attention-card.ts` | as given; Now's section 1 |
+| F7 | the stale-bundle guard: `powerplan/version` against the bundle's own key on start, reconnect and every 30 min, HA's toast on a mismatch; an unknown `custom:powerplan-*` card becomes a placeholder | `version-check.ts`, `ws_version.py` | the key is the loader's `?v=` (`module_key`), read by `bundle.ts` from the loader's own URL, because a content hash cannot be written into the content it hashes (D-0586); the strategy calls both |
+| F8 | the history chart: `drawMarkers` converts one value, not `[x, 0]` (the `TypeError` that drew no marker), and runs on `finished`; History has its period at once from `collection.start`, not after the ≈ 25 s first emit | `patches/history-chart.md` | applied to `timeline-card.ts` and `energy.ts`'s `followPeriod` |
+| F9 | `powerplan-month-bars`: the month's cost and savings over daily bars on a fixed 1..N axis, " - , mangler referanse" without a reference | `month-bars.ts` | as given; Now's section 7 |
+| F10 | savings without a reference are `unknown` with `reason: no_reference`, never −cost (five loads read exactly −cost on the reference house) | `savings_guard.py` | the module as given (`flat_reference_cost` included, not wired); `sensor.<appliance>_savings_month` guards on the ledger's `cf_cost` (D-0583); *(D11 v0.3)* on `settled_cost`, so an open day reads `pending`, not `no_reference` (D-0591) |
+| F11 | the baseline: a window before any load's history begins is skipped; the meter's lag, 0 or 1 h, found by correlation and corrected | `baseline.py` | in D10's `reconstruct.uncontrolled_history`, so the seed and the P90 share it (D-0584; D10 §5.2) |
+| F12 | the price refresher: after the startup fetch and whenever Nord Pool loads, retries 1–2–5–10–15 min while now's slot is not known; `prices_stale` after 30 min; `powerplan/refresh_prices` | `price_refresh.py` | on the runtime (`runtime.price_refresher`), fetching through `Runtime.refresh_prices`, the issue in D8 §5.9's catalogue (D-0580) |
+| F13 | Now: the rail 256 px (300 before), the attention card, the month card | `layout_now.py` | `layout.py` (§5.1 rows 1, 7) |
+
+Not ported: the mockups' own layout names and context object (the builder already had the site), their price options (`fixed_price`, `fixed_price_entity`, `price_model`, `meter_energy_entity`, which the tariff's own `FixedPrice` and register answer), and their own Nord Pool calls (INV-3).
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -491,10 +524,11 @@ None. The dashboard is generated on every open. A household that takes control o
 18. The strategy element is defined before any `await` in `powerplan.js` (a test reads the built module); every `selector.dashboard.options` key a card or `layout.py` uses exists in both languages, and none is left unused.
 19. Iteration 2: tiles and badges read `next_run` / `deadline_time` and never a datetime attribute; `plan_status` carries both as local HH:MM, `next_run` empty while running; the month's money is `entity` cards; the per-appliance bars and the cost table are PowerPlan elements and the only markdown card is "why"; the picker opens upward; the subview's ready-by row has its icon and auto height; `vitest`: target `step_2` with `target_kw: null` and metric 8,97 → segment 2 green at full opacity, money "2,78 kr" / "NOK 2.78", a day's highest hour 8,44 kWh at 00–01 from the grid sources, the month ranking from `advice` or the statistics; the logbook line has no `entity_id` and a running plan reads "går nå".
 
-20. Iteration 3 (6.4i): Now's sections are hour · price · plan · appliances · capacity · month; the appliances card lists every appliance with its `plan_status`, entities and `{dashboard}` subview path (none with `hidden_views: [appliances]`); its `rail_width` equals the Plan timeline's; no tile, `distribution` or runs card on Now; `baseline_p90_kwh` is the baseline plus 1,2816 σ over the slot on a trained house; a price slot's `energy` is 0,50 and its grid part 0,23 for Norgespris 0,40 + grid 0,184 + 25 % VAT, and `reference` is the slot without the fixed price; `vitest`: `rawStatus` over the twelve states with `already_at` as the plan, the 90 s hold, `planRuns` merging 23:00–00:00 to 2,90 kWh, the cheap bands, `bucketize` into 60-minute windows, `nextClock` to tomorrow's 06:00, `readable`. (6.4i)
+20. Iteration 3: Now's sections are hour · price · plan · appliances · capacity · month; the appliances card lists every appliance with its `plan_status`, entities and `{dashboard}` subview path (none with `hidden_views: [appliances]`); its `rail_width` equals the Plan timeline's; no tile, `distribution` or runs card on Now; `baseline_p90_kwh` is the baseline plus 1,2816 σ over the slot on a trained house; a price slot's `energy` is 0,50 and its grid part 0,23 for Norgespris 0,40 + grid 0,184 + 25 % VAT, and `reference` is the slot without the fixed price; `vitest`: `rawStatus` over the twelve states with `already_at` as the plan, the 90 s hold, `planRuns` merging 23:00–00:00 to 2,90 kWh, the cheap bands, `bucketize` into 60-minute windows, `nextClock` to tomorrow's 06:00, `readable`.
 21. The price band's three stacks sum to the slot's total for every slot of a captured `sensor.<site>_prices` attribute; a DK `stromligning` site (basis includes grid and taxes) shows one stack, not three.
 22. The credit line names the copy's sources and is absent for a template or custom tariff.
-23. *(§5.14)* The layout golden carries every help URL of §5.14's table - one line per view, one `help_url` on each of the four cards, the strategy's link in "Why this plan?" - and each one resolves (D14 §9 1). A card config without `help_url` renders no icon (vitest). `customCards` gives each card its own anchor.
+23. The layout golden carries every help URL of §5.14's table - one line per view, one `help_url` on each of the four cards, the strategy's link in "Why this plan?" - and each one resolves (D14 §9 1). A card config without `help_url` renders no icon (vitest). `customCards` gives each card its own anchor.
+24. Iteration 4: Now's section 1 is the attention card on `meter_health` and section 7 the month bars on `cost` and `savings`; the Plan and appliances rails are 256; a price slot's `energy` is 0,50000 on the reference house (grid 0,3779 with its VAT, VAT 0,10 on the energy alone); `uncontrolled_history` finds a one-hour meter lag and skips windows before a load's history (four `test_baseline.py` cases); `vitest`: the status word and its 90 s hold, `readPlan` / `runsFor` / `loweredFor`, `bucketize` and the cheap share, `savingsView`, `guardUnknownCards`, and History's period at once.
 
 ## 10. Deliberately deferred
 
@@ -533,5 +567,7 @@ None. The dashboard is generated on every open. A household that takes control o
 **Keep the next-runs table as markdown.** *For:* no code, and the Jinja is tested in HA's template engine. *Against:* HA draws markdown tables bordered and content-wide, with no theme tokens and no way to restyle them short of card-mod; on the reference house it took 40 % of the card with 180 px empty under it. **Decision:** `powerplan-runs-card` on the shared style sheet.
 
 **The mockups' own backend (`ws_spot.py`, `baseline.py`, `status_guard.py`).** *For:* already rendered on the reference house, and the spot websocket also gives the month's Norgespris effect. *Against:* it assumes entity ids and attributes the integration doesn't publish, calls Nord Pool outside INV-3's four files, and builds a second baseline next to D10's. **Decision:** port the cards and their CSS as given, feed them from the curve and D10 (D-0494…D-0496), and build each backend piece in the integration's own shape - the override guard (D-0497), the empirical P90 (D-0498), the month's fixed-price saving (D-0499).
+
+**Restyle the older cards instead of taking the fourth iteration's files as delivered.** *For restyling:* the older cards carry work the new code doesn't know - every word in the translations (D-0446), holds and planned pauses in the lanes (D-0501, D-0507), the strategy's words in "why", `noUncheckedIndexedAccess` - and a restyle keeps it. *Against:* a restyle is exactly what drifts from the mockups, and every restyled file is one more file to reconcile at the next iteration. **Decision:** the files as delivered, the backend built to feed them (D-0585).
 
 **A fixed `rows: 7` for the timeline instead of `rows: auto`.** *For:* level rows (G6) and the height the review measured. *Against:* at 390 px a four-line legend and the readout leave a fixed card about 120 px of plot, and the plot's 180 px floor can't hold inside a fixed height. **Decision:** the card sizes its canvas and grows with its legend (D-0491).

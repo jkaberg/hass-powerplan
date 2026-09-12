@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.logbook.const import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
+from homeassistant.components.logbook.models import TIME_FIRED_TS_POS
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.translation import async_get_cached_translations
@@ -276,11 +277,13 @@ def describe(
 def _fired(event: Any) -> datetime:
     """Return when `event` fired, from whichever timestamp it carries.
 
-    The logbook hands a `LazyEventPartialState`, which has only `time_fired_ts`;
-    the bus hands an `Event` with `time_fired` (D-0504).
+    The logbook hands a `LazyEventPartialState`, whose timestamp sits only in its database
+    row at `TIME_FIRED_TS_POS`; the bus hands an `Event` with `time_fired` (D-0504).
     """
     fired = getattr(event, "time_fired", None)
-    return fired if isinstance(fired, datetime) else dt_util.utc_from_timestamp(event.time_fired_ts)
+    if isinstance(fired, datetime):
+        return fired
+    return dt_util.utc_from_timestamp(event.row[TIME_FIRED_TS_POS])
 
 
 @callback

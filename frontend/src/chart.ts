@@ -12,7 +12,7 @@ import {
   TooltipComponent,
 } from "echarts/components";
 import * as echarts from "echarts/core";
-import { CanvasRenderer } from "echarts/renderers";
+import { CanvasRenderer, SVGRenderer } from "echarts/renderers";
 
 echarts.use([
   BarChart,
@@ -26,6 +26,8 @@ echarts.use([
   MarkPointComponent,
   TooltipComponent,
   CanvasRenderer,
+  // Now's Plan card draws in SVG (iteration 4, `timeline-plan-mode.ts`).
+  SVGRenderer,
 ]);
 
 export { echarts };

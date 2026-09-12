@@ -57,6 +57,8 @@ In the tables, `<home>` and `<appliance>` stand for those names as Home Assistan
 
 Where your grid company counts half-hours or quarter-hours instead of hours, the entities for this hour count that period instead, and their names say so.
 
+Where your grid company bills no capacity step, **Target this hour** and **Capacity metric this period** read *unknown*: there is no target and no metric to report.
+
 ## Each appliance's entities
 
 <!-- generated:begin entities:appliance · tools/docs.py writes this block; change the entity, not this table -->
@@ -256,6 +258,15 @@ Which appliance keeps its power longest when PowerPlan must pause something: **L
 ### Health
 
 Whether the appliance's device answers: **OK**, **Transient** after a missed answer, or **Unhealthy** when it keeps failing. It starts diagnostic. Key: `health`.
+
+<a name="savings_month"></a>
+### Savings this month
+
+What the appliance saved this month by using its energy at cheaper times than it would have without PowerPlan. The same energy is priced as it would have run: spread evenly over the day for a heater or water heater, at full power from plug-in for a car, from your request for a dishwasher. It can be negative: then PowerPlan used it at dearer times.
+
+A day's savings are added after midnight, and a charge's when the car is done. Until then the attribute `pending` is `true`. In trial mode the savings are zero, because PowerPlan changed nothing.
+
+The attribute `model_savings` appears once PowerPlan's model of the appliance has proved accurate in trial mode. It also counts energy the plan saved or used, for example while nobody is home. **Unknown**, with `reason: no_reference`, means there is nothing to compare with yet. The cards then show " - ".
 
 <a name="events"></a>
 ### Events

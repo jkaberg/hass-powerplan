@@ -70,7 +70,9 @@ powerplan is a Home Assistant custom integration that steers flexible loads - EV
 | **Cycle** | A run-once, non-interruptible load with a fixed duration and energy profile (dishwasher, washer, dryer). |
 | **Forecast** | An estimate of a future non-price input: weather, PV production, uncontrolled-load baseline. Carries confidence; never an authority (INV-62). |
 | **Ledger** | Per load and per site, per calendar month: energy, cost, counterfactual energy and cost, savings, confidence (D11). |
-| **Counterfactual** | What a load would have drawn with no powerplan: its own store model stepped under `always` with no capacity axis - a *shadow*. Priced by the same curves and evaluator as the actual (INV-69). |
+| **Counterfactual** | What a load would have cost with no powerplan: **the same kWh it really drew, at the times it would have drawn them** - spread evenly over the local day for a thermostat, a tank or a timer; at full rate from the plug-in for an EV; in the programme's shape from the request for a cycle; nothing for a battery. Settled once the day, session or run it belongs to has ended. Priced by the same curves and evaluator as the actual (INV-69). |
+| **Reference** | The rule that produces a load's counterfactual from its own measured energy (D11 §5.3). No parameter is fitted, so it cannot drift and needs no calibration. |
+| **Shadow** | A load's own store model stepped under `always` - the physics estimate of what it would have drawn. It also produces the *model* figure (energy a plan saves or adds, not only moves), published only once calibrated; the headline savings come from the reference. |
 | **Accounting month** | The calendar month in the site's local time zone; the grain of cost and savings sensors. |
 | **Attachment** | A load's entities linking to the appliance's own hardware device via `Entity.device_entry`, rather than to a device powerplan owns. The *fallback device* (powerplan's own, `via_device` → site) is what a load without hardware gets instead (D8 §5.16). |
 | **Setting level** | Where a load setting lives, by how often it changes: **1** daily use (an entity, Controls), **2** tuning (an entity, Configuration), **3** setup (the gear flow only). A setting is in exactly one level (D8 §5.16). |
@@ -627,17 +629,19 @@ class Shadow(Protocol):           # the counterfactual for one load, chosen by i
 
 # ledger arithmetic
 cost(load, slot)       = kwh(load, slot) × import_price(carrier, slot)             # D3 LoadMeter × D1 composed curve, Decimal
-savings(load, month)   = Σ cf_kwh × price − Σ kwh × price                          # energy shift only
+savings(load, month)   = Σ_settled (cf_kwh × price − kwh × price)                  # timing only: Σ cf_kwh = Σ kwh per settled day / session / run
 savings(site, month)   = Σ_loads savings(load) + (bill(counterfactual) − bill(actual)).capacity_fee     # D2, same evaluator
 ```
 
-**The counterfactual.** §10 decision 8, settled: not a second engine but a *shadow store* per load - the load's own `SlabStore` / `TankStore` / `EnergyStore` stepped under the policy its uncontrolled thermostat, charger or programme would follow (hold the target profile; charge at plug-in; run at the request; idle for a battery). The household's intent (schedules, presence, plug-in, `run_now`, force) is honoured; powerplan's plans, sheds and stages are not. Uncontrolled load is identical in both worlds and cancels. A load in `observe` mode *is* its counterfactual, so observe days calibrate the model: the error is published and gates the savings confidence.
+**The counterfactual.** §10 decision 8, settled. A load's headline savings measure **when** its energy was bought, never how much: the counterfactual is the load's own measured kWh, placed where the uncontrolled device would have drawn it - evenly over the local day for a thermostat, a tank or a timer; at the charger's full rate from the plug-in for an EV; in the programme's shape from the request for a cycle; nowhere for a battery (a battery without a controller idles). The household's intent (plug-in, `run_now`, force, a `delegated` or `off` mode, a legionella cycle) is honoured by construction; powerplan's plans, sheds and stages are not. A slot's savings are booked when its day, session or run **settles**, so a figure never shows the cost of a slot without its counterfactual. The capacity counterfactual is built from the same placement and billed through the last settled day in both books. The physics *shadows* - the load's store model under `always` - still run: calibrated on observe days, they publish a separate *model* figure (what a plan saved or added in energy) once they are trusted, and never the headline. Uncontrolled load is identical in both worlds and cancels.
 
-**Extension points.** `Shadow` registry by store-model kind: `thermostat` (slab, room, heat pump), `tank`, `plug_in`, `on_request`, `schedule`, `idle`, `none`. A new store model registers its shadow or is `none` (cost shown, savings not stated).
+*Why the change.* On the reference house's first day five of ten loads' shadows drew 0 kWh because their fitted loss coefficients failed D10's quality gate in mild weather, the tank's drew twice the real energy, and the EV's held 3.44 kWh unpriced; the savings bars read red for reasons that had nothing to do with the plan. Under Norgespris the real signal is 0.14 NOK/kWh × the kWh moved - smaller than any shadow's error - and a household that switches control on at install never produces the observe days calibration needs.
+
+**Extension points.** `Reference` by store-model kind (`day`, `session`, `run`, `idle`, `none`) and the `Shadow` registry for the model figure: `thermostat` (slab, room, heat pump), `tank`, `on_request`, `schedule`, `idle`. A new store model names its reference, or is `none` (cost shown, savings not stated).
 
 **Invariants.**
 - **INV-68** Accounting is observation only. Nothing under `core/strategies`, `core/allocation`, `core/loads` or in `writegate.py` imports `core.accounting` or reads a ledger, a shadow or a savings figure; `close_slot` runs in the planning loop, never in the tick. A test asserts both. (A savings number that could steer the controller is an incentive loop.)
-- **INV-69** Same-model baseline. The counterfactual is priced by the same curves and the same tariff evaluator as the actual, with the same load parameters (configured or learned); its only difference is the policy. A savings figure is never clamped, is never restated once priced from a known price, and carries the confidence of its worst input.
+- **INV-69** Same-model baseline. The counterfactual is priced by the same curves and the same tariff evaluator as the actual, with the same load parameters (configured or learned); its only difference is the policy - for the headline figure, only *when* the load's measured energy was drawn. A savings figure is never clamped, is never restated once priced from a known price, and carries the confidence of its worst input.
 
 **From effektstyring.** Nothing; the pyscript app kept no ledger.
 
@@ -789,7 +793,7 @@ No parallel run with effektstyring and no parity checks against it: the pyscript
 | 5 | Battery ladder position | stage 1–2 discharge before any comfort shed; needs a real device to tune |
 | 6 | Target profiles: built-in weekly editor vs. bind a HA `schedule.*` helper | bind HA helpers in v1 (schedule, calendar, person); a built-in editor only if that proves too clumsy |
 | 7 | Presence: automatic from `person` entities vs. manual | automatic with a manual override select; `vacation` is always manual |
-| 8 | Baseline for savings accounting | **settled in D11:** the same house with every load on `strategy = always` and no capacity control, priced by the same tariff evaluator - implemented as a shadow store per load, not a second engine; calibrated on observe-mode days |
+| 8 | Baseline for savings accounting | **settled in D11:** the same house with every load on `strategy = always` and no capacity control, priced by the same tariff evaluator. The headline figure places each load's *measured* energy where the uncontrolled device would have drawn it (a timing reference, D11 §5.3); the shadow stores give a separate model figure once calibrated on observe days |
 
 ---
 

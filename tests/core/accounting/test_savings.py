@@ -26,8 +26,9 @@ from custom_components.powerplan.core.accounting import (
     StoreKind,
 )
 from custom_components.powerplan.core.accounting.ledger import minus, plus
+from custom_components.powerplan.core.accounting.savings import site_savings_confidence
 from custom_components.powerplan.core.loads.stores import SlabStore
-from custom_components.powerplan.core.model import Mode
+from custom_components.powerplan.core.model import Mode, Money
 from tests.core.accounting.conftest import (
     NOK,
     ORDINARY,
@@ -127,6 +128,8 @@ def test_10c_a_flat_curve_leaves_a_completed_session_with_no_energy_savings() ->
                 loads={"ev": 11.0 if hour == 22 else (9.0 if hour == 23 else 0.0)},
             )
         )
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(closed_slot(local(2026, 12, 4, 0, 0).astimezone(UTC), loads={"ev": 0.0}))
 
     rec = under_test.accounting.state().ledger.loads["ev"]
     assert rec.kwh == pytest.approx(rec.cf_kwh), "the same energy in both worlds"
@@ -278,7 +281,8 @@ def test_13_five_observe_days_against_the_simulator_calibrate_ok() -> None:
 
     assert figures.calibration_error is not None
     assert figures.calibration_error < 0.10, figures.calibration_error
-    assert figures.savings_confidence is SavingsConfidence.OK
+    assert figures.model_confidence is SavingsConfidence.OK
+    assert figures.model_savings is not None, "a calibrated model figure is published (§9 31)"
     calib = under_test.accounting.state().calibration["floor"]
     assert calib.observe_days == CALIB_DAYS
 
@@ -291,7 +295,8 @@ def test_13b_a_loss_coefficient_off_by_two_reads_low_and_changes_nothing() -> No
 
     assert figures.calibration_error is not None
     assert figures.calibration_error > CALIBRATION_THRESHOLD
-    assert figures.savings_confidence is SavingsConfidence.LOW
+    assert figures.model_confidence is SavingsConfidence.LOW
+    assert figures.model_savings is None, "a model figure is published only when it is ok"
     # The parameter the shadow read is the parameter the load still has.
     assert under_test.loads["floor"].params.loss_coeff_w_per_k == 24.0
 
@@ -301,14 +306,26 @@ def test_13c_fewer_than_three_observe_days_is_uncalibrated() -> None:
     under_test = _observe_days(12.0, days=MIN_OBSERVE_DAYS - 1)
     figures = under_test.accounting.status().loads["floor"]
 
-    assert figures.savings_confidence is SavingsConfidence.UNCALIBRATED
+    assert figures.model_confidence is SavingsConfidence.UNCALIBRATED
     assert figures.calibration_error is not None, "the error is still published"
 
 
 def test_13d_the_sites_confidence_is_the_worst_of_the_loads_that_move_it() -> None:
-    """A load whose savings are noise beside the site's does not set its confidence."""
+    """A load whose savings are noise beside the site's does not set its confidence.
+
+    Since D11 v0.3 the rule runs over the headline figures (§5.9.5), which observe
+    days no longer move - observe saves nothing - so it is stated on the rule.
+    """
+    nok = "NOK"
+    rows = {
+        "ev": (SavingsConfidence.OK, Money(Decimal("40"), nok)),
+        "floor": (SavingsConfidence.LOW, Money(Decimal("10"), nok)),
+        "tank": (SavingsConfidence.NONE, Money(Decimal("0.5"), nok)),
+    }
+    assert site_savings_confidence(rows, Money(Decimal("50.5"), nok)) is SavingsConfidence.LOW
+    rows["floor"] = (SavingsConfidence.LOW, Money(Decimal("1"), nok))
+    assert site_savings_confidence(rows, Money(Decimal("41.5"), nok)) is SavingsConfidence.OK
     under_test = _observe_days(24.0)
     status = under_test.accounting.status()
-
-    assert status.loads["floor"].savings_confidence is SavingsConfidence.LOW
-    assert status.site.savings_confidence is SavingsConfidence.LOW
+    assert status.loads["floor"].savings.amount == 0, "observe is its own counterfactual"
+    assert status.site.savings_confidence is SavingsConfidence.NONE, "nothing material to rate"

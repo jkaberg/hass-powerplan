@@ -187,6 +187,7 @@ from .events import event_name
 from .flow.load import binding_from_data
 from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
+from .price_refresh import PriceRefresher
 from .providers import tariffs as tariff_sources
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
 from .providers.forecasts.recorder_baseline import (
@@ -320,6 +321,8 @@ class FixedPriceSaving:
     today: float
     #: The metered kWh the saving is over.
     kwh: float
+    #: Today's share of `kwh`: the price card's "effect" (D12 §5.15 F5).
+    today_kwh: float = 0.0
 
 
 def fixed_price_saving(
@@ -347,7 +350,7 @@ def fixed_price_saving(
         for modifier in without:
             reference = modifier.apply(reference, ctx)
         diffs.append((row.start, row.end, float(reference.total - actual.total)))
-    month = day = kwh = 0.0
+    month = day = kwh = day_kwh = 0.0
     for window in windows:
         end = window.start_utc + timedelta(minutes=window.window_min)
         weights = [
@@ -363,8 +366,13 @@ def fixed_price_saving(
         kwh += window.kwh
         if window.start_utc >= today:
             day += gain
+            day_kwh += window.kwh
     return FixedPriceSaving(
-        since=since, month=round(month, 2), today=round(day, 2), kwh=round(kwh, 1)
+        since=since,
+        month=round(month, 2),
+        today=round(day, 2),
+        kwh=round(kwh, 1),
+        today_kwh=round(day_kwh, 1),
     )
 
 
@@ -1201,6 +1209,8 @@ class Runtime:
         self.status_holds: dict[str, StatusHold] = {}
         #: What the fixed price saved this month, refreshed hourly (D-0499).
         self.fixed_saving: FixedPriceSaving | None = None
+        #: Retries the prices while the slot covering now is not known (D12 §5.15 F12).
+        self.price_refresher: PriceRefresher | None = None
         #: Past days' raw prices this month, fetched once each: a past day never changes.
         self._past_raw: dict[date, tuple[RawSlot, ...]] = {}
         #: D10's daily fits by "<load>.<key>", and each thermal load's holding draw.
@@ -1411,6 +1421,10 @@ class Runtime:
         # The tariff copy's renewal is armed, never run: no fetch at start (INV-73).
         self._arm_renewal(dt_util.utcnow())
         self._log_step("triggers")
+        self.price_refresher = PriceRefresher(
+            self.hass, self.entry, self.refresh_prices, self.prices_known_now
+        )
+        self.price_refresher.async_setup()
         # The planning cycle starts after the first tick (D7 §5.5 step 8): the
         # first fetch is I/O and runs outside the lock (INV-46).
         self.hass.async_create_task(self._fetch_then_plan("startup"))
@@ -1849,6 +1863,9 @@ class Runtime:
         for cancel in self._retry_timers.values():
             cancel()
         self._retry_timers.clear()
+        if self.price_refresher is not None:
+            self.price_refresher.async_unload()
+            self.price_refresher = None
         if self._power_timer is not None:
             self._power_timer()
             self._power_timer = None
@@ -2835,6 +2852,28 @@ class Runtime:
         if changed:
             # New prices: the plan is on them, and the published price should be too.
             await self.run_tick("prices")
+        if self.price_refresher is not None:
+            # Not known now → the refresher retries on its back-off (D12 §5.15 F12).
+            self.price_refresher.observe(trigger)
+
+    async def refresh_prices(self) -> bool:
+        """`PriceRefresher`'s fetch: ask the sources again; replan when anything arrived."""
+        changed = await self.fetch("refresh")
+        if changed:
+            await self.run_plan("prices")
+            await self.run_tick("prices")
+        return True
+
+    def prices_known_now(self) -> bool:
+        """Whether the import curve's slot covering now has `known` confidence (D12 §5.15 F12)."""
+        curve = None if self.curves is None else self.curves.import_.get(Carrier.ELECTRICITY)
+        if curve is None:
+            return False
+        now = dt_util.utcnow()
+        return any(
+            slot.start <= now < slot.end and slot.confidence is Confidence.KNOWN
+            for slot in curve.slots
+        )
 
     async def _fetch_weather_if_due(self, now: datetime) -> None:
         """D10 §5.4, §5.7: hourly, or forced by `_on_weather_changed`'s own trigger."""

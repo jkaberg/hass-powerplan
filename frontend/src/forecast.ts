@@ -1,341 +1,344 @@
-// The Plan card's whole-house forecast (D12 §5.12 F1–F6): the next 24 or 48 h
-// per capacity window, so bars and the limit share one unit (kWh per window).
-//   grey    the rest of the house (`slots[].baseline_kwh`) - not movable
-//   colour  each managed load (`slots[].planned_kwh[id]`) - movable
-//   hatch   the reserve, `baseline_p90_kwh − baseline_kwh`
-//   dashed  the limit (`ceiling_kwh`, per window already)
-//   below   the price, one step line with each level's price printed once
-// A rail on the left names the totals (its width equals the appliances card's,
-// so the two time axes line up); under 600 px a summary sits above instead.
+// Plan card, mode "plan" (iteration 4): hourly forecast of the whole house.
+//
+//   Annet forbruk        slots[].baseline_kwh                 grey, not movable
+//   Holder temperaturen  slots[].hold_kwh (sum of all loads)  one muted band, not moved
+//   Flyttet i tid        slots[].planned_kwh[id]              appliance colour, the only coloured part
+//   Kan bli opptil       baseline_p90 − baseline, as a dashed cap on each bar (not a hatched block)
+//   Effektmål            ceiling_kwh per window, dashed line
+//   Price track          one block per price level; dashed outline while prices are estimated
+//
+// Everything that depends on width is expressed in axis units (bar width 72 % of the slot,
+// caps via api.size), so a resize never needs a re-render and bars can't turn into needles.
 
-import { type Bucket, forecastTotals, withAlpha } from "./transforms";
+import type { PlanSlot } from "./r3-util";
 
-export interface ForecastLoad {
-  id: string;
-  name: string;
-  color: string;
+export interface Bucket {
+  start: number; end: number;
+  baseline: number | null; p90: number | null;
+  hold: number;                        // kWh, all loads
+  moved: Record<string, number>;       // kWh per load id
+  ceiling: number | null;
+  price: number | null; estimated: boolean;
 }
 
-export interface ForecastOptions {
-  now: number;
-  from: number;
-  hours: number;
-  windowMin: number;
-  width: number;
-  height: number;
-  rail: number;
-  compact: boolean;
-  zone?: string;
-  locale: string;
-  currency: string;
+export interface LoadRef { id: string; name: string; color: string }
+
+export function bucketize(
+  slots: PlanSlot[], windowMin: number, a0: number, hours: number,
+  prices: { s: number; e: number; p: number; est: boolean }[],
+): Bucket[] {
+  const win = windowMin * 60e3;
+  const n = Math.round((hours * 3600e3) / win);
+  const out: Bucket[] = Array.from({ length: n }, (_, i) => ({
+    start: a0 + i * win, end: a0 + (i + 1) * win, baseline: null, p90: null, hold: 0, moved: {}, ceiling: null, price: null, estimated: false,
+  }));
+  for (const s of slots) {
+    const i = Math.floor((s.start.getTime() - a0) / win);
+    if (i < 0 || i >= n) continue;
+    const b = out[i];
+    if (s.baseline != null) b.baseline = (b.baseline ?? 0) + s.baseline;
+    if (s.baselineP90 != null) b.p90 = (b.p90 ?? 0) + s.baselineP90;
+    for (const v of Object.values(s.hold)) if (v > 0) b.hold += v;
+    for (const [k, v] of Object.entries(s.planned)) if (v > 0) b.moved[k] = (b.moved[k] ?? 0) + v;
+    if (s.ceiling != null) b.ceiling = s.ceiling;
+  }
+  for (const b of out) {
+    const ps = prices.filter((p) => p.e > b.start && p.s < b.end);
+    if (ps.length) {
+      b.price = ps.reduce((t, p) => t + p.p, 0) / ps.length;
+      b.estimated = ps.some((p) => p.est);
+    }
+  }
+  return out;
+}
+
+const sum = (o: Record<string, number>) => Object.values(o).reduce((t, v) => t + v, 0);
+export const capOf = (k: Bucket) => (k.p90 ?? k.baseline ?? 0) + k.hold + sum(k.moved);
+export const totalOf = (k: Bucket) => (k.baseline ?? 0) + k.hold + sum(k.moved);
+
+export interface ForecastColors {
+  text: string; text2: string; text3: string; divider: string; card: string; primary: string; error: string;
+  base: string; hold: string; cheap: string; warn: string; priceHi: string; priceLo: string;
+}
+
+export interface ForecastOpts {
+  now: number; a0: number; hours: number; windowMin: number;
+  rail: number; compact: boolean; fs: number;           // fs = --ha-font-size-s in px
+  tf: Intl.DateTimeFormat; nf: Intl.NumberFormat; nf1: Intl.NumberFormat;
   labels: Record<string, string>;
-  css: { text: string; text2: string; divider: string; primary: string; error: string; card: string };
-  tooltip: Record<string, unknown>;
+  css: ForecastColors;
+  currency: string;
 }
 
-const escape = (value: unknown) =>
-  String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-const fill = (text: string | undefined, values: Record<string, string | number>) =>
-  (text ?? "").replace(/\{(\w+)\}/g, (whole, key: string) => (values[key] === undefined ? whole : String(values[key])));
-
-/** The ECharts option: the stack on one axis, the limit, "Nå", midnights, the price strip under it (F1, F2, F4, F5). */
-export function forecastOption(b: readonly Bucket[], loads: readonly ForecastLoad[], o: ForecastOptions): Record<string, unknown> {
-  const labels = o.labels;
-  const clock = new Intl.DateTimeFormat(o.locale, { hour: "2-digit", minute: "2-digit", timeZone: o.zone });
-  const two = new Intl.NumberFormat(o.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const upToOne = new Intl.NumberFormat(o.locale, { maximumFractionDigits: 1 });
+export function forecastOption(b: Bucket[], loads: LoadRef[], o: ForecastOpts): any {
+  const L = o.labels;
   const step = o.windowMin / 60;
   const H = b.length * step;
   const x = (i: number) => (i + 0.5) * step;
-  const left = o.compact ? 34 : o.rail + 8;
+  const left = o.compact ? 44 : o.rail + 52;
   const right = o.compact ? 12 : 16;
-  const plotW = o.width - left - right;
-  const barW = Math.max(plotW / b.length - (plotW / b.length > 14 ? 3 : 1.5), 2);
-  const used = loads.filter((l) => b.some((k) => (k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0) > 0));
-  const managedIn = (k: Bucket) =>
-    Object.values(k.loads).reduce((s, v) => s + v, 0) + Object.values(k.hold).reduce((s, v) => s + v, 0);
-  const ceiling = b.find((k) => k.ceiling !== null)?.ceiling ?? null;
-  const maxY = Math.max(ceiling ?? 0, ...b.map((k) => (k.p90 ?? k.baseline ?? 0) + managedIn(k)));
-  // Four steps of whole kWh: a multiple of 4, so no tick reads "3,75".
-  const ymax = Math.max(4, Math.ceil((maxY * 1.1) / 4) * 4);
-  const nowX = (o.now - o.from) / 3_600_000;
-  const prices = b.map((k) => k.price).filter((p): p is number => p !== null);
-  const pmin = prices.length ? Math.min(...prices) : 0;
-  const pmax = prices.length ? Math.max(...prices) : 1;
-  const span = Math.max(pmax - pmin, 0.05);
-  const estIdx = b.findIndex((k) => k.estimated);
-  const hourOf = (t: number) => Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: o.zone }).format(t));
-  const dayFmt = new Intl.DateTimeFormat(o.locale, { weekday: "short", day: "numeric", timeZone: o.zone });
-  const midnights = b
-    .map((k, i) => ({ i, t: k.start }))
-    .filter(({ i, t }) => i > 0 && hourOf(t) === 0 && new Date(t).getUTCMinutes() === new Date(o.from).getUTCMinutes())
+  const used = loads.filter((l) => b.some((k) => (k.moved[l.id] ?? 0) > 0));
+  const ceiling = b.find((k) => k.ceiling != null)?.ceiling ?? null;
+  const maxY = Math.max(ceiling ?? 0, ...b.map(capOf));
+  const ymax = Math.max(6, Math.ceil((maxY * 1.08) / 3) * 3);
+  const nf0 = new Intl.NumberFormat(o.tf.resolvedOptions().locale, { maximumFractionDigits: 1 });
+  const nowX = (o.now - o.a0) / 3600e3;
+  const tz = o.tf.resolvedOptions().timeZone;
+  const locale = o.tf.resolvedOptions().locale;
+  const hourOf = (t: number) => Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(t));
+  const dayFmt = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", timeZone: tz });
+  const midnights = b.map((k, i) => ({ i, t: k.start })).filter(({ i, t }) => i > 0 && hourOf(t) === 0)
     .map(({ i, t }) => ({ x: i * step, label: dayFmt.format(t) }));
-  const base = { type: "bar", stack: "t", barWidth: barW, xAxisIndex: 0, yAxisIndex: 0, emphasis: { disabled: true } };
-  const series: Record<string, unknown>[] = [];
-  if (b.some((k) => k.baseline !== null)) {
-    series.push({ ...base, name: labels.other_usage, id: "baseline", data: b.map((k, i) => [x(i), k.baseline ?? 0]), itemStyle: { color: "rgba(155,155,155,0.34)" } });
+  const bar = { type: "bar", stack: "t", barWidth: "72%", xAxisIndex: 0, yAxisIndex: 0, z: 2, emphasis: { disabled: true } };
+  const series: any[] = [];
+  if (b.some((k) => k.baseline != null)) {
+    series.push({ ...bar, id: "baseline", name: L.other_usage, data: b.map((k, i) => [x(i), k.baseline ?? 0]), itemStyle: { color: o.css.base } });
   }
-  for (const load of used) {
-    series.push({ ...base, name: load.name, id: load.id, data: b.map((k, i) => [x(i), k.loads[load.id] ?? 0]), itemStyle: { color: load.color } });
-    // Holding its setpoint: the same colour, lighter — the thermostat's own draw, not a run (D-0501).
-    if (b.some((k) => (k.hold[load.id] ?? 0) > 0)) {
-      series.push({ ...base, name: load.name, id: `${load.id}:hold`, data: b.map((k, i) => [x(i), k.hold[load.id] ?? 0]), itemStyle: { color: withAlpha(load.color, 0.45) } });
-    }
+  if (b.some((k) => k.hold > 0.005)) {
+    series.push({ ...bar, id: "hold", name: L.holding, data: b.map((k, i) => [x(i), k.hold]), itemStyle: { color: o.css.hold } });
   }
-  if (b.some((k) => k.p90 !== null)) {
+  for (const l of used) {
+    series.push({ ...bar, id: l.id, name: l.name, data: b.map((k, i) => [x(i), k.moved[l.id] ?? 0]), itemStyle: { color: l.color } });
+  }
+  // "Kan bli opptil": dashed cap + dotted whisker, sized in axis units so resize keeps them right.
+  if (b.some((k) => k.p90 != null)) {
     series.push({
-      ...base,
-      name: labels.reserve,
-      id: "reserve",
-      data: b.map((k, i) => [x(i), Math.max((k.p90 ?? 0) - (k.baseline ?? 0), 0)]),
-      itemStyle: {
-        color: "rgba(0,0,0,0)",
-        borderColor: "rgba(225,225,225,0.28)",
-        borderWidth: 1,
-        borderType: [2, 2],
-        borderRadius: 2,
-        decal: { symbol: "rect", symbolSize: 1, dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: -Math.PI / 4, color: "rgba(225,225,225,0.28)" },
+      type: "custom", id: "cap", name: L.reserve, xAxisIndex: 0, yAxisIndex: 0, silent: true, z: 3,
+      data: b.map((k, i) => [x(i), capOf(k), totalOf(k)]),
+      renderItem: (_p: any, api: any) => {
+        const [cx, cy] = api.coord([api.value(0), api.value(1)]);
+        const [, ty] = api.coord([api.value(0), api.value(2)]);
+        const w = api.size([step, 0])[0] * 0.72;
+        if (!Number.isFinite(cx) || cy >= ty - 1) return null;
+        return {
+          type: "group", children: [
+            { type: "line", shape: { x1: cx - w / 2, y1: cy, x2: cx + w / 2, y2: cy }, style: { stroke: o.css.text2, lineWidth: 1.5, lineDash: [3, 2] } },
+            { type: "line", shape: { x1: cx, y1: cy, x2: cx, y2: ty }, style: { stroke: o.css.text3, lineWidth: 1, lineDash: [1, 3] } },
+          ],
+        };
       },
     });
   }
+  // limit, now, midnights, cheap hours
   series.push({
-    type: "line",
-    name: labels.limit,
-    id: "limit",
-    xAxisIndex: 0,
-    yAxisIndex: 0,
-    data: [],
-    silent: true,
+    type: "line", id: "marks", xAxisIndex: 0, yAxisIndex: 0, data: [], silent: true, z: 1,   // under the bars (z 2)
     markLine: {
-      symbol: "none",
-      silent: true,
-      animation: false,
+      symbol: "none", silent: true, animation: false,
       data: [
-        ...(ceiling !== null
-          ? [
-              {
-                yAxis: ceiling,
-                lineStyle: { color: o.css.error, width: 1.5, type: [6, 4] },
-                label: { position: "insideEndTop", formatter: fill(labels.limit_value_kwh, { kw: upToOne.format(ceiling) }), color: o.css.text2, fontSize: 11 },
-              },
-            ]
-          : []),
-        {
-          xAxis: nowX,
-          lineStyle: { color: o.css.text, width: 1.5, type: "solid" },
-          label: { position: "end", formatter: labels.now ?? "", color: o.css.card, backgroundColor: o.css.text, borderRadius: 8, padding: [2, 7], fontSize: 10, fontWeight: 500 },
-        },
-        ...midnights.map((m) => ({
-          xAxis: m.x,
-          lineStyle: { color: "rgba(225,225,225,0.14)", width: 1, type: "solid" },
-          label: { show: Math.abs(m.x - nowX) > 1.5 * (o.hours / 24), position: "end", formatter: m.label, color: o.css.text2, fontSize: 11 },
-        })),
+        ...(ceiling != null ? [{ yAxis: ceiling, lineStyle: { color: o.css.error, width: 1.5, type: [6, 4] },
+          label: { position: "insideEndTop", formatter: L.limit_value_h.replace("{kw}", nf0.format(ceiling)), color: o.css.text2, fontSize: o.fs } }] : []),
+        { xAxis: nowX, lineStyle: { color: o.css.text, width: 1.5, type: "solid" },
+          label: { position: "end", formatter: L.now, color: o.css.card, backgroundColor: o.css.text, borderRadius: 10, padding: [3, 8], fontSize: o.fs, fontWeight: 500 } },
+        ...midnights.map((m) => ({ xAxis: m.x, lineStyle: { color: o.css.divider, width: 1, type: "solid" },
+          label: { show: Math.abs(m.x - nowX) > 1.5 * (o.hours / 24), position: "end", formatter: m.label, color: o.css.text2, fontSize: o.fs } })),
       ],
     },
-    markArea:
-      estIdx >= 0
-        ? {
-            silent: true,
-            itemStyle: { color: "rgba(225,225,225,0.025)" },
-            label: { position: "insideTopLeft", color: o.css.text2, fontSize: 11, offset: [6, 4] },
-            data: [[{ name: labels.estimated_prices ?? "", xAxis: estIdx * step }, { xAxis: H }]],
-          }
-        : undefined,
+    markArea: { silent: true, itemStyle: { color: o.css.cheap }, data: cheapAreas(b, step) },
   });
+  // price track (grid 1): blocks per price level
+  const segs = priceSegments(b, step);
   series.push({
-    type: "line",
-    name: labels.price,
-    id: "price",
-    xAxisIndex: 1,
-    yAxisIndex: 1,
-    step: "end",
-    symbol: "none",
-    silent: true,
-    lineStyle: { color: o.css.primary, width: 2 },
-    areaStyle: { color: o.css.primary, opacity: 0.16 },
-    data: [...b.map((k, i) => [i * step, k.price]), [H, b[b.length - 1]?.price ?? null]],
-  });
-  const trackH = o.compact ? 28 : 34;
-  const trackBottom = o.compact ? 40 : 34;
-  const lo = pmin - span * 0.35;
-  const hi = pmax + span * 0.9;
-  const priceY = (p: number) => o.height - trackBottom - ((p - lo) / (hi - lo)) * trackH;
-  const graphic: Record<string, unknown>[] = [
-    { type: "text", left: left - 20, top: o.height - trackBottom - trackH / 2 - 6, style: { text: o.currency, fill: o.css.text2, fontSize: 10 } },
-  ];
-  for (let i = 0; i < b.length; ) {
-    let n = 1;
-    while (i + n < b.length && Math.abs((b[i + n]!.price ?? -1) - (b[i]!.price ?? -1)) < 1e-4) n++;
-    const p = b[i]!.price;
-    if (p !== null && n * (plotW / b.length) > 40) {
-      graphic.push({
-        type: "text",
-        x: left + (i + n / 2) * (plotW / b.length),
-        y: priceY(p) - 14,
-        style: { text: two.format(p), fill: o.css.text, fontSize: 10, fontWeight: 500, align: "center" },
+    type: "custom", id: "price", name: L.price_strip, xAxisIndex: 1, yAxisIndex: 1, silent: true,
+    data: segs.map((s) => [s.x0, s.x1, s.p, s.est ? 1 : 0]),
+    renderItem: (p: any, api: any) => {
+      const [x0] = api.coord([api.value(0), 0]);
+      const [x1] = api.coord([api.value(1), 0]);
+      const cs = p.coordSys;
+      const hi = segs.length ? Math.max(...segs.map((s) => s.p)) : 0;
+      const est = api.value(3) === 1;
+      const w = x1 - x0 - 2;
+      const children: any[] = [{
+        type: "rect", shape: { x: x0 + 1, y: cs.y, width: w, height: cs.height, r: 4 },
+        style: { fill: api.value(2) >= hi - 1e-4 ? o.css.priceHi : o.css.priceLo, stroke: est ? o.css.warn : "none", lineWidth: 1, lineDash: est ? [3, 3] : undefined },
+      }];
+      if (w > 44) children.push({
+        type: "text", x: x0 + 1 + w / 2, y: cs.y + cs.height / 2,
+        style: { text: o.nf.format(api.value(2)) + (est && api.value(0) === segs.find((s) => s.est)?.x0 && w > 120 ? " · " + L.estimated_short : ""),
+          fill: o.css.text, font: `500 ${o.fs}px sans-serif`, align: "center", verticalAlign: "middle" },
       });
-    }
-    i += n;
-  }
+      return { type: "group", children };
+    },
+  });
+
   const tickEvery = o.hours >= 48 || o.compact ? 6 : 3;
+  const axisLabel = {
+    color: o.css.text2, fontSize: o.fs, interval: 0,
+    formatter: (v: number) => {
+      const t = o.a0 + v * 3600e3;
+      return hourOf(t) % tickEvery === 0 && Math.abs(v - nowX) > 0.6 && v > 0.3 && v < H - 0.3 ? o.tf.format(t) : "";
+    },
+  };
   return {
     animation: false,
-    textStyle: { fontFamily: "Roboto, sans-serif" },
+    textStyle: { fontFamily: "Roboto, Noto, sans-serif" },
     grid: [
-      { left, right, top: o.compact ? 132 : 56, bottom: o.compact ? 82 : 76 },
-      { left, right, height: trackH, bottom: trackBottom },
+      { left, right, top: o.compact ? 40 : 76, bottom: o.compact ? 62 : 64 },
+      { left, right, height: 20, bottom: o.compact ? 34 : 36 },
     ],
     xAxis: [
-      { type: "value", min: 0, max: H, interval: 1, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false } },
-      {
-        type: "value",
-        gridIndex: 1,
-        min: 0,
-        max: H,
-        interval: 1,
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitLine: { show: false },
-        axisLabel: {
-          color: o.css.text2,
-          fontSize: o.compact ? 10 : 11,
-          interval: 0,
-          formatter: (v: number) => {
-            const t = o.from + v * 3_600_000;
-            return hourOf(t) % tickEvery === 0 && new Date(t).getUTCMinutes() === 0 && Math.abs(v - nowX) > 0.6 ? clock.format(t) : "";
-          },
-        },
-      },
+      { type: "value", min: 0, max: H, interval: step, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false } },
+      { type: "value", gridIndex: 1, min: 0, max: H, interval: step, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false }, axisLabel },
     ],
     yAxis: [
-      {
-        type: "value",
-        min: 0,
-        max: ymax,
-        interval: ymax / 4,
-        name: labels.unit_kwh_h,
-        nameTextStyle: { color: o.css.text2, fontSize: 10, align: "right" },
-        axisLabel: { color: o.css.text2, fontSize: 10 },
-        splitLine: { lineStyle: { color: "rgba(225,225,225,0.07)", type: [2, 4] } },
-      },
-      { type: "value", gridIndex: 1, min: lo, max: hi, show: false },
+      { type: "value", min: 0, max: ymax, interval: o.compact ? ymax / 2 : ymax / 4, name: L.unit_kwh_h,
+        nameTextStyle: { color: o.css.text2, fontSize: o.fs, align: "right", padding: [0, 6, 6, 0] },
+        axisLabel: { color: o.css.text2, fontSize: o.fs, formatter: (v: number) => nf0.format(v) },
+        splitLine: { lineStyle: { color: o.css.divider, type: [2, 4] } } },
+      { type: "value", gridIndex: 1, min: 0, max: 1, show: false },
     ],
     tooltip: {
-      ...o.tooltip,
-      trigger: "axis",
-      axisPointer: { type: "shadow", shadowStyle: { color: "rgba(225,225,225,0.06)" } },
-      formatter: (items: Array<{ axisIndex: number; seriesId: string; value: number[] }>) => tooltip(b, loads, items, o, ceiling),
+      trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: o.css.cheap } },
+      backgroundColor: o.css.card, borderColor: o.css.divider, textStyle: { color: o.css.text, fontSize: o.fs + 2 },
+      extraCssText: "border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.3);",
+      formatter: (items: any[]) => tooltip(b, loads, items, o),
     },
     series,
-    graphic,
   };
 }
 
-function tooltip(
-  b: readonly Bucket[],
-  loads: readonly ForecastLoad[],
-  items: Array<{ axisIndex: number; seriesId: string; value: number[] }>,
-  o: ForecastOptions,
-  ceiling: number | null,
-): string {
-  const item = items.find((x) => x.axisIndex === 0 || x.seriesId === "baseline") ?? items[0];
-  if (!item) return "";
-  const k = b[Math.floor(item.value[0]! / (o.windowMin / 60))];
+function cheapAreas(b: Bucket[], step: number): any[] {
+  const ps = b.map((k) => k.price).filter((p): p is number => p != null);
+  if (!ps.length) return [];
+  const lo = Math.min(...ps), hi = Math.max(...ps);
+  if (hi - lo < 1e-4) return [];
+  const thr = lo + (hi - lo) * 0.25;
+  const out: any[] = [];
+  let s: number | null = null;
+  b.forEach((k, i) => {
+    const on = k.price != null && k.price <= thr;
+    if (on && s === null) s = i;
+    if ((!on || i === b.length - 1) && s !== null) {
+      out.push([{ xAxis: s * step }, { xAxis: (on ? i + 1 : i) * step }]);
+      s = null;
+    }
+  });
+  return out;
+}
+
+function priceSegments(b: Bucket[], step: number): { x0: number; x1: number; p: number; est: boolean }[] {
+  const out: { x0: number; x1: number; p: number; est: boolean }[] = [];
+  b.forEach((k, i) => {
+    if (k.price == null) return;
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.p - k.price) < 1e-4 && Math.abs(last.x1 - i * step) < 1e-9) { last.x1 = (i + 1) * step; last.est = last.est || k.estimated; }
+    else out.push({ x0: i * step, x1: (i + 1) * step, p: k.price, est: k.estimated });
+  });
+  return out;
+}
+
+function tooltip(b: Bucket[], loads: LoadRef[], items: any[], o: ForecastOpts): string {
+  const it = items.find((x) => x.seriesId === "baseline") ?? items[0];
+  if (!it) return "";
+  const k = b[Math.floor(it.value[0] / (o.windowMin / 60))];
   if (!k) return "";
-  const labels = o.labels;
-  const two = new Intl.NumberFormat(o.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const clock = new Intl.DateTimeFormat(o.locale, { hour: "2-digit", minute: "2-digit", timeZone: o.zone });
-  const day = new Intl.DateTimeFormat(o.locale, { weekday: "short", timeZone: o.zone }).format(k.start);
-  const rows = loads
-    .filter((l) => (k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0) > 0)
-    .map(
-      (l) =>
-        `<div style="display:flex;gap:8px;align-items:center"><span style="width:8px;height:8px;border-radius:50%;background:${l.color}"></span><span style="flex:1">${escape(l.name)}${(k.loads[l.id] ?? 0) > 0 ? "" : ` <span style="color:${o.css.text2}">· ${escape(o.labels.holding_short)}</span>`}</span><b style="font-weight:500">${two.format((k.loads[l.id] ?? 0) + (k.hold[l.id] ?? 0))}</b></div>`,
-    )
-    .join("");
-  const managed = Object.values(k.loads).reduce((s, v) => s + v, 0) + Object.values(k.hold).reduce((s, v) => s + v, 0);
-  const total = managed + (k.baseline ?? 0);
-  const base =
-    k.baseline !== null
-      ? `<div style="display:flex;gap:8px;align-items:center;color:${o.css.text2}"><span style="width:8px;height:8px;border-radius:2px;background:rgba(155,155,155,.6)"></span><span style="flex:1">${escape(labels.other_usage_estimate)}</span><span>${two.format(k.baseline)}</span></div>`
-      : "";
-  const reserve =
-    k.p90 !== null && k.baseline !== null
-      ? `<div style="display:flex;justify-content:space-between;color:${o.css.text2}"><span>${escape(labels.reserve)}</span><span>+${two.format(k.p90 - k.baseline)} kWh</span></div>`
-      : "";
-  const price =
-    k.price !== null
-      ? `<div style="display:flex;justify-content:space-between;gap:16px;color:${o.css.text2}"><span>${escape(labels.price)} ${two.format(k.price)} ${escape(o.currency)}/kWh${k.estimated ? ` · ${escape(labels.estimated_short)}` : ""}</span><span>≈ ${two.format(managed * k.price)} ${escape(o.currency)} ${escape(labels.managed_short)}</span></div>`
-      : "";
-  return `<div style="min-width:230px;line-height:20px"><div style="font-weight:500;margin-bottom:2px">${escape(day)} ${clock.format(k.start)}–${clock.format(k.end)}</div>${rows}${base}
-    <div style="border-top:1px solid ${o.css.divider};margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span>${escape(labels.total)}</span><b style="font-weight:500">${two.format(total)}${ceiling !== null ? ` ${escape(labels.of)} ${two.format(ceiling)}` : ""} kWh</b></div>${reserve}${price}</div>`;
+  const L = o.labels, nf = o.nf;
+  const moved = sum(k.moved);
+  const row = (c: string, name: string, v: number) =>
+    `<div style="display:flex;gap:8px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:${c}"></span><span style="flex:1">${name}</span><span>${nf.format(v)}</span></div>`;
+  const per = loads.filter((l) => (k.moved[l.id] ?? 0) > 0.005).map((l) => `${l.name.replace(/^Gulvvarme /, "")} ${nf.format(k.moved[l.id])}`).join(" · ");
+  const head = `${o.tf.format(k.start)}–${o.tf.format(k.end)}${k.price != null ? ` · ${nf.format(k.price)} ${o.currency}/kWh${k.estimated ? " · " + L.estimated_short : ""}` : ""}`;
+  return `<div style="min-width:240px;line-height:24px"><div style="font-weight:500">${head}</div>
+    ${k.baseline != null ? row(o.css.base, L.other_usage, k.baseline) : ""}
+    ${k.hold > 0.005 ? row(o.css.hold, L.holding, k.hold) : ""}
+    ${moved > 0.005 ? row(loads.find((l) => (k.moved[l.id] ?? 0) > 0)?.color ?? o.css.primary, L.moved_here, moved) + `<div style="color:${o.css.text2};font-size:${o.fs}px;line-height:16px;padding-left:18px">${per}</div>` : ""}
+    <div style="border-top:1px solid ${o.css.divider};margin-top:6px;padding-top:4px;display:flex;justify-content:space-between;gap:16px;font-weight:500">
+      <span>${L.total}</span><span>${nf.format(totalOf(k))} kWh${k.p90 != null ? ` · ${L.can_reach} ${o.nf1.format(capOf(k))}` : ""}</span></div></div>`;
 }
 
-/** The rail: the total, the split bar, each load's kWh, the reserve and limit keys, the cheap share (F3). */
-export function railHtml(b: readonly Bucket[], loads: readonly ForecastLoad[], o: ForecastOptions): string {
-  const labels = o.labels;
-  const two = new Intl.NumberFormat(o.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const one = new Intl.NumberFormat(o.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const upToOne = new Intl.NumberFormat(o.locale, { maximumFractionDigits: 1 });
-  const totals = forecastTotals(b, loads.map((l) => l.id));
-  const per = loads.map((l) => ({ l, v: totals.loads[l.id] ?? 0 })).filter((x) => x.v > 0.005);
-  const total = totals.other + totals.managed;
-  const seg = (w: number, c: string) => `<div style="width:${((w / Math.max(total, 1e-6)) * 100).toFixed(2)}%;background:${c}"></div>`;
-  const row = (swatch: string, name: string | undefined, value: string) =>
-    `<div class="lr"><span class="sw" style="${swatch}"></span><span class="n">${escape(name)}</span><span class="v">${escape(value)}</span></div>`;
-  const ceiling = b.find((k) => k.ceiling !== null)?.ceiling ?? null;
+/** Left rail: total, split bar, three legend groups, cap/limit keys, share of moved energy in cheap hours. */
+export function railHtml(b: Bucket[], loads: LoadRef[], o: ForecastOpts): string {
+  const L = o.labels, nf = o.nf, nf1 = o.nf1;
+  const other = b.reduce((t, k) => t + (k.baseline ?? 0), 0);
+  const hold = b.reduce((t, k) => t + k.hold, 0);
+  const per = loads.map((l) => ({ l, v: b.reduce((t, k) => t + (k.moved[l.id] ?? 0), 0) })).filter((x) => x.v > 0.005);
+  const moved = per.reduce((t, x) => t + x.v, 0);
+  const tot = other + hold + moved;
+  const cheap = cheapShare(b);
+  const seg = (w: number, c: string) => (w > 0 ? `<div style="flex:${w.toFixed(4)} 1 0;min-width:2px;background:${c}"></div>` : "");
+  const row = (sw: string, name: string, val: string, sub = "") =>
+    `<div class="lr"><span class="sw" style="${sw}"></span><span class="n">${name}${sub ? `<small>${sub}</small>` : ""}</span><span class="v">${val}</span></div>`;
+  const ceiling = b.find((k) => k.ceiling != null)?.ceiling;
   return `<div class="rail">
-    <span class="k">${escape(fill(labels.next_hours, { h: o.hours }))}</span>
-    <div class="tot"><span>${one.format(total)}</span><small>${escape(labels.kwh_expected)}</small></div>
-    <div class="split">${totals.other > 0 ? seg(totals.other, "rgba(155,155,155,.5)") : ""}${per.map((x) => seg(x.v, x.l.color)).join("")}</div>
-    <div class="splitl"><span>${escape(labels.unmanaged)} ${one.format(totals.other)}</span><span>${escape(labels.managed)} ${one.format(totals.managed)} kWh</span></div>
-    ${totals.other > 0 ? row("background:rgba(155,155,155,.5)", labels.other_usage, one.format(totals.other)) : ""}
-    ${per.map((x) => row(`background:${x.l.color}`, x.l.name, two.format(x.v))).join("")}
+    <span class="k">${L.next_hours.replace("{h}", String(o.hours))}</span>
+    <div class="tot"><span>${nf1.format(tot)}</span><small>${L.kwh_expected}</small></div>
+    <div class="split">${seg(other, o.css.base)}${seg(hold, o.css.hold)}${per.map((x) => seg(x.v, x.l.color)).join("")}</div>
+    ${other > 0 ? row(`background:${o.css.base}`, L.other_usage, nf1.format(other)) : ""}
+    ${hold > 0.005 ? row(`background:${o.css.hold}`, L.holding, nf1.format(hold)) : ""}
+    ${moved > 0.005 ? row(`background:${per[0].l.color}`, L.moved, nf.format(moved), per.map((x) => x.l.name.replace(/^Gulvvarme /, "")).join(", ")) : ""}
     <div class="hr"></div>
-    ${b.some((k) => k.p90 !== null) ? row("border:1px dashed rgba(225,225,225,.45);background:repeating-linear-gradient(45deg,rgba(225,225,225,.25) 0 2px,transparent 2px 5px)", labels.reserve, "p90") : ""}
-    ${ceiling !== null ? row(`height:0;border-top:2px dashed ${o.css.error};border-radius:0`, labels.limit, `${upToOne.format(ceiling)} ${labels.unit_kwh_h ?? ""}`) : ""}
+    ${b.some((k) => k.p90 != null) ? row(`height:0;border-top:2px dashed ${o.css.text2};border-radius:0`, L.can_reach_key, "p90") : ""}
+    ${ceiling != null ? row(`height:0;border-top:2px dashed ${o.css.error};border-radius:0`, L.limit, new Intl.NumberFormat(o.tf.resolvedOptions().locale, { maximumFractionDigits: 1 }).format(ceiling) + " " + L.unit_kwh_h) : ""}
     <span class="grow"></span>
-    ${totals.cheapPct !== null ? `<div class="ok"><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${escape(fill(labels.cheap_share, { pct: totals.cheapPct }))}</span></div>` : ""}
+    ${cheap != null ? `<div class="ok"><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${L.cheap_share.replace("{pct}", String(cheap))}</span></div>` : ""}
   </div>`;
 }
 
-/** Under 600 px: no rail, a summary above the chart (F6). */
-export function summaryHtml(b: readonly Bucket[], loads: readonly ForecastLoad[], o: ForecastOptions): string {
-  const labels = o.labels;
-  const one = new Intl.NumberFormat(o.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const totals = forecastTotals(b, loads.map((l) => l.id));
-  const per = loads.map((l) => ({ l, v: totals.loads[l.id] ?? 0 })).filter((x) => x.v > 0.005);
-  const total = Math.max(totals.other + totals.managed, 1e-6);
-  const seg = (w: number, c: string) => `<div style="width:${((w / total) * 100).toFixed(2)}%;background:${c}"></div>`;
+/** Share of MOVED energy (not holding) that lands in the cheapest quarter of the window. */
+export function cheapShare(b: Bucket[]): number | null {
+  const ps = b.map((k) => k.price).filter((p): p is number => p != null);
+  const moved = b.reduce((t, k) => t + sum(k.moved), 0);
+  if (!ps.length || moved < 0.01) return null;
+  const lo = Math.min(...ps), hi = Math.max(...ps);
+  if (hi - lo < 1e-4) return null;
+  const thr = lo + (hi - lo) * 0.25;
+  const inCheap = b.reduce((t, k) => t + ((k.price ?? Infinity) <= thr ? sum(k.moved) : 0), 0);
+  return Math.round((inCheap / moved) * 100);
+}
+
+/** Phone (< 600 px): no rail; total, split bar and three chips above the chart. */
+export function summaryHtml(b: Bucket[], o: ForecastOpts): string {
+  const L = o.labels, nf1 = o.nf1, nf = o.nf;
+  const other = b.reduce((t, k) => t + (k.baseline ?? 0), 0);
+  const hold = b.reduce((t, k) => t + k.hold, 0);
+  const moved = b.reduce((t, k) => t + sum(k.moved), 0);
+  const seg = (w: number, c: string) => (w > 0 ? `<div style="flex:${w.toFixed(4)} 1 0;min-width:2px;background:${c}"></div>` : "");
+  const chip = (c: string, t: string, v: string) => `<span class="chip"><i style="background:${c}"></i>${t} ${v}</span>`;
   return `<div class="sum">
-    <span class="k">${escape(fill(labels.next_hours, { h: o.hours }))}</span>
-    <div class="tot"><span>${one.format(totals.other + totals.managed)}</span><small>kWh</small></div>
-    <div class="split">${totals.other > 0 ? seg(totals.other, "rgba(155,155,155,.5)") : ""}${per.map((x) => seg(x.v, x.l.color)).join("")}</div>
-    <div class="splitl"><span>${escape(labels.unmanaged)} ${one.format(totals.other)}</span><span>${escape(labels.managed)} ${one.format(totals.managed)} kWh</span></div>
+    <span class="k">${L.next_hours.replace("{h}", String(o.hours))}</span>
+    <div class="tot"><span>${nf1.format(other + hold + moved)}</span><small>kWh</small></div>
+    <div class="split">${seg(other, o.css.base)}${seg(hold, o.css.hold)}${seg(moved, o.css.primary)}</div>
+    <div class="chips">${chip(o.css.base, L.other_short, nf1.format(other))}${hold > 0.005 ? chip(o.css.hold, L.holding_short, nf1.format(hold)) : ""}${moved > 0.005 ? chip(o.css.primary, L.moved, nf.format(moved)) : ""}</div>
   </div>`;
 }
 
-export const FORECAST_CSS = `
-  .sum { position: absolute; left: 12px; right: 12px; top: 12px; font-size: 12px; }
-  .sum .k { color: var(--secondary-text-color); }
-  .sum .tot { display: flex; align-items: baseline; gap: 5px; } .sum .tot span { font-size: 22px; } .sum .tot small { color: var(--secondary-text-color); }
-  .sum .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 1px; margin-top: 8px; }
-  .sum .splitl { display: flex; justify-content: space-between; color: var(--secondary-text-color); font-size: 11px; margin-top: 5px; }
-  .rail { position: absolute; left: 0; top: 0; bottom: 0; box-sizing: border-box; padding: 16px 16px 14px; border-right: 1px solid var(--divider-color);
-          display: flex; flex-direction: column; font-size: 12px; }
-  .rail .k { color: var(--secondary-text-color); }
-  .rail .tot { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
-  .rail .tot span { font-size: 28px; letter-spacing: -.4px; } .rail .tot small { font-size: 13px; color: var(--secondary-text-color); }
-  .rail .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 1px; margin: 10px 0 4px; }
-  .rail .splitl { display: flex; justify-content: space-between; color: var(--secondary-text-color); font-size: 11px; margin-bottom: 10px; }
-  .rail .lr { display: flex; align-items: center; gap: 8px; height: 22px; }
-  .rail .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; box-sizing: border-box; }
-  .rail .n { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rail .v { color: var(--secondary-text-color); }
-  .rail .hr { height: 1px; background: var(--divider-color); margin: 8px 0; }
-  .rail .grow { flex: 1 1 auto; }
-  .rail .ok { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(67,160,71,.12);
-              color: #9ad69d; line-height: 16px; --mdc-icon-size: 16px; }
-  .rail .ok ha-icon { color: #7ccf80; flex: none; }
+export const PLAN_CSS = `
+  .pp-plan .rail { position: absolute; left: 0; top: 0; bottom: 0; box-sizing: border-box; padding: 16px; border-right: 1px solid var(--pp-divider);
+          display: flex; flex-direction: column; gap: 2px; font-size: var(--pp-fs-m); }
+  .pp-plan .rail .k { color: var(--pp-text2); }
+  .pp-plan .rail .tot { display: flex; align-items: baseline; gap: 6px; }
+  .pp-plan .rail .tot span { font-size: var(--pp-fs-4xl); letter-spacing: -.4px; line-height: 40px; } .pp-plan .rail .tot small { color: var(--pp-text2); }
+  .pp-plan .rail .split, .pp-plan .sum .split { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 1px; margin: 8px 0 10px; }
+  .pp-plan .rail .lr { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+  .pp-plan .rail .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; box-sizing: border-box; }
+  .pp-plan .rail .n { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .pp-plan .rail .n small { font-size: var(--pp-fs-s); color: var(--pp-text2); line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp-plan .rail .v { font-variant-numeric: tabular-nums; }
+  .pp-plan .rail .hr { height: 1px; background: var(--pp-divider); margin: 6px 0; }
+  .pp-plan .rail .grow { flex: 1 1 auto; }
+  .pp-plan .rail .ok { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--pp-ok-bg);
+              line-height: 20px; --mdc-icon-size: 18px; }
+  .pp-plan .rail .ok ha-icon { color: var(--pp-ok); flex: none; }
+  .pp-plan .sum { position: absolute; left: 12px; right: 12px; top: 12px; font-size: var(--pp-fs-m); }
+  .pp-plan .sum .k { color: var(--pp-text2); }
+  .pp-plan .sum .tot { display: flex; align-items: baseline; gap: 6px; } .pp-plan .sum .tot span { font-size: var(--pp-fs-3xl); } .pp-plan .sum .tot small { color: var(--pp-text2); }
+  .pp-plan .sum .chips { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--pp-fs-s); color: var(--pp-text2); }
+  .pp-plan .sum .chip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .pp-plan .sum .chip i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 `;
+
+export const FORECAST_LABELS: Record<string, Record<string, string>> = {
+  nb: {
+    other_usage: "Annet forbruk", other_short: "Annet", holding: "Holder temperaturen", holding_short: "Holder", moved: "Flyttet i tid",
+    moved_here: "Flyttet hit", reserve: "Kan bli opptil", can_reach: "kan bli", can_reach_key: "Kan bli opptil", limit: "Effektmål",
+    limit_value_h: "Effektmål {kw} kWh/t", now: "Nå", price_strip: "Pris", unit_kwh_h: "kWh/t", total: "Sum",
+    estimated_short: "anslått", next_hours: "Neste {h} timer", kwh_expected: "kWh forventet",
+    cheap_share: "{pct} % av flyttet forbruk ligger i billige timer",
+  },
+  en: {
+    other_usage: "Other usage", other_short: "Other", holding: "Holding temperature", holding_short: "Holding", moved: "Moved in time",
+    moved_here: "Moved here", reserve: "Could reach", can_reach: "could reach", can_reach_key: "Could reach", limit: "Limit",
+    limit_value_h: "Limit {kw} kWh/h", now: "Now", price_strip: "Price", unit_kwh_h: "kWh/h", total: "Total",
+    estimated_short: "estimated", next_hours: "Next {h} hours", kwh_expected: "kWh expected",
+    cheap_share: "{pct} % of moved use is in cheap hours",
+  },
+};

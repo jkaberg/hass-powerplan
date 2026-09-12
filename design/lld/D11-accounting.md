@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| HLD section | §6.11, §10 decision 8 |
+| HLD section | §6.11, §10 decision 8 (re-settled v0.5.2) |
 | Depends on | D3 (`LoadMeter` slots, closed windows, import/export), D1 (curves, `Money`, slot confidence), D2 (`bill`, `record_counterfactual`), D4 (store models, `Demand`, learned parameters, target profiles), D10 (outdoor temperature, fit quality) |
 | Consumers | D7 (planning loop, Snapshot, store), D8 (sensors, events), D9 (`BacktestMetrics`, scenarios) |
 | Invariants owned | INV-68, INV-69 |
@@ -13,12 +13,13 @@
 
 **In scope.** Turning "what each load used, when, at what price" into money the household can read, and "what it would have cost without powerplan" into savings it can trust:
 
-- the **ledger**: per load and per site, per calendar month - energy (kWh), cost, counterfactual energy and cost, savings, confidence; a lifetime running total since install; 13 closed months of history;
-- **pricing** of a closed price slot: the load's carrier curve (D1), export credit, the capacity fee (D2) at site level; `Decimal` money, currency carried;
-- the **counterfactual**: one *shadow* per load - the same store model as the real load, stepped under policy `always` with no capacity axis - yielding per-slot kWh; the counterfactual site window fed to D2 for the counterfactual bill;
-- **savings** = counterfactual − actual: per load (energy component only), per site (energy + capacity);
-- **calibration** of the counterfactual from observe-mode slots;
-- accounting-month rollover, load add/remove, persistence.
+- the **ledger**: per load and per site, per calendar month - energy (kWh), cost, counterfactual energy and cost, savings, confidence - plus a lifetime running total since install and 13 closed months of history;
+- **pricing** a closed price slot: the load's carrier curve (D1), export credit, the capacity fee (D2) at site level, `Decimal` money with the currency carried;
+- the **counterfactual**: one **reference** per load, the load's own measured kWh placed where the uncontrolled device would have drawn it (§5.9), booked when its day, session or run settles, and the counterfactual site window fed to D2 for the counterfactual bill;
+- the **model figure**: one *shadow* per load - the same store model as the real load, stepped under policy `always` with no capacity axis - whose savings are published next to the headline once calibrated (§5.9.5);
+- **savings** = counterfactual − actual, per load (energy only) and per site (energy + capacity);
+- **calibration** of the model from observe-mode slots;
+- month rollover, load add/remove, persistence.
 
 **Out of scope.** Measuring energy (D3 `LoadMeter`), composing prices (D1), computing the fee (D2), the physics (D4 store models, D10 fits), presenting numbers (D8), and influencing any decision (INV-68). Reproducing the invoice is a non-goal (HLD §1.2).
 
@@ -30,13 +31,13 @@
 
 **Per-device capacity attribution.** None. The capacity fee is a joint cost of the site peak, and any split (proportional, Shapley, marginal) is a modelling choice the household would argue with. A load's savings are its **energy-shift** savings, the site's add the capacity savings as a separate, visible component. §11 steelmans the alternative.
 
-**Counterfactual model.** HLD §10 decision 8 says "the same house with every load on `strategy = always` and no capacity control, priced by the same tariff evaluator". Implemented as a **shadow store per load**, not a second engine: the load's own store model (D4 §4.3) stepped once per closed price slot under the policy its uncontrolled thermostat, charger or programme would follow, with the same parameters (configured or learned) the real load uses (INV-69). The household's own intent - target profile, presence mode, plug-in time, `run_now` press, force - is honoured by the shadow; powerplan's plans, sheds and stages are not. Uncontrolled load is identical in both worlds and cancels out of the site savings by construction.
+**The model.** HLD §10 decision 8 says "the same house with every load on `strategy = always` and no capacity control, priced by the same tariff evaluator". That's a **shadow store per load**, not a second engine: the load's own store model (D4 §4.3) stepped once per closed price slot under the policy its uncontrolled thermostat, charger or programme would follow, with the same parameters (configured or learned) the real load uses (INV-69). The household's own intent - target profile, presence mode, plug-in time, `run_now`, force - is honoured by the shadow, powerplan's plans, sheds and stages are not. Uncontrolled load is identical in both worlds and cancels out of the site savings by construction. The headline figure is the reference (§5.9), the shadows are the model figure.
 
 **Unmetered loads.** A load with neither a `POWER` nor an `ENERGY` role gets `nameplate × on-fraction` from D3 with `source = estimated`, its cost and savings carry `confidence = estimated`, and the site figures carry the share of estimated slots. Never hidden, never shown as exact.
 
-**Restating.** A slot priced from a `KNOWN` price is never restated - not by an intraday correction, not by a later learned parameter (INV-69). A slot priced from a `SYNTHESISED`/`ESTIMATED` price (D1 outage) is re-priced **once** when a known price for it arrives within D1's 7-day raw-slot retention; that is the only write to a priced slot. An EV session with unknown `required_kwh` is not restated but **deferred**: its counterfactual slots are held unpriced (`deferred`, the load's savings read *pending* for the session) until the session ends, then stepped and priced once (§5.3).
+**Restating.** A slot priced from a `KNOWN` price is never restated - not by an intraday correction, not by a later learned parameter (INV-69). A slot priced from a `SYNTHESISED`/`ESTIMATED` price (D1 outage) is re-priced **once** when a known price for it arrives within D1's 7-day retention, the only write to a priced slot. Every slot of a counted load waits for its day, session or run to settle (§5.9).
 
-**Calibration.** A load in mode `observe` behaves exactly as its counterfactual should predict, so over observe slots `cf_kwh − kwh` is pure model error. The trailing error is published per load and sets the savings confidence (§5.5). It is a *report*, never a correction: parameters are learned by D10 with their own quality gates (INV-63); calibration does not touch them.
+**Calibration.** A load in mode `observe` behaves exactly as the model should predict, so over observe slots `cf_kwh − kwh` is pure model error. The trailing error is published per load and sets the model figure's confidence (§5.5). It's a *report*, never a correction: parameters are learned by D10 with their own gates (INV-63). The reference has nothing to calibrate.
 
 ---
 
@@ -49,6 +50,7 @@ custom_components/powerplan/core/accounting/
 ├── pricing.py       price_slot(), export_credit(), reprice(), capacity_fee_to_date()
 ├── savings.py       load_savings(), site_savings(), kwh_shifted(), confidence(), calibration()
 ├── close.py         Accounting.close_slot(): the once-per-slot step the planning loop calls
+├── reference.py     ReferenceKind, reference_of(kind), settle(): the headline counterfactual (§5.9)
 └── shadow/
     ├── base.py      Shadow protocol, ShadowState, ShadowCtx, registry (by store-model kind)
     ├── thermostat.py   SlabStore / RoomStore / heat pump: hold the target profile, draw when below
@@ -187,6 +189,8 @@ What the code adds to these types:
 
 ### 5.1 Slot close: the one entry point
 
+Step 4 steps the shadow into the **model** figure and adds the slot to the load's open reference buffer. The headline `cf_kwh`/`cf_cost`, the site's counterfactual energy and step 5's shadow window are booked when the buffer settles (§5.9.2, §5.9.4).
+
 Called by D7's planning loop for every price slot that ended since the previous cycle, oldest first (the loop runs at `HH:00/15/30/45 + 20 s`, D7 §5.2, and a missed cycle closes the backlog on the next one). Never in the tick (INV-46).
 
 ```
@@ -242,6 +246,8 @@ D7 hands the planning loop one `SlotClose` per ended slot, and `core/accounting_
 
 ### 5.3 The shadow: one per store-model kind
 
+Everything here produces the **model figure** (§5.9.5), not the headline savings.
+
 Picked by the load's store model at `on_load_added` (the registry in `shadow/base.py`, a type without a store model gets `NONE`). Stepped once per closed slot with `dt = slot.minutes / 60` h. Every parameter is the real load's `effective` value (configured, or learned when D10's fit passed its gate, INV-63), the shadow never has parameters of its own (INV-69).
 
 | kind | store (D4) | policy without powerplan | step |
@@ -280,11 +286,15 @@ The other rows as built (D-0380…D-0383):
 
 ### 5.4 Counterfactual windows and the capacity component
 
+The window's counterfactual kWh come from the settled reference (§5.9.4), and the capacity savings are billed through the last settled day in both books.
+
 Per tariff window (D3 `window_closed`), the counterfactual site energy replaces each controlled load's actual kWh with its counterfactual kWh, and uncontrolled load - everything the loads didn't draw - is identical in both worlds. D2 records it in `counterfactual_days` and prices both histories with the same evaluator and version (INV-52, INV-69). Under `per_day = max` the counterfactual's daily maximum is usually the evening plug-in hour powerplan moved to the night, and that difference *is* the capacity saving. D6's `AllocReport.unconstrained_ask_w` (the unconstrained ask under the actual policy) is a diagnostic and **not** the accounting counterfactual, that's why it doesn't carry the word.
 
 A window D2 seeds from the recorder (D2 §5.12) happened before powerplan steered anything, so its counterfactual is the window itself. The seed writes each window it adds to both books, and a site created mid-month shows no capacity savings for the days before it existed (D-0350).
 
 ### 5.5 Confidence and calibration
+
+The rules below set `model_confidence`, the model figure's. The headline `savings_confidence` is `ok` for every load with a reference and `none` without one (§5.9.5).
 
 ```
 confidence(load, month)      = EXACT if estimated_slots == 0 else ESTIMATED
@@ -320,6 +330,58 @@ A rollover found late (HA down over midnight) runs when the first slot of the ne
 
 Every priced slot carries D1's components with their party (D1 §5.3), so the ledger splits cost and savings **by party** without new pricing: the **grid company** - capacity (D2's bill of the actual and the counterfactual) and the energy charge's timing (the `grid_energy` component under the actual and the counterfactual kWh); the **supplier** - spot timing (`spot`, `supplier`, `tier`, `day_type`); the **state** - what VAT, levies and schemes add or take away (`vat`, `levy`, `subsidy`). Both worlds are priced on the same copy and the same state stage, each slot at **its date's** VAT and levies (INV-69, INV-71), so a rate change moves both and never shows up as a saving. A load with its own tariff (D4 §5.16) is billed on its own meter and curve. A priced limit's surcharge (D2 §5.8, O23) is a grid-party line on the actual and the counterfactual bill alike, from each world's windows, booked at window settlement next to the settled fee (D-0609, D-0613). The month's cost by party puts the capacity fee on the grid and the export credit off the supplier's line, and the three sum to the cost (D-0558).
 
+### 5.9 The reference: what the headline savings compare with
+
+**Why.** On the reference house's first day under control the shadows produced the savings bars, and none of them measured the plan:
+
+| Load | Real | Shadow | Shown | Cause |
+|---|---|---|---|---|
+| EV | 15.34 kWh, 11.67 NOK | 11.70 kWh | −3.11 | 3.44 kWh charged 19:00–21:00 with no SoC, deferred and never settled; its cost counted, its counterfactual not |
+| five floors and heat pumps | 0.5–4.0 kWh each | 0 kWh | −cost | the loss-coefficient fits failed D10's gate (R² 0.01–0.05, or one episode), so the shadow's house never lost heat |
+| water heater | 8.51 kWh | 16.35 kWh | +6.07 | the shadow drew twice the real energy (calibration error 7.5) |
+
+Under Norgespris and Tensio's energy charge the whole price signal is 0.14 NOK/kWh between 22–06 and 06–22 (0.8779 against 0.7379 NOK/kWh incl. VAT): moving a 15 kWh charge earns 2.10 NOK. Any shadow error bigger than a few per cent is bigger than that, the fits can't pass their gates outside the heating season, and a site switched to control at install never gets the three observe days §5.5 needs. So the headline figure measures **timing only**, from measured energy, with nothing fitted (D-0588…D-0592).
+
+#### 5.9.1 One reference per store-model kind
+
+| Reference | Kinds | Buffer opens | Settles | `cf_kwh` per slot |
+|---|---|---|---|---|
+| `day` | `slab`, `room`, `heat_pump`, `tank`, `schedule` | first counted slot of a local day | the slot that ends the local day; else the first slot of a later day; else the month's rollover | `E × minutes_s / Σ minutes` - the day's own energy spread evenly over the day's buffered slots |
+| `session` | `energy` (EV) | the first slot whose `Demand.wants` is true | the first slot whose `wants` is false (that slot included - the car charged until it stopped, D-0269); a session open 7 days; the rollover | the session's own energy at the charger's full rate (`max_w`, else `nameplate_w`) from the session's first slot - `price_session`; no SoC needed |
+| `run` | `cycle` | the first slot whose `wants` is true (the request) | as `session` | the on-request shadow's per-slot kWh (§5.3), scaled so the run's sum is the run's own energy; a run whose shadow drew nothing is `cf:= actual` |
+| `idle` | `battery` | - (settles at once) | the same slot | 0 |
+| `none` | `none` | - | the same slot | `cf:= actual`, `savings_confidence = none` |
+
+Whatever the kind, a slot settles at once with `cf := actual` when the mode is `observe` (powerplan did nothing, so it saved nothing - the slot still calibrates the model), `delegated` or `off` (`excluded_slots`), the tank's legionella cycle is running (the protection is due with or without powerplan), or an EV or cycle is outside a session or run.
+
+Energy is conserved by construction: over every settled day, session and run `Σ cf_kwh = Σ kwh`, so savings are `Σ_s kwh_s·(p_ref − p_s)`-shaped and never come from a volume the model got wrong. Each slot keeps the price it closed at (INV-69), `cf_cost = Σ_s price_slot(cf_kwh_s, p_s)`.
+
+#### 5.9.2 Booking
+
+At slot close the load's `kwh` and `cost` accrue (the cost sensor stays live), and the slot goes into the load's open buffer as a `PricedSlot`. At settlement, for the buffer's slots: `cf_kwh`, `cf_cost`, `settled_cost` (their cost), `kwh_shifted = ½ Σ |kwh − cf_kwh|`, the site's `cf_energy_cost += Σ (cf_cost_s − cost_s)`, and the lifetime's savings accrue. `savings = cf_cost − settled_cost`: an open slot is on neither side, so no figure ever shows a slot's cost without its counterfactual. `pending` is true while a buffer with energy is open.
+
+A buffer whose load stops showing up in the closed slots (its meter not ready, a load gone while HA was down) settles once it's over - at the next local day for `day`, after seven days for `session` and `run` - so it can't hold the tariff windows behind it (§5.9.4). A month rollover settles every open buffer into the month being closed before it's frozen. A session crossing the 1st is split, and its second part opens a new session at 00:00, which is conservative (it credits the remainder nothing).
+
+A slot priced from a non-`KNOWN` price (§5.2) is re-priced once. While it's open the new price replaces the buffer's, once settled the re-price moves `cost`, `settled_cost` and `cf_cost` by `kwh·Δp` and `cf_kwh·Δp`.
+
+#### 5.9.3 What a reference cannot see (stated, not hidden)
+
+- **Natural timing.** A floor that heats more at night without powerplan is credited for that timing in `auto`. The model figure is where it would show, the headline only states "your appliances' energy against the day's average price".
+- **Energy a plan adds or saves** - pre-heating losses, an away setback - isn't in the headline, it's the model figure's (§5.9.5).
+- **Capacity** isn't timing-neutral per load and stays at site level (§2).
+
+#### 5.9.4 The capacity counterfactual from the reference
+
+Each settled slot's `Σ_loads (cf_kwh − kwh)` goes into `slot_deltas` (D-0267's map). A closed tariff window waits in `pending_windows` until none of its slots is in an open buffer, then it's recorded with `record_counterfactual(window.kwh + Σ deltas inside)`, oldest first. `settled_through` is the end of the last window recorded. The capacity savings are `(bill(P, cf_through) − cf_fee_at_month_start) − (bill(P, actual_through) − fee_at_month_start)`, both books cut at the last **complete** local day before `settled_through`, so an open day's peak in the actual book is never set against a counterfactual that doesn't have that day yet. `site.capacity_fee` (the cost) stays live on every window.
+
+#### 5.9.5 The model figure
+
+The shadows of §5.3 still step in every counted and observe slot. Their kWh and cost accrue as `model_cf_kwh` / `model_cf_cost` against `model_cost`, and `model_savings = model_cf_cost − model_cost` is published as an attribute **only** when `model_confidence` (§5.5) is `ok`, otherwise it's absent. The headline `savings_confidence` is `ok` for a load with a reference and `none` for `none`, and the site's rule (§5.5, D-0176) runs over the headline.
+
+#### 5.9.6 Store
+
+`AccountingState.schema = 2`: `open: dict[str, OpenBuffer]` (reference, key - the local day or the session's first slot - and the `PricedSlot`s), `pending_windows`, `settled_through`; `LoadMonthRec` has `settled_cost`, `model_cf_kwh`, `model_cf_cost`, `model_cost`; `SiteMonthRec` has `capacity_fee_settled`; `PricedSlot` has `settled`. A schema-1 section is **discarded** on restore and the ledger restarts `partial`: its figures are exactly the ones this section replaces, and nothing is released on it yet (PLAN dec. 36, D-0592).
+
 ---
 
 ## 6. Configuration schema
@@ -332,7 +394,7 @@ Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off dr
 
 ## 7. Persistence
 
-Store section `accounting` (D7 owns the file): `AccountingState` as JSON, `Decimal` as strings with currency, datetimes ISO-8601 UTC. Marked dirty on every `close_slot` - four times an hour - saved by D7's throttle (D7 §7) and flushed on stop. The partial slot in progress lives in D3's `LoadMeterState` (throttled ≤ 5 s, INV-14 discipline), so a restart loses at most five seconds of one slot, never a closed one. `history` ≤ 13 months; `pending_reprice` ≤ 7 days; the section for a 20-load site is ~60 kB. Migration by `schema`; a load's rec is deleted with its subentry after the fold in §5.7.
+Store section `accounting` (D7 owns the file, schema 2, §5.9.6): `AccountingState` as JSON, `Decimal` as strings with currency, datetimes ISO-8601 UTC. Marked dirty on every `close_slot` - four times an hour - saved by D7's throttle (D7 §7) and flushed on stop. The partial slot in progress lives in D3's `LoadMeterState` (throttled ≤ 5 s, INV-14), so a restart loses at most five seconds of one slot and never a closed one. `history` ≤ 13 months, `pending_reprice` ≤ 7 days, and the section for a 20-load site is ~60 kB. Migrated by `schema`, and a load's rec is deleted with its subentry after §5.7's fold.
 
 ---
 
@@ -340,18 +402,18 @@ Store section `accounting` (D7 owns the file): `AccountingState` as JSON, `Decim
 
 | Failure | Behaviour | Surface |
 |---|---|---|
-| Load has no power and no energy role | D3 `source = estimated`; cost and savings `ESTIMATED` | attribute `confidence`, review-step note |
-| Price slot synthesised (D1 outage) | priced, marked, re-priced once when known | `estimated_share`; INFO on reprice |
-| Meter stale / degraded during a slot | slot `ESTIMATED`; shadows still step (they need no meter) | attribute |
-| Outdoor temperature missing > 6 h | thermostat/heat-pump shadows use the last value; slots `ESTIMATED` | attribute |
-| Learned `loss_coeff` fit fails its gate | shadow uses the configured/derived value (INV-63) - the same the planner uses | `sensor.<load>_learned_*` quality |
-| Calibration error > threshold | `savings_confidence = LOW`; advice `savings_low_confidence(load)` | attribute; D2-style advice via D8 |
-| Load never observed | `UNCALIBRATED`; the review step recommends starting in observe (D8 §5.1 already pre-ticks it) | attribute |
-| Negative savings (legionella in an expensive week; a comfort breach served) | shown negative | state |
-| Currency differs between carriers | per-carrier `Money`; site totals only over the electricity carrier; other carriers shown per load | attribute `currency` |
-| Curve slot length changes (60 → 15 min intraday) | slots follow the curve; a window is still a whole number of slots | - |
-| Store section corrupt | section reset, `since` = now, WARNING; D3 lifetime kWh survives in its own section | repair `store_reset` |
-| Accounting exception in the planning loop | caught per load; that load's slot is `ESTIMATED` with `cf:= actual`; the cycle completes (INV-45 spirit) | ERROR with slot key |
+| Load without a power or energy role | D3 `source = estimated`, cost and savings `ESTIMATED` | attribute `confidence`, review note |
+| Price slot synthesised (D1 outage) | priced, marked, re-priced once when known | `estimated_share`, INFO on reprice |
+| Meter stale / degraded during a slot | slot `ESTIMATED`, shadows still step (they need no meter) | attribute |
+| Outdoor temperature missing > 6 h | thermostat/heat-pump shadows use the last value, slots `ESTIMATED` | attribute |
+| Learned `loss_coeff` fit fails its gate | the shadow uses the configured/derived value (INV-63), the same the planner uses; only the model figure is affected, the headline needs no parameter | `sensor.<load>_learned_*` quality |
+| Calibration error > threshold | `model_confidence = LOW`, `model_savings` absent, advice `savings_low_confidence(load)` | attribute; D2-style advice via D8 |
+| Load never observed | `model_confidence = UNCALIBRATED`, `model_savings` absent; the review recommends starting in observe (D8 §5.1 pre-ticks it) | attribute |
+| Negative savings (legionella in an expensive week, a comfort breach served) | shown negative | state |
+| Currency differs between carriers | per-carrier `Money`, site totals only over electricity, other carriers per load | attribute `currency` |
+| Curve slot length changes (60 → 15 min intraday) | slots follow the curve, a window is still a whole number of slots | - |
+| Store section corrupt | section reset, `since` = now, WARNING; D3's lifetime kWh survives in its own section | repair `store_reset` |
+| Accounting exception in the planning loop | caught per load; that load's slot is `ESTIMATED` with `cf := actual`; the cycle completes (INV-45's spirit) | ERROR with the slot key |
 
 Logging: slot close at DEBUG (one line per site: kWh, cost, cf, savings), rollover and reprice at INFO, calibration crossing the threshold at WARNING.
 
@@ -391,6 +453,18 @@ Scenarios (D9 §5.3): `savings_vs_twin` - the controlled month vs the same month
 22. A VAT change mid-month moves the actual and the counterfactual the same way, and no saving comes from it.
 23. LU (O23): the actual and the counterfactual each carry their own surcharge line from their own windows, and the difference is a grid-party saving.
 
+Items 4–9 and 13 state the **model** figure. The reference:
+
+24. `day`: a floor drawing 6 kWh in night slots of a Norgespris day (0.8779 / 0.7379) → nothing booked before the day's last slot, then `cf_kwh` spread evenly and `savings = 6 × (p̄ − 0.7379)`; a day whose last slot never closes (outage) settles on the next day's first slot.
+25. Conservation: over every settled day, session and run `Σ cf_kwh == Σ kwh` (a property test over random slots and kinds).
+26. `session`: an EV plugged in at 19:00 without an SoC, 3.44 kWh at the day rate 19:00–21:00 and 11.9 kWh at night → settled when `wants` falls, the counterfactual at full rate from 19:00, savings positive and nothing deferred (the regression from §5.9's first table); `force` from plug-in → savings 0; an `off` stretch inside the session is excluded and the session goes on.
+27. `run`: a dishwasher requested at 19:00 and run at 02:00 → the shadow's shape scaled to the run's own energy; a run whose shadow drew nothing → `cf := actual`.
+28. `observe` → every slot `cf := actual`, savings exactly 0, and the model still calibrates.
+29. Capacity through the settled day: an open day's new peak never makes `capacity_savings` negative, the day's windows reach the counterfactual book at settlement, and §9 11's 172 NOK comes back once the day settles.
+30. The site identity (§9 10) with open buffers: no load contributes `−cost` while open (five loads whose shadows drew nothing read `pending`, savings 0).
+31. Model figure: `model_savings` present only at `model_confidence = ok`.
+32. A schema-1 section is discarded on restore, the ledger restarts `partial`.
+
 ---
 
 ## 10. Deliberately deferred
@@ -407,7 +481,9 @@ Scenarios (D9 §5.3): `savings_vs_twin` - the controlled month vs the same month
 
 **A full engine twin as the counterfactual (HLD §10 decision 8 read literally).** *For:* exact by construction - the same `engine.tick` with `always` and `NoPeak`, the same store models, the same D9 simulators, no second model to calibrate, and battery, zones and cycles fall out. *Against:* it needs the physics simulators (test code) in production, a second `EngineState` per site, a second set of writes to swallow and ten times the CPU of one slot step, and its output is *still* a model of the house, just a more expensive one. **Decision:** shadow stores - the store models are already the planner's physics, one step per slot per load is microseconds, and the observe-mode calibration measures the error the twin would only hide. `savings_vs_twin` keeps the two within 10 % in the simulator.
 
-**No physics: "same kWh, priced at the daily mean".** *For:* trivially explainable, no parameters, cannot drift. *Against:* it makes savings depend only on when the load ran, not on what it would have done - an EV plugged in at night already would show savings it did not earn, and a pre-charged slab that used 10 % more energy would show savings it did not earn either. **Decision:** shadows; the `schedule` kind keeps the mean-price model for the one type where nothing better is knowable.
+**No physics: "the same kWh, priced at the daily mean".** *For:* trivially explainable, no parameters, can't drift. *Against:* an EV plugged in at night already would show savings it didn't earn, and a pre-charged slab using 10 % more energy would too. **Decision:** adopted for the headline as §5.9's reference - the first objection is met by placing the EV at its observed plug-in and a cycle at its observed request, not at a mean, and the second is real and is what the model figure (§5.9.5) keeps, published once calibrated. On the reference house the shadows were wrong by 50–100 % against a 10 % effect (§5.9).
+
+**Keep the shadows as the headline and fix their inputs.** *For:* one figure that captures timing *and* energy; the defects found were a missing fallback (a failed fit → no loss term), an unsettled deferral and a tank dial, all fixable; INV-69 read literally. *Against:* each fix is another parameter that has to be right for the figure to be right, the fits can't pass outside the heating season, calibration needs observe days a household that switches control on never gives, and under a flat price the true signal (0.14 NOK/kWh) is below any plausible model error. **Decision:** the reference is the headline, the shadows are kept, calibrated and shown when they can be trusted.
 
 **Leave it to Home Assistant: `sensor.<load>_energy` as an Energy dashboard device plus `sensor.<site>_price`.** *For:* zero accounting code, HA computes per-device cost with its own statistics UI. *Against:* HA prices at the hour and at the entity's price at the time, never a counterfactual, it can't show savings, the capacity component or a confidence, and the money would live outside the Snapshot the diagnostics dump. **Decision:** expose `sensor.<load>_energy` so the Energy dashboard works *too*, and own the cost and savings.
 

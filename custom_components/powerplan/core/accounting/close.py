@@ -11,6 +11,13 @@ The order inside one slot is §5.1's: roll the month over when this slot belongs
 the next one, price every load and step its shadow, price the site, re-price what a
 known price has caught up with, and close the tariff window when this slot
 completed one.
+
+The headline counterfactual is the load's **reference** (§5.9): its own measured
+energy, placed where the uncontrolled device would have drawn it. A slot waits in
+the load's open buffer until its day, session or run settles, and only then are
+its counterfactual, its savings and its share of the shadow window booked - so a
+figure never carries a slot's cost without its counterfactual. The shadows still
+step every slot, for the model figure (§5.9.5).
 """
 
 from __future__ import annotations
@@ -18,7 +25,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, timedelta, tzinfo
 
 from ..metering import ClosedWindow, LoadSlot
 from ..model import Carrier, Mode, Money, PriceCurve
@@ -42,11 +49,11 @@ from .pricing import (
     accrue_by_party,
     capacity_fee_to_date,
     export_credit,
-    price_session,
     price_slot,
     reprice,
     slot_price,
 )
+from .reference import REFERENCE_OF, OpenBuffer, ReferenceKind, settle
 from .savings import (
     CALIBRATION_THRESHOLD,
     CalibrationRec,
@@ -88,6 +95,18 @@ BLIND_REANCHOR_H = 24.0
 
 #: The instant a ledger with no store is opened on; the first priced slot moves it.
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+#: The store section's schema. 2 is the reference (D11 §5.9.6); a section of an
+#: earlier schema is discarded on restore, not migrated (D-0592).
+SCHEMA = 2
+
+#: The longest a session or run stays open before it settles with what is known,
+#: in days (D11 §5.3, §5.9.1).
+MAX_SESSION_DAYS = 7
+
+#: The modes whose slots the reference places. `observe` is its own
+#: counterfactual - powerplan did nothing, so it saved nothing (D-0588).
+PLACED_MODES: frozenset[Mode] = frozenset({Mode.AUTO, Mode.FORCE})
 
 
 # --------------------------------------------------------------------------- #
@@ -162,16 +181,21 @@ class AccountingState:
     shadows: dict[str, ShadowState] = field(default_factory=dict)
     calibration: dict[str, CalibrationRec] = field(default_factory=dict)
     pending_reprice: dict[str, tuple[PricedSlot, ...]] = field(default_factory=dict)
-    deferred: dict[str, tuple[PricedSlot, ...]] = field(default_factory=dict)
+    #: Each load's slots waiting for their day, session or run to settle (§5.9.2).
+    open: dict[str, OpenBuffer] = field(default_factory=dict)
     fee_at_month_start: Money | None = None
     cf_fee_at_month_start: Money | None = None
-    #: `Σ (cf_kwh − kwh)` of each priced slot, keyed by the slot's UTC start (ISO):
+    #: `Σ (cf_kwh − kwh)` of each settled slot, keyed by the slot's UTC start (ISO):
     #: a window's counterfactual is the sum of the slots inside it, whichever
-    #: slot D7 happens to hand the window over with (D-0267). Pruned at each close.
+    #: slot D7 happens to hand the window over with (D-0267). Pruned per window.
     slot_deltas: dict[str, float] = field(default_factory=dict)
+    #: Closed tariff windows whose slots are not all settled yet (§5.9.4).
+    pending_windows: tuple[ClosedWindow, ...] = ()
+    #: The end of the last window recorded in the counterfactual book.
+    settled_through: datetime | None = None
     last_slot_utc: datetime | None = None
     opened: bool = False
-    schema: int = 1
+    schema: int = SCHEMA
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +214,11 @@ class LoadFigures:
     pending: bool
     previous: tuple[Money, Money] | None
     lifetime: tuple[Money, Money]
+    #: The cost of the settled slots - what `savings` is set against (§5.9.2).
+    settled_cost: Money | None = None
+    #: The shadow's savings, only when `model_confidence` is `ok` (§5.9.5).
+    model_savings: Money | None = None
+    model_confidence: SavingsConfidence = SavingsConfidence.NONE
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,8 +275,8 @@ class Accounting:
         """Build the accounting for `cfg`, resuming `state` when a store had one."""
         self.config = cfg
         self._state = state if state is not None else _fresh_state(cfg)
-        #: This slot's loads on their own meter: kWh, counterfactual kWh, own and house price.
-        self._own_meter: list[tuple[float, float, SlotPrice, SlotPrice]] = []
+        #: This slot's loads on their own meter: kWh, own price and the house's (G13).
+        self._own_meter: list[tuple[float, SlotPrice, SlotPrice]] = []
 
     # -- state ------------------------------------------------------------- #
 
@@ -291,13 +320,17 @@ class Accounting:
 
         Site totals never change on a removal: the energy was drawn and the money
         was spent. The month record stays until the month is frozen, and the
-        lifetime row is kept so a re-add continues it (D11 §5.7).
+        lifetime row is kept so a re-add continues it (D11 §5.7). An open buffer
+        settles now, without a rate: a session's counterfactual is then the
+        actual, which states no savings rather than guessing (§5.9.2).
         """
         state = self._state
+        buffer = state.open.pop(load_id, None)
+        if buffer is not None:
+            self._settle(load_id, settle(buffer, None))
         state.ledger.removed = (*state.ledger.removed, load_id)
         state.ledger.partial = True
         state.shadows.pop(load_id, None)
-        state.deferred.pop(load_id, None)
         _LOGGER.info("accounting: load %s removed at %s", load_id, now.isoformat())
 
     # -- the one entry point (D11 §5.1) ------------------------------------ #
@@ -312,13 +345,15 @@ class Accounting:
         elif month_key(slot.start_utc, ctx.tz) != ledger.month:
             month_closed = self._rollover(slot, ctx)
 
-        delta_kwh = self._price_loads(slot, ctx)
-        state.slot_deltas[slot.start_utc.isoformat()] = delta_kwh
-        self._price_site(slot, ctx, delta_kwh)
+        self._price_loads(slot, ctx)
+        self._price_site(slot, ctx)
         repriced = self._reprice(slot, ctx)
 
         if slot.window_closed is not None:
-            self._close_window(slot.window_closed, ctx)
+            state.pending_windows = (*state.pending_windows, slot.window_closed)
+        flushed = self._flush_windows(ctx)
+        if slot.window_closed is not None or flushed:
+            self._bill_live(slot.start_utc, ctx)
 
         state.last_slot_utc = slot.start_utc
         _LOGGER.debug(
@@ -332,22 +367,25 @@ class Accounting:
 
     # -- pricing ----------------------------------------------------------- #
 
-    def _price_loads(self, slot: ClosedSlot, ctx: CloseCtx) -> float:
-        """Price every load's slot and step its shadow (D11 §5.1 steps 2 and 4).
+    def _price_loads(self, slot: ClosedSlot, ctx: CloseCtx) -> None:
+        """Price every load's slot, step its shadow and book it (D11 §5.1, §5.9).
 
-        Returns `Σ (cf_kwh − kwh)` over the loads, which is the only thing that
-        moves the site's counterfactual: uncontrolled load is identical in both
-        worlds and cancels by construction (D11 §5.4).
+        The cost accrues now. The counterfactual waits for the slot's day,
+        session or run to settle, unless the slot is its own counterfactual.
         """
         ledger = self._state.ledger
-        delta = 0.0
         self._own_meter = []
+        self._settle_stale(slot, ctx)
         for load_id, measured in slot.loads.items():
             shadow_ctx = ctx.loads.get(load_id)
             if shadow_ctx is None:
                 continue
-            curve = _import_curve(ctx, load_id, shadow_ctx.params.carrier)
-            price = slot_price(curve, slot.start_utc)
+            price = slot_price(
+                _import_curve(ctx, load_id, shadow_ctx.params.carrier), slot.start_utc
+            )
+            if load_id in ctx.load_curves:
+                house = slot_price(ctx.curves[Carrier.ELECTRICITY].import_curve, slot.start_utc)
+                self._own_meter.append((measured.kwh, price, house))
             rec = ledger.load_rec(load_id, price.currency)
 
             cost = price_slot(measured.kwh, price)
@@ -356,29 +394,170 @@ class Accounting:
             rec.cost = plus(rec.cost, cost)
             rec.slots += 1
             rec.estimated_slots += 0 if (load_exact and price.known) else 1
+            ledger.lifetime.accrue_load(load_id, measured.kwh, cost, zero(cost.currency))
 
-            cf_kwh = self._step_shadow(
-                load_id, slot, shadow_ctx, price=price, measured=measured, rec=rec
+            model_kwh = self._step_shadow(load_id, slot, shadow_ctx, measured=measured, rec=rec)
+            if model_kwh is not None:
+                rec.model_cf_kwh += model_kwh
+                rec.model_cf_cost = plus(rec.model_cf_cost, price_slot(model_kwh, price))
+                rec.model_cost = plus(rec.model_cost, cost)
+
+            entry = PricedSlot(
+                start_utc=slot.start_utc,
+                minutes=slot.minutes,
+                kwh=measured.kwh,
+                cf_kwh=0.0,
+                price=price,
+                load_exact=load_exact,
+                shape_kwh=model_kwh or 0.0,
             )
-            cf_cost = price_slot(cf_kwh, price)
-            accrue_by_party(rec.savings_by_party, price, cf_kwh)
-            accrue_by_party(rec.savings_by_party, price, measured.kwh, -1)
-            rec.cf_kwh += cf_kwh
-            rec.cf_cost = plus(rec.cf_cost, cf_cost)
-            rec.kwh_shifted += kwh_shifted(measured.kwh, cf_kwh)
-            delta += cf_kwh - measured.kwh
-            if load_id in ctx.load_curves:
-                house = slot_price(ctx.curves[Carrier.ELECTRICITY].import_curve, slot.start_utc)
-                self._own_meter.append((measured.kwh, cf_kwh, price, house))
-
             if not price.known:
-                self._defer_reprice(
-                    load_id, slot, measured, cf_kwh=cf_kwh, price=price, load_exact=load_exact
-                )
-            # A deferred session accrues −cost here and the whole counterfactual
-            # at session end; the figures carry `pending` until then (D11 §5.3).
-            ledger.lifetime.accrue_load(load_id, measured.kwh, cost, minus(cf_cost, cost))
-        return delta
+                self._defer_reprice(load_id, entry)
+            self._book(load_id, entry, slot, shadow_ctx, ctx.tz)
+
+    def _book(
+        self,
+        load_id: str,
+        entry: PricedSlot,
+        slot: ClosedSlot,
+        shadow_ctx: ShadowCtx,
+        tz: tzinfo,
+    ) -> None:
+        """Put one slot into the load's open buffer, or settle it (D11 §5.9.1)."""
+        reference = REFERENCE_OF[shadow_ctx.params.kind]
+        if shadow_ctx.mode not in COUNTED_MODES or reference is ReferenceKind.NONE:
+            self._state.ledger.load_rec(load_id, entry.price.currency).excluded_slots += 1
+        # A slot that is its own counterfactual: powerplan did nothing (observe),
+        # was told to do nothing (delegated, off), has nothing to compare with, or
+        # ran a protection due with or without it (a tank's legionella cycle).
+        own = (
+            shadow_ctx.mode not in PLACED_MODES
+            or reference is ReferenceKind.NONE
+            or shadow_ctx.legionella_active
+        )
+        if reference is ReferenceKind.DAY:
+            self._book_day(load_id, entry, slot, own=own, tz=tz)
+        elif reference in (ReferenceKind.SESSION, ReferenceKind.RUN):
+            wants = shadow_ctx.demand is not None and shadow_ctx.demand.wants
+            self._book_session(
+                load_id, entry, reference, own=own, wants=wants, rate_w=_rate_w(shadow_ctx.params)
+            )
+        elif own:
+            self._settle_own(load_id, entry)
+        else:
+            # `idle`: a battery without a controller draws nothing.
+            self._settle(
+                load_id, settle(OpenBuffer(reference, entry.start_utc.isoformat(), (entry,)), None)
+            )
+
+    def _book_day(
+        self, load_id: str, entry: PricedSlot, slot: ClosedSlot, *, own: bool, tz: tzinfo
+    ) -> None:
+        """Buffer a slot for its local day; settle the day at its last slot."""
+        state = self._state
+        day = slot.start_utc.astimezone(tz).date().isoformat()
+        buffer = state.open.get(load_id)
+        if buffer is not None and buffer.key != day:
+            # The day's last slot never closed (an outage over midnight).
+            self._settle(load_id, settle(state.open.pop(load_id), None))
+            buffer = None
+        if own:
+            self._settle_own(load_id, entry)
+        else:
+            buffer = (buffer or OpenBuffer(ReferenceKind.DAY, day)).with_slot(entry)
+            state.open[load_id] = buffer
+        if buffer is not None and _last_slot_of_the_day(slot, tz):
+            self._settle(load_id, settle(state.open.pop(load_id), None))
+
+    def _book_session(
+        self,
+        load_id: str,
+        entry: PricedSlot,
+        reference: ReferenceKind,
+        *,
+        own: bool,
+        wants: bool,
+        rate_w: float | None,
+    ) -> None:
+        """Buffer a slot of a session or run; settle it when the load stops wanting."""
+        state = self._state
+        buffer = state.open.get(load_id)
+        if own or (buffer is None and not wants):
+            self._settle_own(load_id, entry)
+        else:
+            buffer = (buffer or OpenBuffer(reference, entry.start_utc.isoformat())).with_slot(entry)
+            state.open[load_id] = buffer
+        # An open session ends on its own edge even when this slot was the load's
+        # own counterfactual (switched to off or observe mid-session).
+        if buffer is not None:
+            age = entry.start_utc - datetime.fromisoformat(buffer.key)
+            if not wants or age >= timedelta(days=MAX_SESSION_DAYS):
+                self._settle(load_id, settle(state.open.pop(load_id), rate_w))
+
+    def _settle_own(self, load_id: str, entry: PricedSlot) -> None:
+        """Settle a slot that is its own counterfactual: savings exactly zero."""
+        self._settle(load_id, (replace(entry, cf_kwh=entry.kwh, settled=True),))
+
+    def _settle(self, load_id: str, slots: tuple[PricedSlot, ...]) -> None:
+        """Book settled slots: counterfactual, savings, shadow window (D11 §5.9.2).
+
+        Both sides of a slot's savings are booked here, together, which is what
+        keeps an open day or session from ever reading as a loss.
+        """
+        if not slots:
+            return
+        state = self._state
+        ledger = state.ledger
+        currency = slots[0].price.currency
+        rec = ledger.load_rec(load_id, currency)
+        savings = zero(currency)
+        for entry in slots:
+            cost = price_slot(entry.kwh, entry.price)
+            cf_cost = price_slot(entry.cf_kwh, entry.price)
+            rec.cf_kwh += entry.cf_kwh
+            rec.cf_cost = plus(rec.cf_cost, cf_cost)
+            rec.settled_cost = plus(rec.settled_cost, cost)
+            rec.kwh_shifted += kwh_shifted(entry.kwh, entry.cf_kwh)
+            accrue_by_party(rec.savings_by_party, entry.price, entry.cf_kwh)
+            accrue_by_party(rec.savings_by_party, entry.price, entry.kwh, -1)
+            if currency == ledger.site.cf_energy_cost.currency:
+                ledger.site.cf_energy_cost = plus(ledger.site.cf_energy_cost, minus(cf_cost, cost))
+            key = entry.start_utc.isoformat()
+            state.slot_deltas[key] = state.slot_deltas.get(key, 0.0) + entry.cf_kwh - entry.kwh
+            savings = plus(savings, minus(cf_cost, cost))
+            self._mark_settled(load_id, entry)
+        ledger.lifetime.accrue_load(load_id, 0.0, zero(currency), savings)
+
+    def _settle_stale(self, slot: ClosedSlot, ctx: CloseCtx) -> None:
+        """Settle the buffers of loads this slot does not carry, once they are over.
+
+        A load whose slots stop arriving - its meter not ready, or a load gone
+        while HA was down - would otherwise hold its buffer, and every tariff
+        window behind it, for ever (§5.9.4). A day is over at the next local day;
+        a session or run after `MAX_SESSION_DAYS`.
+        """
+        state = self._state
+        today = slot.start_utc.astimezone(ctx.tz).date().isoformat()
+        for load_id, buffer in list(state.open.items()):
+            if load_id in slot.loads and load_id in ctx.loads:
+                continue
+            if buffer.reference is ReferenceKind.DAY:
+                over = buffer.key < today
+            else:
+                age = slot.start_utc - datetime.fromisoformat(buffer.key)
+                over = age >= timedelta(days=MAX_SESSION_DAYS)
+            if over:
+                shadow_ctx = ctx.loads.get(load_id)
+                rate = None if shadow_ctx is None else _rate_w(shadow_ctx.params)
+                self._settle(load_id, settle(state.open.pop(load_id), rate))
+
+    def _settle_all(self, ctx: CloseCtx) -> None:
+        """Settle every open buffer with what is known - a month is closing (§5.9.2)."""
+        state = self._state
+        for load_id in list(state.open):
+            shadow_ctx = ctx.loads.get(load_id)
+            rate = None if shadow_ctx is None else _rate_w(shadow_ctx.params)
+            self._settle(load_id, settle(state.open.pop(load_id), rate))
 
     def _step_shadow(
         self,
@@ -386,22 +565,18 @@ class Accounting:
         slot: ClosedSlot,
         shadow_ctx: ShadowCtx,
         *,
-        price: SlotPrice,
         measured: LoadSlot,
         rec: LoadMonthRec,
-    ) -> float:
-        """Step one shadow and return its kWh; `cf:= actual` when there is none.
+    ) -> float | None:
+        """Step one shadow and return its kWh - the model figure (D11 §5.9.5).
 
-        A load in `delegated` or `off`, or one whose store model has no shadow,
-        counts its cost and states no savings: the counterfactual is set to the
-        actual, so the slot's savings are exactly zero rather than the whole cost
-        (D11 §5.1 step 4).
+        `None` for a load in `delegated` or `off`, or whose store model has no
+        shadow: there is no model figure for that slot.
         """
         state = self._state
         shadow = shadow_for(shadow_ctx.params.kind)
         if shadow is None or shadow_ctx.mode not in COUNTED_MODES:
-            rec.excluded_slots += 1
-            return measured.kwh
+            return None
 
         current = state.shadows.get(load_id)
         if current is None:
@@ -413,24 +588,7 @@ class Accounting:
                 shadow.reanchor(current, shadow_ctx.level_now), anchored_at=slot.start_utc
             )
 
-        before = set(current.session_slots)
         updated, cf_kwh = shadow.step(current, slot, replace(shadow_ctx, measured_kwh=measured.kwh))
-        after = set(updated.session_slots)
-
-        if after > before:
-            # A session with no requirement: hold the slot unpriced (D11 §5.3).
-            state.deferred[load_id] = (
-                *state.deferred.get(load_id, ()),
-                PricedSlot(
-                    start_utc=slot.start_utc,
-                    minutes=slot.minutes,
-                    kwh=measured.kwh,
-                    cf_kwh=0.0,
-                    price=price,
-                ),
-            )
-        elif before and not after:
-            self._settle_session(load_id, shadow_ctx, rec)
 
         if shadow_ctx.mode is Mode.OBSERVE:
             rec.observe_slots += 1
@@ -454,45 +612,22 @@ class Accounting:
         state.shadows[load_id] = updated
         return cf_kwh
 
-    def _settle_session(self, load_id: str, shadow_ctx: ShadowCtx, rec: LoadMonthRec) -> None:
-        """Price a deferred EV session once, at the prices its slots closed with."""
-        held = self._state.deferred.pop(load_id, ())
-        if not held:
-            return
-        session_kwh = sum(entry.kwh for entry in held)
-        rate_w = (
-            shadow_ctx.params.max_w
-            if shadow_ctx.params.max_w is not None
-            else shadow_ctx.params.nameplate_w
-        )
-        priced, total, _ = price_session(held, session_kwh, rate_w)
-        rec.cf_cost = plus(rec.cf_cost, total)
-        for entry in priced:
-            accrue_by_party(rec.savings_by_party, entry.price, entry.cf_kwh)
-        rec.cf_kwh += sum(entry.cf_kwh for entry in priced)
-        rec.kwh_shifted += sum(kwh_shifted(entry.kwh, entry.cf_kwh) for entry in priced)
-        self._state.ledger.lifetime.accrue_load(load_id, 0.0, zero(total.currency), total)
-        _LOGGER.info(
-            "accounting: deferred session of %s priced over %s slot(s), %.2f kWh",
-            load_id,
-            len(priced),
-            session_kwh,
-        )
+    def _price_site(self, slot: ClosedSlot, ctx: CloseCtx) -> None:
+        """Price the site's import and credit its export (D11 §5.1 step 3).
 
-    def _price_site(self, slot: ClosedSlot, ctx: CloseCtx, delta_kwh: float) -> None:
-        """Price the site's import and credit its export (D11 §5.1 step 3)."""
+        The site's counterfactual energy starts as the actual; each load's
+        settlement moves it by that load's `cf_cost − cost` (§5.9.2).
+        """
         ledger = self._state.ledger
         site = ledger.site
         pair = ctx.curves[Carrier.ELECTRICITY]
         price = slot_price(pair.import_curve, slot.start_utc)
         energy = price_slot(slot.import_kwh, price)
-        cf_energy = price_slot(slot.import_kwh + delta_kwh, price)
         credit = export_credit(slot.export_kwh, pair, slot.start_utc)
         accrue_by_party(site.energy_by_party, price, slot.import_kwh)
         # A load on its own meter is billed at its own tariff, not the house's (G13).
-        for kwh, cf_kwh, own, house in self._own_meter:
+        for kwh, own, house in self._own_meter:
             energy = plus(energy, minus(price_slot(kwh, own), price_slot(kwh, house)))
-            cf_energy = plus(cf_energy, minus(price_slot(cf_kwh, own), price_slot(cf_kwh, house)))
             accrue_by_party(site.energy_by_party, house, kwh, -1)
             accrue_by_party(site.energy_by_party, own, kwh)
 
@@ -500,7 +635,7 @@ class Accounting:
         site.export_kwh += slot.export_kwh
         site.energy_cost = plus(site.energy_cost, energy)
         site.export_credit = plus(site.export_credit, credit)
-        site.cf_energy_cost = plus(site.cf_energy_cost, cf_energy)
+        site.cf_energy_cost = plus(site.cf_energy_cost, energy)
         site.slots += 1
         exact = slot.site_confidence is SlotConfidence.EXACT and price.known
         site.estimated_slots += 0 if exact else 1
@@ -509,88 +644,146 @@ class Accounting:
         # the import total already, so accruing both would count them twice.
         ledger.lifetime.accrue_site(minus(energy, credit), zero(energy.currency))
 
-    # -- the tariff window (D11 §5.4) -------------------------------------- #
+    # -- the tariff window (D11 §5.4, §5.9.4) ------------------------------ #
 
-    def _close_window(self, window: ClosedWindow, ctx: CloseCtx) -> None:
-        """Record the shadow window and re-price both capacity components."""
+    def _flush_windows(self, ctx: CloseCtx) -> bool:
+        """Record every pending window whose slots have all settled, oldest first.
+
+        Returns whether one was recorded, in which case the capacity savings are
+        billed again through the last complete day (§5.9.4).
+        """
+        state = self._state
+        open_starts = {entry.start_utc for buffer in state.open.values() for entry in buffer.slots}
+        flushed = False
+        while state.pending_windows:
+            window = state.pending_windows[0]
+            end = window.start_utc + timedelta(minutes=window.window_min)
+            if any(window.start_utc <= start < end for start in open_starts):
+                break
+            inside = [
+                delta
+                for key, delta in state.slot_deltas.items()
+                if window.start_utc <= datetime.fromisoformat(key) < end
+            ]
+            cf_kwh = max(0.0, window.kwh + sum(inside))
+            self._surcharge(window, cf_kwh, ctx)
+            ctx.tariff.record_counterfactual(
+                replace(window, kwh=cf_kwh, avg_kw=cf_kwh / (window.window_min / 60.0))
+            )
+            # The window's slots are spent; older strays (a window D7 never handed
+            # over) go with them so the map holds only what is still to come.
+            state.slot_deltas = {
+                key: delta
+                for key, delta in state.slot_deltas.items()
+                if datetime.fromisoformat(key) >= end
+            }
+            state.pending_windows = state.pending_windows[1:]
+            state.settled_through = end
+            state.ledger.site.windows_cf += 1
+            flushed = True
+        if flushed:
+            self._bill_settled(ctx)
+        return flushed
+
+    def _surcharge(self, window: ClosedWindow, cf_kwh: float, ctx: CloseCtx) -> None:
+        """Bill a settled window's excess over a priced limit in each world (LU, O23)."""
+        priced = ctx.tariff.priced_limit_now(window.start_utc)
+        if priced is None or priced.per_kwh is None:
+            return
+        site = self._state.ledger.site
+        priced = replace(priced, window_min=window.window_min)
+        hours = window.window_min / 60.0
+        actual = surcharge_for_window(priced, window.kwh / hours).amount
+        counterfactual = surcharge_for_window(priced, cf_kwh / hours).amount
+        site.surcharge += actual
+        site.cf_surcharge += counterfactual
+        currency = site.capacity_fee.currency
+        self._state.ledger.lifetime.accrue_site(
+            Money(actual, currency), Money(counterfactual - actual, currency)
+        )
+
+    def _bill_settled(self, ctx: CloseCtx) -> None:
+        """Bill both books through the last complete settled day (D11 §5.9.4).
+
+        The actual book is cut where the counterfactual one is complete, so a day
+        whose peak is in the actual history but not yet in the counterfactual
+        never shows as a capacity loss.
+        """
         state = self._state
         site = state.ledger.site
-        end = window.start_utc + timedelta(minutes=window.window_min)
-        inside = {
-            key: delta
-            for key, delta in state.slot_deltas.items()
-            if window.start_utc <= datetime.fromisoformat(key) < end
-        }
-        cf_kwh = max(0.0, window.kwh + sum(inside.values()))
-        was_charge = site.capacity_charge
+        if state.settled_through is None:
+            return
+        last_day = state.settled_through.astimezone(ctx.tz).date() - timedelta(days=1)
+        if f"{last_day.year:04d}-{last_day.month:02d}" != state.ledger.month:
+            return
+        period = ctx.tariff.period(state.settled_through - timedelta(microseconds=1))
+        through = _through(ctx.history, last_day)
+        cf_bill = ctx.tariff.bill(period, through.counterfactual())
+        actual_bill = ctx.tariff.bill(period, through)
+        self._fees_at_month_start(actual_bill.capacity_fee, cf_bill.capacity_fee)
+        assert state.fee_at_month_start is not None
+        assert state.cf_fee_at_month_start is not None
+
         was_savings = site.capacity_savings
-        # A priced limit bills each window's excess (LU, O23): each world its own.
-        priced = ctx.tariff.priced_limit_now(window.start_utc)
-        if priced is not None and priced.per_kwh is not None:
-            hours = window.window_min / 60.0
-            site.surcharge += surcharge_for_window(
-                replace(priced, window_min=window.window_min), window.kwh / hours
-            ).amount
-            site.cf_surcharge += surcharge_for_window(
-                replace(priced, window_min=window.window_min), cf_kwh / hours
-            ).amount
-        ctx.tariff.record_counterfactual(
-            replace(window, kwh=cf_kwh, avg_kw=cf_kwh / (window.window_min / 60.0))
-        )
-        # The window's slots are spent; older strays (a window D7 never handed
-        # over) go with them so the map stays a window long.
-        state.slot_deltas = {
-            key: delta
-            for key, delta in state.slot_deltas.items()
-            if datetime.fromisoformat(key) >= end
-        }
-        site.windows_cf += 1
-
-        period = ctx.tariff.period(window.start_utc)
-        # The counterfactual is billed first: `Evaluator.bill` remembers its last
-        # bill and the site's own is the actual one (`design/DECISIONS.md` D-0179).
-        cf_bill = ctx.tariff.bill(period, ctx.history.counterfactual())
-        actual_bill = ctx.tariff.bill(period, ctx.history)
-        if state.fee_at_month_start is None:
-            state.fee_at_month_start = zero(actual_bill.capacity_fee.currency)
-        if state.cf_fee_at_month_start is None:
-            state.cf_fee_at_month_start = zero(cf_bill.capacity_fee.currency)
-
-        site.capacity_fee = capacity_fee_to_date(actual_bill, state.fee_at_month_start)
+        site.capacity_fee_settled = capacity_fee_to_date(actual_bill, state.fee_at_month_start)
         site.cf_capacity_fee = capacity_fee_to_date(cf_bill, state.cf_fee_at_month_start)
-        # The capacity figures are re-stated per window rather than accumulated, so
-        # the lifetime takes the change and never the whole fee twice.
+        # Re-stated per settlement rather than accumulated, so the lifetime takes
+        # the change and never the whole figure twice.
         state.ledger.lifetime.accrue_site(
-            minus(site.capacity_charge, was_charge), minus(site.capacity_savings, was_savings)
+            zero(was_savings.currency), minus(site.capacity_savings, was_savings)
         )
+
+    def _bill_live(self, at: datetime, ctx: CloseCtx) -> None:
+        """Re-price the month's capacity fee from the live history - the cost.
+
+        Billed last in a close: `Evaluator.bill` remembers its last bill, and the
+        site's own is the actual one (`design/DECISIONS.md` D-0179).
+        """
+        state = self._state
+        site = state.ledger.site
+        actual_bill = ctx.tariff.bill(ctx.tariff.period(at), ctx.history)
+        self._fees_at_month_start(actual_bill.capacity_fee, actual_bill.capacity_fee)
+        assert state.fee_at_month_start is not None
+        was_fee = site.capacity_fee
+        site.capacity_fee = capacity_fee_to_date(actual_bill, state.fee_at_month_start)
+        state.ledger.lifetime.accrue_site(minus(site.capacity_fee, was_fee), zero(was_fee.currency))
+
+    def _fees_at_month_start(self, actual: Money, counterfactual: Money) -> None:
+        """Open the month's fee baselines at zero when the store had none."""
+        state = self._state
+        if state.fee_at_month_start is None:
+            state.fee_at_month_start = zero(actual.currency)
+        if state.cf_fee_at_month_start is None:
+            state.cf_fee_at_month_start = zero(counterfactual.currency)
 
     # -- re-pricing (D11 §2, §5.1 step 6) ---------------------------------- #
 
-    def _defer_reprice(
-        self,
-        load_id: str,
-        slot: ClosedSlot,
-        measured: LoadSlot,
-        *,
-        cf_kwh: float,
-        price: SlotPrice,
-        load_exact: bool,
-    ) -> None:
+    def _defer_reprice(self, load_id: str, entry: PricedSlot) -> None:
         """Remember a slot priced from a non-known price, for one re-price later."""
         self._state.pending_reprice[load_id] = (
             *self._state.pending_reprice.get(load_id, ()),
-            PricedSlot(
-                start_utc=slot.start_utc,
-                minutes=slot.minutes,
-                kwh=measured.kwh,
-                cf_kwh=cf_kwh,
-                price=price,
-                load_exact=load_exact,
-            ),
+            entry,
+        )
+
+    def _mark_settled(self, load_id: str, entry: PricedSlot) -> None:
+        """Carry a settlement into the slot's re-price entry, if it has one."""
+        pending = self._state.pending_reprice.get(load_id)
+        if not pending:
+            return
+        self._state.pending_reprice[load_id] = tuple(
+            replace(row, cf_kwh=entry.cf_kwh, settled=True)
+            if row.start_utc == entry.start_utc
+            else row
+            for row in pending
         )
 
     def _reprice(self, slot: ClosedSlot, ctx: CloseCtx) -> tuple[str, ...]:
-        """Re-price the pending slots a known price has caught up with (D11 §2)."""
+        """Re-price the pending slots a known price has caught up with (D11 §2).
+
+        A settled slot moves its cost, its settled cost and its counterfactual
+        cost; an open one moves its cost and takes the known price into its
+        buffer, so its settlement uses it (§5.9.2).
+        """
         state = self._state
         done: list[str] = []
         for load_id, pending in list(state.pending_reprice.items()):
@@ -610,16 +803,20 @@ class Accounting:
             rec = state.ledger.load_rec(load_id, curve.currency)
             for row in applied:
                 rec.cost = plus(rec.cost, row.cost_delta)
-                rec.cf_cost = plus(rec.cf_cost, row.cf_cost_delta)
-                # The split moves with the price: the old one out, the known one in.
-                for price, sign in ((row.price, 1), (row.slot.price, -1)):
-                    accrue_by_party(rec.savings_by_party, price, row.slot.cf_kwh, sign)
-                    accrue_by_party(rec.savings_by_party, price, row.slot.kwh, -sign)
+                if row.slot.settled:
+                    rec.settled_cost = plus(rec.settled_cost, row.cost_delta)
+                    rec.cf_cost = plus(rec.cf_cost, row.cf_cost_delta)
+                    # The split moves with the price: the old one out, the known one in.
+                    for price, sign in ((row.price, 1), (row.slot.price, -1)):
+                        accrue_by_party(rec.savings_by_party, price, row.slot.cf_kwh, sign)
+                        accrue_by_party(rec.savings_by_party, price, row.slot.kwh, -sign)
+                    savings = minus(row.cf_cost_delta, row.cost_delta)
+                else:
+                    self._reprice_open(load_id, row.slot.start_utc, row.price)
+                    savings = zero(row.cost_delta.currency)
                 if row.slot.load_exact:
                     rec.estimated_slots = max(0, rec.estimated_slots - 1)
-                state.ledger.lifetime.accrue_load(
-                    load_id, 0.0, row.cost_delta, minus(row.cf_cost_delta, row.cost_delta)
-                )
+                state.ledger.lifetime.accrue_load(load_id, 0.0, row.cost_delta, savings)
                 state.ledger.lifetime.accrue_site(row.cost_delta, zero(row.cost_delta.currency))
                 done.append(row.slot.start_utc.isoformat())
             _LOGGER.info(
@@ -628,6 +825,19 @@ class Accounting:
                 load_id,
             )
         return tuple(done)
+
+    def _reprice_open(self, load_id: str, start: datetime, price: SlotPrice) -> None:
+        """Give an open buffer's slot the price that has become known."""
+        buffer = self._state.open.get(load_id)
+        if buffer is None:
+            return
+        self._state.open[load_id] = replace(
+            buffer,
+            slots=tuple(
+                replace(entry, price=price) if entry.start_utc == start else entry
+                for entry in buffer.slots
+            ),
+        )
 
     # -- the month (D11 §5.6) ---------------------------------------------- #
 
@@ -646,8 +856,14 @@ class Accounting:
         self._state.opened = True
 
     def _rollover(self, slot: ClosedSlot, ctx: CloseCtx) -> MonthClosed:
-        """Freeze the month, open the next one, re-anchor every shadow (D11 §5.6)."""
+        """Settle, freeze the month, open the next one, re-anchor every shadow (D11 §5.6).
+
+        Every open buffer settles into the month being closed first, so a month
+        is frozen with no slot's cost missing its counterfactual (§5.9.2).
+        """
         state = self._state
+        self._settle_all(ctx)
+        self._flush_windows(ctx)
         closed = state.ledger.rollover(slot.start_utc, ctx.tz, self.config.currency)
 
         period = ctx.tariff.period(slot.start_utc)
@@ -684,7 +900,7 @@ class Accounting:
         for load_id, rec in ledger.loads.items():
             calib = state.calibration.get(load_id, CalibrationRec())
             shadow_state = state.shadows.get(load_id)
-            confidence = savings_confidence(
+            model_confidence = savings_confidence(
                 calib,
                 has_shadow=(
                     shadow_state is not None
@@ -692,6 +908,12 @@ class Accounting:
                     and rec.excluded_slots < rec.slots
                 ),
                 threshold=self.config.calibration_threshold,
+            )
+            buffer = state.open.get(load_id)
+            confidence = (
+                SavingsConfidence.OK
+                if rec.slots == 0 or rec.excluded_slots < rec.slots
+                else SavingsConfidence.NONE
             )
             lifetime = ledger.lifetime.loads.get(load_id)
             loads[load_id] = LoadFigures(
@@ -704,13 +926,18 @@ class Accounting:
                 confidence=rec.confidence,
                 savings_confidence=confidence,
                 calibration_error=calibration_error(calib),
-                pending=bool(state.deferred.get(load_id)),
+                pending=buffer is not None and buffer.kwh > 0.0,
                 previous=ledger.previous_load(load_id),
                 lifetime=(
                     (lifetime[1], lifetime[2])
                     if lifetime is not None
                     else (zero(rec.cost.currency), zero(rec.cost.currency))
                 ),
+                settled_cost=rec.settled_cost,
+                model_savings=(
+                    rec.model_savings if model_confidence is SavingsConfidence.OK else None
+                ),
+                model_confidence=model_confidence,
             )
             rows[load_id] = (confidence, rec.savings)
 
@@ -767,6 +994,34 @@ def _last_slot_of_the_day(slot: ClosedSlot, tz: tzinfo) -> bool:
     """Whether this slot ends the local day - where an observe anchor belongs."""
     ends = slot.start_utc + timedelta(minutes=slot.minutes)
     return ends.astimezone(tz).date() != slot.start_utc.astimezone(tz).date()
+
+
+def _rate_w(params: LoadParams) -> float | None:
+    """Return the charger's full rate, for the `session` reference (D11 §5.9.1)."""
+    return params.max_w if params.max_w is not None else params.nameplate_w
+
+
+def _through(history: PeakHistory, last_day: date) -> PeakHistory:
+    """Return `history` cut after `last_day`, in both books (D11 §5.9.4).
+
+    A view, like `PeakHistory.counterfactual()`: the records are shared, the
+    dicts are new, so the evaluator's memo (keyed on the object) cannot confuse
+    the two.
+    """
+    day = last_day.isoformat()
+    return PeakHistory(
+        window_min=history.window_min,
+        period_start=history.period_start,
+        schema=history.schema,
+        windows={key: rec for key, rec in history.windows.items() if rec.day <= day},
+        days={key: rec for key, rec in history.days.items() if key <= last_day},
+        months=history.months,
+        counterfactual_days={
+            key: rec for key, rec in history.counterfactual_days.items() if key <= last_day
+        },
+        overrides=history.overrides,
+        seeded_from=history.seeded_from,
+    )
 
 
 def _fresh_state(cfg: AccountingConfig) -> AccountingState:

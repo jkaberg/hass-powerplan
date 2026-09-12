@@ -351,16 +351,19 @@ def test_09_the_appliance_row_opens_its_dialog_and_page() -> None:
     assert tank["path"] == f"{DASHBOARD}/appliance-tank"
     assert tank["status"] == "sensor.tank_plan_status"
     assert tank["kind"] == "water_heater"
-    assert tank["kind_name"] == TEXTS["en"]["type_water_heater"]
     assert tank["icon"] == TYPE_ICONS["water_heater"]
-    for key in ("control", "cost_month", "next_legionella"):
-        assert tank[key] == f"{_domain(key)}.tank_{key}"
-    assert rows["ev"]["ready_by"] == "time.ev_ready_by"
+    # (F2): the card's own names for the appliance's entities.
+    for key, source in (
+        ("control", "control"),
+        ("cost", "cost_month"),
+        ("legionella", "next_legionella"),
+    ):
+        assert tank[key] == f"{_domain(source)}.tank_{source}"
+    assert rows["ev"]["deadline"] == "time.ev_ready_by"
     assert (
         lanes["rail_width"]
         == _section(_view(config, "overview"), EN["section_plan"])["cards"][1]["rail_width"]
     )
-    assert lanes["strategies"]["deadline_fill"] == TEXTS["en"]["strategy_deadline_fill"]
 
 
 def test_09_hidden_appliances_drop_every_subview() -> None:
@@ -445,18 +448,16 @@ def test_02_granted_power_draws_on_the_subview_only() -> None:
 
 
 def test_03_below_the_releases_that_have_them_the_builder_degrades() -> None:
-    """2026.1: no `repairs`, the picker a card; 2026.3.0 has both (D12 §5.5)."""
+    """2026.1: the picker a card; 2026.3.0 the footer (D12 §5.5). The attention card needs no release (F13)."""
     load = _load("x", "ev")
     old = build([_site((load,))], "2026.1.0", EN)
-    assert "repairs" not in {card["type"] for card in _cards(old)}
+    assert "custom:powerplan-attention-card" in {card["type"] for card in _cards(old)}
     history = _view(old, "history")
     assert "footer" not in history
     assert history["sections"][0]["cards"][0]["type"] == "energy-date-selection"
     floor = build([_site((load,))], "2026.3.0", EN)
-    assert "repairs" in {card["type"] for card in _cards(floor)}
+    assert "repairs" not in {card["type"] for card in _cards(floor)}
     assert "footer" in _view(floor, "history")
-    between = build([_site((load,))], "2026.2.1", EN)
-    assert "repairs" not in {card["type"] for card in _cards(between)}
 
 
 # --------------------------------------------------------------------------- #
@@ -515,14 +516,13 @@ def test_11_sections_follow_what_the_site_has() -> None:
     empty = _view(build([_site(())], "2026.3.0", EN), "overview")
     appliances = _section(empty, EN["section_appliances"])
     assert appliances["cards"][1] == {"type": "markdown", "content": EN["no_loads"]}
-    meter = next(
-        card
-        for card in _view(build([_nordic()], "2026.3.0", EN), "overview")["sections"][0]["cards"]
-        if card.get("entity") == "sensor.home_meter_health"
-    )
-    assert meter["visibility"] == [
-        {"condition": "state", "entity": "sensor.home_meter_health", "state_not": "ok"}
-    ]
+    # (F13): one attention card explains the meter; it hides itself while all is well.
+    [attention] = _view(build([_nordic()], "2026.3.0", EN), "overview")["sections"][0]["cards"]
+    assert attention == {
+        "type": "custom:powerplan-attention-card",
+        "meter_status": "sensor.home_meter_health",
+        "grid_options": {"columns": "full", "rows": "auto"},
+    }
 
 
 def test_14_the_capacity_step_is_the_month_gauge() -> None:
@@ -905,7 +905,7 @@ def _markdown_in(config: dict[str, Any], view: dict[str, Any], heading: str) -> 
 
 async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
     """Need, the chosen runs, coverage and the strategy's own words (D12 §5.9)."""
-    config = build([_nordic()], "2026.9.0", TEXTS["nb"], language="nb")
+    config = build([_nordic()], "2026.9.2", TEXTS["nb"], language="nb")
     why = _markdown_in(config, _subview(config, "tank"), TEXTS["nb"]["section_why"])
     text = await _render(live_house, why)
     assert "**Behov:** 2,96 kWh før 06:00" in text
@@ -921,7 +921,7 @@ async def test_12_why_this_plan(live_house: HomeAssistant) -> None:
 
 def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
     """G5: the subview's next-run badge reads `next_run` and hides while running."""
-    config = build([_nordic()], "2026.9.0", EN)
+    config = build([_nordic()], "2026.9.2", EN)
     badges = [
         b for b in _subview(config, "tank")["badges"] if b["entity"] == "sensor.tank_plan_status"
     ]
@@ -944,14 +944,15 @@ def test_19_tiles_and_badges_show_a_time_never_a_timestamp() -> None:
 
 
 def test_19_the_month_s_money_is_the_sensor_s_own_state() -> None:
-    """N7, A5: `entity` cards for cost and savings; only the energy counter is a statistic."""
-    config = build([_nordic()], "2026.9.0", EN)
+    """N7, A5, F9: Now's month is one card over the sensors' own state; the subview's `entity` cards."""
+    config = build([_nordic()], "2026.9.2", EN)
     month = _section(_view(config, "overview"), EN["section_month"])["cards"]
-    assert [c["type"] for c in month[1:3]] == ["entity", "entity"]
-    assert month[1] == {
-        "type": "entity", "entity": "sensor.home_cost", "name": EN["card_cost"], "icon": "mdi:cash",
-        "grid_options": {"columns": 6, "rows": 2},
-    }  # fmt: skip
+    assert month[1:] == [
+        {
+            "type": "custom:powerplan-month-bars", "entity": "sensor.home_cost",
+            "savings": "sensor.home_savings", "grid_options": {"columns": 12, "rows": 5},
+        }
+    ]  # fmt: skip
     sub = _section(_subview(config, "tank"), EN["section_month"])["cards"]
     assert [(c["type"], c["grid_options"]) for c in sub[1:]] == [
         ("entity", {"columns": 6, "rows": 2}),
@@ -970,7 +971,7 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
 
     Now's runs list (N8) went: the appliances card's lanes show every run (§5.12).
     """
-    config = build([_nordic()], "2026.9.0", EN)
+    config = build([_nordic()], "2026.9.2", EN)
     assert "custom:powerplan-runs-card" not in {card["type"] for card in _cards(config)}
     history = _view(config, "history")
     per = _section(history, EN["section_per_appliance"])["cards"]
@@ -994,7 +995,7 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
 
 def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
     """D1, D7: the picker opens as the Energy dashboard's does; the graph's legend says Cost and Savings."""
-    history = _view(build([_nordic()], "2026.9.0", EN), "history")
+    history = _view(build([_nordic()], "2026.9.2", EN), "history")
     assert history["footer"]["card"]["vertical_opening_direction"] == "up"
     graph = next(
         card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"
@@ -1007,7 +1008,7 @@ def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
 
 def test_19_the_subview_s_ready_by_row_and_plan() -> None:
     """A2, A4, A6: the row has a clock icon and its own height; no bare kWh badge; "why" is auto-height."""
-    config = build([_nordic()], "2026.9.0", EN)
+    config = build([_nordic()], "2026.9.2", EN)
     sub = _subview(config, "tank")
     ready = next(
         c for c in _section(sub, EN["section_control"])["cards"] if c["type"] == "entities"
@@ -1138,7 +1139,7 @@ def test_20_a_price_slot_carries_its_energy_part_and_its_price_without_the_fixed
 
     fixed = _price_slot("0.7300", spot="0.40", grid_energy="0.184", vat="0.146")
     spot = _price_slot("1.2725", spot="0.834", grid_energy="0.184", vat="0.2545")
-    [row] = _slots(curve(fixed), reference=curve(spot))
+    [row] = _slots(curve(fixed), reference=curve(spot), energy_vat=Decimal("0.25"))
     assert float(row["energy"]) == pytest.approx(0.50, abs=1e-4)
     assert float(row["total"]) - float(row["energy"]) == pytest.approx(0.23, abs=1e-4)
     assert row["reference"] == "1.2725"
@@ -1146,11 +1147,16 @@ def test_20_a_price_slot_carries_its_energy_part_and_its_price_without_the_fixed
     assert "reference" not in plain
     no_vat = _slots(curve(_price_slot("0.584", spot="0.40", grid_energy="0.184")))[0]
     assert float(no_vat["energy"]) == pytest.approx(0.40)
+    # The reference house (D-0581): VAT on the energy only, the grid entered with its VAT.
+    # The total ÷ (total − VAT) scaling read 0,45142; Norgespris is 0,50.
+    house = _price_slot("0.8779", spot="0.40", grid_energy="0.3779", vat="0.10")
+    [live] = _slots(curve(house), energy_vat=Decimal("0.25"))
+    assert live["energy"] == "0.50000"
 
 
 def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
     """The price card beside the hour; the Plan card's rail equals the appliances card's (R2)."""
-    config = build([_nordic()], "2026.9.0", EN)
+    config = build([_nordic()], "2026.9.2", EN)
     now = _view(config, "overview")
     price = _section(now, EN["section_price"])["cards"]
     assert price[0]["badges"][0]["entity"] == "binary_sensor.home_prices_tomorrow"
@@ -1158,15 +1164,17 @@ def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
     assert price[1]["entities"] == {
         "price": "sensor.home_price",
         "price_forecast": "sensor.home_price_forecast",
-        "prices_tomorrow": "binary_sensor.home_prices_tomorrow",
-        "level": "sensor.home_level",
+        "tomorrow": "binary_sensor.home_prices_tomorrow",
+        "capacity_step": "sensor.home_level",
     }
     plan = _section(now, EN["section_plan"])["cards"][1]
     lanes = _section(now, EN["section_appliances"])["cards"][1]
-    assert plan["rail_width"] == lanes["rail_width"] == 300
+    assert plan["rail_width"] == lanes["rail_width"] == 256  # F13
+    assert plan["bucket"] == "window"
+    assert plan["show"] == ["plan", "baseline", "reserve", "ceiling", "price"]
     month = _section(now, EN["section_month"])["cards"]
-    assert month[-1]["type"] == "statistics-graph"
-    assert month[-1]["entities"] == ["sensor.home_cost"]
+    assert month[-1]["type"] == "custom:powerplan-month-bars"
+    assert month[-1]["entity"] == "sensor.home_cost"
     assert {card["type"] for card in _cards({"views": [now]})} >= {
         "custom:powerplan-price-card",
         "custom:powerplan-appliances-card",

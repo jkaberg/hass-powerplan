@@ -71,6 +71,9 @@ CATALOGUE: dict[str, Issue] = {
     "savings_low_confidence": Issue(ir.IssueSeverity.WARNING),
     "load_error": Issue(ir.IssueSeverity.WARNING),
     "notify_service_missing": Issue(ir.IssueSeverity.WARNING),
+    # No known price for the slot in progress for 30 min; the price refresher retries
+    # and clears it (D12 §5.15 F12). Gone at restart: the refresher decides anew.
+    "prices_stale": Issue(ir.IssueSeverity.WARNING, persistent=False),
     # Fixed in the appliance's own gear flow, which a repair cannot open: the
     # description says where, and re-binding clears it (D8 §5.16, D-0419).
     "device_missing": Issue(ir.IssueSeverity.ERROR),

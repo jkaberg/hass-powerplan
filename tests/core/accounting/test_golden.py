@@ -12,6 +12,11 @@ late hours. `nordic_detached` - every load the house will ever have, each parame
 with its source - arrives with WP0.11 (D9 §5.9) and this golden becomes a row of
 its baseline; what is pinned here is the arithmetic between D3's slots and the
 money, which is what WP0.11 will be measuring.
+
+Since D11 v0.3 the EV's counterfactual is its session's own energy at full rate
+from the plug-in (§5.9), booked when the car stops wanting: at 00:00 the next day.
+The golden's run ends at 31 October 23:00, so the last night is still open in the
+month's figures; `test_17d` closes the month and finds it in October's history.
 """
 
 from __future__ import annotations
@@ -118,16 +123,20 @@ def test_17_one_synthetic_october_matches_the_hand_computed_golden() -> None:
 
     # -- the EV ----------------------------------------------------------- #
     ev = status.loads["ev"]
+    settled = DAYS - 1
     assert ev.kwh == pytest.approx(DAYS * CHARGE_KWH * len(CHARGE_HOURS))
-    assert ev.cf_kwh == pytest.approx(DAYS * REQUIRED_KWH)
+    assert ev.cf_kwh == pytest.approx(settled * REQUIRED_KWH)
     assert ev.cost.amount == DAYS * DAILY_EV_ACTUAL
-    assert ev.cf_cost.amount == DAYS * DAILY_EV_COUNTERFACTUAL
-    assert ev.savings.amount == DAYS * (DAILY_EV_COUNTERFACTUAL - DAILY_EV_ACTUAL)
+    assert ev.settled_cost is not None
+    assert ev.settled_cost.amount == settled * DAILY_EV_ACTUAL
+    assert ev.cf_cost.amount == settled * DAILY_EV_COUNTERFACTUAL
+    assert ev.savings.amount == settled * (DAILY_EV_COUNTERFACTUAL - DAILY_EV_ACTUAL)
+    assert ev.pending, "the 31st's session settles when the car stops wanting, at 00:00"
     # 5 × (0.72 + 0.55 + 0.40 + 0.28) = 9.75 NOK a night, and 11 × 1.25 + 9 × 1.40 =
-    # 26.35 NOK if nobody had moved it: 16.60 NOK a night, 514.60 over the month.
+    # 26.35 NOK if nobody had moved it: 16.60 NOK a night, 498.00 over 30 settled nights.
     assert Decimal("9.75") == DAILY_EV_ACTUAL
     assert Decimal("26.35") == DAILY_EV_COUNTERFACTUAL
-    assert ev.savings.amount == Decimal("514.60")
+    assert ev.savings.amount == Decimal("498.00")
 
     # -- the site --------------------------------------------------------- #
     assert ledger.site.import_kwh == pytest.approx(
@@ -151,10 +160,29 @@ def test_17_one_synthetic_october_matches_the_hand_computed_golden() -> None:
     assert status.site.capacity_savings.amount == STEP_10_15 - STEP_5_10 == Decimal(197)
 
     # -- what the household reads ----------------------------------------- #
-    assert status.site.savings.amount == Decimal("514.60") + Decimal(197)
+    assert status.site.savings.amount == Decimal("498.00") + Decimal(197)
     assert status.site.cost.amount == DAYS * (DAILY_UNCONTROLLED + DAILY_EV_ACTUAL) + STEP_5_10
     assert status.site.confidence.value == "exact", "every slot was measured and priced"
     assert status.site.estimated_share == 0.0
+
+
+def test_17d_the_rollover_settles_the_last_night_into_october() -> None:
+    """A month is frozen with no slot's cost missing its counterfactual (D11 §5.9.2)."""
+    under_test = _run()
+    under_test.ctx_for("ev", demand=demand(wants=False, required_kwh=REQUIRED_KWH, max_w=MAX_W))
+    under_test.close(
+        closed_slot(
+            local(2026, 11, 1, 0, 0).astimezone(UTC),
+            loads={"ev": 0.0},
+            uncontrolled_kwh=UNCONTROLLED_KWH,
+        )
+    )
+    october = under_test.accounting.state().ledger.history[-1]
+    assert october.month == "2026-10"
+    ev = october.loads["ev"]
+    assert ev.cf_kwh == pytest.approx(DAYS * REQUIRED_KWH)
+    assert ev.savings.amount == Decimal("514.60"), "16.60 NOK a night, all 31 nights"
+    assert not under_test.accounting.state().open
 
 
 def test_17b_the_golden_month_is_reproducible_slot_for_slot() -> None:

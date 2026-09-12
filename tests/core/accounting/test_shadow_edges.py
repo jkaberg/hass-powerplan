@@ -56,7 +56,7 @@ def test_04c_a_shadow_opened_before_the_first_reading_takes_the_first_level_it_s
     shadow = under_test.accounting.state().shadows["floor"]
     assert shadow.level is not None
     rec = under_test.accounting.state().ledger.loads["floor"]
-    assert rec.cf_kwh > 0.0, "a shadow without a level would have drawn nothing for ever"
+    assert rec.model_cf_kwh > 0.0, "a shadow without a level would have drawn nothing for ever"
 
 
 def test_04d_without_a_level_the_first_target_stands_in_as_init_would_have() -> None:
@@ -69,7 +69,7 @@ def test_04d_without_a_level_the_first_target_stands_in_as_init_would_have() -> 
     assert shadow.level is not None
     assert 21.5 - 0.1 <= shadow.level <= 22.5 + 0.1, "started at the target, held in its band"
     rec = under_test.accounting.state().ledger.loads["floor"]
-    assert rec.cf_kwh > 0.0, "at −5 °C outdoors the thermostat it shadows would have run"
+    assert rec.model_cf_kwh > 0.0, "at −5 °C outdoors the thermostat it shadows would have run"
 
 
 @pytest.mark.inv("INV-69")
@@ -87,10 +87,15 @@ def test_05e_the_plug_in_requirement_is_what_the_car_asked_for_at_the_edge() -> 
         under_test.close(
             closed_slot(local(2026, 12, 3, hour, 0).astimezone(UTC), loads={"ev": drawn})
         )
+    # Unplugged at 21:00: the session settles, and the reference places the same 30 kWh.
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(closed_slot(local(2026, 12, 3, 21, 0).astimezone(UTC), loads={"ev": 0.0}))
 
     rec = under_test.accounting.state().ledger.loads["ev"]
     assert rec.kwh == pytest.approx(30.0)
-    assert rec.cf_kwh == pytest.approx(30.0), "27 owed at the close plus the 3 the slot delivered"
+    assert rec.model_cf_kwh == pytest.approx(30.0), (
+        "27 owed at the close plus the 3 the slot delivered"
+    )
     # 11 + 11 + 8 + 0: the shadow charges at the full rate from the plug-in slot.
     assert rec.kwh_shifted == pytest.approx((8.0 + 0.0 + 3.0 + 5.0) / 2.0)
 
@@ -121,14 +126,18 @@ def test_05f_the_session_tail_is_charged_in_the_slot_the_car_finished_in() -> No
 
 @pytest.mark.inv("INV-69")
 def test_10b_a_window_handed_over_a_slot_late_takes_exactly_its_own_slots() -> None:
-    """D7 may carry a window on the slot after its end; its counterfactual is still its four slots' (D-0267)."""
+    """D7 may carry a window on the slot after its end; its counterfactual is still its four slots' (D-0267).
+
+    Since D11 v0.3 a window waits until its slots have settled (§5.9.4): the
+    session below ends at 18:15, and only then is the 17:00 window recorded.
+    """
     under_test = site(tariff=tensio(), import_curve=curve(ORDINARY, days=2))
     under_test.with_load(
         "ev", shadow_ctx(params=LoadParams(kind=StoreKind.ENERGY, nameplate_w=MAX_W, max_w=MAX_W))
     )
     under_test.ctx_for("ev", demand=demand(wants=True, required_kwh=30.0, max_w=MAX_W))
     first = local(2026, 12, 3, 17, 0).astimezone(UTC)
-    # Four quarter-hour slots at 11 kW in the shadow and nothing in the actual: +2.75 each.
+    # Plugged in at 17:00 and idle: the reference charges 11 kW from 17:00, +2.75 a slot.
     for quarter in range(4):
         under_test.close(
             closed_slot(first + timedelta(minutes=15 * quarter), minutes=15, loads={"ev": 0.0})
@@ -142,10 +151,21 @@ def test_10b_a_window_handed_over_a_slot_late_takes_exactly_its_own_slots() -> N
             window_closed=window(first, 3.0, window_min=60),
         )
     )
-    day = under_test.tariff.history.counterfactual_days[first.astimezone(under_test.tz).date()]
-    assert day.max_raw_kw == pytest.approx(3.0 + 4 * 2.75)
+    day = first.astimezone(under_test.tz).date()
+    assert day not in under_test.tariff.history.counterfactual_days, "the session is open"
+
+    # The car takes 30 kWh in the 18:15 slot and is done: the session settles.
+    under_test.ctx_for("ev", demand=demand(wants=False, max_w=MAX_W))
+    under_test.close(
+        closed_slot(first + timedelta(hours=1, minutes=15), minutes=15, loads={"ev": 30.0})
+    )
+    recorded = under_test.tariff.history.counterfactual_days[day]
+    assert recorded.max_raw_kw == pytest.approx(3.0 + 4 * 2.75)
     remaining = under_test.accounting.state().slot_deltas
-    assert list(remaining) == [(first + timedelta(hours=1)).isoformat()]
+    assert list(remaining) == [
+        (first + timedelta(hours=1)).isoformat(),
+        (first + timedelta(hours=1, minutes=15)).isoformat(),
+    ]
 
 
 @pytest.mark.inv("INV-69")
@@ -175,7 +195,7 @@ def test_05g_a_link_that_drops_and_comes_back_is_not_a_new_plug_in() -> None:
         under_test.close(closed_slot(first + timedelta(hours=index), loads={"ev": drawn}))
 
     rec = under_test.accounting.state().ledger.loads["ev"]
-    assert rec.cf_kwh == pytest.approx(30.0), "one session, charged once at plug-in"
+    assert rec.model_cf_kwh == pytest.approx(30.0), "one session, charged once at plug-in"
     assert rec.kwh == pytest.approx(22.0)
 
 
@@ -205,4 +225,4 @@ def test_05h_a_car_back_from_a_drive_re_latches_the_drive_not_the_backlog() -> N
 
     rec = under_test.accounting.state().ledger.loads["ev"]
     # 30 at the first plug-in, then only the 6 kWh drive: the shadow's car left full.
-    assert rec.cf_kwh == pytest.approx(36.0)
+    assert rec.model_cf_kwh == pytest.approx(36.0)

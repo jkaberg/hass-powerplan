@@ -6,6 +6,7 @@ import {
   calendarMonth,
   dailyPeaks,
   energyCollection,
+  followPeriod,
   gridHours,
   highest,
   monthRanking,
@@ -20,6 +21,21 @@ describe("the History picker", () => {
     const hass = { connection: { _energy_powerplan: collection } } as unknown as HomeAssistant;
     expect(energyCollection(hass)).toBe(collection);
     expect(energyCollection({ connection: {} } as unknown as HomeAssistant)).toBeUndefined();
+  });
+
+  it("hands over the picked period at once, without waiting for the energy data (F8)", () => {
+    let later: ((data: { start: Date; end?: Date }) => void) | undefined;
+    const start = new Date(2026, 8, 1);
+    const end = new Date(2026, 9, 1);
+    const collection = { start, end, subscribe: (cb: typeof later) => ((later = cb), () => undefined) };
+    const hass = { connection: { _energy_powerplan: collection } } as unknown as HomeAssistant;
+    const seen: Array<{ start: Date; end: Date }> = [];
+    const stop = followPeriod(hass, (period) => seen.push(period));
+    expect(seen).toEqual([{ start, end }]);
+    later!({ start, end }); // the first emit, ≈ 25 s later on the house: the same period, not again
+    later!({ start: new Date(2026, 7, 1), end: start });
+    expect(seen).toHaveLength(2);
+    stop();
   });
 
   it("falls back to the calendar month", () => {

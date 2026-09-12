@@ -159,6 +159,38 @@ def test_the_ledger_survives_a_restart_through_the_store_sections() -> None:
     assert set(after.loads) == set(before.loads)
 
 
+def test_a_section_from_before_the_reference_is_discarded_and_the_ledger_restarts() -> None:
+    """D11 §9 32: a schema-1 section holds the figures the reference replaced (D-0592)."""
+    engine, adapter = _wired()
+    state = _run(engine, EngineState(), ticks=int(1800 / TICK_S) + 2)
+    at = START + timedelta(seconds=TICK_S * (int(1800 / TICK_S) + 2))
+    state, _report, _effects = engine.plan(
+        state,
+        inputs_at(
+            engine.site,
+            at,
+            grid_w=GRID_W,
+            loads=both(at),
+            curves_=curves(START - timedelta(hours=2)),
+        ),
+    )
+    section = json.loads(json.dumps(state.to_sections()))["accounting"]
+    assert section["state"]["schema"] == 2
+    section["state"]["schema"] = 1
+
+    tariff = evaluator()
+    again = AccountingAdapter(
+        AccountingConfig(currency="NOK", tz=OSLO),
+        reference_loads(),
+        tariff,
+        tariff.history,
+        now=at,
+        state=section,
+    )
+    assert not again.accounting.state().opened, "a fresh ledger, opened by the next slot"
+    assert adapter.accounting.state().opened
+
+
 def test_every_reference_load_maps_to_its_store_kind() -> None:
     """The EV banks energy, a floor loop is a slab (D11 §5.3)."""
     ev, loop = reference_loads()

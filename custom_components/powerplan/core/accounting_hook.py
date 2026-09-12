@@ -10,9 +10,17 @@ says: once per closed price slot, oldest first, in the planning loop.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
-from .accounting.close import Accounting, AccountingConfig, AccountingState, CloseCtx, ClosedSlot
+from .accounting.close import SCHEMA as ACCOUNTING_SCHEMA
+from .accounting.close import (
+    Accounting,
+    AccountingConfig,
+    AccountingState,
+    CloseCtx,
+    ClosedSlot,
+)
 from .accounting.ledger import LoadMonthRec, SiteMonthRec, SlotConfidence
 from .accounting.pricing import CurvePair
 from .accounting.savings import site_savings
@@ -40,6 +48,8 @@ if TYPE_CHECKING:
     from .tariffs import PeakHistory, TariffEvaluator
 
 __all__ = ["AccountingAdapter", "params_of", "store_kind_of"]
+
+_LOGGER = logging.getLogger(__name__)
 
 #: Where the adapter keeps D11's own state inside D7's opaque `accounting` section.
 STATE_KEY = "state"
@@ -133,8 +143,17 @@ class AccountingAdapter:
             load.load_id: load.config.grid_tariff for load in loads if load.config.grid_tariff
         }
         restored = None
-        if state and state.get(STATE_KEY):
-            restored = decode(AccountingState, state[STATE_KEY])
+        raw = state.get(STATE_KEY) if state else None
+        if raw and raw.get("schema") == ACCOUNTING_SCHEMA:
+            restored = decode(AccountingState, raw)
+        elif raw:
+            # A section from before the reference (D11 §5.9.6): its figures are
+            # the ones the reference replaces, so the ledger restarts (D-0592).
+            _LOGGER.warning(
+                "accounting: store section schema %s is not %s — the ledger restarts",
+                raw.get("schema"),
+                ACCOUNTING_SCHEMA,
+            )
         self.accounting = Accounting(cfg, restored)
         if restored is None:
             for load in loads:
@@ -285,6 +304,13 @@ class AccountingAdapter:
                     "savings_confidence": row.savings_confidence.value,
                     "calibration_error": row.calibration_error,
                     "pending": row.pending,
+                    "settled_cost": None
+                    if row.settled_cost is None
+                    else _money_data(row.settled_cost),
+                    "model_savings": None
+                    if row.model_savings is None
+                    else _money_data(row.model_savings),
+                    "model_confidence": row.model_confidence.value,
                     "previous_cost": None if row.previous is None else _money_data(row.previous[0]),
                     "previous_savings": None
                     if row.previous is None
