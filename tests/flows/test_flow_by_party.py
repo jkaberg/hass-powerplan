@@ -182,11 +182,8 @@ async def test_32_a_fetched_grid_company_walks_product_zone_gaps_and_the_summary
     assert result["step_id"] == "tariff_preset"
     placeholders = result["description_placeholders"]
     assert placeholders["credit"].startswith("Grid tariffs from [Fri Nettleie]")
-    # What the plan does with the grid's day/night charge, in the household's money.
-    assert (
-        "Flexible use moves to after 22:00, when the grid charge is 14 øre/kWh lower."
-        in (placeholders["plan"])
-    )
+    # What the plan does with each rule is no longer said (D-0618).
+    assert "plan" not in placeholders
     result = await _answer(hass, result, confirm="yes")
     result = await _answer(hass, result, target="auto", risk="flat")
 

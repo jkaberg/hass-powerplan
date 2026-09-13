@@ -2554,3 +2554,13 @@ Merging the tariff-sources work with main: D11 is the settled-reference ledger, 
 
 `version-check.ts` reads the resource item's `v` from `lovelace/resources` and compares with the loader's own; with no item (YAML resources) it does nothing. The version command goes; `module_key` stays to write the key into the resource. Affects D12 §5.15, §5.16.
 **Rejected:** a command that repeats a key the store already holds.
+
+### D-0617 · A tariff download is read to its end
+
+`Http` read a body with `StreamReader.read(MAX_BYTES + 1)`, which returns whatever has arrived: fri-nettleie's 405 kB archive came back as 4.8 kB and the flow failed with "Unknown error". The body is now read chunk by chunk to its end, stopping one chunk past 5 MB; a cut archive is a `QualityError`, so the ladder falls to the next tier. The rule schema is read once at import, not in the event loop. Tests served captured documents and never met a real stream. Affects D13 §5.2, §11.
+**Rejected:** `read()` and a size check after - buffers any size before the cap applies.
+
+### D-0618 · The grid summary no longer says what the plan does with each rule
+
+The tariff summary drops "Your grid company decides this, and PowerPlan plans by it:" and its lines for every tariff, keeping the rules, the source and the credit. The step is about what the grid company charges. Affects D13 §6, O10.
+**Rejected:** keeping a line for the capacity step - the plan's behaviour belongs in the docs.

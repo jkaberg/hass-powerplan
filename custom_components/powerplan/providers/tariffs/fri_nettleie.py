@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
+import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Final
@@ -76,7 +77,15 @@ def unpack(archive: bytes) -> Bundle:
                 else:
                     stem = file.removesuffix(".yml")
                     documents[stem] = yaml.safe_load(body)
-    except (tarfile.TarError, OSError, yaml.YAMLError, ValueError, KeyError) as err:
+    except (
+        tarfile.TarError,
+        OSError,
+        EOFError,
+        zlib.error,
+        yaml.YAMLError,
+        ValueError,
+        KeyError,
+    ) as err:
         msg = f"{fri_nettleie.KEY}: unreadable archive: {err}"
         raise QualityError(msg) from err
     if not documents:

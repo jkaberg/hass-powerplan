@@ -27,7 +27,7 @@ from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.tariffs import countries
-from custom_components.powerplan.core.tariffs.household import fee_factor, levies_at, vat_at
+from custom_components.powerplan.core.tariffs.household import levies_at, vat_at
 from custom_components.powerplan.core.tariffs.model import HolidayMode, StepTable
 
 if TYPE_CHECKING:
@@ -51,7 +51,6 @@ __all__ = [
     "device_name",
     "entity_name",
     "minor_unit",
-    "plan_lines",
     "preset_options",
     "state_line",
     "target_label",
@@ -445,41 +444,6 @@ def credit_note(text: Text, sources: Sequence[Credit]) -> str:
         for credit in sources
     ]
     return text.word("tariff_text", "credit", sources=text.join(names))
-
-
-def plan_lines(text: Text, price: HouseholdPrice, day: date) -> str:
-    """Return what the plan does with each of the grid company's rules, as a list (§6 1d, §7)."""
-    lines: list[str] = []
-    version = price.grid.energy_at(day)
-    periods = () if version is None else version.periods
-    if len(periods) > 1:
-        cheap = min(periods, key=lambda period: period.price)
-        dear = max(periods, key=lambda period: period.price)
-        start = _start_of(cheap.when, dear.when)
-        difference = (dear.price - cheap.price) * fee_factor(price, day)
-        if difference > 0 and start is not None:
-            lines.append(
-                text.word(
-                    "tariff_text",
-                    "plan_energy",
-                    time=text.clock(start),
-                    difference=text.minor_per_kwh(difference, price.grid.currency),
-                )
-            )
-    if price.grid.capacity_at(day).peak is not None:
-        lines.append(text.word("tariff_text", "plan_capacity"))
-    if not lines:
-        lines.append(text.word("tariff_text", "plan_none"))
-    return "\n".join(f"- {line}" for line in lines)
-
-
-def _start_of(cheap: TimeFilter | None, dear: TimeFilter | None) -> int | None:
-    """Return when the cheaper period starts: its own first hour, or the dearer's end."""
-    if cheap is not None and cheap.hours:
-        return cheap.hours[0][0]
-    if dear is not None and dear.hours:
-        return dear.hours[0][1] % (24 * _MINUTES_PER_HOUR)
-    return None
 
 
 def state_line(text: Text, price: HouseholdPrice, day: date) -> str:

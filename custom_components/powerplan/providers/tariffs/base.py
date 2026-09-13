@@ -47,6 +47,23 @@ MAX_BYTES: Final = 5 * 1024 * 1024
 TIMEOUT_S: Final = 20.0
 
 
+async def _whole(answer: aiohttp.ClientResponse) -> bytes:
+    """Read a body to its end, stopping one byte past `MAX_BYTES` (D13 §11).
+
+    `StreamReader.read(n)` returns whatever has arrived, up to `n` - a 1.5 MB
+    archive came back cut after its first chunks and failed to unpack. A body that
+    ends early (a dropped connection) raises `ClientPayloadError`: unreachable.
+    """
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in answer.content.iter_chunked(64 * 1024):
+        chunks.append(chunk)
+        size += len(chunk)
+        if size > MAX_BYTES:
+            break
+    return b"".join(chunks)
+
+
 class Http:
     """One flow's or one renewal's requests, cached in memory for its life (§5.2 rules 2, 6).
 
@@ -107,7 +124,7 @@ class Http:
                 if answer.status not in {200, 201}:
                     msg = f"{url}: HTTP {answer.status}"
                     raise UnreachableError(msg)
-                data = await answer.content.read(MAX_BYTES + 1)
+                data = await _whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise UnreachableError(f"{url}: {err}") from err
         if len(data) > MAX_BYTES:
@@ -132,7 +149,7 @@ class Http:
                 if answer.status != 200:  # noqa: PLR2004 - HTTP OK
                     msg = f"{url}: HTTP {answer.status}"
                     raise UnreachableError(msg)
-                body = await answer.content.read(MAX_BYTES + 1)
+                body = await _whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise UnreachableError(f"{url}: {err}") from err
         if len(body) > MAX_BYTES:

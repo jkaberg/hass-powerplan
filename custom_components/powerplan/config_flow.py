@@ -85,7 +85,6 @@ from .flow.text import (
     PRESET_UNKNOWN,
     Text,
     credit_note,
-    plan_lines,
     state_line,
     target_label,
     tariff_table,
@@ -1305,7 +1304,6 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                     "name": self._tariff_name(text),
                     "table": tariff_table(text, self._summary),
                     "source": self._summary.source_url or text.word("text", "none"),
-                    "plan": plan_lines(text, self._draft_price(), await self._local_today()),
                     "credit": credit_note(text, self._credits()) if self._fetched else "",
                 },
             )

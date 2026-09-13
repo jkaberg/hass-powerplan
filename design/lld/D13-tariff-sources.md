@@ -311,19 +311,19 @@ Order and words. Titles are questions (D8 §5.15); every screen after the first 
 
 | # | step | nb title | what it says / asks |
 |---|---|---|---|
-| 0′ | country | **Hvilket land bor du i?** | **Not shown** when Home Assistant knows the country - `hass.config.country`, which HA's onboarding fills from its own location lookup and the household sets under Settings → System → General; the flow reads it and never writes it (as today, HUB-2). Otherwise asked with HA's `CountrySelector` - **full country names in the user's language**, never a code - pre-selected from the time zone's name, which each country module declares (`Europe/Oslo` → Norway, `Europe/Zurich` → Switzerland); no match, no pre-selection. The coordinates are not used: HA ships no country boundaries, and sending the home's location to a geocoder breaks O17's rule. A country without a module is still selectable: its tariff is entered by hand and its VAT asked (§9.1). The credit note (§6.1) follows the country. |
-| 0 | postcode | **Hva er postnummeret ditt?** | "Postnummeret finner nettselskapet ditt, prisområdet og avgiftene som gjelder der du bor." Resolves, where the country's directory maps it: the grid company (pre-selected in step 1), the municipality (the tax zone exactly, the tiltakssone included - §9), the price area (D1), the supplier products (O11). Optional: "Hopp over" asks each of those instead (O17). |
-| 1 | grid company | **Hvilket nettselskap har du?** | "Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg." The operators of the country's source, fetched now; "Finner ikke mitt nettselskap" (the rule template) and "Legg inn selv" pinned last. Below the list, a small note crediting the country's sources (§6.1). |
+| 0′ | country | **Hvilket land bor du i?** | **Not shown** when Home Assistant knows the country - `hass.config.country`, which HA's onboarding fills from its own location lookup and the household sets under Settings → System → General; the flow reads it and never writes it (HUB-2). Otherwise asked with HA's `CountrySelector` - **full country names in the user's language**, never a code - pre-selected from the time zone's name, which each country module declares (`Europe/Oslo` → Norway, `Europe/Zurich` → Switzerland); no match, no pre-selection. The coordinates aren't used: HA ships no country boundaries, and sending the home's location to a geocoder breaks O17's rule. A country without a module is still selectable: its tariff is entered by hand and its VAT asked (§9.1). The credit note (§6.1) follows the country. |
+| 0 | postcode | **Hva er postnummeret ditt?** | "Postnummeret finner nettselskapet ditt, prisområdet og avgiftene som gjelder der du bor." Resolves, where the country's directory maps it: the grid company (pre-selected in step 1), the municipality (the tax zone exactly, the tiltakssone included, §9), the price area (D1), the supplier products (O11). Optional: "Hopp over" asks each of those instead (O17). |
+| 1 | grid company | **Hvilket nettselskap har du?** | "Nettselskapet eier strømnettet der du bor. Du velger det ikke selv, og prisene deres henter PowerPlan for deg." The operators of the country's source, fetched now; "Finner ikke mitt nettselskap" (the rule template) and "Legg inn selv" pinned last. Under the list, a small note crediting the country's sources (§6.1). |
 | 1a | product | **Hvilken nettleie har du hos {operator}?** | only when the operator has several |
 | 1b | tax zone | **Hvilket fylke bor du i?** | only when the operator spans zones; its own counties |
 | 1c | confirm | one question per missing field | the source's gap, the default pre-selected |
-| 1c′ | own figures, VAT | **Er beløpene med moms, og hvor mye?** | **not shown** where the country's module knows the VAT - the price fields of "Legg inn selv" and of a rule template are labelled "inkl. moms" and the country's rate is applied (§9.1); shown only where the module has no national rate (the US) or no module exists |
-| 1d | grid summary | **Stemmer dette med nettleien din?** | the grid company's rules as the household pays them, in three short blocks - *Effekttrinn* (the steps), *Energiledd* (day/night/weekend/winter as a small table), *Fastledd* - then "Dette bestemmer nettselskapet, og PowerPlan planlegger etter det:" with one line per rule the plan uses (e.g. «Lading flyttes til etter 22:00, der energileddet er 13 øre lavere»); source, fetch date, attribution |
-| 1e | target, strictness | as today | |
-| 2 | supplier contract | **Hvilken strømavtale har du med strømleverandøren?** | spot / fastpris / Norgespris (the state scheme, via the grid company) / "prisen jeg ser er totalprisen" (a total-price entity - its basis asked) |
+| 1c′ | own figures, VAT | **Er beløpene med moms, og hvor mye?** | **not shown** where the country's module knows the VAT - the price fields of "Legg inn selv" and of a rule template are labelled "inkl. moms" and the country's rate is applied (§9.1); only shown where the module has no national rate (the US) or no module exists |
+| 1d | grid summary | **Stemmer dette med nettleien din?** | the grid company's rules as the household pays them, in three short blocks - *Effekttrinn* (the steps), *Energiledd* (day/night/weekend/winter as a small table), *Fastledd* - then source, fetch date, attribution (D-0618) |
+| 1e | target, strictness | D2 §6 | |
+| 2 | supplier contract | **Hvilken strømavtale har du med strømleverandøren?** | spot / fastpris / Norgespris (the state scheme, via the grid company) / "prisen jeg ser er totalprisen" (a total-price entity, its basis asked) |
 | 2a | contract additions | **Hva legger strømleverandøren på, i tillegg til nettleien?** | Opens with: "Nettleien fra {operator} er allerede med: {Effekttrinn, Energiledd dag/natt, Fastledd}. Avgifter og moms tar vi med i neste steg. Her er bare det som står i avtalen med strømleverandøren." Options: påslag per kWh, månedsbeløp, leverandørens egen tidsprising, trinn etter forbruk. Nothing from party 1 or 3 is offered. |
-| 3 | state | **Hvilke støtteordninger gjelder deg?** | States, does not ask: "For {zone}: moms {25 %}, forbruksavgift {7,13 øre}, Enova {1 øre} per kWh ({source}, {date})." VAT comes from the country's module and the zone (§9.1) and is never asked; the step asks only what the module cannot know - the schemes the household is in (strømstøtte; hidden with Norgespris) and, in Portugal only, whether the household has five or more members (the reduced rate's 300 kWh, §9.1). An override lives in the options flow, not here (O4). |
-| 4 | export | **Selger du strøm tilbake?** | as today; the grid's feed-in terms from party 1 where published |
+| 3 | state | **Hvilke støtteordninger gjelder deg?** | States, doesn't ask: "For {zone}: moms {25 %}, forbruksavgift {7,13 øre}, Enova {1 øre} per kWh ({source}, {date})." VAT comes from the country's module and the zone (§9.1) and is never asked; the step only asks what the module can't know - the schemes the household is in (strømstøtte; hidden with Norgespris) and, in Portugal only, whether the household has five or more members (the reduced rate's 300 kWh, §9.1). An override lives in the options flow, not here (O4). |
+| 4 | export | **Selger du strøm tilbake?** | the grid's feed-in terms from party 1 where published |
 | 5 | review | | one hour tonight and one this afternoon, split by party ("Nettleie 23 øre + strøm 71 øre + avgifter 32 øre") |
 
 English mirrors it ("Which country do you live in?", "Which grid company do you have?", "What does your supplier add, on top of the grid tariff?", "Which support schemes apply to you?").
@@ -576,33 +576,33 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 
 The recommendations below were each taken as recommended.
 
-| # | decision | recommendation |
-|---|---|---|
-| O1 | D13 owns the household's price by party (acquisition, sources, taxes, renewal, the flow's tariff steps); D2 keeps tariff model, evaluator and rule templates; D1 composition | yes |
-| O2 | facts stored as published + basis; taxes applied at composition | yes |
-| O3 | tax rules and rates ship as verified data in each country's module (§5.1); fetched where an authority publishes them | yes |
-| O21 | VAT lives in each country's module with its fetch code (`core/tariffs/countries/<cc>.py`, §5.1, §9.1): dated rates, regional rates, a source per rate; never asked in the flow; applied once at composition; `tools/vat_check.py` compares the EU modules with TEDB in CI (warns, like `preset_age.py`). Figures the household types: fields labelled incl. VAT, no VAT dialog where the module knows the rate; the dialog only in a country without a module | yes |
-| O4 | the old `vat`/`levy` add-ons become overrides of the state stage | yes |
-| O5 | price sources declare their basis; a total-price entity asks it | yes |
-| O6 | ~~fri-nettleie is Norway's T5 fallback~~ - superseded by O16 (T1b, Norway's source) | superseded |
-| O7 | renewal monthly by a timer, and on demand by `powerplan.refresh_tariff` (§10) | yes |
-| O8 | shipped price files removed one release after migration (§12) | yes |
-| O9 | INV-70 … INV-75 | yes |
-| O10 | the flow ordered by party with §6's words; the grid summary says what the plan does with each rule | yes |
-| O11 | supplier contracts: asked in v1; fetching them (NO Forbrukerrådet, SE Elpriskollen - availability to verify) later | ask in v1, research for v1.x |
-| O12 | the site asks bolig/hytte once to pick the customer group | yes |
-| O13 | T3 keys (Elvia, Glitre, Moj elektro, Leneda, MyElectricalData): never shipped in the repository (Elvia's terms); in v1 not needed for Norway (§5.4); in v1.x the household may enter its own to get the operator's own data or its own agreed or reference power (§5.10) | yes |
-| O14 | T4 "in plain sight" endpoints under §5.2's conduct, each adapter's site terms recorded | yes |
-| O15 | T6 documents need a maintainer's sign-off per adapter (candidates: VREG's XLSX - V-test has no JSON (§5.9); Austria's SNE-VO tables; the Bundesnetzagentur's DSO Excel) | yes |
-| O18 | the country's sources are credited in the flow as a small note under the grid company step, and in the summary, diagnostics and docs (§6.1) | yes |
-| O19 | commercial country-wide APIs (EnerSky for Norway; tounify for 25 markets) only under a project agreement, never charged to a household | yes |
-| O20 | LU: D2's `ContractedPower` gains `on_exceed = energy_surcharge` (kWh above the threshold per 15-min mean; a night variant 22–06), rather than a new tariff kind; the planner treats the threshold as a soft ceiling priced per kWh | yes |
-| O23 | G1: a `ContractedPower` whose excess is priced (`surcharge`, `energy_surcharge`) becomes a priced soft ceiling in the plan; only `trip` stays a hard limit (rung 1). INV-36's "never as a capacity step" is narrowed to tripping limits | yes |
-| O22 | a **national regulated grid tariff** - one price for every household in the country, set by the regulator (ES 2.0TD's power terms, FR TURPE, IT ARERA, PT ERSE, IE DUoS, GR) - is national law like VAT: it ships in the country module, dated and sourced, fetched where the regulator serves it (ES's energy term, §5.10); INV-70 covers a *company's* prices only | yes |
-| O24 | v1 is TS.1–TS.7 - every adapter and every engine gap of §18 (G18 net metering stays with Phase 7's export work) - built in WP order, each country shippable behind its module | yes |
-| O25 | D2's "grammar" is renamed **tariff model** in the HLD/LLD pass; `core/tariffs/grammar.py` → `core/tariffs/model.py`, the `Grammar` union → `TariffRule`, `TariffVersion.grammar` → `.rules`. The evaluator's protocol, `TariffModel` until now, becomes **`TariffEvaluator`** in the same WP, so "tariff model" means one thing - the typed rules - and never the evaluator (D-0530) | yes |
-| O17 | the flow asks the **postcode** first (optional, skippable) to pre-select the grid company and settle the tax zone and price area; it is sent only to the country's official directory (§5.9), stored in the entry, and never to a third party | yes |
-| O16 | Norway: fri-nettleie from GitHub (T1b, replacing the earlier Strømpriseridag choice); Strømpriseridag and the per-company APIs as nightly cross-checks; EnerSky only under a project agreement; Elhub's API when it exists | decided |
+| # | decision |
+|---|---|
+| O1 | D13 owns the household's price by party (acquisition, sources, taxes, renewal, the flow's tariff steps); D2 keeps the tariff model, evaluator and rule templates; D1 composition |
+| O2 | facts stored as published + basis; taxes applied at composition |
+| O3 | tax rules and rates ship as verified data in each country's module (§5.1); fetched where an authority publishes them |
+| O21 | VAT lives in each country's module with its fetch code (`core/tariffs/countries/<cc>.py`, §5.1, §9.1): dated rates, regional rates, a source per rate; never asked in the flow; applied once at composition; `tools/vat_check.py` compares the EU modules with TEDB in CI (warns, like `preset_age.py`). Figures the household types: fields labelled incl. VAT, no VAT dialog where the module knows the rate; the dialog only in a country without a module |
+| O4 | the old `vat`/`levy` add-ons become overrides of the state stage |
+| O5 | price sources declare their basis; a total-price entity asks it |
+| O6 | superseded by O16 |
+| O7 | renewal monthly by a timer, and on demand by `powerplan.refresh_tariff` (§10) |
+| O8 | shipped price files removed one release after migration (§12) |
+| O9 | INV-70 … INV-75 |
+| O10 | the flow ordered by party with §6's words; the grid summary without what the plan does with each rule (D-0618) |
+| O11 | supplier contracts: asked in v1; fetching them (NO Forbrukerrådet, SE Elpriskollen - availability to verify) later |
+| O12 | the site asks bolig/hytte once to pick the customer group |
+| O13 | T3 keys (Elvia, Glitre, Moj elektro, Leneda, MyElectricalData): never shipped in the repository (Elvia's terms); not needed for Norway in v1 (§5.4); in v1.x the household may enter its own to get the operator's own data or its own agreed or reference power (§5.10) |
+| O14 | T4 "in plain sight" endpoints under §5.2's conduct, each adapter's site terms recorded |
+| O15 | T6 documents need sign-off per adapter (candidates: VREG's XLSX - V-test has no JSON (§5.9); Austria's SNE-VO tables; the Bundesnetzagentur's DSO Excel) |
+| O18 | the country's sources are credited in the flow as a small note under the grid company step, and in the summary, diagnostics and docs (§6.1) |
+| O19 | commercial country-wide APIs (EnerSky for Norway; tounify for 25 markets) only under a project agreement, never charged to a household |
+| O20 | LU: D2's `ContractedPower` gets `on_exceed = energy_surcharge` (kWh above the threshold per 15-min mean; a night variant 22–06), not a new tariff kind; the planner treats the threshold as a soft ceiling priced per kWh |
+| O23 | G1: a `ContractedPower` whose excess is priced (`surcharge`, `energy_surcharge`) is a priced soft ceiling in the plan; only `trip` stays a hard limit (rung 1). INV-36's "never as a capacity step" is narrowed to tripping limits |
+| O22 | a **national regulated grid tariff** - one price for every household in the country, set by the regulator (ES 2.0TD's power terms, FR TURPE, IT ARERA, PT ERSE, IE DUoS, GR) - is national law like VAT: it ships in the country module, dated and sourced, fetched where the regulator serves it (ES's energy term, §5.10); INV-70 covers a *company's* prices only |
+| O24 | v1 is TS.1–TS.7 - every adapter and every engine gap of §18 (G18 net metering stays with Phase 7's export work) - built in WP order, each country shippable behind its module |
+| O25 | D2's "grammar" is renamed **tariff model**; `core/tariffs/grammar.py` → `core/tariffs/model.py`, the `Grammar` union → `TariffRule`, `TariffVersion.grammar` → `.rules` (TS.1). The evaluator's protocol becomes **`TariffEvaluator`** in the same WP, so "tariff model" means one thing - the typed rules - and never the evaluator (D-0530) |
+| O17 | the flow asks the **postcode** first (optional, skippable) to pre-select the grid company and settle the tax zone and price area; it's only sent to the country's official directory (§5.9), stored in the entry, and never to a third party |
+| O16 | Norway: fri-nettleie from GitHub (T1b); Strømpriseridag and the per-company APIs as nightly cross-checks; EnerSky only under a project agreement; Elhub's API when it exists |
 
 ## 16. Alternatives considered (steelmanned)
 

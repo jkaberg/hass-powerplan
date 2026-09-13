@@ -321,7 +321,7 @@
       },
       "tariff_preset": {
         "title": "Stemmer dette med nettleien din?",
-        "description": "**{name}**\n\n{table}\n\nDette bestemmer nettselskapet, og PowerPlan planlegger etter det:\n\n{plan}\n\nKilde: {source}\n\n{credit}",
+        "description": "**{name}**\n\n{table}\n\nKilde: {source}\n\n{credit}",
         "data": {
           "confirm": "Stemmer det?"
         },
@@ -1608,9 +1608,6 @@
         "month_11": "november",
         "month_12": "desember",
         "credit": "Nettleiepriser fra {sources}. Takk!",
-        "plan_energy": "Fleksibelt forbruk flyttes til etter {time}, der energileddet er {difference} lavere.",
-        "plan_capacity": "Forbruket spres så du holder deg i effekttrinnet ditt.",
-        "plan_none": "Ingen del av denne nettleien endrer når det lønner seg å bruke strøm.",
         "state_rates": "I {zone} er det {rates} per kWh.",
         "state_vat": "moms {vat} %",
         "state_levy": "{name} {amount}",

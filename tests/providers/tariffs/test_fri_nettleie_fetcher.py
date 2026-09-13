@@ -120,3 +120,52 @@ async def test_5_2_rule_6_release_drops_every_download(
     http.release()
     await http.get("https://example.invalid/a")
     assert len(calls) == 2, "released: a later call downloads again"
+
+
+#: The captured archive, read once at import (a test's async body does no file I/O).
+ARCHIVE = next(
+    (Path(__file__).resolve().parents[2] / "fixtures" / "tariff_sources" / "fri_nettleie").glob(
+        "*.tar.gz"
+    )
+).read_bytes()
+
+
+class _Content:
+    """An aiohttp body that arrives in pieces, as a real archive does."""
+
+    def __init__(self, body: bytes, piece: int) -> None:
+        self.pieces = [body[i : i + piece] for i in range(0, len(body), piece)]
+
+    async def read(self, n: int = -1) -> bytes:
+        """`StreamReader.read(n)`: whatever has arrived - the first piece."""
+        return self.pieces[0]
+
+    async def iter_chunked(self, n: int):  # type: ignore[no-untyped-def]
+        """Every piece, to the end."""
+        for piece in self.pieces:
+            yield piece
+
+
+class _Answer:
+    def __init__(self, body: bytes, piece: int = 4096) -> None:
+        self.content = _Content(body, piece)
+
+
+async def test_11_a_download_is_read_to_its_end_not_to_its_first_piece() -> None:
+    """A postcode in the wizard: 4 767 of 404 716 bytes, then "Unknown error"."""
+    body = ARCHIVE
+    assert len(await base._whole(_Answer(body))) == len(body)
+    unpack(await base._whole(_Answer(body)))
+
+
+async def test_11_a_download_past_the_cap_stops_one_piece_over() -> None:
+    """D13 §11: nothing over 5 MB is read, however it arrives."""
+    body = b"x" * (base.MAX_BYTES + 200_000)
+    assert base.MAX_BYTES < len(await base._whole(_Answer(body, 65_536))) <= base.MAX_BYTES + 65_536
+
+
+def test_11_a_cut_archive_is_a_quality_failure_the_ladder_can_pass() -> None:
+    """A truncated gzip is the source's failure, never an unknown error in the wizard."""
+    body = ARCHIVE
+    with pytest.raises(QualityError):
+        unpack(body[:4767])

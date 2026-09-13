@@ -321,7 +321,7 @@
       },
       "tariff_preset": {
         "title": "Does this match your grid bill?",
-        "description": "**{name}**\n\n{table}\n\nYour grid company decides this, and PowerPlan plans by it:\n\n{plan}\n\nSource: {source}\n\n{credit}",
+        "description": "**{name}**\n\n{table}\n\nSource: {source}\n\n{credit}",
         "data": {
           "confirm": "Does it match?"
         },
@@ -1608,9 +1608,6 @@
         "month_11": "November",
         "month_12": "December",
         "credit": "Grid tariffs from {sources}. Thank you!",
-        "plan_energy": "Flexible use moves to after {time}, when the grid charge is {difference} lower.",
-        "plan_capacity": "Use is spread out so you stay in your capacity step.",
-        "plan_none": "No part of this tariff changes when it is best to use power.",
         "state_rates": "For {zone}: {rates} per kWh.",
         "state_vat": "VAT {vat} %",
         "state_levy": "{name} {amount}",

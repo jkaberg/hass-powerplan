@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...model import Money
@@ -211,9 +211,13 @@ def _resolve(ref: str, root: Mapping[str, Any]) -> Mapping[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+#: Read once, when the module is imported - Home Assistant imports an integration
+#: in its executor, so no event-loop caller ever touches the file.
+_SCHEMA: Final[Mapping[str, Any]] = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
 def _schema() -> Mapping[str, Any]:
-    loaded: Mapping[str, Any] = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-    return loaded
+    return _SCHEMA
 
 
 def validate(raw: Mapping[str, Any], *, source: str = "preset", shipped: bool = False) -> None:
