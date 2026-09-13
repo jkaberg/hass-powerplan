@@ -194,6 +194,9 @@
       },
       "run_now": {
         "default": "mdi:play-circle-outline"
+      },
+      "refresh_prices": {
+        "default": "mdi:cloud-refresh"
       }
     },
     "time": {
@@ -229,6 +232,9 @@
     },
     "refresh_tariff": {
       "service": "mdi:cloud-refresh-outline"
+    },
+    "get_dashboard": {
+      "service": "mdi:view-dashboard"
     }
   }
 }

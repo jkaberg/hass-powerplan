@@ -6,6 +6,10 @@ PowerPlan ships a dashboard that shows your home's past, present and future: wha
 
 **Home Assistant 2026.5 or newer:** *Settings → Dashboards → Add dashboard*, choose **PowerPlan**, and give it a name and an icon.
 
+PowerPlan adds its dashboard code to **Settings** > **Dashboards** > **Resources** for you, as `/powerplan_frontend/powerplan.js`. Leave that line there. If you delete it, PowerPlan adds it again the next time Home Assistant starts. When you remove the last PowerPlan home, the line goes too.
+
+If you keep your dashboard resources in YAML (`resource_mode: yaml`), PowerPlan loads its code on every page instead, and you add nothing.
+
 **Home Assistant 2026.3 or 2026.4:** the dialog does not list it yet. Add an empty dashboard, open it, choose *⋮ → Edit dashboard → ⋮ → Raw configuration editor*, and replace everything with:
 
 ```yaml
@@ -64,3 +68,5 @@ PowerPlan does not change your Energy settings. To see your appliances in Home A
 ## If it does not load
 
 The dashboard then shows one card that says why. See [troubleshooting](troubleshooting.md).
+
+If Home Assistant says it timed out waiting for the PowerPlan dashboard, check that **Settings** > **Dashboards** > **Resources** lists `/powerplan_frontend/powerplan.js`, then reload the page.

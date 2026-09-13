@@ -20,6 +20,7 @@ The actions PowerPlan adds to Home Assistant, for scripts, automations, and **De
 | `powerplan.set_peak` | Correct a peak | Correct one day's or one month's peak in the grid-fee history. | `date`, `month`, `kw` (required), `note`, `site` |
 | `powerplan.dump_state` | Make a bug report | Return the last snapshot and the assembled inputs for a bug report. | `site` |
 | `powerplan.refresh_tariff` | Refresh the grid tariff | Fetch your grid company's tariff now, and answer what changed. Nothing changes when the source cannot be reached. | `site` |
+| `powerplan.get_dashboard` | Get the dashboard | Return the PowerPlan dashboard's layout. The PowerPlan dashboard calls this itself. | `site`, `language`, `hidden_views`, `hidden_cards` |
 <!-- generated:end actions -->
 
 `site` takes the home's name as you gave it, for example `YOUR_HOME`. `load` takes the appliance's id: the `load` value in its events, which [Events](events.md) shows how to see.
@@ -140,6 +141,19 @@ action: powerplan.refresh_tariff
 data:
   site: YOUR_HOME
 response_variable: tariff
+```
+
+<a name="get_dashboard"></a>
+## Get the dashboard
+
+Returns the layout of the PowerPlan dashboard: its tabs, sections and cards, in the language you name. The PowerPlan dashboard calls this itself each time it opens, so you do not need it for the dashboard. Use it to copy the layout into a dashboard of your own.
+
+```yaml
+action: powerplan.get_dashboard
+data:
+  language: en
+  hidden_views: [history]
+response_variable: layout
 ```
 
 **See also:** [Events](events.md) · [Entities](entities.md)

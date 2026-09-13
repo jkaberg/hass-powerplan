@@ -1,22 +1,16 @@
-"""`powerplan/dashboard/config` (D12 §3): the strategy's one call, the layout back.
+"""`powerplan.get_dashboard` (D12 §5.16 R1): the strategy's one call, the layout back.
 
-Read-only, so any signed-in user may call it (D12 §9 4). An unknown or
-unloaded site is an error, never an empty dashboard; with no `entry_id` every loaded
-site is meant, so a second site appears on the dashboard the next time it
-opens (D-0439).
+A response action (`SupportsResponse.ONLY`, `services.py`), so any signed-in
+user may call it (D12 §9 4). An unknown or unloaded site is `unknown_site`,
+never an empty dashboard; with no `site` every loaded site is meant, so a
+second site appears on the dashboard the next time it opens (D-0439).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
-from homeassistant.components.websocket_api import async_register_command
-from homeassistant.components.websocket_api.const import ERR_NOT_FOUND
-from homeassistant.components.websocket_api.decorators import async_response, websocket_command
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import __version__ as HA_VERSION  # noqa: N812 - HA's own name
-from homeassistant.core import callback
 from homeassistant.helpers.translation import async_get_translations
 
 from custom_components.powerplan.const import DOMAIN
@@ -25,21 +19,15 @@ from .layout import ENTITY_NAMES, build
 from .site_layout import site_layout
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
-    from homeassistant.components.websocket_api.connection import ActiveConnection
     from homeassistant.core import HomeAssistant
 
-__all__ = ["WS_TYPE", "async_register_ws"]
+    from custom_components.powerplan.runtime import Runtime
 
-WS_TYPE = "powerplan/dashboard/config"
+__all__ = ["async_dashboard_config", "texts_from"]
+
 _COMPONENT = f"component.{DOMAIN}."
-
-
-@callback
-def async_register_ws(hass: HomeAssistant) -> None:
-    """Register the command once per HA."""
-    async_register_command(hass, ws_dashboard_config)
 
 
 def texts_from(strings: Mapping[str, str]) -> dict[str, str]:
@@ -107,37 +95,21 @@ async def _grid_statistics(hass: HomeAssistant) -> list[str]:
     return out
 
 
-@websocket_command(
-    {
-        vol.Required("type"): WS_TYPE,
-        vol.Optional("entry_id"): str,
-        vol.Optional("language", default="en"): str,
-        vol.Optional("hidden_views", default=[]): [str],
-        vol.Optional("hidden_cards", default=[]): [str],
-    }
-)
-@async_response
-async def ws_dashboard_config(
-    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
-) -> None:
-    """Return the dashboard config of one loaded site."""
-    loaded = [
-        entry
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if entry.state is ConfigEntryState.LOADED
-    ]
-    if "entry_id" in msg:
-        loaded = [entry for entry in loaded if entry.entry_id == msg["entry_id"]]
-    if not loaded:
-        connection.send_error(msg["id"], ERR_NOT_FOUND, "No loaded PowerPlan site")
-        return
-    config = build(
-        [site_layout(hass, entry) for entry in loaded],
+async def async_dashboard_config(
+    hass: HomeAssistant,
+    runtimes: Sequence[Runtime],
+    *,
+    language: str,
+    hidden_views: Sequence[str],
+    hidden_cards: Sequence[str],
+) -> dict[str, Any]:
+    """Return the dashboard config of the loaded sites the action named."""
+    return build(
+        [site_layout(hass, runtime.entry) for runtime in runtimes],
         HA_VERSION,
-        await _texts(hass, msg["language"]),
-        language=msg["language"],
+        await _texts(hass, language),
+        language=language,
         grid_statistics=await _grid_statistics(hass),
-        hidden_views=msg["hidden_views"],
-        hidden_cards=msg["hidden_cards"],
+        hidden_views=list(hidden_views),
+        hidden_cards=list(hidden_cards),
     )
-    connection.send_result(msg["id"], config)

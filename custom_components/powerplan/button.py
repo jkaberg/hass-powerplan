@@ -1,4 +1,4 @@
-"""The site's buttons (D8 §5.5): `replan`, `rebuild_baseline`, `rebuild_peak_history`.
+"""The site's buttons (D8 §5.5): `replan`, `refresh_prices`, `rebuild_baseline`, `rebuild_peak_history`.
 
 `rebuild_baseline` and `rebuild_peak_history` arrive only where
 an import register is bound - a button without an action behind it would be a
@@ -33,7 +33,7 @@ async def async_setup_entry(
 ) -> None:
     """Create the replan button, and the two recorder rebuilds where a register is bound."""
     runtime = entry.runtime_data
-    entities: list[ButtonEntity] = [ReplanButton(runtime)]
+    entities: list[ButtonEntity] = [ReplanButton(runtime), RefreshPricesButton(runtime)]
     if runtime.forecasts_adapter is not None:
         entities.append(RebuildBaselineButton(runtime))
     if runtime.has_register:
@@ -55,6 +55,24 @@ class ReplanButton(PowerplanEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Fetch what is missing and plan."""
         await self.runtime.async_replan()
+
+
+class RefreshPricesButton(PowerplanEntity, ButtonEntity):
+    """`button.<site>_refresh_prices`: fetch the prices now (D12 §5.16 R3; the price card's retry)."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site."""
+        super().__init__(runtime, "refresh_prices")
+
+    async def async_press(self) -> None:
+        """Fetch through the price refresher, so its retry and `prices_stale` follow (§5.15 F12)."""
+        refresher = self.runtime.price_refresher
+        if refresher is None:
+            await self.runtime.refresh_prices()
+        else:
+            await refresher.async_refresh("user")
 
 
 class RebuildBaselineButton(PowerplanEntity, ButtonEntity):

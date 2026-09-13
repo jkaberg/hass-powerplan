@@ -7,8 +7,9 @@
 //   1. guardUnknownCards(config, KNOWN_TAGS) - right after the strategy config arrives: every
 //      custom:powerplan-* type this bundle doesn't know gets a small placeholder card instead of
 //      an error card, and the reload toast is shown.
-//   2. startVersionCheck(hass) - compares this bundle's hash with powerplan/version on start,
-//      on every reconnect and every 30 min; shows Home Assistant's own toast on mismatch.
+//   2. startVersionCheck(hass) - compares this bundle's hash with the `v` of PowerPlan's Lovelace
+//      resource (HA's own `lovelace/resources`, D12 §5.16 R5) on start, on every reconnect and every
+//      30 min; shows Home Assistant's own toast on mismatch. No such resource (YAML): no check.
 //
 // BUNDLE is injected at build time: esbuild --define:__PP_BUNDLE__='"<hash used in ?v=>"'.
 
@@ -40,9 +41,9 @@ export function startVersionCheck(hass: Hass, everyMs = 30 * 60e3): () => void {
   if (w.__ppVersionCheck) return w.__ppVersionCheck;
   const check = async () => {
     try {
-      const r = await hass.callWS<{ bundle?: string }>({ type: "powerplan/version" });
-      if (r?.bundle && BUNDLE !== "dev" && r.bundle !== BUNDLE) notify(hass);
-    } catch { /* older backend without the command: nothing to compare */ }
+      const served = servedKey(await hass.callWS<{ url: string }[]>({ type: "lovelace/resources" }));
+      if (served && BUNDLE !== "dev" && served !== BUNDLE) notify(hass);
+    } catch { /* no Lovelace resources: nothing to compare */ }
   };
   check();
   const t = window.setInterval(check, everyMs);
@@ -51,6 +52,12 @@ export function startVersionCheck(hass: Hass, everyMs = 30 * 60e3): () => void {
   const stop = () => { clearInterval(t); conn?.removeEventListener?.("ready", check); w.__ppVersionCheck = undefined; };
   w.__ppVersionCheck = stop;
   return stop;
+}
+
+/** The `v` of PowerPlan's module among HA's Lovelace resources, or null without one (D12 §5.16 R5). */
+export function servedKey(resources: readonly { url: string }[] | null | undefined): string | null {
+  const ours = resources?.find((r) => r.url.split("?")[0] === "/powerplan_frontend/powerplan.js");
+  return ours ? new URL(ours.url, "http://x").searchParams.get("v") : null;
 }
 
 /** Walks a dashboard config and swaps unknown custom:powerplan-* cards for a placeholder. */

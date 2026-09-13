@@ -1080,6 +1080,9 @@
       "rebuild_peak_history": {
         "name": "Reload this month's peaks"
       },
+      "refresh_prices": {
+        "name": "Fetch prices again"
+      },
       "run_now": {
         "name": "Run now"
       }
@@ -2146,6 +2149,28 @@
         "site": {
           "name": "Home",
           "description": "The home; every home when empty."
+        }
+      }
+    },
+    "get_dashboard": {
+      "name": "Get the dashboard",
+      "description": "Return the PowerPlan dashboard's layout. The PowerPlan dashboard calls this itself.",
+      "fields": {
+        "site": {
+          "name": "Home",
+          "description": "The home; every home when empty."
+        },
+        "language": {
+          "name": "Language",
+          "description": "The language of the dashboard's words, for example en or nb."
+        },
+        "hidden_views": {
+          "name": "Hidden tabs",
+          "description": "Tabs to leave out: overview, history, or appliances."
+        },
+        "hidden_cards": {
+          "name": "Hidden cards",
+          "description": "Card types to leave out."
         }
       }
     }

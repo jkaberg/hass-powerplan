@@ -1,9 +1,9 @@
-"""D12 §9 1–6, 8: the dashboard's layout, its websocket command and its entities.
+"""D12 §9 1–6, 8: the dashboard's layout, its action (v0.8: `powerplan.get_dashboard`) and its entities.
 
 The builder is tested on plain `SiteLayout`s - a `nordic_detached`-shaped
 site of twelve loads for the golden, one load per D4 type for the tiles - and
 through Home Assistant for what the registry and the runtime give it: the
-websocket command, `calendar.<site>_plan`, `sensor.<site>_plan`'s slots and
+action (`powerplan.get_dashboard`, D12 §5.16 R1), `calendar.<site>_plan`, `sensor.<site>_plan`'s slots and
 `sensor.<site>_metric`.
 """
 
@@ -24,6 +24,7 @@ from custom_components.powerplan.calendar import plan_events
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.metering import AnchorKind, ClosedWindow
 from custom_components.powerplan.core.model import Confidence, Money, Plan, PlanMode, PlanSlot
+from custom_components.powerplan.dashboard.config import texts_from
 from custom_components.powerplan.dashboard.layout import (
     COLLECTION_KEY,
     CUSTOM_CARDS,
@@ -38,7 +39,6 @@ from custom_components.powerplan.dashboard.site_layout import (
     SiteLayout,
     site_layout,
 )
-from custom_components.powerplan.dashboard.ws import WS_TYPE, texts_from
 from custom_components.powerplan.entity import unique_id
 from tests.builders.houses import ALL_LOADS
 from tests.runtime.conftest import SITE_ENTRY_ID
@@ -70,7 +70,7 @@ RAW = {
     language: json.loads((TRANSLATIONS / f"{language}.json").read_text("utf-8"))
     for language in ("en", "nb")
 }
-#: What the websocket command hands `build`: the dashboard's words, entity names, strategies.
+#: What `powerplan.get_dashboard` hands `build`: the dashboard's words, entity names, strategies.
 TEXTS = {
     language: texts_from(_flat(tree, f"component.{DOMAIN}.")) for language, tree in RAW.items()
 }
@@ -597,19 +597,33 @@ def test_18_the_strategy_is_defined_before_anything_is_fetched() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# §9 4 - the websocket command, through HA
+# §9 4 - powerplan.get_dashboard, through HA (§5.16 R1)
 # --------------------------------------------------------------------------- #
 
 
-async def test_04_the_command_returns_the_site_layout(
-    hass: HomeAssistant, site: MockConfigEntry, hass_ws_client: WebSocketGenerator
+def _call(**data: Any) -> dict[str, Any]:
+    """Return the message `strategy.ts` sends: HA's own `call_service`, answered."""
+    return {
+        "type": "call_service",
+        "domain": DOMAIN,
+        "service": "get_dashboard",
+        "service_data": data,
+        "return_response": True,
+    }
+
+
+async def test_04_the_action_returns_the_site_layout(
+    hass: HomeAssistant,
+    site: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    hass_read_only_access_token: str,
 ) -> None:
-    """Read-only: the site's own entity ids come back, from the registry (D12 §9 4)."""
-    client = await hass_ws_client(hass)
-    await client.send_json_auto_id({"type": WS_TYPE, "language": "nb"})
+    """A signed-in user who is not an admin gets the site's own entity ids back (D12 §9 4)."""
+    client = await hass_ws_client(hass, hass_read_only_access_token)
+    await client.send_json_auto_id(_call(language="nb"))
     reply = await client.receive_json()
     assert reply["success"], reply
-    config = reply["result"]
+    config = reply["result"]["response"]
     assert config["views"][0]["title"] == "Nå"
     registry = er.async_get(hass)
     window = registry.async_get_entity_id("sensor", DOMAIN, unique_id(SITE_ENTRY_ID, "window_used"))
@@ -622,19 +636,44 @@ async def test_04_the_command_returns_the_site_layout(
             assert entry.disabled_by is None, entity_id
 
 
+async def test_04_the_action_answers_what_the_builder_builds(
+    hass: HomeAssistant, site: MockConfigEntry
+) -> None:
+    """The action is the builder, nothing added (the golden does not move, §5.16 R1)."""
+    from custom_components.powerplan.dashboard.config import (  # noqa: PLC0415
+        async_dashboard_config,
+    )
+
+    answer = await hass.services.async_call(
+        DOMAIN,
+        "get_dashboard",
+        {"site": SITE_ENTRY_ID, "hidden_views": ["history"]},
+        blocking=True,
+        return_response=True,
+    )
+    direct = await async_dashboard_config(
+        hass, [site.runtime_data], language="en", hidden_views=["history"], hidden_cards=[]
+    )
+    assert answer == direct
+    assert [view["path"] for view in direct["views"] if not view.get("subview")] == ["overview"]
+
+
 async def test_04_an_unknown_site_is_an_error(
     hass: HomeAssistant, site: MockConfigEntry, hass_ws_client: WebSocketGenerator
 ) -> None:
     """Never an empty dashboard (D12 §9 4)."""
     client = await hass_ws_client(hass)
-    await client.send_json_auto_id({"type": WS_TYPE, "entry_id": "nope"})
+    await client.send_json_auto_id(_call(site="nope"))
     reply = await client.receive_json()
     assert not reply["success"]
-    assert reply["error"]["code"] == "not_found"
-    await client.send_json_auto_id({"type": WS_TYPE, "language": 3})
+    assert reply["error"]["code"] == "service_validation_error"
+    await client.send_json_auto_id(_call(hidden_views=[{"not": "a view"}]))
     reply = await client.receive_json()
     assert not reply["success"]
     assert reply["error"]["code"] == "invalid_format"
+    await client.send_json_auto_id({**_call(), "return_response": False})
+    reply = await client.receive_json()
+    assert not reply["success"]
 
 
 async def test_04_twenty_loads_build_in_under_100_ms(
@@ -836,22 +875,17 @@ def test_07_every_chunk_the_bundle_imports_is_committed() -> None:
             assert list(DIST.rglob(chunk)), f"{path.name} imports {chunk}, which is not in dist/"
 
 
-async def test_07_the_module_is_served_and_loaded_on_every_page(
+async def test_07_the_module_is_served_and_kept_as_a_resource(
     hass: HomeAssistant, hass_client: Any
 ) -> None:
-    """The directory under `/powerplan_frontend`, the module keyed by its content (D12 §5.5)."""
-    from homeassistant.components.frontend import (  # noqa: PLC0415
-        DATA_EXTRA_MODULE_URL,
-        UrlManager,
-    )
+    """The directory under `/powerplan_frontend`, the module keyed by its content (§5.5, §5.16 R4)."""
+    from homeassistant.components.lovelace.const import LOVELACE_DATA  # noqa: PLC0415
     from homeassistant.setup import async_setup_component  # noqa: PLC0415
 
     assert await async_setup_component(hass, "http", {})
-    # The frontend's own setup needs its built package; its URL list is all this reads.
-    hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(lambda *_: None, [])
-    hass.config.components.add("frontend")
+    assert await async_setup_component(hass, "lovelace", {})
     assert await async_setup_component(hass, DOMAIN, {})
-    urls = list(hass.data[DATA_EXTRA_MODULE_URL].urls)
+    urls = [item["url"] for item in hass.data[LOVELACE_DATA].resources.async_items()]
     module = next(url for url in urls if url.startswith("/powerplan_frontend/powerplan.js?v="))
     client = await hass_client()
     response = await client.get(module)

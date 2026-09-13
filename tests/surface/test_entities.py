@@ -77,6 +77,7 @@ SITE_ENTITIES: tuple[tuple[str, str, EntityCategory | None, bool], ...] = (
     ("sensor", "cost", CONTROL, True),
     ("sensor", "savings", CONTROL, True),
     ("button", "replan", CONFIG, True),
+    ("button", "refresh_prices", CONFIG, True),
     ("button", "rebuild_baseline", CONFIG, False),
     ("button", "rebuild_peak_history", CONFIG, False),
     ("event", "events", CONTROL, True),

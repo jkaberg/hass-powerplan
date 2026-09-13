@@ -12,7 +12,7 @@ Install PowerPlan through HACS, then add it to Home Assistant. This page also co
 | Requirement | Value |
 |---|---|
 | Home Assistant | 2026.3.0 or newer |
-| Uses, when set up | `energy`, `frontend`, `http`, `recorder`, `nordpool`, `weather`, `zwave_js` |
+| Uses, when set up | `energy`, `frontend`, `http`, `lovelace`, `recorder`, `nordpool`, `weather`, `zwave_js` |
 | Installs | `holidays>=0.84` |
 | Version | 0.1.0 |
 <!-- generated:end requirements -->

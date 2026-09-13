@@ -1,7 +1,8 @@
-// `ll-strategy-dashboard-powerplan` (D12 §2, §3): one websocket call, the
-// layout back. The layout is built in Python from the site's registry; this
-// element fetches it, points its `{dashboard}` paths at the dashboard it is
-// on, and shows why when it cannot.
+// `ll-strategy-dashboard-powerplan` (D12 §2, §3): one call, the layout back.
+// The layout is built in Python from the site's registry and answered by the
+// response action `powerplan.get_dashboard` (§5.16 R1), sent as HA's own
+// `call_service` message; this element fetches it, points its `{dashboard}`
+// paths at the dashboard it is on, and shows why when it cannot.
 
 import type { HomeAssistant } from "./ha";
 import type { Hass } from "./r3-util";
@@ -37,17 +38,17 @@ interface StrategyConfig {
 
 export class PowerplanDashboardStrategy extends HTMLElement {
   static async generate(config: StrategyConfig, hass: HomeAssistant): Promise<unknown> {
-    const message: Record<string, unknown> = {
-      type: "powerplan/dashboard/config",
-      language: hass.language,
-    };
-    for (const key of ["entry_id", "hidden_views", "hidden_cards"] as const) {
-      if (config[key] !== undefined) message[key] = config[key];
+    const data: Record<string, unknown> = { language: hass.language };
+    if (config.entry_id !== undefined) data.site = config.entry_id;
+    for (const key of ["hidden_views", "hidden_cards"] as const) {
+      if (config[key] !== undefined) data[key] = config[key];
     }
+    const message = { type: "call_service", domain: "powerplan", service: "get_dashboard", service_data: data, return_response: true };
     const ha = hass as unknown as Hass;
     startVersionCheck(ha);
     try {
-      return guardUnknownCards(resolvePaths(await hass.callWS(message), dashboardPath(location.pathname)), KNOWN_TAGS, ha);
+      const reply = await hass.callWS<{ response: unknown }>(message);
+      return guardUnknownCards(resolvePaths(reply.response, dashboardPath(location.pathname)), KNOWN_TAGS, ha);
     } catch (err) {
       const base = (hass.language || "en").split("-")[0]!;
       const [failed, help] = FAILED[["no", "nn"].includes(base) ? "nb" : base] ?? FAILED.en!;

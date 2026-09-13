@@ -13,9 +13,9 @@
 **In scope.** One dashboard for the household's sites (views per site where there are several, D-0439), shipped with the integration, showing the site's **past, present and future** from what powerplan already knows, with the knobs a household turns day to day. It looks and behaves like Home Assistant's own Energy dashboard and is built from HA's built-in cards wherever one can show the thing. The pieces:
 
 - a dashboard **strategy** (`custom:powerplan`), registered by the integration's own frontend module;
-- a websocket command that returns the dashboard's layout, generated in Python from the site's registry;
-- two custom cards for what no built-in card can show: the **timeline** (the next 24–48 h of prices, plans, ceilings and forecasts) and the **window gauge** (the current capacity window);
-- the entities the dashboard needs and D8 did not yet publish (§5.6).
+- a response action, `powerplan.get_dashboard`, that returns the dashboard's layout, generated in Python from the site's registry (§5.16);
+- custom cards for what no built-in card can show: the **timeline** (the next 24–48 h of prices, plans, ceilings and forecasts), the **window gauge** (the current capacity window), and the price, appliances, attention and month cards;
+- the entities the dashboard needs and D8 doesn't otherwise publish (§5.6).
 
 **Non-scope.** Editing configuration (the flows stay the way to change structure), writing to the household's Energy preferences, a sidebar panel of its own, per-user layouts, dragging a plan on the timeline (v2), what-if views over the ledger (D11 v2).
 
@@ -27,11 +27,11 @@
 
 **Default cards where possible.** A built-in card is used for everything it can show: `tile` with features (`toggle`, `select-options`, `numeric-input`, `button`, `trend-graph`, `bar-gauge`), `statistic`, `statistics-graph`, `calendar`, `distribution`, `repairs`, `logbook`, `heading`, `entities`, and - where the household has an Energy configuration - the Energy dashboard's own `energy-usage-graph`, `energy-devices-graph` and `energy-sankey`. **The future is the gap:** `history-graph` and `statistics-graph` only draw the past, and the only built-in forecasts are the weather's (`weather-forecast`, the tile's `temperature-forecast` and `precipitation-forecast`) and the Energy dashboard's solar forecast. So the timeline is a custom card, and the plan is *also* published as a calendar (§5.6) so the built-in `calendar` card and HA's Calendar panel show what will run when.
 
-**How the dashboard reaches the household.** The integration serves one ES module from its own directory and loads it on every page (`frontend.add_extra_js_url`, a static path). The module defines `ll-strategy-dashboard-powerplan` and pushes an entry onto `window.customStrategies`, which HA's "Add dashboard" dialog lists (frontend PR #51310). Nothing is created automatically: the household adds the dashboard, and can "take control" of it to edit it like any other.
+**How the dashboard reaches the household.** The integration serves one ES module from its own directory (a static path) and keeps it as a Lovelace resource, which the dashboard panel and "Add dashboard" load themselves (§5.16 R4; `frontend.add_extra_js_url` where resources are YAML). The module defines `ll-strategy-dashboard-powerplan` and pushes an entry onto `window.customStrategies`, which HA's "Add dashboard" dialog lists (frontend PR #51310). Nothing is created automatically: the household adds the dashboard, and can "take control" of it to edit it like any other.
 
-**Where the layout is decided.** In Python. The strategy's `generate()` makes one websocket call, `powerplan/dashboard/config`, and returns what comes back. The Python builder knows the site from its registry - which loads, of which type, with which entities enabled, whether there is production, a battery, circuits - and is tested with pytest like the rest of the integration. The JavaScript stays a shim plus the two cards.
+**Where the layout is decided.** In Python. The strategy's `generate()` makes one call, the response action `powerplan.get_dashboard`, and returns what comes back. The Python builder knows the site from its registry - which loads, of which type, with which entities enabled, whether there is production, a battery, circuits - and is tested with pytest like the rest of the integration. The JavaScript stays a shim plus the cards.
 
-**Where the data comes from.** Entities, as D8 already publishes them: the price curve on `sensor.<site>_price_forecast` (`slots`), every load's plan per slot on `sensor.<site>_plan` (`slots`, §5.6), the window on `sensor.<site>_window_used` / `_window_projected` / `_ceiling`, cost and savings on the monetary sensors. Large attributes are recorder-excluded and change only when their content does (INV-61), so a card that re-renders on a content change redraws once per replan, not once per tick. No data websocket is added.
+**Where the data comes from.** Entities, as D8 publishes them: the price curve on `sensor.<site>_price_forecast` (`slots`), every load's plan per slot on `sensor.<site>_plan` (`slots`, §5.6), the window on `sensor.<site>_window_used` / `_window_projected` / `_ceiling`, cost and savings on the monetary sensors. Large attributes are recorder-excluded and only change when their content does (INV-61), so a card that re-renders on a content change redraws once per replan, not once per tick. No websocket command of our own (§5.16).
 
 **The past.** HA's long-term statistics through the cards that follow the footer's picker, `collection_key: energy_powerplan` (a collection key must start with `energy_`, `validateEnergyCollectionKey`). Cost and savings use `stat_types: change` (the monetary sensors are `total` with a monthly `last_reset`, D8 §5.5), the capacity windows use `max` of `sensor.<site>_window_used` against the `mean` of `sensor.<site>_ceiling`, and the period metric uses `sensor.<site>_metric` (§5.6).
 
@@ -44,13 +44,12 @@
 ```
 custom_components/powerplan/
 ├── dashboard/
-│   ├── __init__.py       async_setup_dashboard(hass): static path, add_extra_js_url, websocket command - called once from async_setup (PLAN §7 dec. 8)
+│   ├── __init__.py       async_setup_dashboard(hass): static path, the Lovelace resource (add_extra_js_url where resources are YAML) - called once from async_setup (PLAN §7 dec. 8)
 │   ├── site_layout.py    SiteLayout from the entity and device registries and the entry's subentries (no hass.states - INV-3)
 │   ├── logbook.py        async_describe_events: every EventKind in words, on the appliance's plan_status (§5.6)
 │   ├── layout.py         build(sites: Sequence[SiteLayout], ha_version, texts, …) → the Lovelace dashboard config (§5.1); plain data in, plain data out
-│   ├── ws_spot.py        v0.7: powerplan/spot_prices {entry_id} → the price card's spot, fixed price and effect (§5.15 F5)
-│   ├── ws_version.py     v0.7: powerplan/version → the loader's key (§5.15 F7)
-│   └── ws.py             powerplan/dashboard/config {entry_id?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440)
+│   ├── resource.py       v0.8: the Lovelace resource - created, kept at the current key, duplicates removed, deleted with the last site (§5.16 R4)
+│   └── config.py         v0.8: the answer of `powerplan.get_dashboard` {site?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440). v0.7's `ws.py`, `ws_spot.py`, `ws_version.py` are gone (§5.16)
 └── frontend/dist/           the committed build HACS installs, served at /powerplan_frontend (§5.5)
     ├── powerplan.js           the module every page loads (≈ 2 kB)
     └── chunks/                ECharts and what it shares, loaded when a timeline first draws; named by content hash
@@ -83,9 +82,9 @@ frontend/                      the sources, at the repository root so HACS and t
 └── package.json, package-lock.json, tsconfig.json, esbuild.config.mjs
 ```
 
-*v0.7:* `price_refresh.py` (the price refresher and `powerplan/refresh_prices`, §5.15 F12) and `savings_guard.py` (§5.15 F10) sit beside `runtime.py`; `ws_spot.py` reads the site's runtime and the pricing core's `FixedPrice`, `SPOT` and `energy_vat_rate`.
+`price_refresh.py` (the price refresher, §5.15 F12, pressed through `button.<site>_refresh_prices`) and `savings_guard.py` (§5.15 F10) sit next to `runtime.py`. The spot the price card reads is on `sensor.<site>_price_forecast` (`sensor.py`, §5.16 R2).
 
-The dashboard package is HA-side and imports nothing from `core/` beyond enums (`Role`, for the battery's own state of charge); nothing in `core/` knows it exists. It calls no service (INV-3): every knob on the dashboard is an entity the household already has, changed through that entity's own service by the frontend.
+The dashboard package is HA-side and imports nothing from `core/` beyond enums (`Role`, for the battery's own state of charge), and nothing in `core/` knows it exists. It calls no action (INV-3): every knob on the dashboard is an entity the household already has, changed through that entity's own action by the frontend. `services.py` registers `get_dashboard` and calls `dashboard/config.py`, and the frontend's only integration-specific calls are that action and `button.press` (§5.16).
 
 ---
 
@@ -292,7 +291,7 @@ Only built-in tile features and entity rows, which call the entity's own action 
 
 ### 5.5 Registration and versions
 
-`async_setup` (once per HA, not per entry): the websocket command; `hass.http.async_register_static_paths` for `/powerplan_frontend` → `frontend/dist` with caching; and, where the `frontend` component is loaded, `frontend.add_extra_js_url(hass, "/powerplan_frontend/powerplan.js?v=<first 12 hex of the module's SHA-256>")` - a content key, so a new build is never served stale, and the chunks' own names carry their hash (D-0448). The module registers the strategy element, the two cards (in `window.customCards` too, with `documentationURL` → `docs/dashboard.md`; D14 §5.4:* → `docs/dashboard.md#<card type>`, each card its own anchor) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "PowerPlan", description, documentationURL}`.
+`async_setup` (once per HA, not per entry): `hass.http.async_register_static_paths` for `/powerplan_frontend` → `frontend/dist` with caching, and the module `/powerplan_frontend/powerplan.js?v=<first 12 hex of the module's SHA-256>` - a content key, so a new build is never served stale, and the chunks' own names carry their hash (D-0448). The module is a Lovelace resource of type `module` the integration keeps at that URL, and only where Lovelace keeps its resources in YAML, or isn't loaded, `frontend.add_extra_js_url` loads it on every page (§5.16 R4). The module registers the strategy element, the cards (in `window.customCards` too, each with `documentationURL` → `docs/dashboard.md#<card type>`, D14 §5.4) and the `window.customStrategies` entry `{type: "powerplan", strategyType: "dashboard", name: "PowerPlan", description, documentationURL}`.
 
 `layout.py` degrades by HA version:
 
@@ -363,7 +362,7 @@ The only built-in way to lay out text from attributes (a deliberate exception to
 
 ### 5.10 The strategy's first paint (B1)
 
-`powerplan.js` defines `ll-strategy-dashboard-powerplan` at the module's top level, before any `await` or import of a card, and loads the two cards' modules and ECharts behind dynamic imports. *v0.5:* it then logs `PowerPlan frontend <hash>` (the cards chunk's content hash), so Q/A can tell which build a browser runs. The iteration-2 Q/A still saw the timeout on a fresh context with this build; HA 2026.9 imports extra modules from a classic script beside `core` and `app` and races the element against 5 s, so a define that runs first leaves only the module's own arrival - what the console line is for (§5.11 G1, open).
+`powerplan.js` defines `ll-strategy-dashboard-powerplan` at the module's top level, before any `await` or import of a card, and loads the cards' modules and ECharts behind dynamic imports. It then logs `PowerPlan frontend <hash>` (the cards chunk's content hash), so a browser's build can be told. HA imports extra modules from a classic script next to `core` and `app` and races the element against 5 s, so a define that runs first still leaves the module's own arrival to chance. That's why the module arrives as a Lovelace resource, which the panel's own `_fetchConfig` starts loading next to the config and "Add dashboard" awaits (§5.16 R4); the house check of §9 26 is what closes B1.
 
 ### 5.11 Iteration 2: the look of the mockups
 
@@ -462,17 +461,47 @@ The fourth iteration's mockup code (rendered in Chromium on the reference house'
 | F2 | the appliances card: four encodings (solid run, empty track = holding, hatch = lowered, green column = cheap), the next start only, the state as a tile's word line, 12–14 px text, a 40 px filter, every row a button; the idle footer | `appliances-card.ts`, `status.ts` | as given; `layout.py` maps each load's entities to the card's names (`deadline`, `cost`, `savings`, `legionella`) |
 | F3 | Now's Plan card: the whole house per window - other usage, holding, each moved load; "Kan bli opptil" a dashed cap at P90; the limit; cheap columns; the price track with estimates outlined; the rail's three groups and the cheap share; resized in place, never drawn at a guessed width | `forecast.ts`, `timeline-plan-mode.ts` | as given; `timeline-card.ts` hands its rail mode to `renderPlanMode` in a host 440 px high (420 under 600 px) and keeps its 12 / 24 / 48 toggle; `show` gains `reserve`, `bucket: window` |
 | F4 | the appliance dialog in HA's more-info shape: close top-left, breadcrumb, history, settings, ⋮; the hero; the control as HA's tile; one lane with the price track; "why" rows that say when prices are estimated; a bottom sheet ≤ 870 px | `appliance-dialog.ts` | as given |
-| F5 | the price card: tokens, estimates dashed, an alert with "Hent på nytt" when the slot in progress has no known price, the split from `fixed_price` | `price-card.ts`, `ws_spot.py` | `powerplan/spot_prices` from the runtime: the spot is each slot's `spot` on the curve without the fixed price, `fixed_price` the `FixedPrice` modifier's price with the VAT that covers the energy, the effect D-0499's saving (D-0582); the capacity fee from `level`'s `fee` where no fee entity is given (D-0586); the `energy` attribute's VAT fixed at the source (D-0581) |
+| F5 | the price card: tokens, estimates dashed, an alert with "Hent på nytt" when the slot in progress has no known price, the split from `fixed_price` | `price-card.ts`, `ws_spot.py` | *v0.8:* the same data from `sensor.<site>_price_forecast` and `sensor.<site>_fixed_price_savings` (§5.16 R2); v0.7: `powerplan/spot_prices` from the runtime: the spot is each slot's `spot` on the curve without the fixed price, `fixed_price` the `FixedPrice` modifier's price with the VAT that covers the energy, the effect D-0499's saving (D-0582); the capacity fee from `level`'s `fee` where no fee entity is given (D-0586); the `energy` attribute's VAT fixed at the source (D-0581) |
 | F6 | `powerplan-attention-card`: PowerPlan's repairs (`repairs/list_issues`) and the meter's `degraded` / `stale` explained; nothing when all is well | `attention-card.ts` | as given; Now's section 1 |
-| F7 | the stale-bundle guard: `powerplan/version` against the bundle's own key on start, reconnect and every 30 min, HA's toast on a mismatch; an unknown `custom:powerplan-*` card becomes a placeholder | `version-check.ts`, `ws_version.py` | the key is the loader's `?v=` (`module_key`), read by `bundle.ts` from the loader's own URL, because a content hash cannot be written into the content it hashes (D-0586); the strategy calls both |
+| F7 | the stale-bundle guard: `powerplan/version` against the bundle's own key on start, reconnect and every 30 min, HA's toast on a mismatch; an unknown `custom:powerplan-*` card becomes a placeholder | `version-check.ts`, `ws_version.py` | *v0.8:* the served key is the `v` of the resource's URL in `lovelace/resources` (§5.16 R5); the key is the loader's `?v=` (`module_key`), read by `bundle.ts` from the loader's own URL, because a content hash cannot be written into the content it hashes (D-0586); the strategy calls both |
 | F8 | the history chart: `drawMarkers` converts one value, not `[x, 0]` (the `TypeError` that drew no marker), and runs on `finished`; History has its period at once from `collection.start`, not after the ≈ 25 s first emit | `patches/history-chart.md` | applied to `timeline-card.ts` and `energy.ts`'s `followPeriod` |
 | F9 | `powerplan-month-bars`: the month's cost and savings over daily bars on a fixed 1..N axis, " - , mangler referanse" without a reference | `month-bars.ts` | as given; Now's section 7 |
 | F10 | savings without a reference are `unknown` with `reason: no_reference`, never −cost (five loads read exactly −cost on the reference house) | `savings_guard.py` | the module as given (`flat_reference_cost` included, not wired); `sensor.<appliance>_savings_month` guards on the ledger's `cf_cost` (D-0583); *(D11 v0.3)* on `settled_cost`, so an open day reads `pending`, not `no_reference` (D-0591) |
 | F11 | the baseline: a window before any load's history begins is skipped; the meter's lag, 0 or 1 h, found by correlation and corrected | `baseline.py` | in D10's `reconstruct.uncontrolled_history`, so the seed and the P90 share it (D-0584; D10 §5.2) |
-| F12 | the price refresher: after the startup fetch and whenever Nord Pool loads, retries 1–2–5–10–15 min while now's slot is not known; `prices_stale` after 30 min; `powerplan/refresh_prices` | `price_refresh.py` | on the runtime (`runtime.price_refresher`), fetching through `Runtime.refresh_prices`, the issue in D8 §5.9's catalogue (D-0580) |
+| F12 | the price refresher: after the startup fetch and whenever Nord Pool loads, retries 1–2–5–10–15 min while now's slot is not known; `prices_stale` after 30 min; `powerplan/refresh_prices` | `price_refresh.py` | *v0.8:* pressed through `button.<site>_refresh_prices` (§5.16 R3); on the runtime (`runtime.price_refresher`), fetching through `Runtime.refresh_prices`, the issue in D8 §5.9's catalogue (D-0580) |
 | F13 | Now: the rail 256 px (300 before), the attention card, the month card | `layout_now.py` | `layout.py` (§5.1 rows 1, 7) |
 
 Not ported: the mockups' own layout names and context object (the builder already had the site), their price options (`fixed_price`, `fixed_price_entity`, `price_model`, `meter_energy_entity`, which the tariff's own `FixedPrice` and register answer), and their own Nord Pool calls (INV-3).
+
+### 5.16 Home Assistant's own backend
+
+Every path from the frontend into the integration goes through a channel Home Assistant gives every integration, and the integration registers no websocket command of its own (D-0620…D-0623).
+
+| what | how | the frontend calls |
+|---|---|---|
+| the layout | the response action `powerplan.get_dashboard` (R1) | `call_service` with `return_response: true` |
+| the price card's spot | `sensor.<site>_price_forecast` → `slots[].spot`, `fixed_price`; `sensor.<site>_fixed_price_savings` (R2) | `hass.states` |
+| the price card's retry | `button.<site>_refresh_prices` (R3) | `button.press` |
+| the served bundle | the `v` of the resource's URL (R5) | `lovelace/resources` |
+| loading the module | a Lovelace resource the integration keeps (R4) | HA's dashboard panel and "Add dashboard" |
+
+The cards' other calls are HA's own: `recorder/statistics_during_period` (`energy.ts`, `month-bars.ts`) and `repairs/list_issues` (`attention-card.ts`).
+
+**R1: `powerplan.get_dashboard`.** Fields `site` (the entry id or title, as every action; every loaded site without it, D-0439), `language` (default `en`), `hidden_views`, `hidden_cards`. `SupportsResponse.ONLY`. It answers `build(…)`, which §9 1's golden holds. An unknown or unloaded site is `ServiceValidationError` `unknown_site`, translated, never an empty dashboard, and the strategy shows the message in its markdown card. The strategy maps its own `entry_id` option to `site`. Any signed-in user may call it: HA checks entity permissions on an action's target, and this action has none (§9 4).
+
+**R2: the spot on `price_forecast`.** Each slot carries `spot`: the slot's `spot` component without VAT, rounded to 5 decimals, taken from the curve without the fixed price where the site has one (`Runtime.reference_curve`, D-0495) and from the curve itself where not; a slot without a spot component has none. The row carries `fixed_price`: the `FixedPrice` modifier's price with the VAT that covers the energy, rounded to 5 decimals, `null` without one. `slots` stays unrecorded and the row stays digest-gated (INV-61). `sensor.<site>_fixed_price_savings` carries `today_kwh`, so the card's `effect` is the sensor's state (the month), `today`, `kwh` and `today_kwh`. The card computes `tomorrow_available` itself: a `known` slot that starts at or after tomorrow's local midnight.
+
+**R3: `button.<site>_refresh_prices`.** Configuration category, on by default. A press awaits the price refresher's `async_refresh("user")` (§5.15 F12), or the runtime's own fetch where the site has no refresher. The layout passes it to the price card as `entities.refresh`, and the card only shows "Hent på nytt" when it has one. The press returns when the fetch is done, and the alert clears when `price_forecast` changes.
+
+**R4: the Lovelace resource.** `async_setup` (once per HA) runs after `lovelace` (an after-dependency). Where Lovelace keeps its resources in storage, exactly one resource whose URL path is `/powerplan_frontend/powerplan.js` exists afterwards, of type `module`, carrying the current `?v=<key>`. It's created when there's none, its URL updated when the key changed, and any duplicate removed. No other resource is read for anything but its URL, or touched. Where Lovelace keeps resources in YAML, or isn't loaded, the integration falls back to `add_extra_js_url` and `docs/dashboard.md` gives the one YAML line. Removing the last site (`async_remove_entry`) deletes the resource, and a household that deletes it by hand gets it back at the next start. The static path doesn't change.
+
+Why this loads in time (B1): in HA's frontend the dashboard panel's `_fetchConfig` starts loading `lovelace/resources` next to the dashboard config, and "Add dashboard"'s `_loadCustomStrategies` awaits them before it lists strategies. So the module is fetched by the page that waits 5 s for it, not by a separate script racing the app.
+
+**R5: the version check.** On start, on reconnect and every 30 minutes, `version-check.ts` reads `lovelace/resources`, finds the resource under `/powerplan_frontend/powerplan.js`, and compares its `v` with the loader's own (`bundle.ts`). On a mismatch it shows HA's reload toast. Without such a resource (YAML) there's nothing to compare, and nothing is shown.
+
+**R6: nothing private.** No module under `custom_components/powerplan/` imports `websocket_api`, and no file under `frontend/src/` sends a `powerplan/…` message type (§9 25).
+
+The resource store is the household's Lovelace configuration. The integration writes one row of it, its own, found by its URL path, and that row shows under **Settings** > **Dashboards** > **Resources** like any other card's.
 
 ## 6. Configuration schema
 
@@ -490,25 +519,33 @@ None. The dashboard is generated on every open. A household that takes control o
 
 | failure | behaviour | surface |
 |---|---|---|
-| The websocket call fails, the entry is gone or no site is loaded | the strategy returns one view with a `markdown` card saying why, linking `docs/troubleshooting.md` | the dashboard |
+| `powerplan.get_dashboard` fails, the entry is gone or no site is loaded | the strategy returns one view with a `markdown` card saying why, linking `docs/troubleshooting.md` | the dashboard |
 | A site or appliance is added | nothing to do: the strategy regenerates on the next open (§7) | the dashboard |
-| An entity is disabled or missing | the builder leaves its card out; never a card with a dead reference | - |
+| An entity is disabled or missing | the builder leaves its card out, never a card with a dead reference | - |
 | HA older than a card or feature | §5.5's table | - |
-| A stale bundle in the browser cache | the module URL carries the manifest version | - |
+| A stale bundle in the browser cache | the module URL carries the module's content key, and the resource's `v` is compared with the loader's and HA's reload toast shown (§5.16 R5) | the toast |
+| Lovelace keeps its resources in YAML, or isn't loaded | `add_extra_js_url` loads the module on every page; no version check | `docs/dashboard.md` |
+| The household deletes PowerPlan's resource | created again at the next start | - |
+| The price card has no `refresh` entity (the button disabled) | no "Hent på nytt"; the alert still says why | the card |
 | An attribute larger than the recorder limit | already excluded (INV-61); the card reads the live state | - |
 
 ---
 
 ## 9. Tests that must exist before merge
 
-1. Builder golden: a registry shaped like `nordic_detached` (twelve loads, D9 §5.9) yields a config in which every referenced entity id exists and is enabled; every card type is built-in except `custom:powerplan-timeline-card` and `custom:powerplan-window-card`; every view is `sections` with `max_columns: 3` and `dense_section_placement`; the history view's picker has `collection_key: energy_powerplan`, and every `statistics-graph` in that view has `energy_date_selection: true` and the same key.
+1. Builder golden: a registry shaped like `nordic_detached` (twelve loads, D9 §5.9) yields a config in which every referenced entity id exists and is enabled; every view is `sections` with `max_columns: 3` and `dense_section_placement`; the history view's picker has `collection_key: energy_powerplan`, and every card in that view that follows it has the same key.
 2. Per type: each of D4's eight types gets §5.1's tiles and features; a disabled entity is omitted; `comfort_c` is omitted when a schedule is bound.
 3. Versions: at 2026.1 the picker is a card, `distribution` is an `entities` card and `repairs` is omitted; at 2026.2 `distribution` is back; at 2026.3.0 (the floor) all three are (D-0437).
-4. Websocket: schema-validated; an unknown entry is an error, not an empty dashboard; read-only, so no admin required; < 100 ms for a 20-load site.
-5. `calendar.<site>_planned_runs`: each adopted plan's contiguous active blocks are events with load, kWh and estimated cost; it changes only on adoption; a block that ended is gone.
+4. `powerplan.get_dashboard`: schema-validated; answers the config the builder golden holds; an unknown entry is `unknown_site`, not an empty dashboard; a non-admin user may call it; < 100 ms for a 20-load site.
+5. `calendar.<site>_planned_runs`: each adopted plan's contiguous active blocks are events with load, kWh and estimated cost; it only changes on adoption; a block that ended is gone.
 6. `sensor.<site>_plan` → `slots` carries `ceiling_kwh` and `baseline_kwh` per slot and is recorder-excluded; `sensor.<site>_metric` equals D2's metric.
-7. Frontend: CI runs `npm ci`, the type check, `vitest` and `npm run build`, and fails when `custom_components/powerplan/frontend/dist/` differs; pytest checks every chunk the bundle imports is committed and that the module is served and loaded on every page; `vitest` covers the timeline's slot-to-series transform (a DST day draws 92 and 100 quarter slots without a gap; estimated slots are flagged) and the gauge's stage colours.
-8. `test_single_writer` and the INV-3 grep stay green: the dashboard package calls no service and reads no `hass.states`.
+7. Frontend: CI runs `npm ci`, the type check, `vitest` and `npm run build`, and fails when `custom_components/powerplan/frontend/dist/` differs; pytest checks every chunk the bundle imports is committed and that the module is served and loaded as a Lovelace resource (§9 26); `vitest` covers the timeline's slot-to-series transform (a DST day draws 92 and 100 quarter slots without a gap; estimated slots are flagged) and the gauge's stage colours.
+8. `test_single_writer` and the INV-3 grep stay green: the dashboard package calls no action and reads no `hass.states`.
+
+25. No module under `custom_components/powerplan/` imports `websocket_api`, and no file under `frontend/src/` sends a `powerplan/` message type.
+26. The resource: created once as `module` at the current key on a storage-mode HA; a changed key updates the same row; a duplicate is removed; the household's other resources are unchanged; YAML mode leaves the store alone and adds the extra-JS URL; removing the last site deletes the row, removing one of two keeps it. House check: a cold load of `/overview` 10 of 10 on desktop and in the Companion app, also straight after a restart, and PowerPlan listed in "Add dashboard".
+27. `price_forecast`'s `slots[].spot` and `fixed_price`, and `fixed_price_savings`' `today_kwh`, match the runtime's curves with and without a fixed price; `slots` stays unrecorded; `vitest`: the price card builds its spot from those attributes and reads `tomorrow_available` from a known slot after local midnight.
+28. `button.<site>_refresh_prices` exists on every site, is on by default, and a press runs the refresher's `async_refresh("user")`; the layout only gives the price card `entities.refresh` while the button is enabled.
 
 ---
 
@@ -569,5 +606,17 @@ None. The dashboard is generated on every open. A household that takes control o
 **The mockups' own backend (`ws_spot.py`, `baseline.py`, `status_guard.py`).** *For:* already rendered on the reference house, and the spot websocket also gives the month's Norgespris effect. *Against:* it assumes entity ids and attributes the integration doesn't publish, calls Nord Pool outside INV-3's four files, and builds a second baseline next to D10's. **Decision:** port the cards and their CSS as given, feed them from the curve and D10 (D-0494…D-0496), and build each backend piece in the integration's own shape - the override guard (D-0497), the empirical P90 (D-0498), the month's fixed-price saving (D-0499).
 
 **Restyle the older cards instead of taking the fourth iteration's files as delivered.** *For restyling:* the older cards carry work the new code doesn't know - every word in the translations (D-0446), holds and planned pauses in the lanes (D-0501, D-0507), the strategy's words in "why", `noUncheckedIndexedAccess` - and a restyle keeps it. *Against:* a restyle is exactly what drifts from the mockups, and every restyled file is one more file to reconcile at the next iteration. **Decision:** the files as delivered, the backend built to feed them (D-0585).
+
+**Keep four websocket commands and only move the loader.** *For:* the timeout fires before `generate()` makes any call, so only the loader is on the error's path. Websocket commands are official HA API that core integrations such as Energy and Repairs use, and it's the smallest diff. *Against:* four private protocols to version, test and document, a version command that only exists for the loader, and a price card that polls a runtime every 15 minutes instead of reading a published state. **Decision:** every path goes through an action, a state or HA's own commands (§5.16).
+
+**The layout in TypeScript from `hass.entities`, `hass.devices` and `hass.localize`, as HA's own strategies do.** *For:* the purest HA pattern, with no call to the server, so the strategy never waits on it. *Against:* over a thousand lines of `layout.py` and its golden ported to a second language, and the subentries, the planner's priority order and the build's facts (`has_production`, circuits) aren't in the frontend's registries. **Decision:** a response action, Python stays the one source of the layout.
+
+**The layout on an entity attribute.** *For:* it would arrive with the states and need no call. *Against:* one layout per language, tens of kB, pushed to every open tab on every change and only kept out of the recorder by care. **Decision:** no.
+
+**`powerplan.refresh_prices` as an action instead of a button.** *For:* an action can answer `ok`. *Against:* a second public action for one card's button, and HA's own UI already knows how to press a button. **Decision:** a button, and a new `price_forecast` state is the card's success signal.
+
+**A resource only, with no extra-JS fallback.** *For:* one loading path and one thing to test. *Against:* a household that keeps its resources in YAML would silently lose the dashboard. **Decision:** the resource where resources are stored, the extra-JS URL where they aren't.
+
+**The spot on a sensor of its own.** *For:* `price_forecast` stays as it is, and the spot's size is its own row's. *Against:* `price_forecast` already carries `area`, `vat` and each slot's `energy` and `reference` for this card (D-0495), and a second curve-sized unrecorded attribute doubles the push. **Decision:** `slots[].spot` and `fixed_price` on `price_forecast`.
 
 **A fixed `rows: 7` for the timeline instead of `rows: auto`.** *For:* level rows (G6) and the height the review measured. *Against:* at 390 px a four-line legend and the readout leave a fixed card about 120 px of plot, and the plot's 180 px floor can't hold inside a fixed height. **Decision:** the card sizes its canvas and grows with its legend (D-0491).

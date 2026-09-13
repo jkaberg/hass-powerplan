@@ -207,7 +207,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<site>_next_peak_warning` | sensor timestamp | - | on | attrs `expected_kwh`, `ceiling_kwh`, `drivers` |
 | `binary_sensor.<site>_peak_warning` | binary | - | on | |
 | `sensor.<site>_price` | sensor `<CUR>/kWh` | - | on | attrs: components now, min/max/avg today, percentile |
-| `sensor.<site>_price_forecast` | sensor (count) | diagnostic | on | attr `slots` - **recorder-excluded**, changes only with the curve (INV-61) |
+| `sensor.<site>_price_forecast` | sensor (count) | diagnostic | on | attr `slots` - **recorder-excluded**, changes only with the curve (INV-61). *(D12 §5.16 R2)* each slot's `spot` (without VAT, from the curve without the fixed price where there is one) and the row's `fixed_price` (with the VAT on energy, or `null`) |
 | `sensor.<site>_price_export`, `_price_<carrier>` | sensor | - | on if configured | |
 | `binary_sensor.<site>_prices_tomorrow` | binary | - | on | |
 | `sensor.<site>_plan` | sensor (planned kWh next 24 h) | diagnostic | on | attr `by_load` summary; **recorder-excluded**. *(D12 §5.6)* attr `slots`: per slot `start`, `end`, `ceiling_kwh`, `baseline_kwh`, `production_kwh` (Phase 7), `planned_kwh` by load - recorder-excluded, changes on adoption only |
@@ -220,6 +220,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<site>_baseline_confidence` | sensor % | diagnostic | off | D10 |
 | `sensor.<site>_tick_ms` | sensor | diagnostic | off | |
 | `sensor.<site>_reasons` | sensor text | diagnostic | off | attr `trail` - recorder-excluded |
+| `button.<site>_refresh_prices` *(D12 §5.16 R3)* | button | config | on | fetch the prices now through the price refresher (D12 §5.15 F12); the price card's "Hent på nytt" |
 | `button.<site>_replan`, `_rebuild_baseline`, `_rebuild_peak_history` | button | config | on/off/off | `_rebuild_peak_history` re-seeds the open period from the import register's recorder rows, replacing the windows it has; `set_peak` overrides survive (D2 §5.12). Only where an import register is bound |
 | `event.<site>` | event | - | on | HA event entity mirroring the bus events (for the UI's logbook) |
 | `sensor.<site>_cost` | sensor `<CUR>`, `device_class: monetary`, `state_class: total`, `last_reset` = month start | - | on | month-to-date: energy cost − export credit + capacity fee (D11); attrs `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install`, `confidence`, `estimated_share` |
@@ -314,6 +315,7 @@ All are edge-triggered in D7; a `cleared: true` variant is emitted when the cond
 | `powerplan.set_peak` | `site`, `date` or `month`, `kw`, `note` | D2 override |
 | `powerplan.rebuild_baseline` | `site` | D10 reseed |
 | `powerplan.dump_state` | `site` | write the Snapshot + Inputs to the log / return as response |
+| `powerplan.get_dashboard` *(D12 §5.16 R1)* | `site` (optional: every loaded site), `language` (default `en`), `hidden_views`, `hidden_cards` | the dashboard's layout (`SupportsResponse.ONLY`); an unknown site is `unknown_site`. The PowerPlan dashboard calls it; no admin needed |
 | `powerplan.refresh_tariff` | `site` (optional: every loaded site) | fetch the grid tariff now from the same operator, product and tier; merge; answer `{source, fetched, added, changed, kept, next_renewal}` (`SupportsResponse.OPTIONAL`); a template or custom tariff answers `{source: "template", …}`; a failure raises `HomeAssistantError` `tariff_refresh_failed` (source, reason) and changes nothing (D13 §10) |
 Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config_entry_id` or device selector. All registered once per domain with `supports_response` where useful.
 
@@ -869,7 +871,7 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 
 ---
 
- `plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499). `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
+`plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499); attributes `today`, `kwh` and `today_kwh`. `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
 
 ### 5.17 The price by party on screen *(D13 §6, §6.1, §7)*
 
@@ -947,6 +949,7 @@ Config entry data and subentry data as in §4 (HA's own storage). `NotificationP
 35. `refresh_tariff` answers what it did; on a failed source it raises `tariff_refresh_failed` and the entry is unchanged; `powerplan_tariff_updated` fires only when the copy changed.
 36. `tariff_stale` after the last version ends with the renewal failing; `tariff_review` on a disagreement with a confirmed field; `preset_outdated` for a retired file.
 37. The credit note is rendered for every country with a source and names each source's licence where one is required; diagnostics contain no postcode and no meter id.
+38. `get_dashboard` answers only with `return_response`, matches the builder, and refuses an unknown site with `unknown_site`; `button.<site>_refresh_prices` runs the refresher; `price_forecast`'s `spot` and `fixed_price` follow D12 §9 27.
 
 ---
 

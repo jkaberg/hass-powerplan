@@ -2534,3 +2534,23 @@ The ceiling sensor is unknown when the ceiling is infinite, and `metric` when th
 
 Merging the tariff-sources work with main: D11 is the settled-reference ledger, with the series' additions on top (savings by party as each slot settles, energy cost by party per slot, a priced limit's surcharge in both worlds, a tariffed load on its own curve). The frontend is the second card set as delivered: the price strip's party stack and source credit aren't drawn yet, though the sensors still carry `parties` and `credit`. The price card's energy part uses the state stage's VAT where the chain is by party. Affects D11 §5.4, §5.8, §5.9; D12 §5.13.
 **Rejected:** re-applying the party stack to the new cards in the merge - a card change belongs in its own step.
+
+### D-0620 · The dashboard layout is a response action
+
+`powerplan.get_dashboard` (`SupportsResponse.ONLY`: `site`, `language`, `hidden_views`, `hidden_cards`) answers `async_dashboard_config`, the former websocket command's body. `strategy.ts` sends HA's `call_service` with `return_response: true`. A response action is HA's channel for "answer me something", as `dump_state` already uses (PLAN §7 dec. 42), and the strategy's `entry_id` option keeps its name. Affects D12 §5.16, §9 4; D8 §5.7, §9 38.
+**Rejected:** keeping the private websocket command - a private channel where HA offers a public one.
+
+### D-0621 · The spot rides on `price_forecast`; the card computes `tomorrow_available`
+
+`_slots` adds `spot` (ex VAT, from the reference curve where a fixed price exists), the row adds `fixed_price`, and `fixed_price_savings` adds `today_kwh`. `price-card.ts` builds its `Spot` object from these states, so its rendering is untouched; `tomorrow_available` is a known slot from the next local midnight. A state pushes on change where the card polled every 15 minutes. Affects D12 §5.16, §9 27; D8 §5.5.
+**Rejected:** the separate spot command - a snapshot of the same data.
+
+### D-0622 · The frontend module is a Lovelace resource the integration keeps
+
+`dashboard/resource.py` reads `hass.data[LOVELACE_DATA]`; in storage mode it keeps exactly one `module` item for `/powerplan_frontend/powerplan.js` with the current `?v=`, using the collection's own create, update and delete, otherwise `add_extra_js_url`. `lovelace` joins `after_dependencies`; the item is removed with the last entry. HA 2026.9's dashboard panel loads resources itself, so the strategy's module is fetched by the page waiting for it. It's one row the integration owns and the household can see and delete, not a dashboard created unasked. Affects D12 §5.5, §5.16, §8, §9 26.
+**Rejected:** `add_extra_js_url` alone - the page can ask for the strategy before the module arrives.
+
+### D-0623 · The stale-bundle check reads `lovelace/resources`
+
+`version-check.ts` reads the resource item's `v` from `lovelace/resources` and compares with the loader's own; with no item (YAML resources) it does nothing. The version command goes; `module_key` stays to write the key into the resource. Affects D12 §5.15, §5.16.
+**Rejected:** a command that repeats a key the store already holds.

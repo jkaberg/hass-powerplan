@@ -130,3 +130,26 @@ refresh_tariff:
       selector:
         config_entry:
           integration: powerplan
+
+get_dashboard:
+  fields:
+    site:
+      required: false
+      selector:
+        config_entry:
+          integration: powerplan
+    language:
+      required: false
+      default: en
+      selector:
+        text:
+    hidden_views:
+      required: false
+      selector:
+        text:
+          multiple: true
+    hidden_cards:
+      required: false
+      selector:
+        text:
+          multiple: true

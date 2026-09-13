@@ -21,6 +21,7 @@ In the tables, `<home>` and `<appliance>` stand for those names as Home Assistan
 | `binary_sensor.<home>_meter_reading` | Meter reading | — | Diagnostic, off by default |
 | `binary_sensor.<home>_peak_warning` | Peak warning | — | shown |
 | `binary_sensor.<home>_tomorrow_s_prices` | Tomorrow's prices | — | shown |
+| `button.<home>_fetch_prices_again` | Fetch prices again | — | Configuration |
 | `button.<home>_plan_again` | Plan again | — | Configuration |
 | `button.<home>_relearn_normal_usage` | Relearn normal usage | — | Configuration, off by default |
 | `button.<home>_reload_this_month_s_peaks` | Reload this month's peaks | — | Configuration, off by default |
@@ -208,6 +209,11 @@ Whether PowerPlan gets readings from your electricity meter: **OK**, **Slow** wh
 ### Price source
 
 Whether PowerPlan gets electricity prices: **OK**, **Missing prices** when the next prices are late, or **Error** when the source fails. With an error, PowerPlan raises a repair. Key: `price_source_health`.
+
+<a name="price_forecast"></a>
+### Prices known until
+
+The time up to which PowerPlan knows your electricity prices. The `slots` attribute lists each hour or quarter-hour with your price, `total`, and whether it is known or estimated. With a spot price, each one also has `spot`, the market price without VAT. With a fixed price such as Norgespris, `fixed_price` is that price with VAT, and `spot` is what the market would have charged. The dashboard's price card reads these attributes. To fetch the prices again now, press **Fetch prices again**. Key: `price_forecast`.
 
 <a name="plan_status"></a>
 ### Plan status

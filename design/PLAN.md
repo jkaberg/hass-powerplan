@@ -234,6 +234,7 @@ HLD §9 phase 6.
 | **6.4h Dashboard: polish** | shared styles; the runs card; clock strings on `plan_status` | D12 §5.11, §5.1, §5.3, §5.6 | D12 §9 19 | 6.4g |
 | **6.4i Dashboard: appliances and prices** | the appliances card and dialog, the price card, the forecast | D12 §5.12 | D12 §9 20 | 6.4h |
 | **6.4j Dashboard: price refresh and savings** | the price refresher, the savings guard, the meter-lag skip | D12 §5.15; D10 §5.2; D8 §5.5, §5.9 | D12 §9 24 | 6.4i |
+| **6.4k Dashboard: Home Assistant's own backend** | the layout as a response action; the module as a Lovelace resource; no private websocket commands | D12 §5.16; D8 §5.5, §5.7; dec. 42 | D12 §9 4, 25-28; D8 §9 38 | 6.4j |
 
 ### Phase 7 - Solar and the battery together
 
@@ -362,6 +363,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 39. **The household's price by party** (D13). A company's tariff is fetched from the first source tier that passes the quality check, API before file before document (INV-75); company prices never ship (INV-70); national law ships in country modules; VAT is never asked where known; the flow asks by party; the copy renews monthly, never at start (INV-73); a priced contracted-power excess is a cost, not a hard limit. *Rejected:* shipped files where no source exists - staleness returns where nobody checks.
 40. **User documentation is designed like a domain** (D14). A start path apart from the reference, catalogues per registry, one heading per entity, action and event, linkable troubleshooting, facts generated from the code; `docs/` for households, `design/` for the design; headings in the household's words with the registry key as anchor. *Rejected:* the design documents staying in `docs/` - a household would open the folder to three design files.
 41. **Savings measure timing, not physics** (D11 §5.9). A load's measured energy priced where the uncontrolled device would have drawn it, booked when its day, session or run settles; observe saves nothing; the shadows stay as a model figure shown once calibrated. *Rejected:* fixing the shadows' inputs - every fix is one more parameter that must be right, and under a flat price the signal is smaller than the model error.
+42. **The dashboard uses Home Assistant's own backend only.** The layout from a response action, the spot price from a sensor, retries from a button, the module as a Lovelace resource; no private websocket commands. *Rejected:* keeping the commands - a private protocol to version, test and document.
 
 ---
 
@@ -494,6 +496,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4h | Dashboard: polish | done |
 | 6.4i | Dashboard: appliances and prices | done |
 | 6.4j | Dashboard: price refresh and savings | done |
+| 6.4k | Dashboard: Home Assistant's own backend | done |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |

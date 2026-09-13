@@ -1,6 +1,7 @@
-// PowerPlan's dashboard module (D12 §3, §5.5), loaded on every page by
-// `frontend.add_extra_js_url`: the strategy HA lists in "Add dashboard" and
-// the cards its layout names.
+// PowerPlan's dashboard module (D12 §3, §5.5), a Lovelace resource the
+// integration keeps (§5.16 R4; `frontend.add_extra_js_url` on every page where
+// resources are YAML): the strategy HA lists in "Add dashboard" and the cards
+// its layout names.
 //
 // The strategy element is defined first, at the module's top level, with
 // nothing to fetch before it: HA gives a strategy element a few seconds to

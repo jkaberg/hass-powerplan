@@ -25,7 +25,7 @@ from .const import (
     LOAD_TYPE,
     SUBENTRY_LOAD,
 )
-from .dashboard import async_setup_dashboard
+from .dashboard import async_remove_dashboard, async_setup_dashboard
 from .entity import async_prepare_site_device
 from .flow.load import binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
@@ -47,6 +47,7 @@ type PowerplanConfigEntry = ConfigEntry[Runtime]
 __all__ = [
     "PowerplanConfigEntry",
     "Runtime",
+    "async_remove_entry",
     "async_setup",
     "async_setup_entry",
     "async_unload_entry",
@@ -168,3 +169,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -
     await entry.runtime_data.stop("unload")
     _LOGGER.debug("Site %s unloaded (entry %s)", entry.title, entry.entry_id)
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
+    """Remove one site; with the last one, the dashboard's Lovelace resource too (D12 §5.16 R4)."""
+    if not any(
+        other.entry_id != entry.entry_id for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        await async_remove_dashboard(hass)

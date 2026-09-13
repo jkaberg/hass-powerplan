@@ -1080,6 +1080,9 @@
       "rebuild_peak_history": {
         "name": "Hent månedens effekttopper på nytt"
       },
+      "refresh_prices": {
+        "name": "Hent priser på nytt"
+      },
       "run_now": {
         "name": "Kjør nå"
       }
@@ -2146,6 +2149,28 @@
         "site": {
           "name": "Hjem",
           "description": "Hjemmet; alle når feltet er tomt."
+        }
+      }
+    },
+    "get_dashboard": {
+      "name": "Hent dashbordet",
+      "description": "Returner oppsettet til PowerPlan-dashbordet. PowerPlan-dashbordet kaller denne selv.",
+      "fields": {
+        "site": {
+          "name": "Hjem",
+          "description": "Hjemmet; alle når feltet er tomt."
+        },
+        "language": {
+          "name": "Språk",
+          "description": "Språket til dashbordets tekster, for eksempel en eller nb."
+        },
+        "hidden_views": {
+          "name": "Skjulte faner",
+          "description": "Faner som utelates: overview, history eller appliances."
+        },
+        "hidden_cards": {
+          "name": "Skjulte kort",
+          "description": "Korttyper som utelates."
         }
       }
     }

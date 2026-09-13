@@ -35,6 +35,7 @@ from homeassistant.util import dt as dt_util
 
 from .core.model import Carrier, Confidence, Snapshot
 from .core.pricing.modifiers.base import SPOT
+from .core.pricing.modifiers.fixed_price import FixedPrice
 from .core.pricing.modifiers.vat import Vat, energy_vat_rate
 from .core.pricing.party import StateVat, split
 from .core.tariffs.evaluator import ADVICE_KEYS
@@ -112,13 +113,17 @@ def _slots(
     reference: PriceCurve | None = None,
     energy_vat: Decimal = Decimal(0),
 ) -> list[dict[str, Any]]:
-    """Return the curve's slots; with `reference`, each slot's price without the fixed price too."""
+    """Return the curve's slots; with `reference`, each slot's price without the fixed price too.
+
+    `spot` is the market price without VAT (D12 §5.16 R2): the reference's where
+    there is a fixed price, since the curve's own `spot` is then the fixed price.
+    """
     if curve is None:
         return []
-    without = {} if reference is None else {slot.start: slot.total for slot in reference.slots}
+    without = {} if reference is None else {slot.start: slot for slot in reference.slots}
     rows = []
     for slot in curve.slots:
-        row = {
+        row: dict[str, Any] = {
             "start": slot.start.isoformat(),
             "end": slot.end.isoformat(),
             "total": str(slot.total),
@@ -127,8 +132,11 @@ def _slots(
             # The price by party, for the timeline's stack (D12 §5.13, D1 §5.3).
             "parties": by_party(slot.components),
         }
+        market = slot if reference is None else without.get(slot.start)
+        if market is not None and (spot := market.components.get(SPOT)) is not None:
+            row["spot"] = float(round(spot, 5))
         if slot.start in without:
-            row["reference"] = str(without[slot.start])
+            row["reference"] = str(without[slot.start].total)
         rows.append(row)
     return rows if limit is None else rows[:limit]
 
@@ -170,6 +178,14 @@ def energy_vat(runtime: Runtime) -> Decimal:
                 return Decimal(0)
             return vat_at(modifier.price.state, dt_util.now().date())
     return energy_vat_rate(runtime.build.price_modifiers)
+
+
+def _fixed_price(runtime: Runtime) -> float | None:
+    """Return the fixed price with the VAT that covers the energy, or `None` (D12 §5.16 R2)."""
+    fixed = next((m for m in runtime.build.price_modifiers if isinstance(m, FixedPrice)), None)
+    if fixed is None:
+        return None
+    return float(round(fixed.price * (1 + energy_vat(runtime)), 5))
 
 
 def _energy_part(components: Mapping[str, Decimal], energy_vat: Decimal) -> str | None:
@@ -547,6 +563,7 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
             "vat": site_vat(r),
             # The grid tariff's source, credited under the price card (D13 §6.1, D12 §5.13).
             "credit": tariff_credit(r),
+            "fixed_price": _fixed_price(r),
         },
         unrecorded=frozenset({"slots"}),
         digest_gated=True,
@@ -920,9 +937,10 @@ class SiteFixedPriceSavingsSensor(PowerplanEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any]:
-        """Return today's saving and the kWh it is over."""
+        """Return today's saving and the kWh the month's and today's are over."""
         saving = self.runtime.fixed_saving
         return {
             "today": None if saving is None else saving.today,
             "kwh": None if saving is None else saving.kwh,
+            "today_kwh": None if saving is None else saving.today_kwh,
         }

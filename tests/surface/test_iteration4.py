@@ -1,8 +1,8 @@
-"""D12 §9 24 - the price card's backend: spot prices from the runtime, honest savings, the price refresher.
+"""D12 §9 24, 27 - the backend behind the price and appliance cards: spot prices from the runtime, honest savings, the price refresher.
 
-D12 §5.15 in the integration's shape: `powerplan/spot_prices` answers from
-the site's own curves (D-0582), a load's savings are unknown without a reference (D-0583), and the
-price refresher retries and raises `prices_stale` after 30 minutes (D-0580).
+The spot comes from the site's own curves (D-0582), published on `price_forecast` (§5.16 R2, D-0621), a
+load's savings are unknown without a reference (D-0583), and the price refresher retries and raises
+`prices_stale` after 30 minutes (D-0580).
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.model import Carrier, Confidence, Direction, PriceCurve, Slot
 from custom_components.powerplan.core.pricing.modifiers.fixed_price import FixedPrice
 from custom_components.powerplan.core.pricing.modifiers.vat import Vat, energy_vat_rate
-from custom_components.powerplan.dashboard.ws_spot import spot_prices
 from custom_components.powerplan.price_refresh import BACKOFF_S, PriceRefresher
 from custom_components.powerplan.runtime import FixedPriceSaving
 from custom_components.powerplan.savings_guard import NO_REFERENCE, guarded_savings, house_total
+from custom_components.powerplan.sensor import _fixed_price, _slots
 
 if TYPE_CHECKING:
     from freezegun.api import FrozenDateTimeFactory
@@ -78,33 +78,32 @@ def _runtime(*, fixed: bool, known_until_h: int = 48) -> SimpleNamespace:
     )
 
 
-def test_24_spot_prices_come_from_the_curve_without_the_fixed_price() -> None:
-    """F5, D-0582: Norgespris 0,40 + 25 % → 0,50; the spot is the reference curve's; today and tomorrow."""
-    answer = spot_prices(_runtime(fixed=True), NOW)
-    assert answer["area"] == "NO3"
-    assert answer["vat"] == 0.25
-    assert answer["fixed_price"] == 0.5
-    assert answer["energy_field_check"] == 0.0
-    assert {slot["spot"] for slot in answer["slots"]} == {0.834}
-    # 00:00 local today (22:00 UTC) to 00:00 local the day after tomorrow: 48 hours.
-    assert answer["slots"][0]["start"] == "2026-09-23T22:00:00+00:00"
-    assert len(answer["slots"]) == 48
-    assert answer["tomorrow_available"] is True
-    assert answer["effect"] == {
-        "today_kwh": 43.3,
-        "today_nok": 43.5,
-        "month_kwh": 1191.5,
-        "month_nok": 991,
-    }
+def _spot_rows(runtime: SimpleNamespace) -> list[dict[str, object]]:
+    """`price_forecast`'s slots, as `sensor.py` publishes them."""
+    return _slots(
+        runtime.curves.import_[Carrier.ELECTRICITY],
+        reference=runtime.reference_curve,
+        energy_vat=energy_vat_rate(runtime.build.price_modifiers),
+    )
 
 
-def test_24_spot_prices_without_a_fixed_price_or_tomorrow() -> None:
-    """No fixed price: the spot is the import curve's, no effect; tomorrow not in yet."""
-    answer = spot_prices(_runtime(fixed=False, known_until_h=13), NOW)
-    assert answer["fixed_price"] is None
-    assert answer["effect"] is None
-    assert {slot["spot"] for slot in answer["slots"]} == {0.4}
-    assert answer["tomorrow_available"] is False
+def test_27_the_spot_comes_from_the_curve_without_the_fixed_price() -> None:
+    """F5, D-0582, §5.16 R2: Norgespris 0,40 + 25 % → 0,50; each slot's spot is the reference curve's."""
+    runtime = _runtime(fixed=True)
+    rows = _spot_rows(runtime)
+    assert _fixed_price(runtime) == 0.5
+    assert {row["spot"] for row in rows} == {0.834}
+    # v0.7's `energy_field_check`: the slot's energy part is the fixed price with its VAT.
+    assert {row["energy"] for row in rows} == {"0.50000"}
+    assert len(rows) == 48
+
+
+def test_27_the_spot_without_a_fixed_price_is_the_curves_own() -> None:
+    """No fixed price: the spot is the import curve's, and `fixed_price` is null."""
+    runtime = _runtime(fixed=False, known_until_h=13)
+    assert _fixed_price(runtime) is None
+    assert {row["spot"] for row in _spot_rows(runtime)} == {0.4}
+    assert all("reference" not in row for row in _spot_rows(runtime))
 
 
 def test_24_the_energy_vat_is_the_vat_that_covers_the_energy() -> None:

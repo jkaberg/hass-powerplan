@@ -3,7 +3,7 @@
 //
 // Iteration 4: theme tokens instead of fixed px/hex; estimated prices drawn as a dashed line instead of
 // hatching the whole chart; an alert that says WHY prices are estimated (price sensor unknown or no
-// known slot now) with a retry; the Kraft/Nettleie split uses fixed_price from ws_spot, which now
+// known slot now) with a retry; the Kraft/Nettleie split uses fixed_price from price_forecast, which now
 // reads the configured kraftledd entity (0,50 for Norgespris) instead of a slot's `energy` field.
 //
 // Data
@@ -12,7 +12,10 @@
 //   entities.tomorrow        binary_sensor.<home>_morgendagens_priser (optional)
 //   entities.capacity_fee    sensor.energy_level_price (optional, kr/mnd)
 //   entities.capacity_step   sensor.<home>_effekttrinn_denne_maneden (optional, "5–10 kW")
-//   ws powerplan/spot_prices {entry_id} → spot slots, vat, fixed_price, effect (optional; card works without it)
+//   entities.fixed_price_savings  sensor.<home>_fixed_price_savings: the month's effect (optional)
+//   entities.refresh         button.<home>_refresh_prices: "Hent på nytt" presses it (optional)
+//   v0.8 (D12 §5.16 R2): the spot is price_forecast's slots[].spot and fixed_price, built into the same
+//   `Spot` the powerplan/spot_prices command answered in iteration 4 (`spotFromStates`).
 
 import { Hass, esc, lang, numFmt, timeFmt, localMidnight, fmtTemplate, newUid, pick, keepFocus } from "./r3-util";
 import { TOKENS, SHARED, alertHtml } from "./tokens";
@@ -20,7 +23,7 @@ import { TOKENS, SHARED, alertHtml } from "./tokens";
 interface PriceCfg {
   type: string;
   entry_id?: string;
-  entities: { price: string; price_forecast: string; tomorrow?: string; capacity_fee?: string; capacity_step?: string };
+  entities: { price: string; price_forecast: string; tomorrow?: string; capacity_fee?: string; capacity_step?: string; fixed_price_savings?: string; refresh?: string };
   spot?: boolean;              // default true
   labels?: Record<string, string>;
 }
@@ -32,6 +35,26 @@ interface Spot {
   fixed_price_source?: string | null;
   energy_field_check?: number | null;
   effect?: { today_kwh: number; today_nok: number; month_kwh: number; month_nok: number };
+}
+
+/** v0.8 (D12 §5.16 R2): iteration 4's `Spot`, from `price_forecast` and `fixed_price_savings`; undefined without spot slots. */
+export function spotFromStates(h: Hass, c: PriceCfg): Spot | undefined {
+  const a = h.states[c.entities.price_forecast]?.attributes ?? {};
+  const rows: any[] = Array.isArray(a.slots) ? a.slots : [];
+  const slots = rows.filter((x) => typeof x.spot === "number").map((x) => ({ start: x.start, end: x.end, spot: x.spot as number }));
+  if (!slots.length) return undefined;
+  const tomorrow = localMidnight(h).getTime() + 24 * 3600e3;
+  const saving = c.entities.fixed_price_savings ? h.states[c.entities.fixed_price_savings] : undefined;
+  const month = saving ? Number(saving.state) : NaN;
+  const sa = saving?.attributes ?? {};
+  return {
+    area: a.area ?? "", currency: h.config?.currency ?? "", vat: Number(a.vat ?? 0), fixed_price: a.fixed_price ?? null,
+    slots,
+    tomorrow_available: rows.some((x) => x.confidence === "known" && Date.parse(x.start) >= tomorrow),
+    effect: Number.isFinite(month)
+      ? { today_kwh: Number(sa.today_kwh ?? 0), today_nok: Number(sa.today ?? 0), month_kwh: Number(sa.kwh ?? 0), month_nok: Math.round(month) }
+      : undefined,
+  };
 }
 
 const P_LABELS: Record<string, Record<string, string>> = {
@@ -70,8 +93,6 @@ export class PowerplanPriceCard extends HTMLElement {
   private width = 0;
   private ro?: ResizeObserver;
   private spot?: Spot;
-  private spotAt = 0;
-  private spotBusy = false;
   private pts: Pt[] = [];
   private geo?: { x0: number; x1: number; t0: number; t1: number; top: number; bottom: number; ymax: number };
   private uid = newUid("ppp");
@@ -90,10 +111,10 @@ export class PowerplanPriceCard extends HTMLElement {
     if (!c) return;
     const e = c.entities;
     const k = [h.states[e.price], h.states[e.price_forecast], e.tomorrow && h.states[e.tomorrow], e.capacity_fee && h.states[e.capacity_fee], e.capacity_step && h.states[e.capacity_step],
-      lang(h), h.themes?.darkMode, Math.floor(Date.now() / 60e3), this.width, this.spotAt, this.retry];
+      e.fixed_price_savings && h.states[e.fixed_price_savings], lang(h), h.themes?.darkMode, Math.floor(Date.now() / 60e3), this.width, this.retry];
     if (k.every((v, i) => v === this.key[i])) return;
     this.key = k;
-    this.maybeFetchSpot();
+    this.spot = c.spot === false ? undefined : spotFromStates(h, c);
     this.render();
   }
 
@@ -108,25 +129,6 @@ export class PowerplanPriceCard extends HTMLElement {
   disconnectedCallback(): void { this.ro?.disconnect(); }
   getCardSize(): number { return 7; }
   getGridOptions() { return { columns: 12, rows: "auto", min_columns: 6 }; }
-
-  private async maybeFetchSpot(): Promise<void> {
-    const c = this.config!, h = this.hassRef!;
-    if (c.spot === false || !c.entry_id || this.spotBusy) return;
-    const tomorrowIn = !!(c.entities.tomorrow && h.states[c.entities.tomorrow]?.state === "on");
-    const stale = Date.now() - this.spotAt > 15 * 60e3 || (tomorrowIn && this.spot && !this.spot.tomorrow_available);
-    if (!stale) return;
-    this.spotBusy = true;
-    try {
-      this.spot = await h.callWS<Spot>({ type: "powerplan/spot_prices", entry_id: c.entry_id });
-    } catch (err) {
-      this.spot = undefined; // card still renders "Din pris" without spot
-    } finally {
-      this.spotAt = Date.now();
-      this.spotBusy = false;
-      this.key = [];
-      this.hass = this.hassRef!;
-    }
-  }
 
   private labels(): Record<string, string> {
     return { ...pick(P_LABELS, this.hassRef!), ...(this.config!.labels ?? {}) };
@@ -146,14 +148,14 @@ export class PowerplanPriceCard extends HTMLElement {
 
   private async refreshPrices(): Promise<void> {
     const h = this.hassRef, c = this.config;
-    if (!h || !c?.entry_id || this.retry !== "idle") return;
+    if (!h || !c?.entities.refresh || this.retry !== "idle") return;
     this.retry = "busy";
     this.key = []; this.hass = h;
     try {
-      await h.callWS({ type: "powerplan/refresh_prices", entry_id: c.entry_id });
+      await h.callService("button", "press", { entity_id: c.entities.refresh });
       this.retry = "idle";
     } catch {
-      this.retry = "unsupported";          // older backend without the command: hide the button
+      this.retry = "unsupported";          // the press failed: hide the button
     }
     this.key = []; this.hass = this.hassRef!;
   }
@@ -338,7 +340,7 @@ export class PowerplanPriceCard extends HTMLElement {
 
     const alert = stale ? `<div class="alertbox">${alertHtml({
       title: L.stale_title, text: compact ? stale.replace(/ Planen bruker.*$| The plan uses.*$/, "") : stale,
-      action: c.entry_id && this.retry !== "unsupported" ? { label: this.retry === "busy" ? L.retrying : L.retry, act: "refresh" } : undefined,
+      action: c.entities.refresh && this.retry !== "unsupported" ? { label: this.retry === "busy" ? L.retrying : L.retry, act: "refresh" } : undefined,
     })}</div>` : "";
     keepFocus(this.shadowRoot!, () => {
       this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>

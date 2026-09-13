@@ -1,42 +1,37 @@
-"""Price refresh with retry, a repair issue and a websocket command (D12 §5.15 F12).
+"""Price refresh with retry and a repair issue (D12 §5.15 F12).
 
-Seen on the reference house: after a restart at 10:33, sensor.<home>_priser_kjent_til stayed unknown and
-every slot was "stale" or "synthesised" until the price sensors were rebuilt at 11:10:48 - 37 minutes of
-planning on estimates while Nord Pool itself answered. Nothing told the user why.
+After a restart the price sensors can stay unknown for a while, and every slot is
+"stale" or "synthesised" until they rebuild: on the reference house that was 37 minutes
+of planning on estimates while Nord Pool itself answered, and nothing said why.
 
 `PriceRefresher` makes that self-healing and visible:
   * after the runtime's startup fetch, and whenever the Nord Pool entry (re)loads, it checks prices;
   * while no slot covering "now" is known it retries with back-off (1, 2, 5, 10, 15 min, then every 15);
   * after 30 min it raises the repair issue `prices_stale` (D8 §5.9's catalogue); it clears the issue
     as soon as prices are known again;
-  * `powerplan/refresh_prices {entry_id}` lets the price card's "Hent på nytt" trigger it.
+  * `button.<site>_refresh_prices` lets the price card's "Hent på nytt" trigger it (D12 §5.16 R3).
 
-In the integration's shape: the refresher lives on the runtime
-(`runtime.price_refresher`, never `hass.data`), the fetch is the runtime's own (`Runtime.refresh_prices`),
-and the issue goes through `repairs.async_report` like every other (D-0580).
+The refresher lives on the runtime (`runtime.price_refresher`, never `hass.data`), the fetch is the
+runtime's own (`Runtime.refresh_prices`), and the issue goes through `repairs.async_report` like every
+other (D-0580).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import voluptuous as vol
-from homeassistant.components.websocket_api import async_register_command
-from homeassistant.components.websocket_api.decorators import async_response, websocket_command
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .repairs import async_clear, async_report
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from homeassistant.components.websocket_api.connection import ActiveConnection
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -150,29 +145,3 @@ class PriceRefresher:
         self.hass.async_create_background_task(
             self.async_refresh("retry"), "powerplan_price_refresh"
         )
-
-
-@websocket_command(
-    {vol.Required("type"): "powerplan/refresh_prices", vol.Required("entry_id"): str}
-)
-@async_response
-async def ws_refresh_prices(
-    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
-) -> None:
-    """Fetch one site's prices now, for the price card's retry."""
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    refresher: PriceRefresher | None = (
-        None
-        if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED
-        else getattr(entry.runtime_data, "price_refresher", None)
-    )
-    if refresher is None:
-        connection.send_error(msg["id"], "not_found", "PowerPlan entry not found")
-        return
-    connection.send_result(msg["id"], {"ok": await refresher.async_refresh("user")})
-
-
-@callback
-def async_register_ws(hass: HomeAssistant) -> None:
-    """Register the command once per HA."""
-    async_register_command(hass, ws_refresh_prices)

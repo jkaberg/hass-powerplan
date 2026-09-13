@@ -886,12 +886,15 @@ def _price_card(site: _Site) -> Card | None:
     e = site.site.entities
     if "price" not in e or "price_forecast" not in e:
         return None
-    # (F5): the household's card keeps its own words; the spot comes from `powerplan/spot_prices`.
+    # F5: the card keeps its own words. v0.8 (§5.16 R2, R3): the spot is on
+    # `price_forecast`, the month's effect is `fixed_price_savings`, the retry is a button.
     names = {
         "price": "price",
         "price_forecast": "price_forecast",
         "tomorrow": "prices_tomorrow",
         "capacity_step": "level",
+        "fixed_price_savings": "fixed_price_savings",
+        "refresh": "refresh_prices",
     }
     return {
         "type": PRICE_CARD,

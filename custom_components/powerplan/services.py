@@ -8,6 +8,7 @@ row) discards D10's learned baseline and re-seeds it from the recorder.
 D2's own recorder seed runs at setup and from `button.<site>_rebuild_peak_history`
 ; its `powerplan.rebuild_peak_history` service (D8 §5.7, with `months`)
 is still not registered.
+`get_dashboard` (D12 §5.16 R1) answers the dashboard strategy with its layout.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
 from .core.tariffs.sources import SourceError
+from .dashboard.config import async_dashboard_config
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -40,6 +42,7 @@ SERVICE_RESET_WINDOW_ANCHOR = "reset_window_anchor"
 SERVICE_SET_PEAK = "set_peak"
 SERVICE_DUMP_STATE = "dump_state"
 SERVICE_REFRESH_TARIFF = "refresh_tariff"
+SERVICE_GET_DASHBOARD = "get_dashboard"
 
 PRESENCE_MODES = ("auto", "home", "away", "vacation")
 
@@ -73,6 +76,14 @@ SCHEMAS: dict[str, vol.Schema] = {
     ),
     SERVICE_DUMP_STATE: vol.Schema(_SITE),
     SERVICE_REFRESH_TARIFF: vol.Schema(_SITE),
+    SERVICE_GET_DASHBOARD: vol.Schema(
+        {
+            vol.Optional("language", default="en"): cv.string,
+            vol.Optional("hidden_views", default=[]): vol.All(cv.ensure_list, [cv.string]),
+            vol.Optional("hidden_cards", default=[]): vol.All(cv.ensure_list, [cv.string]),
+            **_SITE,
+        }
+    ),
 }
 
 #: The services and whether they answer.
@@ -87,6 +98,7 @@ SERVICES: dict[str, SupportsResponse] = {
     SERVICE_SET_PEAK: SupportsResponse.NONE,
     SERVICE_DUMP_STATE: SupportsResponse.ONLY,
     SERVICE_REFRESH_TARIFF: SupportsResponse.OPTIONAL,
+    SERVICE_GET_DASHBOARD: SupportsResponse.ONLY,
 }
 
 
@@ -189,6 +201,17 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 ) from err
         return cast("ServiceResponse", {"sites": answers})
 
+    async def get_dashboard(call: ServiceCall) -> ServiceResponse:
+        # The dashboard's layout (D12 §5.16 R1): what the strategy's `generate()` returns.
+        config = await async_dashboard_config(
+            hass,
+            runtimes_for(hass, call.data.get("site")),
+            language=call.data["language"],
+            hidden_views=call.data["hidden_views"],
+            hidden_cards=call.data["hidden_cards"],
+        )
+        return cast("ServiceResponse", config)
+
     handlers: dict[str, Callable[[ServiceCall], Coroutine[Any, Any, Any]]] = {
         SERVICE_REPLAN: replan,
         SERVICE_REBUILD_BASELINE: rebuild_baseline,
@@ -200,6 +223,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_SET_PEAK: set_peak,
         SERVICE_DUMP_STATE: dump_state,
         SERVICE_REFRESH_TARIFF: refresh_tariff,
+        SERVICE_GET_DASHBOARD: get_dashboard,
     }
     for name, handler in handlers.items():
         if hass.services.has_service(DOMAIN, name):
