@@ -10,6 +10,7 @@
 
 import "./bundle";
 import { PowerplanDashboardStrategy } from "./strategy";
+import { installStrategies } from "./strategy-shim";
 
 /** The cards' module, named by its content hash; the build puts the name in (esbuild `define`). */
 declare const CARDS_MODULE: string;
@@ -23,9 +24,8 @@ interface Registry<T> {
   customStrategies?: T[];
 }
 
-if (!customElements.get("ll-strategy-dashboard-powerplan")) {
-  customElements.define("ll-strategy-dashboard-powerplan", PowerplanDashboardStrategy);
-}
+// Iteration 5: the newest bundle on the page answers `generate()`, whichever defined the element first.
+installStrategies({ "ll-strategy-dashboard-powerplan": PowerplanDashboardStrategy }, () => undefined);
 console.info("PowerPlan frontend", BUILD_HASH);
 
 const registry = window as unknown as Registry<{ type: string } & Record<string, unknown>>;

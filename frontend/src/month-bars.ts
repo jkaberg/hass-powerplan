@@ -1,16 +1,17 @@
-// custom:powerplan-month-bars - "Denne måneden" (iteration 4): cost and savings so far, and the daily
+// custom:powerplan-month-bars - "Denne måneden" (iteration 5): cost and savings so far, and the daily
 // cost on a fixed 1..N day axis.
 //
 // Replaces the statistics-graph in "Denne måneden": with 1,5 days of data that card zooms in and
-// labels the axis 4:00, 8:00 … Here the axis is always the whole month, days without data are
-// empty, and the first day with data is named.
+// labels the axis 4:00, 8:00 … Here the axis is always the whole month and days without data are
+// simply empty. Iteration 5: no "Data fra …" / "Ingen data ennå" note (the empty days say it), and
+// Besparelse is left out until there is a reference (it showed 0,00 kr with savings_confidence none).
 //
 //   type: custom:powerplan-month-bars
 //   entity: sensor.home_kostnad_denne_maneden   # long-term statistics, state_class total
 //   savings: sensor.home_beregnet_besparelse_denne_maneden   # optional
 //
-// Savings show " - " with a reason when there is no reference cost (see savings_guard.py), instead
-// of an entity card that says "Ukjent" or a negative number that was never computed.
+// Savings are left out when there is no reference cost (see savingsView), instead of an entity card
+// that says "Ukjent", a 0,00 that was never computed, or a negative number.
 
 import { Hass, esc, fmtTemplate, lang, numFmt, pick, tz, toNum, savingsView } from "./r3-util";
 import { TOKENS, SHARED } from "./tokens";
@@ -18,10 +19,8 @@ import { TOKENS, SHARED } from "./tokens";
 interface BarsCfg { type: string; entity: string; savings?: string; statistic_id?: string; height?: number; labels?: Record<string, string> }
 
 const M_LABELS: Record<string, Record<string, string>> = {
-  nb: { since: "Data fra {date}", none: "Ingen data ennå denne måneden", kr: "kr", day: "{date}: {v} kr", aria: "Kostnad per dag i {month}",
-        cost: "Kostnad", savings: "Besparelse", no_ref: "mangler referanse", more: "mer enn uten styring" },
-  en: { since: "Data from {date}", none: "No data yet this month", kr: "", day: "{date}: {v}", aria: "Cost per day in {month}",
-        cost: "Cost", savings: "Savings", no_ref: "no reference yet", more: "more than without control" },
+  nb: { kr: "kr", day: "{date}: {v} kr", aria: "Kostnad per dag i {month}", cost: "Kostnad", savings: "Besparelse", more: "mer enn uten styring" },
+  en: { kr: "", day: "{date}: {v}", aria: "Cost per day in {month}", cost: "Cost", savings: "Savings", more: "more than without control" },
 };
 
 export class PowerplanMonthBars extends HTMLElement {
@@ -131,17 +130,15 @@ export class PowerplanMonthBars extends HTMLElement {
     for (const d of [1, 5, 10, 15, 20, 25, days]) {
       g.push(`<text x="${(x0 + (d - 0.5) * slot).toFixed(1)}" y="${bottom + 18}" class="t-s" text-anchor="middle">${d}</text>`);
     }
-    const first = this.data.length ? Math.min(...this.data.map((d) => d.day)) : null;
-    const note = first == null ? L.none : first > 1 ? fmtTemplate(L.since, { date: dfmt.format(new Date(start.getTime() + (first - 1) * 86400e3 + 12 * 3600e3)) }) : "";
     const ce = h.states[c.entity], se = c.savings ? h.states[c.savings] : undefined;
     const unit = (e: any) => (e?.attributes?.unit_of_measurement === "NOK" ? "kr" : e?.attributes?.unit_of_measurement ?? "");
     const sv = savingsView(se, ce);
     const stat = (label: string, value: string, u: string, sub = "") =>
       `<div class="st"><span class="sl">${esc(label)}</span><span class="sv">${esc(value)} <small>${esc(u)}</small></span>${sub ? `<span class="ss">${esc(sub)}</span>` : ""}</div>`;
     const stats = stat(L.cost, toNum(ce?.state) !== null ? nf.format(toNum(ce!.state)!) : "–", unit(ce))
-      + (se ? stat(L.savings, sv.missing ? "—" : nf.format(sv.value!), sv.missing ? "" : unit(se), sv.missing ? L.no_ref : sv.value! < 0 ? L.more : "") : "");
+      + (se && !sv.missing ? stat(L.savings, nf.format(sv.value!), unit(se), sv.value! < 0 ? L.more : "") : "");
     this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style><ha-card>
-      <div class="head">${stats}<span class="grow"></span>${note ? `<span class="note">${esc(note)}</span>` : ""}</div>
+      <div class="head">${stats}</div>
       <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(fmtTemplate(L.aria, { month: monthName }))}">${g.join("")}</svg></ha-card>`;
   }
 }
@@ -161,8 +158,6 @@ const CSS = `
   .sl { font-size: var(--pp-fs-s); color: var(--pp-text2); }
   .sv { font-size: var(--pp-fs-xl); } .sv small { font-size: var(--pp-fs-s); color: var(--pp-text2); }
   .ss { font-size: var(--pp-fs-s); color: var(--pp-text2); }
-  .grow { flex: 1 1 auto; }
-  .note { font-size: var(--pp-fs-s); color: var(--pp-text2); padding-top: 2px; }
   .gl0 { stroke: var(--pp-divider); } .gl { stroke: var(--pp-divider); stroke-dasharray: 2 4; }
   .bar { fill: var(--pp-primary); opacity: .75; } .bar.today { opacity: 1; }
 `;

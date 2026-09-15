@@ -235,6 +235,7 @@ HLD §9 phase 6.
 | **6.4i Dashboard: appliances and prices** | the appliances card and dialog, the price card, the forecast | D12 §5.12 | D12 §9 20 | 6.4h |
 | **6.4j Dashboard: price refresh and savings** | the price refresher, the savings guard, the meter-lag skip | D12 §5.15; D10 §5.2; D8 §5.5, §5.9 | D12 §9 24 | 6.4i |
 | **6.4k Dashboard: Home Assistant's own backend** | the layout as a response action; the module as a Lovelace resource; no private websocket commands | D12 §5.16; D8 §5.5, §5.7; dec. 42 | D12 §9 4, 25-28; D8 §9 38 | 6.4j |
+| **6.4l Dashboard: Now and History layout** | the leaner Now view; live-card patches | D12 §5.17 | D12 §9 29 | 6.4k |
 
 ### Phase 7 - Solar and the battery together
 
@@ -497,6 +498,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4i | Dashboard: appliances and prices | done |
 | 6.4j | Dashboard: price refresh and savings | done |
 | 6.4k | Dashboard: Home Assistant's own backend | done |
+| 6.4l | Dashboard: Now and History layout | done |
 | 7.1 | PV forecast through the energy platform | todo |
 | 7.2 | `surplus` and the surplus-aware battery | todo |
 | 7.3 | Surplus in the ledger | todo |

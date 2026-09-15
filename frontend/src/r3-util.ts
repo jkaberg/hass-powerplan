@@ -120,7 +120,8 @@ export function readable(hex: string, dark: boolean): string {
   const ratio = (l: number) => (dark ? (l + 0.05) / (bg + 0.05) : (bg + 0.05) / (l + 0.05));
   let [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(1 + i, 3 + i), 16));
   const toHex = () => "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
-  for (let i = 0; i < 14 && ratio(lum(toHex())) < 3; i++) {
+  // 4.5:1 against the card, so the icon still clears 3:1 on its own 20 % tinted bubble
+  for (let i = 0; i < 14 && ratio(lum(toHex())) < 4.5; i++) {
     if (dark) { r = Math.round(r + (255 - r) * 0.18); g = Math.round(g + (255 - g) * 0.18); b = Math.round(b + (255 - b) * 0.18); }
     else { r = Math.round(r * 0.84); g = Math.round(g * 0.84); b = Math.round(b * 0.84); }
   }
@@ -211,9 +212,11 @@ export function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Savings are shown as "—" when there is no reference cost to compare with (see savings_guard.py). */
+/** Savings are hidden when there is no reference cost to compare with: `reason: no_reference` (savings_guard.py)
+ *  or `savings_confidence: none` (what the live backend publishes, with state 0E-8). */
 export function savingsView(sav: HassEntity | undefined, cost: HassEntity | undefined): { value: number | null; missing: boolean } {
-  if (!sav || ["unknown", "unavailable", ""].includes(sav.state) || sav.attributes?.reason === "no_reference") return { value: null, missing: true };
+  if (!sav || ["unknown", "unavailable", ""].includes(sav.state) || sav.attributes?.reason === "no_reference"
+    || sav.attributes?.savings_confidence === "none") return { value: null, missing: true };
   const s = toNum(sav.state), c = toNum(cost?.state);
   // Until the backend guard is deployed: savings exactly equal to −cost means the reference was 0.
   if (s !== null && c !== null && c > 0.005 && Math.abs(s + c) < 0.005) return { value: null, missing: true };

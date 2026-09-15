@@ -1,9 +1,18 @@
-// Theme tokens and small shared parts for every PowerPlan card (iteration 4).
+// Theme tokens and small shared parts for every PowerPlan card (iteration 5).
 //
 // Rule: sizes come from --ha-font-size-* / --ha-space-* (so they follow --ha-font-size-scale),
 // text colours from --primary/secondary-text-color, fills from rgba(var(--rgb-…)) so light and
 // dark themes both work. Appliance colours are only ever used as fills, never as text.
 // Every token has a fallback equal to Home Assistant's default theme.
+//
+// Iteration 5 - contrast. The neutral data tokens were tuned on a light card and nearly vanished on a dark
+// one (Holder temperaturen at 16 % was #3c3c3c on #1c1c1c, 1,5:1). Every mark that carries data now
+// reaches ≥ 3:1 against the card in BOTH HA default themes (WCAG 1.4.11): the alpha is what it takes
+// on the harder theme (dark needs ≥ .38, light ≥ .48). Structure (lane track, grid) stays quiet on purpose.
+//   base  .50  → dark #7f7f7f 4,2:1 · light #909090 3,2:1        Annet forbruk
+//   hold  outline .62 (5,8:1 · 4,6:1) over a .12 fill            Holder temperaturen (hollow = held, not moved)
+//   hatch .50  → stripes #7f7f7f on the lane                      Senket i dyre timer
+//   cheap .13 fill + a 3 px line in full success colour           Billige timer (the fill alone was 1,1:1; the line carries it)
 
 import { esc } from "./r3-util";
 
@@ -29,11 +38,13 @@ export const TOKENS = `
     --pp-rgb-text: var(--rgb-primary-text-color, 33, 33, 33);
     --pp-fill: rgba(var(--pp-rgb-text), 0.06);
     --pp-fill-hover: rgba(var(--pp-rgb-text), 0.09);
-    --pp-track: rgba(var(--pp-rgb-text), 0.06);
-    --pp-hatch: rgba(var(--pp-rgb-text), 0.22);
-    --pp-base: rgba(var(--pp-rgb-text), 0.34);          /* Annet forbruk */
-    --pp-hold: rgba(var(--pp-rgb-text), 0.16);          /* Holder temperaturen */
-    --pp-cheap: rgba(var(--rgb-success-color, 67, 160, 71), 0.10);
+    --pp-track: rgba(var(--pp-rgb-text), 0.10);
+    --pp-hatch: rgba(var(--pp-rgb-text), 0.50);
+    --pp-base: rgba(var(--pp-rgb-text), 0.50);          /* Annet forbruk */
+    --pp-hold: rgba(var(--pp-rgb-text), 0.12);          /* Holder temperaturen: fill … */
+    --pp-hold-line: rgba(var(--pp-rgb-text), 0.62);     /* … and the outline that carries it */
+    --pp-cheap: rgba(var(--rgb-success-color, 67, 160, 71), 0.13);
+    --pp-cheap-line: var(--success-color, #43a047);
     --pp-sel-bg: var(--ha-color-fill-primary-normal-resting, rgba(var(--rgb-primary-color, 0, 154, 199), 0.2));
     --pp-sel-fg: var(--ha-color-on-primary-normal, var(--primary-color, #009ac7));
     --pp-primary: var(--primary-color, #009ac7);
@@ -84,9 +95,9 @@ export const SHARED = `
   .legend { display: inline-flex; align-items: center; gap: 6px; font-size: var(--pp-fs-s); color: var(--pp-text2); white-space: nowrap; }
   .sw { width: 16px; height: 10px; border-radius: 5px; display: inline-block; flex: none; box-sizing: border-box; }
   .sw.run { background: var(--pp-text2); }
-  .sw.hold { background: var(--pp-track); outline: 1px solid var(--pp-divider); }
-  .sw.low { background: repeating-linear-gradient(135deg, var(--pp-hatch) 0 2px, transparent 2px 5px); outline: 1px solid var(--pp-divider); }
-  .sw.cheap { border-radius: 3px; background: var(--pp-cheap); outline: 1px solid rgba(var(--rgb-success-color, 67, 160, 71), 0.35); }
+  .sw.hold { background: var(--pp-hold); box-shadow: inset 0 0 0 1.5px var(--pp-hold-line); }
+  .sw.low { background: repeating-linear-gradient(135deg, var(--pp-hatch) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--pp-hatch); }
+  .sw.cheap { border-radius: 3px; background: var(--pp-cheap); box-shadow: inset 0 3px 0 var(--pp-cheap-line); }
   .t-s { font-size: var(--pp-fs-s); fill: var(--pp-text2); font-family: var(--pp-font); }
   .t-s.strong { fill: var(--pp-text); }
   .t-s.on { fill: var(--pp-text); font-weight: var(--pp-fw-m); }

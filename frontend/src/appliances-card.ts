@@ -1,13 +1,15 @@
-// custom:powerplan-appliances-card - iteration 4.
+// custom:powerplan-appliances-card - iteration 5.
 //
 // One row per appliance with a 24 h lane on the same time axis (and rail width) as the Plan card.
-// Four encodings, explained once in the legend, never written inside a lane:
-//   solid block  = a run PowerPlan moved (slots[].planned_kwh)
-//   empty track  = holds temperature / nothing moved
-//   hatch        = lowered in expensive hours (slots[].paused, heating loads only)
-//   green column = cheap hours (lowest quarter of the price window)
-// Next to a lane: only the next start time(s). kWh and kr live in the dialog.
-// The state is plain secondary text like a tile ("Går · 23,8 → 24 °C"); the whole row is a button.
+//   solid block  = a run PowerPlan moved (slots[].planned_kwh) - obvious, no legend
+//   empty track  = holds temperature / nothing moved - the state word says it, no legend
+//   hatch        = lowered in expensive hours (slots[].paused) - the ONE legend entry, in the footer
+//   green column = cheap hours - keyed once, in Strømpris above
+//   amber tick   = deadline - not repeated as "frist 06:00" text
+// Iteration 5 ("one metric once"): no Aktive/Alle filter (the footer's "N uten behov · Vis alle" does the same),
+// no start times written next to the lanes on desktop (the axis + the dialog's "Valgt tid"), no "frist" in
+// the state line, hatch fragments less than 30 min apart are merged. Phone keeps "Neste 22:00" because
+// its lanes are too narrow to read a time from.
 
 import {
   Hass, esc, numFmt01, timeFmt, localHour, startOfHour, rgbaHex, readable, readPlan, runsFor, loweredFor,
@@ -15,7 +17,7 @@ import {
 } from "./r3-util";
 import { StatusDebouncer, StatusView, rawStatus, STATUS_LABELS, Kind } from "./status";
 import { openApplianceDialog } from "./appliance-dialog";
-import { TOKENS, SHARED, hatchDef, segmented, skeletonRows } from "./tokens";
+import { TOKENS, SHARED, hatchDef, skeletonRows } from "./tokens";
 
 export interface LoadCfg {
   id: string;
@@ -51,14 +53,12 @@ const FILTER_KEY = "powerplan-appliances-filter";
 
 const CARD_LABELS: Record<string, Record<string, string>> = {
   nb: {
-    active: "Aktive", all: "Alle", show_all: "Vis alle", filter: "Vis apparater", n_active: "{n} aktive nå",
-    lg_run: "Kjører", lg_hold: "Holder temperaturen", lg_hold_short: "Holder", lg_low: "Senket i dyre timer", lg_low_short: "Senket",
-    lg_cheap: "Billige timer", now: "Nå", n_idle: "{n} uten behov", open: "Åpne detaljer", idle_state: "Ingen behov neste {h} t",
+    show_all: "Vis alle", show_less: "Vis færre", lg_low: "Senket i dyre timer", lg_low_short: "Senket",
+    now: "Nå", n_idle: "{n} uten behov", open: "Åpne detaljer", idle_state: "Ingen behov neste {h} t",
   },
   en: {
-    active: "Active", all: "All", show_all: "Show all", filter: "Show appliances", n_active: "{n} active now",
-    lg_run: "Running", lg_hold: "Holding temperature", lg_hold_short: "Holding", lg_low: "Lowered in expensive hours", lg_low_short: "Lowered",
-    lg_cheap: "Cheap hours", now: "Now", n_idle: "{n} idle", open: "Open details", idle_state: "Nothing needed in the next {h} h",
+    show_all: "Show all", show_less: "Show fewer", lg_low: "Lowered in expensive hours", lg_low_short: "Lowered",
+    now: "Now", n_idle: "{n} idle", open: "Open details", idle_state: "Nothing needed in the next {h} h",
   },
 };
 
@@ -139,13 +139,12 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const L = this.labels();
     const plan = readPlan(hass.states[c.entities.plan]);
     const nf1 = numFmt01(hass);
-    const tf = timeFmt(hass);
     const cur = plan.slots.find((s) => s.start <= now && s.end > now);
     return c.loads.map((load) => {
       const st = hass.states[load.status];
       const ctl = load.control ? hass.states[load.control] : undefined;
       const runs = runsFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
-      const lowered = loweredFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
+      const lowered = mergeGaps(loweredFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1), 30 * 60e3);
       const view = this.deb.view(load.id, rawStatus(st, ctl, {
         runNow: runs.some((r) => r.start <= now), futureRun: runs.length > 0, holdNow: (cur?.hold[load.id] ?? 0) > 0.0005,
       }, L));
@@ -162,8 +161,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
       let deadline: Date | null = null;
       const dl = (load.deadline && hass.states[load.deadline]?.state) || a.deadline_time;
       if (dl && /^\d{1,2}:\d{2}/.test(dl) && ["running", "planned", "waiting"].includes(view.kind)) {
-        deadline = nextClock(dl, now, hass);
-        parts.push(fmtTemplate(L.deadline, { time: tf.format(deadline) }));
+        deadline = nextClock(dl, now, hass);          // drawn as the amber tick; the dialog has the control
       }
       if (view.reason) parts.splice(0, parts.length, view.reason);
       if (view.kind === "idle") parts.splice(0, parts.length, fmtTemplate(L.idle_state, { h: c.hours ?? 24 }));
@@ -209,7 +207,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
     if (!W || !planEnt || planEnt.state === "unavailable" || !Array.isArray(planEnt.attributes?.slots)) {
       // Skeleton keeps the final size while data or layout is not ready yet.
       this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style><ha-card aria-busy="true">
-        <div class="head"><span class="skel" style="width:40%;height:14px"></span></div>${skeletonRows(Math.min(c.loads.length, 6), 56, c.rail_width ?? 256)}</ha-card>`;
+        <div style="height:40px"></div>${skeletonRows(Math.min(c.loads.length, 6), 56, c.rail_width ?? 256)}</ha-card>`;
       return;
     }
     const compact = W < 600;
@@ -219,7 +217,6 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const a1 = new Date(a0.getTime() + hours * 3600e3);
     const rows = this.rows(now, a1);
     const idle = rows.filter((r) => r.view.kind === "idle");
-    const active = rows.length - idle.length;
     const shown = this.filter === "all" ? rows : rows.filter((r) => r.view.kind !== "idle");
     const rail = compact ? 0 : (c.rail_width ?? 256);
     const lx0 = compact ? 60 : rail;
@@ -231,20 +228,6 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const U = this.uid;
     const xn = sx(now);
 
-    // ---- header: one legend line + filter (desktop); count + filter, legend below (phone)
-    const seg = segmented([
-      { key: "active", label: compact ? L.active : `${L.active} ${active}`, on: this.filter === "active" },
-      { key: "all", label: compact ? L.all : `${L.all} ${rows.length}`, on: this.filter === "all" },
-    ], "data-filter", L.filter);
-    const lg = (cls: string, t: string) => `<span class="legend"><i class="sw ${cls}"></i>${esc(t)}</span>`;
-    const legend = compact
-      ? lg("run", L.lg_run) + lg("hold", L.lg_hold_short) + lg("low", L.lg_low_short)
-      : lg("run", L.lg_run) + lg("hold", L.lg_hold) + lg("low", L.lg_low) + (bands.length ? lg("cheap", L.lg_cheap) : "");
-    const head = compact
-      ? `<div class="head"><span class="count">${esc(fmtTemplate(L.n_active, { n: active }))}</span><span class="grow"></span>${seg}</div>
-         <div class="legendrow">${legend}</div>`
-      : `<div class="head"><div class="legends">${legend}</div><span class="grow"></span>${seg}</div>`;
-
     // ---- axis
     const ticks: string[] = [];
     const every = compact ? 6 : 3;
@@ -253,12 +236,18 @@ export class PowerplanAppliancesCard extends HTMLElement {
       if (h % every) continue;
       const x = sx(t);
       if ((!compact && Math.abs(x - xn) < 40) || x < lx0 + 14 || x > lx1 - 14) continue;
-      ticks.push(`<text x="${x.toFixed(1)}" y="18" class="t-s" text-anchor="middle">${esc(tf.format(t))}</text>`);
+      ticks.push(`<text x="${x.toFixed(1)}" y="${compact ? 22 : 26}" class="t-s" text-anchor="middle">${esc(tf.format(t))}</text>`);
     }
-    const axisH = compact ? 24 : 30;
-    const axis = `<svg class="axis" width="${W}" height="${axisH}" viewBox="0 0 ${W} ${axisH}" aria-hidden="true">${ticks.join("")}
-      ${compact ? "" : `<rect x="${(xn - 16).toFixed(1)}" y="4" width="32" height="20" rx="10" class="nowpill"/>
-      <text x="${xn.toFixed(1)}" y="18" class="t-s nowtxt" text-anchor="middle">${esc(L.now)}</text>`}</svg>`;
+    // The card opens straight on the time axis (no header row: nothing left in it to say).
+    const axisH = compact ? 32 : 40;
+    // cheap hours: a 3 px line at the foot of the axis, over the tinted columns below it
+    const cheapLine = bands.map(([s, e]) => {
+      const x0 = Math.max(sx(s), lx0), x1 = Math.min(sx(e), lx1);
+      return x1 > x0 ? `<rect x="${x0.toFixed(1)}" y="${axisH - 3}" width="${(x1 - x0).toFixed(1)}" height="3" rx="1.5" class="cheapline"/>` : "";
+    }).join("");
+    const axis = `<svg class="axis" width="${W}" height="${axisH}" viewBox="0 0 ${W} ${axisH}" aria-hidden="true">${cheapLine}${ticks.join("")}
+      ${compact ? "" : `<rect x="${(xn - 16).toFixed(1)}" y="12" width="32" height="20" rx="10" class="nowpill"/>
+      <text x="${xn.toFixed(1)}" y="26" class="t-s nowtxt" text-anchor="middle">${esc(L.now)}</text>`}</svg>`;
 
     // ---- rows
     const RH = compact ? 72 : 56;
@@ -289,16 +278,6 @@ export class PowerplanAppliancesCard extends HTMLElement {
         const dx = sx(r.deadline);
         lane += `<line x1="${dx.toFixed(1)}" y1="${laneY - 5}" x2="${dx.toFixed(1)}" y2="${laneY + laneH + 5}" class="deadline"/>`;
       }
-      if (!compact) {
-        const fut = r.runs.filter((x) => x.start > now);
-        if (fut.length) {
-          const lab = fut.slice(0, 2).map((x) => tf.format(x.start)).join(" · ");
-          const end = sx(fut[Math.min(fut.length, 2) - 1].end);
-          const w = lab.length * 6.8;
-          if (end + 8 + w < lx1) lane += `<text x="${(end + 8).toFixed(1)}" y="${laneY + laneH / 2 + 4.5}" class="t-s strong">${esc(lab)}</text>`;
-          else if (sx(fut[0].start) - 8 - w > lx0) lane += `<text x="${(sx(fut[0].start) - 8).toFixed(1)}" y="${laneY + laneH / 2 + 4.5}" class="t-s strong" text-anchor="end">${esc(lab)}</text>`;
-        }
-      }
       lane += compact
         ? `<line x1="${xn.toFixed(1)}" y1="${laneY - 3}" x2="${xn.toFixed(1)}" y2="${laneY + laneH + 3}" class="now"/>`
         : `<line x1="${xn.toFixed(1)}" y1="0" x2="${xn.toFixed(1)}" y2="${RH}" class="now"/>`;
@@ -313,17 +292,23 @@ export class PowerplanAppliancesCard extends HTMLElement {
         </span></button>`;
     }).join("");
 
-    const foot = this.filter === "active" && idle.length
-      ? `<div class="foot"><span class="avatars" aria-hidden="true">${idle.slice(0, 4).map((r) => `<span class="av" style="background:${rgbaHex(r.load.color, 0.2)};color:${readable(r.load.color, dark)}"><ha-icon icon="${esc(r.load.icon || DEFAULT_ICON[r.load.kind ?? ""] || "mdi:flash")}"></ha-icon></span>`).join("")}</span>
-          <span class="ftxt">${esc(fmtTemplate(L.n_idle, { n: idle.length }))}${compact ? "" : " · " + esc(idle.map((r) => r.load.name).join(", "))}</span>
-          <button type="button" class="tbtn" data-filter="all" data-focus-key="foot-all">${esc(L.show_all)}<ha-icon icon="mdi:chevron-down"></ha-icon></button></div>`
+    // Footer: the one legend entry (only when a hatch is on screen) + the idle rows toggle.
+    const hatched = shown.some((r) => r.lowered.length || r.view.kind === "manual" || r.view.kind === "paused");
+    const key = hatched ? `<span class="legend"><i class="sw low"></i>${esc(compact ? L.lg_low_short : L.lg_low)}</span>` : "";
+    const idlePart = idle.length
+      ? (this.filter === "active"
+        ? `<span class="avatars" aria-hidden="true">${idle.slice(0, 4).map((r) => `<span class="av" style="background:${rgbaHex(r.load.color, 0.2)};color:${readable(r.load.color, dark)}"><ha-icon icon="${esc(r.load.icon || DEFAULT_ICON[r.load.kind ?? ""] || "mdi:flash")}"></ha-icon></span>`).join("")}</span>
+           <span class="ftxt">${esc(fmtTemplate(L.n_idle, { n: idle.length }))}${compact ? "" : " · " + esc(idle.map((r) => r.load.name).join(", "))}</span>
+           <button type="button" class="tbtn" data-filter="all" data-focus-key="foot-toggle">${esc(L.show_all)}<ha-icon icon="mdi:chevron-down"></ha-icon></button>`
+        : `<span class="grow"></span><button type="button" class="tbtn" data-filter="active" data-focus-key="foot-toggle">${esc(L.show_less)}<ha-icon icon="mdi:chevron-up"></ha-icon></button>`)
       : "";
+    const foot = key || idlePart ? `<div class="foot">${key}${key && idlePart ? `<span class="sep"></span>` : ""}${idlePart}</div>` : "";
 
     keepFocus(this.shadowRoot!, () => {
       this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
         <ha-card class="${compact ? "compact" : ""}">
           <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>${hatchDef(`${U}-h`)}</defs></svg>
-          ${head}${axis}<div class="rows">${rowHtml}</div>${foot}
+          ${axis}<div class="rows">${rowHtml}</div>${foot}
         </ha-card>`;
     });
 
@@ -361,12 +346,8 @@ export function nextClock(hhmm: string, now: Date, hass: Hass): Date {
 
 const CSS = `
   ha-card { overflow: hidden; padding-bottom: 4px; }
-  .head { display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 0 var(--pp-pad); box-sizing: border-box; }
-  .compact .head { min-height: 56px; gap: 12px; padding: 0 12px; }
-  .legends { display: flex; gap: 20px; flex-wrap: wrap; min-width: 0; }
-  .legendrow { display: flex; gap: 14px; padding: 0 12px 4px; flex-wrap: wrap; }
-  .count { font-size: var(--pp-fs-m); color: var(--pp-text2); }
   .grow { flex: 1 1 auto; }
+  .sep { width: 1px; height: 20px; background: var(--pp-divider); flex: none; }
   .axis { display: block; }
   .nowpill { fill: var(--pp-text); }
   .nowtxt { fill: var(--pp-card); font-weight: var(--pp-fw-m); }
@@ -377,6 +358,7 @@ const CSS = `
   .row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--pp-focus); }
   .lane { position: absolute; inset: 0; display: block; pointer-events: none; }
   .band { fill: var(--pp-cheap); }
+  .cheapline { fill: var(--pp-cheap-line); }
   .track { fill: var(--pp-track); }
   .shed { stroke: var(--pp-warn); stroke-width: 1; }
   .deadline { stroke: var(--pp-amber); stroke-width: 2; stroke-linecap: round; }
@@ -397,3 +379,15 @@ const CSS = `
   .av:first-child { margin-left: 0; }
   .ftxt { flex: 1 1 auto; font-size: var(--pp-fs-m); color: var(--pp-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
+
+/** Joins windows whose gap is at most `gapMs`, so 15-min pauses 20 min apart read as one lowered stretch. */
+function mergeGaps(ws: Win[], gapMs: number): Win[] {
+  const out: Win[] = [];
+  for (const w of [...ws].sort((a, b) => a.start.getTime() - b.start.getTime())) {
+    const last = out[out.length - 1];
+    if (last && w.start.getTime() - last.end.getTime() <= gapMs) {
+      out[out.length - 1] = { ...last, end: w.end > last.end ? w.end : last.end, kwh: last.kwh + w.kwh };
+    } else out.push({ ...w });
+  }
+  return out;
+}

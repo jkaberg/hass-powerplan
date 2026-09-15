@@ -381,10 +381,12 @@ export class PowerplanTimelineCard extends HTMLElement {
     const compact = this.width > 0 && this.width < 600;
     host.style.height = `${compact ? 420 : 440}px`;
     this.unobserveFc ??= observePlanHost(host, () => void this.render());
-    const hours = windowHours(this.width, config, this.chosen);
-    this.drawToggle(hours);
     const { echarts } = await import("./chart");
     if (!this.isConnected) return;
+    // Iteration 5: the pressed option is the one drawn. Both are read after the chunk loads, so a render
+    // that started before the card knew its width cannot draw 24 h under a pressed 12 h.
+    const hours = windowHours(this.width, config, this.chosen);
+    this.drawToggle(hours);
     const loads = config.loads.map((load) => ({ id: load.id, name: load.name, color: this.colorOf(load.id) }));
     this.fcChart = renderPlanMode(
       host,
@@ -981,26 +983,23 @@ export class PowerplanTimelineCard extends HTMLElement {
     const text = this.css("--primary-text-color", "#212121");
     const error = this.css("--error-color", "#db4437");
     const warning = this.css("--warning-color", "#ffa600");
+    // Iteration 5: one bar colour and no legend. Day and night are the price strip under the chart, the
+    // limit is named at its end, and the peak and the top 3 live in Effekttrinn beside it.
     const gridColor = this.css("--energy-grid-consumption-color", "#488fc2");
-    const shades = [gridColor, withAlpha(gridColor, 0.6), withAlpha(gridColor, 0.35)];
     const plotPx = Math.max(100, (this.width || 600) - 32 - GRID.left - GRID.right);
     const barWidth = Math.max(1, (plotPx * step) / (end - start) - 2);
-    const legend: LegendEntry[] = [];
-    const series: Record<string, unknown>[] = sources.map((id, index) => {
+    const series: Record<string, unknown>[] = sources.map((id) => {
       const rows = new Map((usage[id] ?? []).map((row) => [row.start, (row.change ?? 0) * kwhScale(hass, id)]));
-      const name = String(hass.states[id]?.attributes.friendly_name ?? id);
-      legend.push({ name, color: shades[index % shades.length]!, series: true });
       return {
-        name,
+        name: String(hass.states[id]?.attributes.friendly_name ?? id),
         type: "bar",
         stack: "grid",
         barWidth,
-        itemStyle: { color: shades[index % shades.length] },
+        itemStyle: { color: gridColor },
         data: hours.map((row) => [row.start + step / 2, rows.get(row.start) ?? 0]),
       };
     });
     const top = Math.max(...hours.map((row) => row.max ?? 0));
-    const markLines: Record<string, unknown>[] = [];
     const markPoints: Record<string, unknown>[] = [];
     let ceilingMax = 0;
     this.markers = [];
@@ -1017,9 +1016,8 @@ export class PowerplanTimelineCard extends HTMLElement {
       if (points.some(([, v]) => v !== null)) {
         const last = points[points.length - 1]!;
         ceilingMax = Math.max(...points.map(([, v]) => v ?? 0));
-        const name = labels.limit ?? "";
         series.push({
-          name,
+          name: labels.limit ?? "",
           type: "line",
           step: "end",
           symbol: "none",
@@ -1027,28 +1025,7 @@ export class PowerplanTimelineCard extends HTMLElement {
           endLabel: { show: true, formatter: fill(labels.limit_value_kwh ?? "{kw}", { kw: f.kw.format(ceilingMax) }), color: muted, fontSize: 11, align: "right", offset: [-4, -10] },
           data: [...points, [Math.max(last[0] + step, end), last[1]]],
         });
-        legend.push({ name, color: error, swatch: "line", series: true });
       }
-      // The month's third-highest day: a thin amber line (D3).
-      const third = [...ranking].sort((a, b) => b[1] - a[1])[2];
-      if (third) {
-        markLines.push({
-          yAxis: third[1],
-          lineStyle: { color: warning, width: 1, type: "dashed" },
-          label: { formatter: fill(labels.third_threshold ?? "{kw}", { kw: f.number.format(third[1]) }), position: "insideStartTop", color: warning, fontSize: 11 },
-        });
-        legend.push({ name: labels.top3_threshold ?? "", color: warning, swatch: "line" });
-      }
-      // The day's highest hour: an amber dot 4 px above its bar, named beside it.
-      const best = hours.reduce((a, b) => ((b.max ?? 0) > (a.max ?? 0) ? b : a));
-      markPoints.push({
-        coord: [best.start + step / 2, best.max],
-        symbol: "circle",
-        symbolSize: 7,
-        symbolOffset: [0, -8],
-        itemStyle: { color: warning },
-        label: { show: true, position: "right", formatter: fill(labels.highest_hour ?? "{kwh}", { kwh: f.number.format(best.max ?? 0) }), color: muted, fontSize: 11 },
-      });
       // The price strip: the forecast's slots, else hourly means without a first partial hour.
       const priceSlots: TimelineSlot[] = covered
         ? forecast
@@ -1068,7 +1045,6 @@ export class PowerplanTimelineCard extends HTMLElement {
       if (priceSlots.length) {
         series.push(this.strip(priceRuns(priceSlots), f.number));
         this.stripUnit = f.unit;
-        legend.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
       }
       const now2 = Date.now();
       if (now2 >= start && now2 < end) this.markers.push({ at: now2, kind: "now", text: labels.now ?? "" });
@@ -1086,7 +1062,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     // The marks ride on the top source, so they sit over the stack.
     const lastSource = sources.length - 1;
     if (series[lastSource]) {
-      series[lastSource] = { ...series[lastSource], markPoint: { silent: true, data: markPoints }, markLine: { silent: true, symbol: "none", data: markLines } };
+      series[lastSource] = { ...series[lastSource], markPoint: { silent: true, data: markPoints } };
     }
     const scale = niceScale(Math.max(top * 1.15, ceilingMax * 1.2));
     const hasStrip = series.some((item) => item.type === "custom");
@@ -1096,7 +1072,6 @@ export class PowerplanTimelineCard extends HTMLElement {
       {
         animation: false,
         textStyle: { color: text, fontFamily: this.css("--ha-font-family-body", "Roboto, sans-serif") },
-        legend: { show: false, data: legend.filter((item) => item.series).map((item) => item.name) },
         ...frame,
         tooltip: {
           ...frame.tooltip,
@@ -1108,10 +1083,9 @@ export class PowerplanTimelineCard extends HTMLElement {
       },
       { notMerge: true },
     );
-    for (const name of this.off) this.chart!.dispatchAction({ type: "legendUnSelect", name });
     this.chart!.resize();
     this.markersOnFinish();
     this.drawMarkers();
-    this.drawLegend(legend);
+    els.legend.replaceChildren();
   }
 }

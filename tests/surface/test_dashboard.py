@@ -265,11 +265,8 @@ def test_01_golden_on_a_nordic_detached_site(snapshot: SnapshotAssertion) -> Non
         "opening_direction": "right",
         "vertical_opening_direction": "up",
     }
-    graphs = [card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"]
-    assert graphs
-    for graph in graphs:
-        assert graph["energy_date_selection"] is True
-        assert graph["collection_key"] == COLLECTION_KEY
+    # no statistics graph; PowerPlan's own cards follow the picker.
+    assert "statistics-graph" not in {card["type"] for card in _cards({"views": [history]})}
     assert config == snapshot
 
 
@@ -301,8 +298,8 @@ def test_09_sections_come_in_the_phone_order() -> None:
         t["section_capacity"], t["section_month"],
     ]  # fmt: skip
     assert _headings(_view(config, "history")) == [
-        t["section_summary"], t["section_usage"], t["section_capacity"], t["section_per_appliance"],
-        t["section_cost_per_appliance"], t["section_cost_savings"], t["section_events"],
+        t["section_summary"], t["section_usage"], t["section_capacity"],
+        t["section_cost_per_appliance"], t["section_events"],
     ]  # fmt: skip
     assert _headings(_subview(config, "tank")) == [
         t["section_control"], t["section_appliance_plan"], t["section_why"], t["section_month"],
@@ -591,7 +588,10 @@ def test_18_the_strategy_is_defined_before_anything_is_fetched() -> None:
     import re  # noqa: PLC0415
 
     module = (DIST / "powerplan.js").read_text("utf-8")
-    assert 'customElements.define("ll-strategy-dashboard-powerplan"' in module
+    # (§5.17 S1): `installStrategies` defines it, by the tag it is given, at the top level.
+    assert '"ll-strategy-dashboard-powerplan"' in module
+    assert "customElements.define(" in module
+    assert "__ppStrategies" in module
     assert not re.search(r'(?:^|[;}])\s*import\s*["{\w*]', module)
     assert "import(" in module
 
@@ -1008,15 +1008,13 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
     config = build([_nordic()], "2026.9.2", EN)
     assert "custom:powerplan-runs-card" not in {card["type"] for card in _cards(config)}
     history = _view(config, "history")
-    per = _section(history, EN["section_per_appliance"])["cards"]
-    table = _section(history, EN["section_cost_per_appliance"])["cards"]
-    assert per[1]["view"] == "appliances"
-    assert "title" not in per[1]
+    table = _section(history, EN["section_cost_per_appliance"])  # the table only, full width
+    assert table["column_span"] == 3
+    table = table["cards"]
     assert table[1]["view"] == "table"
+    assert table[1]["grid_options"] == {"columns": "full", "rows": "auto"}
+    assert "title" not in table[1]
     assert "badges" not in table[0]
-    assert {load["id"] for load in per[1]["loads"]} == {
-        i for i in ALL_LOADS if "savings_month" in TYPE_KEYS[NORDIC_TYPES[i]]
-    }
     assert table[1]["loads"][0] == {
         "id": "ev", "name": "Ev", "color": HA_GRAPH_PALETTE[0],
         "cost_month": "sensor.ev_cost_month", "savings_month": "sensor.ev_savings_month",
@@ -1028,13 +1026,9 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
 
 
 def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
-    """D1, D7: the picker opens as the Energy dashboard's does; the graph's legend says Cost and Savings."""
+    """D1, D7: the picker opens as the Energy dashboard's does (no cost-and-savings graph)."""
     history = _view(build([_nordic()], "2026.9.2", EN), "history")
     assert history["footer"]["card"]["vertical_opening_direction"] == "up"
-    graph = next(
-        card for card in _cards({"views": [history]}) if card["type"] == "statistics-graph"
-    )
-    assert [row["name"] for row in graph["entities"]] == [EN["card_cost"], EN["card_savings"]]
     peaks = _section(history, EN["section_capacity"])["cards"][1]
     assert peaks["grid_options"] == {"columns": 12, "rows": "auto"}
     assert set(peaks["entities"]) == {"window_used", "ceiling", "advice", "level", "target"}
@@ -1193,19 +1187,17 @@ def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
     config = build([_nordic()], "2026.9.2", EN)
     now = _view(config, "overview")
     price = _section(now, EN["section_price"])["cards"]
-    assert price[0]["badges"][0]["entity"] == "binary_sensor.home_prices_tomorrow"
+    assert "badges" not in price[0]  # the curve's tomorrow half says it
     assert price[1]["type"] == "custom:powerplan-price-card"
     assert price[1]["entities"] == {
         "price": "sensor.home_price",
         "price_forecast": "sensor.home_price_forecast",
-        "tomorrow": "binary_sensor.home_prices_tomorrow",
-        "capacity_step": "sensor.home_level",
     }
     plan = _section(now, EN["section_plan"])["cards"][1]
     lanes = _section(now, EN["section_appliances"])["cards"][1]
     assert plan["rail_width"] == lanes["rail_width"] == 256  # F13
     assert plan["bucket"] == "window"
-    assert plan["show"] == ["plan", "baseline", "reserve", "ceiling", "price"]
+    assert plan["show"] == ["plan", "baseline", "reserve", "ceiling"]  # no price track
     month = _section(now, EN["section_month"])["cards"]
     assert month[-1]["type"] == "custom:powerplan-month-bars"
     assert month[-1]["entity"] == "sensor.home_cost"

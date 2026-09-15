@@ -1,17 +1,18 @@
-// custom:powerplan-price-card - "Strømpris" (iteration 4): what you pay now, today + tomorrow as a curve,
+// custom:powerplan-price-card - "Strømpris" (iteration 5): what you pay now, today + tomorrow as a curve,
 // and what the same hours would cost on spot (Nord Pool + VAT + the same grid tariff).
 //
-// Iteration 4: theme tokens instead of fixed px/hex; estimated prices drawn as a dashed line instead of
-// hatching the whole chart; an alert that says WHY prices are estimated (price sensor unknown or no
-// known slot now) with a retry; the Kraft/Nettleie split uses fixed_price from price_forecast, which now
-// reads the configured kraftledd entity (0,50 for Norgespris) instead of a slot's `energy` field.
+// Iteration 5 ("one metric once"): the card shows the price now, the curve, and ONE number the curve can't
+// show (what Norgespris has saved this month). Removed because the curve or another card already says it:
+// "I dag min–max · snitt" and "Spot NO3 nå" (curve + tooltip), "Uendret til 22:00 · deretter 0,74" (the
+// step), "Laveste/Høyeste i dag" chip (the curve), "Morgendagens priser klare / kommer ca. 13:00" (an
+// empty tomorrow half says it), "+ kapasitetsledd 397 kr/mnd" (Effekttrinn), the Kraft/Nettleie bar
+// (now in the tooltip) and the legend sub-texts. The stale-price alert stays: it is the only status here
+// that needs you to act; its retry presses the backend's "Hent priser på nytt" button.
 //
 // Data
 //   entities.price           sensor.<home>_strompris_na   state + next/min_today/max_today/mean_today/percentile
 //   entities.price_forecast  sensor.<home>_priser_kjent_til attributes.slots [{start,end,total,confidence}]
-//   entities.tomorrow        binary_sensor.<home>_morgendagens_priser (optional)
-//   entities.capacity_fee    sensor.energy_level_price (optional, kr/mnd)
-//   entities.capacity_step   sensor.<home>_effekttrinn_denne_maneden (optional, "5–10 kW")
+//   entities.price_forecast  … also attributes.area / vat / fixed_price and slots[].spot
 //   entities.fixed_price_savings  sensor.<home>_fixed_price_savings: the month's effect (optional)
 //   entities.refresh         button.<home>_refresh_prices: "Hent på nytt" presses it (optional)
 //   v0.8 (D12 §5.16 R2): the spot is price_forecast's slots[].spot and fixed_price, built into the same
@@ -23,7 +24,7 @@ import { TOKENS, SHARED, alertHtml } from "./tokens";
 interface PriceCfg {
   type: string;
   entry_id?: string;
-  entities: { price: string; price_forecast: string; tomorrow?: string; capacity_fee?: string; capacity_step?: string; fixed_price_savings?: string; refresh?: string };
+  entities: { price: string; price_forecast: string; fixed_price_savings?: string; refresh?: string };
   spot?: boolean;              // default true
   labels?: Record<string, string>;
 }
@@ -59,26 +60,18 @@ export function spotFromStates(h: Hass, c: PriceCfg): Spot | undefined {
 
 const P_LABELS: Record<string, Record<string, string>> = {
   nb: {
-    now: "Din pris nå", unit: "kr/kWh", lowest: "Laveste i dag", highest: "Høyeste i dag", today: "I dag", avg: "snitt {v} kr/kWh",
-    spot_now: "Spot {area} nå", incl_vat: "inkl. mva · {v} eks. mva", saves: "Norgespris sparer", saves_sub: "kr/kWh nå · ≈ {v} kr i {month}",
-    spot_cheaper: "Spot er billigere nå", until: "{v} fra {time}", unchanged: "Uendret til {time} · deretter {v}",
-    today_lbl: "I dag", tomorrow_lbl: "I morgen", your_price: "Din pris", your_price_sub: "Norgespris + nettleie",
-    without: "Uten Norgespris", without_sub: "spot {area} inkl. mva + nettleie", spot: "Spot {area}", cheap: "Billige timer",
-    composition: "Nå", energy: "Kraft {v}", energy_fixed: "Kraft {v} · Norgespris", grid: "Nettleie {v}",
-    capacity: "+ kapasitetsledd {v} kr/mnd ({step})", tomorrow_ready: "Morgendagens priser klare", tomorrow_pending: "Morgendagens priser kommer ca. 13:00",
-    estimated: "Anslått", you_save: "Du sparer", spot_plus: "Spot {s} + nettleie {g}", estimated_line: "anslått",
+    now: "Din pris nå", unit: "kr/kWh", saved: "Spart med Norgespris i {month}", saved_v: "≈ {v} kr",
+    today_lbl: "I dag", tomorrow_lbl: "I morgen", your_price: "Din pris",
+    without: "Uten Norgespris", spot: "Spot {area}", cheap: "Billige timer",
+    split: "Kraft {e} + nettleie {g}", estimated: "Anslått", you_save: "Du sparer",
     stale_title: "Prisene er ikke oppdatert", stale_text: "PowerPlan har ikke fått nye priser siden {time}. Planen bruker anslag til prisene er hentet.",
     stale_text_none: "PowerPlan har ingen kjente priser for denne timen. Planen bruker anslag til prisene er hentet.", retry: "Hent på nytt", retrying: "Henter …",
   },
   en: {
-    now: "Your price now", unit: "/kWh", lowest: "Lowest today", highest: "Highest today", today: "Today", avg: "avg {v}",
-    spot_now: "Spot {area} now", incl_vat: "incl. VAT · {v} excl.", saves: "Fixed price saves", saves_sub: "per kWh now · ≈ {v} in {month}",
-    spot_cheaper: "Spot is cheaper now", until: "{v} from {time}", unchanged: "Unchanged until {time} · then {v}",
-    today_lbl: "Today", tomorrow_lbl: "Tomorrow", your_price: "Your price", your_price_sub: "fixed price + grid",
-    without: "Without fixed price", without_sub: "spot {area} incl. VAT + grid", spot: "Spot {area}", cheap: "Cheap hours",
-    composition: "Now", energy: "Energy {v}", energy_fixed: "Energy {v} · fixed", grid: "Grid {v}",
-    capacity: "+ capacity {v}/month ({step})", tomorrow_ready: "Tomorrow's prices are in", tomorrow_pending: "Tomorrow's prices arrive ≈ 13:00",
-    estimated: "Estimated", you_save: "You save", spot_plus: "Spot {s} + grid {g}", estimated_line: "estimated",
+    now: "Your price now", unit: "/kWh", saved: "Saved with fixed price in {month}", saved_v: "≈ {v}",
+    today_lbl: "Today", tomorrow_lbl: "Tomorrow", your_price: "Your price",
+    without: "Without fixed price", spot: "Spot {area}", cheap: "Cheap hours",
+    split: "Energy {e} + grid {g}", estimated: "Estimated", you_save: "You save",
     stale_title: "Prices are not up to date", stale_text: "PowerPlan has had no new prices since {time}. The plan uses estimates until prices are fetched.",
     stale_text_none: "PowerPlan has no known price for this hour. The plan uses estimates until prices are fetched.", retry: "Fetch again", retrying: "Fetching …",
   },
@@ -110,8 +103,8 @@ export class PowerplanPriceCard extends HTMLElement {
     const c = this.config;
     if (!c) return;
     const e = c.entities;
-    const k = [h.states[e.price], h.states[e.price_forecast], e.tomorrow && h.states[e.tomorrow], e.capacity_fee && h.states[e.capacity_fee], e.capacity_step && h.states[e.capacity_step],
-      e.fixed_price_savings && h.states[e.fixed_price_savings], lang(h), h.themes?.darkMode, Math.floor(Date.now() / 60e3), this.width, this.retry];
+    const k = [h.states[e.price], h.states[e.price_forecast], e.fixed_price_savings && h.states[e.fixed_price_savings],
+      lang(h), h.themes?.darkMode, Math.floor(Date.now() / 60e3), this.width, this.retry];
     if (k.every((v, i) => v === this.key[i])) return;
     this.key = k;
     this.spot = c.spot === false ? undefined : spotFromStates(h, c);
@@ -155,7 +148,7 @@ export class PowerplanPriceCard extends HTMLElement {
       await h.callService("button", "press", { entity_id: c.entities.refresh });
       this.retry = "idle";
     } catch {
-      this.retry = "unsupported";          // the press failed: hide the button
+      this.retry = "unsupported";          // button gone or unavailable: hide the action
     }
     this.key = []; this.hass = this.hassRef!;
   }
@@ -195,11 +188,10 @@ export class PowerplanPriceCard extends HTMLElement {
     const compact = W < 600;
     const stale = this.staleText(L);
     const off = stale ? (compact ? 132 : 76) : 0;       // room for the alert above the header
-    const H = (compact ? 404 : 438) + off;
+    const H = (compact ? 336 : 376) + off;              // 376 = a 6-row section card, so Denne timen and Strømpris end level
     const nf = numFmt(h, 2), nf1 = numFmt(h, 1), nf0 = numFmt(h, 0);
     const tf = timeFmt(h);
     const pr = h.states[c.entities.price];
-    const a = pr?.attributes ?? {};
     const din = Number(pr?.state);
     const now = Date.now();
     const t0 = localMidnight(h).getTime();
@@ -210,41 +202,21 @@ export class PowerplanPriceCard extends HTMLElement {
     const sp = this.spot;
     const area = sp?.area ?? "";
     const fixed = sp?.fixed_price ?? null;
-
-    // next change
-    let nextTxt = "";
-    if (cur) {
-      const nx = pts.find((p) => p.s > now && Math.abs(p.din - cur.din) > 1e-4);
-      if (nx) nextTxt = compact ? fmtTemplate(L.until, { v: nf.format(nx.din), time: tf.format(nx.s) })
-        : fmtTemplate(L.unchanged, { time: tf.format(nx.s), v: nf.format(nx.din) });
-    }
-    const pct = Number(a.percentile);
-    const chip = pct === 0 ? `<span class="pill good"><i></i>${esc(L.lowest)}</span>` : pct === 100 ? `<span class="pill bad"><i></i>${esc(L.highest)}</span>` : "";
-    const spotNow = cur?.spot != null && sp ? cur.spot * (1 + sp.vat) : null;
-    const save = cur?.uten != null && fixed != null ? cur.uten - cur.din : null;
     const month = new Intl.DateTimeFormat(lang(h), { month: "short", timeZone: h.config.time_zone }).format(new Date()).replace(".", "");
 
-    const stat = (lbl: string, val: string, sub: string, cls = "") =>
-      `<div class="st"><span class="lbl">${esc(lbl)}</span><span class="val ${cls}">${esc(val)}</span><span class="sub">${esc(sub)}</span></div>`;
-    const stats = compact ? "" : `<div class="stats">
-        ${stat(L.today, `${nf.format(Number(a.min_today))}–${nf.format(Number(a.max_today))}`, fmtTemplate(L.avg, { v: nf.format(Number(a.mean_today)) }))}
-        ${spotNow != null ? stat(fmtTemplate(L.spot_now, { area }), nf.format(spotNow), fmtTemplate(L.incl_vat, { v: nf.format(cur!.spot!) })) : ""}
-        ${save != null ? (save > 0
-          ? stat(L.saves, nf.format(save), fmtTemplate(L.saves_sub, { v: sp?.effect ? nf0.format(sp.effect.month_nok) : "–", month }), "good")
-          : stat(L.spot_cheaper, nf.format(-save), L.unit, "")) : ""}
-      </div>`;
-    const head = compact
-      ? `<div class="head c" style="top:${12 + off}px"><div class="now"><span class="lbl"><ha-icon icon="mdi:flash"></ha-icon>${esc(L.now)}</span>
-           <span class="big">${Number.isFinite(din) ? nf.format(din) : "–"}<small>${esc(L.unit)}</small></span><span class="sub">${esc(nextTxt)}</span></div>
-         <div class="rc">${chip}${spotNow != null ? `<span class="sub r">${esc(fmtTemplate(L.spot_now, { area }))} ${nf.format(spotNow)}${save != null && save > 0 ? `<br><b class="good">${esc(L.saves)} ${nf.format(save)}</b>` : ""}</span>` : ""}</div></div>`
-      : `<div class="head" style="top:${14 + off}px"><div class="now"><span class="lbl"><ha-icon icon="mdi:flash"></ha-icon>${esc(L.now)}</span>
-           <span class="big">${Number.isFinite(din) ? nf.format(din) : "–"}<small>${esc(L.unit)}</small>${chip}</span><span class="sub">${esc(nextTxt)}</span></div>${stats}</div>`;
+    // The one number the curve can't show: what the fixed price has saved so far this month.
+    const saved = fixed != null && sp?.effect && sp.effect.month_nok > 0 ? sp.effect.month_nok : null;
+    const savedHtml = saved != null ? `<div class="st"><span class="lbl">${esc(fmtTemplate(L.saved, { month }))}</span>
+        <span class="val good">${esc(fmtTemplate(L.saved_v, { v: nf0.format(saved) }))}</span></div>` : "";
+    const head = `<div class="head ${compact ? "c" : ""}" style="top:${(compact ? 12 : 14) + off}px">
+        <div class="now"><span class="lbl"><ha-icon icon="mdi:flash"></ha-icon>${esc(L.now)}</span>
+          <span class="big">${Number.isFinite(din) ? nf.format(din) : "–"}<small>${esc(L.unit)}</small></span></div>${savedHtml}</div>`;
 
     // ---- chart geometry
     const pad = compact ? 14 : 16;
     const x0 = pad + (compact ? 26 : 30), x1 = W - pad;
-    const top = (compact ? 112 : 118) + off;
-    const bottom = H - (compact ? 104 : 118);
+    const top = (compact ? 92 : 100) + off;
+    const bottom = H - (compact ? 60 : 64);
     const maxV = Math.max(1, ...pts.map((p) => Math.max(p.din, p.uten ?? 0)));
     const ymax = Math.ceil(maxV * 2) / 2;
     const sx = (t: number) => x0 + (t - t0) / (t1 - t0) * (x1 - x0);
@@ -258,7 +230,11 @@ export class PowerplanPriceCard extends HTMLElement {
       if (hi - lo > 1e-4) {
         const thr = lo + (hi - lo) * 0.25;
         let run: [number, number] | null = null;
-        const flush = () => { if (run) g.push(`<rect class="band" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="${bottom - top}"/>`); run = null; };
+        const flush = () => {
+          if (run) g.push(`<rect class="band" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="${bottom - top}"/>`
+            + `<rect class="cheapline" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="3" rx="1.5"/>`);
+          run = null;
+        };
         for (const p of pts) { if (p.din <= thr) { run = run ? [run[0], p.e] : [p.s, p.e]; } else flush(); }
         flush();
       }
@@ -269,7 +245,6 @@ export class PowerplanPriceCard extends HTMLElement {
       g.push(`<line class="${v ? "gl" : "gl0"}" x1="${x0}" y1="${sy(v).toFixed(1)}" x2="${x1}" y2="${sy(v).toFixed(1)}"/>`);
       g.push(`<text class="yl" x="${x0 - 6}" y="${(sy(v) + 4).toFixed(1)}" text-anchor="end">${v ? nf1.format(v) : "0"}</text>`);
     }
-    g.push(`<text class="yl" x="${x0 - 6}" y="${top - 10}" text-anchor="end">kr</text>`);
     const mid = t0 + 24 * 3600e3;
     g.push(`<line class="day" x1="${sx(mid).toFixed(1)}" y1="${top - 16}" x2="${sx(mid).toFixed(1)}" y2="${bottom}"/>`);
     g.push(`<text class="dl" x="${x0 + 2}" y="${top - 6}">${esc(L.today_lbl)}</text><text class="dl" x="${(sx(mid) + 6).toFixed(1)}" y="${top - 6}">${esc(L.tomorrow_lbl)}</text>`);
@@ -312,31 +287,12 @@ export class PowerplanPriceCard extends HTMLElement {
       </defs>
       ${g.join("")}</svg>`;
 
-    // legend
-    const hasUten = pts.some((p) => p.uten != null);
-    const legend = `<div class="legend" style="top:${bottom + (compact ? 26 : 30)}px">
-      <span><i class="l din"></i>${esc(L.your_price)}${compact ? "" : ` <em>${esc(L.your_price_sub)}</em>`}</span>
+    // legend: names only (the tooltip explains what each line is made of)
+    const legend = !pts.length ? "" : `<div class="legend" style="top:${bottom + (compact ? 26 : 30)}px">
+      <span><i class="l din"></i>${esc(L.your_price)}</span>
       ${pts.some((p) => p.est) ? `<span><i class="l din est"></i>${esc(L.estimated)}</span>` : ""}
-      ${hasUten ? `<span><i class="l uten"></i>${esc(fixed != null ? L.without : fmtTemplate(L.spot, { area }))}${compact ? "" : ` <em>${esc(fmtTemplate(L.without_sub, { area }))}</em>`}</span>` : ""}
+      ${pts.some((p) => p.uten != null) ? `<span><i class="l uten"></i>${esc(fixed != null ? L.without : fmtTemplate(L.spot, { area }))}</span>` : ""}
       <span><i class="sw"></i>${esc(L.cheap)}</span></div>`;
-
-    // composition + tomorrow
-    const tomorrowOn = c.entities.tomorrow ? h.states[c.entities.tomorrow]?.state === "on" : !!sp?.tomorrow_available;
-    // PowerPlan's level sensor carries the step's fee as `fee` ("416.00 NOK") when no fee entity is given.
-    const fee = c.entities.capacity_fee ? Number(h.states[c.entities.capacity_fee]?.state)
-      : c.entities.capacity_step ? parseFloat(String(h.states[c.entities.capacity_step]?.attributes?.fee ?? "")) : NaN;
-    const stepName = c.entities.capacity_step ? h.states[c.entities.capacity_step]?.state ?? "" : "";
-    let comp = "";
-    if (fixed != null && Number.isFinite(din)) {
-      const grid = din - fixed;
-      const fw = Math.max(0, Math.min(100, fixed / din * 100));
-      comp = `<div class="bar"><div class="fx" style="width:${fw.toFixed(1)}%">${esc(fmtTemplate(compact ? L.energy : L.energy_fixed, { v: nf.format(fixed) }))}</div><div class="gr">${esc(fmtTemplate(L.grid, { v: nf.format(grid) }))}</div></div>`;
-    }
-    const foot = compact
-      ? `<div class="foot c">${comp}<span class="tm"><ha-icon icon="${tomorrowOn ? "mdi:calendar-check" : "mdi:calendar-clock"}" class="${tomorrowOn ? "ok" : ""}"></ha-icon>${esc(tomorrowOn ? L.tomorrow_ready : L.tomorrow_pending)}</span></div>`
-      : `<div class="foot"><span class="lbl">${esc(L.composition)}</span>${comp}
-          ${Number.isFinite(fee) ? `<span class="lbl">${esc(fmtTemplate(L.capacity, { v: nf0.format(fee), step: stepName }))}</span>` : ""}
-          <span class="grow"></span><span class="tm"><ha-icon icon="${tomorrowOn ? "mdi:calendar-check" : "mdi:calendar-clock"}" class="${tomorrowOn ? "ok" : ""}"></ha-icon>${esc(tomorrowOn ? L.tomorrow_ready : L.tomorrow_pending)}</span></div>`;
 
     const alert = stale ? `<div class="alertbox">${alertHtml({
       title: L.stale_title, text: compact ? stale.replace(/ Planen bruker.*$| The plan uses.*$/, "") : stale,
@@ -344,7 +300,7 @@ export class PowerplanPriceCard extends HTMLElement {
     })}</div>` : "";
     keepFocus(this.shadowRoot!, () => {
       this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
-        <ha-card class="${compact ? "compact" : ""}" style="height:${H}px">${svg}${alert}${head}${legend}${foot}<div class="tip" hidden></div></ha-card>`;
+        <ha-card class="${compact ? "compact" : ""}" style="height:${H}px">${svg}${alert}${head}${legend}<div class="tip" hidden></div></ha-card>`;
     });
     if (this.pinned != null) this.showTip(this.pinned);
   }
@@ -383,7 +339,7 @@ export class PowerplanPriceCard extends HTMLElement {
       const v = inHour.map(f).filter((x): x is number => x != null);
       return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
     };
-    const din = avg((p) => p.din)!, uten = avg((p) => p.uten), spot = avg((p) => p.spot);
+    const din = avg((p) => p.din)!, uten = avg((p) => p.uten);
     const L = this.labels();
     const nf = numFmt(h, 2), tf = timeFmt(h);
     const W = this.width || 860;
@@ -396,9 +352,9 @@ export class PowerplanPriceCard extends HTMLElement {
     const day = new Intl.DateTimeFormat(lang(h), { weekday: "short", timeZone: h.config.time_zone }).format(hourStart);
     tip.innerHTML = `<b>${esc(day)} ${esc(tf.format(hourStart))}–${esc(tf.format(hourStart + 3600e3))}${inHour.some((p) => p.est) ? ` · ${esc(L.estimated)}` : ""}</b>
       <div class="r"><i class="l din"></i><span>${esc(L.your_price)}</span><b>${nf.format(din)}</b></div>
+      ${sp?.fixed_price != null ? `<div class="sub2">${esc(fmtTemplate(L.split, { e: nf.format(sp.fixed_price), g: nf.format(din - sp.fixed_price) }))}</div>` : ""}
       ${uten != null ? `<div class="r"><i class="l uten"></i><span>${esc(sp?.fixed_price != null ? L.without : fmtTemplate(L.spot, { area: sp?.area ?? "" }))}</span><b>${nf.format(uten)}</b></div>` : ""}
-      ${spot != null && sp?.fixed_price != null ? `<div class="sep">${esc(fmtTemplate(L.spot_plus, { s: nf.format(spot * (1 + sp.vat)), g: nf.format(din - sp.fixed_price) }))}</div>
-      <div class="r good"><span>${esc(L.you_save)}</span><b>${nf.format(uten! - din)} ${esc(L.unit)}</b></div>` : ""}`;
+      ${uten != null && sp?.fixed_price != null && uten > din ? `<div class="r good sep"><span>${esc(L.you_save)}</span><b>${nf.format(uten - din)} ${esc(L.unit)}</b></div>` : ""}`;
     tip.hidden = false;
     const left = xm + 12 + 240 > W ? xm - 12 - 240 : xm + 12;
     tip.style.left = `${left}px`;
@@ -422,20 +378,13 @@ const CSS = `
   .big { display: flex; align-items: baseline; gap: 6px; font-size: var(--pp-fs-4xl); letter-spacing: -.5px; line-height: 40px; }
   .c .big { font-size: var(--pp-fs-3xl); line-height: 34px; }
   .big small { font-size: var(--pp-fs-m); letter-spacing: 0; color: var(--pp-text2); }
-  .big .pill { align-self: center; margin-left: 6px; }
   .sub { font-size: var(--pp-fs-s); line-height: 16px; color: var(--pp-text2); white-space: nowrap; }
-  .sub.r { text-align: right; line-height: 16px; }
   .good { color: var(--pp-ok-text); }
-  .rc { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-  .stats { display: flex; align-items: flex-start; }
-  .st { display: flex; flex-direction: column; gap: 2px; padding: 0 16px; border-left: 1px solid var(--pp-divider); min-width: 0; }
-  .st:first-child { border-left: 0; }
+  .st { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0; text-align: right; }
+  .c .st .lbl { white-space: normal; max-width: 150px; justify-content: flex-end; }
   .st .val { font-size: var(--pp-fs-l); font-weight: var(--pp-fw-m); white-space: nowrap; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; border-radius: 12px; font-size: var(--pp-fs-s); font-weight: var(--pp-fw-m); color: var(--pp-text); }
-  .pill i { width: 8px; height: 8px; border-radius: 50%; }
-  .pill.good { background: var(--pp-ok-bg); } .pill.good i { background: var(--pp-ok); }
-  .pill.bad { background: var(--pp-warn-bg); } .pill.bad i { background: var(--pp-warn); }
   .band { fill: var(--pp-cheap); }
+  .cheapline { fill: var(--pp-cheap-line); }
   .gl0 { stroke: var(--pp-divider); stroke-width: 1; }
   .gl { stroke: var(--pp-divider); stroke-width: 1; stroke-dasharray: 2 4; }
   .yl, .xl, .dl { font-size: var(--pp-fs-s); fill: var(--pp-text2); font-family: var(--pp-font); }
@@ -452,25 +401,14 @@ const CSS = `
   .legend { position: absolute; left: var(--pp-pad); right: var(--pp-pad); display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--pp-fs-s); line-height: 16px; }
   .compact .legend { left: 14px; right: 14px; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .legend em { font-style: normal; color: var(--pp-text2); }
   i.l { width: 16px; display: inline-block; } i.l.din { height: 3px; border-radius: 2px; background: var(--pp-primary); }
   i.l.din.est { height: 0; border-top: 2px dashed var(--pp-primary); background: none; }
   i.l.uten { height: 0; border-top: 2px dashed var(--pp-warn); }
-  i.sw { width: 12px; height: 10px; border-radius: 3px; background: var(--pp-cheap); outline: 1px solid rgba(var(--rgb-success-color, 67, 160, 71), 0.35); display: inline-block; }
-  .foot { position: absolute; left: var(--pp-pad); right: var(--pp-pad); bottom: 14px; display: flex; align-items: center; gap: 14px;
-          border-top: 1px solid var(--pp-divider); padding-top: 12px; }
-  .foot.c { left: 14px; right: 14px; flex-direction: column; align-items: stretch; gap: 6px; padding-top: 10px; bottom: 12px; }
-  .bar { display: flex; height: 24px; width: 320px; border-radius: 6px; overflow: hidden; flex: none; font-size: var(--pp-fs-s); font-weight: var(--pp-fw-m); }
-  .foot.c .bar { width: auto; height: 22px; }
-  .bar > div { display: flex; align-items: center; padding-left: 8px; white-space: nowrap; overflow: hidden; color: var(--pp-text); }
-  .bar .fx { background: var(--pp-price-hi); }
-  .bar .gr { flex: 1 1 auto; background: var(--pp-price-lo); }
-  .grow { flex: 1 1 auto; }
-  .tm { display: inline-flex; align-items: center; gap: 6px; font-size: var(--pp-fs-s); white-space: nowrap; --mdc-icon-size: 16px; }
-  .foot.c .tm { color: var(--pp-text2); }
-  .tm ha-icon { color: var(--pp-text2); } .tm ha-icon.ok { color: var(--pp-ok); }
+  i.sw { width: 12px; height: 10px; border-radius: 3px; background: var(--pp-cheap); box-shadow: inset 0 3px 0 var(--pp-cheap-line); display: inline-block; }
   .tip { position: absolute; width: 240px; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; background: var(--pp-card);
          border: 1px solid var(--pp-divider); box-shadow: 0 6px 20px rgba(0,0,0,.3); font-size: var(--pp-fs-m); line-height: 22px; pointer-events: none; }
   .tip .r { display: flex; align-items: center; gap: 8px; } .tip .r span { flex: 1 1 auto; } .tip .r i.l { width: 12px; }
-  .tip .sep { border-top: 1px solid var(--pp-divider); margin-top: 5px; padding-top: 5px; color: var(--pp-text2); font-size: var(--pp-fs-s); }
+  .tip .sep { border-top: 1px solid var(--pp-divider); margin-top: 5px; padding-top: 3px; }
+  .tip .sub2 { color: var(--pp-text2); font-size: var(--pp-fs-s); line-height: 16px; padding-left: 20px; }
 `;
+

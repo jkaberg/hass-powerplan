@@ -44,41 +44,41 @@
 ```
 custom_components/powerplan/
 ├── dashboard/
-│   ├── __init__.py       async_setup_dashboard(hass): static path, the Lovelace resource (add_extra_js_url where resources are YAML) - called once from async_setup (PLAN §7 dec. 8)
-│   ├── site_layout.py    SiteLayout from the entity and device registries and the entry's subentries (no hass.states - INV-3)
+│   ├── __init__.py       async_setup_dashboard(hass): static path, the Lovelace resource (add_extra_js_url where resources are YAML), called once from async_setup (PLAN §7 dec. 8)
+│   ├── site_layout.py    SiteLayout from the entity and device registries and the entry's subentries (no hass.states, INV-3)
 │   ├── logbook.py        async_describe_events: every EventKind in words, on the appliance's plan_status (§5.6)
 │   ├── layout.py         build(sites: Sequence[SiteLayout], ha_version, texts, …) → the Lovelace dashboard config (§5.1); plain data in, plain data out
-│   ├── resource.py       v0.8: the Lovelace resource - created, kept at the current key, duplicates removed, deleted with the last site (§5.16 R4)
-│   └── config.py         v0.8: the answer of `powerplan.get_dashboard` {site?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440). v0.7's `ws.py`, `ws_spot.py`, `ws_version.py` are gone (§5.16)
+│   ├── resource.py       the Lovelace resource: created, kept at the current key, duplicates removed, deleted with the last site (§5.16 R4)
+│   └── config.py         the answer of `powerplan.get_dashboard` {site?, language, hidden_views?, hidden_cards?} → config; headings from `translations/*.json` → `selector.dashboard.options` (D-0440)
 └── frontend/dist/           the committed build HACS installs, served at /powerplan_frontend (§5.5)
     ├── powerplan.js           the module every page loads (≈ 2 kB)
     └── chunks/                ECharts and what it shares, loaded when a timeline first draws; named by content hash
 
 frontend/                      the sources, at the repository root so HACS and the live config never carry them (D-0445)
 ├── src/index.ts               defines the strategy first, then the cards behind dynamic imports; window.customCards and window.customStrategies (§5.10)
-├── src/strategy.ts            ll-strategy-dashboard-powerplan: generate() → websocket → config
+├── src/strategy.ts            ll-strategy-dashboard-powerplan: generate() → get_dashboard → config
+├── src/strategy-shim.ts       the newest bundle on the page answers the strategy's generate() (§5.17 S1)
 ├── src/timeline-card.ts       powerplan-timeline-card (§5.2)
+├── src/timeline-plan-mode.ts  Now's Plan card, drawn inside the timeline card (§5.15 F3)
+├── src/forecast.ts            the whole-house forecast per window, its rail and phone summary (§5.12 F1–F7)
 ├── src/window-card.ts         powerplan-window-card, modes hour / month / peaks (§5.3, §5.7)
 ├── src/period-summary.ts      powerplan-period-summary, views summary / appliances / table (§5.7, §5.11)
-├── src/runs-card.ts           powerplan-runs-card: v0.5's next runs, defined but no longer laid out (D-0496)
-├── src/appliances-card.ts     powerplan-appliances-card: a row and a 24 h lane per appliance (§5.12 R1–R6)
+├── src/appliances-card.ts     powerplan-appliances-card: a row and a 24 h lane per appliance (§5.12 R1–R8)
 ├── src/appliance-dialog.ts    the dialog a row opens (§5.12 R7)
 ├── src/price-card.ts          powerplan-price-card: the price now, today and tomorrow (§5.12 P1–P5)
-├── src/forecast.ts            the timeline's whole-house forecast per window, its rail and phone summary (§5.12 F1–F6)
-├── src/status.ts              a row's status from plan_status as a word, held 90 s (§5.12 R1, R5; v0.7 §5.15 F2)
-├── src/styles.ts              the style sheet the v0.5 cards start from (§5.11)
-├── src/tokens.ts              v0.7: the iteration-4 cards' theme tokens and shared parts (§5.15)
-├── src/r3-util.ts             v0.7: the iteration-4 cards' shared helpers - the plan's slots, runs, lowered hours, savings (§5.15)
-├── src/timeline-plan-mode.ts  v0.7: Now's Plan card, drawn inside the timeline card (§5.15 F3)
-├── src/attention-card.ts      v0.7: powerplan-attention-card (§5.15 F6)
-├── src/month-bars.ts          v0.7: powerplan-month-bars (§5.15 F9)
-├── src/version-check.ts       v0.7: the reload toast and the placeholder for an unknown card (§5.15 F7)
-├── src/bundle.ts              v0.7: the loader's own `?v=` key, for the version check (§5.15 F7)
+├── src/attention-card.ts      powerplan-attention-card (§5.15 F6)
+├── src/month-bars.ts          powerplan-month-bars (§5.15 F9, §5.19)
+├── src/runs-card.ts           powerplan-runs-card: the next runs, defined but no longer laid out (D-0496)
+├── src/status.ts              a row's status from plan_status as a word, held 90 s (§5.12 R1, R5)
+├── src/styles.ts, tokens.ts   the style sheet and the theme tokens every card starts from (§5.11, §5.15)
+├── src/r3-util.ts             the cards' shared helpers: the plan's slots, runs, lowered hours, savings (§5.15)
+├── src/version-check.ts       the reload toast and the placeholder for an unknown card (§5.16 R5)
+├── src/bundle.ts              the loader's own `?v=` key, for the version check
 ├── src/energy.ts              the picker's collection, with the calendar-month fallback (§5.7)
 ├── src/chart.ts               ECharts 6.1.0 with the two charts and five components the timeline uses
 ├── src/transforms.ts          the pure halves: slots → timeline rows, the gauge's scale and colours (§9 7)
 ├── src/ha.ts                  the slice of HA's frontend objects the cards read
-├── test/transforms.test.ts    vitest
+├── test/*.test.ts             vitest
 └── package.json, package-lock.json, tsconfig.json, esbuild.config.mjs
 ```
 
@@ -180,11 +180,11 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 | # | section (heading key) | `column_span` | cards (`grid_options` columns of the section's 12 × span) |
 |---|---|---|---|
 | 1 | attention (no heading) | 3 | *v0.7:* `custom:powerplan-attention-card` (`meter_status: meter_health`) full × auto - PowerPlan's repairs and the meter in the household's words, nothing when all is well (§5.15 F6); v0.6: `repairs` (`hide_empty`) 12 and a `meter_health` tile 12 |
-| 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; `tile` `peak_warning` (`card_peak_warning`, `mdi:alert-outline`) 12 × 1 |
-| 3 | `section_price` | 2 | heading badge `prices_tomorrow` (state, green); `custom:powerplan-price-card` full × auto (v0.6 §5.12 P1–P5) |
-| 4 | `section_plan` | 3 | heading badges: `plan` (state) and `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 300` (the whole-house forecast, v0.6 F1), every load with its colour, full × auto |
+| 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; *v0.9:* no `peak_warning` tile - the gauge's chip says it, and only when the hour is at risk (§5.17); v0.8: `tile` `peak_warning` 12 × 1 |
+| 3 | `section_price` | 2 | `custom:powerplan-price-card` full × auto (v0.6 §5.12 P1–P5), entities `price`, `price_forecast`, `fixed_price_savings`, `refresh`; *v0.9:* no heading badge `prices_tomorrow`, no `tomorrow` or `capacity_step` (§5.17) |
+| 4 | `section_plan` | 3 | heading badge `replan` (*v0.9:* the `plan` badge is gone, §5.17) (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 300` (the whole-house forecast, v0.6 F1), every load with its colour, full × auto |
 | 5 | `section_appliances` | 3 | `custom:powerplan-appliances-card`, every appliance with a `plan_status`, full × auto (v0.6 R1–R7; v0.5 had a `distribution` of `granted_power` and one tile per appliance); `no_loads` markdown without appliances |
-| 6 | `section_capacity` | 1 | heading badge `projected_level` (`mdi:stairs`); window card `mode: month` 12 × 6 - the section only where `metric` and `level` are shown |
+| 6 | `section_capacity` | 1 | window card `mode: month` 12 × 6 (*v0.9:* no heading badge `projected_level`, §5.17) - the section only where `metric` and `level` are shown |
 | 7 | `section_month` | 1 | heading badge: `cost` as an entity badge, `mdi:chart-bar`, named `view_history`, → `{dashboard}/history`; *v0.7:* `custom:powerplan-month-bars` (`entity: cost`, `savings`) 12 × 5 (§5.15 F9); v0.6: `entity` `cost`, `savings` 6 × 2 each and a 30-day `statistics-graph` |
 | 8 | `section_solar` | 1 | Phase 7, only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
 
@@ -195,10 +195,8 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 | 1 | `section_summary` | 3 | `custom:powerplan-period-summary` full × 2 (§5.7); below the release that has it, four `statistic`s (`cost`, `savings` change this month; `metric` state; `level` as a tile) 9 × 2 each |
 | 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × auto (§5.7) - before WP6.4f `energy-usage-graph` (`collection_key`); the section only with an Energy grid source |
 | 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7) - before WP6.4f `statistics-graph` bar `max` of `window_used` (`card_peak_hour`) |
-| 4 | `section_per_appliance` | 2 | period summary `view: appliances` full × auto, no title (v0.5 D5; v0.4 a `statistics-graph` that ignored the picker) |
-| 5 | `section_cost_per_appliance` | 1 | period summary `view: table` 12 × auto, following the picker (v0.5 D6; v0.4 a markdown table for this month) |
-| 6 | `section_cost_savings` | 2 | `statistics-graph` bar, `change`, `cost` (`primary`, named `card_cost`) and `savings` (`success`, `card_savings`) full × 4 |
-| 7 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4 - worded by `logbook.py` (§5.6) |
+| 4 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (*v0.9:* full width, §5.17; v0.5 D6; v0.4 a markdown table for this month) |
+| 5 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4 - worded by `logbook.py` (§5.6) |
 
 Section 3 shows the capacity windows, section 1 the capacity level, the subviews the energy per appliance, and section 2's badge links to the Energy dashboard for the rest.
 
@@ -503,6 +501,25 @@ Why this loads in time (B1): in HA's frontend the dashboard panel's `_fetchConfi
 
 The resource store is the household's Lovelace configuration. The integration writes one row of it, its own, found by its URL path, and that row shows under **Settings** > **Dashboards** > **Resources** like any other card's.
 
+### 5.17 Iteration 5: less is more
+
+The fifth iteration changes style and UI only, the backend stays. Three rules: one metric once per pane; a status only when it needs you; every mark that carries data at 3:1 against the card, dark and light. The card files are copied as delivered, and the layout only changes where it lays out cards (D-0625, D-0626).
+
+| # | what | where |
+|---|---|---|
+| C1 | Strømpris: the price now, the saving with the fixed price this month, the curve and its legend names; the day's range, the spot now, the next change, the lowest/highest chip, the Kraft/Nettleie bar, the capacity fee and "tomorrow's prices" leave (the split moves into the tooltip) | `price-card.ts`; `spotFromStates` and `button.press` from §5.16 kept |
+| C2 | Plan: no price track, no split bar, no per-load list, no Effektmål row or `p90`; the rail `inset: 0` with ellipsis; y ticks in 1/2/5 steps; hold bars hollow; the cheap hours a 3 px line | `forecast.ts`, `timeline-plan-mode.ts`; the layout's `show` drops `price` |
+| C3 | Apparater: no filter header or desktop lane labels; "N uten behov · Vis alle" in the footer; one legend entry, "Senket i dyre timer" | `appliances-card.ts` |
+| C4 | The dialog: the hero, "why" rows and month cells trimmed; the lane without a price track, with the deadline tick | `appliance-dialog.ts` |
+| C5 | Denne måneden: savings hidden without a reference, also for `savings_confidence: none` | `month-bars.ts`, `r3-util.ts` |
+| C6 | Contrast: `--pp-base` and `--pp-hatch` text at 50 %, `--pp-hold` 12 % with a 62 % outline, `--pp-cheap` 13 % with a line in `--success-color`, `--pp-track` 10 % (also in `styles.ts`); icons 4.5:1 | `tokens.ts`, `styles.ts`, `r3-util.ts` |
+| C7 | Denne timen: the chip only when the hour is tight, critical, over or a peak is expected; no "brukt av … denne timen" line (kept as the SVG's label); the "Forventet" key in its full colour | `window-card.ts` |
+| C8 | Effekttrinn: the step's fee on the subtitle (`level`'s `fee`, `card_step_fee`); one tip sentence when both the headroom and the tipping day are known (`card_day_that_tips_step`); every step at 45 %, the current one 100 % | `window-card.ts` |
+| C9 | Phone: the pressed hours option is the one drawn, both read after the chart chunk loads | `timeline-card.ts` |
+| C10 | History: no period line and, with `window_used`, no highest-hour cell in Oppsummering (the peaks card has both); the peaks card's verdict "Teller ikke i {month}"; Forbruk in one colour with no legend, no highest-hour label and no top-3 line; no saving bars, no cost-and-savings graph, the cost table full width | `period-summary.ts`, `window-card.ts`, `timeline-card.ts`, `layout.py` |
+
+**S1: the strategy shim.** `index.ts` calls `installStrategies` instead of `customElements.define`: the element's `generate()` forwards to the newest bundle's, and a bundle that finds the element defined by another patches that class's `generate()` and shows the reload toast. `bundle.ts` leaves the loader's key on `__ppKey` (the build's `__PP_BUNDLE__`), since `__ppBundle` is the shim's record of which bundle installed last (D-0625).
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -546,6 +563,8 @@ None. The dashboard is generated on every open. A household that takes control o
 26. The resource: created once as `module` at the current key on a storage-mode HA; a changed key updates the same row; a duplicate is removed; the household's other resources are unchanged; YAML mode leaves the store alone and adds the extra-JS URL; removing the last site deletes the row, removing one of two keeps it. House check: a cold load of `/overview` 10 of 10 on desktop and in the Companion app, also straight after a restart, and PowerPlan listed in "Add dashboard".
 27. `price_forecast`'s `slots[].spot` and `fixed_price`, and `fixed_price_savings`' `today_kwh`, match the runtime's curves with and without a fixed price; `slots` stays unrecorded; `vitest`: the price card builds its spot from those attributes and reads `tomorrow_available` from a known slot after local midnight.
 28. `button.<site>_refresh_prices` exists on every site, is on by default, and a press runs the refresher's `async_refresh("user")`; the layout only gives the price card `entities.refresh` while the button is enabled.
+
+29. Now: no `peak_warning` tile and no heading badge on the hour, price, plan or capacity sections but `replan`; the price card's entities are `price` and `price_forecast` (and `fixed_price_savings`, `refresh` where the site has them); the Plan timeline's `show` has no `price`. History: summary · usage · capacity · cost per appliance (span 3, full) · events, and no `statistics-graph`. Every text still used (§9 18). `vitest`: `installStrategies` forwards to the newest bundle through an element an older bundle defined and shows the toast once; `savingsView` hides `savings_confidence: none`. The harness renders Plan, Apparater, Strømpris, the dialog, the attention card and the month bars in both themes without a console error.
 
 ---
 

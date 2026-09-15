@@ -33,6 +33,6 @@ await build({
     // The cards' content hash names the build in the console (G1).
     BUILD_HASH: JSON.stringify(entry.split("/").pop().replace(/^cards-|\.js$/g, "")),
     // Iteration 4 (F7): the `?v=` this page loaded, set by `src/bundle.ts` before anything reads it.
-    __PP_BUNDLE__: "globalThis.__ppBundle",
+    __PP_BUNDLE__: "globalThis.__ppKey",
   },
 });

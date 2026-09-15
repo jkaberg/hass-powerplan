@@ -10,7 +10,7 @@ export const ppStyles = `
     --pp-radius-s: 8px;
     --pp-radius-m: 10px;
     --pp-fill: rgba(var(--rgb-primary-text-color, 225, 225, 225), 0.06);
-    --pp-track: rgba(var(--rgb-primary-text-color, 225, 225, 225), 0.08);
+    --pp-track: rgba(var(--rgb-primary-text-color, 225, 225, 225), 0.1);
     display: block;
     height: 100%;
     font-family: var(--ha-font-family-body, Roboto, Noto, sans-serif);

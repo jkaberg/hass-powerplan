@@ -180,18 +180,17 @@ export class PowerplanPeriodSummary extends HTMLElement {
     const { cost, savings, window_used: used } = entities;
     const grid = config.grid_entities ?? [];
     const changes = [cost, savings, ...grid].filter((id): id is string => Boolean(id));
-    const [changeStats, maxStats, gridByHour] = await Promise.all([
+    // Iteration 5: the highest hour is only this card's without `window_used` (the peaks card has it
+    // otherwise); then it is the grid sources' hourly sum (D2).
+    const ownPeak = !used && mode !== "capacity";
+    const [stats, gridByHour] = await Promise.all([
       safe(fetchStatistics(hass, period, changes, ["change"])),
-      used && mode !== "capacity" ? safe(fetchStatistics(hass, period, [used], ["max"])) : Promise.resolve({}),
-      mode === "hour" && grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({}),
+      ownPeak && mode === "hour" && grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({}),
     ]);
-    const stats: Record<string, StatRow[]> = { ...changeStats, ...maxStats };
-    // D2: before `window_used`'s statistics began, the grid sources' hourly sum is the highest hour.
-    const peak =
-      (used ? highest(stats[used]) : undefined) ?? highest(gridHours(gridByHour, grid, (id) => kwhScale(hass, id)));
+    const peak = ownPeak ? highest(gridHours(gridByHour, grid, (id) => kwhScale(hass, id))) : undefined;
 
     let ranking: Array<[string, number]> | undefined;
-    if (mode === "hour") {
+    if (ownPeak && mode === "hour") {
       ranking = await monthRanking(
         hass,
         calendarMonth(period.start),
@@ -327,7 +326,9 @@ export class PowerplanPeriodSummary extends HTMLElement {
               entity: entities.metric,
             },
       );
-    } else if (entities.window_used || grid.length) {
+    } else if (!entities.window_used && grid.length) {
+      // Iteration 5: with `window_used` the peaks card beside this one shows the highest hour, the top 3
+      // and whether it counts; the summary no longer repeats it.
       const used = entities.window_used;
       const name = labels.summary_highest_hour ?? "";
       const peak = fetched?.peak;
@@ -349,13 +350,11 @@ export class PowerplanPeriodSummary extends HTMLElement {
       }
     }
 
-    const subtitle = fetched ? this.subtitle(fetched, locale, zone) : "";
     this.shadowRoot!.innerHTML = `
       <style>
         ${ppStyles}
         ha-card { container-type: inline-size; }
         .pp-content { padding-bottom: 0; }
-        .period { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); min-height: 16px; }
         .grid { display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr)); margin: 8px -16px 0; }
         .cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 16px; cursor: pointer;
                 border-left: 1px solid var(--divider-color); }
@@ -368,7 +367,6 @@ export class PowerplanPeriodSummary extends HTMLElement {
         }
       </style>
       <ha-card><div class="pp-content">
-        <div class="period">${escape(subtitle)}</div>
         <div class="grid">${cells
           .map(
             (cell) => `
@@ -380,19 +378,6 @@ export class PowerplanPeriodSummary extends HTMLElement {
           )
           .join("")}</div>
       </div></ha-card>`;
-  }
-
-  /** "tirsdag 22. september", "september 2026", or "1. sep. – 23. sep." for anything else. */
-  private subtitle(fetched: Fetched, locale: string, zone: string | undefined): string {
-    const { period, kind } = fetched;
-    if (kind === "day") {
-      return new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(period.start);
-    }
-    if (kind === "month") {
-      return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: zone }).format(period.start);
-    }
-    const format = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: zone });
-    return `${format.format(period.start)} – ${format.format(new Date(period.end.getTime() - 1))}`;
   }
 
   // ------------------------------------------------- per appliance (D5, D6)

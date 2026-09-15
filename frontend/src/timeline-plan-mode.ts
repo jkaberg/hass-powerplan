@@ -1,4 +1,4 @@
-// Glue for timeline-card.ts, plan mode (iteration 4).
+// Glue for timeline-card.ts, plan mode (iteration 5: no price track, phone summary without the split bar).
 //
 //   import { renderPlanMode, observePlanHost } from "./timeline-plan-mode";
 //   // in connectedCallback (once):
@@ -79,12 +79,14 @@ export function renderPlanMode(host: HTMLElement, hass: Hass, cfg: PlanModeCfg, 
   const css: ForecastColors = {
     text: v("--pp-text", "#141414"), text2: v("--pp-text2", "#5e5e5e"), text3: v("--pp-text3", "#bdbdbd"), divider: v("--pp-divider", "rgba(0,0,0,.12)"),
     card: v("--pp-card", "#ffffff"), primary: v("--pp-primary", "#009ac7"), error: v("--pp-error", "#db4437"),
-    base: v("--pp-base", "rgba(33,33,33,.34)"), hold: v("--pp-hold", "rgba(33,33,33,.16)"), cheap: v("--pp-cheap", "rgba(67,160,71,.1)"),
+    base: v("--pp-base", "rgba(33,33,33,.5)"), hold: v("--pp-hold", "rgba(33,33,33,.12)"), holdLine: v("--pp-hold-line", "rgba(33,33,33,.62)"),
+    cheap: v("--pp-cheap", "rgba(67,160,71,.13)"), cheapLine: v("--pp-cheap-line", "#43a047"),
     warn: v("--pp-warn", "#ffa600"), priceHi: v("--pp-price-hi", "rgba(0,154,199,.5)"), priceLo: v("--pp-price-lo", "rgba(0,154,199,.24)"),
   };
   // Bars must be opaque, or the cheap-hours band shows through the translucent greys.
   css.base = solid(css.base, css.card);
   css.hold = solid(css.hold, css.card);
+  css.holdLine = solid(css.holdLine, css.card);
   const l = hass.locale?.language || hass.language || "en";
   const o = {
     now: Date.now(), a0, hours, windowMin, rail, compact, fs: resolvePx(host, "--ha-font-size-s", 12),
@@ -94,7 +96,7 @@ export function renderPlanMode(host: HTMLElement, hass: Hass, cfg: PlanModeCfg, 
   side.style.cssText = compact ? "position:absolute;left:0;right:0;top:0;height:0" : `position:absolute;left:0;top:0;bottom:0;width:${rail}px`;
   side.innerHTML = compact ? summaryHtml(b, o) : railHtml(b, cfg.loads, o);
   const opt = forecastOption(b, cfg.loads, o);
-  if (compact) opt.grid[0].top = 150;
+  if (compact) opt.grid[0].top = 112;
   chart ??= echarts.init(ec!, undefined, { renderer: "svg" });
   chart.setOption(opt, { notMerge: true });
   chart.resize({ width: W, height: H });

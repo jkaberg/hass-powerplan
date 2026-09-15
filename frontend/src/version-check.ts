@@ -1,4 +1,4 @@
-// Stale-bundle guard (iteration 4).
+// Stale-bundle guard (iteration 4; iteration 5 exports notify() for strategy-shim.ts).
 //
 // Seen live: a tab opened at 10:49 kept bundle 29f8ef4f after the server moved to 89716faf; the new
 // layout referenced cards the old bundle didn't have, so Home Assistant drew "Konfigurasjonsfeil".
@@ -25,7 +25,7 @@ const V_LABELS: Record<string, Record<string, string>> = {
 
 let notified = false;
 
-function notify(hass: Hass): void {
+export function notify(hass: Hass): void {
   if (notified) return;
   notified = true;
   const L = pick(V_LABELS, hass);

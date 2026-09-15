@@ -1,8 +1,15 @@
-// powerplan-appliance-dialog - iteration 4: Home Assistant's more-info pattern.
+// powerplan-appliance-dialog - iteration 5: Home Assistant's more-info pattern.
 //
 //   header   X (top-left, all sizes) · breadcrumb "Area › PowerPlan" over the title · history, settings, ⋮
-//   body     hero (value + target + one status line) · Styring as a full-width select ·
-//            one lane with the same encoding as Apparater + price track · "why" rows · this month
+//   body     hero (value + target + one status word) · Styring as a full-width select · Ferdig til ·
+//            one lane with the same encoding as Apparater · "why" rows · this month
+//
+// Iteration 5 ("one metric once"): the deadline lives in the "Ferdig til" control only (not in the hero, not
+// in "Behov … før 06:00"; the hero also printed "Ferdig til" without a time); no comfort bar with
+// "Minst 45 · Mål 45" under "mål 45 °C"; the Styring tile hides its state (the select shows it); no price
+// track and no start label on the lane ("Valgt tid" says it); the Priser row appears only when prices are
+// estimated or stale; "≈ 2,65 kr" without repeating the kWh from Behov; month cells that have no data
+// (savings without a reference, cost 0 with energy used) are left out instead of showing 0,00.
 //   phone    bottom sheet with a drag handle when the viewport is ≤ 870 px wide or ≤ 500 px high
 //            (the same breakpoint as ha-adaptive-dialog)
 //
@@ -26,20 +33,20 @@ const D_LABELS: Record<string, Record<string, string>> = {
     control: "Styring", deadline: "Ferdig til", plan: "Neste 24 timer", why: "Hvorfor denne planen", month: "Denne måneden",
     need: "Behov", chosen: "Valgt tid", prices: "Priser", est_cost: "Anslått kostnad", cost: "Kostnad", savings: "Besparelse",
     energy: "Energi", open: "Åpne apparatside", device: "Sensorinfo", close: "Lukk", more: "Flere valg", settings: "Innstillinger",
-    history: "Historikk", crumb_app: "PowerPlan", done_at: "ferdig ca. {time}", before: "før {time}",
+    history: "Historikk", crumb_app: "PowerPlan", done_at: "ferdig ca. {time}",
     need_moved: "{kwh} kWh flyttes", need_hold: "{kwh} kWh holder temperaturen", no_run: "Ingen kjøring planlagt",
-    min: "Minst {v}", target: "mål {v}", target_cap: "Mål {v}", prices_known: "Kjente priser", prices_part: "Anslått for {n} av {m} timer",
-    prices_stale: "Anslått — ingen nye priser siden {time}", cost_for: "≈ {kr} kr for {kwh} kWh", no_ref: "mangler referanse",
+    target: "mål {v}", prices_known: "Kjente priser", prices_part: "Anslått for {n} av {m} timer",
+    prices_stale: "Anslått — ingen nye priser siden {time}", cost_for: "≈ {kr} kr",
     more_than_ref: "mer enn uten styring", legionella: "Legionella", legionella_next: "neste {date}", planned_word: "planlagt",
   },
   en: {
     control: "Control", deadline: "Ready by", plan: "Next 24 hours", why: "Why this plan", month: "This month",
     need: "Need", chosen: "Chosen time", prices: "Prices", est_cost: "Estimated cost", cost: "Cost", savings: "Savings",
     energy: "Energy", open: "Open appliance page", device: "Sensor info", close: "Close", more: "More options", settings: "Settings",
-    history: "History", crumb_app: "PowerPlan", done_at: "done ≈ {time}", before: "before {time}",
+    history: "History", crumb_app: "PowerPlan", done_at: "done ≈ {time}",
     need_moved: "{kwh} kWh moved", need_hold: "{kwh} kWh holding temperature", no_run: "No run planned",
-    min: "At least {v}", target: "target {v}", target_cap: "Target {v}", prices_known: "Known prices", prices_part: "Estimated for {n} of {m} hours",
-    prices_stale: "Estimated — no new prices since {time}", cost_for: "≈ {kr} for {kwh} kWh", no_ref: "no reference yet",
+    target: "target {v}", prices_known: "Known prices", prices_part: "Estimated for {n} of {m} hours",
+    prices_stale: "Estimated — no new prices since {time}", cost_for: "≈ {kr}",
     more_than_ref: "more than without control", legionella: "Legionella", legionella_next: "next {date}", planned_word: "planned",
   },
 };
@@ -230,7 +237,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
     if (helpers) {
       if (load.control) {
         const el = helpers.createCardElement({
-          type: "tile", entity: load.control, name: L.control, icon: "mdi:tune-variant",
+          type: "tile", entity: load.control, name: L.control, icon: "mdi:tune-variant", hide_state: true,
           features: [{ type: "select-options" }], features_position: "inline",
         });
         ctl.appendChild(el);
@@ -271,21 +278,15 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const moved = toNum(bl.planned_kwh ?? a.planned_kwh) ?? 0;
     const hold = toNum(bl.hold_kwh) ?? holdKwh(load.id, plan.slots);
     const cost = toNum(String(bl.cost ?? a.cost ?? "").split(" ")[0]);
-    const dlTxt = (load.deadline && hass.states[load.deadline]?.state?.slice(0, 5)) || a.deadline_time || "";
 
     // hero: value + target, one status line, comfort bar
-    const t = toNum(a.current), tgt = toNum(a.target), flo = toNum(a.floor);
+    const t = toNum(a.current), tgt = toNum(a.target);
     const statusLine = [view.word + (view.kind === "running" && toNum(a.granted_power) ? ` · ${nf1.format(toNum(a.granted_power)! / 1000)} kW` : ""),
-      view.reason, runs[0] && runs[0].start <= now ? fmtTemplate(L.done_at, { time: tf.format(runs[0].end) }) : "",
-      dlTxt ? fmtTemplate(L.deadline, { time: dlTxt }) : ""].filter(Boolean).join(" · ");
+      view.reason, runs[0] && runs[0].start <= now ? fmtTemplate(L.done_at, { time: tf.format(runs[0].end) }) : ""].filter(Boolean).join(" · ");
     let hero: string;
     if (t !== null && tgt !== null) {
-      const lo = flo ?? Math.min(t, tgt) - 3;
-      const f = Math.max(0, Math.min(1, (t - lo) / Math.max(tgt - lo, 0.1)));
       hero = `<div class="big"><span>${nf1.format(t)} °C</span><small>${esc(fmtTemplate(L.target, { v: nf1.format(tgt) + " °C" }))}</small></div>
-        <div class="sline">${esc(statusLine)}</div>
-        <div class="bar" style="--c:${esc(load.color)}"><div class="fill" style="width:${(f * 100).toFixed(1)}%"></div></div>
-        <div class="scale"><span>${esc(fmtTemplate(L.min, { v: nf1.format(lo) + " °C" }))}</span><span>${esc(fmtTemplate(L.target_cap, { v: nf1.format(tgt) + " °C" }))}</span></div>`;
+        <div class="sline">${esc(statusLine)}</div>`;
     } else {
       hero = `<div class="big"><span>${nf2.format(moved)} kWh</span><small>${esc(L.planned_word)}</small></div>
         <div class="sline">${esc(statusLine)}</div>`;
@@ -294,16 +295,14 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
     // why
     const need = [moved > 0.005 ? fmtTemplate(L.need_moved, { kwh: nf2.format(moved) }) : "",
-      hold > 0.005 ? fmtTemplate(L.need_hold, { kwh: nf2.format(hold) }) : ""].filter(Boolean).join(" · ")
-      + (dlTxt && moved > 0.005 ? " " + fmtTemplate(L.before, { time: dlTxt }) : "");
+      hold > 0.005 ? fmtTemplate(L.need_hold, { kwh: nf2.format(hold) }) : ""].filter(Boolean).join(" · ");
     const chosen = runs.length ? runs.slice(0, 3).map((r) => `${tf.format(r.start)}–${tf.format(r.end)}`).join(" · ") : L.no_run;
     const pr = this.priceState(runs.length ? runs : [{ start: startOfHour(now), end: new Date(startOfHour(now).getTime() + 24 * 3600e3), kwh: 0 }]);
-    const totalKwh = moved + hold;
     const rows: [string, string, string, boolean][] = [
       ["mdi:timer-sand-complete", L.need, need || "–", false],
       ["mdi:calendar-clock", L.chosen, chosen, false],
-      [pr.warn ? "mdi:alert-outline" : "mdi:check-circle-outline", L.prices, pr.text, pr.warn],
-      ["mdi:cash", L.est_cost, cost !== null ? fmtTemplate(L.cost_for, { kr: nf2.format(cost), kwh: nf1.format(totalKwh) }) : "–", false],
+      ...(pr.warn ? [["mdi:alert-outline", L.prices, pr.text, true] as [string, string, string, boolean]] : []),   // known prices = nothing to say
+      ...(cost !== null ? [["mdi:cash", L.est_cost, fmtTemplate(L.cost_for, { kr: nf2.format(cost) }), false] as [string, string, string, boolean]] : []),
     ];
     const leg = load.legionella ? hass.states[load.legionella] : undefined;
     if (leg && !isNaN(Date.parse(leg.state))) {
@@ -324,10 +323,16 @@ export class PowerplanApplianceDialog extends HTMLElement {
       const se = load.savings ? hass.states[load.savings] : undefined;
       const ee = load.energy ? hass.states[load.energy] : undefined;
       const sv = savingsView(se, ce);
-      stats.innerHTML =
-        (ce ? cell(L.cost, toNum(ce.state) !== null ? nf2.format(toNum(ce.state)!) : "–", unitOf(ce)) : "") +
-        (se ? cell(L.savings, sv.missing ? "—" : nf2.format(sv.value!), sv.missing ? "" : unitOf(se), sv.missing ? L.no_ref : sv.value! < 0 ? L.more_than_ref : "") : "") +
-        (ee ? cell(L.energy, toNum(ee.state) !== null ? nf2.format(toNum(ee.state)!) : "–", unitOf(ee)) : "");
+      const c = toNum(ce?.state), e = toNum(ee?.state);
+      const costKnown = c !== null && !(c < 0.005 && (e ?? 0) > 0.05);        // 0,00 kr with 8,5 kWh used = not computed yet
+      const html =
+        (costKnown ? cell(L.cost, nf2.format(c!), unitOf(ce)) : "") +
+        (se && !sv.missing ? cell(L.savings, nf2.format(sv.value!), unitOf(se), sv.value! < 0 ? L.more_than_ref : "") : "") +
+        (e !== null ? cell(L.energy, nf2.format(e), unitOf(ee)) : "");
+      stats.innerHTML = html;
+      const h3 = stats.previousElementSibling as HTMLElement | null;
+      stats.hidden = !html;
+      if (h3?.tagName === "H3") h3.hidden = !html;
     }
     this.renderLane();
   }
@@ -353,7 +358,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
     return n ? { text: fmtTemplate(L.prices_part, { n, m }), warn: true } : { text: L.prices_known, warn: false };
   }
 
-  /** One lane (same encoding as Apparater) + price track + axis, sized to the body width. */
+  /** One lane (same encoding as Apparater) + axis, sized to the body width. */
   private renderLane(): void {
     const hass = this._hass, p = this.params, box = this.shadowRoot?.getElementById("plan");
     if (!hass || !p || !box) return;
@@ -369,51 +374,43 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const runs = runsFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
     const low = loweredFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
     const pe = cfg.entities.price_forecast ? hass.states[cfg.entities.price_forecast] : undefined;
-    const ps = ((pe?.attributes?.slots ?? []) as any[]).map((s) => ({ s: Date.parse(s.start), e: Date.parse(s.end), p: Number(s.total), k: s.confidence === "known" }))
+    const ps = ((pe?.attributes?.slots ?? []) as any[]).map((s) => ({ s: Date.parse(s.start), e: Date.parse(s.end), p: Number(s.total) }))
       .filter((x) => x.e > a0.getTime() && x.s < a1.getTime() && Number.isFinite(x.p));
     const lanes: string[] = [];
-    const top = 26, lh = 20;
+    const top = 12, lh = 20;
     lanes.push(`<rect x="1" y="${top}" width="${W - 2}" height="${lh}" rx="${lh / 2}" class="track"/>`);
     // cheap hours
     if (ps.length) {
       const lo = Math.min(...ps.map((x) => x.p)), hi = Math.max(...ps.map((x) => x.p));
-      if (hi - lo > 1e-4) for (const x of ps) if (x.p <= lo + (hi - lo) * 0.25) lanes.unshift(`<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="${lh + 16}" class="band"/>`);
+      if (hi - lo > 1e-4) for (const x of ps) if (x.p <= lo + (hi - lo) * 0.25) {
+        lanes.unshift(`<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="${lh + 16}" class="band"/>`
+          + `<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="3" class="cheapline"/>`);
+      }
     }
     for (const w of low) lanes.push(`<rect x="${sx(w.start).toFixed(1)}" y="${top}" width="${(sx(w.end) - sx(w.start)).toFixed(1)}" height="${lh}" rx="${lh / 2}" style="fill:url(#${this.uid}-h)"/>`);
-    let lastLabelX = -Infinity;
     for (const r of runs) {
       const x0 = Math.max(sx(r.start), 1), x1 = Math.min(sx(r.end), W - 1);
       lanes.push(`<rect x="${x0.toFixed(1)}" y="${top}" width="${Math.max(x1 - x0, lh).toFixed(1)}" height="${lh}" rx="${lh / 2}" style="fill:${esc(load.color)}"/>`);
-      if (r.start > now && x0 - lastLabelX > 48) {
-        lanes.push(`<text x="${x0.toFixed(1)}" y="${top - 8}" class="t-s on">${esc(tf.format(r.start))}</text>`);
-        lastLabelX = x0;
-      }
+    }
+    // deadline tick, as in Apparater
+    const dl = (load.deadline && hass.states[load.deadline]?.state) || hass.states[load.status]?.attributes?.deadline_time;
+    if (dl && /^\d{1,2}:\d{2}/.test(dl)) {
+      const [hh, mm] = String(dl).split(":").map(Number);
+      let dh = hh + mm / 60 - localHour(now, hass);
+      if (dh <= 0) dh += 24;
+      const dx = sx(now.getTime() + dh * 3600e3);
+      if (dx > 1 && dx < W - 1) lanes.push(`<line x1="${dx.toFixed(1)}" y1="${top - 6}" x2="${dx.toFixed(1)}" y2="${top + lh + 6}" class="deadline"/>`);
     }
     const xn = sx(now);
     lanes.push(`<line x1="${xn.toFixed(1)}" y1="${top - 10}" x2="${xn.toFixed(1)}" y2="${top + lh + 4}" class="now"/>`);
-    // price track: one block per price level, dashed outline while estimated
-    const py = top + lh + 12;
-    const segs: { s: number; e: number; p: number; k: boolean }[] = [];
-    for (const x of ps) {
-      const last = segs[segs.length - 1];
-      if (last && Math.abs(last.p - x.p) < 1e-4 && Math.abs(last.e - x.s) < 1000) { last.e = x.e; last.k = last.k && x.k; }
-      else segs.push({ ...x });
-    }
-    const nf = numFmt(hass, 2);
-    const hi = segs.length ? Math.max(...segs.map((s) => s.p)) : 0;
-    for (const s of segs) {
-      const x0 = sx(Math.max(s.s, a0.getTime())) + 1, x1 = sx(Math.min(s.e, a1.getTime())) - 1;
-      if (x1 <= x0) continue;
-      lanes.push(`<rect x="${x0.toFixed(1)}" y="${py}" width="${(x1 - x0).toFixed(1)}" height="20" rx="4" class="${s.p >= hi - 1e-4 ? "phi" : "plo"} ${s.k ? "" : "pest"}"/>`);
-      if (x1 - x0 > 40) lanes.push(`<text x="${((x0 + x1) / 2).toFixed(1)}" y="${py + 14.5}" class="t-s on" text-anchor="middle">${esc(nf.format(s.p))}</text>`);
-    }
     // axis
+    const ay = top + lh + 26;
     const every = W < 420 ? 6 : 3;
     for (let t = a0.getTime() + 3600e3; t < a1.getTime(); t += 3600e3) {
       if (Math.round(localHour(t, hass)) % every) continue;
-      lanes.push(`<text x="${sx(t).toFixed(1)}" y="${py + 40}" class="t-s" text-anchor="middle">${esc(tf.format(t))}</text>`);
+      lanes.push(`<text x="${sx(t).toFixed(1)}" y="${ay}" class="t-s" text-anchor="middle">${esc(tf.format(t))}</text>`);
     }
-    const H = py + 48;
+    const H = ay + 8;
     box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(L.plan)}">
       <defs>${hatchDef(`${this.uid}-h`)}</defs>${lanes.join("")}</svg>`;
   }
@@ -447,21 +444,18 @@ const CSS = `
   .big span { font-size: var(--pp-fs-5xl); letter-spacing: -.5px; line-height: 44px; }
   .big small { font-size: var(--pp-fs-l); color: var(--pp-text2); }
   .sline { font-size: var(--pp-fs-m); color: var(--pp-text2); }
-  .bar { position: relative; height: 8px; border-radius: 4px; background: var(--pp-track); overflow: hidden; margin-top: 4px; }
-  .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c); border-radius: 4px; }
-  .scale { display: flex; justify-content: space-between; font-size: var(--pp-fs-s); color: var(--pp-text2); }
   .ctl { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
   .ctl > * { min-width: 0; }
   .rowbox { border: 1px solid var(--pp-divider); border-radius: var(--pp-radius); padding: 4px 12px; display: flex; align-items: center; min-height: 48px; }
   .rowbox > * { flex: 1 1 auto; }
   .rowbox .k { font-size: var(--pp-fs-m); color: var(--pp-text2); } .rowbox b { flex: none; font-weight: var(--pp-fw-m); }
-  .plan { min-height: 118px; }
+  .plan { min-height: 66px; }
   .plan svg { display: block; }
   .plan .track { fill: var(--pp-track); }
   .plan .band { fill: var(--pp-cheap); }
+  .plan .cheapline { fill: var(--pp-cheap-line); }
   .plan .now { stroke: var(--pp-text); stroke-width: 1.5; }
-  .plan .phi { fill: var(--pp-price-hi); } .plan .plo { fill: var(--pp-price-lo); }
-  .plan .pest { stroke: var(--pp-warn); stroke-width: 1; stroke-dasharray: 3 3; }
+  .plan .deadline { stroke: var(--pp-amber); stroke-width: 2; stroke-linecap: round; }
   .wrow { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 4px 0; border-top: 1px solid var(--pp-divider); --mdc-icon-size: 20px; color: var(--pp-text2); box-sizing: border-box; }
   .wrow:first-child { border-top: 0; }
   .wrow ha-icon.warn { color: var(--pp-warn); }

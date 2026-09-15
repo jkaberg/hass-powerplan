@@ -2564,3 +2564,13 @@ Merging the tariff-sources work with main: D11 is the settled-reference ledger, 
 
 The tariff summary drops "Your grid company decides this, and PowerPlan plans by it:" and its lines for every tariff, keeping the rules, the source and the credit. The step is about what the grid company charges. Affects D13 §6, O10.
 **Rejected:** keeping a line for the capacity step - the plan's behaviour belongs in the docs.
+
+### D-0625 · The loader's key moves to `__ppKey`; `__ppBundle` is the shim's
+
+`bundle.ts` writes the loader's `?v=` to `globalThis.__ppKey`, and `__PP_BUNDLE__` reads it there. `__ppBundle` is left to `strategy-shim.ts`, which detects an older bundle loaded first by comparing it with its own `BUNDLE`; with the key on `__ppBundle`, the new bundle overwrote the old value first and the toast never showed. Affects D12 §5.17.
+**Rejected:** the shim reading a "previous" global - the shim stays as delivered.
+
+### D-0626 · The third card set's styling, without its backend
+
+The card files are copied as delivered, except `price-card.ts`, which keeps `spotFromStates` and `button.press`. Its backend pieces (a month-cost sensor, a compatibility command for the deleted websocket, D12 §9 25) aren't taken. Its Now-view layout is applied to `layout.py` as layout only (no peak-warning tile, one heading badge, no price track); its live-card patches go into the window, timeline and period-summary cards. The step fee comes from `level`. Unused `card_*` keys go. Affects D12 §5.17, §5.1, §9 29.
+**Rejected:** leaving `layout.py` alone - the removed tiles are laid out there.

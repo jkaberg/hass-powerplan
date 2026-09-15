@@ -202,12 +202,15 @@ export class PowerplanWindowCard extends HTMLElement {
     const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: timeZone(hass) });
     const hasCeiling = ceiling !== null && ceiling > 0;
 
-    // The status chip: the stage in words, or the peak to come while the warning is on.
+    // The status chip: the stage in words, or the peak to come while the warning is on. Iteration 5:
+    // only when the hour needs you; a normal hour is the gauge's green.
     const next = this.state("next_peak_warning")?.state;
     const chip =
       this.state("peak_warning")?.state === "on" && next && !Number.isNaN(Date.parse(next))
         ? fill(labels.peak_expected ?? "{time}", { time: clock.format(Date.parse(next)) })
-        : (labels[`stage_${stageWord(scale.over ? "alert" : tone)}`] ?? "");
+        : scale.over || tone !== "ok"
+          ? (labels[`stage_${stageWord(scale.over ? "alert" : tone)}`] ?? "")
+          : "";
 
     // The footer's three facts; the allowance is always kW (B8).
     const remaining = Number(usedEntity?.attributes.t_rem_min);
@@ -234,6 +237,7 @@ export class PowerplanWindowCard extends HTMLElement {
     const size = gaugeFont(`${value} kWh`.length, r, STROKE, width < 400 ? 30 : 36);
     const [px, py] = scale.projected === null ? [0, 0] : arcPoint(scale.projected, r - STROKE / 2 - 4);
     const [qx, qy] = scale.projected === null ? [0, 0] : arcPoint(scale.projected, r + STROKE / 2 + 4);
+    // Iteration 5: the ceiling is the end label and "this hour" the heading; the words stay for a screen reader.
     const caption = hasCeiling ? fill(labels.used_of ?? "{ceiling}", { ceiling: one.format(ceiling) }) : "";
     this.shadowRoot!.innerHTML = `
       <style>
@@ -249,7 +253,6 @@ export class PowerplanWindowCard extends HTMLElement {
         .tick { stroke: var(--primary-text-color); stroke-width: 2; }
         .value { font-size: ${size}px; font-weight: 400; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
         .unit { font-size: 16px; fill: var(--secondary-text-color); }
-        .caption { font-size: 13px; fill: var(--secondary-text-color); }
         .end { font-size: 11px; fill: var(--secondary-text-color); }
         .footer { margin-top: auto; display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr));
                   height: 72px; box-sizing: border-box; border-top: 1px solid var(--divider-color); }
@@ -258,7 +261,7 @@ export class PowerplanWindowCard extends HTMLElement {
         .name { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 6px;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .num { font-size: 16px; font-weight: 500; line-height: 20px; font-variant-numeric: tabular-nums; }
-        .swatch { width: 10px; height: 10px; border-radius: 3px; background: ${color}; opacity: 0.38; flex: none; }
+        .swatch { width: 10px; height: 10px; border-radius: 3px; background: ${color}; flex: none; }
       </style>
       <ha-card>
         ${chip ? `<span class="pp-status">${escape(chip)}</span>` : ""}
@@ -269,7 +272,6 @@ export class PowerplanWindowCard extends HTMLElement {
           ${scale.used > 0 ? `<path class="used" d="${arc(cx, cy, 0, scale.used, r)}"/>` : ""}
           ${scale.projected !== null ? `<line class="tick" x1="${cx + px}" y1="${cy + py}" x2="${cx + qx}" y2="${cy + qy}"/>` : ""}
           <text x="${cx}" y="${cy - 22}" text-anchor="middle"><tspan class="value">${escape(value)}</tspan><tspan class="unit" dx="4">kWh</tspan></text>
-          ${caption ? `<text class="caption" x="${cx}" y="${cy + 2}" text-anchor="middle">${escape(caption)}</text>` : ""}
           <text class="end" x="${cx - r}" y="${cy + 22}" text-anchor="middle">0</text>
           ${hasCeiling ? `<text class="end" x="${cx + r}" y="${cy + 22}" text-anchor="middle">${escape(`${one.format(ceiling)} kWh`)}</text>` : ""}
         </svg>
@@ -314,14 +316,15 @@ export class PowerplanWindowCard extends HTMLElement {
     let needle = "";
     let bars = "";
     if (steps.length) {
-      // M1: coloured by position against the target step, the current step opaque.
+      // M1: coloured by position against the target step, the current step opaque; iteration 5: the
+      // others at 45 %, so every step clears 3:1 on the dark card.
       const g = monthGauge(metric, steps, targetStep(target?.state, target?.attributes, steps));
       const gap = 2 / (Math.PI * r);
       arcs = g.segments
         .map((seg) => {
           const from = seg.from / g.max + (seg.from > 0 ? gap / 2 : 0);
           const to = seg.to / g.max - (seg.to < g.max ? gap / 2 : 0);
-          return `<path d="${arc(cx, cy, from, to, r)}" fill="none" stroke="${TONE_COLOR[seg.tone]}" stroke-width="${MONTH_STROKE}" stroke-opacity="${seg.current ? 1 : 0.28}"/>`;
+          return `<path d="${arc(cx, cy, from, to, r)}" fill="none" stroke="${TONE_COLOR[seg.tone]}" stroke-width="${MONTH_STROKE}" stroke-opacity="${seg.current ? 1 : 0.45}"/>`;
         })
         .join("");
       ticks = [0, ...g.ticks, g.max]
@@ -351,20 +354,34 @@ export class PowerplanWindowCard extends HTMLElement {
       }
     }
     const reading = `${two.format(metric)} kW`;
-    const caption = level?.state ? fill(labels.metric_label ?? "{level}", { level: level.state }) : "";
-    // M4: kW to one decimal, the fee as money.
+    // Iteration 5: the step's fee rides on the subtitle (it left Strømpris), "397.00 NOK" → "397 kr/mnd".
+    const [feeAmount, feeCurrency] = String(level?.attributes.fee ?? "").split(" ");
+    const stepFee = feeAmount && Number.isFinite(Number(feeAmount))
+      ? fill(labels.step_fee ?? "{fee}", { fee: moneyFormat(locale, feeCurrency ?? "", 0).format(Number(feeAmount)) })
+      : "";
+    const caption = level?.state
+      ? [fill(labels.metric_label ?? "{level}", { level: level.state }), stepFee].filter(Boolean).join(" · ")
+      : "";
+    // M4: kW to one decimal, the fee as money. Iteration 5: one sentence when both are known.
     const footer: string[] = [];
-    if (headroom) {
-      const fee = moneyFormat(locale, String(headroom.currency ?? ""), 0);
+    const nextFee = headroom ? moneyFormat(locale, String(headroom.currency ?? ""), 0).format(Number(headroom.fee_delta)) : "";
+    if (headroom && tips) {
+      footer.push(
+        fill(labels.day_that_tips_step ?? "", {
+          kw: one.format(Number(tips.kw)),
+          next: String(headroom.next_name ?? ""),
+          fee: nextFee,
+        }),
+      );
+    } else if (headroom) {
       footer.push(
         fill(labels.to_next_step ?? "", {
           kw: one.format(Number(headroom.to_next_kw)),
           next: String(headroom.next_name ?? ""),
-          fee: fee.format(Number(headroom.fee_delta)),
+          fee: nextFee,
         }),
       );
-    }
-    if (tips) footer.push(fill(labels.day_that_tips ?? "", { kw: one.format(Number(tips.kw)) }));
+    } else if (tips) footer.push(fill(labels.day_that_tips ?? "", { kw: one.format(Number(tips.kw)) }));
     const height = steps.length ? cy + 60 : 80;
     this.shadowRoot!.innerHTML = `
       <style>
@@ -492,11 +509,8 @@ export class PowerplanWindowCard extends HTMLElement {
         : {
             icon: "mdi:check-circle-outline",
             color: "var(--success-color)",
-            text: fill(labels.not_counts_month ?? "", {
-              month: monthName.format(data.period.start),
-              date: date.format(Date.parse(decision.third![0])),
-              kw: two.format(decision.third![1]),
-            }),
+            // Iteration 5: the third day is the marker on the bar right above.
+            text: fill(labels.not_counts_month ?? "", { month: monthName.format(data.period.start) }),
           };
       this.shadowRoot!.innerHTML = `${style}<ha-card><div class="pp-content">
         <div class="reading"><span class="pp-stat-value">${escape(two.format(value))}<span class="pp-stat-unit">kWh</span></span>

@@ -70,7 +70,6 @@ DASHBOARD = "{dashboard}"
 #: build each release pins, read at its tag (20260128.6, 20260304.0).
 FEATURES: Mapping[str, AwesomeVersion] = {
     "footer": AwesomeVersion("2026.3.0"),
-    "entity_color": AwesomeVersion("2026.6.0"),
 }
 #: HA's chart palette, `--color-1…53` of the 2026.9 frontend (`20260826.7`), in
 #: order: the colour HA's own graphs give the n-th series (D12 §5.8, D-0454).
@@ -255,38 +254,17 @@ def _overview(site: _Site) -> list[Card | None]:
         attention["meter_status"] = e["meter_health"]
     sections: list[Card | None] = [
         _grid([attention], span=3),
+        # One metric once, and a status only when it needs you: no Effektvarsel tile (the
+        # gauge's chip says it when the hour is at risk), no tomorrow badge (the curve's tomorrow
+        # half), no planned-energy badge ("Flyttet i tid" in the rail), no step badge (the gauge).
+        _section(_heading(t["section_hour"]), _cols(_window_card(site), 12, 6)),
         _section(
-            _heading(t["section_hour"]),
-            _cols(_window_card(site), 12, 6),
-            _cols(
-                _tile(e, "peak_warning", t["card_peak_warning"], icon="mdi:alert-outline"),
-                12,
-                1,
-            ),
-        ),
-        _section(
-            _heading(
-                t["section_price"],
-                _entity_badge(
-                    e,
-                    "prices_tomorrow",
-                    show_state=True,
-                    show_icon=True,
-                    color="green",
-                    tap_action={"action": "more-info"},
-                ),
-            ),
+            _heading(t["section_price"]),
             _cols(_price_card(site), "full", "auto"),
             span=2,
         ),
         _section(
-            _heading(
-                t["section_plan"],
-                _entity_badge(
-                    e, "plan", show_state=True, show_icon=True, icon="mdi:lightning-bolt"
-                ),
-                _replan_badge(e, t),
-            ),
+            _heading(t["section_plan"], _replan_badge(e, t)),
             # The whole house per window, with the rail the appliances card lines up with (F1).
             _cols(_timeline(site, s.loads, hours=24, options=[24, 48], rail=RAIL), "full", "auto"),
             span=3,
@@ -299,15 +277,7 @@ def _overview(site: _Site) -> list[Card | None]:
         ),
     ]
     if "metric" in e and "level" in e:
-        sections.append(
-            _section(
-                _heading(
-                    t["section_capacity"],
-                    _entity_badge(e, "projected_level", show_state=True, icon="mdi:stairs"),
-                ),
-                _cols(_month_card(site), 12, 6),
-            )
-        )
+        sections.append(_section(_heading(t["section_capacity"]), _cols(_month_card(site), 12, 6)))
     # (F9): cost and savings so far over daily bars on a fixed 1..N axis - one card for
     # two entity cards (which said "Ukjent") and the statistics graph that labelled days 4:00, 8:00.
     sections.append(
@@ -369,31 +339,12 @@ def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
             _heading(t["section_capacity"]),
             _cols(_peaks_card(site, grid), 12, "auto"),
         ),
-        _section(
-            _heading(t["section_per_appliance"]),
-            _cols(_appliances_card(site, "appliances", "savings_month"), "full", "auto"),
-            span=2,
-        ),
+        # The table only, full width; the saving bars were its Spart column drawn again,
+        # and the cost-and-savings graph is Forbruk × price, with the day's total in Oppsummering.
         _section(
             _heading(t["section_cost_per_appliance"]),
-            _cols(_appliances_card(site, "table", "cost_month"), 12, "auto"),
-        ),
-        _section(
-            _heading(t["section_cost_savings"]),
-            _cols(
-                _graph(
-                    [
-                        _graph_entity(site, e[key], t[f"card_{key}"], color)
-                        for key, color in (("cost", "primary"), ("savings", "green"))
-                        if key in e
-                    ],
-                    ["change"],
-                    "bar",
-                ),
-                "full",
-                4,
-            ),
-            span=2,
+            _cols(_appliances_card(site, "table", "cost_month"), "full", "auto"),
+            span=3,
         ),
         _section(
             _heading(t["section_events"]),
@@ -803,35 +754,6 @@ def _markdown(content: str) -> Card:
     return {"type": "markdown", "content": content}
 
 
-def _graph_entity(site: _Site, entity_id: str, name: str | None, color: str) -> Card:
-    """Return one `statistics-graph` row; `color` only where HA reads it (2026.6+)."""
-    row: Card = {"entity": entity_id}
-    if name is not None:
-        row["name"] = name
-    if site.has["entity_color"]:
-        row["color"] = color
-    return row
-
-
-def _graph(
-    entities: list[str] | list[Card],
-    stat_types: list[str],
-    chart_type: str = "line",
-) -> Card | None:
-    """Return a statistics graph that follows the history view's picker (D12 §9 1)."""
-    if not entities:
-        return None
-    card: Card = {
-        "type": "statistics-graph",
-        "entities": entities,
-        "stat_types": stat_types,
-        "chart_type": chart_type,
-        "energy_date_selection": True,
-        "collection_key": COLLECTION_KEY,
-    }
-    return card
-
-
 def _timeline(
     site: _Site,
     loads: Sequence[LoadLayout],
@@ -853,8 +775,9 @@ def _timeline(
         entities["deadline"] = deadline
         show = ["plan", "price"]
     elif rail is not None:
-        # (F3): the whole house per window, "Kan bli opptil" as a cap on each bar.
-        show = ["plan", "baseline", "reserve", "ceiling", "price"]
+        # (F3) The whole house per window, "Kan bli opptil" as a cap on each bar.
+        # No price track; Strømpris sits right above.
+        show = ["plan", "baseline", "reserve", "ceiling"]
     else:
         show = ["plan", "baseline", "ceiling", "price"]
         if site.site.has_production:
@@ -886,13 +809,12 @@ def _price_card(site: _Site) -> Card | None:
     e = site.site.entities
     if "price" not in e or "price_forecast" not in e:
         return None
-    # F5: the card keeps its own words. v0.8 (§5.16 R2, R3): the spot is on
-    # `price_forecast`, the month's effect is `fixed_price_savings`, the retry is a button.
+    # (F5) The price card keeps its own words; the spot is on `price_forecast`, the
+    # month's effect is `fixed_price_savings`, the retry is a button (D12 §5.16 R2, R3). No
+    # tomorrow or capacity step: the curve and Effekttrinn say them.
     names = {
         "price": "price",
         "price_forecast": "price_forecast",
-        "tomorrow": "prices_tomorrow",
-        "capacity_step": "level",
         "fixed_price_savings": "fixed_price_savings",
         "refresh": "refresh_prices",
     }
