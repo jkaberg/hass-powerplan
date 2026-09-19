@@ -626,6 +626,64 @@
           "schemes": "Strømstøtte is paid automatically on your grid bill; it does not apply with Norgespris.",
           "vat": "PowerPlan has no VAT rate for your country: enter the one on your bill."
         }
+      },
+      "prices_format": {
+        "title": "How are these prices written?",
+        "description": "PowerPlan reads the sensor as {format}. Fill in what it could not tell from the sensor itself.",
+        "data": {
+          "attribute": "Attribute with the prices",
+          "tomorrow_attribute": "Attribute with tomorrow's prices",
+          "start_key": "Key for the start time",
+          "end_key": "Key for the end time",
+          "value_key": "Key for the price",
+          "currency": "Currency",
+          "energy_unit": "Priced per",
+          "magnitude": "Written in",
+          "scale": "Multiply every price by",
+          "today_prefix": "Name of today's hour attributes",
+          "tomorrow_prefix": "Name of tomorrow's hour attributes",
+          "home": "Tibber home",
+          "incl_vat": "Prices include VAT",
+          "second_entity_id": "Tomorrow's prices"
+        },
+        "data_description": {
+          "attribute": "The attribute that holds the list of prices.",
+          "tomorrow_attribute": "Leave empty when tomorrow is in the same list.",
+          "start_key": "The key in each row that holds when the price starts.",
+          "end_key": "Leave empty when the rows have only a start.",
+          "value_key": "The key that holds the price. Use dots for a nested key, for example price.amount.",
+          "currency": "The three-letter code, for example NOK or EUR.",
+          "energy_unit": "Whether a price is for one kWh or one MWh.",
+          "magnitude": "Whether prices are in kroner, euros and the like, or in øre, cents and the like.",
+          "scale": "1 unless the prices are written in a fraction of a unit.",
+          "today_prefix": "The part before the hour, for example price_ for price_07h.",
+          "tomorrow_prefix": "Leave empty when the sensor has no hours for tomorrow.",
+          "home": "The home to plan for, when your account has more than one.",
+          "incl_vat": "Leave on unless you pay no VAT.",
+          "second_entity_id": "The sensor with tomorrow's prices. It is usually found for you."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "publication_tz": "Publication time zone",
+              "publication_time": "Publication time",
+              "interval": "Price interval",
+              "granularity": "Price interval",
+              "slot_minutes": "Minutes per price",
+              "energy_unit": "Priced per"
+            },
+            "data_description": {
+              "publication_tz": "Advanced: the time zone the market publishes in. Leave empty to keep the derived one.",
+              "publication_time": "Advanced: the local time tomorrow's prices usually appear. Leave empty to keep the derived one.",
+              "interval": "Advanced: how long each price lasts.",
+              "granularity": "Advanced: how long each price lasts.",
+              "slot_minutes": "Advanced: how long each price lasts.",
+              "energy_unit": "Advanced: whether a price is for one kWh or one MWh."
+            }
+          }
+        }
       }
     },
     "error": {
@@ -643,7 +701,9 @@
       "steps_not_rising": "Each step must go up to more than the one before it.",
       "limit_required": "Enter the power your contract gives you.",
       "postcode_invalid": "That does not look like a postcode here.",
-      "tariff_source_unreachable": "Could not fetch the grid companies right now. Pick Grid company not listed or Enter it myself, or try again later."
+      "tariff_source_unreachable": "Could not fetch the grid companies right now. Pick Grid company not listed or Enter it myself, or try again later.",
+      "price_format_unknown": "PowerPlan does not recognize this sensor's prices. Choose the format that fits.",
+      "required": "This answer is needed."
     },
     "abort": {
       "already_configured": "This meter is already set up as a home in PowerPlan.",
@@ -1662,18 +1722,24 @@
       "options": {
         "amber": "Amber Electric",
         "comed": "ComEd",
+        "cz_energy_spot_prices": "Czech Energy Spot Prices",
         "easyenergy_action": "easyEnergy",
         "energidataservice": "Energi Data Service",
         "energyzero_action": "EnergyZero",
         "entsoe": "ENTSO-e",
+        "epex_spot": "EPEX Spot",
+        "frank_energie": "Frank Energie",
         "generic_list": "A list of prices in an attribute",
         "hourly_attributes": "One attribute per hour",
         "nordpool_core": "Nord Pool",
         "nordpool_hacs": "Nord Pool (HACS)",
         "octopus_energy": "Octopus Energy",
         "pvpc": "PVPC",
+        "stromligning": "Strømligning",
         "tge": "TGE",
-        "tibber_action": "Tibber"
+        "tibber_action": "Tibber",
+        "tibber_prices": "Tibber Prices (HACS)",
+        "zonneplan_one": "Zonneplan"
       }
     },
     "fuse": {
@@ -2003,6 +2069,39 @@
         "day": "Each day at its own highest",
         "month": "The month's highest",
         "year": "The highest of the last 12 months"
+      }
+    },
+    "price_format_options_energy_unit": {
+      "options": {
+        "kwh": "kWh",
+        "mwh": "MWh"
+      }
+    },
+    "price_format_options_magnitude": {
+      "options": {
+        "major": "Whole units (kroner, euros)",
+        "minor": "Hundredths (øre, cents)"
+      }
+    },
+    "price_format_options_interval": {
+      "options": {
+        "hour": "Hour",
+        "quarter": "Quarter of an hour"
+      }
+    },
+    "price_format_options_granularity": {
+      "options": {
+        "hour": "Hour",
+        "4hour": "Four hours",
+        "day": "Day"
+      }
+    },
+    "price_format_options_slot_minutes": {
+      "options": {
+        "5": "5 minutes",
+        "15": "15 minutes",
+        "30": "30 minutes",
+        "60": "60 minutes"
       }
     }
   },

@@ -2594,3 +2594,23 @@ A planned slot takes from the loads below it its planned mean draw, `(kwh + hold
 
 While `plan_status` is `waiting` or `idle` with a run ahead, `reason`, `reason_key` and `reason_params` describe it: `planned`, `{time, kwh}`, "Planned from 22:00 · 7.6 kWh"; otherwise they stay the gate's `ActionReason`. `planned` is `plan_status`'s own key beside the closed set. The appliances card adds "from 22:00". A tank read "Waiting for cheap power" with "Reason: Already set", which sounded like waiting to cool to its resting setpoint. Affects D8 §5.16, §9 39; D12 §5.6, §9 30.
 **Rejected:** a new `planned` state - `waiting` already means that, and the state set is what automations hold.
+
+### D-0631 · A price entity source is built by its row's kind, with its stored options
+
+`runtime._price_source` builds `ActionSource` or `EntitySource` by `formats.entry(format).kind`, each from `formats.build(format, options)`, which decodes stored options through the modifiers' `decode_options` and drops names the schema doesn't have. `EntitySource` takes an optional `second_entity_id` for Octopus's tomorrow entity. `formats.build(key)` without options raised for five of fourteen keys, and action rows would have been wrapped as entities. Affects D1 §2, §6.
+**Rejected:** a second `EntitySource` for tomorrow - both would share the class key, and the flow would store two rows for one choice.
+
+### D-0632 · The format select has no default, and an unrecognised entity is refused
+
+The format select is `vol.Optional` with no default on first setup; empty means the detected format. An entity no row claims, with nothing chosen, is refused with `price_format_unknown`. The selector covers `sensor` and `event`, unfiltered by platform. The old default (the first key, `amber`) was submitted as the answer on every setup. Affects D1 §6.
+**Rejected:** filtering by platform with a "something else" path - two paths for one question.
+
+### D-0633 · One format-options step for every row; derived answers never asked
+
+`prices_format` is one step rendered from the row's schema, shown only when the row fits any entity, publishes tomorrow on a second entity, or has a required field with no default and nothing derived. `formats.derived(key, EntityFacts)` answers `config_entry`, `currency` (from the unit) and a row's own `from_entity` hook (Tibber names the home only with two price devices). Only 3 of 20 rows show the step on first setup. Affects D1 §6.
+**Rejected:** a step per row - 20 steps × 3 language files for repeating fields.
+
+### D-0634 · Six more price rows; `tibber_prices` keeps `tibber_action`'s basis
+
+`epex_spot`, `zonneplan_one`, `frank_energie`, `cz_energy_spot_prices`, `tibber_prices` and `stromligning` are registered, each with a fixture from the integration's own source. `symbol_unit` reads `€`, `£` and `Kč` as codes and nothing else. `generic_list` gains `tomorrow_attribute`, a dotted `value_key` and `scale`. Both Tibber rows read the same `total`, so their basis stays spot alike. Affects D1 §2.
+**Rejected:** reading `kr` from the site's currency - a Swedish house with a Danish sensor would be priced wrong silently.

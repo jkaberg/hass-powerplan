@@ -8,9 +8,9 @@ is_intelligent_adjusted}`. `value_inc_vat` is in pounds, not pence (the docs are
 explicit: "1.01 = £1.01"), so nothing here scales it; the integration has already
 done the division that the Octopus API's pence would need.
 
-One entity is one day. A site that wants tomorrow as well binds the `next_day`
-entity as a second source - the raw store merges them on UTC start, so two
-sources of the same market cost nothing (D1 §2).
+One entity is one day. The prices step binds the `next_day` sibling on the same
+device as the source's second entity (`tomorrow_entity`), and `EntitySource`
+reads the two as one series (D1 §6).
 
 Agile goes negative on a windy afternoon and that is the whole point of planning
 around it, so nothing here clamps (INV-51).
@@ -46,6 +46,7 @@ class OctopusEnergy:
     platform: ClassVar[str | None] = "octopus_energy"
     kind: ClassVar[FormatKind] = FormatKind.ATTRIBUTES
     schema: ClassVar[Schema] = ()
+    tomorrow_entity: ClassVar[tuple[str, str]] = ("_current_day_rates", "_next_day_rates")
     # `value_inc_vat`: a UK supplier unit rate holds DUoS, levies and VAT (D13 §5.10 UK, O5).
     basis: ClassVar[frozenset[str]] = frozenset({"spot", "grid", "vat", "levies"})
 

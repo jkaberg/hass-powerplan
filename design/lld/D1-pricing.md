@@ -46,6 +46,12 @@
 | `pvpc` | `pvpc_hourly_pricing` | attributes `price_00h … price_23h`, `price_next_day_00h …`, and `price_02h_d` on the 25-hour day | 60 |
 | `comed` | `comed_hourly_pricing` | current 5-min and hour averages only, in **cents**, as the sensor's state → forecaster must fill | 60 |
 | `tge` | `tge` | `prices_today`, `prices_tomorrow` (`[{time, price}]`) in zł per **MWh**; currency configured, because `zł/MWh` names no ISO code | 60 |
+| `epex_spot` | `epex_spot` | market-price sensor attribute `data: [{start_time, end_time, price_per_kwh}]`; unit `€/kWh` or `£/kWh`, the symbol read as its code | 60/15 |
+| `zonneplan_one` | `zonneplan_one` | tariff sensor attribute `forecast: [{start_date, end_date, price_tax_included: {amount}}]` (the legacy sensor: `{start_date, electricity_price}`), amount in 1e-7 € per kWh, tax and markup included | 60/15 |
+| `frank_energie` | `frank_energie` | attributes `prices` and `tomorrow_prices`: `[{from, till, price}]`, € per kWh all in; a `{message}` row before publication is no price | 60/15 |
+| `stromligning` | `stromligning` | attribute `prices: [{price, start, end}]` in `kr/kWh` (DKK), spot + grid + levies + VAT | 60/15 |
+| `cz_energy_spot_prices` | `cz_energy_spot_prices` | one attribute per slot keyed by its local ISO start; unit `Kč/kWh`, `€/kWh` or per MWh | 60/15 |
+| `tibber_prices` | `tibber_prices` (HACS) | action `tibber_prices.get_price` (`entry_id`, `start_time`, `end_time`) → `{success, price_info: [{startsAt, total, …}]}`; one entry is one home; currency configured, derived from the sensor's unit | 15 |
 | `hourly_attributes` | any | pattern `<prefix>{HH}h` today / tomorrow | 60 |
 | `generic_list` | any | user-given attribute name + keys for start/end/value + unit | any |
 
@@ -67,16 +73,13 @@ What the table can't say:
 - A row publishing tomorrow on a **second entity** (`octopus_energy`'s `next_day_rates`) takes it as a second entity of the same source, found on the same device and pre-filled.
 - `generic_list` has a dotted `value_key` path (`price_tax_included.amount`), a `scale` multiplier (default 1) and an optional `tomorrow_attribute`, so it reaches nested, scaled and two-attribute payloads.
 
-Rows to add, in order of Home Assistant installs (HA analytics). Each moves into the table above when its adapter and a fixture written from the integration's own source (D-0081) land; this table is deliberately not the one §9 1 parses.
+The six rows after `tge` are the most installed price integrations without a row: `epex_spot` 3 732, `zonneplan_one` 2 111, `frank_energie` 1 262, `cz_energy_spot_prices` 1 060, `tibber_prices` 996, `stromligning` 575. Each payload is read from the integration's own source, and each has a fixture naming it (D-0081, D-0631…D-0634). What the source shows and the table can't:
 
-| planned key | platform | where prices live (from the integration's source) | resolution | installs |
-|---|---|---|---|---|
-| `epex_spot` | `epex_spot` | attribute `data: [{start_time, end_time, price_per_kwh}]`, EUR/kWh (GBP for GB) | 60/15 | 3 732 |
-| `zonneplan_one` | `zonneplan_one` | attribute `forecast: [{start_date, end_date, price_tax_included: {amount}}]`, amount in 1e-7 EUR | 60/15 | 2 111 |
-| `frank_energie` | `frank_energie` | attributes `prices` and `tomorrow_prices`: `[{from, till, price}]`, EUR/kWh | 15 | 1 262 |
-| `cz_energy_spot_prices` | `cz_energy_spot_prices` | payload read in WP4.7 | - | 1 060 |
-| `tibber_prices` | `tibber_prices` (HACS) | payload read in WP4.7 | - | 996 |
-| `stromligning` | `stromligning` | payload read in WP4.7; its price already includes the Danish grid tariff, levies and VAT, and its **basis** says so, so the chain adds neither the grid's energy charge nor the state stage on it (D13 §8) | - | 575 |
+- **A symbol, not a code.** `epex_spot` and `cz_energy_spot_prices` write `€/kWh`, `£/kWh`, `Kč/kWh`. `formats/base.py::symbol_unit` reads those three symbols as ISO codes and nothing else - `kr` is three currencies, so a row writing it (`stromligning`) states its currency.
+- **Which sensor.** `epex_spot`'s *market price* sensor is spot alone, its *total price* sensor adds the household's surcharges and would count them twice. `frank_energie`'s current price is all in. `zonneplan_one` and `frank_energie` declare `basis` {spot, vat, levies}, `stromligning` {spot, grid, vat, levies} (D13 O5).
+- **Scaled and nested.** Zonneplan's amount is in 1e-7 € and nested (`price_tax_included.amount`), `interval_rows` reads a dotted `value_key` and the row scales it like the integration's own `value_factor`.
+- **An outage in the answer.** `tibber_prices` answers `success: false` for a range the API couldn't serve, that's `SourceUnavailableError` and retried, not an empty day.
+- **`tibber_prices`' basis** stays at spot like core Tibber's `tibber_action`, even though `total` carries VAT. Both rows change together or not at all (D-0634).
 
 An adapter has one method, `parse(state) -> ParsedPrices(intervals, currency, energy, magnitude)`, where `Interval(start, end | None, value)` is the triple before normalisation, and `providers/prices/base.normalise` is called once by `EntitySource` for every row (D-0088). The unit comes back *with* the intervals and not from config, since several rows carry it in an attribute the user can change - the HACS sensor's `price_type` is `kWh`, `MWh` or `Wh`, and a `Wh` sensor is refused instead of guessed. In `raw_today` / `raw_tomorrow` a `value` of `None` is an hour the sensor couldn't price (upstream `_calc_price` returns `None` for `None` or infinity), so it's a hole, never a zero price. `registry.py`'s `for_platform(platform)` is what the prices step pre-selects from.
 
@@ -348,10 +351,10 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 |---|---|---|
 | Where do your electricity prices come from? | select: **Nord Pool (built in)** · **A price sensor I already have** · **Fixed price / I'll type it** | by country: Nordics/Baltics → Nord Pool; if a known price integration is installed → that sensor, pre-selected; else fixed |
 | *(Nord Pool)* Area | select NO1…NO5, SE1–4, FI, DK1–2, EE, LV, LT, NL, BE, DE-LU, FR, AT | from HA's location (lat/long → area map) |
-| *(Sensor)* Entity | entity selector filtered to platforms in the format table | the detected one |
-| *(Sensor)* Format | read-only: detected format name; Advanced: override | detected |
-| *(Sensor)* Format options | a sub-step rendered from the format's `schema`, shown only when a field is left without a default - `currency` for `generic_list`/`hourly_attributes`/`tge`, the paths and scale for `generic_list`, Tibber's `home` when there are two | from the picked entity (its unit, its config entry, its device) |
-| *(Sensor)* Tomorrow's entity | entity selector, pre-filled from the same device | only for rows that publish tomorrow separately (`octopus_energy`) |
+| *(Sensor)* Entity | entity selector over `sensor` and `event` (Octopus's day rates are events); a `generic_list` or `hourly_attributes` source can be any entity, so the selector is not filtered by platform (D-0632) | the detected one |
+| *(Sensor)* Format | a select with no default: left empty it is the detected format, and a picked entity no row claims is refused inline (`price_format_unknown`), never guessed (D-0632) | detected |
+| *(Sensor)* Format options | step `prices_format`, one for every row, rendered from the row's `schema` without `config_entry` (D-0633). Shown when the row fits any entity (`generic_list`, `hourly_attributes`), when it publishes tomorrow on a second entity, or when a required field is left without a default after detection | `formats.derived(key, EntityFacts)`: a `config_entry` field is the entity's own entry, a `currency` field the currency its unit names, and a row's `from_entity` hook adds the rest - Tibber's `home` is the price device's name when the entry has two `Price Sensor` devices. The site's currency is the suggested value where nothing else gives one |
+| *(Sensor)* Tomorrow's entity | entity selector on the format-options step, pre-filled with the sibling on the same device (`…_current_day_rates` → `…_next_day_rates`, the row's `tomorrow_entity`); stored as `second_entity_id` and read by the same `EntitySource` after the first | only for rows that publish tomorrow separately (`octopus_energy`) |
 | Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"); Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
 | *(Fixed)* Price per kWh | number in site currency | - |
 | *(D13 §6 step 2a)* What does your supplier add, on top of the grid tariff? | opens by naming what the grid company's tariff already covers; multi-select: **Supplier markup** · **Monthly fee** · **The supplier's own time-of-use offer** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** - nothing of the grid's or the state's | none pre-ticked; Norgespris is an agreement (step 2), strømstøtte a scheme (step 3) |

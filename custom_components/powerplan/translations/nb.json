@@ -626,6 +626,64 @@
           "schemes": "Strømstøtte trekkes automatisk på nettleiefakturaen; den gjelder ikke med Norgespris.",
           "vat": "PowerPlan har ingen momssats for landet ditt: skriv den som står på regningen."
         }
+      },
+      "prices_format": {
+        "title": "Hvordan er prisene skrevet?",
+        "description": "PowerPlan leser sensoren som {format}. Fyll inn det den ikke kunne se av sensoren selv.",
+        "data": {
+          "attribute": "Attributt med prisene",
+          "tomorrow_attribute": "Attributt med morgendagens priser",
+          "start_key": "Nøkkel for starttid",
+          "end_key": "Nøkkel for sluttid",
+          "value_key": "Nøkkel for prisen",
+          "currency": "Valuta",
+          "energy_unit": "Pris per",
+          "magnitude": "Skrevet i",
+          "scale": "Gang hver pris med",
+          "today_prefix": "Navn på dagens timeattributter",
+          "tomorrow_prefix": "Navn på morgendagens timeattributter",
+          "home": "Tibber-hjem",
+          "incl_vat": "Prisene er med mva.",
+          "second_entity_id": "Morgendagens priser"
+        },
+        "data_description": {
+          "attribute": "Attributtet som har listen med priser.",
+          "tomorrow_attribute": "La stå tomt når morgendagen er i samme liste.",
+          "start_key": "Nøkkelen i hver rad som sier når prisen starter.",
+          "end_key": "La stå tomt når radene bare har en start.",
+          "value_key": "Nøkkelen som har prisen. Bruk punktum for en nøstet nøkkel, for eksempel price.amount.",
+          "currency": "Koden på tre bokstaver, for eksempel NOK eller EUR.",
+          "energy_unit": "Om en pris gjelder én kWh eller én MWh.",
+          "magnitude": "Om prisene er i kroner, euro og lignende, eller i øre, cent og lignende.",
+          "scale": "1, med mindre prisene er skrevet i en brøkdel av en enhet.",
+          "today_prefix": "Delen før timen, for eksempel price_ for price_07h.",
+          "tomorrow_prefix": "La stå tomt når sensoren ikke har timer for i morgen.",
+          "home": "Hjemmet det skal planlegges for, når kontoen har flere.",
+          "incl_vat": "La stå på med mindre du ikke betaler mva.",
+          "second_entity_id": "Sensoren med morgendagens priser. Den blir vanligvis funnet for deg."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede fylt ut. Åpne bare hvis du vet at du vil ha noe annet.",
+            "data": {
+              "publication_tz": "Tidssone for publisering",
+              "publication_time": "Publiseringstidspunkt",
+              "interval": "Prisintervall",
+              "granularity": "Prisintervall",
+              "slot_minutes": "Minutter per pris",
+              "energy_unit": "Pris per"
+            },
+            "data_description": {
+              "publication_tz": "Avansert: tidssonen markedet publiserer i. La stå tomt for å beholde den utledede.",
+              "publication_time": "Avansert: lokal tid morgendagens priser vanligvis kommer. La stå tomt for å beholde den utledede.",
+              "interval": "Avansert: hvor lenge hver pris varer.",
+              "granularity": "Avansert: hvor lenge hver pris varer.",
+              "slot_minutes": "Avansert: hvor lenge hver pris varer.",
+              "energy_unit": "Avansert: om en pris gjelder én kWh eller én MWh."
+            }
+          }
+        }
       }
     },
     "error": {
@@ -643,7 +701,9 @@
       "steps_not_rising": "Hvert trinn må gå opp til mer enn trinnet før.",
       "limit_required": "Fyll inn effekten avtalen din gir deg.",
       "postcode_invalid": "Det ser ikke ut som et postnummer her.",
-      "tariff_source_unreachable": "Fikk ikke hentet nettselskapene nå. Velg Finner ikke mitt nettselskap eller Legg inn selv, eller prøv igjen senere."
+      "tariff_source_unreachable": "Fikk ikke hentet nettselskapene nå. Velg Finner ikke mitt nettselskap eller Legg inn selv, eller prøv igjen senere.",
+      "price_format_unknown": "PowerPlan kjenner ikke igjen prisene i denne sensoren. Velg formatet som passer.",
+      "required": "Dette svaret trengs."
     },
     "abort": {
       "already_configured": "Denne måleren er allerede satt opp som et hjem i PowerPlan.",
@@ -1662,18 +1722,24 @@
       "options": {
         "amber": "Amber Electric",
         "comed": "ComEd",
+        "cz_energy_spot_prices": "Czech Energy Spot Prices",
         "easyenergy_action": "easyEnergy",
         "energidataservice": "Energi Data Service",
         "energyzero_action": "EnergyZero",
         "entsoe": "ENTSO-e",
+        "epex_spot": "EPEX Spot",
+        "frank_energie": "Frank Energie",
         "generic_list": "En prisliste i et attributt",
         "hourly_attributes": "Ett attributt per time",
         "nordpool_core": "Nord Pool",
         "nordpool_hacs": "Nord Pool (HACS)",
         "octopus_energy": "Octopus Energy",
         "pvpc": "PVPC",
+        "stromligning": "Strømligning",
         "tge": "TGE",
-        "tibber_action": "Tibber"
+        "tibber_action": "Tibber",
+        "tibber_prices": "Tibber Prices (HACS)",
+        "zonneplan_one": "Zonneplan"
       }
     },
     "fuse": {
@@ -2003,6 +2069,39 @@
         "day": "Hver dag etter sin egen høyeste",
         "month": "Månedens høyeste",
         "year": "Den høyeste de siste 12 månedene"
+      }
+    },
+    "price_format_options_energy_unit": {
+      "options": {
+        "kwh": "kWh",
+        "mwh": "MWh"
+      }
+    },
+    "price_format_options_magnitude": {
+      "options": {
+        "major": "Hele enheter (kroner, euro)",
+        "minor": "Hundredeler (øre, cent)"
+      }
+    },
+    "price_format_options_interval": {
+      "options": {
+        "hour": "Time",
+        "quarter": "Kvarter"
+      }
+    },
+    "price_format_options_granularity": {
+      "options": {
+        "hour": "Time",
+        "4hour": "Fire timer",
+        "day": "Døgn"
+      }
+    },
+    "price_format_options_slot_minutes": {
+      "options": {
+        "5": "5 minutter",
+        "15": "15 minutter",
+        "30": "30 minutter",
+        "60": "60 minutter"
       }
     }
   },

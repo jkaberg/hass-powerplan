@@ -22,8 +22,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from custom_components.powerplan.core.pricing import Schema
+from custom_components.powerplan.core.pricing.modifiers import decode_options
 
-from .base import ActionFormat, EntityFormat, FormatKind
+from .base import ActionFormat, EntityFacts, EntityFormat, FormatKind
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,9 +71,12 @@ def build(key: str, options: Mapping[str, Any] | None = None) -> EntityFormat | 
 
     Which of the two protocols comes back is `entry(key).kind`; the caller is the
     prices step, which knows it is building an `EntitySource` or an `ActionSource`
-    from it (D-0100).
+    from it (D-0100). What the flow stored is decoded the way a modifier's options
+    are - a `NUMBER` to the type the dataclass declares - and an option the row's
+    schema does not name is dropped.
     """
-    return _REGISTRY[key].factory(**(options or {}))
+    found = _REGISTRY[key]
+    return found.factory(**decode_options(found.schema, found.factory, options or {}))
 
 
 #: What a source's price includes when its adapter says nothing: spot alone (O5).
@@ -82,6 +86,37 @@ SPOT_ONLY: Final = frozenset({"spot"})
 def basis(key: str) -> frozenset[str]:
     """Return what a format's prices already include ⊆ {spot, grid, vat, levies} (D1 §5.3, O5)."""
     found: frozenset[str] = getattr(_REGISTRY[key].factory, "basis", SPOT_ONLY)
+    return found
+
+
+def derived(key: str, facts: EntityFacts) -> dict[str, Any]:
+    """Return the options of row `key` the picked entity answers (D1 §6).
+
+    Two by the schema alone - a `config_entry` field is the entity's own config
+    entry, a `currency` field the currency its unit names - and whatever the row's
+    own `from_entity(facts)` adds (Tibber's home, when the account has two).
+    """
+    found = _REGISTRY[key]
+    fields = {field.key for field in found.schema}
+    out: dict[str, Any] = {}
+    if "config_entry" in fields and facts.config_entry_id:
+        out["config_entry"] = facts.config_entry_id
+    if "currency" in fields and facts.currency:
+        out["currency"] = facts.currency
+    hook = getattr(found.factory, "from_entity", None)
+    if hook is not None:
+        out.update(hook(facts))
+    return out
+
+
+def tomorrow_entity(key: str) -> tuple[str, str] | None:
+    """Return `(today's suffix, tomorrow's suffix)` for a row that publishes a day per entity.
+
+    `octopus_energy` puts tomorrow on a sibling entity of the same device
+    (`…_current_day_rates` → `…_next_day_rates`); the prices step finds it by
+    that suffix and binds it as the source's second entity (D1 §6).
+    """
+    found: tuple[str, str] | None = getattr(_REGISTRY[key].factory, "tomorrow_entity", None)
     return found
 
 
@@ -95,4 +130,14 @@ def for_platform(platform: str) -> tuple[str, ...]:
     return tuple(sorted(key for key, found in _REGISTRY.items() if found.platform == platform))
 
 
-__all__ = ["FormatEntry", "build", "entry", "for_platform", "keys", "register"]
+__all__ = [
+    "FormatEntry",
+    "basis",
+    "build",
+    "derived",
+    "entry",
+    "for_platform",
+    "keys",
+    "register",
+    "tomorrow_entity",
+]

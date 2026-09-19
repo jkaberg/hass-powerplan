@@ -27,7 +27,7 @@ from custom_components.powerplan.providers.prices.action import async_response_a
 from custom_components.powerplan.providers.prices.base import SourceParseError, local_day_bounds
 from custom_components.powerplan.providers.prices.markets import TIBBER_MARKET
 
-from .base import FormatKind, ParsedPrices, interval_rows
+from .base import EntityFacts, FormatKind, ParsedPrices, interval_rows
 from .registry import register
 
 if TYPE_CHECKING:
@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
     from custom_components.powerplan.core.pricing import Publication
+
+#: The model core Tibber gives each home's price device (`sensor.py`,
+#: `TibberSensorElPrice`); its Pulse devices are the other model in an entry.
+PRICE_SENSOR_MODEL: Final = "Price Sensor"
 
 #: The integration and action this row reads through.
 TIBBER_DOMAIN: Final = "tibber"
@@ -61,6 +65,19 @@ class TibberAction:
     home: str = ""
     publication_tz: str = ""
     publication_time: time | str | None = None
+
+    @staticmethod
+    def from_entity(facts: EntityFacts) -> dict[str, str]:
+        """Name the home only when the account has two (D1 §6).
+
+        `get_prices` keys its answer by `home.name`, which is also the name core
+        Tibber gives that home's price device; with one home the answer has one
+        key and nothing needs naming.
+        """
+        homes = [name for name, model in facts.entry_devices if model == PRICE_SENSOR_MODEL]
+        if len(homes) > 1 and facts.device_name:
+            return {"home": facts.device_name}
+        return {}
 
     def publication(self) -> Publication:
         """Return the day-ahead clock Tibber's markets settle on (INV-6, D-0100)."""

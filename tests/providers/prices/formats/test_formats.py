@@ -292,6 +292,29 @@ def test_generic_list_reads_the_configured_attribute_and_keys(
     assert {int((row.end - row.start).total_seconds() // 60) for row in rows} == {60}
 
 
+def test_generic_list_reaches_nested_scaled_and_two_attribute_payloads(
+    hass: HomeAssistant, format_fixture: Callable[[str], dict[str, Any]]
+) -> None:
+    """A dotted value key, a scale and tomorrow's attribute (D1 §2)."""
+    fixture = format_fixture("generic_list")
+    today = fixture["attributes"]["forecast"]
+    nested = [
+        {"from": row["from"], "to": row["to"], "price": {"amount": round(row["price"] * 1000)}}
+        for row in today
+    ]
+    fixture["attributes"]["forecast"] = nested[:4]
+    fixture["attributes"]["forecast_tomorrow"] = nested[4:]
+    state = put(hass, fixture)
+
+    rows = slots(
+        generic(value_key="price.amount", scale="0.001", tomorrow_attribute="forecast_tomorrow"),
+        state,
+    )
+
+    assert len(rows) == len(today)
+    assert rows[0].value == Decimal(str(today[0]["price"])) / 100
+
+
 def test_generic_list_converts_minor_units_to_major(
     hass: HomeAssistant, format_fixture: Callable[[str], dict[str, Any]]
 ) -> None:

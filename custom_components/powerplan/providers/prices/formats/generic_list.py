@@ -8,18 +8,24 @@ adapter - the one thing a format table cannot otherwise promise.
 
 `end_key` may be left empty for a source that publishes only starts; the slot
 then ends where the next one begins (INV-7).
+
+The row also reaches three payloads a plain list would not: `value_key` may be
+a dotted path (`price_tax_included.amount`), `scale` multiplies every price (a
+payload in 1e-7 euro is `0.0000001`), and `tomorrow_attribute` names a second
+list read after the first (D1 §2).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from custom_components.powerplan.core.pricing import Field, FieldKind, Schema
 from custom_components.powerplan.core.pricing.normalise import EnergyUnit, Magnitude
 from custom_components.powerplan.providers.prices.base import Interval, SourceParseError
 
-from .base import FormatKind, ParsedPrices, listed, moment, price
+from .base import FormatKind, ParsedPrices, dotted, listed, moment, price
 from .registry import register
 
 if TYPE_CHECKING:
@@ -36,6 +42,7 @@ class GenericList:
     kind: ClassVar[FormatKind] = FormatKind.ATTRIBUTES
     schema: ClassVar[Schema] = (
         Field(key="attribute", kind=FieldKind.TEXT, default="prices", required=True),
+        Field(key="tomorrow_attribute", kind=FieldKind.TEXT, default=""),
         Field(key="start_key", kind=FieldKind.TEXT, default="start", required=True),
         Field(key="end_key", kind=FieldKind.TEXT, default="end"),
         Field(key="value_key", kind=FieldKind.TEXT, default="value", required=True),
@@ -54,6 +61,7 @@ class GenericList:
             options=tuple(magnitude.value for magnitude in Magnitude),
             required=True,
         ),
+        Field(key="scale", kind=FieldKind.NUMBER, default="1", required=True),
     )
 
     currency: str
@@ -63,26 +71,38 @@ class GenericList:
     value_key: str = "value"
     energy_unit: EnergyUnit = field(default=EnergyUnit.KWH)
     magnitude: Magnitude = field(default=Magnitude.MAJOR)
+    tomorrow_attribute: str = ""
+    scale: Decimal = Decimal(1)
 
     def parse(self, state: State) -> ParsedPrices:
-        """Return the intervals on the configured attribute."""
+        """Return the intervals on the configured attribute, then on tomorrow's."""
         rows = state.attributes.get(self.attribute)
         if rows is None:
             raise SourceParseError(
                 f"{state.entity_id} has no attribute {self.attribute!r}; "
                 f"it has {sorted(state.attributes)}"
             )
-        where = f"{state.entity_id}.{self.attribute}"
-
+        intervals = self._intervals(state, self.attribute, rows)
+        tomorrow = (
+            state.attributes.get(self.tomorrow_attribute) if self.tomorrow_attribute else None
+        )
+        if tomorrow is not None:
+            # Absent before publication: nothing known yet, not a failure.
+            intervals += self._intervals(state, self.tomorrow_attribute, tomorrow)
         return ParsedPrices(
-            intervals=tuple(
-                self._interval(row, where=f"{where}[{index}]")
-                for index, row in enumerate(listed(rows, where=where))
-            ),
+            intervals=tuple(intervals),
             currency=self.currency,
             energy=EnergyUnit(self.energy_unit),
             magnitude=Magnitude(self.magnitude),
         )
+
+    def _intervals(self, state: State, attribute: str, rows: Any) -> list[Interval]:
+        """Read one list-valued attribute through the configured keys."""
+        where = f"{state.entity_id}.{attribute}"
+        return [
+            self._interval(row, where=f"{where}[{index}]")
+            for index, row in enumerate(listed(rows, where=where))
+        ]
 
     def _interval(self, row: Any, *, where: str) -> Interval:
         """Read one row of the list through the configured keys.
@@ -93,7 +113,7 @@ class GenericList:
         """
         if not isinstance(row, dict):
             raise SourceParseError(f"{where} is a {type(row).__name__}, not a slot")
-        raw_value = row.get(self.value_key)
+        raw_value = dotted(row, self.value_key)
         if raw_value is None:
             raise SourceParseError(f"{where}[{self.value_key!r}] is missing")
         raw_end = row.get(self.end_key) if self.end_key else None
@@ -102,7 +122,7 @@ class GenericList:
             end=(
                 moment(raw_end, where=f"{where}[{self.end_key!r}]") if raw_end is not None else None
             ),
-            value=price(raw_value, where=f"{where}[{self.value_key!r}]"),
+            value=price(raw_value, where=f"{where}[{self.value_key!r}]") * Decimal(self.scale),
         )
 
 

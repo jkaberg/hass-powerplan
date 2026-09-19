@@ -1,0 +1,354 @@
+{
+  "source": "https://github.com/jpawlowski/hass.tibber_prices/blob/main/custom_components/tibber_prices/services/get_price.py - `tibber_prices.get_price` is SupportsResponse.ONLY, takes entry_id/start_time/end_time and answers {success, home_id, start_time, end_time, interval_count, price_info}; price_info rows are the Tibber API's intervals (api/client.py: startsAt total energy tax level), total in the home's currency per kWh.",
+  "service": "tibber_prices.get_price",
+  "data": {
+    "entry_id": "tibber-prices-entry-id",
+    "start_time": "2026-09-19T00:00:00+02:00",
+    "end_time": "2026-09-20T00:00:00+02:00"
+  },
+  "response": {
+    "success": true,
+    "home_id": "96a14971-525a-4420-aae9-e5aedaa129ff",
+    "start_time": "2026-09-19T00:00:00+02:00",
+    "end_time": "2026-09-21T00:00:00+02:00",
+    "interval_count": 48,
+    "price_info": [
+      {
+        "startsAt": "2026-09-19T00:00:00+02:00",
+        "total": 1.0413,
+        "energy": 0.833,
+        "tax": 0.2083,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T01:00:00+02:00",
+        "total": 0.9579,
+        "energy": 0.7663,
+        "tax": 0.1916,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T02:00:00+02:00",
+        "total": 0.9082,
+        "energy": 0.7266,
+        "tax": 0.1816,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T03:00:00+02:00",
+        "total": 0.8819,
+        "energy": 0.7055,
+        "tax": 0.1764,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T04:00:00+02:00",
+        "total": 0.8936,
+        "energy": 0.7149,
+        "tax": 0.1787,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T05:00:00+02:00",
+        "total": 1.0077,
+        "energy": 0.8061,
+        "tax": 0.2015,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T06:00:00+02:00",
+        "total": 1.2782,
+        "energy": 1.0226,
+        "tax": 0.2556,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T07:00:00+02:00",
+        "total": 1.6424,
+        "energy": 1.3139,
+        "tax": 0.3285,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T08:00:00+02:00",
+        "total": 1.8208,
+        "energy": 1.4567,
+        "tax": 0.3642,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T09:00:00+02:00",
+        "total": 1.5897,
+        "energy": 1.2718,
+        "tax": 0.3179,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T10:00:00+02:00",
+        "total": 1.3499,
+        "energy": 1.0799,
+        "tax": 0.27,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T11:00:00+02:00",
+        "total": 1.1875,
+        "energy": 0.95,
+        "tax": 0.2375,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T12:00:00+02:00",
+        "total": 1.0896,
+        "energy": 0.8716,
+        "tax": 0.2179,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T13:00:00+02:00",
+        "total": 1.0252,
+        "energy": 0.8202,
+        "tax": 0.205,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T14:00:00+02:00",
+        "total": 1.072,
+        "energy": 0.8576,
+        "tax": 0.2144,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T15:00:00+02:00",
+        "total": 1.1919,
+        "energy": 0.9536,
+        "tax": 0.2384,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T16:00:00+02:00",
+        "total": 1.4157,
+        "energy": 1.1326,
+        "tax": 0.2831,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T17:00:00+02:00",
+        "total": 1.9246,
+        "energy": 1.5397,
+        "tax": 0.3849,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T18:00:00+02:00",
+        "total": 2.3283,
+        "energy": 1.8626,
+        "tax": 0.4657,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T19:00:00+02:00",
+        "total": 2.1762,
+        "energy": 1.741,
+        "tax": 0.4352,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T20:00:00+02:00",
+        "total": 1.7609,
+        "energy": 1.4087,
+        "tax": 0.3522,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T21:00:00+02:00",
+        "total": 1.4786,
+        "energy": 1.1829,
+        "tax": 0.2957,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T22:00:00+02:00",
+        "total": 1.3119,
+        "energy": 1.0495,
+        "tax": 0.2624,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-19T23:00:00+02:00",
+        "total": 1.1524,
+        "energy": 0.922,
+        "tax": 0.2305,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T00:00:00+02:00",
+        "total": 0.9684,
+        "energy": 0.7747,
+        "tax": 0.1937,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T01:00:00+02:00",
+        "total": 0.8909,
+        "energy": 0.7127,
+        "tax": 0.1782,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T02:00:00+02:00",
+        "total": 0.8446,
+        "energy": 0.6757,
+        "tax": 0.1689,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T03:00:00+02:00",
+        "total": 0.8202,
+        "energy": 0.6561,
+        "tax": 0.164,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T04:00:00+02:00",
+        "total": 0.831,
+        "energy": 0.6648,
+        "tax": 0.1662,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T05:00:00+02:00",
+        "total": 0.9371,
+        "energy": 0.7497,
+        "tax": 0.1874,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T06:00:00+02:00",
+        "total": 1.1887,
+        "energy": 0.951,
+        "tax": 0.2377,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T07:00:00+02:00",
+        "total": 1.5274,
+        "energy": 1.2219,
+        "tax": 0.3055,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T08:00:00+02:00",
+        "total": 1.6934,
+        "energy": 1.3547,
+        "tax": 0.3387,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T09:00:00+02:00",
+        "total": 1.4785,
+        "energy": 1.1828,
+        "tax": 0.2957,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T10:00:00+02:00",
+        "total": 1.2554,
+        "energy": 1.0043,
+        "tax": 0.2511,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T11:00:00+02:00",
+        "total": 1.1044,
+        "energy": 0.8835,
+        "tax": 0.2209,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T12:00:00+02:00",
+        "total": 1.0133,
+        "energy": 0.8106,
+        "tax": 0.2027,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T13:00:00+02:00",
+        "total": 0.9534,
+        "energy": 0.7628,
+        "tax": 0.1907,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T14:00:00+02:00",
+        "total": 0.997,
+        "energy": 0.7976,
+        "tax": 0.1994,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T15:00:00+02:00",
+        "total": 1.1085,
+        "energy": 0.8868,
+        "tax": 0.2217,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T16:00:00+02:00",
+        "total": 1.3166,
+        "energy": 1.0533,
+        "tax": 0.2633,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T17:00:00+02:00",
+        "total": 1.7899,
+        "energy": 1.4319,
+        "tax": 0.358,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T18:00:00+02:00",
+        "total": 2.1653,
+        "energy": 1.7323,
+        "tax": 0.4331,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T19:00:00+02:00",
+        "total": 2.0239,
+        "energy": 1.6191,
+        "tax": 0.4048,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T20:00:00+02:00",
+        "total": 1.6376,
+        "energy": 1.3101,
+        "tax": 0.3275,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T21:00:00+02:00",
+        "total": 1.3751,
+        "energy": 1.1001,
+        "tax": 0.275,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T22:00:00+02:00",
+        "total": 1.22,
+        "energy": 0.976,
+        "tax": 0.244,
+        "level": "NORMAL"
+      },
+      {
+        "startsAt": "2026-09-20T23:00:00+02:00",
+        "total": 1.0718,
+        "energy": 0.8574,
+        "tax": 0.2144,
+        "level": "NORMAL"
+      }
+    ]
+  }
+}

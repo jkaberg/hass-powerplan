@@ -53,6 +53,12 @@ ENERGY_UNITS: Final[dict[str, EnergyUnit]] = {
     "mwh": EnergyUnit.MWH,
 }
 
+#: Currency symbols the WP4.7 rows write in `unit_of_measurement` instead of an
+#: ISO code, each as the integration's own source spells it: `€/kWh` and
+#: `£/kWh` (`epex_spot`'s `localization.py`), `Kč/kWh` (`cz_energy_spot_prices`),
+#: `kr/kWh` is not here - it names three currencies.
+CURRENCY_SYMBOLS: Final[dict[str, str]] = {"€": "EUR", "£": "GBP", "Kč": "CZK"}
+
 #: How long an ISO 4217 code is: the test that tells `EUR/kWh` from `zl/MWh`.
 ISO_CURRENCY_LENGTH: Final = 3
 
@@ -70,6 +76,23 @@ def slot_minutes_field(default: int) -> Field:
         options=tuple(str(minutes) for minutes in SLOT_MINUTES),
         advanced=True,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class EntityFacts:
+    """What the prices step knows about the entity the household picked (D1 §6).
+
+    Read from the entity and device registries and the entity's unit, so the rows
+    that need a config entry, a currency or a home are told them, not asked.
+    `entry_devices` is `(name, model)` for every device of the entity's config
+    entry - how a row tells a one-home account from a two-home one.
+    """
+
+    entity_id: str
+    config_entry_id: str | None = None
+    currency: str | None = None
+    device_name: str | None = None
+    entry_devices: tuple[tuple[str | None, str | None], ...] = ()
 
 
 class FormatKind(StrEnum):
@@ -188,6 +211,7 @@ def interval_rows(
 
     `end_key` is left out by the integrations that publish only starts; the slot
     then ends where the next one begins, never at an assumed 60 minutes (INV-7).
+    `value_key` may be a dotted path (`price_tax_included.amount`, `dotted`).
     A row whose price is absent or `None` is skipped: the integration could not
     price that interval, and a hole is the truth about it.
     """
@@ -195,7 +219,7 @@ def interval_rows(
     for index, row in enumerate(listed(raw, where=where)):
         if not isinstance(row, dict):
             raise SourceParseError(f"{where}[{index}] is a {type(row).__name__}, not a slot")
-        value = row.get(value_key)
+        value = dotted(row, value_key)
         if value is None:
             continue
         raw_end = row.get(end_key) if end_key else None
@@ -294,18 +318,66 @@ def declared_unit(state: State) -> tuple[str, EnergyUnit] | None:
     return (currency, known)
 
 
+def symbol_unit(state: State) -> tuple[str, EnergyUnit] | None:
+    """Return `(currency, energy unit)` from a unit written with an ISO code or a symbol.
+
+    `declared_unit` reads `EUR/kWh`; the rows added in WP4.7 write `€/kWh` or
+    `Kč/MWh`, so a symbol in `CURRENCY_SYMBOLS` is read as its code. Anything
+    else is `None`, never a guess.
+    """
+    return declared_unit(state) or unit_currency(state.attributes.get("unit_of_measurement"))
+
+
+def unit_currency(unit: Any) -> tuple[str, EnergyUnit] | None:
+    """Return `(currency, energy unit)` for a unit string with a symbol (`symbol_unit`).
+
+    Also what the prices step reads off the entity registry's `unit_of_measurement`
+    (the flow reads no state, INV-3): there `EUR/kWh` is read too.
+    """
+    if not isinstance(unit, str) or unit.count("/") != 1:
+        return None
+    symbol, _, energy = unit.partition("/")
+    symbol = symbol.strip()
+    iso = len(symbol) == ISO_CURRENCY_LENGTH and symbol.isascii() and symbol.isupper()
+    currency = symbol if iso else CURRENCY_SYMBOLS.get(symbol)
+    known = ENERGY_UNITS.get(energy.strip().lower())
+    if currency is None or known is None:
+        return None
+    return (currency, known)
+
+
+def dotted(row: dict[str, Any], path: str) -> Any:
+    """Return `row[a][b]…` for the path `a.b…`, or `None` where a step is missing.
+
+    `zonneplan_one` nests its price (`price_tax_included.amount`), and
+    `generic_list`'s value key may be a path to reach payloads like it.
+    A missing step is an absent price - what the caller does with that is its rule.
+    """
+    found: Any = row
+    for step in path.split("."):
+        if not isinstance(found, dict):
+            return None
+        found = found.get(step)
+    return found
+
+
 __all__ = [
+    "CURRENCY_SYMBOLS",
     "SLOT_MINUTES",
     "ActionFormat",
+    "EntityFacts",
     "EntityFormat",
     "FormatKind",
     "ParsedPrices",
     "attribute_intervals",
     "declared_unit",
+    "dotted",
     "interval_rows",
     "listed",
     "moment",
     "price",
     "slot_minutes_field",
     "state_interval",
+    "symbol_unit",
+    "unit_currency",
 ]

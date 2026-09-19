@@ -1,6 +1,6 @@
-"""The two action-backed rows of D1 §2's table (D1 §9 item 1).
+"""The action-backed rows of D1 §2's table (D1 §9 item 1).
 
-`tibber_action` and `energyzero_action` / `easyenergy_action` are rows whose
+`tibber_action`, `tibber_prices` and `energyzero_action` / `easyenergy_action` are rows whose
 prices are not on an entity at all: the integration keeps them behind a response
 action, registered `SupportsResponse.ONLY`. Registering the fake action the same
 way is what proves the adapter passes `return_response=True` - Home Assistant
@@ -57,6 +57,8 @@ class Row:
     market_tz: str
     first_start: str
     minutes: int
+    #: The response key the prices are listed under.
+    list_key: str = "prices"
 
 
 ROWS: tuple[Row, ...] = (
@@ -69,6 +71,17 @@ ROWS: tuple[Row, ...] = (
         market_tz="Europe/Oslo",
         first_start="2026-09-18T22:00:00+00:00",
         minutes=60,
+    ),
+    Row(
+        key="tibber_prices",
+        fixture="tibber_prices",
+        options={"config_entry": "tibber-prices-entry-id", "currency": "NOK"},
+        site_currency="NOK",
+        tz=OSLO,
+        market_tz="Europe/Oslo",
+        first_start="2026-09-18T22:00:00+00:00",
+        minutes=60,
+        list_key="price_info",
     ),
     Row(
         key="energyzero_action",
@@ -210,8 +223,8 @@ async def test_an_action_row_with_nothing_published_is_empty(
 ) -> None:
     """Published nothing yet is retryable; a changed shape is not (D1 §8)."""
     empty = format_fixture(row.fixture)["response"]
-    prices = empty["prices"]
-    empty["prices"] = {home: [] for home in prices} if isinstance(prices, dict) else []
+    prices = empty[row.list_key]
+    empty[row.list_key] = {home: [] for home in prices} if isinstance(prices, dict) else []
     action.response = empty
 
     with pytest.raises(SourceEmptyError):
@@ -317,3 +330,27 @@ async def test_easyenergy_prices_are_euro_per_kwh(
 
     published = fixture["response"]["prices"][0]["price"]
     assert slots[0].value == Decimal(str(published))
+
+
+async def test_tibber_prices_asks_its_own_entry_and_fails_on_an_outage(
+    hass: HomeAssistant, format_fixture: Callable[[str], dict]
+) -> None:
+    """One entry is one home; `success: false` is an outage, not an empty day."""
+    fixture = format_fixture("tibber_prices")
+    fake = FakeAction(fixture["service"], fixture["response"])
+    fake.register(hass)
+    source = ActionSource(
+        hass,
+        adapter=formats.build(
+            "tibber_prices", {"config_entry": "tibber-prices-entry-id", "currency": "NOK"}
+        ),
+        site_currency="NOK",
+        tz=OSLO,
+    )
+
+    await source.fetch(DAY)
+    assert fake.calls[0].data["entry_id"] == "tibber-prices-entry-id"
+
+    fake.response = {"success": False, "reason": "price_data_unavailable", "price_info": []}
+    with pytest.raises(SourceUnavailableError, match="price_data_unavailable"):
+        await source.fetch(DAY)

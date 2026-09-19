@@ -6,6 +6,10 @@ else is the same for all thirteen rows and is here: read the state through
 `hass.states.get`, normalise once (D1 §5.2), and hand back the slots of the local
 day that was asked for.
 
+A row that publishes a day per entity (`octopus_energy`) binds tomorrow's as a
+**second entity** of the same source: it is read after the first, and
+until it has anything - tomorrow before publication - it adds nothing.
+
 `publication()` is `None`: an entity has no publication time. It updates when its
 integration updates it, so the runtime re-reads it on the state change it is
 already subscribed to, and again at the hole check (D1 §5.1). Nothing is
@@ -32,6 +36,7 @@ if TYPE_CHECKING:
 
     from custom_components.powerplan.core.pricing import Schema
 
+    from .base import Interval
     from .formats import EntityFormat
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,10 +59,12 @@ class EntitySource:
         carrier: Carrier = Carrier.ELECTRICITY,
         direction: Direction = Direction.IMPORT,
         fx_rate: Decimal | None = None,
+        second_entity_id: str | None = None,
     ) -> None:
-        """Bind the source to one entity, one adapter and the site's currency."""
+        """Bind the source to one entity (and tomorrow's), one adapter and the site's currency."""
         self._hass = hass
         self._entity_id = entity_id
+        self._second_entity_id = second_entity_id
         self._adapter = adapter
         self._site_currency = site_currency
         self._tz = tz
@@ -84,8 +91,8 @@ class EntitySource:
         return (parsed.currency, parsed.energy, parsed.magnitude)
 
     def entity_ids(self) -> frozenset[str]:
-        """Return the one entity this source reads (D7 §5.3 subscribes to it)."""
-        return frozenset({self._entity_id})
+        """Return the entities this source reads (D7 §5.3 subscribes to them)."""
+        return frozenset(filter(None, (self._entity_id, self._second_entity_id)))
 
     async def fetch(self, day: date) -> list[RawSlot]:
         """Return the slots the entity knows for the local day `day` (D1 §5.2)."""
@@ -96,8 +103,9 @@ class EntitySource:
             raise SourceUnavailableError(f"{self._entity_id} is {state.state}")
 
         parsed = self._adapter.parse(state)
+        intervals = parsed.intervals + self._second_intervals()
         slots = normalise(
-            parsed.intervals,
+            intervals,
             source=self.key,
             currency=parsed.currency,
             site_currency=self._site_currency,
@@ -115,6 +123,15 @@ class EntitySource:
             "%s: %d of %d slots are within %s", self._entity_id, len(wanted), len(slots), day
         )
         return wanted
+
+    def _second_intervals(self) -> tuple[Interval, ...]:
+        """Return what the second entity publishes, or nothing while it has nothing."""
+        if self._second_entity_id is None:
+            return ()
+        state = self._hass.states.get(self._second_entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return ()
+        return self._adapter.parse(state).intervals
 
 
 __all__ = ["EntitySource"]

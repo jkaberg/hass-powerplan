@@ -135,7 +135,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         """Return the state overrides flow: a household that knows better (D13 O4, D8 §5.17)."""
         return StateOverridesFlow()
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: PLR0915 - one field per line, the flow's whole state
         """Start with an empty site and the environment's own answers."""
         #: Set by `async_step_reconfigure`; every step's own form prefers the
         #: site's current answer over its onboarding default while this holds.
@@ -156,6 +156,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         #: The agreement question's answer: a source key, or Norgespris (D1 §6).
         self._agreement: str | None = None
         self._sources: list[dict[str, Any]] = []
+        #: The picked price entity and its row, between the two entity steps.
+        self._price_entity: dict[str, Any] = {}
         self._modifier_keys: list[str] = []
         self._modifier_index = 0
         self._modifiers: list[dict[str, Any]] = []
@@ -649,8 +651,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Bind a price sensor the house already has, format detected (D1 §6)."""
+        stored = self._stored_source_options(steps.SOURCE_ENTITY) or {}
         if user_input is None:
-            stored = self._stored_source_options(steps.SOURCE_ENTITY) or {}
             return self._form(
                 "prices_entity",
                 steps.price_entity_schema(
@@ -663,16 +665,83 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             platform = device_pick.price_entity_platform(self.hass, entity_id)
             candidates = formats.for_platform(platform) if platform else ()
             detected = candidates[0] if candidates else None
-        self._sources = [
-            {
-                "key": steps.SOURCE_ENTITY,
-                "options": {
-                    "entity_id": entity_id,
-                    "format": user_input.get("format") or detected,
-                    "detected_format": detected,
+        key = user_input.get("format") or detected
+        if entity_id is None or key is None:
+            # Nothing to read, or nothing that says how to read it: never a guess.
+            return self._form(
+                "prices_entity",
+                steps.price_entity_schema(default_entity=entity_id, default_format=None),
+                errors={"format" if entity_id else "entity_id": "price_format_unknown"},
+            )
+        # What the entity answers is never asked: its config entry, its currency,
+        # Tibber's home, tomorrow's entity (D1 §6).
+        derived = formats.derived(key, device_pick.price_entity_facts(self.hass, entity_id))
+        kept = stored.get("format_options") if stored.get("format") == key else None
+        self._price_entity = {
+            "entity_id": entity_id,
+            "format": key,
+            "detected_format": detected,
+            "format_options": {**derived, **(kept or {})},
+            "second_entity_id": (
+                stored.get("second_entity_id")
+                if kept is not None
+                else device_pick.tomorrow_sibling(self.hass, entity_id, key)
+            ),
+        }
+        if steps.format_needs_step(key, self._price_entity["format_options"]):
+            return await self.async_step_prices_format()
+        return await self._store_price_entity(self._price_entity["format_options"])
+
+    async def async_step_prices_format(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask what detection left open about the picked sensor (D1 §6).
+
+        A row that fits any entity is described here; a row missing a required
+        answer asks it; `octopus_energy` shows tomorrow's entity, pre-filled.
+        """
+        key = str(self._price_entity["format"])
+        values = self._price_entity["format_options"]
+        name = (await Text.load(self.hass)).word("price_format", key) or key
+
+        def form(errors: Mapping[str, str] | None = None) -> ConfigFlowResult:
+            return self._form(
+                "prices_format",
+                steps.format_options_schema(
+                    key,
+                    values=values,
+                    currency=self._currency,
+                    second_entity=self._price_entity.get("second_entity_id"),
+                ),
+                errors=errors,
+                placeholders={"format": name},
+            )
+
+        if user_input is None:
+            return form()
+        answers = {**values, **self._flat(user_input)}
+        schema = formats.entry(key).schema
+        missing = missing_required(schema, answers)
+        if missing is not None:
+            return form({missing: "required"})
+        self._price_entity["second_entity_id"] = answers.pop("second_entity_id", None)
+        return await self._store_price_entity(
+            value_of(schema, answers, prefix=steps.FORMAT_OPTIONS_PREFIX)
+        )
+
+    async def _store_price_entity(self, format_options: Mapping[str, Any]) -> ConfigFlowResult:
+        """Keep the entity source as `_price_source` will build it (D1 §6)."""
+        options = {
+            key: value
+            for key, value in {
+                **self._price_entity,
+                "format_options": {
+                    key: value for key, value in format_options.items() if value is not None
                 },
-            }
-        ]
+            }.items()
+            if value is not None
+        }
+        self._sources = [{"key": steps.SOURCE_ENTITY, "options": options}]
         return await self._after_source()
 
     async def async_step_prices_fixed(

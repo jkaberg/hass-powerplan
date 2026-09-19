@@ -1,10 +1,11 @@
-"""The nine attribute-backed rows of D1 §2's table (D1 §9 item 1).
+"""The attribute-backed rows of D1 §2's table (D1 §9 item 1).
 
 `nordpool_hacs` and `generic_list` are in `test_formats.py`. Here are the
 rows WP4.4 adds that read an entity's attributes or its state:
 `nordpool_core`, `energidataservice`, `entsoe`, `tge`, `octopus_energy`, `amber`,
-`pvpc`, `comed` and `hourly_attributes`. The two action-backed rows are in
-`test_action_formats.py`.
+`pvpc`, `comed` and `hourly_attributes`, and the ones WP4.7 adds: `epex_spot`,
+`zonneplan_one`, `frank_energie`, `stromligning` and `cz_energy_spot_prices`. The
+action-backed rows are in `test_action_formats.py`.
 
 Every row answers the same five questions, so they are asked once, from a table:
 does the fixture parse into normalised `RawSlot`s; is each slot as long as the
@@ -58,6 +59,7 @@ LONDON = ZoneInfo("Europe/London")
 SYDNEY = ZoneInfo("Australia/Sydney")
 MADRID = ZoneInfo("Europe/Madrid")
 CHICAGO = ZoneInfo("America/Chicago")
+PRAGUE = ZoneInfo("Europe/Prague")
 
 #: Every fixture is the local day 2026-09-19 (plus its tomorrow); the clock is
 #: frozen inside it so the two rows whose slot boundary is the entity's own
@@ -89,6 +91,23 @@ def write_hour_key(prefix: str) -> Callable[[dict[str, Any], int, Any], None]:
         fixture["attributes"][f"{prefix}{index:02d}h"] = value
 
     return write
+
+
+def write_nested(attribute: str, *path: str) -> Callable[[dict[str, Any], int, Any], None]:
+    """Return a writer for a nested key of the `index`-th entry (`zonneplan_one`)."""
+
+    def write(fixture: dict[str, Any], index: int, value: Any) -> None:
+        found = fixture["attributes"][attribute][index]
+        for step in path[:-1]:
+            found = found[step]
+        found[path[-1]] = value
+
+    return write
+
+
+def write_start_key(fixture: dict[str, Any], index: int, value: Any) -> None:
+    """Overwrite the attribute keyed by local hour `index`'s start (`cz_energy_spot_prices`)."""
+    fixture["attributes"][f"2026-09-19T{index:02d}:00:00+02:00"] = value
 
 
 def write_state(fixture: dict[str, Any], index: int, value: Any) -> None:
@@ -224,6 +243,75 @@ ROWS: tuple[Row, ...] = (
         first_start="2026-09-19T11:00:00+00:00",
         factor=Decimal("0.01"),
         write=write_state,
+    ),
+    Row(
+        key="epex_spot",
+        fixture="epex_spot",
+        options={},
+        site_currency="EUR",
+        tz=AMSTERDAM,
+        slots=48,
+        minutes=frozenset({60}),
+        first_start="2026-09-18T22:00:00+00:00",
+        factor=Decimal(1),
+        write=write_list("data", "price_per_kwh"),
+        attribute="data",
+        bounded=True,
+    ),
+    Row(
+        key="zonneplan_one",
+        fixture="zonneplan_one",
+        options={},
+        site_currency="EUR",
+        tz=AMSTERDAM,
+        slots=48,
+        minutes=frozenset({60}),
+        first_start="2026-09-18T22:00:00+00:00",
+        factor=Decimal("0.0000001"),
+        write=write_nested("forecast", "price_tax_included", "amount"),
+        attribute="forecast",
+        bounded=True,
+    ),
+    Row(
+        key="frank_energie",
+        fixture="frank_energie",
+        options={},
+        site_currency="EUR",
+        tz=AMSTERDAM,
+        slots=48,
+        minutes=frozenset({60}),
+        first_start="2026-09-18T22:00:00+00:00",
+        factor=Decimal(1),
+        write=write_list("prices", "price"),
+        attribute="prices",
+        bounded=True,
+    ),
+    Row(
+        key="stromligning",
+        fixture="stromligning",
+        options={},
+        site_currency="DKK",
+        tz=COPENHAGEN,
+        slots=48,
+        minutes=frozenset({60}),
+        first_start="2026-09-18T22:00:00+00:00",
+        factor=Decimal(1),
+        write=write_list("prices", "price"),
+        attribute="prices",
+        bounded=True,
+    ),
+    Row(
+        key="cz_energy_spot_prices",
+        fixture="cz_energy_spot_prices",
+        options={},
+        site_currency="CZK",
+        tz=PRAGUE,
+        slots=48,
+        minutes=frozenset({60}),
+        first_start="2026-09-18T22:00:00+00:00",
+        factor=Decimal(1),
+        write=write_start_key,
+        attribute="2026-09-19T00:00:00+02:00",
     ),
     Row(
         key="hourly_attributes",

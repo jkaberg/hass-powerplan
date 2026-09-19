@@ -93,6 +93,8 @@ SAME_IN_BOTH = frozenset(
         "{min} min",  # the gauge's minutes left, a unit in both (D12 §5.3)
         "≈ {cost}",  # a slot's or a run's cost, the currency in the number (D12 §5.11 G7)
         "kW",  # a unit
+        "kWh",  # units a price is per (`selector.price_format_options_energy_unit`)
+        "MWh",
         "—",  # nothing
         "April",  # months spelled the same in nb (`selector.month`)
         "August",
@@ -130,6 +132,13 @@ BRANDS = frozenset(
         "pvpc",
         "tge",
         "tibber_action",
+        # WP4.7's rows (D1 §2)
+        "cz_energy_spot_prices",
+        "epex_spot",
+        "frank_energie",
+        "stromligning",
+        "tibber_prices",
+        "zonneplan_one",
     )
 )
 #: Inline code is syntax the household types, not a number it reads (`-10:2.1`).
@@ -618,6 +627,10 @@ SITE_WALKS: dict[str, tuple[dict[str, Any], dict[str, dict[str, Any]]]] = {
             "name": {"name": "Hjemme"},
             "timezone": {"timezone": "Europe/Oslo"},
             "prices": {"source": "entity"},
+            # A sensor no row claims, described by hand (D1 §6): an empty
+            # answer is refused now, where it once stored `amber` for no entity.
+            "prices_entity": {"entity_id": "sensor.my_prices", "format": "generic_list"},
+            "prices_format": {"currency": "NOK"},
         },
     ),
     "price_only_fixed": (

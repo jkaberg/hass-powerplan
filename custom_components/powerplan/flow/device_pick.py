@@ -20,6 +20,7 @@ import re
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import (
@@ -32,6 +33,7 @@ from custom_components.powerplan.const import (
     ROLE_PHASE_L3,
     ROLE_PRODUCTION_POWER,
 )
+from custom_components.powerplan.providers.prices import formats
 
 if TYPE_CHECKING:
     from collections.abc import Collection, Sequence
@@ -160,6 +162,47 @@ def price_entity_platform(hass: HomeAssistant, entity_id: str) -> str | None:
     """Return the integration that provides `entity_id` (D1 §6, format detection)."""
     entry = er.async_get(hass).async_get(entity_id)
     return None if entry is None else entry.platform
+
+
+def price_entity_facts(hass: HomeAssistant, entity_id: str) -> formats.EntityFacts:
+    """Return what the registries say about a picked price entity."""
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry is None:
+        return formats.EntityFacts(entity_id=entity_id)
+    # The registry's unit, not the state's: the flow reads no state (INV-3).
+    unit = formats.unit_currency(entry.unit_of_measurement)
+    devices = dr.async_get(hass)
+    device = devices.async_get(entry.device_id) if entry.device_id else None
+    siblings = (
+        dr.async_entries_for_config_entry(devices, entry.config_entry_id)
+        if entry.config_entry_id
+        else []
+    )
+    return formats.EntityFacts(
+        entity_id=entity_id,
+        config_entry_id=entry.config_entry_id,
+        currency=unit[0] if unit else None,
+        device_name=device.name if device is not None else None,
+        entry_devices=tuple((sibling.name, sibling.model) for sibling in siblings),
+    )
+
+
+def tomorrow_sibling(hass: HomeAssistant, entity_id: str, key: str) -> str | None:
+    """Return the entity that carries tomorrow for row `key`, on the same device.
+
+    `octopus_energy`'s `…_current_day_rates` has a `…_next_day_rates` sibling;
+    it is looked up by that suffix among the picked entity's device's entities.
+    """
+    suffixes = formats.tomorrow_entity(key)
+    if suffixes is None or not entity_id.endswith(suffixes[0]):
+        return None
+    wanted = entity_id.removesuffix(suffixes[0]) + suffixes[1]
+    registry = er.async_get(hass)
+    entry = registry.async_get(entity_id)
+    found = registry.async_get(wanted)
+    if found is None or entry is None or found.device_id != entry.device_id:
+        return None
+    return wanted
 
 
 def stable_id(hass: HomeAssistant, entity_id: str) -> str:

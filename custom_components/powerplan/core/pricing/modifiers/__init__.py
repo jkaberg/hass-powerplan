@@ -17,7 +17,15 @@ from . import (  # noqa: F401
     vat,
 )
 from .base import GRID_ENERGY, SPOT, PriceModifier, with_component
-from .registry import ModifierEntry, build, chain_from, entry, keys, register
+from .registry import (
+    ModifierEntry,
+    build,
+    chain_from,
+    decode_options,
+    entry,
+    keys,
+    register,
+)
 
 __all__ = [
     "GRID_ENERGY",
@@ -26,6 +34,7 @@ __all__ = [
     "PriceModifier",
     "build",
     "chain_from",
+    "decode_options",
     "entry",
     "keys",
     "register",

@@ -493,7 +493,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.6 | Tariffs: verified facts only | done |
 | 4.6b | Tariff sources: NO, SE, DK | replaced |
 | 4.6c | Tariff sources: BE, US, AU | replaced |
-| 4.7 | Price sources: every row through the flow | todo |
+| 4.7 | Price sources: every row through the flow | done |
 | 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | todo |
 | 4.9 | Event sources in the runtime | todo |

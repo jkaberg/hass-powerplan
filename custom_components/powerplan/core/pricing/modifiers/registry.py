@@ -61,17 +61,27 @@ def build(key: str, options: Mapping[str, Any]) -> PriceModifier:
     `Decimal`s and `TouPeriod`s - pass through unchanged.
     """
     entry_ = _REGISTRY[key]
-    annotations = _annotations(entry_.factory)
-    decoded = {
-        field.key: _decode(field, options[field.key], annotations.get(field.key, ""))
-        for field in entry_.schema
-        if field.key in options
-    }
+    decoded = decode_options(entry_.schema, entry_.factory, options)
     from_options = getattr(entry_.factory, "from_options", None)
     if from_options is not None:
         built: PriceModifier = from_options(decoded)
         return built
     return entry_.factory(**decoded)
+
+
+def decode_options(schema: Schema, factory: Any, options: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the stored `options` a schema names, each as `factory`'s dataclass types it.
+
+    Shared by every registry whose entries the flow stores through `value_of` - the
+    modifiers here, the price formats in `providers/prices/formats` - so
+    an option the schema does not name is dropped rather than passed on.
+    """
+    annotations = _annotations(factory)
+    return {
+        field.key: _decode(field, options[field.key], annotations.get(field.key, ""))
+        for field in schema
+        if field.key in options
+    }
 
 
 def _annotations(factory: Any) -> dict[str, str]:

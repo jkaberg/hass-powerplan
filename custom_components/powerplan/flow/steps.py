@@ -77,7 +77,7 @@ from custom_components.powerplan.core.metering.profile import (
     ElectricalProfile,
     VoltageSystem,
 )
-from custom_components.powerplan.core.pricing import Carrier, modifiers
+from custom_components.powerplan.core.pricing import Carrier, Schema, modifiers
 from custom_components.powerplan.core.pricing.modifiers.base import SPOT
 from custom_components.powerplan.core.pricing.party import PARTY
 from custom_components.powerplan.core.tariffs.household import Party
@@ -709,16 +709,25 @@ def nordpool_schema(*, values: Mapping[str, Any], text: Text) -> vol.Schema:
 
 
 def price_entity_schema(*, default_entity: str | None, default_format: str | None) -> vol.Schema:
-    """Return the entity field and the detected format (D1 §6, `for_platform`)."""
+    """Return the entity field and the format override (D1 §6, `for_platform`).
+
+    The format has no default on a first setup: left empty, it is the one
+    detected from the picked entity's integration. A default here would be
+    submitted as a choice and override the detection.
+    """
     entity_marker = (
         vol.Optional("entity_id", default=default_entity)
         if default_entity
         else vol.Optional("entity_id")
     )
+    format_marker = (
+        vol.Optional("format", default=default_format) if default_format else vol.Optional("format")
+    )
     return vol.Schema(
         {
-            entity_marker: EntitySelector(EntitySelectorConfig(domain="sensor")),
-            vol.Optional("format", default=default_format or formats.keys()[0]): SelectSelector(
+            # Octopus publishes its day rates on `event` entities (D1 §2).
+            entity_marker: EntitySelector(EntitySelectorConfig(domain=["sensor", "event"])),
+            format_marker: SelectSelector(
                 SelectSelectorConfig(
                     options=list(formats.keys()),
                     mode=SelectSelectorMode.DROPDOWN,
@@ -726,6 +735,71 @@ def price_entity_schema(*, default_entity: str | None, default_format: str | Non
                     sort=False,
                 )
             ),
+        }
+    )
+
+
+#: The translation prefix of the format-options step's select fields.
+FORMAT_OPTIONS_PREFIX: Final = "price_format_options"
+
+
+def format_fields(key: str) -> Schema:
+    """Return the fields of row `key` the format-options step asks (D1 §6).
+
+    A `config_entry` is never asked: it is the picked entity's own.
+    """
+    return tuple(field for field in formats.entry(key).schema if field.key != "config_entry")
+
+
+def format_needs_step(key: str, derived: Mapping[str, Any]) -> bool:
+    """Whether row `key` needs the format-options step after detection (D1 §6).
+
+    A row that fits any entity is described by the household; a row that
+    publishes tomorrow on a second entity shows it pre-filled; any other row
+    only when a required field is left without a default or a derived value.
+    """
+    if formats.entry(key).platform is None or formats.tomorrow_entity(key) is not None:
+        return True
+    return any(
+        field.required
+        and not field.advanced
+        and field.default is None
+        and derived.get(field.key) in (None, "")
+        for field in format_fields(key)
+    )
+
+
+def format_options_schema(
+    key: str,
+    *,
+    values: Mapping[str, Any],
+    currency: str | None,
+    second_entity: str | None,
+) -> vol.Schema:
+    """Render row `key`'s options from its schema, and tomorrow's entity (D1 §6).
+
+    The site's currency is suggested where neither the entity's unit nor a stored
+    answer gives one.
+    """
+    schema = render(
+        format_fields(key),
+        translation_prefix=FORMAT_OPTIONS_PREFIX,
+        values=values,
+        suggested={"currency": currency} if currency else None,
+    )
+    if formats.tomorrow_entity(key) is None:
+        return schema
+    platform = formats.entry(key).platform
+    marker = (
+        vol.Optional("second_entity_id", default=second_entity)
+        if second_entity
+        else vol.Optional("second_entity_id")
+    )
+    return schema.extend(
+        {
+            marker: EntitySelector(
+                EntitySelectorConfig(integration=platform) if platform else EntitySelectorConfig()
+            )
         }
     )
 
@@ -1579,6 +1653,7 @@ __all__ = [
     "CARRIER_SENSOR",
     "DEFAULT_SITE_NAME",
     "EXPORT_NONE",
+    "FORMAT_OPTIONS_PREFIX",
     "FUSE_RATINGS",
     "METER_CHANGE",
     "METER_OK",
@@ -1609,6 +1684,9 @@ __all__ = [
     "export_amounts_schema",
     "export_schema",
     "fixed_price_schema",
+    "format_fields",
+    "format_needs_step",
+    "format_options_schema",
     "limits_schema",
     "meter_confirm_schema",
     "meter_data",

@@ -206,6 +206,7 @@ from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
 from .providers.meters.recorder import async_register_history, recorder_loaded
 from .providers.prices import (
+    ActionSource,
     EntitySource,
     ManualSource,
     NordpoolActionSource,
@@ -1153,13 +1154,26 @@ def _price_source(
             publication_time=options.get("publication_time"),
         )
     if key == "entity":
-        adapter = formats.build(str(options["format"]))
+        # By the row's kind, with the options the flow stored for it (D1 §2).
+        row_key = str(options["format"])
+        adapter = formats.build(row_key, options.get("format_options") or {})
+        if formats.entry(row_key).kind is formats.FormatKind.ACTION:
+            # `ActionSource` keys itself by its row per instance, so two action
+            # rows in one site keep apart in the raw store (D-0101); the protocol
+            # declares `key` a class variable for the sources that have one.
+            return ActionSource(  # type: ignore[return-value]
+                hass,
+                adapter=adapter,  # type: ignore[arg-type]
+                site_currency=currency,
+                tz=tz,
+            )
         return EntitySource(
             hass,
             entity_id=str(options["entity_id"]),
             adapter=adapter,  # type: ignore[arg-type]
             site_currency=currency,
             tz=tz,
+            second_entity_id=options.get("second_entity_id") or None,
         )
     if key == "fixed":
         return ManualSource(
