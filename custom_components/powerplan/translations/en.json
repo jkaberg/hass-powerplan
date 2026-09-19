@@ -867,6 +867,7 @@
             "name": "Reason",
             "state": {
               "already_at": "Already set",
+              "planned": "Run planned",
               "already_sent": "Sent, waiting for the device to confirm",
               "readback_predates": "Sent, the device has not reported since",
               "unavailable_retrying": "The device is not answering; trying again",
@@ -1754,6 +1755,7 @@
     "action_reason": {
       "options": {
         "already_at": "Already at {value}",
+        "planned": "Planned from {time} · {kwh} kWh",
         "already_sent": "{value} sent, waiting for the device to confirm",
         "readback_predates": "{value} sent, the device has not reported since",
         "unavailable_retrying": "The device is not answering; trying again",

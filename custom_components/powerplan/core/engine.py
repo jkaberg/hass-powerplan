@@ -1073,14 +1073,6 @@ class Engine:
         self._zones: tuple[ZoneSpec, ...] = tuple(zones)
         self._accounting = accounting
         self._forecasts = forecasts
-        #: `_planned_kwh` memoised per load, keyed on the plan's own `built_at`
-        #: (perf only, WP6.1's own gap found while profiling the benchmark
-        #: runner - D-0321): a plan is re-cut roughly every 900 s but `_warnings`
-        #: asks the same `[window_start, window_end)` of it every 10 s tick, so
-        #: without this the slot walk repeats ~90× for an unchanged answer.
-        self._planned_kwh_cache: dict[
-            str, tuple[datetime, dict[tuple[datetime, datetime], float]]
-        ] = {}
         #: One base `LoadCtx` per load for the tick in progress, keyed against that
         #: tick's own `Inputs` (`_ctx`).
         self._ctx_inputs: Inputs | None = None
@@ -1902,29 +1894,6 @@ class Engine:
 
     # ----------------------------------------------------------- the warnings #
 
-    def _cached_planned_kwh(
-        self, load_id: str, plan: Plan | None, start: datetime, end: datetime
-    ) -> float:
-        """Return `_planned_kwh(plan, start, end)`, memoised per plan (perf, D-0321).
-
-        `_warnings` asks the same handful of `[start, end)` windows of the same
-        plan every tick until the next replan (~90× at 10 s ticks); the plan's
-        own `built_at` is the cache's invalidation key, so a stale entry can
-        never survive a replan.
-        """
-        if plan is None:
-            return 0.0
-        cached = self._planned_kwh_cache.get(load_id)
-        if cached is None or cached[0] != plan.built_at:
-            cached = (plan.built_at, {})
-            self._planned_kwh_cache[load_id] = cached
-        by_window = cached[1]
-        value = by_window.get((start, end))
-        if value is None:
-            value = _planned_kwh(plan, start, end)
-            by_window[(start, end)] = value
-        return value
-
     def _warnings(  # noqa: PLR0917 - the tick's threaded inputs, positional by design
         self,
         runtime: RuntimeState,
@@ -1939,8 +1908,8 @@ class Engine:
 
         The expectation for a coming window's uncontrolled term is D10's baseline
         when it clears `BASELINE_CONFIDENCE`, else the EMA held for the window
-        (D-0319) - plus what the plans intend to move in it, plus what an
-        urgent demand will take whether it is planned or not.
+        (D-0319) - plus what a demand with no vote will take. What a plan
+        moves is not counted: D6 holds it under the ceiling (D-0627).
         """
         cfg = inputs.site.engine
         warnings: list[SiteWarning] = []
@@ -1960,14 +1929,12 @@ class Engine:
             if expected > 0.0:
                 drivers.append(("uncontrolled", expected))
             for view in views:
-                planned = self._cached_planned_kwh(
-                    view.load_id, plans.get(view.load_id), start, end
-                )
-                if planned <= 0.0 and _unplanned_want(view, plans.get(view.load_id), start, end):
-                    planned = max(0.0, view.max_w) / 1000.0 * hours
-                if planned > 0.0:
-                    drivers.append((view.load_id, planned))
-                    expected += planned
+                # A plan's energy is paced under the ceiling by D6, so it never causes a
+                # breach: only a demand with no vote does (D-0627).
+                urgent = _urgent_kwh(view, plans.get(view.load_id), start, end)
+                if urgent > 0.0:
+                    drivers.append((view.load_id, urgent))
+                    expected += urgent
             if expected >= cfg.warn_fraction * limit and start not in warned:
                 warned.add(start)
                 warning = SiteWarning(
@@ -2803,30 +2770,28 @@ def _expected_uncontrolled_kwh(
     return 0.0 if ema is None else ema / 1000.0 * hours
 
 
-def _planned_kwh(plan: Plan | None, start: datetime, end: datetime) -> float:
-    """Return what a plan intends to move inside `[start, end)` (D5 §4)."""
-    if plan is None:
+def _urgent_kwh(view: LoadView, plan: Plan | None, start: datetime, end: datetime) -> float:
+    """Return what a demand with no vote takes in `[start, end)`: `max_w`, bounded by its need."""
+    if not _unplanned_want(view, plan, start, end):
         return 0.0
-    total = 0.0
-    for slot in plan.slots_between(start, end):
-        # What the store draws holding its setpoint is in the window too (D-0501).
-        overlap = (min(slot.end, end) - max(slot.start, start)).total_seconds()
-        if overlap <= 0.0 or slot.hours <= 0.0:
-            continue
-        total += (slot.kwh + slot.hold_kwh) * (overlap / (slot.hours * 3600.0))
-    return total
+    kwh = max(0.0, view.max_w) / 1000.0 * (end - start).total_seconds() / 3600.0
+    if view.demand.required_kwh is None:
+        return kwh
+    return min(kwh, max(0.0, view.demand.required_kwh))
 
 
 def _unplanned_want(view: LoadView, plan: Plan | None, start: datetime, end: datetime) -> bool:
     """Return whether this load will take power in a window nothing planned.
 
-    The four cases with no vote - a force, a min-SoC floor, a legionella cycle, a
-    comfort violation - take their power whatever the price says, so the warning
-    has to count them (§5.4's "reserved unplanned wants").
+    The cases with no vote - a min-SoC floor, a legionella cycle, a comfort
+    violation - take their power whatever the price says, so the warning has to
+    count them (§5.4's "reserved unplanned wants"). Their plan is `urgent` and
+    carries no energy, the reading `_reserved_by` makes too (D-0255, D-0627). A
+    `force` plan is cut to the headroom like any other and is not counted.
     """
     if not view.demand.wants or view.demand.price_sensitive:
         return False
-    return plan is None or plan.mode is PlanMode.NONE
+    return plan is None or plan.mode in (PlanMode.NONE, PlanMode.URGENT)
 
 
 #: A live over-projection is worth a warning only when the household itself is

@@ -255,14 +255,16 @@ Computed in the tick from the planning cycle's artefacts, cheap:
 ```
 for each upcoming window W within warn_horizon_h (3):
     expected_kwh = baseline_kwh(W) (D10, if confidence ≥ 0.6 else current uncontrolled EMA × window_h)
-                 + Σ planned_kwh(load, W) (D5)  + Σ reserved unplanned wants (comfort deficits due, cycles)
+                 + Σ no-vote wants: min(max_w × window_h, required_kwh)   (plan absent, `none` or `urgent`; never a plan's energy, D-0627)
     if expected ≥ warn_fraction (0.95) × ceiling_kwh(W):
         Warning(kind="peak", window=W, expected, ceiling, drivers=[top 3 contributors], advice=[what the controller will do; what the user could do])
-live: if projected_kwh > ceiling and uncontrolled share > 0.6: Warning(kind="peak_uncontrolled", drivers=["uncontrolled load"], advice=["something not controlled by powerplan is running - oven/sauna?"])
+live: if projected_kwh > ceiling and uncontrolled share > 0.6: Warning(kind="peak_uncontrolled", drivers=["uncontrolled load"], advice=["something powerplan doesn't control is running - oven/sauna?"])
 edge-triggered per window; cleared when expected < 0.85 × ceiling; at most one notification per window
 ```
 
-**As wired (D-0276).** A warning is a `SiteWarning` in the snapshot (`binary_sensor.<site>_peak_warning`, `sensor.<site>_next_peak_warning`), a `powerplan_peak_warning` event with `cleared: false` and a `Notification(category="peak_warning", key=<window key>)`; D8's policy makes the notification one persistent notification per window key (interval 1 h) or a `notify` call. The clear is the same three: the event with `cleared: true`, and a notification with `cleared: true` that resets the policy's key and dismisses the persistent one. Under the EMA variant the lead is what the time constant gives: on `oven_sunday_roast` (2.5 kW into a 3 kW ceiling from 15:25) the 16:00 window's warning is first published at 15:39, 21 minutes ahead - D9 §5.3's ≥ 20 min holds by a minute, and WP5.2's baseline term is what turns it into hours.
+**A plan's energy isn't in `expected`.** D6 caps every plan-driven grant at the ceiling (INV-1), so a plan never causes a breach. What can breach is the household (the uncontrolled term) and a demand with no vote: a violated comfort floor, which D6 §5.3 serves past the ceiling, and a legionella cycle or a min-SoC floor, which take their power first. A no-vote demand's plan is `urgent` and carries no energy, so it's counted at `max_w × window_h`, bounded by its `required_kwh`, the reading `_reserved_by` makes (D-0255). Counting plans, an EV plan with no car connected plus the water heater's plan warned "heading for 11.04 kWh against a target of 10" for an hour D6 would have held at 9.7. `drivers` names the same terms, so its advice ("shift what you can") is about loads the household runs (D-0627).
+
+A warning is a `SiteWarning` in the snapshot (`binary_sensor.<site>_peak_warning`, `sensor.<site>_next_peak_warning`), a `powerplan_peak_warning` event with `cleared: false` and a `Notification(category="peak_warning", key=<window key>)`. D8's policy makes the notification one persistent notification per window key (interval 1 h) or a `notify` call. The clear is the same three: the event with `cleared: true`, and a notification with `cleared: true` that resets the policy's key and dismisses the persistent one. With the EMA the lead is what the time constant gives: on `oven_sunday_roast` (2.5 kW into a 3 kW ceiling from 15:25) the 16:00 window's warning is first published at 15:57. The EMA (τ 900 s) crosses 0.95 × 3 kWh at 3.13 − 2.5·e^(−t/15 min) = 2.85, t ≈ 33 min, so the 3-minute lead is the EMA's own. The baseline term is what turns it into hours, and the EMA only serves a site until its baseline is confident (D-0276).
 
 ### 5.5 Lifecycle (INV-48)
 
@@ -358,20 +360,20 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 ## 9. Tests that must exist before merge
 
 1. `core/engine.py` imports nothing from `homeassistant` (INV-2, an AST test).
-2. `hass.services.async_call` appears only in `writegate.py`; `hass.states.get` only in `runtime.py` and `providers/` (INV-3, a grep test).
-3. Tick order: a scenario with a stale meter produces frozen grants and still publishes (INV-17, INV-44).
-4. No trigger fires a full tick at `HH:00:00`; the window fallback is a no-op when the register report arrived (INV-43); a register report that lands while the lock is held is processed by the trailing tick, never dropped (INV-13).
-5. Per-load exception isolation: one raising load, others granted normally; the raising one held (INV-45).
-6. Engine exception ×3 → safe mode: all loads released, observe, repair created; a later restart clears it.
-7. Startup order: release → restore → provision → first tick → platforms (INV-48); a loop left in eco by a previous run is restored before the first allocation.
-8. Unload releases every load and flushes the store; a shed never survives unload (INV-26).
-9. Subentry add/remove/update hot paths. **As asserted (`tests/flows/test_subentry_hot_paths.py`):** a second load added beside a first, no reload (`async_reload` spied, zero calls); removed - dropped from the engine, its entities gone from both the registry and the state machine, its `loads`/`load_meters`/`plans.plans` rows gone from the store, the other load untouched; a circuit's membership shrinks when a member load is removed; a circuit added and removed on its own, no reload; the site's own `entry.data` changing still reloads (INV-48).
-10. Store migrations: v0 → v1 fixture; unknown section preserved; corrupt file renamed and recovered.
-11. Save throttle: 100 samples in 10 s → exactly 2 writes (one per 5 s) and a 1 s cadence never starves the save; an anchor change writes at once; stop flushes (INV-14).
-12. Peak warning fires for a window where baseline + plan > 0.95 ceiling; clears below 0.85; one notification per window. **As asserted:** the EMA half in `test_the_ema_peak_warning_fires_once_per_window_and_clears`, the baseline half in `test_the_baseline_peak_warning_replaces_the_ema_term_when_confident` (`tests/core/engine/test_engine.py`).
+2. `hass.services.async_call` only appears in `writegate.py`, `hass.states.get` only in `runtime.py` and `providers/` (INV-3, a grep test).
+3. Tick order: a scenario with a stale meter gives frozen grants and still publishes (INV-17, INV-44).
+4. No trigger fires a full tick at `HH:00:00`, the window fallback is a no-op when the register report arrived (INV-43), and a register report landing while the lock is held is processed by the trailing tick, never dropped (INV-13).
+5. Per-load exception isolation: one raising load, others granted normally, the raising one held (INV-45).
+6. Engine exception ×3 → safe mode: all loads released, observe, repair created. A later restart clears it.
+7. Startup order: release → restore → provision → first tick → platforms (INV-48). A loop left in eco by a previous run is restored before the first allocation.
+8. Unload releases every load and flushes the store, a shed never survives unload (INV-26).
+9. Subentry add/remove/update without reload (`tests/flows/test_subentry_hot_paths.py`): a second load added next to a first with zero `async_reload` calls; removed, it's gone from the engine, the registry, the state machine and its `loads`/`load_meters`/`plans.plans` store rows, and the other load untouched; a circuit's membership shrinks when a member is removed; a circuit added and removed on its own without reload; the site's own `entry.data` changing still reloads (INV-48).
+10. Store migrations: v0 → v1 fixture, unknown section kept, corrupt file renamed and recovered.
+11. Save throttle: 100 samples in 10 s → exactly 2 writes (one per 5 s), a 1 s cadence never starves the save, an anchor change writes at once, stop flushes (INV-14).
+12. Peak warning fires for a window where baseline + no-vote wants ≥ 0.95 ceiling, clears below 0.85, one notification per window, and a plan's energy never raises it. In `tests/core/engine/test_engine.py`: the EMA half (`test_the_ema_peak_warning_fires_once_per_window_and_clears`), the baseline half (`test_the_baseline_peak_warning_replaces_the_ema_term_when_confident`), and the plan half (`test_a_plan_the_allocator_paces_never_raises_the_peak_warning`: 2.5 kW of baseline and a 7.36 kW EV plan against 10 kWh stays silent; `test_only_a_demand_with_no_vote_counts_towards_the_peak_warning`).
 13. Tick budget: a 20-load synthetic site ticks in < 50 ms (perf test, D9).
 14. Clock jump handling.
-15. Snapshot schema golden: field set stable (D8 depends on it).
+15. Snapshot schema golden: the field set is stable (D8 depends on it).
 
 4, 6, 7, 8, 14 and 17 are `tests/runtime/test_runtime.py`, 10 and 11 `tests/runtime/test_storage.py`, the two scenario rows `tests/scenarios/test_phase1.py`, 9 `tests/flows/test_subentry_hot_paths.py`, 13 the perf tier's.
 16. The accounting close runs in `plan()` once per closed price slot and never in `tick()` (INV-68). A planning cycle skipped for an hour closes the four-slot backlog on the next one, oldest first. `month_closed` is emitted exactly once per rollover. A frozen tick (stale meter) still lets the load meters integrate.
@@ -406,5 +408,7 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 **Queue ticks instead of skipping when the lock is held.** *For:* no lost triggers, a register report is the window boundary. *Against:* a backlog of stale ticks acting on old inputs, and the next trigger re-reads everything anyway. **Decision:** at most one pending trailing tick that re-reads state on release, so the report is never lost and nothing stale is replayed.
 
 **A cron at `HH:00` as the window boundary.** *For:* simple. *Against:* INV-43, and the clock and the register disagree about when a window ends - the old controller did exactly this and gave zero allowance for over a minute at every boundary. **Decision:** the register report is the boundary.
+
+**Count the plans in the peak warning.** *For:* the plan is what the controller intends, so "baseline + plans > ceiling" says the plan won't be met as written, and it doubles as a check on the planner. *Against:* D6 holds every plan under the ceiling, so the window can't breach from a plan, and the household is told about something it can't act on and powerplan won't do. The planner fills to `(target − ε) × 0.95 − baseline` and the warning fires at `0.95 × target`, a 0.95·ε gap any baseline error or thermostat hold crosses. A plan that falls short is `deadline_at_risk`'s job, and a planner inconsistency a test's. **Decision:** the uncontrolled term and the no-vote demands only (D-0627).
 
 **One global store for all sites.** *For:* fewer files. *Against:* sites are independent, a corrupt file should take down one site and not all. **Decision:** per site.

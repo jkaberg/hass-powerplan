@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.number import NumberEntity, NumberMode, RestoreNumber
@@ -699,6 +699,12 @@ def _why(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     return {"why_party": party, "why_until": _clock(plan.next_start), "why_difference": str(fall)}
 
 
+#: `plan_status`'s own `reason_key` beside `ActionReason`'s: a run is planned ahead (D-0630).
+PLANNED_REASON: Final = "planned"
+#: The states whose reason is the run ahead rather than the gate's (D8 §5.16, D-0630).
+_WAITING_FOR_A_RUN: Final = frozenset({"waiting", "idle"})
+
+
 def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, Any]:
     """Return what the merged rows said: the next slot, the plan, the shed, comfort, the session.
 
@@ -743,6 +749,12 @@ def plan_status_attributes(status: LoadStatus, runtime: Runtime) -> dict[str, An
                 "confidence": plan.confidence.value,
             }
         )
+        if out["next_run"] and plan_state(status, runtime) in _WAITING_FOR_A_RUN:
+            # The run ahead is the reason, not the gate's last word on the dial (D-0630).
+            kwh = round(plan.planned_kwh, 1)
+            out["reason"] = f"planned from {out['next_run']} · {kwh} kWh"
+            out["reason_key"] = PLANNED_REASON
+            out["reason_params"] = {"time": out["next_run"], "kwh": kwh}
     comfort = status.comfort
     if comfort is not None:
         out.update(

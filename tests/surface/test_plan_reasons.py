@@ -44,7 +44,7 @@ from custom_components.powerplan.core.model import (
     PlanMode,
     PlanSlot,
 )
-from custom_components.powerplan.load_entities import LOAD_SENSORS
+from custom_components.powerplan.load_entities import LOAD_SENSORS, PLANNED_REASON
 from custom_components.powerplan.sensor import SENSORS, planned_kwh_next_day
 from tests.core.loads.conftest import (
     NOW,
@@ -310,8 +310,9 @@ def test_17_every_key_is_translated_as_a_label_and_a_sentence(document: str) -> 
     body = DOCUMENTS[document]
     labels = body["entity"]["sensor"]["plan_status"]["state_attributes"]["reason_key"]["state"]
     sentences = body["selector"]["action_reason"]["options"]
-    assert set(labels) == {key.value for key in ActionReason}
-    assert set(sentences) == {key.value for key in ActionReason}
+    keys = {key.value for key in ActionReason} | {PLANNED_REASON}
+    assert set(labels) == keys
+    assert set(sentences) == keys
     assert not [key for key, text in labels.items() if "{" in text]
 
 

@@ -36,7 +36,7 @@ from .context import (
 from .plan import build_plan, with_hold_of
 
 if TYPE_CHECKING:
-    from ..model import Demand, Plan, Slot
+    from ..model import Demand, Plan, PlanSlot, Slot
 
 __all__ = [
     "COMMON_SCHEMA",
@@ -257,17 +257,22 @@ def plan_all(
         )
         plan = _with_desired(_closed_outside(plan, view, ctx), view)
 
-        take = before is None or should_adopt(
-            before,
-            plan,
-            ctx.hysteresis,
-            curve=pctx.curve_in,
-            tz=ctx.tz,
-            now=now,
-            inputs_changed=inputs_changed(before, plan),
-            stale=ctx.stale,
+        held = None if before is None else with_hold_of(before, plan)
+        take = (
+            held is None
+            or not _fits(held, pctx.headroom, now, ctx.eps_w)
+            or should_adopt(
+                held,
+                plan,
+                ctx.hysteresis,
+                curve=pctx.curve_in,
+                tz=ctx.tz,
+                now=now,
+                inputs_changed=inputs_changed(held, plan),
+                stale=ctx.stale,
+            )
         )
-        chosen = plan if take or before is None else with_hold_of(before, plan)
+        chosen = plan if take or held is None else held
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)
@@ -305,22 +310,49 @@ def _closed_outside(plan: Plan, view: LoadView, ctx: SiteContext) -> Plan:
     return replace(plan, slots=slots)
 
 
+def _planned_draw_w(slot: PlanSlot) -> float:
+    """Return the mean watts `slot` plans to draw, bounded by its envelope (§5.1, D-0629).
+
+    The same number as the envelope where a strategy cut the slot to its energy
+    (`deadline_fill`); less where the envelope is a cap the load runs free under -
+    a banked or held thermostat - whose standing loss is all it will take. A slot
+    told to stand still, or one that discharges, takes nothing from the loads below.
+    """
+    if slot.envelope_w is not None and slot.envelope_w <= 0.0:
+        return 0.0
+    draw = (slot.kwh + slot.hold_kwh) / slot.hours * 1000.0
+    return draw if slot.envelope_w is None else min(draw, slot.envelope_w)
+
+
+def _fits(plan: Plan, room: Headroom, now: datetime, tolerance_w: float) -> bool:
+    """Return whether `plan`'s slots ahead fit the room left above it (§5.9, D-0628).
+
+    The hysteresis keeps a plan against price, never against the room: a plan
+    whose slots overlap what a higher-priority load took since it was built is not
+    one D6 can follow. `tolerance_w` is D3's ε, so a room that moves by watts from
+    one cycle to the next does not re-cut a flat night (INV-32).
+    """
+    return all(
+        _planned_draw_w(slot) <= room.w_at(slot.start) + tolerance_w
+        for slot in plan.slots
+        if slot.end > now
+    )
+
+
 def _reserved_by(chosen: Plan, view: LoadView, slots: Sequence[Slot]) -> dict[datetime, float]:
     """Return the watts per slot `chosen` takes from the loads below it (§5.1).
 
-    A planned load reserves its envelope. A load with **no vote** - a tank under
-    its floor, a car under its minimum SoC, a legionella cycle (`PlanMode.URGENT`) -
-    has no envelope, yet D6 serves it first and at full power until it is out
-    of trouble (INV-1). It reserves `max_w` for as long as that takes at `max_w`,
-    so the plans below it do not count on headroom it is about to use and re-cut
-    every time it crosses its floor (`design/DECISIONS.md` D-0255).
+    A planned load reserves what it plans to draw (`_planned_draw_w`, D-0629). A
+    load with **no vote** - a tank under its floor, a car under its minimum SoC, a
+    legionella cycle (`PlanMode.URGENT`) - has no envelope, yet D6 serves it first
+    and at full power until it is out of trouble (INV-1). It reserves `max_w` for
+    as long as that takes at `max_w`, so the plans below it do not count on
+    headroom it is about to use and re-cut every time it crosses its floor
+    (`design/DECISIONS.md` D-0255).
     """
     if chosen.mode is not PlanMode.URGENT:
-        return {
-            slot.start: slot.envelope_w
-            for slot in chosen.slots
-            if slot.envelope_w is not None and slot.envelope_w > 0.0
-        }
+        draws = {slot.start: _planned_draw_w(slot) for slot in chosen.slots}
+        return {start: watts for start, watts in draws.items() if watts > 0.0}
     watts = view.demand.max_w
     left = view.demand.required_kwh
     out: dict[datetime, float] = {}

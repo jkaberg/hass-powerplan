@@ -867,6 +867,7 @@
             "name": "Årsak",
             "state": {
               "already_at": "Allerede innstilt",
+              "planned": "Kjøring planlagt",
               "already_sent": "Sendt, venter på at apparatet bekrefter",
               "readback_predates": "Sendt, apparatet har ikke meldt fra siden",
               "unavailable_retrying": "Apparatet svarer ikke; prøver igjen",
@@ -1754,6 +1755,7 @@
     "action_reason": {
       "options": {
         "already_at": "Står allerede på {value}",
+        "planned": "Planlagt fra {time} · {kwh} kWh",
         "already_sent": "{value} sendt, venter på at apparatet bekrefter",
         "readback_predates": "{value} sendt, apparatet har ikke meldt fra siden",
         "unavailable_retrying": "Apparatet svarer ikke; prøver igjen",

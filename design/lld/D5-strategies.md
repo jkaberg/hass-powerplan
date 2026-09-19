@@ -160,20 +160,20 @@ class Strategy(Protocol):
 
 ```
 plan_all(loads, curves, ctx, now):
-    headroom[slot] = (D2.target_w_at(slot.start, target) − ε_w) × ladder.mid − baseline_w(slot)   # the ceiling D6 defends: the flat target for that window (T_kw / weight; ∞ outside eligibility) less D3's ε, at the ladder's stage-2 threshold (D-0257) - no slack or free ride for the future; baseline from D10 or the current uncontrolled EMA
+    headroom[slot] = (D2.target_w_at(slot.start, target) − ε_w) × ladder.mid − baseline_w(slot)   # the ceiling D6 defends: the flat target for that window (T_kw / weight; ∞ outside eligibility) less D3's ε, at the ladder's stage-2 threshold (D-0257); no slack or free ride for the future; baseline from D10 or the current uncontrolled EMA
     for load in sorted(loads, key=priority, reverse=True):              # heat pumps → floors → radiators → tank → EV
         if load.mode in {off, delegated}: reserve nameplate in headroom for delegated; continue
         plan = strategy(load).plan(demand(load), ctx_for(load, headroom), params)
         plan = combinators(load)(plan)
-        plan = with_desired(plan)                                          # a thermostatic load's active slots want COMFORT when the strategy did not say (D-0252)
-        for slot in plan.slots: headroom[slot] −= slot.envelope_w        # reservation for lower priorities
+        plan = with_desired(plan)                                          # a thermostatic load's active slots want COMFORT when the strategy didn't say (D-0252)
+        for slot in plan.slots: headroom[slot] −= reserved(slot)          # min(envelope_w, (kwh + hold_kwh) / h); 0 when envelope_w = 0 (D-0629)
         # a plan with no vote (URGENT) reserves demand.max_w until required_kwh is covered at that power (D-0255)
-        adopt or keep old (5.9)
+        adopt or keep old (5.9); keep only while old fits headroom + ε_w in every slot ahead (D-0628)
     return SitePlan(plans, headroom_left, adopted)
 ```
-*(D13 O23, TS.7.)* **A priced limit is a power tier on price, not headroom.** Where D2's `priced_limit_now` gives a limit whose excess is priced (SI's agreed power, LU's reference power), each slot offers two tiers: capacity up to `priced.w − baseline_w − Σ reserved` at the composed price, and capacity above it - up to the ordinary headroom - at the composed price **plus** the surcharge (per kWh; SI's per-kW excess converted per window). `deadline_fill` sorts `(slot, tier)` pairs by `(price, index, tier)` and fills cheapest-first, so a plan crosses the limit only where that is still the cheapest way to cover what it needs before its deadline; the greedy stays exact because the tiers of one slot are ordered by price. The envelope it publishes is what D6 grants (D6 §5.3 step 5). **A load with its own tariff** (G13) is planned on its own curve (D1 §5.3); **a load the grid switches** (G14: CZ/SK HDO) has every slot outside its allowed windows at cap 0.
+**A priced limit is a power tier on price, not headroom** (D13 O23). Where D2's `priced_limit_now` gives a limit whose excess is priced (SI's agreed power, LU's reference power), each slot offers two tiers: capacity up to `priced.w − baseline_w − Σ reserved` at the composed price, and capacity above it, up to the ordinary headroom, at the composed price **plus** the surcharge (per kWh, SI's per-kW excess converted per window). `deadline_fill` sorts `(slot, tier)` pairs by `(price, index, tier)` and fills cheapest-first, so a plan only crosses the limit where that's still the cheapest way to cover what it needs before its deadline. The greedy stays exact since the tiers of one slot are ordered by price. The envelope it publishes is what D6 grants (D6 §5.3 step 5). On a flat day the tier fills under the limit first (D-0609). **A load with its own tariff** (G13) is planned on its own curve (D1 §5.3, `Curves.for_load`). **A load the grid switches** (G14: CZ/SK HDO) has every slot outside its allowed windows at cap 0, whatever the strategy (D-0608).
 
-No global solver. The EV, lowest priority, takes the residual (HLD non-goal). Loads of equal priority are walked in `load_id` order, so two identical loops are always planned in the same order. What a slot reserves is its `envelope_w` - the same number the allocator will cap the grant at - which for a partly filled slot is less than the load's maximum: a loop taking 480 W of a 960 W element leaves the charger 4 520 W of a 5 kW target, not 4 040. `adopted` names the loads whose plan actually changed, which is the edge D7 fires `plan_adopted` on (§5.12).
+No global solver. The EV, lowest priority, takes the residual (HLD non-goal). Loads of equal priority are walked in `load_id` order, so two identical loops are always planned in the same order. What a slot reserves is its planned mean draw, `(kwh + hold_kwh) / h`, bounded by its `envelope_w` (D-0629). For `deadline_fill` the two are equal: a loop taking 480 W of a 960 W element leaves the charger 4 520 W of a 5 kW target, not 4 040. They differ where the envelope is a cap the load may run free under: `heat_capacitor`'s bank rows publish `max_w` so the thermostat can reach +1 K, and its hold rows publish `None`. There the room the store won't use goes to the loads below. The ceiling is energy per window and D6 serves priority live, so the load below yields when the store does run. Reserving the envelope instead, three banked floors on the reference house reserved 2 080 W in quarters planned at 0 kWh and the EV lost that room all night. `adopted` names the loads whose plan actually changed, the edge D7 fires `plan_adopted` on (§5.12).
 
 ### 5.2 `deadline_fill`: the exact greedy
 
@@ -246,13 +246,14 @@ Cooling: the signs flip (`store.direction`).
 ```
 should_adopt(old, new):
     if old is None or old.deadline passed or old.covered == False and new.covered: adopt
-    if old has no active slot ahead and new has one: adopt                      # a spent plan is not a plan to keep (D-0253)
+    if old has no active slot ahead and new has one: adopt                      # a spent plan isn't a plan to keep (D-0253)
     if inputs_changed (deadline, requirement ±10 %, mode, presence, curve materially changed): adopt
+    if old reserves more than headroom_now + ε_w in any slot ahead: adopt          # the room moved under it, not a price decision (HLD INV-32, D-0628)
     h = policy.threshold(day) × (2 if stale else 1)
     adopt if new.cost < old.cost − h
-commitment: a slot that has started, or is KNOWN and starts within `commit_min` (30) minutes, moves only if the improvement exceeds 2h (avoid churn at the boundary)
-replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, service `replan`, startup (D7 §5.2)
-                 (Phase 7) production reading ≥ 30 % off its forecast for 15 min (§2)
+commitment: a slot that has started, or is KNOWN and starts within `commit_min` (30) minutes, only moves if the improvement exceeds 2h (no churn at the boundary)
+replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, action `replan`, startup (D7 §5.2),
+                 a production reading ≥ 30 % off its forecast for 15 min (§2)
 ```
 
 `h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
@@ -349,6 +350,9 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 
 22. Holding energy (D-0501): a slot `heat_capacitor` holds or banks in, or `best_save` leaves free, carries `hold_kwh` - the store's loss coefficient × (target − outdoor) where known, else the load's measured holding draw - and a coast or postponed slot carries none. `hold_kwh` is priced in `cost_estimate` and never counted in `planned_kwh` (`tests/core/strategies/test_22_holding_energy.py`).
 
+26. *(D-0628)* A kept plan that no longer fits: the EV plans beside a 4 kWh tank plan; the tank (higher priority) re-plans to 7.6 kWh in the same night slots; the EV's fresh plan is under the cost hysteresis, yet the EV adopts it, and no slot ahead holds more than the room + ε_w. A room that moves by less than ε_w keeps the plan (no churn, §9 3).
+27. *(D-0629)* A banked floor holding at +1 K (envelope `max_w`, 0 kWh, hold 0.04 kWh a quarter) reserves 160 W, not `max_w`, and the EV below it plans into the rest; a `deadline_fill` slot still reserves its envelope; a slot at `envelope_w = 0` reserves nothing.
+
 ## 10. Deliberately deferred
 
 - Curtailing export or commanding an inverter's own export (HLD non-goal).
@@ -368,6 +372,12 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 **Percentile Δ vs. cost-optimal banking for `heat_capacitor`.** *For cost-optimal:* better savings on paper. *Against:* it needs an accurate thermal model to beat a rule, and the rule fails as "slightly less saving" while the model fails as the old controller's overshoot to 29 °C. **Decision:** quantile rule bounded by the store, deadline fills for the parts that matter. Revisit when D10's fits are trusted.
 
 **Absolute hysteresis.** Refused in D1 (INV-8), the planner inherits the policy.
+
+**Keep a plan by hysteresis even when the room under it moved.** *For:* INV-32's letter - fewer adoptions, fewer `plan_adopted` events, a charger that doesn't re-decide, and the commitment window protects a slot about to start. *Against:* the hysteresis weighs cost, and a plan whose slots overlap what a higher-priority load took since isn't cheaper or dearer, it can't be followed. D6 caps it live, so it shows up as a plan over the limit and a warning, then under-delivery. **Decision:** replace it when it overlaps by more than ε_w (D-0628). *Clip the kept plan to the room instead:* keeps the shape, however the clipped energy is lost and the plan no longer covers its requirement, so the next cycle replans anyway.
+
+**Reserve the cap a slot publishes.** *For:* the allocator may grant up to the envelope at any instant, so a lower plan counting on that room can be clipped live, and reserving the cap makes every plan feasible in the worst case. *Against:* the ceiling is energy per window. A thermostat banked at +1 K draws its standing loss, and reserving its full element all night takes the EV's room for energy nobody plans to use. D6 serves priority live, so the EV already yields when the slab runs. **Decision:** reserve the planned draw, bounded by the envelope (D-0629).
+
+**Plan to the bare `target − ε` instead of the ladder's stage-2 fraction.** *For:* the household set a limit and a guard band, and the extra 5 % is room left on the table every full hour, 0.485 kWh on a 10 kWh target. *Against:* D6's ladder reaches stage 2 when the projection passes 95 % of the ceiling. A plan cut to the bare target opens every planned full-power slot at 103 % of the ceiling, and the ladder sheds the bathrooms at the window boundary (D-0257). **Decision:** keep `× ladder.mid` until the ladder reads planned energy differently.
 
 **Replan on every price tick.** *For:* always current. *Against:* churn, the EV starts and stops. **Decision:** triggers + hysteresis + commitment.
 

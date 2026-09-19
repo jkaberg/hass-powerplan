@@ -2574,3 +2574,23 @@ The tariff summary drops "Your grid company decides this, and PowerPlan plans by
 
 The card files are copied as delivered, except `price-card.ts`, which keeps `spotFromStates` and `button.press`. Its backend pieces (a month-cost sensor, a compatibility command for the deleted websocket, D12 §9 25) aren't taken. Its Now-view layout is applied to `layout.py` as layout only (no peak-warning tile, one heading badge, no price track); its live-card patches go into the window, timeline and period-summary cards. The step fee comes from `level`. Unused `card_*` keys go. Affects D12 §5.17, §5.1, §9 29.
 **Rejected:** leaving `layout.py` alone - the removed tiles are laid out there.
+
+### D-0627 · The peak warning counts only what D6 won't hold under the ceiling
+
+A coming window's `expected_kwh` is the uncontrolled term (D10's baseline, else the EMA) plus, for each no-vote demand, `max_w × window_h` bounded by `required_kwh`. Plans don't count: D6 caps every plan-driven grant at the ceiling (INV-1), and only violated comfort floors and running cycles pass it. A warning of 11 kWh against 10 turned out to be 6.3 kWh of an EV plan with no car connected plus the tank's plan. `urgent` plans now count as no-vote. The roast scenario's lead falls to the EMA's (about 33 min to crossing, first seen 3 min before the window); D9 §5.3's ≥ 20 min stands for a confident baseline. A shorter EMA constant would warn on 5-minute bursts. Affects D7 §5.4, §9 12, §11.
+**Rejected:** keeping plans in the sum and fixing the planner - plans fill to within 0.95·ε of the warning threshold, so any baseline error trips it nightly.
+
+### D-0628 · A kept plan that no longer fits the room above it is replaced
+
+`plan_all` keeps a previous plan past the hysteresis (INV-32) only while every slot ahead reserves no more than the headroom the higher-priority loads left now, plus ε_w; otherwise the fresh plan is adopted. An EV plan kept from before the water heater re-planned twice left an hour at 10.7 kWh against a 10 kWh target. INV-32 protects against price noise, not against a plan overlapping room its betters took. Affects HLD INV-32; D5 §5.1, §5.9, §9 26, §11.
+**Rejected:** clipping the kept plan to today's room - the clipped energy is lost and the next cycle replans anyway.
+
+### D-0629 · A slot reserves what it plans to draw, not the cap it publishes
+
+A planned slot takes from the loads below it its planned mean draw, `(kwh + hold_kwh) / hours`, bounded by `envelope_w`; an envelope of 0 reserves nothing. For `deadline_fill` it's the same number; for `heat_capacitor`'s bank and hold rows it's what the store will actually take. Three banked floors reserved 2.1 kW all night while planning almost nothing, and the EV lost that room. `urgent` is unchanged (D-0255). Affects D5 §5.1, §9 27, §11.
+**Rejected:** reserving the cap - the ceiling is energy per window, and D6 serves priority live anyway.
+
+### D-0630 · A load waiting for its run says the run
+
+While `plan_status` is `waiting` or `idle` with a run ahead, `reason`, `reason_key` and `reason_params` describe it: `planned`, `{time, kwh}`, "Planned from 22:00 · 7.6 kWh"; otherwise they stay the gate's `ActionReason`. `planned` is `plan_status`'s own key beside the closed set. The appliances card adds "from 22:00". A tank read "Waiting for cheap power" with "Reason: Already set", which sounded like waiting to cool to its resting setpoint. Affects D8 §5.16, §9 39; D12 §5.6, §9 30.
+**Rejected:** a new `planned` state - `waiting` already means that, and the state set is what automations hold.

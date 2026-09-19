@@ -127,3 +127,11 @@ describe("guardUnknownCards (F7)", () => {
     expect(defined).toContain("powerplan-placeholder-card");
   });
 });
+
+describe("the run ahead (D-0630)", () => {
+  it("a waiting row can say when its run starts, in both languages", () => {
+    expect(STATUS_LABELS.nb!.from).toBe("fra {time}");
+    expect(STATUS_LABELS.en!.from).toBe("from {time}");
+    expect(rawStatus(entity("waiting"), undefined, { ...none, futureRun: true }, L).kind).toBe("waiting");
+  });
+});

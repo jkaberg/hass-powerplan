@@ -16,6 +16,7 @@ import json
 import time
 from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import datetime, timedelta
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from types import UnionType
@@ -45,6 +46,7 @@ from custom_components.powerplan.core.loads import Action, Mode, targets
 from custom_components.powerplan.core.loads import base as loads_base
 from custom_components.powerplan.core.loads.stores import EnergyStore
 from custom_components.powerplan.core.pricing import events as pricing_events
+from custom_components.powerplan.core.strategies.plan import build_plan
 from custom_components.powerplan.core.tariffs import Target
 from tests.core.engine.conftest import (
     START,
@@ -359,6 +361,87 @@ def test_the_baseline_peak_warning_replaces_the_ema_term_when_confident() -> Non
             break
 
     assert fired, "a baseline predicting 12 kW must warn even though the EMA (500 W) would not"
+
+
+def _overfull_ev_plan(load_id: str, at: datetime) -> model.Plan:
+    """Return a price plan charging at 7.36 kW for three hours from the next hour."""
+    origin = at.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    slots = [
+        model.PlanSlot(
+            start=origin + timedelta(minutes=15 * index),
+            end=origin + timedelta(minutes=15 * (index + 1)),
+            envelope_w=7_360.0,
+            kwh=1.84,
+            price=Decimal("0.50"),
+        )
+        for index in range(12)
+    ]
+    return build_plan(
+        load_id=load_id,
+        strategy="deadline_fill",
+        mode=model.PlanMode.PRICE,
+        slots=slots,
+        now=at,
+        currency="NOK",
+    )
+
+
+def test_a_plan_the_allocator_paces_never_raises_the_peak_warning() -> None:
+    """D7 §5.4 (D-0627): 2.5 kW of household and a 7.36 kW EV plan against 10 kWh stay quiet.
+
+    D6 caps every plan-driven grant at the ceiling (INV-1), so a plan's energy never
+    causes a breach. A warning seen on the reference house ("heading for 11.04 kWh
+    against a target of 10") added the plan of a charger with no car behind it.
+    """
+    cfg = site()
+    ev, loop = reference_loads()
+    engine = engine_for((ev, loop), cfg=cfg)
+    knobs = Knobs(target=Target(kind="kw", kw=10.0))
+    state = replace(
+        EngineState(),
+        plans=engine_module.PlansState(plans={ev.load_id: _overfull_ev_plan(ev.load_id, START)}),
+    )
+    for index in range(30):
+        at = START + timedelta(seconds=TICK_S * index)
+        inputs = replace(
+            inputs_at(cfg, at, grid_w=2_000.0, loads=both(at), knobs=knobs, curves_=curves()),
+            forecast_baseline=_RichBaseline(rate_w=2_500.0),
+        )
+        state, snapshot, effects = engine.tick(state, inputs)
+        assert not any(e.kind is EventKind.PEAK_WARNING for e in effects.ha_events)
+        assert not [w for w in snapshot.warnings if w.kind == "peak"]
+
+
+@dataclass(frozen=True)
+class _Want:
+    wants: bool
+    price_sensitive: bool
+
+
+@dataclass(frozen=True)
+class _View:
+    demand: _Want
+
+
+@pytest.mark.parametrize(
+    ("mode", "counted"),
+    [
+        (None, True),
+        (model.PlanMode.NONE, True),
+        (model.PlanMode.URGENT, True),
+        (model.PlanMode.PRICE, False),
+        (model.PlanMode.FORCE, False),
+    ],
+)
+def test_only_a_demand_with_no_vote_counts_towards_the_peak_warning(
+    mode: model.PlanMode | None, *, counted: bool
+) -> None:
+    """D7 §5.4 (D-0627): an `urgent` plan carries no energy yet takes `max_w`, so it counts."""
+    plan = None if mode is None else replace(_overfull_ev_plan("ev", START), mode=mode)
+    urgent: Any = _View(demand=_Want(wants=True, price_sensitive=False))
+    idle: Any = _View(demand=_Want(wants=False, price_sensitive=False))
+    assert engine_module._unplanned_want(urgent, plan, START, START) is counted
+    assert engine_module._unplanned_want(idle, plan, START, START) is False
 
 
 # --------------------------------------------------------------------------- #

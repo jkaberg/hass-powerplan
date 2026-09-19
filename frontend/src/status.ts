@@ -22,13 +22,13 @@ export const STATUS_LABELS: Record<string, Record<string, string>> = {
     running: "Går", charging: "Lader", forced: "Tvunget på", holding: "Holder", planned: "Planlagt", waiting: "Venter",
     paused: "Strupet", manual: "Manuell", off: "Av", unavailable: "Utilgjengelig",
     paused_reason: "pause for å holde effekttrinnet", manual_reason: "styres fra enheten", off_reason: "slått av i PowerPlan",
-    deadline: "frist {time}", target: "mål {v}", next: "Neste {time}",
+    deadline: "frist {time}", target: "mål {v}", next: "Neste {time}", from: "fra {time}",
   },
   en: {
     running: "Running", charging: "Charging", forced: "Forced on", holding: "Holding", planned: "Planned", waiting: "Waiting",
     paused: "Throttled", manual: "Manual", off: "Off", unavailable: "Unavailable",
     paused_reason: "paused to protect the capacity step", manual_reason: "controlled by the device", off_reason: "turned off in PowerPlan",
-    deadline: "due {time}", target: "target {v}", next: "Next {time}",
+    deadline: "due {time}", target: "target {v}", next: "Next {time}", from: "from {time}",
   },
 };
 

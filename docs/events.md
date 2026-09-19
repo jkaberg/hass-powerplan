@@ -67,7 +67,7 @@ triggers:
 <a name="peak_warning"></a>
 ### Peak warning
 
-PowerPlan expects this hour to go over the target. `drivers` lists what draws most, and `cleared` is `true` when the warning ends.
+PowerPlan expects this hour to go over the target because of something it cannot hold back: the house's other usage, or an appliance that must run whatever the price (below its lowest temperature, a legionella cycle, a car below its minimum charge). What PowerPlan plans for its own appliances never raises it, because PowerPlan keeps those under the target. `drivers` lists what draws most, and `cleared` is `true` when the warning ends.
 
 ```yaml
 triggers:

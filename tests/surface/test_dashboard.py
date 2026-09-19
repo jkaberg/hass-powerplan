@@ -14,6 +14,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -22,8 +23,9 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.calendar import plan_events
 from custom_components.powerplan.const import DOMAIN
+from custom_components.powerplan.core.loads import ActionReason
 from custom_components.powerplan.core.metering import AnchorKind, ClosedWindow
-from custom_components.powerplan.core.model import Confidence, Money, Plan, PlanMode, PlanSlot
+from custom_components.powerplan.core.model import Confidence, Mode, Money, Plan, PlanMode, PlanSlot
 from custom_components.powerplan.dashboard.config import texts_from
 from custom_components.powerplan.dashboard.layout import (
     COLLECTION_KEY,
@@ -1048,10 +1050,31 @@ def test_19_the_subview_s_ready_by_row_and_plan() -> None:
     assert why["grid_options"] == {"columns": "full", "rows": "auto"}
 
 
+#: A tank that wants heat and draws none: `plan_status` is `waiting` (D8 §5.16).
+_WAITING: dict[str, Any] = {
+    "health": SimpleNamespace(unhealthy=False),
+    "mode": Mode.AUTO,
+    "demand": SimpleNamespace(wants=True),
+    "measured_w": None,
+}
+
+
+def _runtime(now: datetime, next_start: datetime | None) -> SimpleNamespace:
+    """Return the runtime `plan_status_attributes` reads: one tank plan, nothing overridden."""
+    plan = SimpleNamespace(
+        next_start=next_start, planned_kwh=7.603, cost=None, mode=PlanMode.PRICE, covered=True,
+        coverage=1.0, deadline=datetime(2026, 9, 24, 4, 0, tzinfo=UTC), strategy="deadline_fill",
+        confidence=Confidence.KNOWN,
+    )  # fmt: skip
+    return SimpleNamespace(
+        snapshot=SimpleNamespace(at=now, plans={"tank": plan}),
+        overridden_at={},
+        state=SimpleNamespace(loads={}),
+    )
+
+
 def test_19_plan_status_carries_the_next_run_and_the_deadline_as_clock_times() -> None:
     """G5: local HH:MM; a run in progress has no next run; no plan, no attribute."""
-    from types import SimpleNamespace  # noqa: PLC0415
-
     from custom_components.powerplan.load_entities import plan_status_attributes  # noqa: PLC0415
 
     dt_util.set_default_time_zone(dt_util.get_time_zone("Europe/Oslo"))
@@ -1060,23 +1083,50 @@ def test_19_plan_status_carries_the_next_run_and_the_deadline_as_clock_times() -
         status = SimpleNamespace(
             load_id="tank", granted_w=0.0, action_reason="", action_key=None, action_params={},
             shed=False, shed_reason=None, latches=SimpleNamespace(shed_since=None), blunt=False,
-            comfort=None, type_key="water_heater",
+            comfort=None, type_key="water_heater", **_WAITING,
         )  # fmt: skip
 
         def attributes(next_start: datetime | None) -> dict[str, Any]:
-            plan = SimpleNamespace(
-                next_start=next_start, planned_kwh=3.81, cost=None, mode=PlanMode.PRICE, covered=True,
-                coverage=1.0, deadline=datetime(2026, 9, 24, 4, 0, tzinfo=UTC), strategy="deadline_fill",
-                confidence=Confidence.KNOWN,
-            )  # fmt: skip
-            runtime = SimpleNamespace(snapshot=SimpleNamespace(at=now, plans={"tank": plan}))
-            return plan_status_attributes(status, runtime)  # type: ignore[arg-type]
+            return plan_status_attributes(status, _runtime(now, next_start))  # type: ignore[arg-type]
 
         later = attributes(datetime(2026, 9, 23, 20, 0, tzinfo=UTC).replace(hour=21))
         assert (later["next_run"], later["deadline_time"]) == ("23:00", "06:00")
         assert attributes(now)["next_run"] == ""
         assert attributes(None)["next_run"] == ""
         assert later["next_start"] == "2026-09-23T21:00:00+00:00"
+    finally:
+        dt_util.set_default_time_zone(UTC)
+
+
+def test_19_a_waiting_load_s_reason_is_its_planned_run() -> None:
+    """D-0630: waiting for 22:00, the reason is the run ahead, not the gate's "already at 45"."""
+    from custom_components.powerplan.load_entities import (  # noqa: PLC0415
+        PLANNED_REASON,
+        plan_status_attributes,
+    )
+
+    dt_util.set_default_time_zone(dt_util.get_time_zone("Europe/Oslo"))
+    try:
+        now = datetime(2026, 9, 24, 19, 6, 3, tzinfo=UTC)
+        ahead = datetime(2026, 9, 24, 20, 0, tzinfo=UTC)
+
+        def attributes(granted_w: float, next_start: datetime | None) -> dict[str, Any]:
+            status = SimpleNamespace(
+                load_id="tank", granted_w=granted_w, action_reason="already at 45.0",
+                action_key=ActionReason.ALREADY_AT, action_params={"value": 45.0}, shed=False,
+                shed_reason=None, latches=SimpleNamespace(shed_since=None), blunt=False, comfort=None,
+                type_key="water_heater", **_WAITING,
+            )  # fmt: skip
+            return plan_status_attributes(status, _runtime(now, next_start))  # type: ignore[arg-type]
+
+        waiting = attributes(0.0, ahead)
+        assert waiting["reason_key"] == PLANNED_REASON
+        assert waiting["reason_params"] == {"time": "22:00", "kwh": 7.6}
+        assert waiting["reason"] == "planned from 22:00 · 7.6 kWh"
+        running = attributes(3_000.0, ahead)
+        assert running["reason_key"] == ActionReason.ALREADY_AT.value, "acting: the gate's reason"
+        nothing_ahead = attributes(0.0, None)
+        assert nothing_ahead["reason_key"] == ActionReason.ALREADY_AT.value
     finally:
         dt_util.set_default_time_zone(UTC)
 

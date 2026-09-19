@@ -72,6 +72,7 @@ interface Row {
   runs: Win[];
   lowered: Win[];
   line: string;          // "Går · 23,8 → 24 °C"
+  lineWide: string;      // "Venter · fra 22:00 · 54,8 °C · mål 45": the wide row has no "Neste" at its end
   deadline: Date | null;
   nextStart: number;
 }
@@ -137,6 +138,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const hass = this.hassRef!;
     const c = this.config!;
     const L = this.labels();
+    const tf = timeFmt(hass);
     const plan = readPlan(hass.states[c.entities.plan]);
     const nf1 = numFmt01(hass);
     const cur = plan.slots.find((s) => s.start <= now && s.end > now);
@@ -165,8 +167,13 @@ export class PowerplanAppliancesCard extends HTMLElement {
       }
       if (view.reason) parts.splice(0, parts.length, view.reason);
       if (view.kind === "idle") parts.splice(0, parts.length, fmtTemplate(L.idle_state, { h: c.hours ?? 24 }));
+      // A load waiting for its run says when it starts (D-0630), whatever its temperature.
+      const upcoming = runs.find((r) => r.start > now);
+      const from = upcoming && (view.kind === "waiting" || view.kind === "planned")
+        ? fmtTemplate(L.from, { time: tf.format(upcoming.start) }) : "";
       return {
         load, view, runs, lowered, deadline, line: [view.word, ...parts].filter(Boolean).join(" · "),
+        lineWide: [view.word, from, ...parts].filter(Boolean).join(" · "),
         nextStart: runs.find((r) => r.start > now)?.start.getTime() ?? Number.MAX_SAFE_INTEGER,
       };
     }).sort((x, y) => ORDER.indexOf(x.view.kind) - ORDER.indexOf(y.view.kind) || x.nextStart - y.nextStart ||
@@ -283,12 +290,13 @@ export class PowerplanAppliancesCard extends HTMLElement {
         : `<line x1="${xn.toFixed(1)}" y1="0" x2="${xn.toFixed(1)}" y2="${RH}" class="now"/>`;
       const next = r.runs.find((x) => x.start > now);
       const right = compact && next ? `<span class="next">${esc(fmtTemplate(L.next, { time: tf.format(next.start) }))}</span>` : "";
-      const aria = `${load.name}: ${r.line}. ${L.open}`;
+      const line = compact ? r.line : r.lineWide;
+      const aria = `${load.name}: ${line}. ${L.open}`;
       return `<button type="button" class="row ${view.kind}" data-load="${esc(load.id)}" data-focus-key="row-${esc(load.id)}" aria-label="${esc(aria)}" style="height:${RH}px">
         <svg class="lane" width="${W}" height="${RH}" viewBox="0 0 ${W} ${RH}" aria-hidden="true">${bandsSvg}${lane}</svg>
         <span class="rail" style="width:${compact ? W - 24 : rail - 24}px">
           <span class="bubble" style="background:${rgbaHex(col, 0.2)};color:${readable(col, dark)}"><ha-icon icon="${esc(icon)}"></ha-icon></span>
-          <span class="txt"><span class="name">${esc(load.name)}</span><span class="state">${esc(r.line)}</span></span>${right}
+          <span class="txt"><span class="name">${esc(load.name)}</span><span class="state">${esc(line)}</span></span>${right}
         </span></button>`;
     }).join("");
 

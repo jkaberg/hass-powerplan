@@ -117,6 +117,23 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 |---|---|---|---|---|
 | **ACC.1 The reference** | `core/accounting/reference.py`; settlement buffers, pending windows, capacity through the settled day; ledger schema 2; `pending`, `model_savings`, `model_confidence` | D11 §5.9, §3, §4, §5.1, §5.4, §5.5, §7, §8; D8 §5.5 | D11 §9 24-32 | - |
 
+### 3.0h Plan fit and the peak warning
+
+[D5 §5.1, §5.9](lld/D5-strategies.md), [D7 §5.4](lld/D7-engine.md), INV-32: the warning is about the house, a kept plan fits the room it's given, and a slot reserves what it plans to draw (dec. 43).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **PW.1 The warning is about the house** | `_warnings` without a plan's energy; no-vote demands counted | D7 §5.4 | D7 §9 12 | - |
+| **PW.2 The plan fits its room** | reservations on planned draw; a kept plan that overlaps its room replaced | D5 §5.1, §5.9; INV-32 | D5 §9 26, 27 | PW.1 |
+
+### 3.0i The plan status says the run ahead
+
+[D8 §5.16](lld/D8-ha-surface.md), [D12 §5.6](lld/D12-dashboard.md): a load waiting for a planned run says the run (D-0630).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **PS.1 The reason is the run ahead** | `planned` as `plan_status`'s reason while waiting for a run | D8 §5.16; D12 §5.6 | D8 §9 39; D12 §9 30 | - |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -365,6 +382,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 40. **User documentation is designed like a domain** (D14). A start path apart from the reference, catalogues per registry, one heading per entity, action and event, linkable troubleshooting, facts generated from the code; `docs/` for households, `design/` for the design; headings in the household's words with the registry key as anchor. *Rejected:* the design documents staying in `docs/` - a household would open the folder to three design files.
 41. **Savings measure timing, not physics** (D11 §5.9). A load's measured energy priced where the uncontrolled device would have drawn it, booked when its day, session or run settles; observe saves nothing; the shadows stay as a model figure shown once calibrated. *Rejected:* fixing the shadows' inputs - every fix is one more parameter that must be right, and under a flat price the signal is smaller than the model error.
 42. **The dashboard uses Home Assistant's own backend only.** The layout from a response action, the spot price from a sensor, retries from a button, the module as a Lovelace resource; no private websocket commands. *Rejected:* keeping the commands - a private protocol to version, test and document.
+43. **A plan fits the room it's given, and the peak warning is about the house.** The warning counts the uncontrolled term and no-vote demands, never a plan (D-0627); a kept plan overlapping its betters' room is replaced (D-0628); a slot reserves its planned draw (D-0629). *Rejected:* plans in the warning - D6 holds every plan under the ceiling, so a plan can't cause a breach.
 
 ---
 
@@ -428,6 +446,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DOC.4 | Understand and help | todo |
 | DOC.5 | Dashboard help | todo |
 | ACC.1 | The reference | done |
+| PW.1 | The warning is about the house | done |
+| PW.2 | The plan fits its room | done |
+| PS.1 | The reason is the run ahead | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
