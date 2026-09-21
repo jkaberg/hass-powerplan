@@ -28,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
+from custom_components.powerplan import doclinks
 from custom_components.powerplan.const import (
     CIRCUIT_FUSE_A,
     CIRCUIT_MEMBERS,
@@ -36,6 +37,7 @@ from custom_components.powerplan.const import (
     CIRCUIT_UNMETERED_W,
     CONF_ELECTRICAL,
     SECTION_ADVANCED,
+    SUBENTRY_CIRCUIT,
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.flow.questionnaire import (
@@ -159,7 +161,9 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
         """Show the questionnaire, or take its answers on to the review."""
         members = self._members()
         if not members:
-            return self.async_abort(reason="no_loads")
+            return self.async_abort(
+                reason="no_loads", description_placeholders=doclinks.abort_placeholders("no_loads")
+            )
         errors: dict[str, str] = {}
         if user_input is not None:
             chosen = [str(member) for member in user_input.get(CIRCUIT_MEMBERS) or ()]
@@ -184,6 +188,7 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
             step_id=step_id,
             data_schema=circuit_schema(members, site_phases=self._site_phases(), values=values),
             errors=errors or None,
+            description_placeholders=doclinks.step_placeholders(SUBENTRY_CIRCUIT, step_id),
         )
 
     async def _placeholders(self) -> dict[str, str]:

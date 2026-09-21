@@ -168,7 +168,8 @@ async def _followups(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, A
 
     # HUB-7: every add-on its own step, titled by its own strings - never by its key.
     assert result["step_id"] == "modifier_spot_scale"
-    assert not result["description_placeholders"]
+    # Only its section's link (D14 §5.4); nothing names it by its key.
+    assert set(result["description_placeholders"]) == {"docs"}
     result = await _answer(hass, result, mult=1.1)
 
     # D13 §6 step 3: the rates stated, strømstøtte asked.
@@ -584,6 +585,7 @@ async def test_the_grid_companys_own_charges_are_not_offered_again_as_add_ons(
     ]
     assert offered == ["cumulative_tier", "day_type", "spot_scale", "supplier_tou"]
     assert result["description_placeholders"] == {
+        "docs": "https://github.com/jkaberg/hass-powerplan/blob/main/docs/setup.md#modifiers",
         "operator": "Tensio TS",
         "covered": "Grid energy charge (day/night), VAT and Taxes and levies",
     }

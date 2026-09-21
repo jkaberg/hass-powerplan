@@ -153,6 +153,32 @@ def render_fields(arg: str | None) -> str:
     return _table(("Question", "What it asks"), rows)
 
 
+def render_questions(arg: str | None) -> str:
+    """Render one appliance type's own questions, in its questionnaire's order (DOC.3).
+
+    The appliance flow's `questions` step is shared by the eight types, so its
+    `fields` table would list them all; a type's page lists only its own.
+    """
+    assert arg is not None
+    step = _flow("load")["step"]["questions"]
+    advanced = step.get("sections", {}).get("advanced", {})
+    section = advanced.get("name", "")
+    rows: list[tuple[str, str]] = []
+    for question in device_types.get(arg).questionnaire.questions:
+        key = question.key
+        if key in step.get("data", {}):
+            label, what = step["data"][key], step.get("data_description", {}).get(key, "")
+        elif key in advanced.get("data", {}):
+            label = (
+                f"{section} \N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK} {advanced['data'][key]}"
+            )
+            what = advanced.get("data_description", {}).get(key, "")
+        else:
+            continue
+        rows.append((label, what))
+    return _table(("Question", "What it asks"), rows)
+
+
 def render_types(_arg: str | None) -> str:
     """`appliances/README.md`: every device type, its default plan and the others."""
     rows = []
@@ -345,7 +371,8 @@ def render_actions(_arg: str | None) -> str:
             (
                 f"`powerplan.{name}`",
                 texts[name]["name"],
-                texts[name]["description"],
+                # The link points back at this page (D14 §5.4): not repeated in the table.
+                re.sub(r"\s*\[[^\]]*\]\(\{docs\}\)", "", texts[name]["description"]),
                 ", ".join(fields) or "—",
             )
         )
@@ -383,6 +410,7 @@ def render_dashboard_options(_arg: str | None) -> str:
 RENDERERS: dict[str, Callable[[str | None], str]] = {
     "requirements": render_requirements,
     "fields": render_fields,
+    "questions": render_questions,
     "types": render_types,
     "strategies": render_strategies,
     "profiles": render_profiles,

@@ -47,6 +47,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
+from custom_components.powerplan import doclinks
 from custom_components.powerplan.const import (
     CONF_TARIFF,
     DOMAIN,
@@ -965,6 +966,15 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._raw: dict[str, Any] = {}
 
     # ----------------------------------------------------------------- helpers
+
+    def async_show_form(self, **kwargs: Any) -> SubentryFlowResult:
+        """Show a step with its section linked: the type's page once a type is chosen (D14 §5.4)."""
+        docs = doclinks.step_placeholders("load", str(kwargs.get("step_id")), self._type)
+        kwargs["description_placeholders"] = {
+            **docs,
+            **(kwargs.get("description_placeholders") or {}),
+        } or None
+        return super().async_show_form(**kwargs)
 
     @property
     def _device_type(self) -> DeviceType:

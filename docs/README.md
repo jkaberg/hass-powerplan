@@ -24,6 +24,20 @@ PowerPlan starts in trial mode. It shows what it would do, and changes nothing u
 | I want to… | Read |
 |---|---|
 | install, update, or remove PowerPlan | [Install](install.md) |
+| set up PowerPlan for the first time | [Get started](get-started.md) |
+| understand a question in the setup | [Set up a home](setup.md) |
+| add a circuit, a group of appliances, or a room | [Circuits, groups and rooms](circuits-groups-rooms.md) |
+| see which appliances PowerPlan steers, and how | [Appliances](appliances/README.md) |
+| choose a plan for an appliance | [Plans](strategies.md) |
+| check whether my charger or thermostat works | [Devices](devices.md) |
+| use a price sensor I already have | [Prices](prices.md) |
+| use PowerPlan day to day | [Daily use](daily-use.md) |
+| understand why an appliance ran or waited | [How it works](how-it-works.md) |
+| understand capacity steps and the target | [Capacity tariffs](capacity-tariffs.md) |
+| understand the cost and savings figures | [Savings](savings.md) |
+| fix a repair or a problem | [Troubleshooting](troubleshooting.md) |
+| know what PowerPlan does not do yet | [Limitations](limitations.md) |
+| copy an automation | [Examples](examples.md) |
 | know what a word on a screen means | [Glossary](glossary.md) |
 | check whether PowerPlan fetches my grid company's tariff | [Grid tariffs](tariffs.md) |
 | use PowerPlan's entities in a card or an automation | [Entities](entities.md) |

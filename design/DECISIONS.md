@@ -2664,3 +2664,18 @@ A heat pump whose match offers `cool` is asked *Plan for cooling*; the answer se
 
 The heat pump cools at 24 °C with `follow_presence` off; the scenario runs two August weekdays. Pre-cooling: the unit's energy 10:00-14:00 exceeds 14:00-20:00 each day. Demand: every on-peak 30-minute window stays at or under 5 kW. `WeatherSim` takes its climate normals as fields. With the away setback the planner doesn't know when the household returns, so can't cool ahead; with the target held it cools until 14:00 and lets the room coast 24.2 → 24.9 °C through the peak. Affects D9 §5.3, §5.9.
 **Rejected:** teaching `heat_capacitor` to bank ahead of a capacity window - a D5 change the demand doesn't need yet; noted as a gap.
+
+### D-0645 · Flow text within budget, the detail on the page; aborts link to troubleshooting
+
+Every non-review step of the home, circuit, group and room flows ends with `[How this works]({docs})`, supplied by `doclinks.step_placeholders`. Step texts are cut to 30 words and 2 sentences, field texts to 15 words and one sentence, in both languages; the rest is on `setup.md` or `circuits-groups-rooms.md`. Aborts whose fix is elsewhere link `troubleshooting.md#<reason>`. D14 decision 7 and §5.4. Affects D14 §5.4.
+**Rejected:** raising the budgets - HA renders a field's description under the field, and the budgets come from the review's screenshots.
+
+### D-0646 · The appliance flow links its type's page; a type page lists its own questions
+
+`LoadSubentryFlow.async_show_form` merges `doclinks.step_placeholders("load", step_id, self._type)`: the index before a type is chosen, the type's page after. `tools/docs.py` gains `questions:<type>`, that type's questionnaire in order. The five-word budget for option labels skips the word-bank selectors read through `Text.word`, which are sentence parts, not choices. Over-long dropdown labels are shortened, the detail moved to `setup.md`. The eight types share steps, so a per-step table would list every type's questions on each page. Affects D14 §5.4, §5.6, §9 4.
+**Rejected:** a step id per type - multiplies steps and translations by eight for a table.
+
+### D-0647 · Troubleshooting holds the aborts and symptoms; actions carry `{docs}`
+
+`troubleshooting.md` has a section per repair, per linked abort, for three symptoms (`dashboard`, `not_running`, `over_target`) and for diagnostics. `services.py` registers every action with `description_placeholders={"docs": doc_url("actions", name)}`, and descriptions end with the link; the generated `actions` table strips it. Every `docs-*` quality-scale rule is done or exempt. HA 2026.9's `async_register` takes `description_placeholders`, so the action editor shows the link. Affects D14 §3.1, §5.4.
+**Rejected:** no link on actions - the action editor is where an automation author meets them first.

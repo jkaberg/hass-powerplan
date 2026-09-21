@@ -30,6 +30,23 @@ NO_LINK: dict[tuple[str, str], str] = {
     ("config", "name"): "the home's name: nothing to explain",
 }
 
+#: Selectors that are not option lists but the words a text is built from, read
+#: through `Text.word` into a review, a status or a card: their entries are
+#: sentences by design, so the option-label budget does not apply (DOC.3).
+WORD_BANKS = frozenset(
+    {
+        "action_reason",
+        "dashboard",
+        "load_text",
+        "logbook",
+        "review",
+        "tariff_measurement",
+        "tariff_method",
+        "tariff_text",
+        "timezone_source",
+    }
+)
+
 #: D8 §5.13's budgets, placeholders and link text excluded.
 STEP_WORDS, STEP_SENTENCES = 30, 2
 FIELD_WORDS, FIELD_SENTENCES = 15, 1
@@ -140,6 +157,7 @@ def test_04_option_labels_keep_their_budget(language: str) -> None:
     long = [
         f"{key}.{option}"
         for key, selector in _document(language)["selector"].items()
+        if key not in WORD_BANKS
         for option, label in selector.get("options", {}).items()
         if _words(label) > OPTION_WORDS
     ]

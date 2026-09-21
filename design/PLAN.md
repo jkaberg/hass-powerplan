@@ -443,9 +443,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TS.6 | Retire shipped prices | done |
 | TS.7 | Europe | done |
 | DOC.1 | Foundation | done |
-| DOC.2 | Start and setup | todo |
-| DOC.3 | Appliances and catalogues | todo |
-| DOC.4 | Understand and help | todo |
+| DOC.2 | Start and setup | done |
+| DOC.3 | Appliances and catalogues | done |
+| DOC.4 | Understand and help | done |
 | DOC.5 | Dashboard help | todo |
 | ACC.1 | The reference | done |
 | PW.1 | The warning is about the house | done |

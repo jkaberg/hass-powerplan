@@ -172,7 +172,10 @@ async def test_32_a_fetched_grid_company_walks_product_zone_gaps_and_the_summary
     result = await _answer(hass, result, preset="operator:Tensio TS")
 
     assert result["step_id"] == "tariff_product"
-    assert result["description_placeholders"] == {"operator": "Tensio TS"}
+    assert result["description_placeholders"] == {
+        "docs": "https://github.com/jkaberg/hass-powerplan/blob/main/docs/setup.md#tariff_product",
+        "operator": "Tensio TS",
+    }
     result = await _answer(hass, result, product="bolig")
 
     assert result["step_id"] == "tariff_confirm"

@@ -24,6 +24,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import DOMAIN
 from .core.tariffs.sources import SourceError
 from .dashboard.config import async_dashboard_config
+from .doclinks import doc_url
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -229,7 +230,13 @@ def async_setup_services(hass: HomeAssistant) -> None:
         if hass.services.has_service(DOMAIN, name):
             continue
         hass.services.async_register(
-            DOMAIN, name, handler, schema=SCHEMAS[name], supports_response=SERVICES[name]
+            DOMAIN,
+            name,
+            handler,
+            schema=SCHEMAS[name],
+            supports_response=SERVICES[name],
+            # The action's section on actions.md (D14 §5.4).
+            description_placeholders={"docs": doc_url("actions", name)},
         )
 
 

@@ -30,6 +30,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
+from custom_components.powerplan import doclinks
 from custom_components.powerplan.const import (
     GROUP_CEILING_FRACTION,
     GROUP_FROM_STAGE,
@@ -38,6 +39,7 @@ from custom_components.powerplan.const import (
     GROUP_STARVE_SECONDS,
     LOAD_PARAMS,
     SECTION_ADVANCED,
+    SUBENTRY_GROUP,
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.core.allocation import default_max_concurrent_w
@@ -200,7 +202,9 @@ class GroupSubentryFlow(ConfigSubentryFlow):
         """Show the questionnaire, or take its answers on to the review."""
         members = self._members()
         if not members:
-            return self.async_abort(reason="no_loads")
+            return self.async_abort(
+                reason="no_loads", description_placeholders=doclinks.abort_placeholders("no_loads")
+            )
         errors: dict[str, str] = {}
         if user_input is not None:
             chosen = [str(member) for member in user_input.get(GROUP_MEMBERS) or ()]
@@ -229,6 +233,7 @@ class GroupSubentryFlow(ConfigSubentryFlow):
             step_id=step_id,
             data_schema=group_schema(members, self._nameplates(), values=values),
             errors=errors or None,
+            description_placeholders=doclinks.step_placeholders(SUBENTRY_GROUP, step_id),
         )
 
     async def _placeholders(self) -> dict[str, str]:

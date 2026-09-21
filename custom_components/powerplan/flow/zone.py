@@ -36,10 +36,12 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
+from custom_components.powerplan import doclinks
 from custom_components.powerplan.const import (
     LOAD_TYPE,
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
+    SUBENTRY_ZONE,
     ZONE_CAPACITY_PENALTY,
     ZONE_MEMBERS,
     ZONE_MIN_COP,
@@ -230,7 +232,10 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         """Show the questionnaire, or take its answers on to the review."""
         members = self._members()
         if len(members) < _MIN_MEMBERS:
-            return self.async_abort(reason="not_enough_loads")
+            return self.async_abort(
+                reason="not_enough_loads",
+                description_placeholders=doclinks.abort_placeholders("not_enough_loads"),
+            )
         errors: dict[str, str] = {}
         if user_input is not None:
             chosen = [str(member) for member in user_input.get(ZONE_MEMBERS) or ()]
@@ -253,6 +258,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
             step_id=step_id,
             data_schema=zone_schema(members, values=values),
             errors=errors or None,
+            description_placeholders=doclinks.step_placeholders(SUBENTRY_ZONE, step_id),
         )
 
     async def _placeholders(self) -> dict[str, str]:
@@ -294,6 +300,9 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
                     step_id="never_substitute",
                     data_schema=never_schema(members, chosen, never),
                     errors={ZONE_NEVER_SUBSTITUTE: "unknown_member"},
+                    description_placeholders=doclinks.step_placeholders(
+                        SUBENTRY_ZONE, "never_substitute"
+                    ),
                     last_step=False,
                 )
             self._answers[ZONE_NEVER_SUBSTITUTE] = never
@@ -301,6 +310,7 @@ class ZoneSubentryFlow(ConfigSubentryFlow):
         return self.async_show_form(
             step_id="never_substitute",
             data_schema=never_schema(members, chosen, self._answers[ZONE_NEVER_SUBSTITUTE]),
+            description_placeholders=doclinks.step_placeholders(SUBENTRY_ZONE, "never_substitute"),
             last_step=False,
         )
 

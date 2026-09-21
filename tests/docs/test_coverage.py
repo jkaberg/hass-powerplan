@@ -61,7 +61,8 @@ def _steps() -> dict[str, dict[str, str | None]]:
             page, _, anchor = placeholders["docs"].split("/blob/main/docs/")[1].partition("#")
             if flow == "load" and page != "appliances/README.md":
                 continue  # the type's own steps: `_type_steps`
-            found.setdefault(page, {})[anchor] = step.get("title")
+            # A reconfigure step shares its first step's anchor: the first title heads it.
+            found.setdefault(page, {}).setdefault(anchor, step.get("title"))
     return found
 
 

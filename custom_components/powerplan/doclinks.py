@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from .const import DOCS_URL, SUBENTRY_CIRCUIT, SUBENTRY_GROUP, SUBENTRY_LOAD, SUBENTRY_ZONE
 
-__all__ = ["REVIEW_STEPS", "doc_url", "step_page", "step_placeholders"]
+__all__ = ["REVIEW_STEPS", "abort_placeholders", "doc_url", "step_page", "step_placeholders"]
 
 #: The home flow's page.
 SETUP = "setup"
@@ -52,6 +52,15 @@ def step_page(flow: str, type_key: str | None = None) -> str:
     if flow in (SUBENTRY_CIRCUIT, SUBENTRY_GROUP, SUBENTRY_ZONE):
         return CIRCUITS
     return SETUP
+
+
+#: The page an abort whose fix lies outside the flow links (D14 §5.4).
+TROUBLESHOOTING = "troubleshooting"
+
+
+def abort_placeholders(reason: str) -> dict[str, str]:
+    """Return an abort's `{docs}` placeholder: its entry on the troubleshooting page."""
+    return {"docs": doc_url(TROUBLESHOOTING, reason)}
 
 
 def step_placeholders(flow: str, step_id: str, type_key: str | None = None) -> dict[str, str]:

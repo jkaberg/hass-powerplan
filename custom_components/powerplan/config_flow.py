@@ -32,6 +32,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
+from . import doclinks
 from .const import (
     CONF_ACTIVE,
     CONF_CURRENCY,
@@ -253,12 +254,13 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         placeholders: Mapping[str, str] | None = None,
         last_step: bool = False,
     ) -> ConfigFlowResult:
-        """Show one step. Nothing but the review is ever the last step."""
+        """Show one step, its section on `setup.md` linked (D14 §5.4). Only the review is last."""
+        shown = {**doclinks.step_placeholders("config", step_id), **(placeholders or {})}
         return self.async_show_form(
             step_id=step_id,
             data_schema=schema,
             errors=dict(errors) if errors else None,
-            description_placeholders=dict(placeholders) if placeholders else None,
+            description_placeholders=shown or None,
             last_step=last_step,
         )
 
@@ -415,6 +417,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(
             step_id="user",
             menu_options=[path.value for path in OnboardingPath],
+            description_placeholders=doclinks.step_placeholders("config", "user"),
         )
 
     async def async_step_full(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
