@@ -1,0 +1,149 @@
+{
+ "name": "v2c_charger",
+ "device": "EVSE 192.168.1.40",
+ "device_id": "3fab5e2d7c4a6b8d9e0f1a2b3c4d5e6f",
+ "manufacturer": "V2C",
+ "model": "Trydan",
+ "written_at": "2026-09-21",
+ "source": "Not captured: no house here owns a V2C (D-0081, D-0371). Written from home-assistant/core's v2c integration (dev branch): number.py (intensity, max_intensity, min_intensity in A), switch.py (paused 'Pause session', on while paused; locked, timer, dynamic, pause_dynamic), binary_sensor.py (connected, device class plug; charging; ready), sensor.py (charge_power W, charge_energy kWh); names from strings.json with has_entity_name. There is no charge-point state sensor. The states are a car charging at 16 A.",
+ "entity_count": 12,
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Intensity",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.evse_192_168_1_40_intensity",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Max intensity",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.evse_192_168_1_40_max_intensity",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "32"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Min intensity",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.evse_192_168_1_40_min_intensity",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Pause session"
+   },
+   "entity_id": "switch.evse_192_168_1_40_pause_session",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Pause dynamic control modulation"
+   },
+   "entity_id": "switch.evse_192_168_1_40_pause_dynamic_control_modulation",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Lock EVSE"
+   },
+   "entity_id": "switch.evse_192_168_1_40_lock_evse",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Connected",
+    "device_class": "plug"
+   },
+   "entity_id": "binary_sensor.evse_192_168_1_40_connected",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Charging",
+    "device_class": "battery_charging"
+   },
+   "entity_id": "binary_sensor.evse_192_168_1_40_charging",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Ready"
+   },
+   "entity_id": "binary_sensor.evse_192_168_1_40_ready",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Charge power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.evse_192_168_1_40_charge_power",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "11040"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 Charge energy",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.evse_192_168_1_40_charge_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6.12"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EVSE 192.168.1.40 House power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.evse_192_168_1_40_house_power",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "1450"
+  }
+ ]
+}

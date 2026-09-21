@@ -215,6 +215,11 @@ def test_16k_the_registry_ranks_the_charger_first(easee: DeviceView) -> None:
         "generic_climate",
         "generic_number",
         "generic_switch",
+        "goecharger_api2",
+        "ocpp",
+        "peblar",
+        "v2c",
+        "wallbox",
         "zaptec",
     )
     assert registry.get("easee_ble") is easee_ble.PROFILE

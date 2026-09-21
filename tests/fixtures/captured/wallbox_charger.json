@@ -1,0 +1,155 @@
+{
+ "name": "wallbox_charger",
+ "device": "Wallbox Portal",
+ "device_id": "1d8f3c0b5a2e4f6b7c9d0e1f2a3b4c5d",
+ "manufacturer": "Wallbox",
+ "model": "Pulsar Plus",
+ "written_at": "2026-09-21",
+ "source": "Not captured: no house here owns a Wallbox (D-0081, D-0371). Written from home-assistant/core's wallbox integration (dev branch): number.py NUMBER_TYPES (maximum_charging_current, energy_price, maximum_icp_current), switch.py (pause_resume), sensor.py SENSOR_TYPES, lock.py; names from strings.json with has_entity_name (entity.py); status_description is the text of const.py ChargerStatus. The states are a car charging at 16 A.",
+ "entity_count": 12,
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Maximum charging current",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.wallbox_portal_maximum_charging_current",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Energy price",
+    "min": 0,
+    "max": 5,
+    "step": 0.01,
+    "mode": "auto",
+    "unit_of_measurement": "EUR/kWh"
+   },
+   "entity_id": "number.wallbox_portal_energy_price",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "0.4"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Maximum ICP current",
+    "min": 6,
+    "max": 63,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.wallbox_portal_maximum_icp_current",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "40"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Pause/resume"
+   },
+   "entity_id": "switch.wallbox_portal_pause_resume",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Lock"
+   },
+   "entity_id": "lock.wallbox_portal_lock",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "unlocked"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Status description"
+   },
+   "entity_id": "sensor.wallbox_portal_status_description",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "Charging"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Charging power",
+    "unit_of_measurement": "kW",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.wallbox_portal_charging_power",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "11.0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Max available power",
+    "unit_of_measurement": "A",
+    "device_class": "current",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.wallbox_portal_max_available_power",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "32"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Added energy",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.wallbox_portal_added_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6.1"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Added green energy",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.wallbox_portal_added_green_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "0.0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Added grid energy",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.wallbox_portal_added_grid_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6.1"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Wallbox Portal Max charging current",
+    "unit_of_measurement": "A",
+    "device_class": "current",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.wallbox_portal_max_charging_current",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  }
+ ]
+}

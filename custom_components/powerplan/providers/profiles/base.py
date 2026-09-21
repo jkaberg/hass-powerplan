@@ -1185,9 +1185,13 @@ class DeviceProfile(Protocol):
     config flow renders from the registry.
     """
 
-    key: ClassVar[str]
     kinds: ClassVar[frozenset[str]]
     types: ClassVar[frozenset[str]]
+
+    @property
+    def key(self) -> str:
+        """The profile's registry key: a class constant, or a vocabulary charger's field."""
+        ...
 
     def match(self, view: DeviceView) -> MatchResult:
         """Say how confident this profile is about `view`, and bind what it finds."""

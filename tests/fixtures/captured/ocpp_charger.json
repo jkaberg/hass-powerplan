@@ -1,0 +1,128 @@
+{
+ "name": "ocpp_charger",
+ "device": "charger",
+ "device_id": "0c7e2b9a4f1d3e5a6b8c9d0e1f2a3b4c",
+ "manufacturer": "ABB",
+ "model": "Terra AC",
+ "written_at": "2026-09-21",
+ "source": "Not captured: no house here owns an OCPP charger (D4 §5.9, D-0081's precedent, D-0371). Written from lbbrhzn/ocpp v0.12.0 (github.com/lbbrhzn/ocpp, tag v0.12.0) for a charge point with one connector, cpid `charger`: number.py NUMBERS (`maximum_current`, 0 A to DEFAULT_MAX_CURRENT, step 1, entity_id `number.<cpid>_maximum_current`); switch.py SWITCHES (`charge_control`, `availability`); sensor.py's CHARGER_ONLY and CONNECTOR_ONLY metrics, named `metric.replace('.', ' ')` with entity_id `sensor.<cpid>_<metric lower, dots to underscores>`; the measurands the charger reports by default (Energy.Active.Import.Register, Power.Active.Import, Current.Import). Status.Connector is OCPP 1.6 ChargePointStatus as sent. The states are a car charging at 16 A on 3 phases.",
+ "entity_count": 11,
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Maximum Current",
+    "min": 0,
+    "max": 32,
+    "step": 1,
+    "mode": "auto",
+    "unit_of_measurement": "A"
+   },
+   "entity_id": "number.charger_maximum_current",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Charge Control"
+   },
+   "entity_id": "switch.charger_charge_control",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Availability"
+   },
+   "entity_id": "switch.charger_availability",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Status Connector"
+   },
+   "entity_id": "sensor.charger_status_connector",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "Charging"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Status"
+   },
+   "entity_id": "sensor.charger_status",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "Available"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Error Code Connector"
+   },
+   "entity_id": "sensor.charger_error_code_connector",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "NoError"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Power Active Import",
+    "unit_of_measurement": "kW",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.charger_power_active_import",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "11.04"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Energy Active Import Register",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.charger_energy_active_import_register",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "4821.37"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Current Import",
+    "unit_of_measurement": "A",
+    "device_class": "current",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.charger_current_import",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16.0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Energy Session",
+    "unit_of_measurement": "kWh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.charger_energy_session",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6.12"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Transaction Id"
+   },
+   "entity_id": "sensor.charger_transaction_id",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "1937"
+  }
+ ]
+}

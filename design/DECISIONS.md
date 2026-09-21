@@ -2614,3 +2614,23 @@ The format select is `vol.Optional` with no default on first setup; empty means 
 
 `epex_spot`, `zonneplan_one`, `frank_energie`, `cz_energy_spot_prices`, `tibber_prices` and `stromligning` are registered, each with a fixture from the integration's own source. `symbol_unit` reads `€`, `£` and `Kč` as codes and nothing else. `generic_list` gains `tomorrow_attribute`, a dotted `value_key` and `scale`. Both Tibber rows read the same `total`, so their basis stays spot alike. Affects D1 §2.
 **Rejected:** reading `kr` from the site's currency - a Swedish house with a Danish sensor would be priced wrong silently.
+
+### D-0635 · A vocabulary charger is one `VocabularyCharger`, registered from its own module
+
+`VocabularyCharger` is a frozen dataclass saying where a charger's limit, stop/start, status and reads are (`Find`: domain, name tokens, device class, exclusions), with its status vocabulary and quirks; it implements `match`, `bind`, `provisions` and `quirks` once. `ocpp`, `wallbox`, `peblar`, `v2c` and `goecharger_api2` each register an instance. `DeviceProfile.key` becomes a read-only property. Affects D4 §5.9.
+**Rejected:** one class per charger - none has a quirk that isn't data.
+
+### D-0636 · OCPP pauses by its station-wide limit; charge control isn't bound
+
+`ocpp` binds *Maximum Current* (a `ChargePointMaxProfile`, 0 A up) with `limit_pauses`: 0 A holds the car, and it holds with or without a transaction, so nothing is re-sent on plug-in. *Charge Control* sends `RemoteStopTransaction`, ending the session as `Finishing`, which would latch every pause as done (as with Zaptec, D-0372). The per-transaction limit is the separate *Session Current Limit*. Affects D4 §5.9, §10.
+**Rejected:** binding *Charge Control* as ENABLE - some chargers need re-authorising to start again.
+
+### D-0637 · ENABLE in the charger's own spelling; V2C's status is its plug, go-e's the API code
+
+`EnableSpec(find, on, off)`: the first value of each is written and every value reads back; an unknown value reads unavailable. V2C's *Pause session* is on while paused (`on=("off",)`); go-e's stop/start is a select (`on=("2", "0")`, `off=("1",)`). V2C publishes no charge-point state, so its status is the plug sensor; go-e's *Car state* is translated into HA's language, so the status is *Car state [CODE]*, which ships disabled. Affects D4 §5.9.
+**Rejected:** the mapping in `Quirks.option_names` - changes `BoundDevice` for every profile to serve two.
+
+### D-0638 · KEBA waits for a device
+
+No `keba` profile in v1: the core integration has no config flow and none of its entities sets `device_info`, so the load flow, keyed by device, can't pick it (D4 §5.9's own condition). Affects D4 §5.9, §9 16, §10.
+**Rejected:** offering it through the entity picker - the subentry is keyed by a device.

@@ -1574,6 +1574,11 @@
         "generic_climate": "Termostat",
         "generic_number": "Tallgrense",
         "generic_switch": "Bryter",
+        "goecharger_api2": "go-e (lokal)",
+        "ocpp": "OCPP (lokal)",
+        "peblar": "Peblar (lokal)",
+        "v2c": "V2C (lokal)",
+        "wallbox": "Wallbox (skytjeneste)",
         "zaptec": "Zaptec (skytjeneste)"
       }
     },

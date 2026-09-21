@@ -1,0 +1,82 @@
+{
+ "name": "goecharger_api2_charger",
+ "device": "go-eCharger 204501",
+ "device_id": "4abc6f3e8d5b7c9e0f1a2b3c4d5e6f7a",
+ "manufacturer": "go-e",
+ "model": "go-eCharger Gemini",
+ "written_at": "2026-09-21",
+ "source": "Not captured: no house here owns a go-e charger (D-0081, D-0371). Written from marq24/ha-goecharger-api2 2026.9.5: const.py (number amp 6-32 A; select frc options 0/1/2; sensor car, the API code, disabled by default; sensor car with lookup, the same code through pygoecharger_ha/const.py TRANSLATIONS; nrg index 11 'Power total now' in W), names from translations/en.json. The states are a car charging at 16 A with the code sensor enabled.",
+ "entity_count": 6,
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Requested current",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "slider",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.goe_204501_amp",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  },
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Force state",
+    "options": [
+     "0",
+     "1",
+     "2"
+    ]
+   },
+   "entity_id": "select.goe_204501_frc",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "2"
+  },
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Car state [CODE]"
+   },
+   "entity_id": "sensor.goe_204501_car",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "2"
+  },
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Car state"
+   },
+   "entity_id": "sensor.goe_204501_car_value",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "Charging"
+  },
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Power total now",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.goe_204501_nrg_11",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "11040"
+  },
+  {
+   "attributes": {
+    "friendly_name": "go-eCharger 204501 Energy since car connected",
+    "unit_of_measurement": "Wh",
+    "device_class": "energy"
+   },
+   "entity_id": "sensor.goe_204501_wh",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6120"
+  }
+ ]
+}

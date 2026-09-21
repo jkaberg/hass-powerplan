@@ -1,0 +1,159 @@
+{
+ "name": "peblar_charger",
+ "device": "Peblar EV Charger",
+ "device_id": "2e9a4d1c6b3f5a7c8d0e1f2a3b4c5d6e",
+ "manufacturer": "Peblar",
+ "model": "WLAC2",
+ "written_at": "2026-09-21",
+ "source": "Not captured: no house here owns a Peblar (D-0081, D-0371). Written from home-assistant/core's peblar integration (dev branch): number.py (charge_current_limit, 6 A to the lower of the hardware and installation limit), switch.py (charge, force_single_phase, socket_lock), sensor.py (cp_state is an enum over const.py PEBLAR_CP_STATE_TO_HOME_ASSISTANT; power_total has no translation key, so it is named by its device class; currents in mA, energy in Wh); names from strings.json with has_entity_name. The states are a car charging at 16 A.",
+ "entity_count": 12,
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Charge limit",
+    "min": 6,
+    "max": 32,
+    "step": 1,
+    "mode": "slider",
+    "unit_of_measurement": "A",
+    "device_class": "current"
+   },
+   "entity_id": "number.peblar_ev_charger_charge_limit",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "16"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Charge"
+   },
+   "entity_id": "switch.peblar_ev_charger_charge",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Force single phase"
+   },
+   "entity_id": "switch.peblar_ev_charger_force_single_phase",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Keep socket locked"
+   },
+   "entity_id": "switch.peblar_ev_charger_keep_socket_locked",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger State",
+    "device_class": "enum",
+    "options": [
+     "charging",
+     "error",
+     "fault",
+     "invalid",
+     "no_ev_connected",
+     "suspended"
+    ]
+   },
+   "entity_id": "sensor.peblar_ev_charger_state",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "charging"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Limit source",
+    "device_class": "enum",
+    "options": [
+     "charging_cable",
+     "current_limiter",
+     "installation_limit"
+    ]
+   },
+   "entity_id": "sensor.peblar_ev_charger_limit_source",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "current_limiter"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.peblar_ev_charger_power",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "11040"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Power phase 1",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.peblar_ev_charger_power_phase_1",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "3680"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Power phase 2",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.peblar_ev_charger_power_phase_2",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "3680"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Power phase 3",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.peblar_ev_charger_power_phase_3",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "3680"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Session energy",
+    "unit_of_measurement": "Wh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.peblar_ev_charger_session_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "6120"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Peblar EV Charger Lifetime energy",
+    "unit_of_measurement": "Wh",
+    "device_class": "energy",
+    "state_class": "total_increasing"
+   },
+   "entity_id": "sensor.peblar_ev_charger_lifetime_energy",
+   "last_changed": "2026-09-24T18:00:00+00:00",
+   "last_updated": "2026-09-24T18:00:00+00:00",
+   "state": "4821370"
+  }
+ ]
+}

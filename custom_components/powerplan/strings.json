@@ -1574,6 +1574,11 @@
         "generic_climate": "Thermostat",
         "generic_number": "Number limit",
         "generic_switch": "Switch",
+        "goecharger_api2": "go-e (local)",
+        "ocpp": "OCPP (local)",
+        "peblar": "Peblar (local)",
+        "v2c": "V2C (local)",
+        "wallbox": "Wallbox (cloud)",
         "zaptec": "Zaptec (cloud)"
       }
     },
