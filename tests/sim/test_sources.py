@@ -27,6 +27,7 @@ MODULES = (
     "household",
     "production",
     "tempo",
+    "battery",
 )
 
 #: What a source must not be.  A short answer is fine - "SI", "the calendar" -

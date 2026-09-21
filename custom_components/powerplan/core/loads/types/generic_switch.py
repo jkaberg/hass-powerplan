@@ -191,7 +191,7 @@ class GenericSwitch:
 
     key: ClassVar[str] = "generic_switch"
     kinds: ClassVar[tuple[str, ...]] = ("switch",)
-    strategies: ClassVar[tuple[str, ...]] = ("cheapest_hours", "always")
+    strategies: ClassVar[tuple[str, ...]] = ("cheapest_hours", "surplus", "always")
     default_strategy: ClassVar[str] = "cheapest_hours"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

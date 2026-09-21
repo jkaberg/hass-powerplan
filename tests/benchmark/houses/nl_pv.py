@@ -1,4 +1,4 @@
-"""`nl_pv@1` - D9 §5.9's second "other house": PV, `ContractedPower`, EPEX.
+"""`nl_pv@2` - D9 §5.9's second "other house": PV, `ContractedPower`, EPEX.
 
 The spec is `tests/builders/houses.py`'s `nl_pv()`; this module names it for
 the benchmark and says which loads a build controls, exactly like

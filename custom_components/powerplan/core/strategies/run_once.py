@@ -228,7 +228,7 @@ class RunOnce:
 
         programme = _programme(demand, params)
         horizon = ctx.horizon_end()
-        window = ctx.curve_in.slots_between(ctx.now, horizon)
+        window = ctx.effective.slots_between(ctx.now, horizon)
         if not window or programme.duration <= timedelta(0):
             return free_plan(ctx, strategy=self.key, mode=PlanMode.NONE, reason="no programme")
 
@@ -254,7 +254,7 @@ class RunOnce:
                 _slot(slot, energy.get(slot.start, 0.0), inside=slot in run) for slot in window
             ),
             now=ctx.now,
-            currency=ctx.curve_in.currency,
+            currency=ctx.effective.currency,
             # A running cycle's requirement is what is **left** of it: the slots
             # already behind `now` are not in the window, and a machine that is
             # washing is not a machine at risk of missing its deadline (§8).
@@ -263,7 +263,7 @@ class RunOnce:
             confidence=confidence_of(
                 [slot for slot in window if energy.get(slot.start, 0.0) > 0.0]
             ),
-            known_until=ctx.now + timedelta(hours=ctx.curve_in.coverage_h(ctx.now)),
+            known_until=ctx.now + timedelta(hours=ctx.effective.coverage_h(ctx.now)),
             reason=why,
             inputs_hash=inputs_digest(
                 self.key,
@@ -320,7 +320,7 @@ def _choose(
         )
     ]
     if feasible:
-        best = min(feasible, key=lambda start: (_cost(ctx.curve_in, programme, start), start))
+        best = min(feasible, key=lambda start: (_cost(ctx.effective, programme, start), start))
         return best, "block", True
 
     if allow_late:

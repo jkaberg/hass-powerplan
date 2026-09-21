@@ -36,6 +36,7 @@ __all__ = [
     "ESTIMATED_CONFIDENCE",
     "KNOWN_CONFIDENCE",
     "OFFER_CONFIDENCE",
+    "SURPLUS_CONFIDENCE",
     "BaselineModel",
     "BudgetForecast",
     "ForecastKind",
@@ -58,6 +59,9 @@ ESTIMATED_CONFIDENCE = 0.6
 #: day it belongs to must reach it. Below that D6 runs on σ alone and D7 issues
 #: no forecast-based peak warning.
 OFFER_CONFIDENCE = 0.6
+#: D5 §2 (Phase 7): below this production confidence a slot's surplus is not
+#: planned on - no deadline waits for sun the forecast barely believes.
+SURPLUS_CONFIDENCE = 0.5
 
 
 class ForecastKind(StrEnum):
@@ -115,6 +119,17 @@ class Series:
             if t < point.end:
                 return point
         return None
+
+    def kwh_between(self, a: datetime, b: datetime) -> float | None:
+        """Return a watts series' energy over `[a, b)` in kWh, `None` where no point overlaps."""
+        joules = 0.0
+        found = False
+        for point in self.points:
+            overlap = (min(point.end, b) - max(point.start, a)).total_seconds()
+            if overlap > 0.0:
+                joules += point.value * overlap
+                found = True
+        return joules / 3_600_000.0 if found else None
 
     def mean(self, a: datetime, b: datetime) -> tuple[float, float] | None:
         """Return the duration-weighted value over `[a, b)` and its worst confidence.
@@ -184,8 +199,9 @@ class PlannerForecasts:
 
     The bridge D5's protocol needs: `Headroom.build` subtracts `baseline_w` from
     the ceiling, so a baseline that is not offered must answer **0.0** - subtract
-    nothing - and never a guess. `surplus_w` is 0.0 until PV lands (D10 §5.5,
-    v1.x); the planner is the self-consumption logic (D10 §2).
+    nothing - and never a guess. `surplus_w` is D10 §2's `max(0, pv − baseline)`
+    where the production forecast's confidence is at least `SURPLUS_CONFIDENCE`,
+    else 0.0 (D5 §2); the planner is the self-consumption logic (D10 §2).
     """
 
     source: Forecasts
@@ -196,9 +212,12 @@ class PlannerForecasts:
         return None if answer is None else answer[0]
 
     def surplus_w(self, t: datetime) -> float:
-        """Return the PV surplus expected at `t` - 0.0 until v1.x's sources."""
-        del t
-        return 0.0
+        """Return the PV surplus the planner may count on at `t`, 0.0 below the gate."""
+        production = self.source.production
+        point = None if production is None else production.at(t)
+        if point is None or point.confidence < SURPLUS_CONFIDENCE:
+            return 0.0
+        return self.source.surplus_naive_w(t) or 0.0
 
     def baseline_w(self, t: datetime) -> float:
         """Return the expected uncontrolled load at `t`, 0.0 when not offered."""

@@ -23,7 +23,7 @@ import json
 import math
 import time as _time
 from collections import defaultdict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from decimal import Decimal
@@ -43,6 +43,13 @@ from custom_components.powerplan.core.engine import (
     LoadReads,
     _curves_stale,
 )
+from custom_components.powerplan.core.forecasts.model import (
+    ForecastKind,
+    Forecasts,
+    PlannerForecasts,
+    Series,
+    SeriesPoint,
+)
 from custom_components.powerplan.core.loads import Action, LoadState, PresenceMode, Role
 from custom_components.powerplan.core.metering import (
     MeterSample,
@@ -50,7 +57,14 @@ from custom_components.powerplan.core.metering import (
     WindowMeter,
     WindowMeterConfig,
 )
-from custom_components.powerplan.core.model import Carrier, Confidence, Mode
+from custom_components.powerplan.core.model import (
+    Carrier,
+    Confidence,
+    Direction,
+    Mode,
+    PriceCurve,
+    Slot,
+)
 from custom_components.powerplan.core.pricing import build_curve, modifiers
 from custom_components.powerplan.core.pricing.context import PriceContext
 from custom_components.powerplan.core.pricing.events import EventStore
@@ -392,6 +406,18 @@ def load_reads(  # noqa: PLR0911 - one branch per device type (D4's eight)
                 at, numbers={Role.POWER: step.power_w}, texts={Role.SWITCH: step.status or "off"}
             )
         )
+    if kind == "battery":
+        # The inverter's setpoint entity, its state of charge and its power (D4 §6.6).
+        return LoadReads(
+            reads=core_reads(
+                at,
+                numbers={
+                    Role.BATTERY_POWER_SET: sim.setpoint_w,
+                    Role.SOC: step.values[SOC],
+                    Role.POWER: step.power_w,
+                },
+            )
+        )
     raise NotImplementedError(f"no read adapter for type {kind!r} yet (D9 §3 runner)")
 
 
@@ -447,6 +473,9 @@ class HouseDriver:
     #: sub-meter, invisible to every load's own reading (`unmetered_load`).
     unmetered_w: dict[str, float] = field(default_factory=dict)
     requested_days: set[date] = field(default_factory=set)
+    #: This step's roof and the grid total it made, W (Phase 7's `self_consumption`).
+    production_w: float = 0.0
+    grid_w: float = 0.0
     plugged_days: set[date] = field(default_factory=set)
     unplugged_days: set[date] = field(default_factory=set)
     seen_days: set[date] = field(default_factory=set)
@@ -523,7 +552,8 @@ class HouseDriver:
         house = self.house
         total_w = house.uncontrolled.at(now)
         if house.production is not None:
-            total_w += house.production.at(now)
+            self.production_w = -house.production.at(now)
+            total_w -= self.production_w
         for load in house.loads:
             sim = house.sims[load.load_id]
             command = pending[load.load_id]
@@ -538,6 +568,7 @@ class HouseDriver:
             self.passive_steps[load_id] = passive_step
             total_w += passive_step.power_w
         total_w += sum(self.unmetered_w.values())
+        self.grid_w = total_w
         return house.meter.step(TICK_S, total_w, env)
 
     def circuits(self, now: datetime) -> dict[str, MeterSample]:
@@ -649,7 +680,107 @@ def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
         timedelta(hours=horizon_h),
         now,
     )
-    return Curves(import_={Carrier.ELECTRICITY: curve})
+    if house.export is None:
+        return Curves(import_={Carrier.ELECTRICITY: curve})
+    return Curves(
+        import_={Carrier.ELECTRICITY: curve},
+        export={Carrier.ELECTRICITY: _export_curve(house, raw, curve, now)},
+    )
+
+
+def _export_curve(
+    house: House, raw: Sequence[RawSlot], import_curve: PriceCurve, now: datetime
+) -> PriceCurve:
+    """Return what an exported kWh earns over the known prices (Phase 7).
+
+    `"spot"` is the day-ahead price itself (a Dutch or Nordic spot-paid export),
+    `"half_spot"` half of it (the Dutch floor after net metering), `"net"` the
+    composed import price (net metering: an exported kWh offsets a bought one);
+    a decimal string is a flat feed-in price (Germany's EEG, Australia's FiT).
+    """
+    slots = []
+    for row in sorted(raw, key=lambda row: row.start):
+        rule = house.export
+        if house.export_switch is not None and row.start >= house.export_switch[0]:
+            rule = house.export_switch[1]
+        value = _export_value(str(rule), row, import_curve)
+        slots.append(
+            Slot(
+                start=row.start,
+                end=row.end,
+                total=value,
+                components={"spot": value},
+                confidence=Confidence.KNOWN,
+            )
+        )
+    slots_t = tuple(slots)
+    return PriceCurve(
+        carrier=Carrier.ELECTRICITY,
+        direction=Direction.EXPORT,
+        currency=house.cfg.currency,
+        slots=slots_t,
+        built_at=now,
+        sources=("sim",),
+    )
+
+
+def _export_value(rule: str, row: RawSlot, import_curve: PriceCurve) -> Decimal:
+    """Return one export rule's price for the raw slot `row`."""
+    if rule == "spot":
+        return row.value
+    if rule == "half_spot":
+        return row.value / 2
+    if rule == "net":
+        slot = import_curve.price_at(row.start)
+        return row.value if slot is None else slot.total
+    return Decimal(rule)
+
+
+#: D10 §5.5's confidence for a PV forecast: 0.7 for a day, 0.5 after (`energy_solar`).
+_PV_NEAR = timedelta(hours=24)
+_PV_NEAR_CONFIDENCE = 0.7
+_PV_FAR_CONFIDENCE = 0.5
+_PV_HORIZON_H = 48
+_PV_SAMPLES = 4
+
+
+def _pv_forecast(house: House, now: datetime) -> PlannerForecasts | None:
+    """Return the house's own production as D10's forecast, hour by hour.
+
+    What `energy_solar` would read from Forecast.Solar, drawn from the simulator
+    that makes the power: each hour's mean of four samples, so the forecast
+    knows the weather's clouds but not the minute. Only for a house that asks
+    (`House.pv_forecast`).
+    """
+    if house.production is None or not house.pv_forecast:
+        return None
+    hour = now.replace(minute=0, second=0, microsecond=0)
+    points = []
+    for offset in range(_PV_HORIZON_H):
+        start = hour + timedelta(hours=offset)
+        watts = (
+            -sum(
+                house.production.at(start + timedelta(minutes=15 * sample))
+                for sample in range(_PV_SAMPLES)
+            )
+            / _PV_SAMPLES
+        )
+        points.append(
+            SeriesPoint(
+                start=start,
+                end=start + timedelta(hours=1),
+                value=round(max(0.0, watts), 1),
+                confidence=_PV_NEAR_CONFIDENCE if start - now < _PV_NEAR else _PV_FAR_CONFIDENCE,
+            )
+        )
+    series = Series(
+        kind=ForecastKind.PRODUCTION,
+        unit="W",
+        points=tuple(points),
+        source="sim",
+        issued_at=now,
+    )
+    return Forecasts(at=now, production=series).for_planner()
 
 
 # --------------------------------------------------------------------------- #
@@ -709,6 +840,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
     started = _time.perf_counter()
     writes_10min: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
     curves: Curves | None = None
+    pv_forecast: PlannerForecasts | None = None
     plan_due: str | None = "startup"
     next_quarter_plan = _quarter_plan_after(scenario.start)
     last_plans: dict[str, Any] = {}
@@ -812,6 +944,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 if day not in outage_days
                 else _curves_without_today(house, now, outage_days)
             )
+            pv_forecast = _pv_forecast(house, now)
         inputs = Inputs(
             now=now,
             site=cfg,
@@ -828,6 +961,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             trigger="tick",
             circuits=driver.circuits(now),
             events=_announced(house, now).in_force(now),
+            forecasts=pv_forecast,
         )
 
         # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #
@@ -886,6 +1020,8 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             house, snapshot, steps, result, now, target_kwh, ready_checked, departure_checked, day
         )
         _measure_month(result, snapshot, month, target_kwh)
+        if house.production is not None:
+            _measure_sun(result.month(month), driver)
         if state.runtime.failures:
             result.engine_failures += 1
         result.reasons_sample = snapshot.reasons
@@ -957,6 +1093,14 @@ def _measure_month(
                 row["over_target"] += 1
     if _room_violated(snapshot):
         row["comfort_violation_min"] += TICK_S / 60.0
+
+
+def _measure_sun(row: dict[str, Any], driver: HouseDriver) -> None:
+    """Accumulate the month's production and what of it stayed home (D9 §5.9 `self_consumption`)."""
+    produced = driver.production_w * TICK_S / 3_600_000.0
+    exported = min(produced, max(0.0, -driver.grid_w) * TICK_S / 3_600_000.0)
+    row["production_kwh"] = row.get("production_kwh", 0.0) + produced
+    row["self_consumed_kwh"] = row.get("self_consumed_kwh", 0.0) + produced - exported
 
 
 def _room_violated(snapshot: Snapshot) -> bool:

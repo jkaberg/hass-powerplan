@@ -209,6 +209,12 @@ class AccountingAdapter:
                 if row.slot is not None and load_id in self._params
             },
             window_closed=close.window_closed,
+            production_kwh=close.site_production_kwh,
+            sun_claims={
+                load_id: row.planned_sun_kwh
+                for load_id, row in close.loads.items()
+                if row.planned_sun_kwh > 0.0 and load_id in self._params
+            },
         )
         ctx = CloseCtx(
             curves=curves,

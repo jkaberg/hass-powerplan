@@ -10,12 +10,12 @@ The kinds of appliance PowerPlan steers, the plan each follows by default, and t
 |---|---|---|---|
 | Dishwasher, washer or dryer | One run before ready-by | Always on, Cheapest hours before the deadline | `appliance_cycle` |
 | Home battery | Shave the peaks | Always on, Buy low, sell high, Cheapest hours before the deadline | `battery` |
-| Car charger | Cheapest hours before the deadline | Always on, Cheapest hours | `ev` |
+| Car charger | Cheapest hours before the deadline | Always on, Cheapest hours, Solar surplus | `ev` |
 | Floor heating | Bank heat in cheap hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule | `floor_heating` |
-| Something else on a switch | Cheapest hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule | `generic_switch` |
+| Something else on a switch | Cheapest hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule, Solar surplus | `generic_switch` |
 | Heat pump | Bank heat in cheap hours | Always on, Save where it hurts least, Cheapest hours, Cheapest hours before the deadline, Follow a schedule | `heat_pump` |
 | Panel heater | Save where it hurts least | Always on, Cheapest hours, Cheapest hours before the deadline, Bank heat in cheap hours, Follow a schedule | `radiator` |
-| Water heater | Cheapest hours before the deadline | Always on, Save where it hurts least, Cheapest hours, Bank heat in cheap hours, Follow a schedule | `water_heater` |
+| Water heater | Cheapest hours before the deadline | Always on, Save where it hurts least, Cheapest hours, Bank heat in cheap hours, Follow a schedule, Solar surplus | `water_heater` |
 <!-- generated:end types -->
 
 <a name="ev"></a>

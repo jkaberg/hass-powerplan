@@ -172,7 +172,7 @@ def _sub_plans(
     covered = True
     for need in found:
         sub = plan_one(
-            ctx.curve_in,
+            ctx.effective,
             required_kwh=need.required_kwh,
             max_w=demand.max_w,
             headroom=ctx.headroom,
@@ -217,7 +217,7 @@ def _ranked(
         by_day.setdefault(slot.start.astimezone(ctx.tz).date(), []).append(slot)
     out: dict[datetime, float] = {}
     for day, slots in by_day.items():
-        if ctx.hysteresis.is_flat(ctx.curve_in, day, ctx.tz):
+        if ctx.hysteresis.is_flat(ctx.effective, day, ctx.tz):
             out.update(dict.fromkeys((slot.start for slot in slots), 0.5))
             continue
         order = sorted(slots, key=lambda row: (row.total, row.start))
@@ -321,7 +321,7 @@ class HeatCapacitor:
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:
         """Return the banking plan over the horizon (§5.7)."""
         store = ctx.store
-        window = ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())
+        window = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
         profile = ctx.load.target
         silent = _nothing_to_say(demand, ctx, store, window)
         if silent is not None:
@@ -337,11 +337,11 @@ class HeatCapacitor:
             mode=PlanMode.PRICE,
             slots=tuple(row.slot for row in rows),
             now=ctx.now,
-            currency=ctx.curve_in.currency,
+            currency=ctx.effective.currency,
             required_kwh=required if fills else None,
             deadline=first,
             confidence=confidence_of([slot for slot in window if slot.start in fills]),
-            known_until=ctx.now + timedelta(hours=ctx.curve_in.coverage_h(ctx.now)),
+            known_until=ctx.now + timedelta(hours=ctx.effective.coverage_h(ctx.now)),
             reason=_reason(rows),
             inputs_hash=inputs_digest(
                 self.key,

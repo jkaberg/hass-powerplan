@@ -2,9 +2,10 @@
 
 | | |
 |---|---|
+| Status | v0.5 |
 | HLD section | §6.10 |
-| Depends on | D3 (history reconstruction, uncontrolled decomposition), D1 (curve horizon, holidays), D4 (store models to fit, load views) |
-| Consumers | D5 (weather → demand, surplus, baseline headroom), D6 (baseline projection, residual σ), D7 (peak warning), D2 (advice), D4 (fitted parameters), D11 (outdoor temperature and fitted `loss_coeff` for the shadows - the same `effective` values D4 uses) |
+| Depends on | D3 (history reconstruction, the uncontrolled part), D1 (curve horizon, holidays), D4 (store models to fit, load views) |
+| Consumers | D5 (weather, surplus, baseline headroom), D6 (baseline projection, residual σ), D7 (peak warning), D2 (advice), D4 (fitted parameters), D11 (outdoor temperature and the fitted `loss_coeff` for the shadows, the same `effective` values D4 uses) |
 | Invariants owned | INV-62, INV-63 |
 
 ---

@@ -18,6 +18,7 @@ from tests.builders.houses import (
     FLOOR_GROUP,
     FLOOR_LOOPS,
     GARAGE_CIRCUIT,
+    au_solar,
     be_quarter,
     es_contracted,
     fi_linear,
@@ -30,7 +31,7 @@ from tests.builders.houses import (
     zaptec_house,
 )
 from tests.scenarios.runner import Fault, Scenario
-from tests.sim.prices import FLAT, SPOT_LIKE
+from tests.sim.prices import FLAT, SOLAR_GLUT, SPOT_LIKE
 
 OSLO = ZoneInfo("Europe/Oslo")
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
@@ -608,6 +609,150 @@ PHASE4 = (
     fi_deductible,
     es_contracted_p1_p2,
     us_srp_demand_cooling,
+)
+
+# --------------------------------------------------------------------------- #
+# Phase 7: panels and a battery on the reference house (D9 §5.3)
+# --------------------------------------------------------------------------- #
+
+#: 8 kWp on the roof: a common Norwegian detached-house array, the size
+#: `nl_pv` carries at 6 kWp scaled to a larger roof (assumed; D-0652).
+PV_KWP = 8.0
+#: Sunday 30 May 2027: the household home all day with the car plugged in since
+#: Friday, Monday's 07:30 departure the deadline (checked against `HouseholdSim`).
+PV_EV_START = datetime(2027, 5, 30, 8, 17, 17, tzinfo=OSLO)
+#: A June weekday: the household out at work, the sun on the roof.
+PV_BATTERY_START = datetime(2027, 6, 15, 6, 17, 17, tzinfo=OSLO)
+#: A flat, low feed-in price - a supplier paying a fixed 0.10 NOK/kWh (assumed).
+LOW_EXPORT_NOK = "0.10"
+#: The dark month: the reference winter day's own January Tuesday, after the car has
+#: left, so its first deadline is the next morning's.
+PV_WINTER_START = datetime(2027, 1, 12, 8, 17, 17, tzinfo=OSLO)
+#: A target tight enough that the evening needs the battery (kW).
+PV_WINTER_TARGET_KW = 9.0
+#: Saturday 5 June 2027 under `SOLAR_GLUT`: 25 quarter-hours below zero, down to
+#: −0.067 (the deepest weekend of the summer under the house's seed, checked).
+SOAK_START = datetime(2027, 6, 5, 8, 17, 17, tzinfo=OSLO)
+
+
+def pv_no_battery_ev_waits() -> Scenario:
+    """Return a spring Sunday with panels and the car at home (D9 §5.3, Phase 7).
+
+    Export is paid at the spot price; the car's plan ranks midday surplus at
+    that price against the night's import price and Monday's 07:30 deadline.
+    """
+    return Scenario(
+        name="pv_no_battery_ev_waits",
+        house=lambda: house(
+            day=PV_EV_START.date(),
+            price_kind=SPOT_LIKE,
+            with_tank=False,
+            pv_kwp=PV_KWP,
+            export="spot",
+        ),
+        start=PV_EV_START,
+        days=1.0,
+        target_kw=None,
+    )
+
+
+def pv_battery_self_consumption() -> Scenario:
+    """Return a June weekday with panels, a battery and a low feed-in price (D9 §5.3)."""
+    return Scenario(
+        name="pv_battery_self_consumption",
+        house=lambda: house(
+            day=PV_BATTERY_START.date(),
+            price_kind=SPOT_LIKE,
+            with_ev=False,
+            pv_kwp=PV_KWP,
+            battery={},
+            battery_soc=30.0,
+            export=LOW_EXPORT_NOK,
+        ),
+        start=PV_BATTERY_START,
+        days=1.0,
+        target_kw=None,
+    )
+
+
+def pv_battery_peak_shave_winter() -> Scenario:
+    """Return the dark January day with panels and a `peak_shave` battery (D9 §5.3).
+
+    Grid charging on: in January the sun cannot fill the reserve.
+    """
+    return Scenario(
+        name="pv_battery_peak_shave_winter",
+        house=lambda: house(
+            day=PV_WINTER_START.date(),
+            price_kind=SPOT_LIKE,
+            pv_kwp=PV_KWP,
+            battery={"allow_grid_charge": True},
+            battery_soc=60.0,
+            export="spot",
+        ),
+        start=PV_WINTER_START,
+        days=1.0,
+        target_kw=PV_WINTER_TARGET_KW,
+    )
+
+
+def negative_price_soak() -> Scenario:
+    """Return a June Saturday whose midday export price is below zero (D9 §5.3)."""
+    return Scenario(
+        name="negative_price_soak",
+        house=lambda: house(
+            day=SOAK_START.date(),
+            price_kind=SOLAR_GLUT,
+            with_ev=False,
+            tank_top_c=50.0,
+            tank_bottom_c=40.0,
+            pv_kwp=PV_KWP,
+            battery={"allow_grid_charge": True},
+            battery_soc=30.0,
+            export="spot",
+        ),
+        start=SOAK_START,
+        days=1.0,
+        target_kw=None,
+    )
+
+
+#: WP7.4: a Sydney spring Saturday - the household at home, the sun high.
+AU_SOAK_START = datetime(2026, 10, 10, 6, 17, 17, tzinfo=ZoneInfo("Australia/Sydney"))
+#: `nl_pv@2` across the end of Dutch net metering, 2027-01-01.
+SALDERING_START = datetime(2026, 12, 29, 0, 17, 17, tzinfo=ZoneInfo("Europe/Amsterdam"))
+SALDERING_DAYS = 6.0
+
+
+def au_solar_soak() -> Scenario:
+    """Return a spring day on `au_solar@1`: the surplus is soaked before the grid (D9 §5.3)."""
+    return Scenario(
+        name="au_solar_soak",
+        house=lambda: au_solar(start=AU_SOAK_START.date()),
+        start=AU_SOAK_START,
+        days=1.0,
+        target_kw=None,
+    )
+
+
+def nl_saldering_end() -> Scenario:
+    """Return three days either side of 2027-01-01 on `nl_pv@2` (D9 §5.3)."""
+    return Scenario(
+        name="nl_saldering_end",
+        house=lambda: nl_pv(start=SALDERING_START.date()),
+        start=SALDERING_START,
+        days=SALDERING_DAYS,
+        target_kw=None,
+    )
+
+
+PHASE7 = (
+    pv_no_battery_ev_waits,
+    pv_battery_self_consumption,
+    pv_battery_peak_shave_winter,
+    negative_price_soak,
+    au_solar_soak,
+    nl_saldering_end,
 )
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.

@@ -60,6 +60,7 @@ from .heat_capacitor import HeatCapacitor
 from .plan import COVER_EPS_KWH, build_plan, inputs_digest
 from .run_once import RunOnce
 from .schedule import Schedule
+from .surplus import Surplus
 
 __all__ = [
     "COMMIT_MIN",
@@ -94,6 +95,7 @@ __all__ = [
     "SitePlan",
     "Strategy",
     "StrategyEntry",
+    "Surplus",
     "build_plan",
     "committed_slots",
     "entry",

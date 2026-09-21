@@ -196,7 +196,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 8
+SnapshotSchema: int = 9
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -934,6 +934,9 @@ class SlotLoad:
     level_now: float | None
     slot: LoadSlot | None
     legionella_active: bool = False
+    #: Phase 7 (D11 §5.2): the surplus kWh the load's plan meant to take in the
+    #: slot, `inf` for a load that may not import (`Demand.import_w == 0`).
+    planned_sun_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -958,6 +961,8 @@ class SlotClose:
     loads: Mapping[str, SlotLoad]
     window_closed: ClosedWindow | None = None
     presence: PresenceMode = PresenceMode.HOME
+    #: The site's production over the slot (D3), `None` without a production sensor.
+    site_production_kwh: float | None = None
 
 
 class AccountingHook(Protocol):
@@ -2459,6 +2464,7 @@ class Engine:
         assert inputs.curves is not None
         site_import = _slot_of(state.load_meters.get(SITE_IMPORT), slot.start)
         site_export = _slot_of(state.load_meters.get(SITE_EXPORT), slot.start)
+        site_production = _slot_of(state.load_meters.get(SITE_PRODUCTION), slot.start)
         estimated = any(
             row is not None and row.confidence != "exact" for row in (site_import, site_export)
         )
@@ -2472,6 +2478,11 @@ class Engine:
                 level_now=views[load.load_id].level_now if load.load_id in views else None,
                 slot=_slot_of(state.load_meters.get(load.load_id), slot.start),
                 legionella_active=_legionella_running(state.loads.get(load.load_id)),
+                planned_sun_kwh=_planned_sun_kwh(
+                    state.plans.plans.get(load.load_id),
+                    views[load.load_id].demand if load.load_id in views else None,
+                    slot,
+                ),
             )
             for load in self._loads
         }
@@ -2482,6 +2493,7 @@ class Engine:
             curves=inputs.curves,
             site_import_kwh=0.0 if site_import is None else site_import.kwh,
             site_export_kwh=0.0 if site_export is None else site_export.kwh,
+            site_production_kwh=None if site_production is None else site_production.kwh,
             site_confidence="estimated" if estimated or site_import is None else "exact",
             outdoor_c=inputs.outdoor_c,
             loads=loads,
@@ -2538,10 +2550,14 @@ class Engine:
             row.sample(inputs.now, view, None if energy is None else energy.reading, minutes)
             out[load.load_id] = row.state()
         grid_w = meter.grid_w
-        for load_id, watts in (
+        sites: list[tuple[str, float | None]] = [
             (SITE_IMPORT, None if grid_w is None else max(grid_w, 0.0)),
             (SITE_EXPORT, None if grid_w is None else max(-grid_w, 0.0)),
-        ):
+        ]
+        if meter.production_w is not None or SITE_PRODUCTION in state.load_meters:
+            # Phase 7 (D11 §5.2): the production integral, for a site that measures it.
+            sites.append((SITE_PRODUCTION, meter.production_w))
+        for load_id, watts in sites:
             row = LoadMeter(LoadMeterConfig(load_id=load_id), state.load_meters.get(load_id))
             row.sample(
                 inputs.now,
@@ -2639,6 +2655,27 @@ def _ema(runtime: RuntimeState, meter: MeterSnapshot, frozen: bool, cfg: EngineC
 #: The site's own slot integrals live beside the loads' under these ids (D-0267).
 SITE_IMPORT: Final = "__site_import__"
 SITE_EXPORT: Final = "__site_export__"
+SITE_PRODUCTION: Final = "__site_production__"
+
+
+def _planned_sun_kwh(plan: Plan | None, demand: Demand | None, slot: Slot) -> float:
+    """Return the surplus kWh `plan` meant `slot` to take (D11 §5.2, Phase 7).
+
+    A load whose demand may not import (`import_w == 0`, a battery) took only the
+    sun whatever its plan said: `inf`, so the ledger caps it at what it drew.
+    """
+    if demand is not None and demand.import_w == 0.0:
+        return math.inf
+    if plan is None:
+        return 0.0
+    total = 0.0
+    for row in plan.slots:
+        overlap = (min(row.end, slot.end) - max(row.start, slot.start)).total_seconds()
+        if overlap > 0.0 and row.surplus_w > 0.0:
+            total += row.surplus_w * overlap / 3_600_000.0
+    return total
+
+
 #: Closed windows kept for the planning loop to hand to D11 - two days of hours.
 _WINDOWS_KEPT: Final = 48
 #: The slot length D3's load meters use when no curve says otherwise (D1: quarter hours).

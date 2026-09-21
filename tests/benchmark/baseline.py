@@ -55,6 +55,8 @@ DEFAULT_TOLERANCES: dict[str, Tolerance] = {
     "total.fee": Tolerance("not_worse"),
     "total.cost_energy": Tolerance("not_worse"),
     "total.savings": Tolerance("not_less"),
+    #: Phase 7: the share of the production used at home; only a house with panels.
+    "total.self_consumption": Tolerance("not_less"),
     "total.writes": Tolerance("pct", 10.0),
     "perf.tick_p95_ms": Tolerance("abs", 50.0),
     "perf.plan_p95_ms": Tolerance("abs", 500.0),

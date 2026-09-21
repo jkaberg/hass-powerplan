@@ -1,11 +1,13 @@
 """The ordered walk: who gets what, and why (D6 §5.3, INV-1).
 
     0 frozen        → hold every previous grant, no escalation (INV-15, INV-17)
+    0a discharge    → at stage ≥ 1 a battery above its reserve covers the measured deficit (Phase 7)
     1 zones         → which source carries a zone's demand              (INV-42)
     2 P_free        = P_allow − uncontrolled − Σ reserved(decided so far)
     3 comfort       → every violator first, at any priority, bounded by item 1 only
     4 cycles        → a running cycle keeps its profile power            (INV-59)
-    5 the walk      → descending priority, on the residual, quantised down
+    5 the walk      → descending priority, on the residual, quantised down;
+                      a load with a grid limit follows the measured surplus (Phase 7)
     6 stage actions → ≥ 2 stores to their floor, 4 (blunt) all off but comfort and pumps
     7 the shed set  → filtered to agree with the grants, a reason each   (INV-40)
     8 EV stop gates → two gates, two horizons                           (INV-39)
@@ -16,12 +18,12 @@
 ceiling > comfort floors > plan > preference. A strategy paces and never overrides
 safety; a device profile never decides.
 
-Two invariants the arithmetic carries rather than checks. A load is judged against the
-allowance less what the loads **decided before it** reserve, so it is never asked to fit
-beside its own reservation (D6 §9 21) - and what a load reserves is its nameplate, its
-measured draw plus a margin, or its grant, by what it *is* (D6 §5.2). Both are the
-ancestor controller's lesson: `granted_w 348.3, measured_w 2940.0` with `p_free_w`
-reading 8–9 kW while the house was 1.4 kW over.
+Two invariants the arithmetic carries rather than checks. A load is judged against
+the allowance less what the loads **decided before it** reserve, so it is never asked
+to fit beside its own reservation (D6 §9 21) - and what a load reserves is its
+nameplate, its measured draw plus a margin, or its grant, by what it *is* (D6 §5.2).
+Both come from one night on the ancestor controller: `granted_w 348.3, measured_w 2940.0`
+with `p_free_w` reading 8–9 kW while the house was 1.4 kW over.
 """
 
 from __future__ import annotations
@@ -55,12 +57,19 @@ from .reserved import GRANT_MARGIN_W, MODULATING_KINDS, ON_W, reserved_w
 from .trim import TrimCfg, proportional_trim
 
 if TYPE_CHECKING:
+    from ..model import Plan
     from ..strategies import LoadView
 
 __all__ = ["EV_MIN_STOP_S", "AllocCfg", "AllocState", "Grants", "allocate"]
 
 #: Ten minutes of EV sulk: below this a stop costs more than it saves (INV-39).
 EV_MIN_STOP_S = 600.0
+
+#: D6 §5.3 (Phase 7): a surplus-only load starts after this long with enough
+#: surplus, and stops after `SURPLUS_STOP_S` of importing - evcc's enable and
+#: disable delays, defaults tuned on `pv_no_battery_ev_waits`, not measured.
+SURPLUS_START_S = 60.0
+SURPLUS_STOP_S = 300.0
 
 #: The constraint scopes that bound a comfort violator: item 1 of the precedence
 #: plus the physical limits inside it - a grid-switched load's open relay among
@@ -74,6 +83,9 @@ _EPS_W = 1e-6
 #: What the walk's stages are named in `AllocReport.denied`.
 _SATISFIED = "satisfied"
 _PLANNED_IDLE = "planned idle"
+_WAITING_FOR_SUN = "waiting for surplus"
+#: What `Grant.capped_by` names when the measured surplus bound a grant.
+_SURPLUS = "surplus"
 
 
 type Grants = Mapping[str, Grant]
@@ -91,6 +103,8 @@ class AllocCfg:
     #: The stage at which stickiness stops protecting a running load (§5.3 step 5).
     sticky_max_stage: int = 3
     trim: TrimCfg = field(default_factory=TrimCfg)
+    surplus_start_s: float = SURPLUS_START_S
+    surplus_stop_s: float = SURPLUS_STOP_S
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +124,10 @@ class AllocState:
     ev_stop_latch: Mapping[str, datetime | None] = field(default_factory=dict)
     pi: PiState = field(default_factory=PiState)
     ladder: LadderState = field(default_factory=LadderState)
+    #: D6 §5.3 (Phase 7): since when a stopped surplus-only load has had enough
+    #: surplus, and since when a running one has imported.
+    sun_since: Mapping[str, datetime] = field(default_factory=dict)
+    import_since: Mapping[str, datetime] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         """Return the JSON-able form D7 persists (D6 §7)."""
@@ -122,6 +140,8 @@ class AllocState:
             },
             "pi": self.pi.as_dict(),
             "ladder": self.ladder.as_dict(),
+            "sun_since": {k: v.isoformat() for k, v in self.sun_since.items()},
+            "import_since": {k: v.isoformat() for k, v in self.import_since.items()},
         }
 
     @classmethod
@@ -145,6 +165,10 @@ class AllocState:
             ladder=(
                 LadderState.from_dict(dict(data["ladder"])) if "ladder" in data else LadderState()
             ),
+            sun_since={k: datetime.fromisoformat(v) for k, v in data.get("sun_since", {}).items()},
+            import_since={
+                k: datetime.fromisoformat(v) for k, v in data.get("import_since", {}).items()
+            },
         )
 
 
@@ -176,6 +200,7 @@ def allocate(
     ceiling_w = ctx.budget.p_allow_w - (ctx.meter.uncontrolled_w or 0.0)
     walk = _Walk(ctx=ctx, cfg=cfg, constraints=constraints, state=state, ceiling_w=ceiling_w)
 
+    walk.serve_discharge(order)
     walk.serve_comfort(order)
     walk.serve_cycles()
     walk.serve_rest(order)
@@ -253,8 +278,36 @@ class _Walk:
         self.stop_ok: dict[str, bool] = {}
         self.sticky: dict[str, datetime] = dict(self.state.sticky_until)
         self.breach_w: float = 0.0
+        #: The measured surplus the loads that follow it have left (D6 §5.3,
+        #: Phase 7); computed on first use, taken in the walk's priority order.
+        self.sun_left: float | None = None
+        self.sun_since: dict[str, datetime] = dict(self.state.sun_since)
+        self.import_since: dict[str, datetime] = dict(self.state.import_since)
 
     # ------------------------------------------------------------------ stages #
+
+    def serve_discharge(self, order: Sequence[LoadView]) -> None:
+        """Discharge a battery into the measured deficit at stage ≥ 1, first (D6 §5.3, Phase 7).
+
+        Faster than the planning cycle's `peak_shave`: a battery above its reserve
+        (its demand offers discharge, `min_w < 0`) is granted
+        `−min(deficit + what it already delivers, its inverter)` before any comfort
+        is served or shed, and the room it frees is the walk's. At stage 0 the plan
+        governs; below the reserve the demand offers no discharge at all.
+        """
+        grid = self.ctx.meter.grid_w
+        if self.ctx.stage < 1 or grid is None:
+            return
+        deficit = grid - self.ctx.budget.p_allow_w
+        for load in order:
+            if deficit <= 0.0:
+                return
+            if load.demand.min_w >= 0.0 or load.load_id in self.grants:
+                continue
+            delivering = max(0.0, -self._drawn(load))
+            watts = min(deficit + delivering, -load.demand.min_w)
+            self._give(load, -watts, capped_by=(), reason="discharge")
+            deficit -= watts - delivering
 
     def serve_comfort(self, order: Sequence[LoadView]) -> None:
         """Grant every comfort-floor violator, whatever its priority (HLD §3, INV-1).
@@ -400,6 +453,8 @@ class _Walk:
             starved_since=self._starvation(),
             zone_choice=self._zone_choices(),
             ev_stop_latch={lid: self.ctx.now for lid, ok in self.stop_ok.items() if ok},
+            sun_since=self.sun_since,
+            import_since=self.import_since,
         )
 
     # --------------------------------------------------------------- internals #
@@ -419,6 +474,13 @@ class _Walk:
 
         plan = self.ctx.plans.get(load.load_id)
         plan_cap = None if plan is None else plan.cap_w(self.ctx.now)
+        if plan_cap is not None and plan_cap < 0.0 and demand.min_w < 0.0:
+            # A PLANNED DISCHARGE (D5 §5.8, Phase 7): the plan governs a battery at
+            # stage 0, into what the house imports and never into export.
+            self._give(
+                load, -self._discharge_w(load, -plan_cap), capped_by=("plan",), reason="discharge"
+            )
+            return
         if plan_cap is not None and plan_cap <= 0.0:
             # PACING, NOT SHEDDING (INV-25, INV-30): the plan says "not in this slot",
             # which for a store means standing still at its resting setpoint.
@@ -429,6 +491,14 @@ class _Walk:
         cap, capped_by = self._cap(load)
         if plan_cap is not None and plan_cap < cap:
             cap, capped_by = plan_cap, ("plan",)
+        follow = self._follow(load, plan)
+        if follow is not None and follow < cap:
+            if follow <= _EPS_W:
+                # WAITING, NOT SHED (INV-25): a surplus-only load with no sun yet.
+                watts = self._quantise(load, 0.0, stop_ok=stop_ok, session=self._session(load))
+                self._give(load, watts, capped_by=(_SURPLUS,), reason=_WAITING_FOR_SUN)
+                return
+            cap, capped_by = follow, (_SURPLUS,)
         want = min(demand.max_w, cap)
 
         if (
@@ -553,6 +623,118 @@ class _Walk:
         if reason in {_SATISFIED, _PLANNED_IDLE}:
             self.denied.append((load.load_id, reason))
         self._touch_sticky(load, watts)
+
+    def _discharge_w(self, load: LoadView, planned_w: float) -> float:
+        """Return the watts a battery discharges for a planned `planned_w` (D6 §5.3, Phase 7).
+
+        Bounded by its inverter (`-min_w`) and by what the house would import
+        without it - the grid now plus what it already delivers - so a discharge
+        planned against the import price displaces import and is never sold at
+        the export price.
+        """
+        watts = min(planned_w, -load.demand.min_w)
+        grid = self.ctx.meter.grid_w
+        if grid is None:
+            return watts
+        return max(0.0, min(watts, grid - self._drawn(load)))
+
+    def _grid_limit(self, load: LoadView, plan: Plan | None) -> float | None:
+        """Return what `load` may import now, or `None` when it does not follow the sun (D6 §5.3).
+
+        A plan slot built on surplus says it (`grid_w`), and so does a planned
+        charge of a load whose demand limits its import; otherwise the demand's
+        own `import_w` - a battery's 0, so a slot its plan leaves open charges from
+        the sun alone (D5 §5.8's "surplus-only charging, or hold"). A modulating load follows
+        watts; a relay can only be surplus-only (`grid_w = 0`) - with a grid share
+        it keeps its plan, as a setpoint or a mode does.
+        """
+        slot = None if plan is None else plan.slot_at(self.ctx.now)
+        planned = slot is not None and slot.envelope_w is not None and slot.envelope_w > 0.0
+        if (
+            slot is not None
+            and slot.grid_w is not None
+            and planned
+            and (slot.surplus_w > 0.0 or load.demand.import_w is not None)
+        ):
+            # The plan's own grid share: a sunny slot's, or a battery's planned charge.
+            grid: float | None = slot.grid_w
+        else:
+            grid = load.demand.import_w
+        if grid is None:
+            return None
+        if load.kind in MODULATING_KINDS or grid <= 0.0:
+            return grid
+        return None
+
+    def _drawn(self, load: LoadView) -> float:
+        """Return what `load` draws now, signed: measured, else what it was granted."""
+        view = self.ctx.view(load.load_id)
+        if view is not None and view.measured_w is not None:
+            return view.measured_w
+        return self.ctx.previous_w(load.load_id)
+
+    def _sun(self) -> float:
+        """Return the measured surplus left for the loads that follow it (D6 §5.3).
+
+        What the site exports plus what those loads draw now - their draw came
+        out of the surplus they are following, so it counts as theirs to take
+        again. Taken in the walk's priority order.
+        """
+        if self.sun_left is None:
+            grid = self.ctx.meter.grid_w
+            drawn = sum(
+                self._drawn(load)
+                for load in self.ctx.loads
+                if self._grid_limit(load, self.ctx.plans.get(load.load_id)) is not None
+            )
+            self.sun_left = 0.0 if grid is None else max(0.0, drawn - grid)
+        return self.sun_left
+
+    def _follow(self, load: LoadView, plan: Plan | None) -> float | None:
+        """Return the most `load` may draw on the measured surplus, or `None` (D6 §5.3).
+
+        `grid_w + its share`: it never imports more than its plan's grid share, so
+        the capacity axis, which counts import only, sees nothing new (INV-19).
+        A surplus-only load (`grid_w = 0`) has the start and stop delays.
+        """
+        grid = self._grid_limit(load, plan)
+        if grid is None:
+            return None
+        sun = self._sun()
+        allowed = grid + sun if grid > 0.0 else self._surplus_only(load, sun)
+        self.sun_left = max(0.0, sun - max(0.0, min(allowed, load.demand.max_w) - grid))
+        return allowed
+
+    def _surplus_only(self, load: LoadView, sun: float) -> float:
+        """Return a surplus-only load's allowance: start after 60 s of sun, stop after 300 s of import."""
+        load_id = load.load_id
+        now = self.ctx.now
+        floor = self._sun_floor(load)
+        if self._session(load):
+            self.sun_since.pop(load_id, None)
+            if sun >= floor:
+                self.import_since.pop(load_id, None)
+                return sun
+            since = self.import_since.setdefault(load_id, now)
+            if (now - since).total_seconds() >= self.cfg.surplus_stop_s:
+                self.import_since.pop(load_id, None)
+                return 0.0
+            return max(sun, floor)
+        self.import_since.pop(load_id, None)
+        if sun < floor or sun <= 0.0:
+            self.sun_since.pop(load_id, None)
+            return 0.0
+        since = self.sun_since.setdefault(load_id, now)
+        return sun if (now - since).total_seconds() >= self.cfg.surplus_start_s else 0.0
+
+    def _sun_floor(self, load: LoadView) -> float:
+        """Return the surplus a surplus-only load needs to run: `min_surplus_w`, else its floor."""
+        configured = float(load.params.get("min_surplus_w", 0) or 0)
+        if configured > 0.0:
+            return configured
+        if load.kind in MODULATING_KINDS:
+            return max(0.0, load.min_w)
+        return load.nameplate_w
 
     def _deny(self, load: LoadView, why: ShedReason, detail: str) -> None:
         """Record a shed: a zero grant **because we are holding it back** (INV-40)."""

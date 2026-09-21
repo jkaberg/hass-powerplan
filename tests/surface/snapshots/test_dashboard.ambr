@@ -1380,7 +1380,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -1710,7 +1710,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -2040,7 +2040,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -2370,7 +2370,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -2700,7 +2700,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -3030,7 +3030,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -3360,7 +3360,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -3674,7 +3674,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -4004,7 +4004,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -4334,7 +4334,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -4670,7 +4670,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   
@@ -4975,7 +4975,7 @@
                   {%- endfor -%}
                   {%- if ns.cs -%}{%- set ns.runs = ns.runs + [[ns.cs, ns.ce]] -%}{%- endif -%}
                   {%- set hm = '%H:%M' -%}
-                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan"} -%}
+                  {%- set strategy = {"always": "Alltid på", "arbitrage": "Kjøp billig, selg dyrt", "best_save": "Spar der det svir minst", "cheapest_hours": "Billigste timer", "deadline_fill": "Billigste timer før fristen", "heat_capacitor": "Lagre varme i billige timer", "observe": "Prøvemodus", "opportunistic": "Bare når det er billig", "peak_shave": "Kapp toppene", "run_once": "Én kjøring før klartid", "schedule": "Følg en tidsplan", "surplus": "Soloverskudd"} -%}
                   {%- set conf = {"known": "kjente priser", "stale": "gamle priser", "estimated": "anslåtte priser", "synthesised": "syntetiske priser"} -%}
                   <ha-icon icon="mdi:clock-check-outline"></ha-icon> **Behov:** {{ n(a.planned_kwh | float(0)) }} kWh{{ (' ' ~ 'før ' ~ (a.deadline | as_timestamp | timestamp_custom(hm)) ~ '') if a.deadline }}
                   

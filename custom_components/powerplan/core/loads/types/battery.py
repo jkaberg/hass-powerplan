@@ -16,8 +16,9 @@ What the type stands for:
   NMC 90 % - the label's kWh is what the cells hold, not what they should cycle
   (D4 §6.6; sources in `CHEMISTRIES`).
 * **Grid charging is a household choice**, not the planner's: with it off the
-  battery charges from surplus only (v1.x, D5 `surplus`), and `max_w` is 0 for
-  the allocator until then (`design/DECISIONS.md` D-0209).
+  battery charges from surplus only - `Demand.import_w` is 0 and D6 grants it
+  the measured surplus and nothing from the grid (D6 §5.3; `design/DECISIONS.md`
+  D-0209, D-0651).
 * **Fail-safe** (INV-64): the release value is 0 W - an inverter left at zero
   neither drains nor overcharges, and the inverter's own controller resumes.
 """
@@ -326,7 +327,9 @@ class Battery:
             if load.store is None
             else load.store.required_kwh(soc, comfort.target, None, ctx.store_ctx())
         )
-        wants = (can_charge and (grid_charge or forced)) or can_discharge
+        # It may always charge from the sun: `import_w = 0` is what D6 holds it
+        # to outside a planned charge (D6 §5.3, Phase 7; D-0209).
+        wants = can_charge or can_discharge
         if comfort.violated:
             urgency = Urgency.COMFORT_VIOLATION
         elif not wants:
@@ -340,7 +343,10 @@ class Battery:
             # Signed: the allocator may grant a negative watt figure - discharge
             # - down to the inverter's limit, never below the reserve.
             min_w=-max_discharge_w if can_discharge else 0.0,
-            max_w=max_charge_w if can_charge and (grid_charge or forced) else 0.0,
+            max_w=max_charge_w if can_charge else 0.0,
+            # The grid charges it only where its plan says so; everywhere else D6
+            # grants it the measured surplus alone (D5 §5.8, D6 §5.3; D-0209).
+            import_w=None if forced else 0.0,
             urgency=urgency,
             comfort=comfort,
             price_sensitive=not comfort.violated and not forced,

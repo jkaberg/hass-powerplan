@@ -82,7 +82,7 @@ def _rows(ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | N
     statements (HLD §7.1) - and by the price cap.
     """
     out: list[_Row] = []
-    for index, slot in enumerate(ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())):
+    for index, slot in enumerate(ctx.effective.slots_between(ctx.now, ctx.horizon_end())):
         if window is not None and not window.matches(slot.start, ctx.tz, ctx.holidays):
             continue
         if max_price is not None and slot.total > max_price:
@@ -237,7 +237,7 @@ class CheapestHours:
         for day_rows in _by_day(_rows(ctx, window=window, max_price=cap)).values():
             chosen |= pick(day_rows, hours)
 
-        whole = ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())
+        whole = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
         return build_plan(
             load_id=ctx.load.load_id,
             strategy=self.key,
@@ -247,9 +247,9 @@ class CheapestHours:
                 for index, slot in enumerate(whole)
             ),
             now=ctx.now,
-            currency=ctx.curve_in.currency,
+            currency=ctx.effective.currency,
             confidence=confidence_of([slot for index, slot in enumerate(whole) if index in chosen]),
-            known_until=ctx.now + timedelta(hours=ctx.curve_in.coverage_h(ctx.now)),
+            known_until=ctx.now + timedelta(hours=ctx.effective.coverage_h(ctx.now)),
             reason=_reason(hours, consecutive=consecutive, max_price=cap),
             inputs_hash=inputs_digest(
                 self.key,

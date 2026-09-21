@@ -26,6 +26,7 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta, tzinfo
+from decimal import Decimal
 
 from ..metering import ClosedWindow, LoadSlot
 from ..model import Carrier, Mode, Money, PriceCurve
@@ -47,7 +48,10 @@ from .pricing import (
     PricedSlot,
     SlotPrice,
     accrue_by_party,
+    accrue_entry_by_party,
     capacity_fee_to_date,
+    entry_cf_cost,
+    entry_cost,
     export_credit,
     price_slot,
     reprice,
@@ -130,6 +134,12 @@ class ClosedSlot:
     site_confidence: SlotConfidence
     loads: Mapping[str, LoadSlot]
     window_closed: ClosedWindow | None = None
+    #: Phase 7 (§5.2): the site's production over the slot, `None` without a
+    #: production sensor; and per load the surplus kWh its plan meant to take
+    #: (`PlanSlot.surplus_w × dt`), `inf` for a load that may not import at all
+    #: (a battery's `Demand.import_w = 0`: whatever it charged was the sun).
+    production_kwh: float | None = None
+    sun_claims: Mapping[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,6 +386,14 @@ class Accounting:
         ledger = self._state.ledger
         self._own_meter = []
         self._settle_stale(slot, ctx)
+        sun = _attributed(slot)
+        pair = ctx.curves.get(Carrier.ELECTRICITY)
+        sun_price = (
+            None
+            if pair is None or pair.export_curve is None
+            else slot_price(pair.export_curve, slot.start_utc)
+        )
+        sun_cap = _counterfactual_surplus(slot)
         for load_id, measured in slot.loads.items():
             shadow_ctx = ctx.loads.get(load_id)
             if shadow_ctx is None:
@@ -388,8 +406,28 @@ class Accounting:
                 self._own_meter.append((measured.kwh, price, house))
             rec = ledger.load_rec(load_id, price.currency)
 
-            cost = price_slot(measured.kwh, price)
-            load_exact = measured.confidence == "exact"
+            # PV surplus is electricity; without an export curve it would have earned 0.
+            electric = shadow_ctx.params.carrier is Carrier.ELECTRICITY
+            load_sun = sun.get(load_id, 0.0) if electric else 0.0
+            entry = PricedSlot(
+                start_utc=slot.start_utc,
+                minutes=slot.minutes,
+                kwh=measured.kwh,
+                cf_kwh=0.0,
+                price=price,
+                sun_kwh=load_sun,
+                sun_price=(
+                    None
+                    if not electric or (load_sun == 0.0 and sun_cap <= 0.0)
+                    else sun_price or replace(price, amount=Decimal(0), parts=())
+                ),
+                sun_cap_kwh=sun_cap if electric else 0.0,
+            )
+            cost = entry_cost(entry)
+            # Without a production reading the attribution is an estimate (§5.2).
+            load_exact = measured.confidence == "exact" and (
+                load_sun == 0.0 or slot.production_kwh is not None
+            )
             rec.kwh += measured.kwh
             rec.cost = plus(rec.cost, cost)
             rec.slots += 1
@@ -402,15 +440,7 @@ class Accounting:
                 rec.model_cf_cost = plus(rec.model_cf_cost, price_slot(model_kwh, price))
                 rec.model_cost = plus(rec.model_cost, cost)
 
-            entry = PricedSlot(
-                start_utc=slot.start_utc,
-                minutes=slot.minutes,
-                kwh=measured.kwh,
-                cf_kwh=0.0,
-                price=price,
-                load_exact=load_exact,
-                shape_kwh=model_kwh or 0.0,
-            )
+            entry = replace(entry, load_exact=load_exact, shape_kwh=model_kwh or 0.0)
             if not price.known:
                 self._defer_reprice(load_id, entry)
             self._book(load_id, entry, slot, shadow_ctx, ctx.tz)
@@ -496,7 +526,10 @@ class Accounting:
 
     def _settle_own(self, load_id: str, entry: PricedSlot) -> None:
         """Settle a slot that is its own counterfactual: savings exactly zero."""
-        self._settle(load_id, (replace(entry, cf_kwh=entry.kwh, settled=True),))
+        self._settle(
+            load_id,
+            (replace(entry, cf_kwh=entry.kwh, cf_sun_kwh=entry.sun_kwh, settled=True),),
+        )
 
     def _settle(self, load_id: str, slots: tuple[PricedSlot, ...]) -> None:
         """Book settled slots: counterfactual, savings, shadow window (D11 §5.9.2).
@@ -512,14 +545,14 @@ class Accounting:
         rec = ledger.load_rec(load_id, currency)
         savings = zero(currency)
         for entry in slots:
-            cost = price_slot(entry.kwh, entry.price)
-            cf_cost = price_slot(entry.cf_kwh, entry.price)
+            cost = entry_cost(entry)
+            cf_cost = entry_cf_cost(entry)
             rec.cf_kwh += entry.cf_kwh
             rec.cf_cost = plus(rec.cf_cost, cf_cost)
             rec.settled_cost = plus(rec.settled_cost, cost)
             rec.kwh_shifted += kwh_shifted(entry.kwh, entry.cf_kwh)
-            accrue_by_party(rec.savings_by_party, entry.price, entry.cf_kwh)
-            accrue_by_party(rec.savings_by_party, entry.price, entry.kwh, -1)
+            accrue_entry_by_party(rec.savings_by_party, entry, counterfactual=True)
+            accrue_entry_by_party(rec.savings_by_party, entry, counterfactual=False, sign=-1)
             if currency == ledger.site.cf_energy_cost.currency:
                 ledger.site.cf_energy_cost = plus(ledger.site.cf_energy_cost, minus(cf_cost, cost))
             key = entry.start_utc.isoformat()
@@ -771,7 +804,7 @@ class Accounting:
         if not pending:
             return
         self._state.pending_reprice[load_id] = tuple(
-            replace(row, cf_kwh=entry.cf_kwh, settled=True)
+            replace(row, cf_kwh=entry.cf_kwh, cf_sun_kwh=entry.cf_sun_kwh, settled=True)
             if row.start_utc == entry.start_utc
             else row
             for row in pending
@@ -807,9 +840,11 @@ class Accounting:
                     rec.settled_cost = plus(rec.settled_cost, row.cost_delta)
                     rec.cf_cost = plus(rec.cf_cost, row.cf_cost_delta)
                     # The split moves with the price: the old one out, the known one in.
+                    grid_cf = row.slot.cf_kwh - row.slot.cf_sun_kwh
+                    grid = row.slot.kwh - row.slot.sun_kwh
                     for price, sign in ((row.price, 1), (row.slot.price, -1)):
-                        accrue_by_party(rec.savings_by_party, price, row.slot.cf_kwh, sign)
-                        accrue_by_party(rec.savings_by_party, price, row.slot.kwh, -sign)
+                        accrue_by_party(rec.savings_by_party, price, grid_cf, sign)
+                        accrue_by_party(rec.savings_by_party, price, grid, -sign)
                     savings = minus(row.cf_cost_delta, row.cost_delta)
                 else:
                     self._reprice_open(load_id, row.slot.start_utc, row.price)
@@ -1033,3 +1068,47 @@ def _import_curve(ctx: CloseCtx, load_id: str, carrier: Carrier) -> PriceCurve:
     """Return the curve a load is billed on: its own tariff's, else its carrier's (G13)."""
     own = ctx.load_curves.get(load_id)
     return own if own is not None else ctx.curves[carrier].import_curve
+
+
+def _attributed(slot: ClosedSlot) -> dict[str, float]:
+    """Return each load's kWh of the slot's own surplus (D11 §5.2, Phase 7).
+
+    The self-consumed production - `production − export`, or without a
+    production reading `export − import + Σ load kWh`, what the loads could have
+    eaten after the house - goes first to the loads whose plan meant to take
+    surplus, each up to what it planned and what it drew; when there is less,
+    pro rata to their measured kWh. A battery discharging while the site exports
+    net sends its energy out: its whole slot is priced at the export price.
+    """
+    loads = {load_id: row.kwh for load_id, row in slot.loads.items()}
+    if slot.production_kwh is not None:
+        pool = max(0.0, slot.production_kwh - slot.export_kwh)
+    else:
+        charged = sum(kwh for kwh in loads.values() if kwh > 0.0)
+        pool = max(0.0, slot.export_kwh - slot.import_kwh + charged)
+    claims = {
+        load_id: min(loads[load_id], planned)
+        for load_id, planned in slot.sun_claims.items()
+        if load_id in loads and loads[load_id] > 0.0 and planned > 0.0
+    }
+    out: dict[str, float] = {}
+    wanted = sum(claims.values())
+    if wanted > 0.0 and pool > 0.0:
+        drawn = sum(loads[load_id] for load_id in claims)
+        for load_id, claim in claims.items():
+            share = claim if wanted <= pool else pool * loads[load_id] / drawn
+            out[load_id] = min(claim, share)
+    if slot.export_kwh > slot.import_kwh:
+        out.update({load_id: kwh for load_id, kwh in loads.items() if kwh < 0.0})
+    return out
+
+
+def _counterfactual_surplus(slot: ClosedSlot) -> float:
+    """Return the surplus the house without powerplan had in this slot (§5.3, Phase 7).
+
+    The same panels less the uncontrolled consumption: `export − import + Σ
+    controlled kWh`, measured, whatever the production sensor says. The other
+    shadows' own draw is ignored (§5.3's stated approximation).
+    """
+    controlled = sum(row.kwh for row in slot.loads.values())
+    return max(0.0, slot.export_kwh - slot.import_kwh + controlled)

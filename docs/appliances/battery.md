@@ -54,6 +54,6 @@ Set the reserve it always keeps for a power cut under **Reserve**.
 
 ## Limits
 
-PowerPlan charges from the grid only if you allow it. Solar and the battery together are planned in a later version.
+PowerPlan charges the battery from the grid only in the hours its plan chooses, and only if you allow grid charging. At any other time it charges only from solar power your home would otherwise send to the grid. With solar panels, the plan stores the midday surplus for the evening when your evening price is worth more than selling the surplus now. It sells when that is not the case. When the battery covers the evening, it covers only what your home would buy, never more.
 
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

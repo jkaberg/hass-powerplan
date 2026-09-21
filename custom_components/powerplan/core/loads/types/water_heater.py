@@ -398,7 +398,7 @@ class WaterHeater:
 
     key: ClassVar[str] = "water_heater"
     kinds: ClassVar[tuple[str, ...]] = ("setpoint", "switch")
-    strategies: ClassVar[tuple[str, ...]] = ("deadline_fill", "heat_capacitor", "always")
+    strategies: ClassVar[tuple[str, ...]] = ("deadline_fill", "heat_capacitor", "surplus", "always")
     default_strategy: ClassVar[str] = "deadline_fill"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 

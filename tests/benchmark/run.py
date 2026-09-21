@@ -55,10 +55,21 @@ class MonthRow:
     cost_energy: str | None = None
     cost_counterfactual: str | None = None
     savings: str | None = None
+    #: D9 §5.9 (Phase 7): self-consumed production ÷ production; `None` without panels.
+    self_consumption: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        """Return the row as JSON-able data, rounded the way the baseline stores it."""
-        return {
+        """Return the row as JSON-able data, rounded the way the baseline stores it.
+
+        `self_consumption` only for a house with panels, so a house without them
+        keeps its baseline byte for byte.
+        """
+        sun = (
+            {}
+            if self.self_consumption is None
+            else {"self_consumption": round(self.self_consumption, 4)}
+        )
+        return sun | {
             "windows": self.windows,
             "over_target": self.over_target,
             "max_window_kwh": round(self.max_window_kwh, 3),
@@ -228,6 +239,7 @@ def run_benchmark(
             cost_energy=money.get(key, {}).get("energy_cost"),
             cost_counterfactual=money.get(key, {}).get("cf_cost"),
             savings=money.get(key, {}).get("savings"),
+            self_consumption=_ratio(row.get("self_consumed_kwh"), row.get("production_kwh")),
         )
         for key, row in months.items()
     }
@@ -239,7 +251,11 @@ def run_benchmark(
         build=build,
         seed=seed,
         months=rows,
-        total=_total(rows, spans),
+        total=_total(rows, spans)
+        | _self_consumption(
+            sum(row.get("self_consumed_kwh", 0.0) for row in months.values()),
+            sum(row.get("production_kwh", 0.0) for row in months.values()),
+        ),
         spans=spans,
         perf={
             "ticks": ticks,
@@ -251,6 +267,20 @@ def run_benchmark(
         controlled_share=controlled_share,
         wall_s=wall,
     )
+
+
+def _self_consumption(consumed: float, produced: float) -> dict[str, Any]:
+    """Return the total's `self_consumption`, only for a house with panels."""
+    if produced <= 0.0:
+        return {}
+    return {"self_consumption": round(consumed / produced, 4)}
+
+
+def _ratio(part: float | None, whole: float | None) -> float | None:
+    """Return `part / whole`, `None` without a whole."""
+    if part is None or not whole:
+        return None
+    return part / whole
 
 
 def _fold_months(into: dict[str, dict[str, Any]], result: ScenarioResult) -> None:

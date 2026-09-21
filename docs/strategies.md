@@ -17,6 +17,7 @@ Each appliance follows a plan: the way PowerPlan chooses its hours. The setup pi
 | Shave the peaks | Home battery | Home battery | `peak_shave` |
 | One run before ready-by | Dishwasher, washer or dryer | Dishwasher, washer or dryer | `run_once` |
 | Follow a schedule | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | — | `schedule` |
+| Solar surplus | Car charger, Something else on a switch, Water heater | — | `surplus` |
 <!-- generated:end strategies -->
 
 <a name="always"></a>
@@ -117,6 +118,19 @@ Follows a Home Assistant schedule helper: on in its windows, off outside them. P
 | Good for | an appliance you want run by the clock |
 | Needs | a schedule helper |
 | Key | `schedule` |
+
+<a name="surplus"></a>
+## Solar surplus
+
+Runs the appliance on the solar power your home would otherwise send to the grid. If the forecast sun cannot fill it before the time you set, it takes the rest from the grid in the cheapest hours. Without a ready-by time it runs on the sun alone.
+
+| | |
+|---|---|
+| Good for | the car charger, the water heater or a switch, in a home with solar panels |
+| Needs | a production sensor and a solar forecast on Home Assistant's energy dashboard |
+| Key | `surplus` |
+
+With solar panels, every plan counts the forecast surplus as cheap power: it costs what you would have been paid for it, or nothing above your export limit. A water heater on **Cheapest hours before the deadline** then heats at noon when the sun is cheaper than the night.
 
 To change an appliance's plan, open its device and choose another under **Strategy**. The plans an appliance offers are in the table above.
 

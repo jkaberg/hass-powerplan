@@ -24,7 +24,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from .pricing import PricedSlot, price_session
+from .pricing import PricedSlot, price_session, with_cf_sun
 from .shadow.base import StoreKind
 
 if TYPE_CHECKING:
@@ -100,7 +100,7 @@ def settle(buffer: OpenBuffer, rate_w: float | None) -> tuple[PricedSlot, ...]:
     else:
         placed = [slot.kwh for slot in slots]
     return tuple(
-        replace(slot, cf_kwh=cf_kwh, settled=True)
+        with_cf_sun(replace(slot, cf_kwh=cf_kwh, settled=True))
         for slot, cf_kwh in zip(slots, placed, strict=True)
     )
 

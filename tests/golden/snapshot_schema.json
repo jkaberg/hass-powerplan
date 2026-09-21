@@ -456,6 +456,12 @@
               "None"
             ]
           },
+          "import_w": {
+            "one_of": [
+              "float",
+              "None"
+            ]
+          },
           "max_w": "float",
           "min_w": "float",
           "price_sensitive": "bool",
@@ -986,5 +992,5 @@
       }
     }
   },
-  "schema": 8
+  "schema": 9
 }

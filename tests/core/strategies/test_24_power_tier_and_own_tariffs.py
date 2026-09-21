@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from custom_components.powerplan.core.strategies import Curves, Headroom, LoadView, plan_all
-from custom_components.powerplan.core.strategies.deadline_fill import _Candidate, _fill_priced
+from custom_components.powerplan.core.strategies.deadline_fill import (
+    _Candidate,
+    _candidate,
+    _fill_priced,
+)
 from custom_components.powerplan.core.tariffs import TimeFilter
 from tests.builders.curves import OSLO
 
@@ -106,11 +110,14 @@ def test_23_a_cheaper_slot_is_crossed_in_exactly_when_it_saves_more_than_the_sur
 
 
 def _cost(candidates: list[_Candidate], taken: dict[int, float]) -> Decimal:
+    """Return what `taken` costs, each slot's kWh through its bands in order."""
     total = Decimal(0)
     for row in candidates:
-        kwh = taken.get(row.index, 0.0)
-        under = min(kwh, (row.tier_w or row.cap_w) * row.hours / 1000.0)
-        total += row.price * Decimal(str(kwh)) + row.surcharge * Decimal(str(kwh - under))
+        left = taken.get(row.index, 0.0)
+        for watts, price in row.bands or ((row.cap_w, row.slot.total),):
+            kwh = min(left, watts * row.hours / 1000.0)
+            total += price * Decimal(str(kwh))
+            left -= kwh
     return total
 
 
@@ -119,18 +126,18 @@ def test_23_the_greedy_equals_brute_force_on_slot_tier_instances(seed: int) -> N
     """Three one-hour slots, each with a tier; every 0.5 kWh split is tried."""
     rng = random.Random(seed)
     base = flat_curve().slots[0]
-    candidates = []
+    candidates: list[_Candidate] = []
     for index in range(3):
         start = datetime(2026, 9, 24, index, tzinfo=OSLO)
         price = Decimal(rng.randint(10, 60)) / 100
         slot = replace(base, start=start, end=start + timedelta(hours=1), total=price)
         candidates.append(
-            _Candidate(
-                index=index,
-                slot=slot,
-                cap_w=4000.0,
-                tier_w=float(rng.choice((1000, 2000, 3000))),
-                surcharge=Decimal(rng.randint(1, 30)) / 100,
+            _candidate(
+                index,
+                slot,
+                4000.0,
+                (),
+                (float(rng.choice((1000, 2000, 3000))), Decimal(rng.randint(1, 30)) / 100),
             )
         )
     required = float(rng.randint(2, 20)) / 2

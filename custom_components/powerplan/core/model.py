@@ -439,7 +439,9 @@ class Demand:
     `min_w` is negative for a battery or V2H (power is signed).
     `price_sensitive` is False under `force`, a min-SoC floor, a legionella
     cycle or a comfort violation - the four cases where the plan does not get
-    a vote.
+    a vote. `import_w` is the most of `max_w` that may come from the grid;
+    `None` is all of it. A battery with grid charging off says 0.0, and D6 then
+    grants it only the measured surplus (D6 §5.3, Phase 7; D-0209).
     """
 
     wants: bool
@@ -451,6 +453,7 @@ class Demand:
     comfort: ComfortState | None
     price_sensitive: bool
     reason: str
+    import_w: float | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -496,11 +499,21 @@ class PlanSlot:
     reason: str = ""
     committed: bool = False
     hold_kwh: float = 0.0
+    #: Phase 7 (D5 §2, D6 §5.3): how much of the slot's planned draw comes from the
+    #: forecast PV surplus, W. The rest is `grid_w`, the most the plan imports.
+    surplus_w: float = 0.0
 
     @property
     def hours(self) -> float:
         """Return the slot's length in hours - from the slot, never a constant."""
         return (self.end - self.start).total_seconds() / 3600.0
+
+    @property
+    def grid_w(self) -> float | None:
+        """Return what the plan imports in this slot: the envelope less its surplus (D6 §5.3)."""
+        if self.envelope_w is None:
+            return None
+        return max(0.0, self.envelope_w - self.surplus_w)
 
     def contains(self, t: datetime) -> bool:
         """Return whether `t` falls in `[start, end)`."""

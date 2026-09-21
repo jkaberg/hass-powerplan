@@ -53,8 +53,7 @@ from tests.core.strategies.conftest import (
 def test_the_registered_roster_is_what_the_flow_offers() -> None:
     """`keys()` is the roster; each entry carries its own fields (D5 §3, §6).
 
-    `arbitrage`/`peak_shave` land with WP5.4; `surplus` is still v1.x, so it is
-    not a row yet, and the combinators are not rows at all - they are extras on
+    `arbitrage`/`peak_shave` land with WP5.4, `surplus` with WP7.2; the combinators are not rows at all - they are extras on
     any load (D5 §5.11, `base.py`'s roster comment).
     """
     assert keys() == (
@@ -67,8 +66,9 @@ def test_the_registered_roster_is_what_the_flow_offers() -> None:
         "peak_shave",
         "run_once",
         "schedule",
+        "surplus",
     )
-    assert supports("ev") == ("always", "cheapest_hours", "deadline_fill")
+    assert supports("ev") == ("always", "cheapest_hours", "deadline_fill", "surplus")
 
     fields = {field.key for field in entry("deadline_fill").schema}
     assert {"min_block_min", "flat_policy", "prefer_late"} <= fields

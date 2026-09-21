@@ -81,13 +81,15 @@ def test_a_full_battery_asks_for_nothing_and_offers_discharge() -> None:
     assert demand.required_kwh == 0.0
 
 
-def test_grid_charging_off_leaves_only_the_discharge_side() -> None:
-    """`allow_grid_charge = no`: the allocator may not charge it from the grid (D-0209)."""
-    load = battery(allow_grid_charge=False)
-    demand = load.device_type.demand(load, LoadState(), ctx_at(50.0))  # type: ignore[attr-defined]
+def test_the_grid_charges_it_only_where_its_plan_says_so() -> None:
+    """`import_w` 0 with grid charging on or off: D6 grants the sun, the plan the grid (D-0651)."""
+    for allow in (False, True):
+        load = battery(allow_grid_charge=allow)
+        demand = load.device_type.demand(load, LoadState(), ctx_at(50.0))  # type: ignore[attr-defined]
 
-    assert demand.max_w == 0.0
-    assert demand.min_w == -5000.0
+        assert demand.import_w == 0.0
+        assert demand.max_w == 5000.0
+        assert demand.min_w == -5000.0
 
 
 @pytest.mark.inv("INV-64")

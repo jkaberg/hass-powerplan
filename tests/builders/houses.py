@@ -16,7 +16,7 @@ line (D9 §5.11).
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -33,6 +33,7 @@ from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.presets import fixture_preset
 from tests.core.loads.conftest import ev_load, floor_load, load_from
 from tests.sim.base import W_PER_AMP_IT230_3P
+from tests.sim.battery import BatterySim
 from tests.sim.charger_ble import BleChargerSim
 from tests.sim.charger_zaptec import ZaptecChargerSim
 from tests.sim.cycle import CycleSim
@@ -178,6 +179,18 @@ class House:
     #: every other house - `HouseDriver.step` adds its `.at(now)` (negative,
     #: export) into the meter's signed total beside `uncontrolled`.
     production: ProductionSim | None = None
+    #: WP7.2: whether the runner hands the engine that production as a forecast
+    #: (D10 §5.5's series, from the simulator itself). `nl_pv@1` predates it and
+    #: keeps planning blind to its own panels until WP7.4's `nl_pv@2`.
+    pv_forecast: bool = False
+    #: What a kWh exported earns (D1's export curve, Phase 7): `"spot"` for the
+    #: day-ahead price itself, `"half_spot"` for half of it, `"net"` for the
+    #: import price (net metering), a decimal string for a flat feed-in price,
+    #: `None` for no export curve at all.
+    export: str | None = None
+    #: From this instant, `export` is the second rule (`nl_pv@2`: the
+    #: Dutch net-metering end on 2027-01-01).
+    export_switch: tuple[datetime, str] | None = None
 
     def load(self, load_id: str) -> Load:
         """Return the load with `load_id`."""
@@ -298,6 +311,10 @@ def house(
     with_sauna: bool = False,
     circuits: tuple[CircuitSpec, ...] = (),
     groups: tuple[GroupCap, ...] = (),
+    pv_kwp: float = 0.0,
+    battery: dict[str, Any] | None = None,
+    battery_soc: float = 50.0,
+    export: str | None = None,
 ) -> House:
     """Return the reference house, or a subset of it, ready for one run.
 
@@ -308,6 +325,10 @@ def house(
     `with_sauna` adds the 6 kW Saturday sauna, `circuits` the sub-fuses
     (`GARAGE_CIRCUIT` for D9 §5.3's `circuit_garage_32a`) and `groups` the
     rotation caps (`FLOOR_GROUP` for `floor_group_rotation`).
+
+    Phase 7: `pv_kwp` puts panels on the roof, forecast to the engine;
+    `battery` adds a home battery with those questionnaire answers over
+    `BATTERY_ANSWERS`, at `battery_soc`; `export` is what an exported kWh earns.
     """
     cfg = cfg or site_config()
     loads: list[Load] = []
@@ -374,6 +395,10 @@ def house(
         )
         sims["sauna"] = SwitchSim()
 
+    if battery is not None:
+        loads.append(load_from("battery", {**BATTERY_ANSWERS, **battery}, load_id="battery"))
+        sims["battery"] = BatterySim(soc_pct=battery_soc)
+
     regimes = (
         PriceRegime(
             kind=price_kind,
@@ -383,6 +408,7 @@ def house(
     )
     if strategy is not None:
         loads = [with_strategy(load, strategy) for load in loads]
+    weather = WeatherSim(seed=seed, tz=OSLO)
     return House(
         cfg=cfg,
         tariff=tariff if tariff is not None else tensio(),
@@ -393,7 +419,7 @@ def house(
         tank=tank,
         household=HouseholdSim(seed=seed, tz=OSLO),
         uncontrolled=UncontrolledSim(seed=seed, tz=OSLO),
-        weather=WeatherSim(seed=seed, tz=OSLO),
+        weather=weather,
         prices=PriceSim(
             seed=seed,
             tz=OSLO,
@@ -404,7 +430,27 @@ def house(
         seed=seed,
         circuits=circuits,
         groups=groups,
+        production=ProductionSim(rated_kwp=pv_kwp, weather=weather) if pv_kwp > 0.0 else None,
+        pv_forecast=pv_kwp > 0.0,
+        export=export,
     )
+
+
+#: The home battery's questionnaire answers (D4 §6.6) - `tests/sim/battery.py`'s
+#: 10 kWh on a 5 kW inverter, the reserve at 20 %, grid charging off: a solar
+#: battery charges from the sun (D5 §5.8).
+BATTERY_ANSWERS: dict[str, Any] = {
+    "capacity_kwh": 10.0,
+    "max_charge_kw": 5.0,
+    "max_discharge_kw": 5.0,
+    "reserve_pct": 20.0,
+    "allow_grid_charge": False,
+    "chemistry": "lfp",
+    "soc_entity": "sensor.battery_soc",
+    "power_entity": "number.battery_power",
+    "max_soc": 100.0,
+    "force_max_h": 6.0,
+}
 
 
 #: The garage of D9 §5.3's `circuit_garage_32a`: a 32 A three-phase sub-fuse with
@@ -643,7 +689,10 @@ NL_PV_ARRAY_KWP = 6.0
 NL_MAIN_FUSE_A = 25.0
 NL_CONNECTION_KW = 3 * 230.0 * NL_MAIN_FUSE_A / 1000.0
 
-NL_PV_HOUSE_ID = "nl_pv@1"
+NL_PV_HOUSE_ID = "nl_pv@2"
+#: The end of the Dutch net-metering scheme (salderingsregeling): 1 January 2027,
+#: Amsterdam time (Rijksoverheid, "Salderingsregeling stopt per 1 januari 2027").
+NL_SALDERING_END = datetime(2027, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam"))
 
 #: Where nl_pv's own numbers (the ones nordic_detached's don't already cover) come from.
 NL_PV_SOURCES: dict[str, str] = {
@@ -665,6 +714,11 @@ NL_PV_SOURCES: dict[str, str] = {
         "negative-midday pricing are"
     ),
     "main_fuse_a": "assumed: the preset's own default connection size, 3×25 A",
+    "export": (
+        "nl_pv@2: net metering (an exported kWh offsets a bought one, at the import price) "
+        "until 2027-01-01, when the salderingsregeling ends (rijksoverheid.nl); from then 50 % "
+        "of the bare supply price, the feed-in floor the law sets to 2030"
+    ),
 }
 
 
@@ -782,6 +836,12 @@ def nl_pv(
         seed=seed,
         production=ProductionSim(rated_kwp=NL_PV_ARRAY_KWP, weather=weather),
         spec=NL_PV_HOUSE_ID,
+        # nl_pv@2: the roof is forecast to the engine, and export is net
+        # metered until the Dutch saldering ends on 2027-01-01, half the bare
+        # supply price after (the legal floor to 2030).
+        pv_forecast=True,
+        export="net",
+        export_switch=(NL_SALDERING_END, "half_spot"),
     )
 
 
@@ -1041,11 +1101,18 @@ def _market_house(
     ev_w_per_amp: float = W_PER_AMP_IT230_3P,
     cooling: bool = False,
     climate: tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...]] | None = None,
+    latitude_deg: float | None = None,
+    pv_kwp: float = 0.0,
+    battery: dict[str, Any] | None = None,
+    battery_soc: float = 50.0,
+    export: str | None = None,
 ) -> House:
     """Return `nordic_detached`'s twelve loads under another market's site and tariff.
 
     What `be_quarter()` builds inline, shared by the WP4.3b houses: the same
-    generators (D9 §5.9), a different site, tariff, currency and price.
+    generators (D9 §5.9), a different site, tariff, currency and price. Phase 7
+    : `pv_kwp` puts panels on the roof, forecast to the engine; `battery`
+    adds a home battery (answers over `BATTERY_ANSWERS`); `export` prices export.
     """
     steer = frozenset(ALL_LOADS) if controlled is None else controlled
     loads: dict[str, Load] = {}
@@ -1130,11 +1197,23 @@ def _market_house(
             monthly_min_c=climate[2],
         )
     )
+    if latitude_deg is not None:
+        weather = replace(weather, latitude_deg=latitude_deg)
+    extra_loads: tuple[Load, ...] = ()
+    extra_sims: dict[str, Any] = {}
+    if battery is not None:
+        extra_loads = (load_from("battery", {**BATTERY_ANSWERS, **battery}, load_id="battery"),)
+        extra_sims = {
+            "battery": BatterySim(
+                soc_pct=battery_soc,
+                capacity_kwh=float(battery.get("capacity_kwh", BATTERY_ANSWERS["capacity_kwh"])),
+            )
+        }
     return House(
         cfg=cfg,
         tariff=tariff,
-        loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer),
-        sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer},
+        loads=tuple(loads[load_id] for load_id in ALL_LOADS if load_id in steer) + extra_loads,
+        sims={load_id: sims[load_id] for load_id in ALL_LOADS if load_id in steer} | extra_sims,
         passive={load_id: sims[load_id] for load_id in ALL_LOADS if load_id not in steer},
         ev=ev,
         charger=charger,
@@ -1149,6 +1228,9 @@ def _market_house(
         spec=spec,
         price_modifiers=price_modifiers,
         announcer=TempoSim(weather=weather, tz=tz) if tempo else None,
+        production=ProductionSim(rated_kwp=pv_kwp, weather=weather) if pv_kwp > 0.0 else None,
+        pv_forecast=pv_kwp > 0.0,
+        export=export,
     )
 
 
@@ -1408,4 +1490,123 @@ def us_demand(
         ev_w_per_amp=240.0,
         cooling=True,
         climate=(PHOENIX_MEAN_C, PHOENIX_MAX_C, PHOENIX_MIN_C),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# au_solar - Phase 7: panels and a battery on a wholesale price
+# --------------------------------------------------------------------------- #
+
+SYDNEY = ZoneInfo("Australia/Sydney")
+AU_SOLAR_HOUSE_ID = "au_solar@1"
+#: Sydney's latitude, for the sun angle (the southern hemisphere's summer is December).
+SYDNEY_LATITUDE_DEG = -33.8688
+#: The size most Australian rooftop systems are sold at (assumed; the CEC's
+#: annual reports put the average new residential system at 6–10 kW).
+AU_PV_KWP = 6.6
+#: A Tesla Powerwall 2's usable capacity, 13.5 kWh at 5 kW continuous (its datasheet).
+AU_BATTERY_KWH = 13.5
+#: One phase at 230 V behind a 63 A main switch: the common Australian house supply
+#: (assumed; AS/NZS 3000 sizes it per house).
+AU_MAIN_FUSE_A = 63.0
+#: The network and retail part of a wholesale-pass-through bill on top of the spot
+#: price, AUD/kWh (assumed: a flat stand-in for Ausgrid's EA025 time-of-use network
+#: tariff plus the retailer's margin; replaced by the EA025 schedule if the time
+#: of day of the network charge becomes load-bearing).
+AU_NETWORK_AUD_PER_KWH = 0.12
+
+#: Sydney Observatory Hill, BOM 1991–2020 normals (mean, mean max, mean min), °C.
+SYDNEY_MEAN_C = (23.5, 23.4, 22.1, 19.5, 16.6, 14.2, 13.4, 14.5, 17.0, 18.9, 20.4, 22.1)
+SYDNEY_MAX_C = (27.0, 26.8, 25.7, 23.6, 20.9, 18.3, 17.9, 19.3, 21.6, 23.2, 24.2, 25.7)
+SYDNEY_MIN_C = (20.0, 19.9, 18.4, 15.3, 12.3, 10.0, 8.9, 9.7, 12.3, 14.6, 16.6, 18.4)
+
+#: The benchmark's own tariff: no capacity component, a flat network charge.
+AU_WHOLESALE: dict[str, Any] = {
+    "id": "au.wholesale-benchmark",
+    "name": "Wholesale pass-through, flat network charge (benchmark)",
+    "country": "AU",
+    "currency": "AUD",
+    "tz": "Australia/Sydney",
+    "source_url": "https://www.aemo.com.au/energy-systems/electricity/national-electricity-market-nem",
+    "verified": None,
+    "assumed": (
+        "the benchmark's own: the NEM's wholesale price passed through (as Amber Electric "
+        "does), a flat 0.12 AUD/kWh network and retail charge, no demand charge"
+    ),
+    "versions": [
+        {
+            "valid_from": "2026-01-01",
+            "no_peak": True,
+            "energy_components": {
+                "tou_schedule": {"periods": [{"name": "network", "price": AU_NETWORK_AUD_PER_KWH}]}
+            },
+        }
+    ],
+}
+
+AU_SOLAR_SOURCES: dict[str, str] = {
+    "site": "D9 §5.9 au_solar: panels and a battery; Sydney, one phase of 230 V, 63 A",
+    "tariff": "AU_WHOLESALE: no demand charge, a flat network charge (assumed, see the constant)",
+    "prices": (
+        "sim/prices.py SOLAR_GLUT read in AUD: the NEM's duck curve, negative middays in "
+        "spring, as EPEX NL's (D-0312) — the shape is the point, not a fitted NEM level"
+    ),
+    "export": "the spot price itself, negative when it is (a wholesale pass-through feed-in)",
+    "climate": "Sydney Observatory Hill, BOM 1991–2020 normals, via en.wikipedia.org Climate of Sydney",
+    "production": f"{AU_PV_KWP} kWp at Sydney's latitude, sim/production.py",
+    "battery": f"{AU_BATTERY_KWH} kWh on 5 kW (a Tesla Powerwall 2's datasheet), grid charging on",
+}
+
+
+def au_solar(
+    *,
+    seed: int = 20260919,
+    start: date = date(2026, 7, 1),
+    price_regimes: tuple[PriceRegime, ...] | None = None,
+    weather_events: tuple[WeatherEvent, ...] = (),
+    controlled: frozenset[str] | None = None,
+    ev_soc: float = 0.55,
+    slab_start_c: float = 22.0,
+) -> House:
+    """Return `au_solar` (D9 §5.9): the twelve loads, 6.6 kWp and a battery in Sydney."""
+    raw = dict(AU_WHOLESALE)
+    loader.validate(raw, source="benchmark au_solar")
+    cfg = site_config(
+        site_id="au_solar",
+        tz=SYDNEY,
+        electrical=ElectricalProfile(
+            system=VoltageSystem.SINGLE_230, phases=1, main_fuse_a=AU_MAIN_FUSE_A
+        ),
+        name="AU solar",
+        # No demand charge, so the hour the register reports on; a 30-minute
+        # window under an hourly register closes on the integral twice.
+        window_min=60,
+        currency="AUD",
+    )
+    regimes = price_regimes or (
+        PriceRegime(kind=SOLAR_GLUT, start=start, end=start.replace(year=start.year + 1)),
+    )
+    return _market_house(
+        cfg=cfg,
+        tariff=Evaluator(
+            loader.from_raw(raw, source="benchmark au_solar"),
+            tz=SYDNEY,
+            calendar=calendar_for("AU"),
+        ),
+        tz=SYDNEY,
+        spec=AU_SOLAR_HOUSE_ID,
+        seed=seed,
+        start=start,
+        price_regimes=regimes,
+        weather_events=weather_events,
+        controlled=controlled,
+        ev_soc=ev_soc,
+        slab_start_c=slab_start_c,
+        ev_phases=1,
+        ev_w_per_amp=230.0,
+        climate=(SYDNEY_MEAN_C, SYDNEY_MAX_C, SYDNEY_MIN_C),
+        latitude_deg=SYDNEY_LATITUDE_DEG,
+        pv_kwp=AU_PV_KWP,
+        battery={"capacity_kwh": AU_BATTERY_KWH, "allow_grid_charge": True},
+        export="spot",
     )

@@ -320,6 +320,11 @@ FETCH_LOG_KEEP = 200
 #: How far `sensor.<site>_plan`'s `slots` reach: the dashboard's longest timeline (D12 §5.2).
 PLAN_SLOTS_HORIZON = timedelta(hours=48)
 
+#: D5 §5.9 (Phase 7): a production reading this far off its forecast, for this
+#: long, is a replan trigger.
+PRODUCTION_MISS = 0.30
+PRODUCTION_MISS_FOR = timedelta(minutes=15)
+
 
 @dataclass(frozen=True, slots=True)
 class FixedPriceSaving:
@@ -384,13 +389,6 @@ def fixed_price_saving(
         kwh=round(kwh, 1),
         today_kwh=round(day_kwh, 1),
     )
-
-
-def _rounded(value: tuple[float, Any] | float | None) -> float | None:
-    """Return a forecast figure rounded for an attribute: a `(value, confidence)` or a float."""
-    if value is None:
-        return None
-    return round(value[0] if isinstance(value, tuple) else value, 1)
 
 
 def _baseline_p90(
@@ -1372,6 +1370,10 @@ class Runtime:
         #: last fetch, and whether the platform API answered (Phase 7).
         self._production_series: Series | None = None
         self._production_fetched_at: datetime | None = None
+        #: D5 §5.9 (Phase 7): since when the measured production has been off its
+        #: forecast by `PRODUCTION_MISS`, and whether that episode has replanned.
+        self._production_miss_since: datetime | None = None
+        self._production_miss_replanned = False
 
     # ----------------------------------------------------------- lifecycle #
 
@@ -2799,6 +2801,9 @@ class Runtime:
         if any(event.kind is EventKind.EV_CONNECTED for event in effects.ha_events):
             # A demand change (D7 §5.2): the plan runs after this tick, off the lock.
             self.hass.async_create_task(self.run_plan("demand"))
+        if self._production_missed(now, snapshot):
+            # D5 §5.9 (Phase 7): the sun is not what was forecast; replan once.
+            self.hass.async_create_task(self.run_plan("forecast"))
         presence = inputs.knobs.presence
         if presence is not None and presence is not self.last_presence:
             if self.last_presence is not None:
@@ -2873,6 +2878,11 @@ class Runtime:
                 window_start, window_start + timedelta(seconds=window_s), inputs.knobs.target
             )
             offered = None if forecasts is None else forecasts.baseline_kwh(start, end)
+            produced = (
+                None
+                if forecasts is None or forecasts.production is None
+                else forecasts.production.kwh_between(start, end)
+            )
             sigma_w = (
                 None if forecasts is None or offered is None else forecasts.residual_sigma_w(start)
             )
@@ -2914,13 +2924,14 @@ class Runtime:
                     # What each thermal load draws holding its setpoint (D-0501).
                     "hold_kwh": held,
                     "paused": paused,
-                    # D10 §2's display figures: the PV forecast and `max(0, pv − baseline)`,
-                    # null with no forecast.
-                    "production_w": _rounded(
-                        None if forecasts is None else forecasts.production_w(start)
-                    ),
-                    "surplus_w": _rounded(
-                        None if forecasts is None else forecasts.surplus_naive_w(start)
+                    # D10 §2's display figures, the timeline's production series
+                    # (D12 §5.6): the PV forecast's energy and `max(0, pv − baseline)`,
+                    # null with no forecast (D-0650).
+                    "production_kwh": None if produced is None else round(produced, 3),
+                    "surplus_kwh": (
+                        None
+                        if produced is None
+                        else round(max(0.0, produced - (0.0 if offered is None else offered[0])), 3)
                     ),
                 }
             )
@@ -3025,6 +3036,32 @@ class Runtime:
             _LOGGER.warning("site %s: PV forecast failed: %s", self.site_name, err)
             return
         async_clear(self.hass, self.entry.entry_id, "pv_forecast_unavailable")
+
+    def _production_missed(self, now: datetime, snapshot: Snapshot) -> bool:
+        """Return `True` once per episode of production off its forecast (D5 §5.9, Phase 7).
+
+        An episode is the measured production `PRODUCTION_MISS` or more off the
+        forecast for `PRODUCTION_MISS_FOR`; it ends when the two agree again. Night
+        (a forecast of nothing) and a site without a production sensor never start one.
+        """
+        measured = None if snapshot.meter is None else snapshot.meter.production_w
+        point = None if self._production_series is None else self._production_series.at(now)
+        if measured is None or point is None or point.value <= 0.0:
+            self._production_miss_since = None
+            self._production_miss_replanned = False
+            return False
+        if abs(measured - point.value) < PRODUCTION_MISS * point.value:
+            self._production_miss_since = None
+            self._production_miss_replanned = False
+            return False
+        if self._production_miss_since is None:
+            self._production_miss_since = now
+        if self._production_miss_replanned or now - self._production_miss_since < (
+            PRODUCTION_MISS_FOR
+        ):
+            return False
+        self._production_miss_replanned = True
+        return True
 
     async def _on_energy_preferences(self) -> None:
         """D7 §5.3: the Energy preferences changed; refresh the PV forecast, then plan."""

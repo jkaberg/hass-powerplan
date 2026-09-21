@@ -188,7 +188,7 @@ class BestSave:
             return free_plan(ctx, strategy=self.key, mode=PlanMode.URGENT, reason=demand.reason)
 
         policy = _policy(params)
-        window = ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())
+        window = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
         off = _decide(window, policy)
         postponed = [slot for slot, skip in zip(window, off, strict=True) if skip]
         return build_plan(
@@ -200,9 +200,9 @@ class BestSave:
                 for slot, skip in zip(window, off, strict=True)
             ),
             now=ctx.now,
-            currency=ctx.curve_in.currency,
+            currency=ctx.effective.currency,
             confidence=confidence_of(postponed),
-            known_until=ctx.now + timedelta(hours=ctx.curve_in.coverage_h(ctx.now)),
+            known_until=ctx.now + timedelta(hours=ctx.effective.coverage_h(ctx.now)),
             reason=_reason(postponed, policy),
             inputs_hash=inputs_digest(
                 self.key, ctx.load.mode, demand.price_sensitive, sorted(params.items(), key=str)

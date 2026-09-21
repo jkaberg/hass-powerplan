@@ -50,6 +50,8 @@ __all__ = [
     "Quantiser",
     "SiteContext",
     "SitePlan",
+    "effective_curve",
+    "surplus_bands",
     "with_rewards",
 ]
 
@@ -256,6 +258,96 @@ def _per_kwh(event: Event) -> Decimal | None:
     """Return a reward event's `per_kwh` payload, or `None` when it carries none."""
     value = event.payload.get("per_kwh")
     return None if value is None else Decimal(str(value))
+
+
+def surplus_bands(
+    surplus_w: float, *, export_limit_w: float | None, p_in: Decimal, p_out: Decimal
+) -> tuple[tuple[float, Decimal], ...]:
+    """Return a slot's surplus as `(watts, price)` bands, cheapest first (D5 §2, Phase 7).
+
+    Surplus above the site's export limit could not be sold, so it costs nothing;
+    the rest costs the export it forgoes, `p_out`. Both are capped at `p_in`, so the
+    bands and the grid after them rise with the watts: a slot's energy is then
+    convex in its watts and the greedy over `(slot, band)` pairs stays exact
+    (§5.2) - and a load does draw the surplus first, whatever it is worth.
+    """
+    if surplus_w <= 0.0:
+        return ()
+    stranded = 0.0 if export_limit_w is None else max(0.0, surplus_w - export_limit_w)
+    sold = surplus_w - stranded
+    forgone = min(p_out, p_in)
+    bands: list[tuple[float, Decimal]] = []
+    if stranded > 0.0:
+        bands.append((stranded, min(Decimal(0), forgone)))
+    if sold > 0.0:
+        bands.append((sold, forgone))
+    return tuple(bands)
+
+
+def _band_price(bands: Sequence[tuple[float, Decimal]], p_in: Decimal, w: float) -> Decimal:
+    """Return the mean price of `w` watts drawn through `bands`, then the grid at `p_in`."""
+    if w <= 0.0:
+        return p_in
+    left = w
+    cost = Decimal(0)
+    for watts, price in bands:
+        take = min(left, watts)
+        cost += price * Decimal(str(take))
+        left -= take
+        if left <= 0.0:
+            break
+    if left > 0.0:
+        cost += p_in * Decimal(str(left))
+    return cost / Decimal(str(w))
+
+
+def effective_curve(
+    curve_in: PriceCurve,
+    curve_out: PriceCurve | None,
+    surplus: Mapping[datetime, float],
+    *,
+    export_limit_w: float | None,
+    draw_w: float,
+) -> PriceCurve:
+    """Return `curve_in` priced as `draw_w` watts would cost with the forecast surplus (D5 §2).
+
+    The curve a strategy that ranks whole slots plans on: each slot's total is the
+    mean of the surplus bands and the grid over the load's draw, and the
+    difference is its `surplus` component. Without surplus the curve is returned
+    as it is - the same object, so a site without panels plans bit for bit as it
+    did (§9 17).
+    """
+    if not any(watts > 0.0 for watts in surplus.values()):
+        return curve_in
+    slots: list[Slot] = []
+    for slot in curve_in.slots:
+        watts = surplus.get(slot.start, 0.0)
+        if watts <= 0.0:
+            slots.append(slot)
+            continue
+        bands = surplus_bands(
+            watts,
+            export_limit_w=export_limit_w,
+            p_in=slot.total,
+            p_out=_export_price(curve_out, slot.start),
+        )
+        price = _band_price(bands, slot.total, draw_w)
+        slots.append(
+            replace(
+                slot,
+                total=price,
+                components={**slot.components, "surplus": price - slot.total},
+            )
+        )
+    return replace(curve_in, slots=tuple(slots))
+
+
+def _export_price(curve_out: PriceCurve | None, start: datetime) -> Decimal:
+    """Return what a kWh exported in the slot at `start` earns: 0 without an export curve."""
+    if curve_out is None:
+        return Decimal(0)
+    slot = curve_out.price_at(start)
+    return Decimal(0) if slot is None else slot.total
 
 
 @dataclass(frozen=True, slots=True)
@@ -494,6 +586,30 @@ class PlanContext:
     #: D3 §4: the most the site may export, in W; `None` is the fuse. Never on
     #: the capacity axis, which counts import only (INV-19, D3 §9 21).
     export_limit_w: float | None = None
+    #: D5 §2 (Phase 7): the forecast PV surplus left per slot start, W, after the
+    #: loads above this one took theirs (INV-33's walk). Empty without panels.
+    surplus: Mapping[datetime, float] = field(default_factory=dict)
+    #: `curve_in` priced at this load's draw with that surplus (`effective_curve`);
+    #: `None` where there is no surplus, and `effective` is then `curve_in`.
+    curve_eff: PriceCurve | None = None
+
+    @property
+    def effective(self) -> PriceCurve:
+        """The curve a strategy ranks whole slots on (D5 §2): `curve_in` without surplus."""
+        return self.curve_in if self.curve_eff is None else self.curve_eff
+
+    def surplus_bands(self, slot: Slot) -> tuple[tuple[float, Decimal], ...]:
+        """Return this slot's surplus left as `(watts, price)` bands, cheapest first (D5 §2)."""
+        return surplus_bands(
+            self.surplus.get(slot.start, 0.0),
+            export_limit_w=self.export_limit_w,
+            p_in=slot.total,
+            p_out=_export_price(self.curve_out, slot.start),
+        )
+
+    def effective_price(self, slot: Slot, w: float) -> Decimal:
+        """Return the mean price of `w` watts in `slot`: surplus bands first, then the grid."""
+        return _band_price(self.surplus_bands(slot), slot.total, w)
 
     @property
     def store(self) -> StoreModel | None:

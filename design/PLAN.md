@@ -525,9 +525,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4k | Dashboard: Home Assistant's own backend | done |
 | 6.4l | Dashboard: Now and History layout | done |
 | 7.1 | PV forecast through the energy platform | done |
-| 7.2 | `surplus` and the surplus-aware battery | todo |
-| 7.3 | Surplus in the ledger | todo |
-| 7.4 | Solar houses | todo |
+| 7.2 | `surplus` and the surplus-aware battery | done |
+| 7.3 | Surplus in the ledger | done |
+| 7.4 | Solar houses | done |
 | 7.5 | Battery hardware survey | todo |
 | 6.3 | Release v1.0 | todo |
 

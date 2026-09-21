@@ -26,6 +26,18 @@ and the cheapest remaining slots are forced to charge enough to cover that
 reserve first; `arbitrage`'s own ranking then runs on whatever the horizon has
 left - "peak_shave claims first, arbitrage uses what is left," literally the
 same forward simulation with `peak_shave`'s own decisions applied before it.
+
+**With panels (Phase 7, D5 §5.8).** A slot's charge is priced on the effective
+curve - stranded surplus at 0, surplus at what its export would earn, the grid
+at the import price only with `allow_grid_charge` - and its discharge on what
+the energy displaces: the import price where the house is forecast to import
+(no surplus left once the loads above took theirs), the export price where it
+would export. So the surplus is banked for the evening when the evening import
+is worth more than the export now, and sold when it is not; at a negative
+export price a surplus charge earns and is taken first. Above
+`surplus_priority_soc` the battery stops charging from the sun and leaves it to
+the loads below it (evcc's `prioritySoc`). Without panels every slot is priced
+at its import price both ways, as before.
 """
 
 from __future__ import annotations
@@ -42,6 +54,7 @@ from .plan import build_plan, confidence_of, inputs_digest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+    from datetime import datetime
 
     from ..model import Demand, Plan
     from .context import PlanContext
@@ -55,15 +68,24 @@ _POWER_EPS_W: Final = 1.0
 _SCHEMA: Schema = (
     Field(key="threshold", kind=FieldKind.MONEY, default=0.05, unit="/kWh", advanced=True),
     Field(key="round_trip_eff", kind=FieldKind.NUMBER, default=0.85, advanced=True),
+    Field(key="allow_grid_charge", kind=FieldKind.BOOL, default=True, advanced=True),
+    Field(key="surplus_priority_soc", kind=FieldKind.NUMBER, default=100, unit="%", advanced=True),
 )
 
 
 @dataclass(frozen=True, slots=True)
 class _Row:
-    """One candidate slot of the horizon: where it sits and what it costs."""
+    """One candidate slot of the horizon: where it sits and what each direction is worth."""
 
     index: int
     slot: Slot
+    #: The most the battery may charge here, W: the inverter, or the surplus alone
+    #: without `allow_grid_charge` (D5 §5.8).
+    charge_cap_w: float
+    charge_price: Decimal
+    discharge_price: Decimal
+    #: Whether the charge here comes from the sun, which `surplus_priority_soc` caps.
+    sun: bool = False
 
     @property
     def hours(self) -> float:
@@ -71,12 +93,34 @@ class _Row:
         return (self.slot.end - self.slot.start).total_seconds() / 3600.0
 
 
-def _rows(ctx: PlanContext) -> list[_Row]:
-    """Return the horizon's slots, in time order (D5 §5.8)."""
-    return [
-        _Row(index=index, slot=slot)
-        for index, slot in enumerate(ctx.curve_in.slots_between(ctx.now, ctx.horizon_end()))
-    ]
+def _rows(ctx: PlanContext, *, max_charge_w: float, allow_grid: bool) -> list[_Row]:
+    """Return the horizon's slots, in time order, priced for each direction (D5 §5.8)."""
+    rows: list[_Row] = []
+    for index, slot in enumerate(ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())):
+        bands = ctx.surplus_bands(slot)
+        sun_w = sum(watts for watts, _ in bands)
+        cap_w = max_charge_w if allow_grid else min(max_charge_w, sun_w)
+        rows.append(
+            _Row(
+                index=index,
+                slot=slot,
+                charge_cap_w=cap_w,
+                charge_price=ctx.effective_price(slot, cap_w) if cap_w > 0.0 else slot.total,
+                discharge_price=(
+                    slot.total if sun_w <= 0.0 else _export_price(ctx, slot.start, slot.total)
+                ),
+                sun=sun_w > 0.0,
+            )
+        )
+    return rows
+
+
+def _export_price(ctx: PlanContext, start: datetime, p_in: Decimal) -> Decimal:
+    """Return what a kWh exported at `start` earns, never above `p_in` (D5 §2)."""
+    if ctx.curve_out is None:
+        return Decimal(0)
+    slot = ctx.curve_out.price_at(start)
+    return Decimal(0) if slot is None else min(slot.total, p_in)
 
 
 def _bounds(demand: Demand, store: EnergyStore) -> tuple[float, float]:
@@ -96,15 +140,18 @@ def _candidates(
     because neither ranking can make a later pair more profitable.
     """
     pool = [row for row in rows if row.index not in exclude]
-    cheap = sorted(pool, key=lambda row: (row.slot.total, row.index))
-    pricey = sorted(pool, key=lambda row: (-row.slot.total, row.index))
+    cheap = sorted(
+        (row for row in pool if row.charge_cap_w > 0.0),
+        key=lambda row: (row.charge_price, row.index),
+    )
+    pricey = sorted(pool, key=lambda row: (-row.discharge_price, row.index))
     charge: set[int] = set()
     discharge: set[int] = set()
     eff = Decimal(str(round_trip_eff))
     for chg, dis in zip(cheap, pricey, strict=False):
         if chg.index == dis.index or chg.index in discharge or dis.index in charge:
             continue
-        if dis.slot.total * eff - chg.slot.total <= threshold:
+        if dis.discharge_price * eff - chg.charge_price <= threshold:
             break
         charge.add(chg.index)
         discharge.add(dis.index)
@@ -123,6 +170,7 @@ def _simulate(
     charge_set: set[int],
     discharge_set: set[int],
     forced_w: Mapping[int, float] | None = None,
+    sun_soc: float | None = None,
 ) -> dict[int, float]:
     """Walk `rows` in time order, returning each committed slot's envelope in watts.
 
@@ -130,7 +178,8 @@ def _simulate(
     to the inverter and to `[reserve_soc, max_soc]`, actually stores or draws -
     a discharge earns only what has already been banked by then (D5 §5.8's own
     "SoC path simulated slot by slot"). `forced_w` (`peak_shave`'s own
-    reservation) is applied first, and clamped exactly the same way.
+    reservation) is applied first, and clamped exactly the same way. A charge
+    from the sun stops at `sun_soc` (`surplus_priority_soc`, Phase 7).
     """
     envelopes: dict[int, float] = {}
     soc = level_now
@@ -139,14 +188,15 @@ def _simulate(
     discharge_cell = (per_unit, store.discharge_eff)
     forced = forced_w or {}
     for row in rows:
+        top = max_soc if sun_soc is None or not row.sun else min(max_soc, sun_soc)
         if row.index in forced:
             wanted = forced[row.index]
             if wanted >= 0.0:
-                w, soc = _charge(wanted, row.hours, soc, max_soc, charge_cell)
+                w, soc = _charge(min(wanted, row.charge_cap_w), row.hours, soc, top, charge_cell)
             else:
                 w, soc = _discharge(-wanted, row.hours, soc, reserve_soc, discharge_cell)
         elif row.index in charge_set:
-            w, soc = _charge(max_charge_w, row.hours, soc, max_soc, charge_cell)
+            w, soc = _charge(min(max_charge_w, row.charge_cap_w), row.hours, soc, top, charge_cell)
         elif row.index in discharge_set:
             w, soc = _discharge(max_discharge_w, row.hours, soc, reserve_soc, discharge_cell)
         else:
@@ -221,13 +271,14 @@ def _shave_reservation(
         discharge_needed_kwh += w * row.hours / 1000.0
     if discharge_needed_kwh <= 0.0:
         return forced
-    for row in sorted(rows, key=lambda row: (row.slot.total, row.index)):
+    for row in sorted(rows, key=lambda row: (row.charge_price, row.index)):
         if discharge_needed_kwh <= 0.0:
             break
-        if row.index in forced:
+        if row.index in forced or row.charge_cap_w <= 0.0:
             continue
-        forced[row.index] = max_charge_w
-        discharge_needed_kwh -= max_charge_w * row.hours / 1000.0
+        watts = min(max_charge_w, row.charge_cap_w)
+        forced[row.index] = watts
+        discharge_needed_kwh -= watts * row.hours / 1000.0
     return forced
 
 
@@ -236,12 +287,16 @@ def _plan_slot(row: _Row, envelope_w: float | None) -> PlanSlot:
     hours = row.hours
     kwh = 0.0 if envelope_w is None else envelope_w * hours / 1000.0
     reason = "no plan" if envelope_w is None else ("charge" if envelope_w > 0.0 else "discharge")
+    if envelope_w is None:
+        price = row.slot.total
+    else:
+        price = row.charge_price if envelope_w > 0.0 else row.discharge_price
     return PlanSlot(
         start=row.slot.start,
         end=row.slot.end,
         envelope_w=envelope_w,
         kwh=kwh,
-        price=row.slot.total,
+        price=price,
         reason=reason,
     )
 
@@ -262,8 +317,10 @@ def _plan(
     if not isinstance(store, EnergyStore) or level_now is None:
         return free_plan(ctx, strategy=key, mode=PlanMode.NONE, reason="state of charge unknown")
 
-    rows = _rows(ctx)
     max_charge_w, max_discharge_w = _bounds(demand, store)
+    rows = _rows(
+        ctx, max_charge_w=max_charge_w, allow_grid=bool(params.get("allow_grid_charge", True))
+    )
     reserve_soc = float(params.get("reserve_soc", store.reserve_soc or store.min_soc))
     max_soc = float(params.get("max_soc", store.max_soc))
     threshold = Decimal(str(params["threshold"]))
@@ -284,6 +341,7 @@ def _plan(
         charge_set=charge_set,
         discharge_set=discharge_set,
         forced_w=forced,
+        sun_soc=float(params.get("surplus_priority_soc", 100.0)),
     )
     return build_plan(
         load_id=ctx.load.load_id,
@@ -330,7 +388,10 @@ class PeakShave:
         if ctx.load.forced or not isinstance(store, EnergyStore) or ctx.load.level_now is None:
             return _plan(self.key, demand, ctx, params, forced=None)
         max_charge_w, max_discharge_w = _bounds(demand, store)
+        rows = _rows(
+            ctx, max_charge_w=max_charge_w, allow_grid=bool(params.get("allow_grid_charge", True))
+        )
         forced = _shave_reservation(
-            _rows(ctx), ctx, max_charge_w=max_charge_w, max_discharge_w=max_discharge_w
+            rows, ctx, max_charge_w=max_charge_w, max_discharge_w=max_discharge_w
         )
         return _plan(self.key, demand, ctx, params, forced=forced)

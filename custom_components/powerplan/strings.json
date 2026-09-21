@@ -1097,7 +1097,8 @@
           "best_save": "Save where it hurts least",
           "peak_shave": "Shave the peaks",
           "arbitrage": "Buy low, sell high",
-          "run_once": "One run before ready-by"
+          "run_once": "One run before ready-by",
+          "surplus": "Solar surplus"
         }
       },
       "priority": {
@@ -1614,7 +1615,8 @@
         "opportunistic": "Only when cheap",
         "peak_shave": "Shave the peaks",
         "run_once": "One run before ready-by",
-        "schedule": "Follow a schedule"
+        "schedule": "Follow a schedule",
+        "surplus": "Solar surplus"
       }
     },
     "text": {

@@ -36,16 +36,19 @@ from .base import free_plan, register
 from .plan import COVER_EPS_KWH, build_plan, inputs_digest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime
 
     from ..model import Demand, Plan, PriceCurve
     from .context import Headroom, PlanContext
 
-__all__ = ["DeadlineFill", "FlatPolicy", "plan_one"]
+__all__ = ["DeadlineFill", "FlatPolicy", "SurplusOf", "plan_one"]
 
 #: How a flat day is ordered when the price cannot order it (D5 §5.9).
 type FlatPolicy = Literal["fill", "spread"]
+
+#: A slot's surplus bands, `(watts, price)` cheapest first (D5 §2, `PlanContext.surplus_bands`).
+type SurplusOf = Callable[[Slot], tuple[tuple[float, Decimal], ...]]
 
 #: Enough kWh to be worth a slot. Below this the greedy stops (§5.2).
 _EPS_KWH: Final = 1e-9
@@ -58,9 +61,13 @@ class _Candidate:
     index: int
     slot: Slot
     cap_w: float
-    #: D5 §5.1's power tier (O23): above `tier_w` a kWh costs `surcharge` more.
-    tier_w: float | None = None
-    surcharge: Decimal = Decimal(0)
+    #: The slot's watts as `(watts, price)` bands in the order the load draws them:
+    #: D5 §2's surplus bands (Phase 7), then the grid - split at a priced limit,
+    #: above which a kWh costs the surcharge more (D5 §5.1, O23). Empty is one
+    #: band, `cap_w` at the slot's price.
+    bands: tuple[tuple[float, Decimal], ...] = ()
+    #: How many of `bands` are surplus; the rest are grid.
+    surplus_bands: int = 0
 
     @property
     def hours(self) -> float:
@@ -79,8 +86,35 @@ class _Candidate:
 
     @property
     def price(self) -> Decimal:
-        """The composed price this slot was chosen at (INV-31)."""
-        return self.slot.total
+        """The composed price this slot is ranked at as a whole (INV-31).
+
+        With surplus, the mean over its bands at full cap (D5 §2); otherwise the
+        slot's price, a priced limit's tier included, as before Phase 7.
+        """
+        if not self.surplus_bands or self.cap_w <= 0.0:
+            return self.slot.total
+        return _mean(self.bands, self.cap_w)
+
+    def price_of(self, kwh: float) -> Decimal:
+        """Return the mean price of `kwh` taken in this slot, its bands in order (D5 §2)."""
+        if not self.surplus_bands or kwh <= 0.0:
+            return self.slot.total
+        return _mean(self.bands, kwh * 1000.0 / self.hours)
+
+
+def _mean(bands: Sequence[tuple[float, Decimal]], w: float) -> Decimal:
+    """Return the mean price of `w` watts drawn through `bands` in order."""
+    left = w
+    cost = Decimal(0)
+    drawn = 0.0
+    for watts, price in bands:
+        take = min(left, watts)
+        cost += price * Decimal(str(take))
+        drawn += take
+        left -= take
+        if left <= 0.0:
+            break
+    return cost / Decimal(str(drawn)) if drawn > 0.0 else Decimal(0)
 
 
 def _candidates(
@@ -92,27 +126,62 @@ def _candidates(
     now: datetime,
     until: datetime,
     not_before: datetime | None,
+    surplus: SurplusOf | None = None,
+    grid: bool = True,
 ) -> tuple[_Candidate, ...]:
     """Return the usable slots of `[now, until)` with their per-slot caps (§5.2).
 
     A slot whose cap is under `min_w` is dropped: a charger below 6 A is not a
     slow charger, it is a stopped one (INV-28). Slot lengths come from the slots,
     so a DST day yields 92 or 100 of them without anything here knowing (INV-7).
+
+    `surplus` answers a slot's surplus bands (Phase 7, D5 §2): watts that do not
+    import, so on top of the headroom, which counts import only (INV-19).
+    `grid=False` is D5's `surplus` without its top-up: the surplus bands alone.
     """
     out: list[_Candidate] = []
     for index, slot in enumerate(curve.slots_between(now, until)):
         if not_before is not None and slot.end <= not_before:
             continue
-        cap_w = min(max_w, headroom.w_at(slot.start))
+        own = () if surplus is None else surplus(slot)
+        sun_w = sum(watts for watts, _ in own)
+        grid_w = headroom.w_at(slot.start) if grid else 0.0
+        cap_w = min(max_w, grid_w + sun_w)
         if cap_w <= 0.0 or (min_w > 0.0 and cap_w < min_w):
             continue
-        tier = headroom.tier_at(slot.start)
-        out.append(
-            _Candidate(index=index, slot=slot, cap_w=cap_w)
-            if tier is None or tier[0] >= cap_w
-            else _Candidate(index=index, slot=slot, cap_w=cap_w, tier_w=tier[0], surcharge=tier[1])
-        )
+        out.append(_candidate(index, slot, cap_w, own, headroom.tier_at(slot.start)))
     return tuple(out)
+
+
+def _candidate(
+    index: int,
+    slot: Slot,
+    cap_w: float,
+    sun: tuple[tuple[float, Decimal], ...],
+    tier: tuple[float, Decimal] | None,
+) -> _Candidate:
+    """Return one slot as its bands: the surplus it can take, then the grid (D5 §2, O23)."""
+    bands: list[tuple[float, Decimal]] = []
+    left = cap_w
+    for watts, price in sun:
+        take = min(left, watts)
+        if take > 0.0:
+            bands.append((take, price))
+            left -= take
+    sun_bands = len(bands)
+    if left > 0.0:
+        if tier is None or tier[0] >= left:
+            bands.append((left, slot.total))
+        else:
+            if tier[0] > 0.0:
+                bands.append((tier[0], slot.total))
+            bands.append((left - tier[0], slot.total + tier[1]))
+    if not sun_bands and len(bands) == 1:
+        # One band at the slot's price is the plain candidate (bit-identical, §9 17).
+        return _Candidate(index=index, slot=slot, cap_w=cap_w)
+    return _Candidate(
+        index=index, slot=slot, cap_w=cap_w, bands=tuple(bands), surplus_bands=sun_bands
+    )
 
 
 def _fill_priced(
@@ -121,26 +190,27 @@ def _fill_priced(
     *,
     min_w: float,
     prefer_late: bool,
+    grid_penalty: Decimal = Decimal(0),
 ) -> dict[int, float]:
     """Fill the cheapest slots first, stable on `(price, index)` (§5.2, INV-32).
 
-    A slot with a priced limit is two candidates (D5 §5.1, O23): its capacity up to
-    the limit at the slot's price, and the rest at the price plus the surcharge.
-    `(slot, tier)` pairs sort on `(price, index, tier)`, so the greedy stays exact -
-    a slot's tiers are ordered by price - and crossing happens only where it is
-    still the cheapest energy left.
+    A slot with bands is one candidate per band (D5 §2, §5.1): its surplus at what
+    the export forgoes, the grid up to a priced limit at the slot's price, and the
+    rest at the price plus the surcharge. `(slot, band)` pairs sort on
+    `(price, index, band)`, so the greedy stays exact - a slot's bands rise with
+    its watts - and crossing happens only where it is still the cheapest energy
+    left. `grid_penalty` is added to every grid band's rank, never to its price:
+    D5's `surplus` takes every surplus kWh before the first grid one.
     """
     tiers: list[tuple[Decimal, int, int, _Candidate]] = []
     for row in candidates:
         index = -row.index if prefer_late else row.index
-        if row.tier_w is None:
-            tiers.append((row.price, index, 0, row))
+        if not row.bands:
+            tiers.append((row.price + grid_penalty, index, 0, row))
             continue
-        if row.tier_w > 0.0:
-            tiers.append((row.price, index, 0, replace(row, cap_w=row.tier_w)))
-        tiers.append(
-            (row.price + row.surcharge, index, 1, replace(row, cap_w=row.cap_w - row.tier_w))
-        )
+        for band, (watts, price) in enumerate(row.bands):
+            rank = price if band < row.surplus_bands else price + grid_penalty
+            tiers.append((rank, index, band, replace(row, cap_w=watts)))
     tiers.sort(key=lambda entry: entry[:3])
     taken: dict[int, float] = {}
     remaining = required
@@ -431,12 +501,19 @@ def plan_one(
     reason: str = "",
     desired_state: DesiredState | None = None,
     inputs_hash: str = "",
+    surplus: SurplusOf | None = None,
+    grid: bool = True,
+    grid_penalty: Decimal = Decimal(0),
 ) -> Plan:
     """Return the cheapest plan covering `required_kwh` (D5 §5.2, §5.3).
 
     Slots come back in **time** order, every slot of the window present - a plan
     is read top to bottom, and a slot the load does not run in carries `0.0`,
     which is "stand still", not "no plan" and never a shed (INV-25, INV-30).
+
+    `surplus`, `grid` and `grid_penalty` are Phase 7's (D5 §2): the slot's
+    surplus bands, whether the grid may be used at all, and how much dearer a
+    grid kWh ranks than its price - `surplus`'s surplus-first order.
     """
     until = horizon_end if force or deadline is None else min(deadline, horizon_end)
     window = curve.slots_between(now, horizon_end)
@@ -448,7 +525,10 @@ def plan_one(
         now=now,
         until=until,
         not_before=now if force and not_before is None else not_before,
+        surplus=surplus,
+        grid=grid,
     )
+    banded = any(row.bands for row in candidates)
 
     if required_kwh <= 0.0 or not candidates:
         taken: dict[int, float] = {}
@@ -456,19 +536,38 @@ def plan_one(
         taken = _fill_time_order(candidates, required_kwh, min_w=min_w)
     elif min_block_min > 0:
         taken = _fill_blocks(candidates, required_kwh, min_block_min=min_block_min, min_w=min_w)
-    elif flat and any(row.tier_w is not None for row in candidates):
-        # A flat price is not flat energy under a priced limit: the tier above it
-        # is dearer, so the night fills under the limit first, in time order (O23).
-        taken = _fill_priced(candidates, required_kwh, min_w=min_w, prefer_late=False)
+    elif flat and banded:
+        # A flat price is not flat energy under a priced limit or beside surplus:
+        # the tier above the limit is dearer and the sun cheaper, so the night
+        # fills under the limit first, in time order (O23, D5 §2).
+        taken = _fill_priced(
+            candidates, required_kwh, min_w=min_w, prefer_late=False, grid_penalty=grid_penalty
+        )
     elif flat and flat_policy == "spread":
         taken = _fill_spread(candidates, required_kwh)
     elif flat:
         taken = _fill_time_order(candidates, required_kwh, min_w=min_w)
     else:
-        taken = _fill_priced(candidates, required_kwh, min_w=min_w, prefer_late=prefer_late)
+        taken = _fill_priced(
+            candidates,
+            required_kwh,
+            min_w=min_w,
+            prefer_late=prefer_late,
+            grid_penalty=grid_penalty,
+        )
 
+    by_index = {row.index: row for row in candidates}
     slots = tuple(
-        _slot(index, slot, taken.get(index, 0.0), reason=reason, desired_state=desired_state)
+        _slot(
+            index,
+            slot,
+            taken.get(index, 0.0),
+            reason=reason,
+            desired_state=desired_state,
+            price=None
+            if index not in by_index
+            else by_index[index].price_of(taken.get(index, 0.0)),
+        )
         for index, slot in enumerate(window)
     )
     energy = [slot.kwh for slot in slots]
@@ -496,8 +595,13 @@ def _slot(
     *,
     reason: str,
     desired_state: DesiredState | None,
+    price: Decimal | None = None,
 ) -> PlanSlot:
-    """Return one `PlanSlot`: the envelope is the energy over the slot's own hours."""
+    """Return one `PlanSlot`: the envelope is the energy over the slot's own hours.
+
+    `price` is what the slot's energy costs through its bands (D5 §2); the slot's
+    own price where it has none.
+    """
     hours = (slot.end - slot.start).total_seconds() / 3600.0
     return PlanSlot(
         start=slot.start,
@@ -505,7 +609,7 @@ def _slot(
         envelope_w=0.0 if kwh <= 0.0 or hours <= 0.0 else kwh / hours * 1000.0,
         desired_state=desired_state if kwh > 0.0 else None,
         kwh=max(0.0, kwh),
-        price=slot.total,
+        price=slot.total if price is None else price,
         reason=reason,
     )
 
@@ -591,6 +695,7 @@ class DeadlineFill:
             prefer_late=bool(params["prefer_late"]),
             load_id=ctx.load.load_id,
             strategy=self.key,
+            surplus=ctx.surplus_bands if ctx.surplus else None,
             inputs_hash=inputs_digest(
                 self.key,
                 ctx.load.mode,

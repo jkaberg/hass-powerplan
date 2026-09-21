@@ -21,6 +21,8 @@ Savings compare what you paid with what the same energy would have cost without 
 
 The difference is the saving. A day's savings are added after midnight, and a car's when its charge is done. In trial mode PowerPlan steers nothing, so it saves nothing.
 
+With solar panels, the solar power an appliance used is priced at what you would have been paid for selling it, and the rest at your price for buying. The same rule prices the house without PowerPlan, which has the same panels. A battery's cost is the solar power it stored, at the selling price, less what it covered in the evening, at the buying price. Your home's total cost does not change; only its split between the appliances does.
+
 <a name="confidence"></a>
 ## Confidence
 

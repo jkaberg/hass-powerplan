@@ -2689,3 +2689,43 @@ Every non-review step of the home, circuit, group and room flows ends with `[How
 
 The electrical step's Advanced section asks *Export limit* in kW when a production sensor is bound, as a suggestion so it can be cleared; stored as `export_limit_w` and passed through `SiteContext` to every `PlanContext`. D3 §6 asks it only of a home that produces; installers state it in kW; a default couldn't be removed. Affects D3 §4, §6, §9 21.
 **Rejected:** a site knob - it's a property of the connection, like the fuse.
+
+### D-0650 · The plan's PV figures are energy per slot
+
+Slot rows carry `production_kwh` (the forecast's energy over the slot) and `surplus_kwh` (that less the offered baseline, floored at 0), not watts. D12 §5.6 names them, the timeline card reads kWh, and ceiling and baseline beside them are kWh per slot. Affects D10 §5.5, D12 §5.6.
+**Rejected:** watts converted in the card - the card already reads kWh.
+
+### D-0651 · `Demand.import_w`: a battery takes the grid only where its plan charges; a planned discharge runs
+
+`Demand.import_w` is the most of `max_w` that may come from the grid (`None` is all). A battery wants a charge whenever it has room, with `import_w = 0` outside force, so D6 grants it the measured surplus alone unless its plan slot charges, whose `grid_w` is then the limit. A free slot charges from the sun or holds, as D5 §5.8 always said. A negative envelope for a load that offers discharge is now granted at stage 0, bounded by the inverter and what the house would import without it; step 5 had read every negative envelope as idle, so no planned discharge ever ran. Grid charging stays the household's choice (D-0209). Affects D4 §4, §6.6; D5 §5.8; D6 §5.3.
+**Rejected:** a battery exception in the allocator - a device-type conditional that still leaves unplanned slots free.
+
+### D-0652 · The effective curve is bands; two strategies plan on the bands, the rest on the curve at their draw
+
+A slot's surplus is `(watts, price)` bands: above the export limit at `min(0, p_out, p_in)`, the rest at `min(p_out, p_in)`. `deadline_fill` and `surplus` split each candidate into bands then the grid, cap it at `min(max_w, headroom + surplus)`, and run the greedy over `(slot, band)` pairs. `cheapest_hours`, `best_save`, `heat_capacitor` and `run_once` rank on `PlanContext.effective`, the import curve priced at the load's `max_w` through the bands. `plan_all` attributes each slot's surplus share and reserves only its grid part. Capping bands at `p_in` keeps cost rising with watts, which keeps the greedy exact (§9 17). Without surplus, `effective` is the import curve and every plan is identical. Affects D5 §2, §3, §5.8.
+**Rejected:** bands in every strategy now - those strategies choose slots, not watts within one.
+
+### D-0653 · `surplus` is offered only where a production sensor is bound
+
+`surplus` is registered for `ev`, `water_heater` and `generic_switch`, and listed in the flow and the strategy select only with a bound production sensor (the export limit's test). Its fields (`grid_top_up`, `min_surplus_w`) are strategy parameters with defaults. A generic switch, which gains a real choice, now shows the strategy select. Without panels a surplus-only appliance never runs. Affects D4 §3, D5 §6.
+**Rejected:** offering it everywhere - a choice that silently does nothing.
+
+### D-0654 · The Phase 7 scenarios run on the reference house with 8 kWp, forecast from its own simulator
+
+`house()` gains `pv_kwp`, `battery`, `battery_soc` and `export`; `tests/sim/battery.py` is a signed-setpoint inverter over a 10 kWh LFP store. A house with panels gets `House.pv_forecast`: each hour's mean of the simulator, confidence 0.7 for a day and 0.5 after, as `energy_solar` sets it. `export` builds an export curve. Scenario dates are checked against the household and price simulators (a summer Sunday with the car home, a winter Tuesday after it left, the deepest negative-price weekend). A forecast from the same simulator isolates the planner from forecast error, which the replan trigger handles. Affects D9 §5.3.
+**Rejected:** a noisy forecast - every threshold would become a forecast-error threshold.
+
+### D-0655 · A production miss replans once per episode
+
+After each tick the runtime compares measured production with the forecast; an episode starts at 30 % or more off, and after 15 minutes the runtime plans once with trigger `forecast`. It ends when they agree. Night and sites without a production sensor never start one. Too little sun leaves surplus plans short, too much leaves surplus unplanned; once per episode is D5 §9 20's "exactly one replan". Affects D5 §5.9, D7 §5.3.
+**Rejected:** comparing in the engine's tick - the series lives in the runtime.
+
+### D-0656 · Surplus in the ledger: attributed at close; the counterfactual's surplus from the grid and the loads
+
+D7's slot close carries the site's production and each load's planned surplus claim (`inf` for `import_w = 0`). D11 gives self-consumed production (`production − export`) to claimants up to `min(claim, drawn)`, pro rata when short, priced at the export price, the rest at import. Without a production reading the pool is `export − import + Σ loads`, an estimate. A discharge while the site exports net is priced at export. The counterfactual house's surplus is `export − import + Σ loads` in every slot, algebraically production minus uncontrolled, so the shadow needs no production sensor. Affects D11 §5.2, §5.3; D7 §5.2.
+**Rejected:** pricing every load at import and crediting the sun to the site - the car that waited for noon would show no saving for it.
+
+### D-0657 · `au_solar@1` on a wholesale price; `nl_pv@2` across the net-metering end
+
+`au_solar@1` is the twelve loads in Sydney: single-phase 230 V at 63 A, 6.6 kWp, a 13.5 kWh battery with grid charging, the NEM's duck curve as `SOLAR_GLUT` in AUD exported at spot, a flat 0.12 AUD/kWh network charge (assumed), 60-minute windows. `nl_pv@2` is forecast and exports at the import price until 1 January 2027 and at half spot after. `self_consumption` is recorded only for houses with panels. `au_solar_soak` asserts at least 70 % used at home (75 % measured); `nl_saldering_end` asserts the share rises across 1 January (88.8 % to 94.9 %). The simulated register stays flat while exporting, which folds export-hour backlogs into one window; recorded as a gap. Affects D9 §5.3, §5.9.
+**Rejected:** Ausgrid's time-of-use network charge - makes the benchmark about the network's peak window, not the sun.

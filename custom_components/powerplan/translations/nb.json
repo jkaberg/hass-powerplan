@@ -1097,7 +1097,8 @@
           "best_save": "Spar der det svir minst",
           "peak_shave": "Kapp toppene",
           "arbitrage": "Kjøp billig, selg dyrt",
-          "run_once": "Én kjøring før klartid"
+          "run_once": "Én kjøring før klartid",
+          "surplus": "Soloverskudd"
         }
       },
       "priority": {
@@ -1614,7 +1615,8 @@
         "opportunistic": "Bare når det er billig",
         "peak_shave": "Kapp toppene",
         "run_once": "Én kjøring før klartid",
-        "schedule": "Følg en tidsplan"
+        "schedule": "Følg en tidsplan",
+        "surplus": "Soloverskudd"
       }
     },
     "text": {

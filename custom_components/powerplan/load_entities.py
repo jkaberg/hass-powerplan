@@ -150,11 +150,18 @@ class LoadControlSelect(LoadEntity, SelectEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-def strategy_options(load: Load) -> list[str]:
-    """Return the strategies a household chooses between: the type's, `always` left out (D-0412)."""
+def strategy_options(load: Load, *, produces: bool) -> list[str]:
+    """Return the strategies a household chooses between (D-0412, D5 §2).
+
+    The type's, `always` left out, and `surplus` too without a production sensor.
+    """
     if load.config.type_key not in device_types.keys():  # noqa: SIM118 - the registry's function
         return []
-    return [key for key in device_types.get(load.config.type_key).strategies if key != "always"]
+    return [
+        key
+        for key in device_types.get(load.config.type_key).strategies
+        if key != "always" and (produces or key != "surplus")
+    ]
 
 
 class LoadStrategySelect(LoadEntity, SelectEntity):
@@ -165,7 +172,7 @@ class LoadStrategySelect(LoadEntity, SelectEntity):
     def __init__(self, runtime: Runtime, load: Load) -> None:
         """Bind to the load and its type's strategies."""
         super().__init__(runtime, load, "strategy")
-        self._attr_options = strategy_options(load)
+        self._attr_options = strategy_options(load, produces=runtime.has_production)
 
     @property
     def current_option(self) -> str | None:
@@ -203,7 +210,7 @@ def load_selects(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[
     out: list[SelectEntity] = []
     for load in _loads(runtime, loads):
         out.append(LoadControlSelect(runtime, load))
-        if len(strategy_options(load)) >= 2:  # noqa: PLR2004 - a choice needs two
+        if len(strategy_options(load, produces=runtime.has_production)) >= 2:  # noqa: PLR2004
             out.append(LoadStrategySelect(runtime, load))
         out.append(LoadPrioritySelect(runtime, load))
     return out

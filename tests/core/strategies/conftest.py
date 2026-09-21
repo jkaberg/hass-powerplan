@@ -404,6 +404,63 @@ class Weather:
         return self.hold.get(load_id)
 
 
+#: The day after `NOW`'s: where the sun shines in the Phase 7 tests.
+TOMORROW = ORDINARY + timedelta(days=1)
+
+
+@dataclass(frozen=True, slots=True)
+class Sun:
+    """A forecast surplus by local hour of `TOMORROW` (D5 §2, Phase 7); nothing else.
+
+    `surplus_w` is what D10's planner view answers once its confidence gate has
+    passed (`PlannerForecasts.surplus_w`), so this is the planner's input as is.
+    """
+
+    by_hour: dict[int, float] = field(default_factory=dict)
+    baseline: float = 0.0
+
+    def outdoor_c(self, t: datetime) -> float | None:
+        """Return no weather: the tests are about the sun."""
+        return None
+
+    def surplus_w(self, t: datetime) -> float:
+        """Return the surplus forecast for `t`'s local hour tomorrow, 0 otherwise."""
+        local = t.astimezone(OSLO)
+        return self.by_hour.get(local.hour, 0.0) if local.date() == TOMORROW else 0.0
+
+    def baseline_w(self, t: datetime) -> float:
+        """Return the uncontrolled load expected."""
+        return self.baseline
+
+    def hold_w(self, load_id: str, t: datetime) -> float | None:
+        """Return no holding draw."""
+        return None
+
+
+def at_hours(source: PriceCurve, hours: Mapping[int, str], *, day: date = TOMORROW) -> PriceCurve:
+    """Return `source` re-priced at the given local hours of `day`."""
+    slots = tuple(
+        replace(slot, total=Decimal(price), components={"spot": Decimal(price)})
+        if (local := slot.start.astimezone(OSLO)).date() == day
+        and (price := hours.get(local.hour)) is not None
+        else slot
+        for slot in source.slots
+    )
+    return replace(source, slots=slots)
+
+
+def export_of(source: PriceCurve, value: str) -> PriceCurve:
+    """Return an export curve over `source`'s slots at a flat `value` (D1 §4)."""
+    amount = Decimal(value)
+    return replace(
+        source,
+        direction=Direction.EXPORT,
+        slots=tuple(
+            replace(slot, total=amount, components={"spot": amount}) for slot in source.slots
+        ),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Contexts
 # --------------------------------------------------------------------------- #

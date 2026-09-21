@@ -31,6 +31,7 @@ from .context import (
     PlanContext,
     SiteContext,
     SitePlan,
+    effective_curve,
     with_rewards,
 )
 from .plan import build_plan, with_hold_of
@@ -221,6 +222,8 @@ def plan_all(
         else headroom
     )
     eligible = _eligible(ctx, slots)
+    # D5 §2 (Phase 7): the forecast surplus, taken in the same walk as the room.
+    surplus = _surplus(ctx, slots)
 
     for view in sorted(loads, key=lambda row: (-row.priority, row.load_id)):
         if not view.plans:
@@ -230,10 +233,13 @@ def plan_all(
 
         curve_in, curve_out = curves.for_load(view)
         before = old.get(view.load_id)
+        curve_in = with_rewards(curve_in, ctx.events, participates=view.participates_in_events)
+        # PV surplus is electricity: a gas or district-heat load plans on its own curve.
+        own = surplus if view.carrier is Carrier.ELECTRICITY else {}
         pctx = PlanContext(
             now=now,
             tz=ctx.tz,
-            curve_in=with_rewards(curve_in, ctx.events, participates=view.participates_in_events),
+            curve_in=curve_in,
             curve_out=curve_out,
             headroom=_switched(room, view, slots, ctx),
             hysteresis=ctx.hysteresis,
@@ -247,6 +253,18 @@ def plan_all(
             holidays=ctx.holidays,
             previous=before,
             export_limit_w=ctx.export_limit_w,
+            surplus=own,
+            curve_eff=(
+                None
+                if not own
+                else effective_curve(
+                    curve_in,
+                    curve_out,
+                    own,
+                    export_limit_w=ctx.export_limit_w,
+                    draw_w=view.demand.max_w,
+                )
+            ),
         )
         params = params_of(view.strategy, view.params)
         plan = combine(
@@ -261,7 +279,7 @@ def plan_all(
         held = None if before is None else with_hold_of(before, plan)
         take = (
             held is None
-            or not _fits(held, pctx.headroom, now, ctx.eps_w)
+            or not _fits(_with_surplus(held, own), pctx.headroom, now, ctx.eps_w)
             or should_adopt(
                 held,
                 plan,
@@ -273,11 +291,12 @@ def plan_all(
                 stale=ctx.stale,
             )
         )
-        chosen = plan if take or held is None else held
+        chosen = _with_surplus(plan if take or held is None else held, own)
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)
         room = room.reserve(_reserved_by(chosen, view, slots))
+        surplus = _surplus_left(surplus, chosen)
 
     return SitePlan(plans=kept, headroom_left=room, adopted=frozenset(adopted), built_at=now)
 
@@ -325,6 +344,46 @@ def _planned_draw_w(slot: PlanSlot) -> float:
     return draw if slot.envelope_w is None else min(draw, slot.envelope_w)
 
 
+def _surplus(ctx: SiteContext, slots: Sequence[Slot]) -> dict[datetime, float]:
+    """Return the forecast surplus per slot start, W; empty without one (D5 §2)."""
+    if ctx.forecasts is None:
+        return {}
+    forecasts = ctx.forecasts
+    found = {slot.start: forecasts.surplus_w(slot.start) for slot in slots}
+    return {start: watts for start, watts in found.items() if watts > 0.0}
+
+
+def _with_surplus(plan: Plan, surplus: Mapping[datetime, float]) -> Plan:
+    """Return `plan` with each slot's draw attributed to the surplus left first (D5 §2).
+
+    A load draws the surplus before the grid whatever either is worth, so the
+    share is physical, not a strategy's choice: `min(draw, surplus left)`. What
+    remains, `grid_w`, is what the slot imports - all D6's surplus following lets
+    it import (D6 §5.3) and all it takes from the room below it (INV-19).
+    """
+    if not surplus and not any(slot.surplus_w for slot in plan.slots):
+        return plan
+    slots = tuple(
+        slot if share == slot.surplus_w else replace(slot, surplus_w=share)
+        for slot in plan.slots
+        for share in (min(_planned_draw_w(slot), surplus.get(slot.start, 0.0)),)
+    )
+    return replace(plan, slots=slots)
+
+
+def _surplus_left(surplus: dict[datetime, float], plan: Plan) -> dict[datetime, float]:
+    """Return the surplus the loads below `plan` may still take (INV-33's walk)."""
+    if not surplus:
+        return surplus
+    left = dict(surplus)
+    for slot in plan.slots:
+        if slot.surplus_w > 0.0 and slot.start in left:
+            left[slot.start] = left[slot.start] - slot.surplus_w
+            if left[slot.start] <= 0.0:
+                del left[slot.start]
+    return left
+
+
 def _fits(plan: Plan, room: Headroom, now: datetime, tolerance_w: float) -> bool:
     """Return whether `plan`'s slots ahead fit the room left above it (§5.9, D-0628).
 
@@ -334,7 +393,7 @@ def _fits(plan: Plan, room: Headroom, now: datetime, tolerance_w: float) -> bool
     one cycle to the next does not re-cut a flat night (INV-32).
     """
     return all(
-        _planned_draw_w(slot) <= room.w_at(slot.start) + tolerance_w
+        _planned_draw_w(slot) - slot.surplus_w <= room.w_at(slot.start) + tolerance_w
         for slot in plan.slots
         if slot.end > now
     )
@@ -352,7 +411,8 @@ def _reserved_by(chosen: Plan, view: LoadView, slots: Sequence[Slot]) -> dict[da
     (`design/DECISIONS.md` D-0255).
     """
     if chosen.mode is not PlanMode.URGENT:
-        draws = {slot.start: _planned_draw_w(slot) for slot in chosen.slots}
+        # What the slot imports: the surplus it takes is not the room's (INV-19).
+        draws = {slot.start: _planned_draw_w(slot) - slot.surplus_w for slot in chosen.slots}
         return {start: watts for start, watts in draws.items() if watts > 0.0}
     watts = view.demand.max_w
     left = view.demand.required_kwh

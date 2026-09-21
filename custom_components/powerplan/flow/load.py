@@ -49,6 +49,7 @@ from homeassistant.helpers.selector import (
 
 from custom_components.powerplan import doclinks
 from custom_components.powerplan.const import (
+    CONF_METER,
     CONF_TARIFF,
     DOMAIN,
     ENTITY_SETTINGS,
@@ -62,6 +63,7 @@ from custom_components.powerplan.const import (
     LOAD_TITLE_USER_SET,
     LOAD_TYPE,
     PRIORITY_LEVELS,
+    ROLE_PRODUCTION_POWER,
     SECTION_ADVANCED,
     SUBENTRY_LOAD,
     priority_level,
@@ -708,9 +710,15 @@ def _shadow_sentence(text: Text, type_key: str, params: Mapping[str, Any]) -> st
     return text.word("load_text", f"shadow_{type_key}") or None
 
 
-def strategy_choices(device_type: DeviceType) -> list[str]:
-    """Return the strategies a household chooses between: `always` left out (D-0412)."""
-    return [key for key in device_type.strategies if key != "always"]
+def strategy_choices(device_type: DeviceType, *, produces: bool) -> list[str]:
+    """Return the strategies a household chooses between (D-0412, D5 §2).
+
+    `always` is left out, and `surplus` too where the home has no production
+    sensor: without panels a surplus-only appliance would never run.
+    """
+    return [
+        key for key in device_type.strategies if key != "always" and (produces or key != "surplus")
+    ]
 
 
 def _review_schema(
@@ -720,6 +728,7 @@ def _review_schema(
     name: str,
     params: Mapping[str, Any] | None = None,
     reconfigure: bool = False,
+    produces: bool = False,
 ) -> vol.Schema:
     """Name, strategy and priority when adding - and the derived parameters, editable, in Advanced.
 
@@ -734,7 +743,7 @@ def _review_schema(
     if reconfigure:
         owned = ENTITY_SETTINGS.get(device_type.key, frozenset())
     else:
-        choices = strategy_choices(device_type)
+        choices = strategy_choices(device_type, produces=produces)
         if len(choices) >= 2:  # noqa: PLR2004 - a choice needs two
             default = derived.strategy if derived.strategy in choices else choices[0]
             fields[vol.Optional("strategy", default=default)] = SelectSelector(
@@ -1440,6 +1449,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 name=load_title(
                     self.hass, self._device_id, text.word("load_type", str(self._type))
                 ),
+                produces=ROLE_PRODUCTION_POWER
+                in ((self._get_entry().data.get(CONF_METER) or {}).get("roles") or {}),
             ).extend(grid_binding_fields(self._site_price(), text, str(self._type))),
             description_placeholders={
                 "explanation": explanation_text(

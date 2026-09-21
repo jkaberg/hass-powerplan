@@ -38,11 +38,15 @@ __all__ = [
     "Repriced",
     "SlotPrice",
     "accrue_by_party",
+    "accrue_entry_by_party",
     "capacity_fee_to_date",
+    "entry_cf_cost",
+    "entry_cost",
     "export_credit",
     "price_slot",
     "reprice",
     "slot_price",
+    "with_cf_sun",
 ]
 
 #: kWh is quantised to 1 Wh on the way into `Decimal` (D11 §5.2).
@@ -97,6 +101,15 @@ class PricedSlot:
     settled: bool = False
     #: A run's shape: the on-request shadow's kWh for this slot (D11 §5.9.1, `run`).
     shape_kwh: float = 0.0
+    #: Phase 7 (D11 §5.2): the kWh of `kwh` that was the site's own surplus, priced
+    #: at `sun_price` - the export they replaced - and the rest at `price`. Signed
+    #: with `kwh`: a battery discharging into export is `sun_kwh = kwh`.
+    sun_kwh: float = 0.0
+    sun_price: SlotPrice | None = None
+    #: The surplus the counterfactual house had in this slot (§5.3 "Shadows beside
+    #: panels"), and what of `cf_kwh` it took, set when the slot settles.
+    sun_cap_kwh: float = 0.0
+    cf_sun_kwh: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,12 +161,52 @@ def price_slot(kwh: float, price: SlotPrice) -> Money:
     return Money(kwh_decimal(kwh) * price.amount, price.currency)
 
 
+def entry_cost(entry: PricedSlot) -> Money:
+    """Return what a slot cost: its grid kWh at `price`, its surplus kWh at `sun_price`."""
+    return _split_cost(entry.kwh, entry.sun_kwh, entry)
+
+
+def entry_cf_cost(entry: PricedSlot) -> Money:
+    """Return what the counterfactual paid: its surplus share at `sun_price`, the rest at `price`."""
+    return _split_cost(entry.cf_kwh, entry.cf_sun_kwh, entry)
+
+
+def _split_cost(kwh: float, sun_kwh: float, entry: PricedSlot) -> Money:
+    grid = price_slot(kwh - sun_kwh, entry.price)
+    if entry.sun_price is None or sun_kwh == 0.0:
+        return grid
+    return Money(grid.amount + price_slot(sun_kwh, entry.sun_price).amount, grid.currency)
+
+
+def accrue_entry_by_party(
+    into: dict[str, Decimal], entry: PricedSlot, *, counterfactual: bool, sign: int = 1
+) -> None:
+    """Add a slot's cost (or its counterfactual's) to `into`, party by party (D11 §5.8)."""
+    kwh, sun = (entry.cf_kwh, entry.cf_sun_kwh) if counterfactual else (entry.kwh, entry.sun_kwh)
+    accrue_by_party(into, entry.price, kwh - sun, sign)
+    if entry.sun_price is not None and sun != 0.0:
+        accrue_by_party(into, entry.sun_price, sun, sign)
+
+
+def with_cf_sun(entry: PricedSlot) -> PricedSlot:
+    """Return `entry` with the counterfactual's surplus share set from its cap (§5.3).
+
+    A slot whose counterfactual is its own energy there takes its own share, so
+    it saves exactly nothing.
+    """
+    if entry.cf_kwh == entry.kwh:
+        return replace(entry, cf_sun_kwh=entry.sun_kwh)
+    if entry.sun_price is None or entry.cf_kwh <= 0.0:
+        return replace(entry, cf_sun_kwh=0.0)
+    return replace(entry, cf_sun_kwh=min(entry.cf_kwh, entry.sun_cap_kwh))
+
+
 def export_credit(export_kwh: float, pair: CurvePair, start: datetime) -> Money:
     """Return what the site was credited for exporting in this slot (D11 §5.2).
 
-    Site level only: per-load attribution of consumed surplus needs D5's
-    `surplus` and is v1.x (D11 §10). Without an export curve the credit is zero,
-    not a guess at the import price.
+    Site level: the per-load attribution of consumed surplus moves money between
+    loads and never changes this (§5.2, Phase 7). Without an export curve the
+    credit is zero, not a guess at the import price.
     """
     if pair.export_curve is None:
         return zero(pair.import_curve.currency)
@@ -199,9 +252,14 @@ def reprice(
             Repriced(
                 slot=slot,
                 price=price,
-                cost_delta=minus(price_slot(slot.kwh, price), price_slot(slot.kwh, slot.price)),
+                # Only the grid kWh move: the surplus share is priced on the export curve.
+                cost_delta=minus(
+                    price_slot(slot.kwh - slot.sun_kwh, price),
+                    price_slot(slot.kwh - slot.sun_kwh, slot.price),
+                ),
                 cf_cost_delta=minus(
-                    price_slot(slot.cf_kwh, price), price_slot(slot.cf_kwh, slot.price)
+                    price_slot(slot.cf_kwh - slot.cf_sun_kwh, price),
+                    price_slot(slot.cf_kwh - slot.cf_sun_kwh, slot.price),
                 ),
             )
         )
