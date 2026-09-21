@@ -78,11 +78,21 @@ class DayType:
     schema: ClassVar[Schema] = (
         Field("rates", FieldKind.LIST, required=True),
         Field("fallback", FieldKind.TEXT),
+        # The entity that announces the day's type, and how many days ahead it
+        # speaks (1 for tomorrow's colour published today). Read by the runtime,
+        # which builds the event source from them; the modifier prices what the
+        # store answers (D7 §5.5).
+        Field("entity", FieldKind.ENTITY),
+        Field("day_offset", FieldKind.NUMBER, default=0, advanced=True),
     )
 
     rates: Mapping[str, DayTypeRate] = field(default_factory=dict)
     fallback: str | None = None
     day_starts_min: int = 0
+    #: Where the day's type is announced, and how many days ahead: the
+    #: runtime builds the event source from these; `apply` reads the store.
+    entity: str | None = None
+    day_offset: int = 0
 
     @classmethod
     def from_options(cls, options: Mapping[str, Any]) -> DayType:
@@ -108,6 +118,8 @@ class DayType:
             },
             fallback=options.get("fallback"),
             day_starts_min=int(options.get("day_starts_min") or 0),
+            entity=options.get("entity") or None,
+            day_offset=int(float(options.get("day_offset") or 0)),
         )
 
     def apply(self, slot: Slot, ctx: PriceContext) -> Slot:

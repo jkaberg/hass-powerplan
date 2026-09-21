@@ -136,3 +136,20 @@ def test_16_every_event_kind_round_trips_through_the_store(kind: EventKind) -> N
     store = EventStore().upsert([event])
 
     assert store.active(kind, DAY_START + timedelta(hours=1)) == (event,)
+
+
+def test_16_the_store_round_trips_through_its_section() -> None:
+    """D1 §7: the `prices` section's `events` list rebuilds the same store."""
+    store = EventStore().upsert([tempo("red"), replace(tempo("blue"), id="tomorrow", revoked=True)])
+
+    again = EventStore.from_data(store.to_data())
+
+    assert again == store
+    assert again.all() == store.all()
+
+
+def test_16_a_row_that_no_longer_reads_is_dropped_not_fatal() -> None:
+    """A stored event of a kind this version does not know costs that event, not the store."""
+    rows = [*EventStore().upsert([tempo("red")]).to_data(), {"kind": "dso_whim", "id": "x"}]
+
+    assert len(EventStore.from_data(rows).all()) == 1

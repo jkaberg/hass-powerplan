@@ -200,11 +200,25 @@
         "description": "Some tariffs price announced days, such as critical peak days, differently. The prices are in your agreement.",
         "data": {
           "rates": "Day types",
-          "fallback": "Normal day type"
+          "fallback": "Normal day type",
+          "entity": "Sensor that announces the day"
         },
         "data_description": {
           "rates": "The announced day types and what each costs.",
-          "fallback": "The day type used when nothing is announced."
+          "fallback": "The day type used when nothing is announced.",
+          "entity": "The sensor whose state is the day's type, for example tomorrow's Tempo colour. Name each day type below as this sensor writes it."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Already filled in. Open it only if you know you want something else.",
+            "data": {
+              "day_offset": "Days ahead the sensor announces"
+            },
+            "data_description": {
+              "day_offset": "Advanced: 1 when the sensor shows tomorrow's type today, 0 when it shows today's."
+            }
+          }
         }
       },
       "modifier_cumulative_tier": {

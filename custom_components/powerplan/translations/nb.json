@@ -200,11 +200,25 @@
         "description": "Noen tariffer priser varslede dager, som kritiske toppdager, annerledes. Prisene står i avtalen din.",
         "data": {
           "rates": "Dagtyper",
-          "fallback": "Vanlig dagtype"
+          "fallback": "Vanlig dagtype",
+          "entity": "Sensor som varsler dagen"
         },
         "data_description": {
           "rates": "De varslede dagtypene og hva hver av dem koster.",
-          "fallback": "Dagtypen som brukes når ingenting er varslet."
+          "fallback": "Dagtypen som brukes når ingenting er varslet.",
+          "entity": "Sensoren som har dagens type som tilstand, for eksempel morgendagens Tempo-farge. Gi hver dagtype under navnet sensoren skriver."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Avansert",
+            "description": "Allerede fylt ut. Åpne bare hvis du vet at du vil ha noe annet.",
+            "data": {
+              "day_offset": "Dager fram som sensoren varsler"
+            },
+            "data_description": {
+              "day_offset": "Avansert: 1 når sensoren viser morgendagens type i dag, 0 når den viser dagens."
+            }
+          }
         }
       },
       "modifier_cumulative_tier": {

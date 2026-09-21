@@ -153,6 +153,8 @@ from .core.pricing import (
     party,
 )
 from .core.pricing.context import HolidayCalendar, month_to_date
+from .core.pricing.events import EventKind as PricingEventKind
+from .core.pricing.events import EventStore
 from .core.pricing.forecasters.base import PriceForecaster, chain
 from .core.pricing.forecasters.carry_known import CarryKnown
 from .core.pricing.forecasters.synthesised import GridCharge, Synthesised
@@ -189,6 +191,7 @@ from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
 from .price_refresh import PriceRefresher
 from .providers import tariffs as tariff_sources
+from .providers.events import EntityEventSource
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
 from .providers.forecasts.recorder_baseline import (
     LoadSource,
@@ -443,6 +446,12 @@ class LoadDevice(Protocol):
 # --------------------------------------------------------------------------- #
 
 
+#: The price add-ons that name an entity announcing events, and the kind it
+#: announces (D7 §5.5). A source for another kind is one row here plus its
+#: flow field.
+EVENT_MODIFIERS: Final[Mapping[str, PricingEventKind]] = {"day_type": PricingEventKind.DAY_TYPE}
+
+
 class RawSlotStore:
     """The raw slots every source delivered, by source, kept `RAW_KEEP_DAYS` deep.
 
@@ -598,6 +607,9 @@ class SiteBuild:
     target_kw: float | None = None
     preset_file: str | None = None
     preset_outdated: bool = False
+    #: The entities that announce events (D7 §5.5): today the `day_type`
+    #: add-on's, one per add-on row that names an entity.
+    event_sources: tuple[EntityEventSource, ...] = ()
     #: Old VAT/levy add-ons kept as the household's overrides until it confirms them (D13 §10).
     tariff_review: tuple[str, ...] = ()
     #: The tariff copy by party (D13 §3), the household's own add-ons and what the
@@ -676,6 +688,17 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     added = modifiers.chain_from(
         [(row["key"], row.get("options") or {}) for row in prices.get("modifiers") or ()]
     )
+    event_sources = tuple(
+        EntityEventSource(
+            hass,
+            entity_id=str(options["entity"]),
+            kind=EVENT_MODIFIERS[row["key"]],
+            tz=tz,
+            day_offset=int(float(options.get("day_offset") or 0)),
+        )
+        for row in prices.get("modifiers") or ()
+        if row.get("key") in EVENT_MODIFIERS and (options := row.get("options") or {}).get("entity")
+    )
     basis = _source_basis(prices)
     price_modifiers, forecaster = _chain_of(price, added, basis)
     export = prices.get("export") or {}
@@ -733,6 +756,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         target_options=_target_options(peak, tariff_data),
         target_kw=None if tariff_data.get("target_kw") is None else float(tariff_data["target_kw"]),
         preset_file=tariff_data.get("preset_file"),
+        event_sources=event_sources,
         preset_outdated=outdated,
         tariff_review=review,
         price=price,
@@ -1249,6 +1273,9 @@ class Runtime:
         #: The import curve without the fixed-price modifier, for the price card (D12 §5.12 P3).
         self.reference_curve: PriceCurve | None = None
         self.raw = RawSlotStore()
+        #: Every announcement the site's event sources made (D1 §5.6),
+        #: persisted beside the raw slots in the `prices` section (D1 §7).
+        self.events = EventStore()
         self.engine: Engine | None = None
         self.adapter: AccountingAdapter | None = None
         self.active = build.active
@@ -1333,6 +1360,7 @@ class Runtime:
         document = await self.store.load()
         self.state = EngineState.from_sections(document) if document else EngineState()
         self.raw = RawSlotStore(self.store.get(Section.PRICES))
+        self.events = EventStore.from_data((self.store.get(Section.PRICES) or {}).get("events"))
         # The site switch as the last tick saw it: its own entity restores only
         # after the platforms load, which is after startup has released and
         # restored - and a site that is off writes nothing, startup included
@@ -1439,6 +1467,8 @@ class Runtime:
             self.hass, self.entry, self.refresh_prices, self.prices_known_now
         )
         self.price_refresher.async_setup()
+        # Each event source read once, before the first plan (D7 §5.5).
+        await self._poll_events(dt_util.utcnow())
         # The planning cycle starts after the first tick (D7 §5.5 step 8): the
         # first fetch is I/O and runs outside the lock (INV-46).
         self.hass.async_create_task(self._fetch_then_plan("startup"))
@@ -1779,7 +1809,7 @@ class Runtime:
             currency=build.cfg.currency,
             mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
-            day_type_at=lambda _d: None,
+            day_type_at=self._day_type_at,
             holidays=build.holidays,
         )
         self.fixed_saving = fixed_price_saving(
@@ -2634,6 +2664,7 @@ class Runtime:
             forecast_confidence=confidence,
             forecast_ready=confidence is not None and confidence >= OFFER_CONFIDENCE,
             forecast_baseline=self._forecast_baseline(now),
+            events=self.events.in_force(now),
         )
 
     def _forecast_confidence(self, now: datetime) -> float | None:
@@ -2765,7 +2796,12 @@ class Runtime:
             return
         async with self.lock:
             now = dt_util.utcnow()
-            inputs = await self._inputs(now, trigger)
+            # An announcement past its end is dropped in the cycle (D7 §5.2).
+            pruned = self.events.prune(now)
+            if pruned != self.events:
+                self.events = pruned
+                self._save_prices()
+            inputs = replace(await self._inputs(now, trigger), events=self.events.all())
             state, report, effects = self.engine.plan(self.state, inputs)
             self.state = state
             self.plans += 1
@@ -3078,8 +3114,7 @@ class Runtime:
         changed = report.slots > 0
         if changed:
             self.raw.prune(now)
-            self.state = replace(self.state, prices=self.raw.to_data())
-            self.store.set(Section.PRICES, self.raw.to_data())
+            self._save_prices()
         if changed or self.curves is None:
             self.curves = self._build_curves(now)
             self.reference_curve = self._build_reference_curve(now)
@@ -3341,7 +3376,7 @@ class Runtime:
             currency=build.cfg.currency,
             mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
-            day_type_at=lambda _d: None,
+            day_type_at=self._day_type_at,
             holidays=build.holidays,
         )
         keys = {source.key for source in build.sources}
@@ -3372,7 +3407,7 @@ class Runtime:
             currency=build.cfg.currency,
             mtd_kwh_at=self._month_to_date(now),
             ytd_kwh_at=lambda _t: 0.0,
-            day_type_at=lambda _d: None,
+            day_type_at=self._day_type_at,
             holidays=build.holidays,
         )
         import_: dict[Carrier, PriceCurve] = {}
@@ -3579,6 +3614,13 @@ class Runtime:
                     )
             else:
                 self._schedule_publication(source.key, publication)
+        event_entities = [
+            entity_id for source in build.event_sources for entity_id in source.entity_ids()
+        ]
+        if event_entities:
+            self._track(
+                async_track_state_change_event(hass, event_entities, self._on_event_entity_changed)
+            )
         self._schedule_hole_check()
         self._subscribe_loads()
         del tz
@@ -3647,6 +3689,38 @@ class Runtime:
     @callback
     def _on_price_entity_changed(self, _event: Event[EventStateChangedData]) -> None:
         self.hass.async_create_task(self._fetch_then_plan("entity"))
+
+    @callback
+    def _on_event_entity_changed(self, _event: Event[EventStateChangedData]) -> None:
+        self.hass.async_create_task(self._events_then_plan())
+
+    async def _events_then_plan(self) -> None:
+        """Upsert a changed announcement, reprice and plan (D7 §5.3)."""
+        now = dt_util.utcnow()
+        if await self._poll_events(now):
+            self.curves = self._build_curves(now)
+            await self.run_plan("event")
+
+    async def _poll_events(self, now: datetime) -> bool:
+        """Read every event source into the store; return whether it changed (D1 §5.6)."""
+        before = self.events
+        for source in self.build.event_sources:
+            self.events = self.events.upsert(await source.poll())
+        self.events = self.events.prune(now)
+        if self.events == before:
+            return False
+        self._save_prices()
+        return True
+
+    def _day_type_at(self, day: date) -> str | None:
+        """`PriceContext.day_type_at`: the store's answer for the local day (D1 §5.6)."""
+        return self.events.day_type_at(day, self.build.cfg.tz)
+
+    def _save_prices(self) -> None:
+        """Write the `prices` section: the raw slots and the events beside them (D1 §7)."""
+        section = {**self.raw.to_data(), "events": self.events.to_data()}
+        self.state = replace(self.state, prices=section)
+        self.store.set(Section.PRICES, section)
 
     async def _tick_and_plan(self, trigger: str) -> None:
         await self.run_tick(trigger)

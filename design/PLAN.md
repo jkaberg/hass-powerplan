@@ -496,7 +496,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 4.7 | Price sources: every row through the flow | done |
 | 4.8a | Charger profiles: Zaptec, Easee cloud | done |
 | 4.8b | Charger profiles: OCPP and vocabulary rows | done |
-| 4.9 | Event sources in the runtime | todo |
+| 4.9 | Event sources in the runtime | done |
 | 5.1 | D10 core and providers | done |
 | 5.1a | D10 core | done |
 | 5.2 | Baseline-aware reserve and warning | done |

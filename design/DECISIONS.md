@@ -2634,3 +2634,13 @@ The format select is `vol.Optional` with no default on first setup; empty means 
 
 No `keba` profile in v1: the core integration has no config flow and none of its entities sets `device_info`, so the load flow, keyed by device, can't pick it (D4 §5.9's own condition). Affects D4 §5.9, §9 16, §10.
 **Rejected:** offering it through the entity picker - the subentry is keyed by a device.
+
+### D-0639 · The day-type add-on names its announcing entity; its events persist beside the slots
+
+`day_type` gains `entity` and `day_offset` (Advanced) fields; the runtime builds an `EntityEventSource` from them (`runtime.EVENT_MODIFIERS`). Rates are named as the sensor writes the type, case-folded, so no mapping is asked. The event store persists as the `prices` section's `events`. D1 §6's day-type entity had no field anywhere, so Tempo priced only its fallback. Affects D1 §6, §7; D7 §5.5.
+**Rejected:** a separate event-sources step - the DSO-limit UI is v1.x, and a day type without its entity can't be configured.
+
+### D-0640 · The tick sees events in force; a changed announcement reprices and plans
+
+`Inputs.events` is `EventStore.in_force(now)` in the tick and `all()` in the plan; the planning cycle prunes events ended over an hour ago. A state change on an event entity polls every source, and a changed store rebuilds the curves and plans. Each source is polled once at start. Curves are built after a fetch, so a colour announced between fetches would otherwise wait for the next one. Affects D7 §5.2, §5.3, §5.5, §9 18.
+**Rejected:** rebuilding curves on every plan - four full compositions an hour for an input that changes daily.

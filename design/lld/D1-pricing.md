@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | HLD section | §6.1 |
-| Depends on | D3 (month-to-date consumption for context), D10 (projected consumption, optional), D13 (the tariff copy by party and the country module's state stage; was D2's preset-supplied energy components) |
+| Depends on | D3 (month-to-date consumption for context), D10 (projected consumption, optional), D13 (the tariff copy by party and the country module's state stage) |
 | Consumers | D5 (curves), D6 (zone cost comparison, event load limits via D6 constraints), D7/D8 (price sensors, events, health) |
 | Invariants owned | INV-4 … INV-8, INV-51 |
 
@@ -349,18 +349,18 @@ Site flow, step **prices** (skipped on the *fuse only* path):
 
 | Field | Selector | Default / derivation |
 |---|---|---|
-| Where do your electricity prices come from? | select: **Nord Pool (built in)** · **A price sensor I already have** · **Fixed price / I'll type it** | by country: Nordics/Baltics → Nord Pool; if a known price integration is installed → that sensor, pre-selected; else fixed |
-| *(Nord Pool)* Area | select NO1…NO5, SE1–4, FI, DK1–2, EE, LV, LT, NL, BE, DE-LU, FR, AT | from HA's location (lat/long → area map) |
-| *(Sensor)* Entity | entity selector over `sensor` and `event` (Octopus's day rates are events); a `generic_list` or `hourly_attributes` source can be any entity, so the selector is not filtered by platform (D-0632) | the detected one |
-| *(Sensor)* Format | a select with no default: left empty it is the detected format, and a picked entity no row claims is refused inline (`price_format_unknown`), never guessed (D-0632) | detected |
-| *(Sensor)* Format options | step `prices_format`, one for every row, rendered from the row's `schema` without `config_entry` (D-0633). Shown when the row fits any entity (`generic_list`, `hourly_attributes`), when it publishes tomorrow on a second entity, or when a required field is left without a default after detection | `formats.derived(key, EntityFacts)`: a `config_entry` field is the entity's own entry, a `currency` field the currency its unit names, and a row's `from_entity` hook adds the rest - Tibber's `home` is the price device's name when the entry has two `Price Sensor` devices. The site's currency is the suggested value where nothing else gives one |
-| *(Sensor)* Tomorrow's entity | entity selector on the format-options step, pre-filled with the sibling on the same device (`…_current_day_rates` → `…_next_day_rates`, the row's `tomorrow_entity`); stored as `second_entity_id` and read by the same `EntitySource` after the first | only for rows that publish tomorrow separately (`octopus_energy`) |
-| Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"); Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
-| *(Fixed)* Price per kWh | number in site currency | - |
-| *(D13 §6 step 2a)* What does your supplier add, on top of the grid tariff? | opens by naming what the grid company's tariff already covers; multi-select: **Supplier markup** · **Monthly fee** · **The supplier's own time-of-use offer** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)** - nothing of the grid's or the state's | none pre-ticked; Norgespris is an agreement (step 2), strømstøtte a scheme (step 3) |
-| *(per ticked item)* sub-form | markup; monthly fee; the supplier's periods; tiers; day-type entity + mapping | none |
+| Where do your electricity prices come from? | select: **Nord Pool (built in)** · **A price sensor I already have** · **Fixed price / I'll type it** | by country: Nordics/Baltics → Nord Pool, a known price integration installed → that sensor pre-selected, else fixed |
+| *(Nord Pool)* Area | select NO1…NO5, SE1–4, FI, DK1–2, EE, LV, LT, NL, BE, DE-LU, FR, AT | from the Nord Pool entry |
+| *(Sensor)* Entity | entity selector over `sensor` and `event` (Octopus's day rates are events). A `generic_list` or `hourly_attributes` source can be any entity, so it's not filtered by platform (D-0632) | the detected one |
+| *(Sensor)* Format | a select without default: left empty it's the detected format, and a picked entity no row claims is refused inline (`price_format_unknown`), never guessed (D-0632) | detected |
+| *(Sensor)* Format options | step `prices_format`, rendered from the row's `schema` without `config_entry` (D-0633). Shown when the row fits any entity (`generic_list`, `hourly_attributes`), when it publishes tomorrow on a second entity, or when a required field is still without a default after detection | `formats.derived(key, EntityFacts)`: `config_entry` is the entity's own entry, `currency` the currency its unit names, and a row's `from_entity` hook adds the rest - Tibber's `home` is the price device's name when the entry has two `Price Sensor` devices. The site's currency is the suggestion where nothing else gives one |
+| *(Sensor)* Tomorrow's entity | entity selector on the format options step, pre-filled with the sibling on the same device (`…_current_day_rates` → `…_next_day_rates`, the row's `tomorrow_entity`), stored as `second_entity_id` and read by the same `EntitySource` after the first | only rows that publish tomorrow separately (`octopus_energy`) |
+| Publication clock | read-only: the derived publication time and market zone ("about 13:00 CET"). Advanced: `publication_tz`, `publication_time` | derived from the market / area (D-0100) |
+| *(Fixed)* Price per kWh | number in the site currency | - |
+| What does your supplier add, on top of the grid tariff? | opens by naming what the grid company's tariff already covers. Multi-select: **Supplier markup** · **Monthly fee** · **The supplier's own time-of-use offer** · **Tiered by monthly use** · **Day-type tariff (Tempo / critical peak)**, nothing of the grid's or the state's (D13 §6 2a) | none pre-ticked. Norgespris is an agreement (step 2), strømstøtte a scheme (step 3) |
+| *(per ticked item)* sub-form | markup, monthly fee, the supplier's periods, tiers, day type | none. The day-type step asks `entity` (the sensor whose state is the day's type) and under Advanced `day_offset` (1 for tomorrow's colour published today). Rates are named as the sensor writes the type, case-folded, no separate mapping (D-0639) |
 | Export | select: **I don't export** · **fixed** · **spot minus** · **spot × share** · **from a sensor** | none |
-| Other carriers | repeatable: gas / district heat / oil / pellets → **fixed** or **daily from a sensor** | none. A follow-up behind "Varmer du også med ved, pellets, olje eller fjernvarme?", and in the household's word "varmekilde" |
+| Other carriers | repeatable: gas / district heat / oil / pellets → **fixed** or **daily from a sensor** | none, a follow-up behind "Varmer du også med ved, pellets, olje eller fjernvarme?" |
 
 Review text (INV-67), by party: "Tomorrow's prices come from Nord Pool NO3 at about 13:00. Tonight at 23:00: grid 23 øre (Tensio) + power 71 øre (spot + your supplier's 4 øre) + taxes 32 øre (VAT 25 %, forbruksavgift, Enova). If Nord Pool is unreachable, powerplan keeps planning with yesterday's shape and the grid charge."
 
@@ -372,7 +372,7 @@ Validation: currency mismatch without `fx_rate` refused, a VAT override > 30 % w
 
 ## 7. Persistence
 
-Store section `prices`: `{schema, raw: {source_key: {slot_key: RawSlot}}, fetch_log: {source_key: {last_ok, last_attempt, attempts_today, last_error}}, events: {(source,id): Event}, history_days_kept: 7}`. Written after each fetch and each event upsert (rare); pruned daily. On restore, the curve is rebuilt immediately with zero fetches (INV-6).
+Store section `prices`: `{"slots": {source: [row]}, "events": [event]}`. `events` is `EventStore.to_data()`, a list of `{id, source, kind, start, end, issued_at, valid_until, payload, revoked}` (D-0639). Written after each fetch and event upsert (rare), pruned daily. On restore the curve is rebuilt at once with zero fetches (INV-6).
 
 ---
 

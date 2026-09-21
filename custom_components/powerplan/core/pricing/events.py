@@ -87,6 +87,59 @@ class EventStore:
             events={key: event for key, event in self.events.items() if event.end >= cutoff}
         )
 
+    def in_force(self, when: datetime) -> tuple[Event, ...]:
+        """Return every event in force at `when`, of any kind, earliest first (the tick's view)."""
+        return tuple(
+            sorted(
+                (event for event in self.events.values() if event.is_active_at(when)),
+                key=lambda event: event.start,
+            )
+        )
+
+    def all(self) -> tuple[Event, ...]:
+        """Return every held event, earliest first (the plan's view, D7 §5.5)."""
+        return tuple(sorted(self.events.values(), key=lambda event: (event.start, event.key)))
+
+    def to_data(self) -> list[dict[str, Any]]:
+        """Return the store as the `prices` section's `events` list (D1 §7)."""
+        return [
+            {
+                "id": event.id,
+                "source": event.source,
+                "kind": event.kind.value,
+                "start": event.start.isoformat(),
+                "end": event.end.isoformat(),
+                "issued_at": event.issued_at.isoformat(),
+                "valid_until": event.valid_until.isoformat(),
+                "payload": dict(event.payload),
+                "revoked": event.revoked,
+            }
+            for event in self.all()
+        ]
+
+    @classmethod
+    def from_data(cls, rows: Iterable[Mapping[str, Any]] | None) -> EventStore:
+        """Rebuild the store from its section; a row that no longer reads is dropped."""
+        events: list[Event] = []
+        for row in rows or ():
+            try:
+                events.append(
+                    Event(
+                        id=str(row["id"]),
+                        source=str(row["source"]),
+                        kind=EventKind(row["kind"]),
+                        start=datetime.fromisoformat(row["start"]),
+                        end=datetime.fromisoformat(row["end"]),
+                        issued_at=datetime.fromisoformat(row["issued_at"]),
+                        valid_until=datetime.fromisoformat(row["valid_until"]),
+                        payload=dict(row.get("payload") or {}),
+                        revoked=bool(row.get("revoked", False)),
+                    )
+                )
+            except KeyError, TypeError, ValueError:
+                continue
+        return cls().upsert(events)
+
     def active(self, kind: EventKind, when: datetime) -> tuple[Event, ...]:
         """Return the events of `kind` in force at `when`, earliest first."""
         return tuple(
