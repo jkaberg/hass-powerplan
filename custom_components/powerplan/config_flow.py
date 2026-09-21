@@ -53,6 +53,7 @@ from .const import (
     QUIET_START_DEFAULT,
     ROLE_GRID_POWER,
     ROLE_IMPORT_REGISTER,
+    ROLE_PRODUCTION_POWER,
     SECTION_ADVANCED,
     SUBENTRY_CIRCUIT,
     SUBENTRY_GROUP,
@@ -497,7 +498,12 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._phase_suggestion = steps.phase_limit_suggestion(country, values)
         return self._form(
             "electrical",
-            steps.electrical_schema(country=country, values=values, ask_country=self._asks_country),
+            steps.electrical_schema(
+                country=country,
+                values=values,
+                ask_country=self._asks_country,
+                produces=bool(((self._meter or {}).get("roles") or {}).get(ROLE_PRODUCTION_POWER)),
+            ),
             errors=errors,
         )
 

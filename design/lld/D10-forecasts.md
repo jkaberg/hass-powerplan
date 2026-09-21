@@ -177,6 +177,8 @@ So `energy_solar` reads what the **Energy dashboard** reads:
 
 `async_get_energy_platforms` is internal to Home Assistant, not a published API. It's called from this one module and wrapped: an import or signature failure degrades the site to "no PV forecast" (no surplus is planned, D5 §2) and raises the repair `pv_forecast_unavailable`, never a crash (PLAN R3, R13). Surplus display per §2.
 
+In `providers/forecasts/energy_solar.py`, `async_solar_forecast_entries` does step 1 through `energy.data.async_get_manager` and `EnergySolarSource.fetch` does steps 2–4. Both imports sit inside the functions, so an Home Assistant without them fails there and not at import. An entry whose platform answers `None` (still loading) adds nothing. No entry answering is `ForecastUnavailableError` and the runtime keeps the last series, same as for weather (§8). Only `SolarForecastUnavailableError` (the API is gone or its signature changed) clears the series and raises the repair. The plan's rows per slot carry `production_w` and `surplus_w` (§2's display figure), sampled at the slot's start and `null` without a forecast (D-0648).
+
 ### 5.6 Parameter fits (INV-63)
 
 Every fit runs in the planning loop, never in the tick, atmost once per day per load, on the last 60 days of recorder history.

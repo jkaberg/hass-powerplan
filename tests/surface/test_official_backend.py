@@ -51,9 +51,18 @@ def _ours(hass: HomeAssistant) -> list[dict[str, Any]]:
 
 
 def test_25_no_websocket_command_and_no_private_message() -> None:
-    """R6: the integration registers no command; the frontend sends no `powerplan/` message."""
+    """R6: the integration registers no command; the frontend sends no `powerplan/` message.
+
+    `energy_solar` imports the energy component's `websocket_api` module for
+    `async_get_energy_platforms` (D10 §5.5, D-0648); that reads a forecast and
+    registers nothing, so the ban is on HA's `websocket_api` component itself.
+    """
+    banned = re.compile(
+        r"homeassistant\.components\.websocket_api|components import websocket_api"
+        r"|async_register_command|websocket_command"
+    )
     for path in (ROOT / "custom_components" / "powerplan").rglob("*.py"):
-        assert "websocket_api" not in path.read_text("utf-8"), path
+        assert not banned.search(path.read_text("utf-8")), path
     for path in (ROOT / "frontend" / "src").rglob("*.ts"):
         text = path.read_text("utf-8")
         assert not re.search(r"""type:\s*["']powerplan/""", text), path

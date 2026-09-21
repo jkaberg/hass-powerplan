@@ -27,6 +27,7 @@ What each repair PowerPlan raises means and what to do about it, and the common 
 | Notification service missing | no | `notify_service_missing` |
 | Electricity prices are not up to date | no | `prices_stale` |
 | An appliance's device is gone | no | `device_missing` |
+| A PV forecast cannot be read | no | `pv_forecast_unavailable` |
 <!-- generated:end repairs -->
 
 ## Repairs
@@ -79,6 +80,13 @@ Your price source has delivered nothing for a day. PowerPlan plans on estimated 
 PowerPlan has had no known price for a while and plans on estimates. It retries by itself.
 
 **What to do:** If it lasts, check that the price integration is loaded. **Fetch prices again** on the home tries at once.
+
+<a name="pv_forecast_unavailable"></a>
+### A PV forecast cannot be read
+
+Home Assistant's energy dashboard names a solar forecast, but PowerPlan could not read it. PowerPlan plans without a solar forecast until it can.
+
+**What to do:** Check that your solar forecast integration, such as Forecast.Solar, is loaded and shows a forecast on the energy dashboard.
 
 <a name="preset_outdated"></a>
 ### The tariff preset has changed

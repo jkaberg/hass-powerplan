@@ -92,6 +92,7 @@ The voltage decides how PowerPlan turns amps into watts: most older Norwegian ho
 | Main fuse | It is printed on the main fuse in the fuse box. |
 | Advanced › Per-phase limit | Only if your grid company set a lower limit per phase than the fuse. |
 | Advanced › Phases | How many phases the home is connected with. |
+| Advanced › Export limit | Advanced: the most your grid company lets you export, in kW; empty if none. |
 <!-- generated:end fields:config.electrical -->
 
 ## Prices

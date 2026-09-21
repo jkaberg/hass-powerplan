@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/BJReplay/ha-solcast-solar/blob/main/custom_components/solcast_solar/forecast.py - the energy dict is keyed by `forecast[PERIOD_START].isoformat()` in UTC, one key per 30-minute period, each `round(pv_estimate * 500, 0)` Wh (kW over half an hour). Values hand-written for the same morning.",
+  "wh_hours": {
+    "2026-06-21T04:00:00+00:00": 200,
+    "2026-06-21T04:30:00+00:00": 450,
+    "2026-06-21T05:00:00+00:00": 750,
+    "2026-06-21T05:30:00+00:00": 1050,
+    "2026-06-21T06:00:00+00:00": 1400,
+    "2026-06-21T06:30:00+00:00": 1650,
+    "2026-06-21T07:00:00+00:00": 1950,
+    "2026-06-21T07:30:00+00:00": 2200
+  }
+}

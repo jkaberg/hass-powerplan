@@ -79,6 +79,10 @@ class ElectricalProfile:
     main_fuse_a: float
     per_phase_limit_a: float | None = None
     frequency_hz: Literal[50, 60] = 50
+    #: The most the site may export, W: a DSO's export cap, Germany's 60 % rule
+    #: without a smart meter (D3 §4, Phase 7). `None` is the fuse. Carried to D5
+    #: unchanged; the capacity axis counts import only and never sees it (INV-19).
+    export_limit_w: float | None = None
 
     def v_ll(self) -> float:
         """Line-to-line voltage."""

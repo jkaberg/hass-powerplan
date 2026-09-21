@@ -491,6 +491,9 @@ class PlanContext:
     horizon_h: float = 48.0
     holidays: HolidayCalendar = NO_HOLIDAYS
     previous: Plan | None = None
+    #: D3 §4: the most the site may export, in W; `None` is the fuse. Never on
+    #: the capacity axis, which counts import only (INV-19, D3 §9 21).
+    export_limit_w: float | None = None
 
     @property
     def store(self) -> StoreModel | None:
@@ -540,6 +543,8 @@ class SiteContext:
     #: threshold: together the ceiling the plans are cut to (D5 §5.1, D-0257).
     eps_w: float = 0.0
     plan_fraction: float = 1.0
+    #: D3 §4's export cap, handed to each `PlanContext` unchanged (D3 §9 21).
+    export_limit_w: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

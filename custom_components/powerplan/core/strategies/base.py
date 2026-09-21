@@ -246,6 +246,7 @@ def plan_all(
             horizon_h=ctx.horizon_h,
             holidays=ctx.holidays,
             previous=before,
+            export_limit_w=ctx.export_limit_w,
         )
         params = params_of(view.strategy, view.params)
         plan = combine(

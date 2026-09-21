@@ -77,6 +77,9 @@ CATALOGUE: dict[str, Issue] = {
     # Fixed in the appliance's own gear flow, which a repair cannot open: the
     # description says where, and re-binding clears it (D8 §5.16, D-0419).
     "device_missing": Issue(ir.IssueSeverity.ERROR),
+    # Home Assistant's energy platform API no longer fits: no PV forecast, no
+    # surplus planned; cleared by the next fetch that answers (D10 §5.5).
+    "pv_forecast_unavailable": Issue(ir.IssueSeverity.WARNING, persistent=False),
 }
 
 #: D8 §5.9: the meter's power must be stale this long before the issue is raised.

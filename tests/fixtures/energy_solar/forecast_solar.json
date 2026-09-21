@@ -1,0 +1,14 @@
+{
+  "source": "https://github.com/home-assistant/core/blob/dev/homeassistant/components/forecast_solar/energy.py - `{\"wh_hours\": {timestamp.isoformat(): val for timestamp, val in coordinator.data.wh_period.items()}}` with midnight zeros dropped; forecast_solar's `wh_period` is hourly in the site's zone and opens at sunrise, so the first period is short. Values hand-written for a 6 kWp plane on 2026-06-21 in Oslo.",
+  "wh_hours": {
+    "2026-06-21T04:12:00+02:00": 12,
+    "2026-06-21T05:00:00+02:00": 180,
+    "2026-06-21T06:00:00+02:00": 640,
+    "2026-06-21T07:00:00+02:00": 1210,
+    "2026-06-21T08:00:00+02:00": 1830,
+    "2026-06-21T09:00:00+02:00": 2520,
+    "2026-06-21T10:00:00+02:00": 3100,
+    "2026-06-21T11:00:00+02:00": 3480,
+    "2026-06-21T12:00:00+02:00": 3650
+  }
+}

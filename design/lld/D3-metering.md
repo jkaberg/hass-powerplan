@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | HLD section | §6.3 |
-| Depends on | - (D2 supplies the window length as a parameter) |
+| Depends on | nothing (D2 passes the window length as a parameter) |
 | Consumers | D2 (closed windows), D5 (surplus, consumption), D6 (used, allowance inputs, σ, per-phase headroom), D7 (health, seam, freeze), D10 (history reconstruction), D11 (per-load slots, import/export per slot) |
 | Invariants owned | INV-13 … INV-19, INV-53 |
 

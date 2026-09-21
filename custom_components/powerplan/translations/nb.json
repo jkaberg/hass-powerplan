@@ -50,11 +50,13 @@
             "description": "Fylt ut fra landet og sikringen.",
             "data": {
               "per_phase_limit_a": "Grense per fase",
-              "phases": "Faser"
+              "phases": "Faser",
+              "export_limit_kw": "Eksportgrense"
             },
             "data_description": {
               "per_phase_limit_a": "Bare hvis nettselskapet har satt en lavere grense per fase enn sikringen.",
-              "phases": "Hvor mange faser hjemmet er tilknyttet med."
+              "phases": "Hvor mange faser hjemmet er tilknyttet med.",
+              "export_limit_kw": "Avansert: det meste nettselskapet lar deg levere, i kW; tomt om ingen."
             }
           }
         }
@@ -1304,6 +1306,10 @@
     "tariff_stale": {
       "title": "Nettleien har gått ut",
       "description": "{site}: nettleien fra {operator} har ingen priser etter siste periode, og det lykkes ikke å hente nye. PowerPlan bruker de siste prisene den har. Sjekk internettforbindelsen, eller velg Endre oppsett for å velge nettleien på nytt."
+    },
+    "pv_forecast_unavailable": {
+      "title": "En solprognose kan ikke leses",
+      "description": "{site}: Home Assistants energiprognose kunne ikke leses ({error}), så PowerPlan planlegger uten solprognose. Sjekk at integrasjonen for solprognosen er lastet."
     }
   },
   "selector": {

@@ -1,0 +1,11 @@
+{
+  "source": "https://github.com/rany2/ha-open-meteo-solar-forecast/blob/master/custom_components/open_meteo_solar_forecast/energy.py - `{\"wh_hours\": {timestamp.isoformat(): val for timestamp, val in coordinator.data.wh_period.items()}}`, hourly aware timestamps in the site's zone. Values hand-written for the same morning.",
+  "wh_hours": {
+    "2026-06-21T06:00:00+02:00": 520,
+    "2026-06-21T07:00:00+02:00": 1100,
+    "2026-06-21T08:00:00+02:00": 1750,
+    "2026-06-21T09:00:00+02:00": 2400,
+    "2026-06-21T10:00:00+02:00": 2950,
+    "2026-06-21T11:00:00+02:00": 3300
+  }
+}

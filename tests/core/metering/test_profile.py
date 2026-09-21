@@ -92,3 +92,52 @@ def test_11b_export_beyond_minus_1_2_fuse_is_implausible() -> None:
     assert bad.grid_w is None
     assert bad.health.implausible_count == 1
     assert bad.frozen_reason == "stale"
+
+
+def test_21_export_limit_none_is_the_fuse_and_a_set_one_reaches_the_planner_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`None` changes nothing; 6 kW reaches each `PlanContext` as is; headroom never sees it.
+
+    The capacity axis counts import only (INV-19): the windows left after planning
+    are the same with and without the export cap.
+    """
+    from custom_components.powerplan.core.strategies import base  # noqa: PLC0415
+    from tests.core.strategies.conftest import (  # noqa: PLC0415
+        NOW,
+        curves_of,
+        ev_view,
+        site_ctx,
+        volatile_curve,
+    )
+
+    capped = ElectricalProfile(VoltageSystem.IT_230, 3, 63.0, export_limit_w=6000.0)
+    uncapped = ElectricalProfile(VoltageSystem.IT_230, 3, 63.0)
+    assert uncapped.export_limit_w is None
+    assert capped.fuse_w() == uncapped.fuse_w()
+
+    seen: list[float | None] = []
+    real = base.get
+
+    def probe(key: str) -> Any:
+        strategy = real(key)
+
+        class Probe:
+            def plan(self, demand: Any, pctx: Any, params: Any) -> Any:
+                seen.append(pctx.export_limit_w)
+                return strategy.plan(demand, pctx, params)
+
+        return Probe()
+
+    monkeypatch.setattr(base, "get", probe)
+    curves = curves_of(volatile_curve())
+    with_cap = base.plan_all(
+        [ev_view()], curves, site_ctx(export_limit_w=capped.export_limit_w), NOW
+    )
+    without = base.plan_all(
+        [ev_view()], curves, site_ctx(export_limit_w=uncapped.export_limit_w), NOW
+    )
+
+    assert seen == [6000.0, None]
+    assert with_cap.headroom_left == without.headroom_left
+    assert with_cap.plans == without.plans

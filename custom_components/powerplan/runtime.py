@@ -193,6 +193,12 @@ from .price_refresh import PriceRefresher
 from .providers import tariffs as tariff_sources
 from .providers.events import EntityEventSource
 from .providers.forecasts.base import ForecastSourceError, detect_weather_entity
+from .providers.forecasts.energy_solar import (
+    EnergySolarSource,
+    SolarForecastUnavailableError,
+    async_listen_preferences,
+    async_solar_forecast_entries,
+)
 from .providers.forecasts.recorder_baseline import (
     LoadSource,
     async_seed,
@@ -378,6 +384,13 @@ def fixed_price_saving(
         kwh=round(kwh, 1),
         today_kwh=round(day_kwh, 1),
     )
+
+
+def _rounded(value: tuple[float, Any] | float | None) -> float | None:
+    """Return a forecast figure rounded for an attribute: a `(value, confidence)` or a float."""
+    if value is None:
+        return None
+    return round(value[0] if isinstance(value, tuple) else value, 1)
 
 
 def _baseline_p90(
@@ -1032,6 +1045,9 @@ def _electrical(data: Mapping[str, Any]) -> ElectricalProfile:
         system=VoltageSystem(str(data.get("system", VoltageSystem.IT_230.value))),
         phases=1 if int(data.get("phases", 3)) == 1 else 3,
         main_fuse_a=float(data.get("main_fuse_a", 63.0)),
+        export_limit_w=(
+            None if data.get("export_limit_w") is None else float(data["export_limit_w"])
+        ),
     )
 
 
@@ -1352,6 +1368,10 @@ class Runtime:
         self._weather_entity_id: str | None = None
         self._weather_series: Series | None = None
         self._weather_fetched_at: datetime | None = None
+        #: D10 §5.5: the PV forecast of the Energy dashboard's solar sources, its
+        #: last fetch, and whether the platform API answered (Phase 7).
+        self._production_series: Series | None = None
+        self._production_fetched_at: datetime | None = None
 
     # ----------------------------------------------------------- lifecycle #
 
@@ -2687,7 +2707,11 @@ class Runtime:
         if adapter is None:
             return None
         return Forecasts(
-            at=now, weather=self._weather_series, baseline=adapter.baseline, hold=self.hold_profiles
+            at=now,
+            weather=self._weather_series,
+            production=self._production_series,
+            baseline=adapter.baseline,
+            hold=self.hold_profiles,
         )
 
     def _forecasts_view(self, now: datetime) -> PlannerForecasts | None:
@@ -2890,6 +2914,14 @@ class Runtime:
                     # What each thermal load draws holding its setpoint (D-0501).
                     "hold_kwh": held,
                     "paused": paused,
+                    # D10 §2's display figures: the PV forecast and `max(0, pv − baseline)`,
+                    # null with no forecast.
+                    "production_w": _rounded(
+                        None if forecasts is None else forecasts.production_w(start)
+                    ),
+                    "surplus_w": _rounded(
+                        None if forecasts is None else forecasts.surplus_naive_w(start)
+                    ),
                 }
             )
         return tuple(rows)
@@ -2898,6 +2930,7 @@ class Runtime:
         changed = await self.fetch(trigger)
         if self.forecasts_adapter is not None:
             await self._fetch_weather_if_due(dt_util.utcnow())
+            await self._fetch_production_if_due(dt_util.utcnow())
         await self.run_plan(trigger)
         if changed:
             # New prices: the plan is on them, and the published price should be too.
@@ -2951,6 +2984,54 @@ class Runtime:
             _LOGGER.warning(
                 "site %s: weather %s failed: %s", self.site_name, self._weather_entity_id, err
             )
+
+    async def _fetch_production_if_due(self, now: datetime, *, force: bool = False) -> None:
+        """D10 §5.5, D7 §5.2: the PV forecast hourly, outside the lock; forced on a preferences change.
+
+        A site with no solar source in its Energy preferences calls no energy
+        platform and has no production series (D7 §9 20). An API that no longer
+        fits leaves no series and raises `pv_forecast_unavailable` (D10 §9 18).
+        """
+        if (
+            not force
+            and self._production_fetched_at is not None
+            and now - self._production_fetched_at < WEATHER_REFRESH_INTERVAL
+        ):
+            return
+        self._production_fetched_at = now
+        try:
+            entries = await async_solar_forecast_entries(self.hass)
+            if not entries:
+                self._production_series = None
+                async_clear(self.hass, self.entry.entry_id, "pv_forecast_unavailable")
+                return
+            self._production_series = await EnergySolarSource(self.hass, entries=entries).fetch(
+                WEATHER_HORIZON, now
+            )
+        except SolarForecastUnavailableError as err:
+            self._production_series = None
+            _LOGGER.warning("site %s: no PV forecast: %s", self.site_name, err)
+            async_report(
+                self.hass,
+                self.entry.entry_id,
+                "pv_forecast_unavailable",
+                active=True,
+                placeholders={"error": str(err)},
+                entry_title=self.site_name,
+            )
+            return
+        except ForecastSourceError as err:
+            # A forecast that did not answer this hour: keep the last series (D10 §8).
+            _LOGGER.warning("site %s: PV forecast failed: %s", self.site_name, err)
+            return
+        async_clear(self.hass, self.entry.entry_id, "pv_forecast_unavailable")
+
+    async def _on_energy_preferences(self) -> None:
+        """D7 §5.3: the Energy preferences changed; refresh the PV forecast, then plan."""
+        if self._stopped:
+            return
+        await self._fetch_production_if_due(dt_util.utcnow(), force=True)
+        await self.run_plan("forecast")
 
     async def _on_weather_changed(self, event: Event[EventStateChangedData]) -> None:
         """D7 §5.2's own `forecast update` trigger, D10 §5.7's "on entity change"."""
@@ -3562,6 +3643,8 @@ class Runtime:
             # only after this method, D7 §5.5's own step order) - a fresh
             # `weather.*` entity added later needs a reload to be picked up,
             # the same "detected at setup" D10 §6 already says for every source.
+            # D7 §5.3: the Energy preferences name the solar sources (D10 §5.5).
+            hass.async_create_task(async_listen_preferences(hass, self._on_energy_preferences))
             self._weather_entity_id = detect_weather_entity(self.hass)
             if self._weather_entity_id:
                 self._track(
@@ -3680,6 +3763,9 @@ class Runtime:
         await self.run_tick("fallback")
 
     async def _on_quarter(self, _now: datetime) -> None:
+        if self.forecasts_adapter is not None:
+            # D7 §5.2: the PV forecast hourly, fetched before the lock is taken.
+            await self._fetch_production_if_due(dt_util.utcnow())
         await self.run_plan("quarter")
 
     @callback

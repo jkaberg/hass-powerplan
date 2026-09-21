@@ -250,7 +250,11 @@ _VOLTAGE_OPTIONS: Final = (str(VoltageSystem.IT_230), str(VoltageSystem.TN_400),
 
 
 def electrical_schema(
-    *, country: str | None, values: Mapping[str, Any] | None = None, ask_country: bool = False
+    *,
+    country: str | None,
+    values: Mapping[str, Any] | None = None,
+    ask_country: bool = False,
+    produces: bool = False,
 ) -> vol.Schema:
     """Return "Hvor stor er hovedsikringen?": the fuse, and in Norway the voltage (D3 §6).
 
@@ -266,6 +270,10 @@ def electrical_schema(
     fuse = str(given.get("main_fuse_a") or default_fuse_a(country))
     suggested_limit = phase_limit_suggestion(country, given)
     limit = given.get("per_phase_limit_a")
+    # A reconfigure shows the stored watts as the kW it was asked in.
+    export_kw = given.get("export_limit_kw")
+    if export_kw is None and given.get("export_limit_w") is not None:
+        export_kw = float(given["export_limit_w"]) / 1000.0
     fields: dict[Any, Any] = {}
     if ask_country:
         fields[vol.Optional("country", default=given.get("country") or country or "")] = (
@@ -306,6 +314,20 @@ def electrical_schema(
                 NumberSelectorConfig(
                     mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="A"
                 )
+            ),
+            # Asked only of a home that produces (D3 §6, Phase 7): the export cap, kW.
+            **(
+                {
+                    vol.Optional(
+                        "export_limit_kw", description={"suggested_value": export_kw}
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            mode=NumberSelectorMode.BOX, min=0, step="any", unit_of_measurement="kW"
+                        )
+                    )
+                }
+                if produces
+                else {}
             ),
         }
     )
@@ -357,11 +379,13 @@ def electrical_profile(answers: Mapping[str, Any]) -> ElectricalProfile:
     if phases not in (1, 3):
         raise StepError("phases", "phases_not_available")
     system = answers.get("system")
+    export_kw = answers.get("export_limit_kw")
     profile = ElectricalProfile(
         system=default_system(country) if system in (None, DONT_KNOW) else VoltageSystem(system),
         phases=phases,  # type: ignore[arg-type]
         main_fuse_a=fuse,
         per_phase_limit_a=limit,
+        export_limit_w=None if export_kw in (None, "") else float(export_kw) * 1000.0,
     )
     try:
         profile.fuse_w()
@@ -383,6 +407,7 @@ def electrical_data(answers: Mapping[str, Any], profile: ElectricalProfile) -> d
         "phases": profile.phases,
         "main_fuse_a": profile.main_fuse_a,
         "per_phase_limit_a": profile.phase_limit_a(),
+        "export_limit_w": profile.export_limit_w,
         "derived": {
             "v_ll": profile.v_ll(),
             "v_ln": profile.v_ln(),

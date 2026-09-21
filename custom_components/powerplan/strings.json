@@ -50,11 +50,13 @@
             "description": "Filled in from your country and fuse.",
             "data": {
               "per_phase_limit_a": "Per-phase limit",
-              "phases": "Phases"
+              "phases": "Phases",
+              "export_limit_kw": "Export limit"
             },
             "data_description": {
               "per_phase_limit_a": "Only if your grid company set a lower limit per phase than the fuse.",
-              "phases": "How many phases the home is connected with."
+              "phases": "How many phases the home is connected with.",
+              "export_limit_kw": "Advanced: the most your grid company lets you export, in kW; empty if none."
             }
           }
         }
@@ -1304,6 +1306,10 @@
     "tariff_stale": {
       "title": "The grid tariff has run out",
       "description": "{site}: the grid tariff from {operator} has no prices after its last period, and fetching new ones keeps failing. PowerPlan keeps using the last prices it has. Check your internet connection, or choose Reconfigure to pick the tariff again."
+    },
+    "pv_forecast_unavailable": {
+      "title": "A PV forecast cannot be read",
+      "description": "{site}: Home Assistant's energy forecast could not be read ({error}), so PowerPlan plans without a solar forecast. Check that your solar forecast integration is loaded."
     }
   },
   "selector": {

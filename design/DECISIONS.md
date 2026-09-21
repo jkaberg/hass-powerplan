@@ -2679,3 +2679,13 @@ Every non-review step of the home, circuit, group and room flows ends with `[How
 
 `troubleshooting.md` has a section per repair, per linked abort, for three symptoms (`dashboard`, `not_running`, `over_target`) and for diagnostics. `services.py` registers every action with `description_placeholders={"docs": doc_url("actions", name)}`, and descriptions end with the link; the generated `actions` table strips it. Every `docs-*` quality-scale rule is done or exempt. HA 2026.9's `async_register` takes `description_placeholders`, so the action editor shows the link. Affects D14 §3.1, §5.4.
 **Rejected:** no link on actions - the action editor is where an automation author meets them first.
+
+### D-0648 · The PV forecast rides the quarter-hour cycle; the preferences listener outlives nothing
+
+`energy_solar` is fetched by `_fetch_production_if_due` before the lock, in `_fetch_then_plan` and `_on_quarter`, at most hourly. The Energy manager's `async_listen_updates` has no unsubscribe, so the site's listener returns at once once the site has stopped. A forecast that didn't answer keeps the last series; only a missing or changed platform API clears it and raises `pv_forecast_unavailable`. The quarter-hour cycle is the planning loop's only wall-clock trigger (D7 §5.2). Affects D10 §5.5; D7 §5.2, §5.3.
+**Rejected:** an hourly timer of its own - plans twice at the top of the hour.
+
+### D-0649 · The export limit is asked in kW, suggested, and carried to the planner
+
+The electrical step's Advanced section asks *Export limit* in kW when a production sensor is bound, as a suggestion so it can be cleared; stored as `export_limit_w` and passed through `SiteContext` to every `PlanContext`. D3 §6 asks it only of a home that produces; installers state it in kW; a default couldn't be removed. Affects D3 §4, §6, §9 21.
+**Rejected:** a site knob - it's a property of the connection, like the fuse.

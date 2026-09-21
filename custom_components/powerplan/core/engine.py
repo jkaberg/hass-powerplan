@@ -2211,6 +2211,7 @@ class Engine:
                 stale=_curves_stale(inputs.curves, now),
                 eps_w=eps_for_window(eps_base, site.window_min) * 60.0 / site.window_min,
                 plan_fraction=site.ladder.thresholds[1],
+                export_limit_w=site.electrical.export_limit_w,
             )
             site_plan = plan_all(views, inputs.curves, site_ctx, now, previous=state.plans.plans)
             adopted = tuple(sorted(site_plan.adopted))

@@ -269,6 +269,19 @@ class Forecasts:
         """Return the PV production forecast at `t` (D10 §5.5, v1.x)."""
         return _point(self.production, t)
 
+    def surplus_naive_w(self, t: datetime) -> float | None:
+        """Return D10 §2's displayed surplus at `t`: `max(0, pv − baseline)`, or `None`.
+
+        `None` with no PV forecast - no surplus is known, which is not a zero. A
+        baseline not yet offered subtracts nothing (the planner's own surplus,
+        D5 §2, subtracts its plans on top of this).
+        """
+        pv = self.production_w(t)
+        if pv is None:
+            return None
+        baseline = self.baseline_w(t)
+        return max(0.0, pv[0] - (0.0 if baseline is None else baseline[0]))
+
     def baseline_w(self, t: datetime) -> tuple[float, Confidence] | None:
         """Return the expected uncontrolled load at `t`, or `None` (D10 §5.3).
 
