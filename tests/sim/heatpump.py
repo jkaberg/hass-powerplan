@@ -64,6 +64,11 @@ ROOM_MASS_KWH_PER_K_PER_M3 = 0.03
 DEFAULT_U_ENVELOPE_W_PER_M2K = 0.7
 SENSOR_STEP_K = 0.1
 J_PER_KWH = 3_600_000.0
+#: Cooling: the indoor coil's air, the outdoor coil's lift above ambient,
+#: and the rated EER point the exergy efficiency is anchored on.
+EVAPORATOR_AIR_C = 12.0
+CONDENSER_LIFT_K = 10.0
+EER_ANCHOR_35 = 3.2
 
 SOURCES: dict[str, str] = {
     "RATED_W": "D9 §5.9 house spec: air-to-air 1.5 kW rated; D4 §6.4 asks for it always",
@@ -124,6 +129,15 @@ SOURCES: dict[str, str] = {
     "DEFAULT_U_ENVELOPE_W_PER_M2K": "D4 §6.4 building-age table, 2000–2010 → 0.7 W/m²·K",
     "SENSOR_STEP_K": "a climate entity reports temperature in 0.1 K steps",
     "J_PER_KWH": "SI",
+    "EVAPORATOR_AIR_C": (
+        "assumed: 12 °C air off the indoor coil in cooling, the usual design point for a split "
+        "unit's supply air (ASHRAE Handbook, HVAC Systems, 'cooling coil leaving air 10–13 °C')"
+    ),
+    "CONDENSER_LIFT_K": "assumed: the outdoor coil condenses about 10 K above the outdoor air",
+    "EER_ANCHOR_35": (
+        "EN 14511 rating point for air-to-air cooling, 35 °C outdoor / 27 °C indoor; 3.2 is a "
+        "typical small split unit's EER (Energy Label A band, Regulation (EU) 626/2011)"
+    ),
 }
 
 
@@ -132,6 +146,19 @@ def _carnot(outdoor_c: float) -> float:
     hot = SUPPLY_AIR_C + KELVIN_0C
     cold = min(outdoor_c, SUPPLY_AIR_C - CARNOT_MIN_LIFT_K) + KELVIN_0C
     return hot / (hot - cold)
+
+
+def _carnot_cooling(outdoor_c: float) -> float:
+    """Ideal cooling COP between the indoor coil air and the outdoor coil."""
+    cold = EVAPORATOR_AIR_C + KELVIN_0C
+    hot = max(outdoor_c + CONDENSER_LIFT_K, EVAPORATOR_AIR_C + CARNOT_MIN_LIFT_K) + KELVIN_0C
+    return cold / (hot - cold)
+
+
+def cooling_cop_at(outdoor_c: float) -> float:
+    """Cooling COP: the exergy efficiency at the EN 14511 point, times Carnot."""
+    eta = EER_ANCHOR_35 / _carnot_cooling(35.0)
+    return max(COP_MIN, min(COP_MAX, eta * _carnot_cooling(outdoor_c)))
 
 
 def cop_at(outdoor_c: float) -> float:
@@ -154,6 +181,8 @@ class HeatPumpSim:
     band_k: float = BAND_K
     room_c: float = 21.0
     hvac_on: bool = True
+    #: `heat` or `cool`: which way the unit moves the room.
+    mode: str = "heat"
     energy_in_kwh: float = 0.0
     heat_out_kwh: float = 0.0
     loss_kwh: float = 0.0
@@ -185,6 +214,8 @@ class HeatPumpSim:
         if not self.hvac_on:
             return 0.0
         error = self.setpoint_c - self.room_c
+        if self.mode == "cool":
+            error = -error
         fraction = max(0.0, min(1.0, error / self.band_k))
         if fraction < MIN_MODULATION:
             if self._compressor_s > 0.0 and self._dwell_s_left > 0.0:
@@ -237,7 +268,7 @@ class HeatPumpSim:
         running = fraction > 0.0
         if running:
             self._compressor_s += dt_s
-            if env.outdoor_c < DEFROST_BELOW_C:
+            if env.outdoor_c < DEFROST_BELOW_C and self.mode != "cool":
                 self._since_defrost_s += dt_s
 
         if not self.defrosting and self._since_defrost_s >= self._defrost_interval_s(env.outdoor_c):
@@ -245,8 +276,12 @@ class HeatPumpSim:
             self._since_defrost_s = 0.0
             self.defrost_count += 1
 
-        cop = cop_at(env.outdoor_c)
+        cooling = self.mode == "cool"
+        cop = cooling_cop_at(env.outdoor_c) if cooling else cop_at(env.outdoor_c)
         power_w, heat_w = self._power_and_heat(dt_s, fraction, cop)
+        if cooling:
+            # The same compressor work, taking heat out of the room.
+            heat_w = -heat_w
 
         q_loss = self.u_envelope_w_per_m2k * self.area_m2 * (self.room_c - env.outdoor_c)
         self.room_c += (heat_w - q_loss) * dt_s / (self.kwh_per_k * J_PER_KWH)
@@ -261,6 +296,9 @@ class HeatPumpSim:
         elif heat_w > 0.0:
             outlet_c = self.room_c + OUTLET_RISE_K_PER_KW * heat_w / 1000.0
             status = "heating"
+        elif heat_w < 0.0 and cooling:
+            outlet_c = EVAPORATOR_AIR_C
+            status = "cooling"
         else:
             outlet_c = self.room_c
             status = "idle"

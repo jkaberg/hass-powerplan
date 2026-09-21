@@ -1,0 +1,232 @@
+{
+  "build": "835e0b2",
+  "house": "us_demand",
+  "results": {
+    "smoke": {
+      "build": "835e0b2",
+      "controlled_share": 1.0,
+      "house": "us_demand",
+      "months": {
+        "2026-10": {
+          "comfort_violation_min": 0.0,
+          "cost_counterfactual": "78.47 USD",
+          "cost_energy": "41.98 USD",
+          "deadline_misses": 0,
+          "fee": "31.05 USD",
+          "kwh": 227.957,
+          "level": "2.61 kW",
+          "max_window_kwh": 6.031,
+          "metric_kw": 2.609,
+          "over_target": 5,
+          "savings": "12.07 USD",
+          "windows": 336,
+          "writes": 1392
+        },
+        "2027-01": {
+          "comfort_violation_min": 0.0,
+          "cost_counterfactual": "91.14 USD",
+          "cost_energy": "76.95 USD",
+          "deadline_misses": 0,
+          "fee": "0.00 USD",
+          "kwh": 317.096,
+          "level": "0.00 kW",
+          "max_window_kwh": 7.997,
+          "metric_kw": 0.0,
+          "over_target": 13,
+          "savings": "14.20 USD",
+          "windows": 336,
+          "writes": 1416
+        }
+      },
+      "perf": {
+        "plan_p95_ms": 100.121,
+        "tick_p95_ms": 3.495,
+        "ticks": 120960,
+        "ticks_per_s": 410,
+        "wall_s": 295.3
+      },
+      "seed": 20260919,
+      "set_at": "2026-09-24T22:26:29+00:00",
+      "since": "WP4.3c",
+      "spans": [
+        {
+          "comfort_violation_min": 0.0,
+          "commitment_breaks": {},
+          "days": 7.0,
+          "deadline_misses": 0,
+          "engine_failures": 0,
+          "ev_stops": 21,
+          "frozen_ticks": 2032,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 7,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 1,
+            "radiator_bed_2": 1,
+            "tank": 1
+          },
+          "name": "us_demand:smoke:2026-10-05",
+          "over_target": 5,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 336,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 76,
+            "heat_pump": 46,
+            "loop_bath_1": 204,
+            "loop_bath_2": 204,
+            "loop_hall": 258,
+            "loop_kitchen": 261,
+            "loop_living": 257,
+            "radiator_bed_1": 1,
+            "radiator_bed_2": 1,
+            "tank": 83
+          },
+          "zero_amp_writes": 0
+        },
+        {
+          "comfort_violation_min": 0.0,
+          "commitment_breaks": {},
+          "days": 7.0,
+          "deadline_misses": 0,
+          "engine_failures": 0,
+          "ev_stops": 24,
+          "frozen_ticks": 2064,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 4,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 1,
+            "radiator_bed_2": 1,
+            "tank": 1
+          },
+          "name": "us_demand:smoke:2027-01-11",
+          "over_target": 13,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 336,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 57,
+            "heat_pump": 64,
+            "loop_bath_1": 213,
+            "loop_bath_2": 213,
+            "loop_hall": 249,
+            "loop_kitchen": 256,
+            "loop_living": 242,
+            "radiator_bed_1": 19,
+            "radiator_bed_2": 19,
+            "tank": 83
+          },
+          "zero_amp_writes": 0
+        }
+      ],
+      "tier": "smoke",
+      "total": {
+        "comfort_violation_min": 0.0,
+        "commitment_breaks": 0,
+        "cost_counterfactual": "169.61 USD",
+        "cost_energy": "118.93 USD",
+        "deadline_misses": 0,
+        "engine_failures": 0,
+        "fee": "31.05 USD",
+        "kwh": 545.053,
+        "max_window_kwh": 7.997,
+        "over_target": 18,
+        "plan_gaps": 0,
+        "savings": "26.27 USD",
+        "sessions_dropped": 10,
+        "windows": 672,
+        "writes": 2808,
+        "writes_by_load": {
+          "dishwasher": 2,
+          "ev": 133,
+          "heat_pump": 110,
+          "loop_bath_1": 417,
+          "loop_bath_2": 417,
+          "loop_hall": 507,
+          "loop_kitchen": 517,
+          "loop_living": 499,
+          "radiator_bed_1": 20,
+          "radiator_bed_2": 20,
+          "tank": 166
+        },
+        "zero_amp_writes": 0
+      },
+      "year": "y2026_27@1"
+    }
+  },
+  "since": "WP4.3c",
+  "tolerances": {
+    "perf.plan_p95_ms": {
+      "kind": "abs",
+      "value": 500.0
+    },
+    "perf.tick_p95_ms": {
+      "kind": "abs",
+      "value": 50.0
+    },
+    "total.comfort_violation_min": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.commitment_breaks": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.cost_energy": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.deadline_misses": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.engine_failures": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.fee": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.over_target": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.plan_gaps": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.savings": {
+      "kind": "not_less",
+      "value": null
+    },
+    "total.sessions_dropped": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.writes": {
+      "kind": "pct",
+      "value": 10.0
+    },
+    "total.zero_amp_writes": {
+      "kind": "zero",
+      "value": null
+    }
+  },
+  "year": "y2026_27@1"
+}

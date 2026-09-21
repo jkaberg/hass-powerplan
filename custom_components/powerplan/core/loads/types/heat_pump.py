@@ -210,6 +210,15 @@ QUESTIONNAIRE = Questionnaire(
             help_key="heat_pump_dwell",
         ),
         Question(
+            # Asked only of a unit that can cool (D4 §5.14): the season
+            # the plan is for, switched here when the household switches its unit.
+            key="cooling",
+            kind=QuestionKind.BOOL,
+            default=False,
+            help_key="heat_pump_cooling",
+            needs="cool",
+        ),
+        Question(
             key="preheat",
             kind=QuestionKind.BOOL,
             default=False,
@@ -315,7 +324,11 @@ class HeatPump:
         band_k = answers.number("band_k")
         u_value = BUILDING_U_VALUE[building]
         curve = answers.get("cop_curve") or dict(DEFAULT_COP_CURVES[hp_type].points)
-        floor_c = comfort_c - FLOOR_BELOW_COMFORT_K
+        cooling = answers.flag("cooling") and "cool" in ctx.capabilities
+        # Cooling mirrors the band (D4 §5.14): the limit it never crosses is
+        # *above* comfort, and the bank's end is below it (INV-29, INV-55, INV-56).
+        sign = -1.0 if cooling else 1.0
+        floor_c = comfort_c - sign * FLOOR_BELOW_COMFORT_K
 
         params: dict[str, Any] = {
             "kind": "setpoint",
@@ -331,11 +344,11 @@ class HeatPump:
             "cop_curve": {f"{float(point)}": float(cop) for point, cop in sorted(curve.items())},
             "comfort_c": comfort_c,
             "floor_c": floor_c,
-            "vacation_c": floor_c + 1.0,
+            "vacation_c": floor_c + sign * 1.0,
             # INV-29 bounds the setpoint to `comfort ± band`, so the store's
             # maximum is the top of that band and nothing may bank past it
             # (INV-56).
-            "max_c": comfort_c + band_k,
+            "max_c": comfort_c + sign * band_k,
             "shed_setpoint_c": floor_c,
             "band_k": band_k,
             "device_min_c": ctx.readable.get("min_temp"),
@@ -348,6 +361,7 @@ class HeatPump:
             "outdoor_entity": answers.get("outdoor_entity"),
             "outlet_entity": answers.get("outlet_entity"),
             "can_cool": "cool" in ctx.capabilities,
+            "direction": "cool" if cooling else "heat",
             "follow_presence": answers.flag("follow_presence"),
             "schedule_entity": answers.get("schedule_entity"),
             "arrival_sources": [str(entity) for entity in answers.get("arrival_sources") or ()],
@@ -430,6 +444,7 @@ class HeatPump:
                 verify_after_s=120.0,
                 restore_dwell_s=float(params.get("dwell_s", 1800.0)),
                 urgent_from_stage=_NEVER_URGENT,
+                cooling=params.get("direction") == "cool",
             )
         )
 
@@ -437,11 +452,16 @@ class HeatPump:
         """Return the room the pump heats (§5.7)."""
         params = cfg.params
         loss = params.get("heat_loss_w_per_k")
+        top, bottom = float(params.get("max_c", 22.0)), float(params.get("floor_c", 17.0))
+        cooling = params.get("direction") == "cool"
+        # A cooling room banks downwards to the band's end and never warms past
+        # its limit: the two ends swap (D4 §4.3, §5.14).
         return RoomStore.from_volume(
             volume_m3=float(params.get("volume_m3", 150.0)),
-            max_c=float(params.get("max_c", 22.0)),
-            min_c=float(params.get("floor_c", 17.0)),
+            max_c=bottom if cooling else top,
+            min_c=top if cooling else bottom,
             heat_loss_w_per_k=None if loss is None else float(loss),
+            direction="cool" if cooling else "heat",
         )
 
     # -------------------------------------------------------------------- tick #
@@ -461,13 +481,21 @@ class HeatPump:
         assert profile is not None  # build() refuses a pump without one
         target = profile.target(ctx.now, ctx.presence)
         level = self.level(load, ctx)
+        cooling = profile.direction == "cool"
+        if level is None:
+            violated, deficit = False, 0.0
+        elif cooling:
+            # The floor is the warm limit when cooling (D4 §4.4).
+            violated, deficit = level > profile.floor, level - target
+        else:
+            violated, deficit = level < profile.floor, target - level
         return ComfortState(
             current=level,
             target=target,
             floor=profile.floor,
             ceiling=profile.ceiling,
-            violated=level is not None and level < profile.floor,
-            deficit=0.0 if level is None else target - level,
+            violated=violated,
+            deficit=deficit,
             direction=profile.direction,
         )
 
@@ -540,7 +568,11 @@ class HeatPump:
         loss = load.config.params.get("heat_loss_w_per_k")
         if outdoor is None or loss is None:
             return None
-        return max(0.0, float(loss) * (self.comfort(load, ctx).target - outdoor))
+        target = self.comfort(load, ctx).target
+        gap = (
+            outdoor - target if load.config.params.get("direction") == "cool" else target - outdoor
+        )
+        return max(0.0, float(loss) * gap)
 
     def expected_draw_w(self, load: Load, ctx: LoadCtx) -> float | None:
         """Electrical draw for that heat through the COP curve, capped at rated."""
@@ -616,10 +648,21 @@ class HeatPump:
         # §5.4: coast a kelvin under target from stage 3 - an offset, not a shed.
         # Never while defrosting: the unit is drawing and heating nothing, and
         # lowering its target there buys nothing back (INV-29).
-        offset = -1.0 if stage >= _COAST_STAGE and not defrosting else 0.0
-        ceiling = comfort.target + band_k
-        if comfort.ceiling is not None:
-            ceiling = min(ceiling, comfort.ceiling)
+        cooling = comfort.direction == "cool"
+        # Cooling coasts a kelvin warmer; the band's ends are the target ± band,
+        # bounded by the profile's limit above and its bank end below (§5.14).
+        coast = 1.0 if cooling else -1.0
+        offset = coast if stage >= _COAST_STAGE and not defrosting else 0.0
+        if cooling:
+            ceiling = min(comfort.target + band_k, comfort.floor)
+            floor = comfort.target - band_k
+            if comfort.ceiling is not None:
+                floor = max(floor, comfort.ceiling)
+        else:
+            ceiling = comfort.target + band_k
+            if comfort.ceiling is not None:
+                ceiling = min(ceiling, comfort.ceiling)
+            floor = max(comfort.floor, comfort.target - band_k)
         return KindCtx(
             now=ctx.now,
             reads=ctx.reads,
@@ -634,7 +677,7 @@ class HeatPump:
             # The band's bottom, never under the configured floor: INV-29 bounds
             # the setpoint to `comfort ± band` *then* the device's own limits, and
             # the band moves with the target when presence does.
-            floor=max(comfort.floor, comfort.target - band_k),
+            floor=floor,
             ceiling=ceiling,
             setpoint_delta=ctx.setpoint_delta + offset,
             desired=None if defrosting else ctx.desired,
@@ -666,14 +709,16 @@ def _reason(
     if device_type.defrosting(load, state, ctx):
         return "defrosting: drawing, not heating (INV-29)"
     if comfort.violated:
-        return f"below the {comfort.floor:.1f} °C floor"
+        side = "above the" if comfort.direction == "cool" else "below the"
+        return f"{side} {comfort.floor:.1f} °C floor"
     if forced:
         return "forced"
     if not wants:
         return f"at {comfort.target:.1f} °C"
     if comfort.current is None:
         return "room temperature unknown"
-    return f"{comfort.deficit:.1f} K under {comfort.target:.1f} °C"
+    side = "over" if comfort.direction == "cool" else "under"
+    return f"{comfort.deficit:.1f} K {side} {comfort.target:.1f} °C"
 
 
 TYPE = register(HeatPump())

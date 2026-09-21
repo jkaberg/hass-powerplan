@@ -1,4 +1,4 @@
-"""D9 §5.3's phase-4 rows: `nl_pv_negative_midday`, `be_quarter_hour_rolling`, `zaptec_slow_trim`.
+"""D9 §5.3's phase-4 rows: `nl_pv_negative_midday`, `be_quarter_hour_rolling`, `zaptec_slow_trim`, `fi_deductible`, `es_contracted_p1_p2`, `us_srp_demand_cooling`.
 
 `nl_pv_negative_midday`: a summer day EPEX NL's own duck-curve shape
 (`sim/prices.py`'s `SOLAR_GLUT`, D-0311) goes negative at midday under this
@@ -22,23 +22,28 @@ cannot yet take back (D4 §5.9, §5.10).
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from custom_components.powerplan.core.loads import device_types
+from custom_components.powerplan.core.model import Carrier
 from custom_components.powerplan.providers.profiles import zaptec
 from tests.builders.houses import (
+    ES_P1_KW,
+    ES_P2_KW,
+    TEMPO_EUR_PER_KWH,
     ZAPTEC_MIN_INTERVAL_S,
     ZAPTEC_TOLERANCE_A,
     be_quarter,
+    fr_tempo,
     nl_pv,
     zaptec_house,
 )
 from tests.scenarios import catalogue
 from tests.scenarios.cache import cached
-from tests.scenarios.runner import ZAPTEC_WORDS, run_scenario
+from tests.scenarios.runner import ZAPTEC_WORDS, _curves, run_scenario
 from tests.sim.charger_zaptec import ZaptecChargerSim
 
 if TYPE_CHECKING:
@@ -213,3 +218,149 @@ def test_zaptec_slow_trim_trims_urgently_when_the_ceiling_needs_it(
         for (earlier, *_), (later, before, after) in zip(charger.log, charger.log[1:], strict=False)
         if (later - earlier).total_seconds() < ZAPTEC_MIN_INTERVAL_S and after < before
     )
+
+
+# --------------------------------------------------------------------------- #
+# WP4.3b: fi_deductible, es_contracted_p1_p2, and fr_tempo's announcements
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="module")
+def tehomaksu_days() -> ScenarioResult:
+    """Run `fi_deductible` once for the module."""
+    return cached(__file__, "tehomaksu_days", lambda: run_scenario(catalogue.fi_deductible()))
+
+
+@pytest.mark.xdist_group(name="phase4_tehomaksu_days")
+def test_fi_deductible_keeps_every_hour_inside_the_free_8_kw(
+    tehomaksu_days: ScenarioResult,
+) -> None:
+    """D9 §5.3: the peak kept ≤ 8 kW when cheap to do so - two January days, no fee paid."""
+    result = tehomaksu_days
+    assert result.engine_failures == 0
+    assert result.plan_gaps == 0
+    assert result.over_target == 0
+    assert result.max_window_kwh <= catalogue.FI_FREE_KW
+
+
+@pytest.fixture(scope="module")
+def contracted_days() -> ScenarioResult:
+    """Run `es_contracted_p1_p2` once for the module."""
+    return cached(
+        __file__, "contracted_days", lambda: run_scenario(catalogue.es_contracted_p1_p2())
+    )
+
+
+def _p1(start: str) -> bool:
+    """2.0TD's P1: working weekdays 08:00–24:00 in Madrid (the rule's own `when`)."""
+    local = datetime.fromisoformat(start).astimezone(catalogue.ES_P1_P2_START.tzinfo)
+    return local.weekday() < 5 and local.hour >= 8
+
+
+@pytest.mark.xdist_group(name="phase4_contracted_days")
+def test_es_contracted_never_trips_and_uses_p2_at_night(contracted_days: ScenarioResult) -> None:
+    """D9 §5.3: no hour over its period's contracted power, and P2's extra room is used."""
+    result = contracted_days
+    assert result.engine_failures == 0
+    by_period = [
+        (_p1(start), kwh)
+        for start, kwh in zip(result.window_starts, result.window_kwh, strict=True)
+    ]
+    assert all(kwh <= (ES_P1_KW if p1 else ES_P2_KW) for p1, kwh in by_period)
+    assert max(kwh for p1, kwh in by_period if not p1) > ES_P1_KW
+
+
+def test_fr_tempo_prices_tomorrow_only_once_its_colour_is_announced() -> None:
+    """The red day's peak hours cost 0.7295 once announced; before 10:40 they are blue."""
+    house = fr_tempo()
+    assert house.announcer is not None
+    red = next(
+        day
+        for day in (datetime(2027, 1, 4, tzinfo=UTC).date() + timedelta(days=n) for n in range(60))
+        if house.announcer.colour(day) == "red"
+    )
+    noon = datetime.combine(red, time(12), tzinfo=house.cfg.tz)
+    before = datetime.combine(red - timedelta(days=1), time(10, 30), tzinfo=house.cfg.tz)
+    after = datetime.combine(red - timedelta(days=1), time(10, 50), tzinfo=house.cfg.tz)
+
+    def price(now: datetime) -> float:
+        curve = _curves(house, now.astimezone(UTC)).import_[Carrier.ELECTRICITY]
+        slot = next(slot for slot in curve.slots if slot.start <= noon < slot.end)
+        return float(slot.total)
+
+    assert price(before) == TEMPO_EUR_PER_KWH["blue"][1]
+    assert price(after) == TEMPO_EUR_PER_KWH["red"][1]
+
+
+# --------------------------------------------------------------------------- #
+# WP4.3c: us_srp_demand_cooling
+# --------------------------------------------------------------------------- #
+
+#: SRP's summer on-peak, local: 14:00–20:00 on weekdays.
+ON_PEAK_FROM_H = 14
+ON_PEAK_TO_H = 20
+#: The morning the unit may pre-cool in, before the window.
+BEFORE_FROM_H = 10
+
+
+class _CoolingTrail:
+    """The heat pump's measured draw per tick, keyed by local hour (picklable)."""
+
+    def __init__(self) -> None:
+        self.wh_by_hour: dict[tuple[str, int], float] = {}
+        self._last: datetime | None = None
+
+    def __call__(self, now: datetime, snapshot: Any) -> None:
+        local = now.astimezone(catalogue.US_DEMAND_START.tzinfo)
+        status = snapshot.loads["heat_pump"]
+        if self._last is not None and status.measured_w is not None:
+            seconds = (now - self._last).total_seconds()
+            key = (local.date().isoformat(), local.hour)
+            self.wh_by_hour[key] = (
+                self.wh_by_hour.get(key, 0.0) + status.measured_w * seconds / 3600
+            )
+        self._last = now
+
+
+@pytest.fixture(scope="module")
+def cooling_days() -> tuple[ScenarioResult, _CoolingTrail]:
+    """Run `us_srp_demand_cooling` once for the module, keeping the heat pump's draw."""
+
+    def run() -> tuple[ScenarioResult, _CoolingTrail]:
+        trail = _CoolingTrail()
+        return run_scenario(catalogue.us_srp_demand_cooling(), trail), trail
+
+    return cached(__file__, "cooling_days", run)
+
+
+@pytest.mark.xdist_group(name="phase4_cooling_days")
+def test_us_srp_on_peak_demand_stays_at_or_under_the_target(
+    cooling_days: tuple[ScenarioResult, _CoolingTrail],
+) -> None:
+    """D9 §5.3: every 30-minute on-peak window's average at or under 5 kW."""
+    result, _ = cooling_days
+    assert result.engine_failures == 0
+    zone = catalogue.US_DEMAND_START.tzinfo
+    for start, kwh in zip(result.window_starts, result.window_kwh, strict=True):
+        local = datetime.fromisoformat(start).astimezone(zone)
+        if local.weekday() < 5 and ON_PEAK_FROM_H <= local.hour < ON_PEAK_TO_H:
+            assert kwh * 2.0 <= catalogue.US_DEMAND_TARGET_KW, (start, kwh)
+
+
+@pytest.mark.xdist_group(name="phase4_cooling_days")
+def test_us_srp_the_heat_pump_cools_before_the_window_and_coasts_through_it(
+    cooling_days: tuple[ScenarioResult, _CoolingTrail],
+) -> None:
+    """D9 §5.3's pre-cooling: more cooling energy 10–14 than 14–20, on each weekday."""
+    _, trail = cooling_days
+    days = sorted({day for day, _ in trail.wh_by_hour})
+    assert days
+    for day in days:
+        before = sum(
+            trail.wh_by_hour.get((day, hour), 0.0) for hour in range(BEFORE_FROM_H, ON_PEAK_FROM_H)
+        )
+        during = sum(
+            trail.wh_by_hour.get((day, hour), 0.0) for hour in range(ON_PEAK_FROM_H, ON_PEAK_TO_H)
+        )
+        if before or during:
+            assert before > during, (day, before, during)

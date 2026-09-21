@@ -224,6 +224,7 @@ def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
         vacation_level=None if params.get("vacation_c") is None else float(params["vacation_c"]),
         follow_presence=bool(params.get("follow_presence", True)),
         arrival_sources=tuple(str(entity) for entity in params.get("arrival_sources") or ()),
+        direction="cool" if params.get("direction") == "cool" else "heat",
     )
 
 

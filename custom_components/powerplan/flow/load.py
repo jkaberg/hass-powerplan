@@ -459,6 +459,8 @@ def _asked(question: Question, ctx: QCtx, *, followups: bool) -> bool:
     """Whether this form asks `question`: follow-ups on their own step, a single option never."""
     if (question.asked_if is not None) != followups:
         return False
+    if question.needs is not None and question.needs not in ctx.capabilities:
+        return False
     return not (question.key == _SITE_PHASES_KEY and ctx.phases == 1)
 
 

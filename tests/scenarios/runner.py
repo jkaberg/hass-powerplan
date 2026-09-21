@@ -53,6 +53,7 @@ from custom_components.powerplan.core.metering import (
 from custom_components.powerplan.core.model import Carrier, Confidence, Mode
 from custom_components.powerplan.core.pricing import build_curve, modifiers
 from custom_components.powerplan.core.pricing.context import PriceContext
+from custom_components.powerplan.core.pricing.events import EventStore
 from custom_components.powerplan.core.pricing.forecasters.base import chain
 from custom_components.powerplan.core.pricing.forecasters.carry_known import CarryKnown
 from custom_components.powerplan.core.pricing.forecasters.synthesised import Synthesised
@@ -599,6 +600,13 @@ def _tou_from(options: Mapping[str, Any] | None) -> TouSchedule | None:
     return built
 
 
+def _announced(house: House, now: datetime) -> EventStore:
+    """Return what has been announced to the house by `now` (D1 §5.6; `fr_tempo`)."""
+    if house.announcer is None:
+        return EventStore()
+    return EventStore().upsert(house.announcer.events(now))
+
+
 def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
     """Compose the site's curve from the price generator through D1's pipeline (INV-5)."""
     tz = house.cfg.tz
@@ -619,13 +627,14 @@ def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
                     fetched_at=now,
                 )
             )
+    store = _announced(house, now)
     ctx = PriceContext(
         now=now,
         tz=tz,
         currency=house.cfg.currency,
         mtd_kwh_at=lambda _t: 0.0,
         ytd_kwh_at=lambda _t: 0.0,
-        day_type_at=lambda _d: None,
+        day_type_at=lambda day: store.day_type_at(day, tz),
         # nl_pv/be_quarter's own tariffs carry no `tou_schedule` energy
         # component, so `tou` above is always `None` for them and `holidays`
         # never reaches a `TimeFilter` - this stays `nordic_detached`'s own
@@ -634,7 +643,7 @@ def _curves(house: House, now: datetime, horizon_h: float = 48.0) -> Curves:
     )
     curve = build_curve(
         raw,
-        [] if tou is None else [tou],
+        [*([] if tou is None else [tou]), *house.price_modifiers],
         chain(CarryKnown(), Synthesised(tou=tou)),
         ctx,
         timedelta(hours=horizon_h),
@@ -818,6 +827,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             outdoor_c=env.outdoor_c,
             trigger="tick",
             circuits=driver.circuits(now),
+            events=_announced(house, now).in_force(now),
         )
 
         # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #

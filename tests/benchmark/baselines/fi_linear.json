@@ -1,0 +1,241 @@
+{
+  "build": "835e0b2",
+  "house": "fi_linear",
+  "results": {
+    "smoke": {
+      "build": "835e0b2",
+      "controlled_share": 1.0,
+      "house": "fi_linear",
+      "months": {
+        "2026-10": {
+          "comfort_violation_min": 2.0,
+          "cost_counterfactual": "76.28 EUR",
+          "cost_energy": "56.93 EUR",
+          "deadline_misses": 2,
+          "fee": "0.00 EUR",
+          "kwh": 320.77,
+          "level": "7.16 kW",
+          "max_window_kwh": 7.16,
+          "metric_kw": 7.16,
+          "over_target": 0,
+          "savings": "19.36 EUR",
+          "windows": 168,
+          "writes": 1747
+        },
+        "2027-01": {
+          "comfort_violation_min": 9.67,
+          "cost_counterfactual": "164.37 EUR",
+          "cost_energy": "132.68 EUR",
+          "deadline_misses": 1,
+          "fee": "2.05 EUR",
+          "kwh": 510.9,
+          "level": "8.82 kW",
+          "max_window_kwh": 8.82,
+          "metric_kw": 8.82,
+          "over_target": 0,
+          "savings": "31.70 EUR",
+          "windows": 168,
+          "writes": 1564
+        }
+      },
+      "perf": {
+        "plan_p95_ms": 98.444,
+        "tick_p95_ms": 3.823,
+        "ticks": 120960,
+        "ticks_per_s": 393,
+        "wall_s": 308.1
+      },
+      "seed": 20260919,
+      "set_at": "2026-09-24T21:05:11+00:00",
+      "since": "WP4.3b",
+      "spans": [
+        {
+          "comfort_violation_min": 2.0,
+          "commitment_breaks": {
+            "ev": 2
+          },
+          "days": 7.0,
+          "deadline_misses": 2,
+          "engine_failures": 0,
+          "ev_stops": 35,
+          "frozen_ticks": 352,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 5,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 1,
+            "radiator_bed_2": 1,
+            "sauna": 1,
+            "tank": 1
+          },
+          "name": "fi_linear:smoke:2026-10-05",
+          "over_target": 0,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 168,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 175,
+            "heat_pump": 79,
+            "loop_bath_1": 233,
+            "loop_bath_2": 233,
+            "loop_hall": 297,
+            "loop_kitchen": 296,
+            "loop_living": 298,
+            "radiator_bed_1": 31,
+            "radiator_bed_2": 33,
+            "sauna": 4,
+            "tank": 67
+          },
+          "zero_amp_writes": 0
+        },
+        {
+          "comfort_violation_min": 9.667,
+          "commitment_breaks": {
+            "ev": 1
+          },
+          "days": 7.0,
+          "deadline_misses": 1,
+          "engine_failures": 0,
+          "ev_stops": 25,
+          "frozen_ticks": 386,
+          "max_writes_per_10min": {
+            "dishwasher": 1,
+            "ev": 5,
+            "heat_pump": 1,
+            "loop_bath_1": 1,
+            "loop_bath_2": 1,
+            "loop_hall": 1,
+            "loop_kitchen": 1,
+            "loop_living": 1,
+            "radiator_bed_1": 2,
+            "radiator_bed_2": 2,
+            "sauna": 1,
+            "tank": 2
+          },
+          "name": "fi_linear:smoke:2027-01-11",
+          "over_target": 0,
+          "plan_gaps": 0,
+          "sessions_dropped": 5,
+          "ticks": 60480,
+          "windows": 168,
+          "writes": {
+            "dishwasher": 1,
+            "ev": 170,
+            "heat_pump": 92,
+            "loop_bath_1": 172,
+            "loop_bath_2": 172,
+            "loop_hall": 212,
+            "loop_kitchen": 212,
+            "loop_living": 213,
+            "radiator_bed_1": 126,
+            "radiator_bed_2": 140,
+            "sauna": 4,
+            "tank": 50
+          },
+          "zero_amp_writes": 0
+        }
+      ],
+      "tier": "smoke",
+      "total": {
+        "comfort_violation_min": 11.67,
+        "commitment_breaks": 3,
+        "cost_counterfactual": "240.65 EUR",
+        "cost_energy": "189.61 EUR",
+        "deadline_misses": 3,
+        "engine_failures": 0,
+        "fee": "2.05 EUR",
+        "kwh": 831.67,
+        "max_window_kwh": 8.82,
+        "over_target": 0,
+        "plan_gaps": 0,
+        "savings": "51.06 EUR",
+        "sessions_dropped": 10,
+        "windows": 336,
+        "writes": 3311,
+        "writes_by_load": {
+          "dishwasher": 2,
+          "ev": 345,
+          "heat_pump": 171,
+          "loop_bath_1": 405,
+          "loop_bath_2": 405,
+          "loop_hall": 509,
+          "loop_kitchen": 508,
+          "loop_living": 511,
+          "radiator_bed_1": 157,
+          "radiator_bed_2": 173,
+          "sauna": 8,
+          "tank": 117
+        },
+        "zero_amp_writes": 0
+      },
+      "year": "y2026_27@1"
+    }
+  },
+  "since": "WP4.3b",
+  "tolerances": {
+    "perf.plan_p95_ms": {
+      "kind": "abs",
+      "value": 500.0
+    },
+    "perf.tick_p95_ms": {
+      "kind": "abs",
+      "value": 50.0
+    },
+    "total.comfort_violation_min": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.commitment_breaks": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.cost_energy": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.deadline_misses": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.engine_failures": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.fee": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.over_target": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.plan_gaps": {
+      "kind": "zero",
+      "value": null
+    },
+    "total.savings": {
+      "kind": "not_less",
+      "value": null
+    },
+    "total.sessions_dropped": {
+      "kind": "not_worse",
+      "value": null
+    },
+    "total.writes": {
+      "kind": "pct",
+      "value": 10.0
+    },
+    "total.zero_amp_writes": {
+      "kind": "zero",
+      "value": null
+    }
+  },
+  "year": "y2026_27@1"
+}

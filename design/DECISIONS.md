@@ -2644,3 +2644,23 @@ No `keba` profile in v1: the core integration has no config flow and none of its
 
 `Inputs.events` is `EventStore.in_force(now)` in the tick and `all()` in the plan; the planning cycle prunes events ended over an hour ago. A state change on an event entity polls every source, and a changed store rebuilds the curves and plans. Each source is polled once at start. Curves are built after a fetch, so a colour announced between fetches would otherwise wait for the next one. Affects D7 §5.2, §5.3, §5.5, §9 18.
 **Rejected:** rebuilding curves on every plan - four full compositions an hour for an input that changes daily.
+
+### D-0641 · Three market houses on one builder; Tempo colours announced into the runner's event store
+
+`fi_linear`, `es_contracted` and `fr_tempo` are `nordic_detached`'s twelve loads under another market, built by one `_market_house`. `fr_tempo` prices energy as a `day_type` add-on over a flat source, and `TempoSim` announces each day's colour at 10:40 the day before; the runner builds an `EventStore` from the announcer and passes what's in force as `Inputs.events`. ES and FR are TT 400 V three phase, since a single-phase supply can't carry the three-phase loads. The FI and SRP shapes are benchmark-only rules. Affects D9 §5.9.
+**Rejected:** Tempo prices as a known price regime - tests nothing about acting on an announcement.
+
+### D-0642 · `us_demand` waits for the heat pump's cooling mode
+
+Three market houses ship; `us_demand` and its cooling scenario wait for the cooling mode D4 §5.14 specifies (D4 §9 34). The scenario's first assertion is pre-cooling before 15:00, and `HeatPumpType.comfort` and its store only heat so far; D9 §5.9 specifies the house's climate, tariff and season. A baseline built now would move as soon as cooling lands. Affects D4 §5.14, §9 34; D9 §5.9.
+**Rejected:** `us_demand` with only its demand half - a Phoenix summer house whose largest load can't run.
+
+### D-0643 · Cooling is a setting of the appliance, not the unit's live `hvac_mode`
+
+A heat pump whose match offers `cool` is asked *Plan for cooling*; the answer sets `params.direction`, and the profile, room store and setpoint kind are built for it. The household switches it at the season's change. The store, profile and kind are built once from the subentry, so a live flip would leave a heating store under a cooling profile, and the unit's mode also changes for an open window or *dry*. Affects D4 §5.14, §9 34.
+**Rejected:** reading `hvac_mode` every tick and rebuilding - drops the plan's store mid-plan.
+
+### D-0644 · `us_demand` holds its air conditioning; pre-cooling is cooling before the window and coasting through it
+
+The heat pump cools at 24 °C with `follow_presence` off; the scenario runs two August weekdays. Pre-cooling: the unit's energy 10:00-14:00 exceeds 14:00-20:00 each day. Demand: every on-peak 30-minute window stays at or under 5 kW. `WeatherSim` takes its climate normals as fields. With the away setback the planner doesn't know when the household returns, so can't cool ahead; with the target held it cools until 14:00 and lets the room coast 24.2 → 24.9 °C through the peak. Affects D9 §5.3, §5.9.
+**Rejected:** teaching `heat_capacitor` to bank ahead of a capacity window - a D5 change the demand doesn't need yet; noted as a gap.

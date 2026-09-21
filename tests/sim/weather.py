@@ -118,6 +118,11 @@ class WeatherSim:
     #: Only `_solar_w_per_m2`'s sun-angle formula reads this (SOURCES); the
     #: climate-normal tables above stay Trondheim's regardless (D-0310).
     latitude_deg: float = LATITUDE_DEG
+    #: The climate normals, °C per month: Trondheim's unless a house names its own
+    #: (`us_demand`'s Phoenix).
+    monthly_mean_c: tuple[float, ...] = MONTHLY_MEAN_C
+    monthly_max_c: tuple[float, ...] = MONTHLY_MAX_C
+    monthly_min_c: tuple[float, ...] = MONTHLY_MIN_C
 
     # -- levels ------------------------------------------------------------- #
 
@@ -130,11 +135,11 @@ class WeatherSim:
             prev, nxt, w = (month - 1) % 12, month, day_fraction + 0.5
         else:
             prev, nxt, w = month, (month + 1) % 12, day_fraction - 0.5
-        return MONTHLY_MEAN_C[prev] * (1.0 - w) + MONTHLY_MEAN_C[nxt] * w
+        return self.monthly_mean_c[prev] * (1.0 - w) + self.monthly_mean_c[nxt] * w
 
     def _amplitude_k(self, t: datetime) -> float:
         month = t.astimezone(self.tz).month - 1
-        return (MONTHLY_MAX_C[month] - MONTHLY_MIN_C[month]) / 2.0
+        return (self.monthly_max_c[month] - self.monthly_min_c[month]) / 2.0
 
     def _anomaly_k(self, t: datetime) -> float:
         """Draw a smoothed daily anomaly: continuous across midnight, pure in `t`."""

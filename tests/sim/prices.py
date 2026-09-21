@@ -224,6 +224,9 @@ class PriceSim:
     tz: ZoneInfo = field(default_factory=lambda: ZoneInfo("Europe/Oslo"))
     regimes: Sequence[PriceRegime] = ()
     default_kind: str = SPOT_LIKE
+    #: What a `FLAT` day costs: Norgespris by default; `fr_tempo` sets 0, because
+    #: its whole energy price is the Tempo colour's (the `day_type` add-on).
+    flat_price: float = NORGESPRIS_NOK_PER_KWH
     _day_draws: dict[int, tuple[float, float]] = field(default_factory=dict)
     _solar_day_draws: dict[int, tuple[float, float]] = field(default_factory=dict)
 
@@ -316,7 +319,7 @@ class PriceSim:
         if kind == OUTAGE:
             return None
         if kind == FLAT:
-            return NORGESPRIS_NOK_PER_KWH
+            return self.flat_price
         if kind == SOLAR_GLUT:
             return self._solar_glut_at(t)
         spot = self._spot_at(t)

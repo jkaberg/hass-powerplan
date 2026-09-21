@@ -12,9 +12,11 @@ from tests.sim.heatpump import (
     COP_ANCHOR_PLUS7,
     COP_MAX,
     DEFROST_S,
+    EER_ANCHOR_35,
     RATED_W,
     STANDBY_W,
     HeatPumpSim,
+    cooling_cop_at,
     cop_at,
 )
 
@@ -105,3 +107,18 @@ def test_a_setpoint_write_is_obeyed_and_off_means_off() -> None:
     reads = sim.step(STEP_S, Command(mode="off"), Env(now=T0, outdoor_c=-3.0))
     assert reads.power_w == pytest.approx(STANDBY_W)
     assert reads.values[COP] == pytest.approx(cop_at(-3.0))
+
+
+def test_a_cooling_unit_takes_heat_out_of_a_hot_room() -> None:
+    """WP4.10: in cooling mode the room falls towards the setpoint on a 35 °C day."""
+    sim = HeatPumpSim(area_m2=60.0, room_c=28.0, setpoint_c=24.0, mode="cool")
+    start = sim.room_c
+    t = datetime(2026, 7, 15, 12, 0, tzinfo=UTC)
+    for minute in range(60):
+        step = sim.step(60.0, None, Env(now=t + timedelta(minutes=minute), outdoor_c=35.0))
+
+    assert sim.room_c < start
+    assert step.status in {"cooling", "idle"}
+    assert cooling_cop_at(35.0) == pytest.approx(EER_ANCHOR_35)
+    assert cooling_cop_at(25.0) > cooling_cop_at(40.0)
+    assert sim.defrost_count == 0

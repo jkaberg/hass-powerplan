@@ -125,6 +125,9 @@ class Question:
     #: true, and left at its default otherwise (D8 §5.15 rule 5, review
     #: HUB-17 - "preheat off never sees its temperature").
     asked_if: str | None = None
+    #: A capability the device must have for this question to be asked at all:
+    #: `cool` for a heat pump's cooling mode. Left at its default otherwise.
+    needs: str | None = None
 
     def default_for(self, ctx: QCtx) -> Any:
         """Resolve the default, calling it when it is a function of the context."""

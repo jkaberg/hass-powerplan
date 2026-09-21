@@ -19,11 +19,14 @@ from tests.builders.houses import (
     FLOOR_LOOPS,
     GARAGE_CIRCUIT,
     be_quarter,
+    es_contracted,
+    fi_linear,
     house,
     nl_pv,
     no_peak,
     nordic_detached,
     tensio,
+    us_demand,
     zaptec_house,
 )
 from tests.scenarios.runner import Fault, Scenario
@@ -530,7 +533,82 @@ PHASE3 = (
     presence_away_day,
     dishwasher_weeknight,
 )
-PHASE4 = (nl_pv_negative_midday, be_quarter_hour_rolling, zaptec_slow_trim)
+#: WP4.3b, D9 §5.3 `fi_deductible`: the same January days as `reference_winter_day`,
+#: in Helsinki, under the tehomaksu - 8 kW free, 2.50 EUR per kW above it.
+FI_DEDUCTIBLE_START = datetime(2027, 1, 12, 16, 17, 17, tzinfo=ZoneInfo("Europe/Helsinki"))
+FI_DEDUCTIBLE_DAYS = 2.0
+#: The ceiling the site defends: the tehomaksu's free 8 kW (D2 `Linear`).
+FI_FREE_KW = 8.0
+
+
+def fi_deductible() -> Scenario:
+    """Return the winter days the tehomaksu's free 8 kW is worth defending (D9 §5.3).
+
+    `target_kw = 8`: the free part is the ceiling, and the fee above it is what
+    a window over it costs - kept under when a flexible load can wait.
+    """
+    return Scenario(
+        name="fi_deductible",
+        house=lambda: fi_linear(start=FI_DEDUCTIBLE_START.date()),
+        start=FI_DEDUCTIBLE_START,
+        days=FI_DEDUCTIBLE_DAYS,
+        target_kw=FI_FREE_KW,
+    )
+
+
+#: WP4.3b, D9 §5.3 `es_contracted_p1_p2`: two January weekdays in Madrid under
+#: 2.0TD's contracted powers - P1 5.75 kW 08–24 on working weekdays, P2 9.2 kW
+#: the rest. The car arrives in the evening and charges into the night.
+ES_P1_P2_START = datetime(2027, 1, 12, 16, 17, 17, tzinfo=ZoneInfo("Europe/Madrid"))
+ES_P1_P2_DAYS = 2.0
+
+
+def es_contracted_p1_p2() -> Scenario:
+    """Return the days 2.0TD's two limits steer: never over either, P2's room used at night.
+
+    No `target_kw`: `ContractedPower` is a hard limit and no ceiling (D2).
+    """
+    return Scenario(
+        name="es_contracted_p1_p2",
+        house=lambda: es_contracted(start=ES_P1_P2_START.date()),
+        start=ES_P1_P2_START,
+        days=ES_P1_P2_DAYS,
+        target_kw=None,
+    )
+
+
+#: WP4.3c, D9 §5.3 `us_srp_demand_cooling`: two August weekdays in Phoenix (the
+#: household sim takes July off), SRP's
+#: on-peak 14:00–20:00, the heat pump cooling at 24 °C against 40 °C afternoons.
+US_DEMAND_START = datetime(2026, 8, 18, 8, 17, 17, tzinfo=ZoneInfo("America/Phoenix"))
+US_DEMAND_DAYS = 2.0
+#: The on-peak 30-minute demand the site defends, kW.
+US_DEMAND_TARGET_KW = 5.0
+
+
+def us_srp_demand_cooling() -> Scenario:
+    """Return the July days SRP's on-peak demand is set on (D9 §5.3).
+
+    `target_kw = 5`: the demand the site defends inside the on-peak window; the
+    heat pump pre-cools before 14:00 so the afternoon's cooling needs less.
+    """
+    return Scenario(
+        name="us_srp_demand_cooling",
+        house=lambda: us_demand(start=US_DEMAND_START.date()),
+        start=US_DEMAND_START,
+        days=US_DEMAND_DAYS,
+        target_kw=US_DEMAND_TARGET_KW,
+    )
+
+
+PHASE4 = (
+    nl_pv_negative_midday,
+    be_quarter_hour_rolling,
+    zaptec_slow_trim,
+    fi_deductible,
+    es_contracted_p1_p2,
+    us_srp_demand_cooling,
+)
 ACCOUNTING = (savings_vs_twin, savings_twin, observe_calibration)
 #: The twin's month, for pricing its windows under the tariff the controlled house pays.
 TWIN_END = TWIN_START + timedelta(days=TWIN_DAYS)

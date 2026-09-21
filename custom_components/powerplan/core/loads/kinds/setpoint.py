@@ -75,6 +75,10 @@ class SetpointCfg:
     restore_dwell_s: float = 1800.0
     urgent_from_stage: int = 2
     role: Role = Role.SETPOINT
+    #: A cooling unit (D4 §5.14): `shed_setpoint` is the warm limit it
+    #: rests at, "on" is a setpoint under it, and a restore's dwell holds a move
+    #: **down**. Heating is the default and unchanged.
+    cooling: bool = False
 
     def __post_init__(self) -> None:
         """Reject a band wider than the hard cap (INV-29)."""
@@ -106,7 +110,13 @@ class Setpoint:
 
         target = ctx.target
         floor = cfg.shed_setpoint if ctx.floor is None else ctx.floor
-        resting = max(cfg.shed_setpoint, floor)
+        resting = (
+            min(cfg.shed_setpoint, ctx.ceiling)
+            if cfg.cooling and ctx.ceiling is not None
+            else cfg.shed_setpoint
+            if cfg.cooling
+            else max(cfg.shed_setpoint, floor)
+        )
         params: ReasonParams = {}
 
         if ctx.comfort_violated:
@@ -151,14 +161,20 @@ class Setpoint:
 
         value = float(q.value)
         held = None if ctx.held is None else float(ctx.held)
-        want_on = value > max(cfg.shed_setpoint, ctx.floor or cfg.shed_setpoint) + cfg.tolerance
+        if cfg.cooling:
+            resting = min(cfg.shed_setpoint, ctx.ceiling or cfg.shed_setpoint)
+            want_on = value < resting - cfg.tolerance
+            more = held is not None and value < held - cfg.tolerance
+        else:
+            want_on = value > max(cfg.shed_setpoint, ctx.floor or cfg.shed_setpoint) + cfg.tolerance
+            more = held is not None and value > held + cfg.tolerance
 
-        if ctx.last_restore_at is not None and held is not None and value > held + cfg.tolerance:
+        if ctx.last_restore_at is not None and more:
             since = (ctx.now - ctx.last_restore_at).total_seconds()
             if since < cfg.restore_dwell_s:
                 return Hold(
                     Action.HELD_DWELL,
-                    f"{since:.0f} s since a restore: no upward move within one dwell (INV-29)",
+                    f"{since:.0f} s since a restore: no move towards more within one dwell (INV-29)",
                     ActionReason.RESTORE_WAIT,
                     {"seconds": round(since)},
                 )
