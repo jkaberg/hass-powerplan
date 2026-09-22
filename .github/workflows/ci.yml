@@ -39,8 +39,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: ruff format
         run: uv run ruff format --check .
       - name: ruff check
@@ -87,8 +87,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: vulture - no dead code
         run: uv run vulture
       - uses: actions/setup-node@v5
@@ -110,20 +110,21 @@ jobs:
           # the first release line that requires Python 3.14 (the hacs.json floor).
           - line: ha-floor
             phcc: "0.13.320"
-          # The newest release: the `dev` group's range resolves to it.
+          # 0.13.366 → homeassistant 2026.9.3, the latest stable; this is the pin
+          # in the `dev` dependency group and therefore in uv.lock.
           - line: ha-latest
-            phcc: "latest"
+            phcc: "0.13.366"
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: Move to the HA floor fixture line
         if: matrix.line == 'ha-floor'
-        # The sync resolves the latest line; the floor line is installed on top of it.
+        # uv.lock pins the latest line; the floor line is installed on top of it.
         # phcc pins homeassistant and its own test dependencies exactly, so this
         # replaces the whole HA stack.
         run: uv pip install "pytest-homeassistant-custom-component==${{ matrix.phcc }}"
@@ -156,8 +157,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: pytest
         run: |
           uv run pytest tests/core tests/property tests/sim tests/backtest tests/benchmark \
@@ -202,8 +203,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: Restore the simulation cache (D9 §5.13)
         # The cache is content-addressed inside (tests/scenarios/cache.py): an
         # entry from an older commit is simply never hit, so restoring the
@@ -229,8 +230,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - uses: actions/download-artifact@v4
         with:
           pattern: coverage-*
@@ -255,8 +256,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: bench smoke (every PR; table posted to the PR)
         # The tier's two spans run in parallel processes (T.1a); the result is
         # byte-identical to running them in turn.
@@ -299,8 +300,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: Restore the base's simulations (D9 §5.13)
         uses: actions/cache@v4
         with:

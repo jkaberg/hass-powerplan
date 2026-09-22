@@ -27,8 +27,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: Fetch and cross-check every source
         id: canary
         run: |

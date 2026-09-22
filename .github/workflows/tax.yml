@@ -25,8 +25,8 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.14"
-      - name: Sync the environment
-        run: uv sync
+      - name: Sync the locked environment
+        run: uv sync --locked
       - name: VAT by country (D13 §9.1)
         run: |
           {
