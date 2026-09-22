@@ -1,0 +1,107 @@
+{
+ "name": "solax_modbus_inverter",
+ "device": "SolaX Inverter",
+ "device_id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+ "manufacturer": "SolaX Power",
+ "model": "X1-Hybrid G4",
+ "written_at": "2026-09-22",
+ "platform": "solax_modbus",
+ "source": "Not captured: no house here owns a SolaX inverter (D-0081). Written from wills106/homeassistant-solax-modbus's documentation, 'Mode 1 remote power control' (homeassistant-solax-modbus.readthedocs.io): the select remotecontrol_power_control and its options, the numbers remotecontrol_active_power (W, signed, positive charges), remotecontrol_duration and remotecontrol_autorepeat_duration (s), the button remotecontrol_trigger; the battery sensors battery capacity (%) and battery power charge (W). The states are a battery at 40 % idle, remote control disabled.",
+ "entities": [
+  {
+   "attributes": {
+    "options": [
+     "Disabled",
+     "Enabled Power Control",
+     "Enabled Grid Control",
+     "Enabled Battery Control",
+     "Enabled Self Use",
+     "Enabled Feedin Priority",
+     "Enabled No Discharge"
+    ],
+    "friendly_name": "SolaX Remotecontrol Power Control"
+   },
+   "entity_id": "select.solax_remotecontrol_power_control",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "min": -6000,
+    "max": 6000,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "SolaX Remotecontrol Active Power"
+   },
+   "entity_id": "number.solax_remotecontrol_active_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 28800,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "s",
+    "friendly_name": "SolaX Remotecontrol Duration"
+   },
+   "entity_id": "number.solax_remotecontrol_duration",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 28800,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "s",
+    "friendly_name": "SolaX Remotecontrol Autorepeat Duration"
+   },
+   "entity_id": "number.solax_remotecontrol_autorepeat_duration",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolaX Remotecontrol Trigger"
+   },
+   "entity_id": "button.solax_remotecontrol_trigger",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "unknown"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement",
+    "friendly_name": "SolaX Battery Capacity"
+   },
+   "entity_id": "sensor.solax_battery_capacity",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "40"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement",
+    "friendly_name": "SolaX Battery Power Charge"
+   },
+   "entity_id": "sensor.solax_battery_power_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  }
+ ],
+ "entity_count": 7
+}

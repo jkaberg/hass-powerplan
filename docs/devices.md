@@ -8,18 +8,30 @@ The chargers and devices PowerPlan knows how to steer, and the ones it cannot. W
 <!-- generated:begin profiles · tools/docs.py writes this block; change the profile registry, not this table -->
 | Profile | For | PowerPlan |
 |---|---|---|
+| `anker_solix` | Home battery | sets the power or current |
 | `easee_ble` | Car charger | sets the power or current |
 | `easee_cloud` | Car charger | sets the power or current |
+| `ecoflow_cloud` | Home battery | sets the power or current |
 | `generic_climate` | Floor heating, Heat pump, Panel heater, Water heater | sets its mode, sets its temperature |
 | `generic_number` | Home battery, Car charger, Something else on a switch | sets the power or current |
 | `generic_switch` | Dishwasher, washer or dryer, Something else on a switch, Panel heater | turns it on and off |
 | `goecharger_api2` | Car charger | sets the power or current |
+| `goodwe` | Home battery | battery_mode |
+| `huawei_solar` | Home battery | sets the power or current |
 | `ocpp` | Car charger | sets the power or current |
 | `peblar` | Car charger | sets the power or current |
+| `sigen` | Home battery | battery_mode |
+| `solax_modbus` | Home battery | sets the power or current |
 | `v2c` | Car charger | sets the power or current |
 | `wallbox` | Car charger | sets the power or current |
 | `zaptec` | Car charger | sets the power or current |
+| `zendure_ha` | Home battery | sets the power or current |
 <!-- generated:end profiles -->
+
+<a name="anker_solix"></a>
+## `anker_solix`
+
+An Anker Solarbank through the Anker Solix integration from HACS. Its own panels charge it; PowerPlan sets only how much it gives your home, through its system output preset. Anker's cloud updates every 5 minutes, so PowerPlan changes it at most that often.
 
 <a name="easee_ble"></a>
 ## `easee_ble`
@@ -30,6 +42,11 @@ An Easee charger over Bluetooth, through the Easee BLE integration. PowerPlan se
 ## `easee_cloud`
 
 An Easee charger through Easee's cloud integration. PowerPlan sets the charger's dynamic current limit, which the charger forgets on every new session, so PowerPlan sets it again when a car connects.
+
+<a name="ecoflow_cloud"></a>
+## `ecoflow_cloud`
+
+An EcoFlow PowerStream through the EcoFlow Cloud integration from HACS. Its own panels charge it; PowerPlan sets only how much power it gives your home.
 
 <a name="generic_climate"></a>
 ## `generic_climate`
@@ -51,6 +68,16 @@ Anything on a switch or a smart plug, with a power sensor if it has one. PowerPl
 
 A go-e charger through the go-e Charger API v2 integration from HACS. Enable its **Car state [CODE]** sensor: PowerPlan reads whether a car is connected from it.
 
+<a name="goodwe"></a>
+## `goodwe`
+
+A home battery behind a GoodWe hybrid inverter, through Home Assistant's GoodWe integration. PowerPlan switches the inverter's operation mode between charging, discharging and its own mode. The inverter sets the power itself, so PowerPlan counts it at full power. The battery's reserve becomes the inverter's depth of discharge.
+
+<a name="huawei_solar"></a>
+## `huawei_solar`
+
+A Huawei LUNA battery behind a SUN2000 inverter, through the Huawei Solar integration from HACS. PowerPlan charges and discharges it for up to an hour at a time. If PowerPlan stops, the battery goes back to its own mode within the hour.
+
 <a name="ocpp"></a>
 ## `ocpp`
 
@@ -60,6 +87,16 @@ Any charger that speaks OCPP 1.6, through the OCPP integration from HACS: ABB, A
 ## `peblar`
 
 A Peblar charger through Home Assistant's Peblar integration, over your home network.
+
+<a name="sigen"></a>
+## `sigen`
+
+A Sigenergy battery through the Sigenergy integration from HACS. PowerPlan switches its remote control mode between charging, discharging and maximum self consumption, and keeps remote control on. The integration ships its controls turned off: switch off its read-only mode in the integration's options, then enable the **Remote EMS Control Mode** entity.
+
+<a name="solax_modbus"></a>
+## `solax_modbus`
+
+A SolaX hybrid inverter's battery, or a rebranded one, through the SolaX Inverter Modbus integration from HACS. PowerPlan uses its remote control: it sets the power, then presses the trigger. If PowerPlan stops, the inverter goes back to its own mode within the hour.
 
 <a name="v2c"></a>
 ## `v2c`
@@ -75,6 +112,11 @@ A Wallbox charger through Home Assistant's Wallbox integration. The integration 
 ## `zaptec`
 
 A Zaptec charger through the Zaptec integration from HACS. Zaptec asks that the current changes at most every 15 minutes, so PowerPlan raises it slowly and lowers it at once when it must.
+
+<a name="zendure_ha"></a>
+## `zendure_ha`
+
+A Zendure battery, such as a Hyper 2000, through the Zendure integration from HACS. Its own panels charge it; PowerPlan sets only its output limit.
 
 ## Chargers PowerPlan cannot steer yet
 

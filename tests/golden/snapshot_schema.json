@@ -376,6 +376,9 @@
                 "mode_saving",
                 "mode_comfort",
                 "restore_mode",
+                "battery_charge",
+                "battery_discharge",
+                "battery_hold",
                 "switch_on",
                 "paused",
                 "not_granted",
@@ -992,5 +995,5 @@
       }
     }
   },
-  "schema": 9
+  "schema": 10
 }

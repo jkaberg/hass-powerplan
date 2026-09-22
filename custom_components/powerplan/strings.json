@@ -969,6 +969,9 @@
               "mode_saving": "Energy saving",
               "mode_comfort": "Comfort",
               "restore_mode": "Handed back",
+              "battery_charge": "Charging",
+              "battery_discharge": "Discharging",
+              "battery_hold": "In its own mode",
               "switch_on": "Switched on",
               "paused": "Paused",
               "not_granted": "No power set aside for it now",
@@ -1600,7 +1603,14 @@
         "peblar": "Peblar (local)",
         "v2c": "V2C (local)",
         "wallbox": "Wallbox (cloud)",
-        "zaptec": "Zaptec (cloud)"
+        "zaptec": "Zaptec (cloud)",
+        "huawei_solar": "Huawei battery",
+        "solax_modbus": "SolaX battery",
+        "goodwe": "GoodWe battery",
+        "sigen": "Sigenergy battery",
+        "anker_solix": "Anker Solix battery",
+        "ecoflow_cloud": "EcoFlow battery",
+        "zendure_ha": "Zendure battery"
       }
     },
     "strategy": {
@@ -1874,6 +1884,9 @@
         "mode_saving": "Energy saving: {value}",
         "mode_comfort": "Comfort: {value}",
         "restore_mode": "Handed back on {value}",
+        "battery_charge": "Charging: {value}",
+        "battery_discharge": "Discharging: {value}",
+        "battery_hold": "In its own mode: {value}",
         "switch_on": "Switched on",
         "paused": "Paused",
         "not_granted": "No power set aside for it now",

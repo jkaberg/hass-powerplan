@@ -2729,3 +2729,23 @@ D7's slot close carries the site's production and each load's planned surplus cl
 
 `au_solar@1` is the twelve loads in Sydney: single-phase 230 V at 63 A, 6.6 kWp, a 13.5 kWh battery with grid charging, the NEM's duck curve as `SOLAR_GLUT` in AUD exported at spot, a flat 0.12 AUD/kWh network charge (assumed), 60-minute windows. `nl_pv@2` is forecast and exports at the import price until 1 January 2027 and at half spot after. `self_consumption` is recorded only for houses with panels. `au_solar_soak` asserts at least 70 % used at home (75 % measured); `nl_saldering_end` asserts the share rises across 1 January (88.8 % to 94.9 %). The simulated register stays flat while exporting, which folds export-hour backlogs into one window; recorded as a gap. Affects D9 §5.3, §5.9.
 **Rejected:** Ausgrid's time-of-use network charge - makes the benchmark about the network's peak window, not the sun.
+
+### D-0658 · Battery hardware: three profile kinds, programs later, the Powerwall not at all
+
+The nine most-installed battery and inverter integrations take one of five shapes: a power command (`huawei_solar`, `solax_modbus`), an operating mode (`goodwe`, `sigen`), an output limit only (`anker_solix`, `ecoflow_cloud`, `zendure_ha`), time-of-use programs only (`solarman`, v1.x), or no power control (`powerwall`, a limitation). A profile is worth building where powerplan can keep re-deciding every tick; rewriting an inverter's day of programs has its own failure modes, since a partial write leaves a wrong day. The three kinds reach 30 604 of 42 697 counted installs. Affects D4 §5.9, §9 35-38, §10.
+**Rejected:** one generic profile over a signed W number - only Solax has one.
+
+### D-0659 · A device call may carry follow-ups; an hour is a battery's fail-safe
+
+`DeviceCall.then` is a tuple of calls `writegate.py` sends right after, in order, in the same context, each `blocking=True`; the read-back reads the first call's entity. Solax: the power number, the mode select, the trigger button. Huawei: `forcible_charge` or `forcible_discharge` with 60 minutes, or `stop_forcible_charge` under 50 W. Solax's autorepeat is provisioned to 3600 s. Both return to their own mode on their own if powerplan stops watching (INV-64); a lapse while watching is a read-back mismatch that re-sends. Huawei's read-back is the measured battery power (200 W tolerance), its only witness. Affects D4 §5.9, §5.10, §9 35-36.
+**Rejected:** Huawei's 1440-minute maximum - a stopped powerplan would leave a forced discharge for a day.
+
+### D-0660 · `battery_mode`: the grant's sign picks the mode; the allocator counts the whole inverter
+
+A fifth kind writes one `select_option` to `Role.BATTERY_MODE`: a grant of the whole charge power charges, a discharge of 500 W or more discharges, anything else is self-use, which is also the release. `effective_w` is the whole inverter or 0, D6's relay rule. Options are recognised by their words ("PV first" preferred), so a third mode inverter is a row, not a kind change. `goodwe` provisions depth of discharge from the reserve; `sigen` holds its remote EMS switch on. Neither exposes a power number, so powerplan decides only when. Affects D4 §4.2, §5.9, §9 37.
+**Rejected:** Sigen as a power command through its kW limits - two numbers to read back, for a battery the plan treats as a mode battery.
+
+### D-0661 · Plug-in batteries: the output number scaled by −1, and no charge ever commanded
+
+`anker_solix`, `ecoflow_cloud` and `zendure_ha` bind `BATTERY_POWER_SET` to the output number with its scale negated, so a discharge writes the output and a charge clamps to 0. The profile says `output_only`, and the type sets `command_charge_w = 0`, removing the charge command instead of teaching the gate to expect a clamp. Vendor cadence is the gate floor: Anker 300 s and a 360 s read-back (its cloud updates every 5 minutes), EcoFlow and Zendure 60 s. Affects D4 §5.9, §9 38.
+**Rejected:** Zendure's input limit too - a device-specific mode flip that source-only fixtures can't test.

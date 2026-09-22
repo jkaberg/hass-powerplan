@@ -449,24 +449,32 @@ def test_16q_a_kilowatt_setpoint_scales_to_watts() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_16r_the_eleven_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
+def test_16r_the_eighteen_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
     """Extension is by registry: one module each, registered (D4 §3).
 
     Six since WP4.8a added the two cloud chargers, `zaptec` and `easee_cloud`;
-    eleven since WP4.8b added the five vocabulary chargers.
+    eleven since WP4.8b added the five vocabulary chargers; thirteen since WP7.6
+    added the two batteries that take a power command; fifteen since WP7.7's mode batteries; eighteen since WP7.8's plug-in batteries.
     """
     assert registry.keys() == (
+        "anker_solix",
         "easee_ble",
         "easee_cloud",
+        "ecoflow_cloud",
         "generic_climate",
         "generic_number",
         "generic_switch",
         "goecharger_api2",
+        "goodwe",
+        "huawei_solar",
         "ocpp",
         "peblar",
+        "sigen",
+        "solax_modbus",
         "v2c",
         "wallbox",
         "zaptec",
+        "zendure_ha",
     )
     assert registry.get("generic_climate") is CLIMATE_PROFILE
     assert registry.get("generic_switch") is SWITCH_PROFILE

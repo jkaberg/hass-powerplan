@@ -1,0 +1,40 @@
+{
+ "name": "ecoflow_powerstream",
+ "device": "PowerStream",
+ "device_id": "22bb33cc44dd55ee66ff77889900aa11",
+ "manufacturer": "EcoFlow",
+ "model": "PowerStream",
+ "platform": "ecoflow_cloud",
+ "source": "Not captured: no house here owns an EcoFlow PowerStream (D-0081). Written from tolwi/hassio-ecoflow-cloud's README: the PowerStream's 'Custom Load Power' number in W and its battery level. The states are 300 W to the house at 55 %.",
+ "entities": [
+  {
+   "attributes": {
+    "min": 0,
+    "max": 800,
+    "step": 1,
+    "mode": "slider",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "PowerStream Custom Load Power"
+   },
+   "entity_id": "number.powerstream_custom_load_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "300"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement",
+    "friendly_name": "PowerStream Battery Charge"
+   },
+   "entity_id": "sensor.powerstream_battery_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "55"
+  }
+ ],
+ "written_at": "2026-09-22",
+ "entity_count": 2
+}

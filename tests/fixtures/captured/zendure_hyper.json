@@ -1,0 +1,67 @@
+{
+ "name": "zendure_hyper",
+ "device": "Hyper 2000",
+ "device_id": "33cc44dd55ee66ff77889900aa11bb22",
+ "manufacturer": "Zendure",
+ "model": "Hyper 2000",
+ "platform": "zendure_ha",
+ "source": "Not captured: no house here owns a Zendure (D-0081). Written from Zendure/Zendure-HA's device.py: the outputLimit and inputLimit numbers (W), the acMode select, electricLevel (the state of charge, %). The states are 0 W out at 80 %.",
+ "entities": [
+  {
+   "attributes": {
+    "min": 0,
+    "max": 1200,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "Hyper 2000 Output limit"
+   },
+   "entity_id": "number.hyper_2000_output_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 1200,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "Hyper 2000 Input limit"
+   },
+   "entity_id": "number.hyper_2000_input_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "options": [
+     "input",
+     "output"
+    ],
+    "friendly_name": "Hyper 2000 AC mode"
+   },
+   "entity_id": "select.hyper_2000_ac_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "output"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "state_class": "measurement",
+    "friendly_name": "Hyper 2000 Electric level"
+   },
+   "entity_id": "sensor.hyper_2000_electric_level",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "80"
+  }
+ ],
+ "written_at": "2026-09-22",
+ "entity_count": 4
+}

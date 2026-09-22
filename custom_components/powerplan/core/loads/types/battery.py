@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
+from ..kinds.battery_mode import BatteryMode, BatteryModeCfg
 from ..kinds.modulate import Modulate, ModulateCfg
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.energy import EnergyStore
@@ -39,7 +40,20 @@ if TYPE_CHECKING:
 
     from ..stores.base import StoreModel
 
-__all__ = ["CHEMISTRIES", "DERIVATION_VERSION", "Battery", "Chemistry"]
+__all__ = [
+    "BATTERY_MODE_CAPABILITY",
+    "CHEMISTRIES",
+    "DERIVATION_VERSION",
+    "OUTPUT_ONLY_CAPABILITY",
+    "Battery",
+    "Chemistry",
+]
+
+#: What a profile says of an inverter that takes a mode, not a power (D4 §5.9).
+BATTERY_MODE_CAPABILITY: Final = "battery_mode"
+#: What a profile says of a plug-in battery powerplan may only set the output of
+#: (D4 §5.9): its own panels charge it, the command never does.
+OUTPUT_ONLY_CAPABILITY: Final = "output_only"
 
 #: Bumped whenever a table below changes (INV-66).
 DERIVATION_VERSION: Final = 1
@@ -164,7 +178,7 @@ class Battery:
     """A home battery: signed power, a reserve, a usable window."""
 
     key: ClassVar[str] = "battery"
-    kinds: ClassVar[tuple[str, ...]] = ("modulate",)
+    kinds: ClassVar[tuple[str, ...]] = ("modulate", "battery_mode")
     #: `peak_shave` claims discharge for a threatened ceiling first and lets
     #: `arbitrage` plan the rest - the safer default (D5 §5.8); `always`
     #: stays offered for a household that wants no price steering at all.
@@ -184,7 +198,8 @@ class Battery:
         reserve = answers.number("reserve_pct")
         max_soc = answers.number("max_soc")
         params: dict[str, Any] = {
-            "kind": "modulate",
+            # An inverter that takes a mode, not a power (GoodWe, Sigenergy; D4 §5.9).
+            "kind": "battery_mode" if BATTERY_MODE_CAPABILITY in ctx.capabilities else "modulate",
             "store": "energy",
             "chemistry": chemistry_key,
             "capacity_kwh": capacity,
@@ -194,6 +209,8 @@ class Battery:
             "discharge_eff": chemistry.discharge_eff,
             "nameplate_w": max_charge_w,
             "max_charge_w": max_charge_w,
+            # A plug-in battery charges from its own panels: the command is output only.
+            "command_charge_w": 0.0 if OUTPUT_ONLY_CAPABILITY in ctx.capabilities else max_charge_w,
             "max_discharge_w": max_discharge_w,
             "reserve_soc": reserve,
             "min_soc": reserve + _RESERVE_MARGIN_PCT,
@@ -246,13 +263,24 @@ class Battery:
         )
 
     def _kind(self, cfg: LoadConfig) -> ControlKind:
-        """Return the signed `MODULATE` kind in watts over `BATTERY_POWER_SET` (§4.2)."""
+        """Return the signed `MODULATE` kind in watts over `BATTERY_POWER_SET` (§4.2).
+
+        A mode inverter's battery is `BATTERY_MODE` instead: charge, discharge or
+        its own mode, at the inverter's own power (D4 §5.9).
+        """
         params = cfg.params
+        if params.get("kind") == "battery_mode":
+            return BatteryMode(
+                BatteryModeCfg(
+                    charge_w=float(params.get("max_charge_w", 5000.0)),
+                    discharge_w=float(params.get("max_discharge_w", 5000.0)),
+                )
+            )
         return Modulate(
             ModulateCfg(
                 unit="w",
                 min_value=-float(params.get("max_discharge_w", 5000.0)),
-                max_value=float(params.get("max_charge_w", 5000.0)),
+                max_value=float(params.get("command_charge_w", params.get("max_charge_w", 5000.0))),
                 step=float(params.get("power_step_w", POWER_STEP_W)),
                 cliff=False,
                 step_up=float(params.get("max_charge_w", 5000.0)),

@@ -1,0 +1,84 @@
+{
+ "name": "sigen_plant",
+ "device": "Sigen Plant",
+ "device_id": "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+ "manufacturer": "Sigenergy",
+ "model": "SigenStor",
+ "written_at": "2026-09-22",
+ "platform": "sigen",
+ "source": "Not captured: no house here owns a Sigenergy system (D-0081). Written from TypQxQ/Sigenergy-Local-Modbus (main): select.py (plant_remote_ems_control_mode 'Remote EMS Control Mode' and its options), switch.py (plant_remote_ems_enable 'Remote EMS (Controlled by Home Assistant)'), number.py (plant_ess_max_charging_limit, plant_ess_max_discharging_limit in kW), and the plant's battery state of charge (%). The states are a plant in maximum self consumption at 48 %, remote EMS off.",
+ "entities": [
+  {
+   "attributes": {
+    "options": [
+     "PCS Remote Control",
+     "Standby",
+     "Maximum Self Consumption",
+     "Command Charging (Grid First)",
+     "Command Charging (PV First)",
+     "Command Discharging (PV First)",
+     "Command Discharging (ESS First)",
+     "V2G",
+     "Unknown"
+    ],
+    "friendly_name": "Sigen Plant Remote EMS Control Mode"
+   },
+   "entity_id": "select.sigen_plant_remote_ems_control_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Maximum Self Consumption"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sigen Plant Remote EMS (Controlled by Home Assistant)"
+   },
+   "entity_id": "switch.sigen_plant_remote_ems_controlled_by_home_assistant",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 100,
+    "step": 0.001,
+    "mode": "box",
+    "unit_of_measurement": "kW",
+    "device_class": "power",
+    "friendly_name": "Sigen Plant ESS Max Charging Limit"
+   },
+   "entity_id": "number.sigen_plant_ess_max_charging_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 100,
+    "step": 0.001,
+    "mode": "box",
+    "unit_of_measurement": "kW",
+    "device_class": "power",
+    "friendly_name": "Sigen Plant ESS Max Discharging Limit"
+   },
+   "entity_id": "number.sigen_plant_ess_max_discharging_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement",
+    "friendly_name": "Sigen Plant Battery State of Charge"
+   },
+   "entity_id": "sensor.sigen_plant_battery_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "48"
+  }
+ ],
+ "entity_count": 5
+}

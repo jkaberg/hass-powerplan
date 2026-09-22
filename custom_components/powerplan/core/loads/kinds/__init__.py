@@ -25,6 +25,7 @@ from .base import (
     Value,
     Write,
 )
+from .battery_mode import DISCHARGE_FROM_W, BatteryMode, BatteryModeCfg, battery_option
 from .mode import ECO_TOKENS, ModeCfg, ModeKind, match_option
 from .modulate import AMP_EPS, EV_MIN_A, Modulate, ModulateCfg
 from .setpoint import BAND_MAX_K, Setpoint, SetpointCfg
@@ -33,10 +34,13 @@ from .switch import Switch, SwitchCfg
 __all__ = [
     "AMP_EPS",
     "BAND_MAX_K",
+    "DISCHARGE_FROM_W",
     "ECO_TOKENS",
     "EV_MIN_A",
     "Action",
     "ActionReason",
+    "BatteryMode",
+    "BatteryModeCfg",
     "Command",
     "ControlKind",
     "Desired",
@@ -57,5 +61,6 @@ __all__ = [
     "SwitchCfg",
     "Value",
     "Write",
+    "battery_option",
     "match_option",
 ]

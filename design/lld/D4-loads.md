@@ -518,6 +518,24 @@ Status vocabularies, onto `SessionState` (the table is data, §5.11):
 
 Chargers **no profile reaches in v1**: a charger whose integration exposes no amp control (myenergi zappi, Ohme: a mode select only) needs an `ev` on a `MODE` or `SWITCH` kind, and control through the car (Tesla Fleet, Teslemetry, Tessie: billed per command and polled every 10 min) is too slow and too costly for the tick. Both are §10. A household running evcc already has a controller and puts the charger's load in `delegated` or `observe`.
 
+**Battery profiles (D-0658).** A battery is steered by a signed power setpoint (§6.6, the `battery` type's `Modulate` over `Role.BATTERY_POWER_SET`). Without a product profile only `generic_number` reaches one: a number in signed W. The nine most-installed battery and inverter integrations fall into four shapes:
+
+| shape | integrations (HA installs) | what powerplan writes | where |
+|---|---|---|---|
+| **power command** | `huawei_solar` 6 119, `solax_modbus` 2 881 | Huawei: the actions `forcible_charge` / `forcible_discharge` (power and a duration, re-armed before it lapses), `stop_forcible_charge` at 0. Solax: `remotecontrol_power_control` to battery control, `remotecontrol_active_power` in signed W (positive charges), an autorepeat duration, then `remotecontrol_trigger`. Both are the signed setpoint through a profile-specific write, and the release is the inverter's own mode (INV-64) | power command rows |
+| **operating mode** | `goodwe` 3 497 + 1 437, `sigen` 2 402 | a `battery_mode` kind over `Role.BATTERY_MODE`: the plan's sign picks charge, discharge or the inverter's own self-use; the inverter sets the power, so D6 counts a mode battery at its whole inverter (§5.4's relay rule). GoodWe: `operation_mode` `eco_charge`/`eco_discharge`/`general`, `battery_discharge_depth` as the reserve. Sigen: the EMS work mode, with its controls read-only until the household enables them | mode rows |
+| **output limit** | `anker_solix` 5 918, `ecoflow_cloud` 4 329, `zendure_ha` 4 021 | a plug-in battery charged by its own panels: powerplan sets only what it gives the house, ≥ 0 W (Anker's system output preset, EcoFlow's custom load power, Zendure's output limit), `Transport.CLOUD` with the vendor's cadence as `min_interval_s` (Anker Solix 2: a 5-minute cloud update) | output-limit rows |
+| **time-of-use programs** | `solarman` 10 055 (Deye, Sunsynk, Sofar, Solis…) | six *Program N* slots of time, power, SoC and grid charging, and *Battery Max Charging/Discharging Current* in A. Steering means rewriting the day's programs, not a setpoint | floor rows, below |
+| **no control** | `powerwall` 2 038 (core) | the core integration has one switch, off-grid, and none on a Powerwall 3: nothing to steer with | a limitation (`docs/limitations.md`) |
+
+Sources: each integration's own documentation or code; installs from HA's opt-in analytics.
+
+`providers/profiles/huawei_solar.py`: the platform with a battery charge/discharge power sensor claims the device at 0.95. `BATTERY_POWER_SET` binds to that sensor, its only witness (INV-22, tolerance 200 W, the Modbus row: 30 s read-back, 60 s interval). The setpoint is written by sign to the battery device: `forcible_charge` or `forcible_discharge` with whole watts and `FORCE_MINUTES` = 60, or `stop_forcible_charge` under 50 W. The hour is the fail-safe: a lapse while powerplan watches is a read-back mismatch, and the gate re-sends. `providers/profiles/solax_modbus.py`: the platform with a `remotecontrol_active_power` number claims the device. The number is the setpoint and its witness, `BATTERY_MODE` binds the mode select and `START` the trigger button. A write is the number, then the mode (`Enabled Battery Control`, or `Disabled` under 50 W with the number at 0), then the press - one `DeviceCall` with `then`, which `writegate.py` sends in order, in one context, each `blocking=True`. `remotecontrol_autorepeat_duration` is provisioned to 3600 s, the same fail-safe hour - D-0659.
+
+**Mode rows (D-0660).** `core/loads/kinds/battery_mode.py` is a fifth control kind in `CONTROL_KINDS`. A grant of the battery's whole charge power or more selects the charge option, a discharge of 500 W or more the discharge option, and anything else the inverter's own self-use, which is also its release (INV-64). The allocator is charged ±the whole inverter or 0 (`effective_w`), and D6's relay rule applies because the kind is not a modulating one. The options are read off the select: a charge option says "charg" and not "discharg", a discharge option "discharg", self-use "general" or "self", preferring "pv" where two fit. The battery type takes it when the profile's capabilities carry `battery_mode` (`QCtx.capabilities`, `params["kind"]`). `providers/profiles/battery_mode.py` holds one `BatteryModeProfile` per integration as data. `goodwe` binds `operation_mode` and provisions `battery_discharge_depth` = 100 − reserve. `sigen` binds the remote EMS control mode and provisions its remote EMS switch on, and its match says that the integration ships its controls disabled. Neither binds a battery power sensor: GoodWe's sign is not documented, and a mode battery's measured draw is the meter's.
+
+**Output-limit rows (D-0661).** `providers/profiles/output_limit.py` holds one `OutputLimitProfile` per plug-in battery. `BATTERY_POWER_SET` binds to the output number with its scale negated, so −400 W writes 400 and a charge clamps to the number's own minimum of 0. The profile says `output_only`, the battery type's derive sets `command_charge_w = 0`, and the kind's charge side stops there, so the gate never chases a charge that cannot land. Rows: `anker_solix` (*System output preset*, cloud, 300 s between writes, a 360 s read-back for Solarbank 2's 5-minute cloud update), `ecoflow_cloud` (*Custom Load Power*, cloud, 60 s), `zendure_ha` (`outputLimit`, MQTT, 60 s, with `electricLevel` as the state of charge). Zendure's `inputLimit` and `acMode` would let powerplan command a charge too; the rows stay output-only.
+
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
 **The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the
@@ -884,11 +902,15 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 32. *(G14)* An HDO-switched water heater is never granted power outside its allowed windows, at any stage, and its constraint's reason is `grid_switched`.
 33. *(G15)* A controlled circuit with unknown times is never written to, is reserved while drawing, and its energy is accounted.
 34. *(D-0642)* A heat pump in cooling mode: violated above its ceiling, the deficit `level − target`; a bank lowers the setpoint within the band and never below the store's minimum, a shed raises it; the ESPHome air-to-air capture with `hvac_mode: cool` matches with direction `cool`; D5 §9 8's pre-cooling reaches the device as a lower setpoint.
-
+35. *(D-0658)* `huawei_solar`: +3 kW is `forcible_charge` at 3000 W with a duration, re-armed before it lapses; −2 kW is `forcible_discharge` at 2000 W; 0 is `stop_forcible_charge`; a release stops any forced charge. Each is a `DeviceCall` the gate executes (INV-3).
+36. `solax_modbus`: +3 kW sets battery control, `remotecontrol_active_power` 3000 and the autorepeat, then presses `remotecontrol_trigger`; −2 kW is −2000; a release sets `remotecontrol_power_control` to disabled.
+37. A mode battery (`goodwe`, `sigen`): a positive envelope selects charge, a negative one discharge, 0 the inverter's self-use; D6 counts it at its whole inverter while charging; the discharge depth is its reserve.
+38. An output-limited battery (`anker_solix`, `ecoflow_cloud`, `zendure_ha`): powerplan writes only its output to the house, ≥ 0 W, never a grid charge, no more often than the vendor's cloud cadence.
 ---
 
 ## 10. Deliberately deferred
 
+- A battery steered through time-of-use programs (`solarman`'s Deye/Sunsynk *Program N* slots): powerplan would rewrite the inverter's day plan, a different kind from a setpoint (§5.9's battery table, D-0658).
 - `SG_READY` kind (v1.x) - a generic kind over two switches/relays, not a product profile.
 - Hydronic floor heating through a heat pump (§5.15, v1.x - needs a real installation to settle the open points).
 - Multi-charger circuits, 1p/3p phase switching, V2H (v1.x).

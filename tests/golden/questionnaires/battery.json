@@ -38,6 +38,7 @@
       "capacity_kwh": 10.0,
       "charge_eff": 0.95,
       "chemistry": "lfp",
+      "command_charge_w": 5000.0,
       "discharge_eff": 0.95,
       "force_max_h": 6.0,
       "kind": "modulate",

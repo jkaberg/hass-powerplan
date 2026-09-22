@@ -210,17 +210,24 @@ def test_16k_the_registry_ranks_the_charger_first(easee: DeviceView) -> None:
     assert [found.profile for found in matches] == ["easee_ble", "generic_number"]
     assert matches[0].confidence > matches[1].confidence
     assert registry.keys() == (
+        "anker_solix",
         "easee_ble",
         "easee_cloud",
+        "ecoflow_cloud",
         "generic_climate",
         "generic_number",
         "generic_switch",
         "goecharger_api2",
+        "goodwe",
+        "huawei_solar",
         "ocpp",
         "peblar",
+        "sigen",
+        "solax_modbus",
         "v2c",
         "wallbox",
         "zaptec",
+        "zendure_ha",
     )
     assert registry.get("easee_ble") is easee_ble.PROFILE
 

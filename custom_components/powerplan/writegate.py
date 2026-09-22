@@ -110,6 +110,10 @@ class DeviceCall:
     entity_id: str
     data: Mapping[str, Any] = field(default_factory=dict)
     device_id: str | None = None
+    #: What must follow this call for the device to act on it, sent in order in
+    #: the same context: Solax's remote-control trigger after its power number
+    #: (D4 §5.9). The read-back still reads this call's entity.
+    then: tuple[DeviceCall, ...] = ()
 
     @property
     def target(self) -> dict[str, str]:
@@ -264,6 +268,8 @@ class WriteGate:
             if call is None:
                 return self._unaddressable(actuation, write)
             calls.append(call)
+        # A call's follow-ups go out right after it, in the same context (D4 §5.9).
+        calls = [each for call in calls for each in (call, *call.then)]
 
         now = dt_util.utcnow()
         sent: list[DeviceCall] = []

@@ -1,0 +1,72 @@
+{
+ "name": "goodwe_inverter",
+ "device": "GoodWe",
+ "device_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+ "manufacturer": "GoodWe",
+ "model": "GW5K-ET",
+ "written_at": "2026-09-22",
+ "platform": "goodwe",
+ "source": "Not captured: no house here owns a GoodWe inverter (D-0081). Written from home-assistant/core's goodwe integration (dev): select.py (operation_mode, a CONFIG select whose options are general, off_grid, backup, eco, peak_shaving, eco_charge, eco_discharge), number.py (battery_discharge_depth 0-99 %, grid_export_limit W), and the library's battery state of charge sensor (%, device class battery). The states are an inverter in general mode at 62 %.",
+ "entities": [
+  {
+   "attributes": {
+    "options": [
+     "general",
+     "off_grid",
+     "backup",
+     "eco",
+     "peak_shaving",
+     "eco_charge",
+     "eco_discharge"
+    ],
+    "friendly_name": "GoodWe Inverter operation mode"
+   },
+   "entity_id": "select.goodwe_inverter_operation_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "general"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 99,
+    "step": 1,
+    "mode": "box",
+    "unit_of_measurement": "%",
+    "friendly_name": "GoodWe Depth of discharge (on-grid)"
+   },
+   "entity_id": "number.goodwe_depth_of_discharge_on_grid",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "80"
+  },
+  {
+   "attributes": {
+    "min": 0,
+    "max": 10000,
+    "step": 100,
+    "mode": "box",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "GoodWe Grid export limit"
+   },
+   "entity_id": "number.goodwe_grid_export_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10000"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement",
+    "friendly_name": "GoodWe Battery State of Charge"
+   },
+   "entity_id": "sensor.goodwe_battery_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "62"
+  }
+ ],
+ "entity_count": 4
+}

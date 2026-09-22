@@ -1,0 +1,40 @@
+{
+ "name": "anker_solix_solarbank",
+ "device": "Solarbank",
+ "device_id": "11aa22bb33cc44dd55ee66ff77889900",
+ "manufacturer": "Anker",
+ "model": "Solarbank 2 E1600 Pro",
+ "platform": "anker_solix",
+ "source": "Not captured: no house here owns an Anker Solarbank (D-0081). Written from thomluther/ha-anker-solix's README: the 'System output preset' number in W and the battery state of charge; the 5-minute cloud cadence of Solarbank 2. The states are a Solarbank giving the house 200 W at 70 %.",
+ "entities": [
+  {
+   "attributes": {
+    "min": 0,
+    "max": 800,
+    "step": 10,
+    "mode": "slider",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "friendly_name": "Solarbank System output preset"
+   },
+   "entity_id": "number.solarbank_system_output_preset",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "200"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement",
+    "friendly_name": "Solarbank State of charge"
+   },
+   "entity_id": "sensor.solarbank_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "70"
+  }
+ ],
+ "written_at": "2026-09-22",
+ "entity_count": 2
+}

@@ -969,6 +969,9 @@
               "mode_saving": "Energisparing",
               "mode_comfort": "Komfort",
               "restore_mode": "Gitt tilbake",
+              "battery_charge": "Lader",
+              "battery_discharge": "Utlader",
+              "battery_hold": "I sin egen modus",
               "switch_on": "Slått på",
               "paused": "Satt på pause",
               "not_granted": "Ingen strøm satt av til den nå",
@@ -1600,7 +1603,14 @@
         "peblar": "Peblar (lokal)",
         "v2c": "V2C (lokal)",
         "wallbox": "Wallbox (skytjeneste)",
-        "zaptec": "Zaptec (skytjeneste)"
+        "zaptec": "Zaptec (skytjeneste)",
+        "huawei_solar": "Huawei-batteri",
+        "solax_modbus": "SolaX-batteri",
+        "goodwe": "GoodWe-batteri",
+        "sigen": "Sigenergy-batteri",
+        "anker_solix": "Anker Solix-batteri",
+        "ecoflow_cloud": "EcoFlow-batteri",
+        "zendure_ha": "Zendure-batteri"
       }
     },
     "strategy": {
@@ -1874,6 +1884,9 @@
         "mode_saving": "Energisparing: {value}",
         "mode_comfort": "Komfort: {value}",
         "restore_mode": "Gitt tilbake på {value}",
+        "battery_charge": "Lader: {value}",
+        "battery_discharge": "Utlader: {value}",
+        "battery_hold": "I sin egen modus: {value}",
         "switch_on": "Slått på",
         "paused": "Satt på pause",
         "not_granted": "Ingen strøm satt av til den nå",

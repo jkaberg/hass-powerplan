@@ -149,6 +149,10 @@ class ActionReason(StrEnum):
     MODE_SAVING = "mode_saving"
     MODE_COMFORT = "mode_comfort"
     RESTORE_MODE = "restore_mode"
+    # Battery mode (D4 §5.9).
+    BATTERY_CHARGE = "battery_charge"
+    BATTERY_DISCHARGE = "battery_discharge"
+    BATTERY_HOLD = "battery_hold"
     # Switch (D4 §5.6).
     SWITCH_ON = "switch_on"
     PAUSED = "paused"

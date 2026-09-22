@@ -267,6 +267,9 @@ The solar-and-battery part of HLD §9 phase 7, inside v1.0 (dec. 25). **Gate (si
 | **7.3 Surplus in the ledger** | a load's surplus priced at the export price | D11 §5.2, §5.3 | D11 §9 18-20 | 7.2, 5.6 |
 | **7.4 Solar houses** | `self_consumption`; `au_solar`; `nl_pv` across net metering's end | D9 §5.3, §5.9 | the phase gate | 7.2 |
 | **7.5 Battery hardware survey** | which battery integrations take a power, a mode or an output limit | D4 §5.9 | D4 §5.9's battery table and WP rows | - |
+| **7.6 Battery profiles by power command** | `huawei_solar`, `solax_modbus`; `DeviceCall.then` | D4 §5.9, §5.10, §9 35-36 | D4 §9 35-36 | 7.5, 5.4 |
+| **7.7 Battery profiles by operating mode** | the `battery_mode` kind; `goodwe`, `sigen` | D4 §5.9, §9 37 | D4 §9 37 | 7.6 |
+| **7.8 Plug-in batteries: output only** | `anker_solix`, `ecoflow_cloud`, `zendure_ha` | D4 §5.9, §9 38 | D4 §9 38 | 7.6 |
 
 ### Release
 
@@ -528,7 +531,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 7.2 | `surplus` and the surplus-aware battery | done |
 | 7.3 | Surplus in the ledger | done |
 | 7.4 | Solar houses | done |
-| 7.5 | Battery hardware survey | todo |
+| 7.5 | Battery hardware survey | done |
+| 7.6 | Battery profiles by power command | done |
+| 7.7 | Battery profiles by operating mode | done |
+| 7.8 | Plug-in batteries: output only | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

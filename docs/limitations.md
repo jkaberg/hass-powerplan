@@ -22,6 +22,7 @@ What PowerPlan does not do, or not yet. Each item says what to do meanwhile, whe
 
 - PowerPlan plans on the solar forecast your energy dashboard shows. Without one, it uses your solar power only as it comes, not ahead.
 - PowerPlan never limits your panels or what they send to the grid.
+- A home battery is steered through a number in watts. The Tesla Powerwall integration offers no way to steer the battery, so PowerPlan can only show it.
 
 ## Homes
 

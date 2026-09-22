@@ -196,7 +196,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 9
+SnapshotSchema: int = 10
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.

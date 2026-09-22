@@ -1,9 +1,9 @@
 {
-  "build": "9dd60be",
+  "build": "e74374b",
   "house": "au_solar",
   "results": {
     "smoke": {
-      "build": "9dd60be",
+      "build": "e74374b",
       "controlled_share": 1.0,
       "house": "au_solar",
       "months": {
