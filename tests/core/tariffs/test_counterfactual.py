@@ -14,7 +14,7 @@ into `days` would be the same class of bug with a friendlier name (INV-11).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -118,3 +118,24 @@ def test_18d_an_unwritten_shadow_book_bills_nothing() -> None:
     cf = ev.bill(period, ev.history.counterfactual())
     assert cf.metric_kw == 0.0
     assert cf.capacity_fee.amount == 137, "the bottom step is still a fee (Tensio 0–2 kW)"
+
+
+def test_d11_36_reset_counterfactual_sets_the_open_period_to_the_actual_book() -> None:
+    """D11 §9 36: the reset claims nothing for the period it clears, and only that period."""
+    ev = evaluator(no_tariff())
+    _both_books(ev)
+    ev.record_window(closed(datetime(2026, 8, 30, 18), 3.0))
+    ev.record_counterfactual(closed(datetime(2026, 8, 30, 18), 12.0))
+    august = dict(ev.history.days_in("2026-08", counterfactual=True))
+    overrides = list(ev.history.overrides)
+
+    ev.history.reset_counterfactual(date(2026, 9, 1), date(2026, 10, 1))
+
+    assert ev.history.days_in("2026-09", counterfactual=True) == ev.history.days_in("2026-09")
+    assert ev.history.days_in("2026-08", counterfactual=True) == august, "a closed period is kept"
+    assert ev.history.overrides == overrides
+    period = ev.period(local(PERIOD_AT))
+    cf = ev.bill(period, ev.history.counterfactual())
+    actual = ev.bill(period)
+    assert cf.capacity_fee == actual.capacity_fee
+    assert cf.level.name == actual.level.name

@@ -13,6 +13,7 @@ Three claims the savings figure rests on:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -25,10 +26,15 @@ from custom_components.powerplan.core.accounting import (
     SavingsConfidence,
     StoreKind,
 )
-from custom_components.powerplan.core.accounting.ledger import minus, plus
-from custom_components.powerplan.core.accounting.savings import site_savings_confidence
+from custom_components.powerplan.core.accounting.close import AccountingState
+from custom_components.powerplan.core.accounting.ledger import LoadMonthRec, minus, plus
+from custom_components.powerplan.core.accounting.savings import (
+    result_prices,
+    site_savings_confidence,
+)
 from custom_components.powerplan.core.loads.stores import SlabStore
 from custom_components.powerplan.core.model import Mode, Money
+from custom_components.powerplan.core.state_codec import decode, encode
 from tests.core.accounting.conftest import (
     NOK,
     ORDINARY,
@@ -198,6 +204,40 @@ def test_11_the_ev_moved_off_the_evening_peak_is_one_capacity_step() -> None:
     status = under_test.accounting.status()
     assert status.site.capacity_savings.amount == Decimal(172)
     assert status.site.savings == plus(status.loads["ev"].savings, status.site.capacity_savings)
+
+    # D11 §9 33: both settled bills' metric and step ride on the site's rec and survive a restore.
+    assert (rec.metric_kw, rec.level) == (pytest.approx(4.5), "2–5 kW")
+    assert (rec.cf_metric_kw, rec.cf_level) == (pytest.approx(8.5), "5–10 kW")
+    assert (status.site.level, status.site.cf_level) == ("2–5 kW", "5–10 kW")
+    restored = decode(AccountingState, encode(under_test.accounting.state())).ledger.site
+    assert (restored.level, restored.cf_level, restored.cf_metric_kw) == (
+        "2–5 kW",
+        "5–10 kW",
+        pytest.approx(8.5),
+    )
+
+
+def test_34_the_price_paid_and_the_reference_price_over_the_settled_energy() -> None:
+    """D11 §9 34: `Σ settled_cost / Σ cf_kwh` against `Σ cf_cost / Σ cf_kwh`; a sip is `None`."""
+
+    def rec(kwh: float, paid: str, reference: str) -> LoadMonthRec:
+        return replace(
+            LoadMonthRec.empty(NOK),
+            kwh=kwh,
+            cf_kwh=kwh,
+            settled_cost=Money(Decimal(paid), NOK),
+            cf_cost=Money(Decimal(reference), NOK),
+        )
+
+    ev, tank = rec(15.0, "11.10", "12.45"), rec(8.0, "6.00", "6.64")
+    paid, reference, kwh = result_prices([ev, tank])
+    assert kwh == pytest.approx(23.0)
+    assert paid == pytest.approx(17.10 / 23.0)
+    assert reference == pytest.approx(19.09 / 23.0)
+    # Their difference over the counted kWh is the loads' settled savings, to the øre.
+    assert (reference - paid) * kwh == pytest.approx(1.99, abs=0.005)
+    assert result_prices([rec(0.05, "0.04", "0.05")])[:2] == (None, None)
+    assert result_prices([]) == (None, None, 0.0)
 
 
 def test_11b_a_nopeak_site_records_no_shadow_window_and_bills_no_capacity() -> None:

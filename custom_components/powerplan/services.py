@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
@@ -40,6 +40,7 @@ SERVICE_BOOST = "boost"
 SERVICE_RUN_NOW = "run_now"
 SERVICE_SET_PRESENCE = "set_presence"
 SERVICE_RESET_WINDOW_ANCHOR = "reset_window_anchor"
+SERVICE_RESET_ACCOUNTING = "reset_accounting"
 SERVICE_SET_PEAK = "set_peak"
 SERVICE_DUMP_STATE = "dump_state"
 SERVICE_REFRESH_TARIFF = "refresh_tariff"
@@ -66,6 +67,7 @@ SCHEMAS: dict[str, vol.Schema] = {
         }
     ),
     SERVICE_RESET_WINDOW_ANCHOR: vol.Schema(_SITE),
+    SERVICE_RESET_ACCOUNTING: vol.Schema({vol.Required("site"): cv.string}),
     SERVICE_SET_PEAK: vol.Schema(
         {
             vol.Exclusive("date", "when"): cv.date,
@@ -96,6 +98,7 @@ SERVICES: dict[str, SupportsResponse] = {
     SERVICE_RUN_NOW: SupportsResponse.NONE,
     SERVICE_SET_PRESENCE: SupportsResponse.NONE,
     SERVICE_RESET_WINDOW_ANCHOR: SupportsResponse.NONE,
+    SERVICE_RESET_ACCOUNTING: SupportsResponse.NONE,
     SERVICE_SET_PEAK: SupportsResponse.NONE,
     SERVICE_DUMP_STATE: SupportsResponse.ONLY,
     SERVICE_REFRESH_TARIFF: SupportsResponse.OPTIONAL,
@@ -165,6 +168,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
         for runtime in runtimes_for(hass, call.data.get("site")):
             await runtime.async_reset_window_anchor()
 
+    async def reset_accounting(call: ServiceCall) -> None:
+        """Restart a site's books after a fault; an administrator's action (D11 §5.11)."""
+        user = (
+            await hass.auth.async_get_user(call.context.user_id) if call.context.user_id else None
+        )
+        if user is not None and not user.is_admin:
+            raise Unauthorized(context=call.context)
+        for runtime in runtimes_for(hass, call.data["site"]):
+            await runtime.async_reset_accounting()
+
     async def set_peak(call: ServiceCall) -> None:
         when_date: date | None = call.data.get("date")
         month: str | None = call.data.get("month")
@@ -221,6 +234,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         SERVICE_RUN_NOW: run_now,
         SERVICE_SET_PRESENCE: set_presence,
         SERVICE_RESET_WINDOW_ANCHOR: reset_window_anchor,
+        SERVICE_RESET_ACCOUNTING: reset_accounting,
         SERVICE_SET_PEAK: set_peak,
         SERVICE_DUMP_STATE: dump_state,
         SERVICE_REFRESH_TARIFF: refresh_tariff,

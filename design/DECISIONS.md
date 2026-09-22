@@ -2769,3 +2769,23 @@ A release is published with GitHub's generated notes, the diff since the last ta
 
 `LoadMeterState.register_source` records the entity the anchor came from; a reading from another entity re-anchors as a reset does, so the slot keeps its energy. A state without the field re-anchors once. A water heater's energy role was rebound from a Z-Wave meter at 2 317 kWh to a Riemann helper at 5 911 kWh, the reload kept the old anchor, and one quarter hour took 3 593 kWh; D3 re-anchored only on a drop. Affects D3 §5.12, §9 18c.
 **Rejected:** a jump guard like the window meter's - needs the register's own report time, which the state doesn't hold.
+
+### D-0666 · The dashboard's fit is checked on a harness with real states and HA's own theme
+
+Widths and colours are checked on a static page that mounts the built cards in a copy of HA's sections grid (320-500 px columns, 32/8 px gaps, 12 columns per span, 56 px rows), fed recorded states and statistics and HA's resolved theme variables, light and dark, at 320, 390, 768, 1184 and 1664 px, checking nothing overflows a card and no text is clipped. The fixes (D12 §5.18): badges wrap, the price legend and hour gauge fit, footer collisions are gone, History's summary is `rows: auto`, colours are HA's palette; the month card splits energy from the capacity fee and cuts an outlier day. HA's sections view is the only size contract HA publishes. Affects D12 §5.18, §5.1, §9 31.
+**Rejected:** checking only on a running house - one merge and restart per try; kept as the final check.
+
+### D-0667 · The results read from both settled bills and the reference's own prices
+
+`_bill_settled` keeps both bills' metric and step on `SiteMonthRec`. The savings sensors publish step and metric with and without PowerPlan, and the counted loads' price paid against their reference price per kWh, over settled energy. The month card says them one line each: savings by source, the step without PowerPlan, the price paid, deviations only when above zero. Under Norgespris timing is worth 0.14 NOK/kWh, so a household reads the step first; both prices follow from `Σ cf_kWh = Σ kWh` (D11 §5.9.1). Affects D11 §5.10, §9 33-34; D8 §5.5, §9 40; D12 §5.19.
+**Rejected:** a savings percentage - mixes a stepped fee with a rate.
+
+### D-0668 · The month's deviations are counted in the tick and published as one sensor
+
+`RuntimeState.deviations` counts per local month: seconds and episodes below comfort per load, deadlines met and missed per load, and windows closed over their ceiling, from the tick's own report, demand and closed ceiling. `sensor.<site>_deviations` sums missed deadlines, comfort episodes and windows over, with rows as attributes. A saving bought with a cold floor isn't one, and a deadline had no "missed" signal: the last `required_kwh` before it is the only fact that says so. Affects D7 §5.10, §9 26; D8 §5.5, §9 40.
+**Rejected:** counting events in the frontend - the recorder keeps ten days and an edge can be lost. Counting in D11 - these are the tick's facts (INV-68).
+
+### D-0669 · A month's books can be reset by the household
+
+`powerplan.reset_accounting` (site, admin) restarts the ledger as a new store does, `partial` with `since` at the reset, and sets the open period's counterfactual peak days equal to the actual ones, so the reset claims no capacity savings it can't re-examine. D-0665's bad slot sits in a month's books with a large cost and inflated capacity savings, and the ledger keeps no per-slot history to remove just it. Affects D11 §5.11, §9 35-36; D8 §5.7, §9 41.
+**Rejected:** repairing the ledger in place - the slot can't be found after settlement.

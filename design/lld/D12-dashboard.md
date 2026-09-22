@@ -167,8 +167,8 @@ Two text tabs and one subview per appliance. Every visible word comes from `sele
 
 | view | `path` | title key | shape |
 |---|---|---|---|
-| Now | `overview` | `view_overview` | `sections`, `max_columns: 3`, dense; three view badges; `header: {layout: center, badges_position: top, badges_wrap: scroll}`; no `icon` (a text tab) |
-| History | `history` | `view_history` | as above, no badges; `footer: {card: energy-date-selection, collection_key: energy_powerplan, opening_direction: right, vertical_opening_direction: up}` - the Energy dashboard's own footer (v0.5 D1) |
+| Now | `overview` | `view_overview` | `sections`, `max_columns: 3`, dense; three view badges; `header: {layout: center, badges_position: top, badges_wrap: wrap}` (§5.18 W1: `scroll` hides the third badge on a phone); no `icon` (a text tab) |
+| History | `history` | `view_history` | as above, no badges; `footer: {card: energy-date-selection, collection_key: energy_powerplan, opening_direction: right, vertical_opening_direction: up}`, the Energy dashboard's own footer |
 | an appliance | `appliance-<load id, lower case>` | the appliance's name | as Now, plus `subview: true`, `back_path: '{dashboard}/overview'`, the type icon (§3's `TYPE_ICONS`) |
 
 Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `history-<entry>`, `appliance-<entry>-<load>`, and a subview's `back_path` points at its own site's Now. `{dashboard}` is a placeholder the strategy rewrites to the dashboard's own `url_path` (`location.pathname`'s first segment) after the call, in `back_path` and in every `navigation_path` that starts with it. Python and the golden keep the placeholder.
@@ -179,24 +179,24 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 
 | # | section (heading key) | `column_span` | cards (`grid_options` columns of the section's 12 × span) |
 |---|---|---|---|
-| 1 | attention (no heading) | 3 | *v0.7:* `custom:powerplan-attention-card` (`meter_status: meter_health`) full × auto - PowerPlan's repairs and the meter in the household's words, nothing when all is well (§5.15 F6); v0.6: `repairs` (`hide_empty`) 12 and a `meter_health` tile 12 |
-| 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; *v0.9:* no `peak_warning` tile - the gauge's chip says it, and only when the hour is at risk (§5.17); v0.8: `tile` `peak_warning` 12 × 1 |
-| 3 | `section_price` | 2 | `custom:powerplan-price-card` full × auto (v0.6 §5.12 P1–P5), entities `price`, `price_forecast`, `fixed_price_savings`, `refresh`; *v0.9:* no heading badge `prices_tomorrow`, no `tomorrow` or `capacity_step` (§5.17) |
-| 4 | `section_plan` | 3 | heading badge `replan` (*v0.9:* the `plan` badge is gone, §5.17) (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 300` (the whole-house forecast, v0.6 F1), every load with its colour, full × auto |
-| 5 | `section_appliances` | 3 | `custom:powerplan-appliances-card`, every appliance with a `plan_status`, full × auto (v0.6 R1–R7; v0.5 had a `distribution` of `granted_power` and one tile per appliance); `no_loads` markdown without appliances |
-| 6 | `section_capacity` | 1 | window card `mode: month` 12 × 6 (*v0.9:* no heading badge `projected_level`, §5.17) - the section only where `metric` and `level` are shown |
-| 7 | `section_month` | 1 | heading badge: `cost` as an entity badge, `mdi:chart-bar`, named `view_history`, → `{dashboard}/history`; *v0.7:* `custom:powerplan-month-bars` (`entity: cost`, `savings`) 12 × 5 (§5.15 F9); v0.6: `entity` `cost`, `savings` 6 × 2 each and a 30-day `statistics-graph` |
-| 8 | `section_solar` | 1 | Phase 7, only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
+| 1 | attention (no heading) | 3 | `custom:powerplan-attention-card` (`meter_status: meter_health`) full × auto: PowerPlan's repairs and the meter in the household's words, nothing when all is well (§5.15 F6) |
+| 2 | `section_hour` | 1 | window card `mode: hour` 12 × 6; no `peak_warning` tile, the gauge's chip says it, and only when the hour is at risk (§5.17) |
+| 3 | `section_price` | 2 | `custom:powerplan-price-card` full × auto (§5.12 P1–P5), entities `price`, `price_forecast`, `fixed_price_savings`, `refresh` |
+| 4 | `section_plan` | 3 | heading badge `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 256` (the whole-house forecast, F1), every load with its colour, full × auto |
+| 5 | `section_appliances` | 3 | `custom:powerplan-appliances-card`, every appliance with a `plan_status`, full × auto (R1–R8); `no_loads` markdown without appliances |
+| 6 | `section_capacity` | 1 | window card `mode: month` 12 × 6, only where `metric` and `level` are shown |
+| 7 | `section_month` | 1 | heading badge: `cost` as an entity badge, `mdi:chart-bar`, named `view_history`, → `{dashboard}/history`; `custom:powerplan-month-bars` (`entity: cost`, `savings`, `deviations`) 12 × auto (§5.15 F9, §5.18 N1–N2, §5.19) |
+| 8 | `section_solar` | 1 | only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
 
 **History - sections, in order** (every graph that can follows the picker)
 
 | # | section | span | cards |
 |---|---|---|---|
-| 1 | `section_summary` | 3 | `custom:powerplan-period-summary` full × 2 (§5.7); below the release that has it, four `statistic`s (`cost`, `savings` change this month; `metric` state; `level` as a tile) 9 × 2 each |
-| 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × auto (§5.7) - before WP6.4f `energy-usage-graph` (`collection_key`); the section only with an Energy grid source |
-| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7) - before WP6.4f `statistics-graph` bar `max` of `window_used` (`card_peak_hour`) |
-| 4 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (*v0.9:* full width, §5.17; v0.5 D6; v0.4 a markdown table for this month) |
-| 5 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4 - worded by `logbook.py` (§5.6) |
+| 1 | `section_summary` | 3 | `custom:powerplan-period-summary` full × auto (§5.7, §5.18 W7) |
+| 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × auto (§5.7), only with an Energy grid source |
+| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7) |
+| 4 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (§5.11 D6, §5.17) |
+| 5 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4, worded by `logbook.py` (§5.6) |
 
 Section 3 shows the capacity windows, section 1 the capacity level, the subviews the energy per appliance, and section 2's badge links to the Energy dashboard for the rest.
 
@@ -520,6 +520,50 @@ The fifth iteration changes style and UI only, the backend stays. Three rules: o
 
 **S1: the strategy shim.** `index.ts` calls `installStrategies` instead of `customElements.define`: the element's `generate()` forwards to the newest bundle's, and a bundle that finds the element defined by another patches that class's `generate()` and shows the reload toast. `bundle.ts` leaves the loader's key on `__ppKey` (the build's `__PP_BUNDLE__`), since `__ppBundle` is the shim's record of which bundle installed last (D-0625).
 
+### 5.18 Fit and palette
+
+HA's official palette, every screen size HA supports, no overflow or cropping, and then build on what's there. Checked on a harness that mounts the built cards in HA's sections grid with the reference house's states and HA's own theme variables, light and dark (D-0666).
+
+**Widths.** HA gives no device list, its sections view does the sizing: a column is 320–500 px, the gap 32 px (8 px below a 600 px viewport), atmost `max_columns` (3 here) columns; a section is 12 grid columns per span, a row 56 px plus an 8 px gap. Every card is checked at the viewports that give each column count and each narrow edge: 320 and 390 (one column, phones), 768 (two, a tablet and the Companion app), 1184 and 1664 (three; 1440 and 1920 minus the 256 px sidebar).
+
+| # | what | where |
+|---|---|---|
+| W1 | View badges wrap onto a second line instead of scrolling out of sight on a phone (`badges_wrap: wrap`) | `layout.py` `_HEADER` |
+| W2 | Strømpris: a legend that wraps on a phone grows the card by its second line instead of being cut off | `price-card.ts` |
+| W3 | Denne timen: the arc's radius follows the card's height as well as its width (`min(170, width/2 − 34, height − footer − 86)`), centred above the footer, so there's no empty band under it on a phone; the footer cells' padding 12 px, so "Igjen av timen" fits a 304 px card | `window-card.ts` |
+| W4 | Effekttrinn: the gap above the first top-3 row sits under the heading, so the "10 kW" mark doesn't touch it | `window-card.ts` |
+| W5 | Apparater: under 420 px the footer drops the avatars, which repeat "N uten behov", so the count isn't cut to "2 u…"; a status line cut by the rail shows whole on hover | `appliances-card.ts` |
+| W6 | Plan on a phone: three y ticks, not two - with two, 10,8 kWh/h puts the axis at 0–20 and flattens every bar | `forecast.ts` |
+| W7 | Oppsummering (History) is `rows: auto`: at 2 rows its content (141 px) hangs out of the 120 px card | `layout.py` |
+| P1 | The status chip on Denne timen uses HA's semantic quiet colours, `--ha-color-fill-{success,warning,danger}-quiet-resting` on `--ha-color-on-…-quiet`, as HA's own chips do | `window-card.ts` |
+| P2 | Every colour fallback is HA's current default: primary `#009ac7` (`0, 154, 199`), text `#141414`, secondary text `#5e5e5e`, not the older `#03a9f4` | `timeline-card.ts`, `window-card.ts`, `styles.ts` |
+| N1 | Denne måneden: under the cost, one 6 px bar splits it into energy (`--energy-grid-consumption-color`) and the capacity fee (`--pp-base`), with export credit in the key when there is any, from the cost entity's `energy_cost`, `capacity_fee`, `export_credit` | `month-bars.ts` |
+| N2 | Denne måneden: when one day holds over 3 × the next largest (the month's capacity fee is booked in one go, eg 424 kr against 14–15 kr days), the axis follows the ordinary days (1,25 × the next largest) and that bar is cut with its amount above it | `month-bars.ts`, `r3-util.ts` `outlierCap` |
+| N3 | Oppsummering: no savings cell while the reference has none (`savingsView`, as §5.17 C5 does on Now) | `period-summary.ts` |
+
+Left out, for less is more: the price's place in the day (C1 took it out), the free ride (`free_ride_today` repeats the hour's limit the gauge already shows), and a savings card while the reference has none.
+
+A chart drawn narrow on the first paint of the Plan card is a full-page capture's artefact: the browser widens the page for the capture, and every viewport capture and every width change draws it right.
+
+### 5.19 The month's results
+
+Show how PowerPlan is doing, not only what the month cost. Under Norgespris the timing signal is 0,14 NOK/kWh, so the capacity step carries almost all the money (D11 §5.9), and the card leads with it. Every line is one sentence, and a line with nothing to say is absent (§5.17's rule: a status only when it needs you) (D-0667).
+
+**Now, Denne måneden** - under the cost and its split (§5.18 N1), one results block, then the daily bars:
+
+| # | line (nb) | shown when | from |
+|---|---|---|---|
+| R1 | "Spart {total} kr · effekttrinn {capacity} · billigere timer {energy}"; "venter på døgnoppgjør" while `pending` with nothing settled | `savingsView` finds a figure (§5.17 C5) | `sensor.<site>_savings` and its `capacity_savings`, `energy_savings` |
+| R2 | "Effekttrinn {step} - uten PowerPlan {step_without}" | both steps known | `capacity_step`, `capacity_step_without` (D11 §5.10) |
+| R3 | "Apparatene betalte {paid} mot {reference} kr/kWh" | both prices known | `price_paid`, `price_reference` |
+| R4 | "{n} frister nådd ikke" · "{t} under komfort: {load}" (the load with the most) · "{n} timer over grensen" - each only when above zero, joined on one line | `sensor.<site>_deviations` above zero | D7 §5.10 via D8 |
+
+The month card becomes `rows: auto`: its bars keep their height and the block adds a line per row it shows. A negative saving is said as it is ("kostet {x} kr mer"), in the text colour, never red - the reference is a comparison, not a verdict.
+
+**History, Kostnad per apparat** - a column "Flyttet" with each appliance's `kwh_shifted` for the period, shown from a 500 px card up (a phone keeps two numbers).
+
+Left out: a savings bar per month on History (§5.17 C10 took the savings bars out, and HA's statistics on `sensor.<site>_savings` keep the history), and the model figure (D11 §5.9.5).
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -567,6 +611,10 @@ None. The dashboard is generated on every open. A household that takes control o
 30. `STATUS_LABELS` carries `from` ("fra {time}", "from {time}"); the wide appliances row of a waiting load with a run ahead reads "Venter · fra 22:00 · …" (vitest: the label; the row composition isn't rendered in the node environment).
 
 29. Now: no `peak_warning` tile and no heading badge on the hour, price, plan or capacity sections but `replan`; the price card's entities are `price` and `price_forecast` (and `fixed_price_savings`, `refresh` where the site has them); the Plan timeline's `show` has no `price`. History: summary · usage · capacity · cost per appliance (span 3, full) · events, and no `statistics-graph`. Every text still used (§9 18). `vitest`: `installStrategies` forwards to the newest bundle through an element an older bundle defined and shows the toast once; `savingsView` hides `savings_confidence: none`. The harness renders Plan, Apparater, Strømpris, the dialog, the attention card and the month bars in both themes without a console error.
+
+31. The layout golden has `badges_wrap: wrap` on every view and the History summary at `rows: auto`; `vitest`: `outlierCap` cuts 424,37 among 14,46 and 15,21 at 1,25 × 15,21 and leaves ordinary days, one day and a zero alone. The harness: every card at 320, 390, 768, 1184 and 1664 px, light and dark, with nothing outside its card and no clipped text but a status line that shows on hover.
+
+32. The month card's entities are `cost`, `savings` and `deviations`, with `load_names` for every appliance, `rows: auto`; `card_moved` in en and nb; `vitest`: `resultLines` over the house's attributes gives R1–R3 and no R4 at zero deviations; R4 names the load with the most comfort minutes; a negative saving reads "kostet … mer"; no savings line at `savings_confidence: none`. The "Flyttet" column's 500 px rule is a container query, seen in the house check.
 
 ---
 

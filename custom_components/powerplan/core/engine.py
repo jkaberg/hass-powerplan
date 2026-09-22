@@ -196,7 +196,7 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`).
-SnapshotSchema: int = 10
+SnapshotSchema: int = 11
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -694,6 +694,9 @@ class AccountingStatus:
     per_load: Mapping[str, Any] = field(default_factory=dict)
     #: Cost and savings by party, `{"cost": {party: "12.30"}, "savings": {…}}` (D11 §5.8).
     by_party: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    #: The month's results (D11 §5.10): `metric_kw`, `level`, `cf_metric_kw`,
+    #: `cf_level`, `price_paid`, `price_reference`, `kwh_counted`.
+    results: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -764,6 +767,41 @@ class EventsState:
     last_sent: Mapping[str, str] = field(default_factory=dict)
 
 
+#: A window over its ceiling by more than this is counted over (D7 §5.10).
+OVER_WINDOW_KWH = 0.05
+#: A deadline is met when no more than this was still wanted before it (D7 §5.10).
+DEADLINE_MET_KWH = 0.1
+#: The most one tick adds to a comfort count, so a gap in the ticks is not counted.
+DEVIATIONS_TICK_CAP_S = 300.0
+
+
+@dataclass(frozen=True, slots=True)
+class DeviationsState:
+    """The month's deviations, counted in the tick (D7 §5.10).
+
+    Observation only: nothing in the tick, the planner or D6 reads it (INV-68's
+    rule); `_count_deviations` is the one writer. `deadline_at` and `deadline_kwh`
+    hold each load's pending deadline and what its demand last still wanted.
+    """
+
+    month: str | None = None
+    comfort_s: Mapping[str, float] = field(default_factory=dict)
+    comfort_n: Mapping[str, int] = field(default_factory=dict)
+    deadline_met: Mapping[str, int] = field(default_factory=dict)
+    deadline_missed: Mapping[str, int] = field(default_factory=dict)
+    deadline_at: Mapping[str, str] = field(default_factory=dict)
+    deadline_kwh: Mapping[str, float] = field(default_factory=dict)
+    over_windows: int = 0
+    windows: int = 0
+    #: The loads below their floor on the last tick: an episode starts on the edge into it.
+    comfort_now: tuple[str, ...] = ()
+
+    @property
+    def total(self) -> int:
+        """Return the month's deviations: missed deadlines, comfort episodes, windows over."""
+        return sum(self.deadline_missed.values()) + sum(self.comfort_n.values()) + self.over_windows
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeState:
     """The `runtime` section: the tick counter, the counters, the window's stats.
@@ -794,6 +832,8 @@ class RuntimeState:
     uc_samples: int = 0
     #: How long the measured total has been over the contracted limit (D2 §5.8).
     over_since: datetime | None = None
+    #: The month's deviations (D7 §5.10), persisted with the counters.
+    deviations: DeviationsState = field(default_factory=DeviationsState)
     #: Entered after `safe_mode_after_failures` consecutive engine exceptions;
     #: never written to the store, so a restart clears it (D7 §2).
     safe_mode: bool = False
@@ -1281,9 +1321,12 @@ class Engine:
             runtime.uc_peak_w, runtime.uc_mean_w, meter.sigma_uncontrolled_w, site.budget.outlier_k
         ):
             pi = pi.saw_outlier()
+        closed_over: list[bool] = []
         for window in meter.closed:
             self._tariff.record_window(window)
-            pi = pi_close(pi, window.kwh, self._closed_ceiling_kwh(window, knobs), site.budget)
+            closed_ceiling = self._closed_ceiling_kwh(window, knobs)
+            closed_over.append(0.0 < closed_ceiling < window.kwh - OVER_WINDOW_KWH)
+            pi = pi_close(pi, window.kwh, closed_ceiling, site.budget)
             reasons.append(
                 f"window {window.start_utc.isoformat()} closed at {window.kwh:.3f} kWh "
                 f"({window.confidence})"
@@ -1413,6 +1456,15 @@ class Engine:
             last_tick_at=now,
             failures=0,
             load_failures=_bumped(state.runtime.load_failures, failed),
+            deviations=_count_deviations(
+                state.runtime.deviations,
+                now=now,
+                tz=site.tz,
+                since=state.runtime.last_tick_at,
+                comfort=frozenset(report.comfort),
+                demands={load_id: obs.demand for load_id, obs in observations.items()},
+                closed_over=tuple(closed_over),
+            ),
         )
         engine_health = EngineHealth.SAFE_MODE if safe_mode else EngineHealth.OK
         health = HealthStatus(
@@ -3042,6 +3094,71 @@ def _circuit_events(edges: dict[str, str], report: AllocReport) -> list[HaEvent]
     return events
 
 
+def _count_deviations(
+    prev: DeviationsState,
+    *,
+    now: datetime,
+    tz: tzinfo,
+    since: datetime | None,
+    comfort: frozenset[str],
+    demands: Mapping[str, Demand],
+    closed_over: tuple[bool, ...],
+) -> DeviationsState:
+    """Return the month's deviations after this tick (D7 §5.10); the one writer of `deviations`.
+
+    Comfort: the seconds since the last tick while below the floor, capped at
+    `DEVIATIONS_TICK_CAP_S`, and an episode on the edge into it. A deadline is judged
+    on the first tick at or after it, by what the demand still wanted on the tick
+    before; one withdrawn before it passes is not judged. A closed window is over
+    when it passed its ceiling by more than `OVER_WINDOW_KWH`.
+    """
+    month = now.astimezone(tz).strftime("%Y-%m")
+    fresh = prev.month != month
+    base = (
+        DeviationsState(month=month, deadline_at=prev.deadline_at, deadline_kwh=prev.deadline_kwh)
+        if fresh
+        else prev
+    )
+    comfort_s = dict(base.comfort_s)
+    comfort_n = dict(base.comfort_n)
+    met = dict(base.deadline_met)
+    missed = dict(base.deadline_missed)
+    step = (
+        0.0
+        if since is None
+        else min(DEVIATIONS_TICK_CAP_S, max(0.0, (now - since).total_seconds()))
+    )
+    for load_id in comfort:
+        comfort_s[load_id] = comfort_s.get(load_id, 0.0) + step
+        if load_id not in prev.comfort_now:
+            comfort_n[load_id] = comfort_n.get(load_id, 0) + 1
+    deadline_at: dict[str, str] = {}
+    deadline_kwh: dict[str, float] = {}
+    for load_id in {*base.deadline_at, *demands}:
+        pending = base.deadline_at.get(load_id)
+        if pending is not None and now >= datetime.fromisoformat(pending):
+            left = base.deadline_kwh.get(load_id, 0.0)
+            target = met if left <= DEADLINE_MET_KWH else missed
+            target[load_id] = target.get(load_id, 0) + 1
+            pending = None
+        demand = demands.get(load_id)
+        if demand is not None and demand.deadline is not None and demand.deadline > now:
+            deadline_at[load_id] = demand.deadline.isoformat()
+            deadline_kwh[load_id] = max(0.0, demand.required_kwh or 0.0)
+    return DeviationsState(
+        month=month,
+        comfort_s=comfort_s,
+        comfort_n=comfort_n,
+        deadline_met=met,
+        deadline_missed=missed,
+        deadline_at=deadline_at,
+        deadline_kwh=deadline_kwh,
+        over_windows=base.over_windows + sum(closed_over),
+        windows=base.windows + len(closed_over),
+        comfort_now=tuple(sorted(comfort)),
+    )
+
+
 def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     edges: dict[str, str],
     ladder: LadderState,
@@ -3591,6 +3708,7 @@ def _accounting_status(state: EngineState) -> AccountingStatus:
         lifetime_savings=_money_of(status.get("lifetime_savings")),
         per_load=dict(status.get("per_load", {})),
         by_party=dict(status.get("by_party", {})),
+        results=dict(status.get("results", {})),
     )
 
 

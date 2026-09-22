@@ -85,7 +85,8 @@ export function forecastOption(b: Bucket[], loads: LoadRef[], o: ForecastOpts): 
   const used = loads.filter((l) => b.some((k) => (k.moved[l.id] ?? 0) > 0));
   const ceiling = b.find((k) => k.ceiling != null)?.ceiling ?? null;
   const maxY = Math.max(ceiling ?? 0, ...b.map(capOf), 4);
-  const yStep = niceStep((maxY * 1.08) / (o.compact ? 2 : 4));
+  // Three ticks on a phone: two put 10,8 on a 0–20 axis and flattened the bars under it.
+  const yStep = niceStep((maxY * 1.08) / (o.compact ? 3 : 4));
   const ymax = Math.ceil((maxY * 1.08) / yStep) * yStep;
   const nf0 = new Intl.NumberFormat(o.tf.resolvedOptions().locale, { maximumFractionDigits: 1 });
   const nowX = (o.now - o.a0) / 3600e3;

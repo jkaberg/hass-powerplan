@@ -4,7 +4,7 @@
 |---|---|
 | HLD section | §6.7, §4, §7.3 |
 | Depends on | every core domain (D1–D6, D10, D11); HA: config entries, coordinator, storage, event bus, time/state tracking |
-| Consumers | D8 (entities, events, services), D9 (scenario runner drives the same engine) |
+| Consumers | D8 (entities, events, actions), D9 (the scenario runner drives the same engine) |
 | Invariants owned | INV-2, INV-3, INV-43 … INV-48, INV-61 |
 
 ---
@@ -323,6 +323,18 @@ All internal times UTC (`dt_util.utcnow()`), local conversions only in D2/D5 fil
 
 The grid tariff copy is renewed by a **runtime timer** on the planning side: `renew_at` is the earlier of (the last fetch + 1 month) and (the last version's `valid_to` − 7 days), at 03:17 local, never within an hour of start, armed with `async_track_point_in_utc_time` at setup from the stored copy - **no fetch at start**. `powerplan.refresh_tariff` runs the same renewal at once. Both fetch outside the runtime lock (like a price fetch), merge (append a new `valid_from`, replace a changed version, never remove, INV-52), write the entry as the runtime's own data **without a reload**, rebuild the evaluator on the next planning call, fire `powerplan_tariff_updated`, and re-arm the timer. A failed fetch keeps the copy and retries after an hour, doubling up to a day. `tariff_stale` is raised once the last version has ended without a successor. VAT and levies aren't renewed, they live in the country module and change with a release (D13 §9.1). The tick never waits on any of it (INV-46, D-0557).
 
+### 5.10 The month's deviations
+
+What the plan cost the household, counted in the tick from what the tick already sees, per local calendar month, in `RuntimeState.deviations` (the `runtime` section, D-0668):
+
+| Counter | Counted when | From |
+|---|---|---|
+| `comfort_s[load]`, `comfort_n[load]` | a tick where the load is in `AllocReport.comfort`: its seconds since the last tick (capped at 5 min, so a gap isn't counted), and an episode on the edge into it | the `comfort` edge (§5.1 step 11) |
+| `deadline_met[load]`, `deadline_missed[load]` | the first tick at or after a deadline the load's demand carried: met when the last `required_kwh` seen before it was ≤ 0.1 kWh, missed otherwise. A deadline withdrawn before it passes (unplugged, changed, mode off) isn't judged | `Demand.deadline`, `Demand.required_kwh`; the pending deadline in `results.deadlines[load]` |
+| `over_windows`, `windows` | every closed capacity window, over when its kWh exceed `_closed_ceiling_kwh` by more than 0.05 kWh | §5.1 step 3 |
+
+`deviations.month` is the tick's local month, and the first tick of a new month starts the counters at zero (no history kept, HA's statistics keep it). A removed load takes its rows with it. The counters are observations: nothing in the tick, the planner or D6 reads them (INV-68's rule, and a test asserts `deviations` is only written by `_count_deviations`). D8 publishes them as `sensor.<site>_deviations` (D8 §5.5).
+
 ## 6. Configuration schema
 
 Runtime knobs are Advanced only: `tick_min_interval_s` 10, `heartbeat_s` 30, `plan_interval_min` 15, `warn_horizon_h` 3, `warn_fraction` 0.95, `safe_mode_after_failures` 3, `tick_budget_ms` 50. The site `active` switch and `select.<site>_presence` are entities (D8), read live every tick.
@@ -388,6 +400,8 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 23. A device registry `remove` for a load's bound device detaches (doesn't delete) its entities and raises the repair without a tick or plan. A `rename` follows the sub-entry title unless the household renamed it separately. Step 5a runs once, after release/restore and before the first tick, and is skipped entirely while the site is `off` (D8 §5.16 §9).
 24. A setup with a tariff source makes no HTTP call before the flow or the renewal timer, and the timer is armed at `renew_at` from the stored copy (INV-73).
 25. `refresh_tariff` while a tick runs: the tick isn't delayed, the entry is written without a reload and the next planning call uses the merged copy.
+
+26. `_count_deviations`: 3 ticks 10 s apart with a load in `comfort` count 20 s and one episode, a 20-min gap counts 5 min. An EV whose deadline passes with 0.05 kWh left counts met, with 2 kWh left missed, and one unplugged before isn't judged. A window closed 0.2 kWh over its ceiling counts over, 0.03 kWh over doesn't. The first tick of a new local month starts from zero. Nothing outside `_count_deviations` writes `deviations`.
 
 ---
 

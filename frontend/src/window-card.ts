@@ -87,6 +87,8 @@ export class PowerplanWindowCard extends HTMLElement {
   private hassRef?: HomeAssistant;
   private key: unknown[] = [];
   private width = 0;
+  /** The card's height from the section grid (`rows: 6`), so the hour gauge fills it rather than leaving a band. */
+  private height = 0;
   private resize?: ResizeObserver;
   private period?: Period;
   private unfollow?: () => void;
@@ -101,8 +103,11 @@ export class PowerplanWindowCard extends HTMLElement {
   public connectedCallback(): void {
     this.resize = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? 0;
-      if (Math.abs(width - this.width) < 1) return;
+      const height = entries[0]?.contentRect.height ?? 0;
+      const hour = (this.config?.mode ?? "hour") === "hour";
+      if (Math.abs(width - this.width) < 1 && (!hour || Math.abs(height - this.height) < 1)) return;
       this.width = width;
+      this.height = height;
       this.render();
     });
     this.resize.observe(this);
@@ -196,6 +201,8 @@ export class PowerplanWindowCard extends HTMLElement {
     const tone = stageTone(numeric(this.state("stage")));
     const scale = gauge(used, projected, ceiling);
     const color = scale.over ? TONE_COLOR.alert : TONE_COLOR[tone];
+    // The chip in HA's semantic quiet colours (`--ha-color-fill-*` / `--ha-color-on-*`), as HA's own chips.
+    const chipRole = scale.over || tone === "alert" ? "danger" : tone === "warn" ? "warning" : "success";
     const locale = hass.locale.language;
     const two = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const one = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -226,9 +233,11 @@ export class PowerplanWindowCard extends HTMLElement {
       cells.push([labels.headroom ?? "", `${one.format(kw)} kW`, false]);
     }
 
-    // H4: the radius follows the card; the arc's top sits 40 px down, under the chip.
+    // H4: the radius follows the card; the arc's top sits 40 px down, under the chip. The arc fills the
+    // height the section grid gives the card (above the 72 px footer), and never pushes its end labels out.
     const width = this.cardWidth;
-    const r = Math.min(146, 0.35 * width);
+    const room = (this.height || 376) - (cells.length ? 72 : 0) - 40 - 30 - 16;
+    const r = Math.max(60, Math.min(170, width / 2 - 34, room));
     const cx = width / 2;
     const cy = 40 + r;
     const height = cy + 22 + 8;
@@ -244,9 +253,9 @@ export class PowerplanWindowCard extends HTMLElement {
         ${ppStyles}
         :host { cursor: pointer; }
         ha-card { position: relative; display: flex; flex-direction: column; overflow: hidden; }
-        .pp-status { position: absolute; top: 12px; right: 16px; color: ${color};
-                     background: color-mix(in srgb, ${color} 16%, transparent); }
-        svg { display: block; flex: none; }
+        .pp-status { position: absolute; top: 12px; right: 16px; color: var(--ha-color-on-${chipRole}-quiet, ${color});
+                     background: var(--ha-color-fill-${chipRole}-quiet-resting, color-mix(in srgb, ${color} 16%, transparent)); }
+        svg { display: block; flex: none; margin: auto 0; }
         .track { fill: none; stroke: var(--pp-track); stroke-width: ${STROKE}; }
         .used { fill: none; stroke: ${color}; stroke-width: ${STROKE}; }
         .projected { fill: none; stroke: ${color}; stroke-opacity: 0.38; stroke-width: ${STROKE}; }
@@ -254,9 +263,9 @@ export class PowerplanWindowCard extends HTMLElement {
         .value { font-size: ${size}px; font-weight: 400; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
         .unit { font-size: 16px; fill: var(--secondary-text-color); }
         .end { font-size: 11px; fill: var(--secondary-text-color); }
-        .footer { margin-top: auto; display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr));
+        .footer { display: grid; grid-template-columns: repeat(${Math.max(cells.length, 1)}, minmax(0, 1fr));
                   height: 72px; box-sizing: border-box; border-top: 1px solid var(--divider-color); }
-        .cell { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; padding: 0 16px; }
+        .cell { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; padding: 0 12px; }
         .cell + .cell { border-left: 1px solid var(--divider-color); }
         .name { font-size: 12px; line-height: 16px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 6px;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -400,7 +409,7 @@ export class PowerplanWindowCard extends HTMLElement {
         .limit { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--warning-color); }
         .limit span { position: absolute; bottom: 100%; left: -12px; font-size: 10px; line-height: 12px;
                       color: var(--secondary-text-color); white-space: nowrap; }
-        .top3 .row:first-of-type { margin-top: 10px; }
+        .top3 .pp-sub + .row { margin-top: 12px; }
         .footer { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--divider-color);
                   font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
         .footer ha-icon { --mdc-icon-size: 16px; color: var(--warning-color); flex: none; }
@@ -486,7 +495,7 @@ export class PowerplanWindowCard extends HTMLElement {
       this.shadowRoot!.innerHTML = `${style}<ha-card><div class="pp-content">${text ? `<div class="pp-empty">${escape(text)}</div>` : ""}</div></ha-card>`;
       return;
     }
-    const primary = cssVar(this, "--primary-color", "#03a9f4");
+    const primary = cssVar(this, "--primary-color", "#009ac7");
     const warning = cssVar(this, "--warning-color", "#ffa600");
     const error = cssVar(this, "--error-color", "#db4437");
     const level = this.state("level");

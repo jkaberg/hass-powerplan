@@ -224,7 +224,7 @@ def _view(
     return view
 
 
-_HEADER = {"layout": "center", "badges_position": "top", "badges_wrap": "scroll"}
+_HEADER = {"layout": "center", "badges_position": "top", "badges_wrap": "wrap"}
 
 
 def _kept(sections: list[Card | None], hidden: Collection[str]) -> list[Card]:
@@ -297,7 +297,7 @@ def _overview(site: _Site) -> list[Card | None]:
                     },
                 ),
             ),
-            _cols(_month_bars(e), 12, 5),
+            _cols(_month_bars(site), 12, "auto"),
         )
     )
     if s.has_production:
@@ -318,7 +318,7 @@ def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
     return [
         _section(
             _heading(t["section_summary"]),
-            _cols(_summary_card(site, grid), "full", 2),
+            _cols(_summary_card(site, grid), "full", "auto"),
             span=3,
         ),
         _section(
@@ -875,13 +875,21 @@ def _appliances_lanes(site: _Site) -> Card | None:
     }
 
 
-def _month_bars(e: Mapping[str, str]) -> Card | None:
-    """Return the month's cost and savings over the cost per day, 1..N (D12 §5.15 F9)."""
+def _month_bars(site: _Site) -> Card | None:
+    """Return the month's cost, its results and the cost per day, 1..N (D12 §5.15 F9, §5.19).
+
+    `load_names` names the appliances the deviations are keyed by, so the results
+    line can say which one was below its comfort temperature.
+    """
+    e = site.site.entities
     if "cost" not in e:
         return None
     card: Card = {"type": MONTH_BARS, "entity": e["cost"]}
     if "savings" in e:
         card["savings"] = e["savings"]
+    if "deviations" in e:
+        card["deviations"] = e["deviations"]
+        card["load_names"] = {load.subentry_id: load.name for load in site.site.loads}
     return card
 
 

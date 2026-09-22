@@ -382,6 +382,18 @@ class PeakHistory:
             seeded_from=self.seeded_from,
         )
 
+    def reset_counterfactual(self, first: date, end: date) -> None:
+        """Set the counterfactual days in `[first, end)` equal to the actual ones (D11 §5.11).
+
+        After a reset of the books nothing can re-examine those days, so the
+        counterfactual claims no difference for them. Other days, the windows and
+        the overrides are untouched.
+        """
+        self.revision += 1
+        kept = {day: rec for day, rec in self.counterfactual_days.items() if not first <= day < end}
+        kept.update({day: rec for day, rec in self.days.items() if first <= day < end})
+        self.counterfactual_days = kept
+
     # -------------------------------------------------------------- lifecycle
 
     def freeze_month(self, key: str, rec: MonthRec) -> None:

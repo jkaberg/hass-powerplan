@@ -96,6 +96,9 @@
         ]
       },
       "pricing_confidence": "str",
+      "results": {
+        "mapping": "Any"
+      },
       "savings": {
         "one_of": [
           "Money",
@@ -995,5 +998,5 @@
       }
     }
   },
-  "schema": 10
+  "schema": 11
 }

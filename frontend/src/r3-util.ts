@@ -223,6 +223,88 @@ export function savingsView(sav: HassEntity | undefined, cost: HassEntity | unde
   return { value: s, missing: s === null };
 }
 
+/** The axis top when one day holds over 3 × the next largest (a booked lump), else null: 1,25 × that next day. */
+export function outlierCap(values: number[]): number | null {
+  const [first, second] = [...values].sort((a, b) => b - a);
+  return first !== undefined && second !== undefined && second > 0 && first > 3 * second ? second * 1.25 : null;
+}
+
+/** The words of `resultLines`, nb and en (D12 §5.19). */
+export const RESULT_LABELS: Record<string, Record<string, string>> = {
+  nb: {
+    saved: "Spart {total} {unit} · effekttrinn {capacity} · billigere timer {energy}",
+    cost_more: "Kostet {total} {unit} mer enn uten PowerPlan",
+    pending: "Besparelsen telles når døgnet er over",
+    step_without: "Effekttrinn {step} — uten PowerPlan {without}",
+    step_same: "Effekttrinn {step} — det samme uten PowerPlan",
+    price: "Apparatene betalte {paid} mot {reference} {unit}/kWh",
+    missed_one: "1 frist nådd ikke", missed: "{n} frister nådd ikke",
+    comfort: "{time} under komfort: {load}",
+    over_one: "1 time over effektmålet", over: "{n} timer over effektmålet",
+    hours: "{h} t", hours_minutes: "{h} t {m} min", minutes: "{m} min",
+  },
+  en: {
+    saved: "Saved {total} {unit} · capacity step {capacity} · cheaper hours {energy}",
+    cost_more: "Cost {total} {unit} more than without PowerPlan",
+    pending: "Savings are counted when the day is over",
+    step_without: "Capacity step {step} — without PowerPlan {without}",
+    step_same: "Capacity step {step} — the same without PowerPlan",
+    price: "Appliances paid {paid} against {reference} {unit}/kWh",
+    missed_one: "1 deadline missed", missed: "{n} deadlines missed",
+    comfort: "{time} below comfort: {load}",
+    over_one: "1 hour over the target", over: "{n} hours over the target",
+    hours: "{h} h", hours_minutes: "{h} h {m} min", minutes: "{m} min",
+  },
+};
+
+const sumOf = (v: unknown): number =>
+  v && typeof v === "object" ? Object.values(v as Record<string, unknown>).reduce<number>((a, x) => a + (Number(x) || 0), 0) : 0;
+
+/**
+ * The month's results in one sentence each (D12 §5.19): savings by source, the step without
+ * PowerPlan, the price paid against the reference, and the deviations only when there are any.
+ */
+export function resultLines(
+  sav: HassEntity | undefined, cost: HassEntity | undefined, dev: HassEntity | undefined,
+  loads: Record<string, string>, L: Record<string, string>, locale: string, unit: string,
+): string[] {
+  const out: string[] = [];
+  const f0 = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const f2 = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const a = sav?.attributes ?? {};
+  const view = savingsView(sav, cost);
+  if (!view.missing && view.value !== null) {
+    const money = (v: unknown) => f0.format(Math.round(parseFloat(String(v)) || 0));
+    if (a.pending && Math.abs(view.value) < 0.5) out.push(L.pending);
+    else if (view.value < 0) out.push(fmtTemplate(L.cost_more, { total: f0.format(-view.value), unit }));
+    else out.push(fmtTemplate(L.saved, { total: f0.format(view.value), unit, capacity: money(a.capacity_savings), energy: money(a.energy_savings) }));
+  }
+  if (a.capacity_step && a.capacity_step_without) {
+    out.push(a.capacity_step === a.capacity_step_without
+      ? fmtTemplate(L.step_same, { step: a.capacity_step })
+      : fmtTemplate(L.step_without, { step: a.capacity_step, without: a.capacity_step_without }));
+  }
+  if (a.price_paid != null && a.price_reference != null) {
+    out.push(fmtTemplate(L.price, { paid: f2.format(a.price_paid), reference: f2.format(a.price_reference), unit }));
+  }
+  const d = dev?.attributes ?? {};
+  if ((toNum(dev?.state) ?? 0) > 0) {
+    const parts: string[] = [];
+    const missed = sumOf(d.deadlines_missed);
+    if (missed > 0) parts.push(missed === 1 ? L.missed_one : fmtTemplate(L.missed, { n: missed }));
+    const worst = Object.entries((d.comfort_min ?? {}) as Record<string, number>).sort((x, y) => y[1] - x[1])[0];
+    if (worst && worst[1] > 0) {
+      const h = Math.floor(worst[1] / 60), m = Math.round(worst[1] % 60);
+      const time = h === 0 ? fmtTemplate(L.minutes, { m }) : m === 0 ? fmtTemplate(L.hours, { h }) : fmtTemplate(L.hours_minutes, { h, m });
+      parts.push(fmtTemplate(L.comfort, { time, load: loads[worst[0]] ?? worst[0] }));
+    }
+    const over = Number(d.over_windows) || 0;
+    if (over > 0) parts.push(over === 1 ? L.over_one : fmtTemplate(L.over, { n: over }));
+    if (parts.length) out.push(parts.join(" · "));
+  }
+  return out;
+}
+
 /** Stable per-instance id for SVG defs (several cards can be on one page). */
 let _uid = 0;
 export const newUid = (p: string) => `${p}${++_uid}`;

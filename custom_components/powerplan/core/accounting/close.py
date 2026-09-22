@@ -64,6 +64,7 @@ from .savings import (
     calibration_error,
     cost_by_party,
     kwh_shifted,
+    result_prices,
     savings_by_party,
     savings_confidence,
     site_savings,
@@ -229,6 +230,10 @@ class LoadFigures:
     #: The shadow's savings, only when `model_confidence` is `ok` (§5.9.5).
     model_savings: Money | None = None
     model_confidence: SavingsConfidence = SavingsConfidence.NONE
+    #: What the settled energy cost per kWh, and what it would have at its
+    #: reference's times; `None` under `RESULT_MIN_KWH` (D11 §5.10).
+    price_paid: float | None = None
+    price_reference: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +256,15 @@ class SiteFigures:
     #: Cost and savings by party - grid, supplier, state (D11 §5.8, D12 §5.13).
     cost_by_party: Mapping[str, Money] = field(default_factory=dict)
     savings_by_party: Mapping[str, Money] = field(default_factory=dict)
+    #: The settled bills' metric and step, with and without powerplan (D11 §5.10).
+    metric_kw: float | None = None
+    level: str | None = None
+    cf_metric_kw: float | None = None
+    cf_level: str | None = None
+    #: The counted loads' price paid and reference price per kWh, and the kWh they cover.
+    price_paid: float | None = None
+    price_reference: float | None = None
+    kwh_counted: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -760,6 +774,8 @@ class Accounting:
         was_savings = site.capacity_savings
         site.capacity_fee_settled = capacity_fee_to_date(actual_bill, state.fee_at_month_start)
         site.cf_capacity_fee = capacity_fee_to_date(cf_bill, state.cf_fee_at_month_start)
+        site.metric_kw, site.level = actual_bill.metric_kw, actual_bill.level.name
+        site.cf_metric_kw, site.cf_level = cf_bill.metric_kw, cf_bill.level.name
         # Re-stated per settlement rather than accumulated, so the lifetime takes
         # the change and never the whole figure twice.
         state.ledger.lifetime.accrue_site(
@@ -932,6 +948,7 @@ class Accounting:
         ledger = state.ledger
         loads: dict[str, LoadFigures] = {}
         rows: dict[str, tuple[SavingsConfidence, Money]] = {}
+        counted: list[LoadMonthRec] = []
         for load_id, rec in ledger.loads.items():
             calib = state.calibration.get(load_id, CalibrationRec())
             shadow_state = state.shadows.get(load_id)
@@ -951,6 +968,7 @@ class Accounting:
                 else SavingsConfidence.NONE
             )
             lifetime = ledger.lifetime.loads.get(load_id)
+            paid, reference, _ = result_prices([rec])
             loads[load_id] = LoadFigures(
                 kwh=rec.kwh,
                 cost=rec.cost,
@@ -973,10 +991,15 @@ class Accounting:
                     rec.model_savings if model_confidence is SavingsConfidence.OK else None
                 ),
                 model_confidence=model_confidence,
+                price_paid=paid,
+                price_reference=reference,
             )
             rows[load_id] = (confidence, rec.savings)
+            if confidence is SavingsConfidence.OK:
+                counted.append(rec)
 
         total, energy, capacity = site_savings(ledger.site, ledger.loads.values())
+        price_paid, price_reference, kwh_counted = result_prices(counted)
         site = SiteFigures(
             cost=ledger.site.cost,
             energy_cost=ledger.site.energy_cost,
@@ -993,6 +1016,13 @@ class Accounting:
             lifetime=(ledger.lifetime.cost, ledger.lifetime.savings),
             cost_by_party=cost_by_party(ledger.site),
             savings_by_party=savings_by_party(ledger.site, ledger.loads.values()),
+            metric_kw=ledger.site.metric_kw,
+            level=ledger.site.level,
+            cf_metric_kw=ledger.site.cf_metric_kw,
+            cf_level=ledger.site.cf_level,
+            price_paid=price_paid,
+            price_reference=price_reference,
+            kwh_counted=kwh_counted,
         )
         return AccountingStatus(
             month=ledger.month,

@@ -435,12 +435,12 @@ export class PowerplanTimelineCard extends HTMLElement {
       }
     }
     if (show.has("baseline") && !this.single) {
-      items.push({ name: labels.other_usage ?? "", color: this.css("--secondary-text-color", "#727272"), series: true });
+      items.push({ name: labels.other_usage ?? "", color: this.css("--secondary-text-color", "#5e5e5e"), series: true });
     }
     if (show.has("ceiling") && !this.single && this.slots.some((slot) => slot.ceilingKw !== null)) {
       items.push({ name: labels.limit ?? "", color: this.css("--error-color", "#db4437"), swatch: "line", series: true });
     }
-    items.push({ name: this.priceName(), color: this.css("--primary-color", "#03a9f4"), swatch: "strip", series: true });
+    items.push({ name: this.priceName(), color: this.css("--primary-color", "#009ac7"), swatch: "strip", series: true });
     return items;
   }
 
@@ -564,8 +564,8 @@ export class PowerplanTimelineCard extends HTMLElement {
 
   /** The axes, grids and tooltip both modes share (T2, T5, T9). */
   private frame(start: number, end: number, scale: { max: number; step: number }, unit: string, labelStep: number, xLabel: (value: number) => string, strip: boolean) {
-    const muted = this.css("--secondary-text-color", "#727272");
-    const text = this.css("--primary-text-color", "#212121");
+    const muted = this.css("--secondary-text-color", "#5e5e5e");
+    const text = this.css("--primary-text-color", "#141414");
     const track = this.css("--pp-track", "rgba(127,127,127,.12)");
     return {
       grid: [
@@ -610,7 +610,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     const single = this.single;
     const ids = config.loads.map((load) => load.id);
     const f = this.formats();
-    const muted = this.css("--secondary-text-color", "#727272");
+    const muted = this.css("--secondary-text-color", "#5e5e5e");
     const surface = this.css("--card-background-color", "#fff");
     const error = this.css("--error-color", "#db4437");
     const start = slots[0]!.start;
@@ -755,7 +755,7 @@ export class PowerplanTimelineCard extends HTMLElement {
     const frame = this.frame(start, end, scale, "kW", this.labelStep(hours), (value) => f.clock.format(value), true);
     return {
       animation: false,
-      textStyle: { color: this.css("--primary-text-color", "#212121"), fontFamily: this.css("--ha-font-family-body", "Roboto, sans-serif") },
+      textStyle: { color: this.css("--primary-text-color", "#141414"), fontFamily: this.css("--ha-font-family-body", "Roboto, sans-serif") },
       legend: { show: false, data: series.map((s) => s.name).filter((name) => name !== OFFSET && name !== MARKS) },
       ...frame,
       tooltip: {
@@ -775,9 +775,9 @@ export class PowerplanTimelineCard extends HTMLElement {
 
   /** T4: one rect per run of equal price, 1 px gaps, the outer corners rounded, the price inside when it fits. */
   private strip(runs: PriceRun[], number: Intl.NumberFormat): Record<string, unknown> {
-    const primary = this.css("--primary-color", "#03a9f4");
-    const text = this.css("--primary-text-color", "#212121");
-    const hatch = this.hatch(this.css("--secondary-text-color", "#727272"));
+    const primary = this.css("--primary-color", "#009ac7");
+    const text = this.css("--primary-text-color", "#141414");
+    const hatch = this.hatch(this.css("--secondary-text-color", "#5e5e5e"));
     const last = runs.length - 1;
     return {
       name: this.priceName(),
@@ -833,9 +833,9 @@ export class PowerplanTimelineCard extends HTMLElement {
     const height = this.els.plot.clientHeight;
     const width = this.els.plot.clientWidth;
     if (!height || !width) return;
-    const text = this.css("--primary-text-color", "#212121");
+    const text = this.css("--primary-text-color", "#141414");
     const background = this.css("--primary-background-color", "#fafafa");
-    const muted = this.css("--secondary-text-color", "#727272");
+    const muted = this.css("--secondary-text-color", "#5e5e5e");
     const divider = this.css("--divider-color", "rgba(0,0,0,.12)");
     const warning = this.css("--warning-color", "#ffa600");
     const top = GRID.top;
@@ -979,8 +979,8 @@ export class PowerplanTimelineCard extends HTMLElement {
     const step = hourly ? HOUR_MS : 86_400_000;
     const start = period.start.getTime();
     const end = period.end.getTime();
-    const muted = this.css("--secondary-text-color", "#727272");
-    const text = this.css("--primary-text-color", "#212121");
+    const muted = this.css("--secondary-text-color", "#5e5e5e");
+    const text = this.css("--primary-text-color", "#141414");
     const error = this.css("--error-color", "#db4437");
     const warning = this.css("--warning-color", "#ffa600");
     // Iteration 5: one bar colour and no legend. Day and night are the price strip under the chart, the

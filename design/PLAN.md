@@ -134,6 +134,17 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 |---|---|---|---|---|
 | **PS.1 The reason is the run ahead** | `planned` as `plan_status`'s reason while waiting for a run | D8 §5.16; D12 §5.6 | D8 §9 39; D12 §9 30 | - |
 
+### 3.0j The results a household reads
+
+[HLD §6.11](HLD.md), [D11 §5.10, §5.11](lld/D11-accounting.md), [D7 §5.10](lld/D7-engine.md), [D8 §5.5, §5.7](lld/D8-ha-surface.md), [D12 §5.19](lld/D12-dashboard.md): the step and the price without PowerPlan, the month's deviations, and a reset for a month's books.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **RES.1 Reset a month's books** | `powerplan.reset_accounting` | D11 §5.11; D8 §5.7 | D11 §9 35, 36; D8 §9 41 | - |
+| **RES.2 The step without PowerPlan, the price paid** | both bills' metric and step; price paid against the reference price | D11 §5.10; D8 §5.5 | D11 §9 33, 34; D8 §9 40 | - |
+| **RES.3 The month's deviations** | `sensor.<site>_deviations` | D7 §5.10; D8 §5.5 | D7 §9 26; D8 §9 40 | - |
+| **RES.4 The results on the dashboard** | the month card's results; the cost table's moved-kWh column | D12 §5.19 | D12 §9 32 | RES.2, RES.3 |
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -255,6 +266,7 @@ HLD §9 phase 6.
 | **6.4j Dashboard: price refresh and savings** | the price refresher, the savings guard, the meter-lag skip | D12 §5.15; D10 §5.2; D8 §5.5, §5.9 | D12 §9 24 | 6.4i |
 | **6.4k Dashboard: Home Assistant's own backend** | the layout as a response action; the module as a Lovelace resource; no private websocket commands | D12 §5.16; D8 §5.5, §5.7; dec. 42 | D12 §9 4, 25-28; D8 §9 38 | 6.4j |
 | **6.4l Dashboard: Now and History layout** | the leaner Now view; live-card patches | D12 §5.17 | D12 §9 29 | 6.4k |
+| **6.4m Dashboard: fit and palette** | every card inside its column at every supported width; HA's palette | D12 §5.18 | D12 §9 31 | 6.4l |
 
 ### Phase 7 - Solar and the battery together
 
@@ -454,6 +466,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | PW.1 | The warning is about the house | done |
 | PW.2 | The plan fits its room | done |
 | PS.1 | The reason is the run ahead | done |
+| RES.1 | Reset a month's books | done |
+| RES.2 | The step without PowerPlan, the price paid | done |
+| RES.3 | The month's deviations | done |
+| RES.4 | The results on the dashboard | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -527,6 +543,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 6.4j | Dashboard: price refresh and savings | done |
 | 6.4k | Dashboard: Home Assistant's own backend | done |
 | 6.4l | Dashboard: Now and History layout | done |
+| 6.4m | Dashboard: fit and palette | done |
 | 7.1 | PV forecast through the energy platform | done |
 | 7.2 | `surplus` and the surplus-aware battery | done |
 | 7.3 | Surplus in the ledger | done |

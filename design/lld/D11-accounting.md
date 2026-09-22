@@ -386,6 +386,32 @@ The shadows of §5.3 still step in every counted and observe slot. Their kWh and
 
 ---
 
+### 5.10 The results: the step without powerplan, the price paid
+
+What the savings bought, from figures the ledger already holds - nothing new is estimated (D-0667):
+
+| Figure | Rule | Where it comes from |
+|---|---|---|
+| `metric_kw`, `level` | the actual bill's metric and step, through the last settled day | `_bill_settled`'s `actual_bill` (§5.9.4) |
+| `cf_metric_kw`, `cf_level` | the counterfactual bill's, through the same day | `_bill_settled`'s `cf_bill` |
+| `price_paid` | `Σ settled_cost / Σ cf_kwh` over the loads with a reference (`savings_confidence ≠ none`) | the load recs; `Σ cf_kwh = Σ settled kWh` by construction (§5.9.1) |
+| `price_reference` | `Σ cf_cost / Σ cf_kwh` over the same loads | the same recs |
+| `kwh_counted` | `Σ cf_kwh` over the same loads | |
+
+Per load: `price_paid` and `price_reference` over its own rec. A figure under 0.1 kWh counted is `None`, two prices over a sip of energy say nothing. `SiteMonthRec` stores the four bill fields, so a restart publishes them before the next settlement, and a rollover opens them empty. The step names are D2's `Level.name`, as `sensor.<site>_level` shows them.
+
+The two prices say the headline in the household's words: "your appliances paid 0,74 kr/kWh against 0,83 kr/kWh at the times they would have run". Their difference times `kwh_counted` is the counted loads' energy savings, less rounding (§5.9.1).
+
+### 5.11 Resetting a month's books
+
+`powerplan.reset_accounting` (D8 §5.7) restarts the ledger after a fault no guard caught - a water heater slot of 3 593 kWh (D-0665) inflated a month's counterfactual peak into a 4 720 NOK "capacity saving" (D-0669):
+
+1. The ledger restarts as a new store does: every load's rec and shadow opened from now, `Lifetime.since` = now, the month `partial`. Its open buffers, pending windows and slot deltas go with it.
+2. D2's counterfactual days of the **open period** are set equal to the actual days (`PeakHistory.reset_counterfactual(period)`): the reset can't re-examine them, so it claims no capacity saving for them. Closed periods are untouched.
+3. The month's capacity fee is billed afresh against a zero baseline on the next close, like a new install, and the cost sensors' `last_reset` moves to the reset, so HA's statistics start a new cycle instead of a negative change.
+
+Nothing is restated silently: the action is the household's, logged, and the ledger says `partial`. INV-69's "never restated" is about a figure the ledger still stands behind, and a reset withdraws the month's figures instead of correcting them.
+
 ## 6. Configuration schema
 
 Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off drops the store section and the entities), `calibration_threshold` 0.15, `reprice_days` 7 (bounded by D1's retention). A per-load opt-out of the savings figure doesn't ship in v1, `store_kind_of` alone decides whether a load gets a savings sensor (D-0291). The review step (INV-67) says which counterfactual was picked in plain words: "Without powerplan this floor would hold 22 °C on its own thermostat; savings are what the night charge saves against that."
@@ -466,6 +492,11 @@ Items 4–9 and 13 state the **model** figure. The reference:
 30. The site identity (§9 10) with open buffers: no load contributes `−cost` while open (five loads whose shadows drew nothing read `pending`, savings 0).
 31. Model figure: `model_savings` present only at `model_confidence = ok`.
 32. A schema-1 section is discarded on restore, the ledger restarts `partial`.
+
+33. `_bill_settled` stores both bills' metric and step on the site rec; a site whose EV plug-in hour moved to the night reads its actual step one below the counterfactual one, and the fields survive a restore.
+34. `price_paid` and `price_reference` over two loads equal `Σ settled_cost / Σ cf_kwh` and `Σ cf_cost / Σ cf_kwh`; a load with reference `none` is left out; under 0.1 kWh counted both are `None`; their difference times `kwh_counted` equals the loads' settled savings to the øre.
+35. `reset_accounting` on a ledger holding a 3 593 kWh slot: afterwards the month's cost, savings and every load's rec are zero, `since` is the reset, the month is `partial`, and the next settled close bills the capacity fee from a zero baseline.
+36. `PeakHistory.reset_counterfactual(period)` sets every counterfactual day of that period to the actual one, leaves other periods and overrides alone, and the next counterfactual bill equals the actual bill.
 
 ---
 

@@ -650,6 +650,17 @@ savings(site, month)   = Σ_loads savings(load) + (bill(counterfactual) − bill
 
 **Open for the LLD.** Period grain and rolling-12 tariffs; per-device attribution of the capacity fee; the exact shadow per store kind and its anchoring; unmetered loads; re-pricing of slots priced from a synthesised price; calibration thresholds; which modes count.
 
+**The results a household reads.** Beside the money, the site publishes what the money bought and what it cost in comfort - every figure an observation, read by nothing that decides (INV-68's rule, extended to D7's counters by D7 §5.10):
+
+| Question | Figure | Where |
+|---|---|---|
+| Is it saving? | savings split into capacity and timing (exists) | D11 |
+| Did it keep the step down? | the step and the metric **with** and **without** powerplan, from the two settled bills | D11 §5.10 |
+| Does it buy in cheap hours? | the counted loads' price paid against their reference price, per kWh | D11 §5.10 |
+| Did it cost comfort, a deadline, the limit? | minutes below the comfort floor and episodes per load; deadlines met and missed per load; capacity windows closed over their ceiling - per calendar month | D7 §5.10 |
+
+A month's books can be **reset** by the household (`powerplan.reset_accounting`) after a fault a guard did not catch: the ledger restarts, marked partial, and the counterfactual peak history of the open period is set equal to the actual one, so no saving is claimed for days the reset cannot re-examine (D11 §5.11).
+
 ### 6.12 D12 - Dashboard
 
 **Responsibility.** One dashboard per site that shows the **past, present and future** from what powerplan already knows, with the day-to-day knobs, and that looks and behaves like Home Assistant's own Energy dashboard.

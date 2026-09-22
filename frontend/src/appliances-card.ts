@@ -296,7 +296,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
         <svg class="lane" width="${W}" height="${RH}" viewBox="0 0 ${W} ${RH}" aria-hidden="true">${bandsSvg}${lane}</svg>
         <span class="rail" style="width:${compact ? W - 24 : rail - 24}px">
           <span class="bubble" style="background:${rgbaHex(col, 0.2)};color:${readable(col, dark)}"><ha-icon icon="${esc(icon)}"></ha-icon></span>
-          <span class="txt"><span class="name">${esc(load.name)}</span><span class="state">${esc(line)}</span></span>${right}
+          <span class="txt"><span class="name">${esc(load.name)}</span><span class="state" title="${esc(line)}">${esc(line)}</span></span>${right}
         </span></button>`;
     }).join("");
 
@@ -305,7 +305,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const key = hatched ? `<span class="legend"><i class="sw low"></i>${esc(compact ? L.lg_low_short : L.lg_low)}</span>` : "";
     const idlePart = idle.length
       ? (this.filter === "active"
-        ? `<span class="avatars" aria-hidden="true">${idle.slice(0, 4).map((r) => `<span class="av" style="background:${rgbaHex(r.load.color, 0.2)};color:${readable(r.load.color, dark)}"><ha-icon icon="${esc(r.load.icon || DEFAULT_ICON[r.load.kind ?? ""] || "mdi:flash")}"></ha-icon></span>`).join("")}</span>
+        ? `${W < 420 ? "" : `<span class="avatars" aria-hidden="true">${idle.slice(0, 4).map((r) => `<span class="av" style="background:${rgbaHex(r.load.color, 0.2)};color:${readable(r.load.color, dark)}"><ha-icon icon="${esc(r.load.icon || DEFAULT_ICON[r.load.kind ?? ""] || "mdi:flash")}"></ha-icon></span>`).join("")}</span>`}
            <span class="ftxt">${esc(fmtTemplate(L.n_idle, { n: idle.length }))}${compact ? "" : " · " + esc(idle.map((r) => r.load.name).join(", "))}</span>
            <button type="button" class="tbtn" data-filter="all" data-focus-key="foot-toggle">${esc(L.show_all)}<ha-icon icon="mdi:chevron-down"></ha-icon></button>`
         : `<span class="grow"></span><button type="button" class="tbtn" data-filter="active" data-focus-key="foot-toggle">${esc(L.show_less)}<ha-icon icon="mdi:chevron-up"></ha-icon></button>`)

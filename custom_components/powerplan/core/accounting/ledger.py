@@ -204,6 +204,12 @@ class SiteMonthRec:
     #: each from its own settled windows (D11 §5.4, O23): part of the grid's capacity line.
     surcharge: Decimal = Decimal(0)
     cf_surcharge: Decimal = Decimal(0)
+    #: Both settled bills' metric and step, through the last settled day (D11 §5.10):
+    #: the step with powerplan and the step the counterfactual house would be on.
+    metric_kw: float | None = None
+    level: str | None = None
+    cf_metric_kw: float | None = None
+    cf_level: str | None = None
 
     @classmethod
     def empty(cls, currency: str) -> SiteMonthRec:

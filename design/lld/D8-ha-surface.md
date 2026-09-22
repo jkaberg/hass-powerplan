@@ -194,7 +194,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `switch.<site>_active` | switch | control | on | master; off = release every load on the edge (INV-26) and treat every load as `observe`: decisions still published (INV-44), calibration slots accrue (D11 §5.5; PLAN §7 dec. 20) |
 | `select.<site>_presence` | select | control | on | auto / home / away / vacation |
 | `select.<site>_target` | select | config | on | step or kW (D2) |
-| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**, from WP U.3, 0.5 for `per_day = max` presets until then; an existing site keeps its materialised value, INV-66) |
+| `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**; an existing site keeps its materialised value, INV-66) |
 | `number.<site>_margin_kwh` | number | config | off | ε |
 | `sensor.<site>_window_used` | sensor kWh | - | on | attrs: `t_rem_min`, `anchor_kind`, `confidence` |
 | `sensor.<site>_window_projected` | sensor kWh | - | on | |
@@ -224,7 +224,8 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `button.<site>_replan`, `_rebuild_baseline`, `_rebuild_peak_history` | button | config | on/off/off | `_rebuild_peak_history` re-seeds the open period from the import register's recorder rows, replacing the windows it has; `set_peak` overrides survive (D2 §5.12). Only where an import register is bound |
 | `event.<site>` | event | - | on | HA event entity mirroring the bus events (for the UI's logbook) |
 | `sensor.<site>_cost` | sensor `<CUR>`, `device_class: monetary`, `state_class: total`, `last_reset` = month start | - | on | month-to-date: energy cost − export credit + capacity fee (D11); attrs `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install`, `confidence`, `estimated_share` |
-| `sensor.<site>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date vs. no powerplan (D11); may be **negative**; attrs `energy_savings`, `capacity_savings`, `counterfactual_cost`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence` |
+| `sensor.<site>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date vs. no powerplan (D11); may be **negative**; attrs `energy_savings`, `capacity_savings`, `counterfactual_cost`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`; *(D11 §5.10)* `capacity_step`, `capacity_step_without`, `metric_kw`, `metric_kw_without` (both bills through the last settled day), `price_paid`, `price_reference` (`<CUR>/kWh`), `kwh_counted` |
+| `sensor.<site>_deviations` *(D7 §5.10)* | sensor, `state_class: total`, `last_reset` = the month's start | - | on | the month's deviations: missed deadlines + comfort episodes + windows over the limit; attrs `comfort_min` and `comfort_episodes` (by load id), `deadlines_met`, `deadlines_missed` (by load id), `over_windows`, `windows`, `month`; icon `mdi:clipboard-alert-outline` |
 | v1.x: `sensor.<site>_energy_price` (Energy dashboard compatible) | | | | |
 
 **Load device** (`via_device` → site; name = load name; model = type; manufacturer from the HA device):
@@ -255,7 +256,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<load>_learned_<key>` | sensor | diagnostic | off | D10 fits with quality attrs |
 | `sensor.<load>_energy` | sensor kWh, `device_class: energy`, `state_class: total_increasing` | - | on | lifetime since the load was added (D3 `LoadMeter.lifetime_kwh`); usable as an Energy-dashboard *individual device*; attrs `source` (register / power / estimated) |
 | `sensor.<load>_cost` | sensor `<CUR>`, monetary, total, `last_reset` = month start | - | on | month-to-date energy cost (D11); attrs `kwh`, `avg_price`, `previous_month`, `since_install`, `confidence` |
-| `sensor.<load>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date energy-shift savings vs. this load's counterfactual (D11); may be **negative**; attrs `counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`, `calibration_error`, `shadow` (kind); absent for kind `none` *v0.1.29 (D-0583):* `unknown` with `reason: no_reference` when the load has no counterfactual (`cf_cost` ≤ 0 under a positive cost), never −cost *v0.1.30 (D11 v0.3 §5.9, D-0591):* the figure is the **settled** reference savings - `cf_cost − settled_cost`, so an open day or session reads its settled part and `pending: true`, never −cost; the guard runs on `settled_cost`; `savings_confidence` is the headline's (`ok`/`none`); `calibration_error` and `model_confidence` describe the shadow, and `model_savings` is present only when `model_confidence` is `ok` |
+| `sensor.<load>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date energy-shift savings vs. this load's counterfactual (D11); may be **negative**; attrs `counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`, `calibration_error`, `shadow` (kind); absent for kind `none` *(D-0583)* `unknown` with `reason: no_reference` when the load has no counterfactual (`cf_cost` ≤ 0 under a positive cost), never −cost *(D11 §5.9, D-0591)* the figure is the **settled** reference savings - `cf_cost − settled_cost`, so an open day or session reads its settled part and `pending: true`, never −cost; the guard runs on `settled_cost`; `savings_confidence` is the headline's (`ok`/`none`); `calibration_error` and `model_confidence` describe the shadow, and `model_savings` is present only when `model_confidence` is `ok` *(D11 §5.10)* `price_paid`, `price_reference` over the load's settled energy |
 
 A load's device page therefore shows by default: mode, force/run-now, comfort or deadline/SoC, granted, measured, plan next, shed, comfort state, health, energy, cost, savings - twelve or fewer. Everything else is opt-in (HLD §7.9 rule 6).
 
@@ -314,6 +315,7 @@ All are edge-triggered in D7; a `cleared: true` variant is emitted when the cond
 | `powerplan.rebuild_peak_history` | `site`, `months` | D2 seed from the recorder |
 | `powerplan.set_peak` | `site`, `date` or `month`, `kw`, `note` | D2 override |
 | `powerplan.rebuild_baseline` | `site` | D10 reseed |
+| `powerplan.reset_accounting` *(D11 §5.11)* | `site` (required) | restart the ledger now, `partial`, and set the open period's counterfactual peaks to the actual ones; admin only; logged at warning |
 | `powerplan.dump_state` | `site` | write the Snapshot + Inputs to the log / return as response |
 | `powerplan.get_dashboard` *(D12 §5.16 R1)* | `site` (optional: every loaded site), `language` (default `en`), `hidden_views`, `hidden_cards` | the dashboard's layout (`SupportsResponse.ONLY`); an unknown site is `unknown_site`. The PowerPlan dashboard calls it; no admin needed |
 | `powerplan.refresh_tariff` | `site` (optional: every loaded site) | fetch the grid tariff now from the same operator, product and tier; merge; answer `{source, fetched, added, changed, kept, next_renewal}` (`SupportsResponse.OPTIONAL`); a template or custom tariff answers `{source: "template", …}`; a failure raises `HomeAssistantError` `tariff_refresh_failed` (source, reason) and changes nothing (D13 §10) |
@@ -951,6 +953,9 @@ Where they live: 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11, 12 and 
 37. The credit note is rendered for every country with a source and names each source's licence where one is required; diagnostics contain no postcode and no meter id.
 38. `get_dashboard` answers only with `return_response`, matches the builder, and refuses an unknown site with `unknown_site`; `button.<site>_refresh_prices` runs the refresher; `price_forecast`'s `spot` and `fixed_price` follow D12 §9 27.
 39. *(D-0630)* A tank waiting for a 22:00 run with the gate's `already_at` in its status reads `reason_key: planned`, `reason_params: {time: "22:00", kwh: 7.6}`; drawing, or with nothing ahead, it keeps `already_at` (`tests/surface/test_dashboard.py`). `planned` has a label and a sentence in `en`, `nb` and `strings.json` (`tests/surface/test_plan_reasons.py`).
+
+40. `sensor.<site>_savings` carries the four step and metric attributes and the three price attributes from `AccountingStatus`, `None` where the ledger has none; `sensor.<load>_savings` its two prices; `sensor.<site>_deviations` is the sum of missed deadlines, comfort episodes and windows over, with `last_reset` at the month's start and its attributes keyed by load id; en and nb name it.
+41. `powerplan.reset_accounting` needs `site`, is refused for a non-admin, and afterwards `sensor.<site>_cost` and `_savings` read 0 with `last_reset` at the reset; `services.yaml`, `strings.json`, `icons.json` and `docs/actions.md` carry it.
 
 ---
 

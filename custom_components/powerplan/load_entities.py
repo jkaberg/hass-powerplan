@@ -1262,6 +1262,9 @@ class LoadSavingsSensor(_LoadMoneySensor):
             "pending": None if row is None else row.get("pending"),
             "model_confidence": None if row is None else row.get("model_confidence"),
             "calibration_error": None if row is None else row.get("calibration_error"),
+            # D11 §5.10: what the settled energy cost per kWh, and at its reference's times.
+            "price_paid": None if row is None else row.get("price_paid"),
+            "price_reference": None if row is None else row.get("price_reference"),
             **model,
             "shadow": store_kind_of(self.load).value,
         }

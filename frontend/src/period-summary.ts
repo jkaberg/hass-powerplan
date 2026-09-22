@@ -22,6 +22,7 @@ import {
 } from "./energy";
 import { type HomeAssistant, moreInfo, numeric, timeZone } from "./ha";
 import { ppStyles } from "./styles";
+import { savingsView } from "./r3-util";
 import {
   countsDecision,
   formatSummary,
@@ -274,6 +275,8 @@ export class PowerplanPeriodSummary extends HTMLElement {
     ] as const) {
       const id = entities[key];
       if (!id) continue;
+      // As Now's month card (§5.17 C5): no savings figure while the reference says it has none.
+      if (key === "savings" && savingsView(hass.states[id], entities.cost ? hass.states[entities.cost] : undefined).missing) continue;
       const total = totalChange(fetched?.stats[id]);
       cells.push(
         total === null
@@ -438,19 +441,30 @@ export class PowerplanPeriodSummary extends HTMLElement {
     const rows = this.totals(config).sort((a, b) => b.cost - a.cost);
     const cost = rows.reduce((sum, row) => sum + row.cost, 0);
     const saved = rows.reduce((sum, row) => sum + row.saved, 0);
-    const line = (name: string, c: number, s: number, extra = "", entity?: string) =>
-      `<tr class="${extra}" ${entity ? `data-entity="${escape(entity)}"` : ""}><td>${name}</td><td class="num">${escape(money.format(c).replace("-", "−"))}</td><td class="num">${escape(this.signed(s, locale))}</td></tr>`;
+    // D12 §5.19: the kWh each appliance moved - a month-to-date attribute, so only while the picker shows this month.
+    const now = Date.now();
+    const thisMonth = Boolean(this.period && +this.period.start <= now && now < +this.period.end && +this.period.end - +this.period.start > 27 * 86_400_000);
+    const kwh = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+    const moved = (row?: SummaryLoad) => {
+      if (!thisMonth) return "";
+      const value = row?.savings_month ? Number(hass.states[row.savings_month]?.attributes.kwh_shifted) : NaN;
+      return `<td class="num moved">${row && Number.isFinite(value) ? escape(`${kwh.format(value)} kWh`) : ""}</td>`;
+    };
+    const line = (name: string, c: number, s: number, extra = "", entity?: string, row?: SummaryLoad) =>
+      `<tr class="${extra}" ${entity ? `data-entity="${escape(entity)}"` : ""}><td>${name}</td>${moved(row)}<td class="num">${escape(money.format(c).replace("-", "−"))}</td><td class="num">${escape(this.signed(s, locale))}</td></tr>`;
     this.shadowRoot!.innerHTML = `
       <style>
         ${ppStyles}
         td .pp-dot { display: inline-block; margin-right: 10px; vertical-align: 1px; }
         tr[data-entity] { cursor: pointer; }
+        ha-card { container-type: inline-size; }
+        @container (max-width: 499px) { .moved { display: none; } }
       </style>
       <ha-card><div class="pp-content">${
         this.fetched
           ? `<table class="pp-table">
-          <tr><th>${escape(labels.appliance ?? "")}</th><th class="num">${escape(labels.cost ?? "")}</th><th class="num">${escape(labels.saved ?? "")}</th></tr>
-          ${rows.map((row) => line(`<span class="pp-dot" style="background:${escape(row.color)}"></span>${escape(row.name)}`, row.cost, row.saved, "", row.cost_month)).join("")}
+          <tr><th>${escape(labels.appliance ?? "")}</th>${thisMonth ? `<th class="num moved">${escape(labels.moved ?? "")}</th>` : ""}<th class="num">${escape(labels.cost ?? "")}</th><th class="num">${escape(labels.saved ?? "")}</th></tr>
+          ${rows.map((row) => line(`<span class="pp-dot" style="background:${escape(row.color)}"></span>${escape(row.name)}`, row.cost, row.saved, "", row.cost_month, row)).join("")}
           ${line(escape(labels.total ?? ""), cost, saved, "sum")}
         </table>
         <div class="pp-caption">${escape(labels.negative_saving ?? "")}</div>`

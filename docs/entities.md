@@ -36,6 +36,7 @@ In the tables, `<home>` and `<appliance>` stand for those names as Home Assistan
 | `sensor.<home>_capacity_step_this_month` | Capacity step this month | — | shown |
 | `sensor.<home>_control_level` | Control level | — | Diagnostic |
 | `sensor.<home>_cost_this_month` | Cost this month | ‹currency› | shown |
+| `sensor.<home>_deviations_this_month` | Deviations this month | — | shown |
 | `sensor.<home>_electricity_price_now` | Electricity price now | ‹currency›/kWh | shown |
 | `sensor.<home>_estimated_savings_this_month` | Estimated savings this month | ‹currency› | shown |
 | `sensor.<home>_expected_capacity_step` | Expected capacity step | — | shown |
@@ -273,6 +274,35 @@ What the appliance saved this month by using its energy at cheaper times than it
 A day's savings are added after midnight, and a charge's when the car is done. Until then the attribute `pending` is `true`. In trial mode the savings are zero, because PowerPlan changed nothing.
 
 The attribute `model_savings` appears once PowerPlan's model of the appliance has proved accurate in trial mode. It also counts energy the plan saved or used, for example while nobody is home. **Unknown**, with `reason: no_reference`, means there is nothing to compare with yet. The cards then show " - ".
+
+The attributes `price_paid` and `price_reference` say the same thing per kWh: what the appliance's counted energy cost, and what it would have cost at the times it would have run. Both are empty until at least 0.1 kWh has been counted.
+
+<a name="savings"></a>
+### Estimated savings this month
+
+What the whole home saved this month: every appliance's savings, plus the capacity fee PowerPlan kept you from paying. Its attributes say where the money came from.
+
+| Attribute | Meaning |
+|---|---|
+| `capacity_savings`, `energy_savings` | The part from a lower capacity step, and the part from cheaper hours. |
+| `capacity_step`, `capacity_step_without` | Your capacity step, and the step you would be on without PowerPlan. |
+| `metric_kw`, `metric_kw_without` | The kW your step is counted from, with and without PowerPlan. |
+| `price_paid`, `price_reference`, `kwh_counted` | What the appliances' counted energy cost per kWh, what it would have cost, and how many kWh that is. |
+
+Days are counted once they are over, so these figures lag today by up to a day. Key: `savings`.
+
+<a name="deviations"></a>
+### Deviations this month
+
+What PowerPlan's plans cost you this month, counted as they happen. The number is the sum of three things: deadlines missed, times an appliance fell below its comfort temperature, and hours that ended over the capacity target. **0** means none of them happened.
+
+| Attribute | Meaning |
+|---|---|
+| `deadlines_met`, `deadlines_missed` | For each appliance with a ready-by time, how often it was ready and how often it was not. |
+| `comfort_min`, `comfort_episodes` | For each appliance, the minutes below its comfort temperature and how many times it went below. |
+| `over_windows`, `windows` | Hours that ended over the target, out of the hours counted. |
+
+The counts start from zero on the first of each month. Key: `deviations`.
 
 <a name="events"></a>
 ### Events

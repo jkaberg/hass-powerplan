@@ -31,12 +31,14 @@ __all__ = [
     "CALIBRATION_DAYS",
     "CALIBRATION_THRESHOLD",
     "MIN_OBSERVE_DAYS",
+    "RESULT_MIN_KWH",
     "CalibDay",
     "CalibrationRec",
     "calibration_error",
     "cost_by_party",
     "kwh_shifted",
     "load_savings",
+    "result_prices",
     "savings_by_party",
     "savings_confidence",
     "site_savings",
@@ -211,3 +213,27 @@ def site_savings_confidence(
     if not material:
         return SavingsConfidence.NONE
     return min(material, key=WORST_FIRST.index)
+
+
+#: Below this much settled energy a price per kWh says nothing (D11 §5.10).
+RESULT_MIN_KWH = 0.1
+
+
+def result_prices(recs: Iterable[LoadMonthRec]) -> tuple[float | None, float | None, float]:
+    """Return the price paid and the reference price per kWh over `recs`' settled energy (D11 §5.10).
+
+    `cf_kwh` is the settled energy itself (the reference conserves it, §5.9.1), so
+    `settled_cost / cf_kwh` is what the energy cost and `cf_cost / cf_kwh` what it
+    would have cost at the reference's times. Both are `None` under
+    `RESULT_MIN_KWH`; the third value is the kWh they cover.
+    """
+    kwh = 0.0
+    paid = Decimal(0)
+    reference = Decimal(0)
+    for rec in recs:
+        kwh += rec.cf_kwh
+        paid += rec.settled_cost.amount
+        reference += rec.cf_cost.amount
+    if kwh < RESULT_MIN_KWH:
+        return None, None, round(kwh, 3)
+    return float(paid) / kwh, float(reference) / kwh, round(kwh, 3)

@@ -57,6 +57,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
     from . import PowerplanConfigEntry
+    from .core.engine import AccountingStatus, DeviationsState
     from .core.model import Plan, PriceCurve
     from .core.tariffs.evaluator import Advice
 
@@ -728,7 +729,9 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         SiteSensor(runtime, description) for description in SENSORS if description.applies(runtime)
     ]
-    entities.extend([SiteCostSensor(runtime), SiteSavingsSensor(runtime)])
+    entities.extend(
+        [SiteCostSensor(runtime), SiteSavingsSensor(runtime), SiteDeviationsSensor(runtime)]
+    )
     if runtime.has_fixed_price:
         entities.append(SiteFixedPriceSavingsSensor(runtime))
     entities.extend(
@@ -901,6 +904,73 @@ class SiteSavingsSensor(_SiteMoneySensor):
             "previous_month": None if status is None else money_text(status.previous_savings),
             "since_install": self._since_install(),
             "savings_confidence": None if status is None else status.confidence,
+            **self._results(status),
+        }
+
+    @staticmethod
+    def _results(status: AccountingStatus | None) -> dict[str, Any]:
+        """Return the step and metric with and without powerplan, and the prices (D11 §5.10)."""
+        results = {} if status is None else status.results
+        return {
+            "capacity_step": results.get("level"),
+            "capacity_step_without": results.get("cf_level"),
+            "metric_kw": results.get("metric_kw"),
+            "metric_kw_without": results.get("cf_metric_kw"),
+            "price_paid": results.get("price_paid"),
+            "price_reference": results.get("price_reference"),
+            "kwh_counted": results.get("kwh_counted"),
+        }
+
+
+class SiteDeviationsSensor(PowerplanEntity, SensorEntity):
+    """`sensor.<site>_deviations`: what the month's plans cost in comfort, deadlines and the limit (D7 §5.10).
+
+    The state is the month's missed deadlines + comfort episodes + windows over
+    the limit; the rows are attributes by load id. `total` with the local
+    month's start as `last_reset`, so its statistics are one month each.
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL
+
+    def __init__(self, runtime: Runtime) -> None:
+        """Bind to the site; named by the site's own key, as `site_cost` is."""
+        super().__init__(runtime, "deviations")
+        self._attr_translation_key = "site_deviations"
+
+    @property
+    def _results(self) -> DeviationsState | None:
+        results = self.runtime.state.runtime.deviations
+        return None if results.month is None else results
+
+    @property
+    def native_value(self) -> int | None:
+        """The month's deviations so far, or `None` before the first counted tick."""
+        results = self._results
+        return None if results is None else results.total
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """The local month's start."""
+        results = self._results
+        if results is None:
+            return None
+        year, month = (int(part) for part in str(results.month).split("-"))
+        return datetime(year, month, 1, tzinfo=self.runtime.build.cfg.tz)
+
+    @property
+    def extra_state_attributes(self) -> Mapping[str, Any]:
+        """Return the rows by load id, the windows over and counted, and the month."""
+        results = self._results
+        if results is None:
+            return {}
+        return {
+            "comfort_min": {load: round(s / 60.0) for load, s in results.comfort_s.items()},
+            "comfort_episodes": dict(results.comfort_n),
+            "deadlines_met": dict(results.deadline_met),
+            "deadlines_missed": dict(results.deadline_missed),
+            "over_windows": results.over_windows,
+            "windows": results.windows,
+            "month": results.month,
         }
 
 

@@ -68,7 +68,7 @@ export const ppStyles = `
   .pp-toggle button { height: 28px; min-width: 44px; padding: 0 12px; border: 0; border-radius: var(--pp-radius-s);
                       background: transparent; color: var(--secondary-text-color);
                       font: 500 12px/28px var(--ha-font-family-body, Roboto, sans-serif); cursor: pointer; }
-  .pp-toggle button[aria-pressed="true"] { background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.22); color: var(--primary-color); }
+  .pp-toggle button[aria-pressed="true"] { background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.22); color: var(--primary-color); }
   .pp-readout { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 4px 12px; box-sizing: border-box;
                 border-radius: var(--pp-radius-m); background: var(--secondary-background-color); }
   .pp-readout .head { font-size: 12px; font-weight: 500; line-height: 16px; }

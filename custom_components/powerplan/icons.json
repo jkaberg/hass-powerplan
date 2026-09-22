@@ -21,6 +21,9 @@
       }
     },
     "sensor": {
+      "site_deviations": {
+        "default": "mdi:clipboard-alert-outline"
+      },
       "window_used": {
         "default": "mdi:gauge"
       },
@@ -223,6 +226,9 @@
     },
     "reset_window_anchor": {
       "service": "mdi:anchor"
+    },
+    "reset_accounting": {
+      "service": "mdi:cash-refund"
     },
     "set_peak": {
       "service": "mdi:chart-bar"

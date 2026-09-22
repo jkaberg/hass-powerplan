@@ -871,6 +871,9 @@
       "site_savings": {
         "name": "Beregnet besparelse denne måneden"
       },
+      "site_deviations": {
+        "name": "Avvik denne måneden"
+      },
       "site_plan": {
         "name": "Planlagt forbruk"
       },
@@ -1987,6 +1990,7 @@
         "card_appliance": "Apparat",
         "card_total": "Sum",
         "card_saved": "Spart",
+        "card_moved": "Flyttet",
         "card_no_runs": "Ingen planlagte kjøringer",
         "card_running_now": "{name} går nå",
         "card_plan_horizon": "kWh og kr gjelder hele planen.",
@@ -2237,6 +2241,16 @@
         "site": {
           "name": "Hjem",
           "description": "Hjemmet; alle når feltet er tomt."
+        }
+      }
+    },
+    "reset_accounting": {
+      "name": "Nullstill månedens kostnad og besparelse",
+      "description": "Start månedens kostnad og besparelse på nytt fra nå, etter at en feil ga dem gale tall. Måneden merkes da som delvis og regner ingen besparelse på effekttrinnet for dagene før. Dette kan ikke angres. [Slik fungerer det]({docs})",
+      "fields": {
+        "site": {
+          "name": "Hjem",
+          "description": "Hjemmet som skal nullstilles."
         }
       }
     },

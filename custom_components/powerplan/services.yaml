@@ -88,6 +88,14 @@ reset_window_anchor:
         config_entry:
           integration: powerplan
 
+reset_accounting:
+  fields:
+    site:
+      required: true
+      selector:
+        config_entry:
+          integration: powerplan
+
 set_peak:
   fields:
     date:

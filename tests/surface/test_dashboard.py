@@ -128,7 +128,7 @@ SITE_KEYS = (
     "active", "presence", "target", "window_used", "window_projected", "ceiling", "allowance", "stage",
     "level", "projected_level", "advice", "next_peak_warning", "peak_warning", "price",
     "price_forecast", "prices_tomorrow", "plan", "metric", "plan_calendar", "cost", "savings",
-    "events", "meter_health", "replan",
+    "deviations", "events", "meter_health", "replan",
 )  # fmt: skip
 #: Where each type's own tile lands, and with which feature.
 TYPE_TILES = {
@@ -982,12 +982,17 @@ def test_19_the_month_s_money_is_the_sensor_s_own_state() -> None:
     """N7, A5, F9: Now's month is one card over the sensors' own state; the subview's `entity` cards."""
     config = build([_nordic()], "2026.9.2", EN)
     month = _section(_view(config, "overview"), EN["section_month"])["cards"]
+    # D12 §9 32 (§5.19): the results read the savings and the deviations; the card is as tall as it says.
+    loads = month[1].pop("load_names")
     assert month[1:] == [
         {
             "type": "custom:powerplan-month-bars", "entity": "sensor.home_cost",
-            "savings": "sensor.home_savings", "grid_options": {"columns": 12, "rows": 5},
+            "savings": "sensor.home_savings", "deviations": "sensor.home_deviations",
+            "grid_options": {"columns": 12, "rows": "auto"},
         }
     ]  # fmt: skip
+    assert set(loads) == {load.subentry_id for load in _nordic().loads}
+    assert all(loads.values())
     sub = _section(_subview(config, "tank"), EN["section_month"])["cards"]
     assert [(c["type"], c["grid_options"]) for c in sub[1:]] == [
         ("entity", {"columns": 6, "rows": 2}),

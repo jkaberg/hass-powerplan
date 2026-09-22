@@ -4018,6 +4018,21 @@ class Runtime:
             )
         await self.run_tick("service")
 
+    async def async_reset_accounting(self) -> None:
+        """`powerplan.reset_accounting`: restart this month's books after a fault (D11 §5.11)."""
+        if self.adapter is None:
+            return
+        async with self.lock:
+            self.adapter.reset(dt_util.utcnow())
+            self.state = replace(self.state, accounting=self.adapter.section())
+            self._persist_sections(frozenset({Section.ACCOUNTING}))
+            self.store.mark_dirty(Section.TARIFF)
+        _LOGGER.warning(
+            "site %s: the accounting was reset by powerplan.reset_accounting — the month restarts, partial",
+            self.entry.title,
+        )
+        await self.run_tick("service")
+
     async def async_set_peak(self, scope: str, key: str, kw: float, note: str) -> None:
         """`powerplan.set_peak`: a D2 override of one day's or one month's peak."""
         self.build.tariff.history.apply_override(

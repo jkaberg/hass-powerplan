@@ -871,6 +871,9 @@
       "site_savings": {
         "name": "Estimated savings this month"
       },
+      "site_deviations": {
+        "name": "Deviations this month"
+      },
       "site_plan": {
         "name": "Planned usage"
       },
@@ -1987,6 +1990,7 @@
         "card_appliance": "Appliance",
         "card_total": "Total",
         "card_saved": "Saved",
+        "card_moved": "Moved",
         "card_no_runs": "No planned runs",
         "card_running_now": "{name} is running now",
         "card_plan_horizon": "kWh and cost cover the whole plan.",
@@ -2237,6 +2241,16 @@
         "site": {
           "name": "Home",
           "description": "The home; every home when empty."
+        }
+      }
+    },
+    "reset_accounting": {
+      "name": "Reset this month's cost and savings",
+      "description": "Start this month's cost and savings over from now, after a fault gave them wrong figures. The month is then marked partial and claims no capacity savings for the days before. This cannot be undone. [How this works]({docs})",
+      "fields": {
+        "site": {
+          "name": "Home",
+          "description": "The home whose figures to reset."
         }
       }
     },

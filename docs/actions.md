@@ -17,6 +17,7 @@ The actions PowerPlan adds to Home Assistant, for scripts, automations, and **De
 | `powerplan.run_now` | Run now | Start an appliance's cycle now, capacity permitting. | `load` (required), `site` |
 | `powerplan.set_presence` | Set presence | Say who is home, optionally until a time. | `mode` (required), `until`, `site` |
 | `powerplan.reset_window_anchor` | Restart this hour's count (emergency) | Start counting this hour again from the meter's current reading. For emergencies only. | `site` |
+| `powerplan.reset_accounting` | Reset this month's cost and savings | Start this month's cost and savings over from now, after a fault gave them wrong figures. The month is then marked partial and claims no capacity savings for the days before. This cannot be undone. | `site` (required) |
 | `powerplan.set_peak` | Correct a peak | Correct one day's or one month's peak in the grid-fee history. | `date`, `month`, `kw` (required), `note`, `site` |
 | `powerplan.dump_state` | Make a bug report | Return the last snapshot and the assembled inputs for a bug report. | `site` |
 | `powerplan.refresh_tariff` | Refresh the grid tariff | Fetch your grid company's tariff now, and answer what changed. Nothing changes when the source cannot be reached. | `site` |
@@ -100,6 +101,20 @@ Starts counting this hour's usage again from the meter's current reading. Use it
 
 ```yaml
 action: powerplan.reset_window_anchor
+data:
+  site: YOUR_HOME
+```
+
+<a name="reset_accounting"></a>
+## Reset this month's cost and savings
+
+Starts this month's cost and savings over from now. Use it only when a fault gave them figures that cannot be right, for example a meter that reported thousands of kWh in a quarter of an hour. The month is then marked partial. No capacity-step savings are counted for the days before the reset, because PowerPlan cannot check them again.
+
+> [!CAUTION]
+> The month's figures before the reset are gone and cannot be brought back.
+
+```yaml
+action: powerplan.reset_accounting
 data:
   site: YOUR_HOME
 ```

@@ -302,6 +302,10 @@ export class PowerplanPriceCard extends HTMLElement {
       this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
         <ha-card class="${compact ? "compact" : ""}" style="height:${H}px">${svg}${alert}${head}${legend}<div class="tip" hidden></div></ha-card>`;
     });
+    // A phone wraps the legend onto a second line: the card grows by it instead of cropping it.
+    const legendEl = this.shadowRoot!.querySelector<HTMLElement>(".legend");
+    const extra = legendEl ? Math.max(0, legendEl.offsetTop + legendEl.offsetHeight + (compact ? 14 : 16) - H) : 0;
+    if (extra) this.shadowRoot!.querySelector<HTMLElement>("ha-card")!.style.height = `${H + extra}px`;
     if (this.pinned != null) this.showTip(this.pinned);
   }
 

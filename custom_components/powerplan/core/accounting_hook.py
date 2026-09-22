@@ -162,6 +162,23 @@ class AccountingAdapter:
                     load.load_id, params.kind, None, now, ShadowCtx(params=params)
                 )
 
+    def reset(self, now: datetime) -> None:
+        """Restart the ledger as a new store does, and clear the open period's claim (D11 §5.11).
+
+        Every load's rec and shadow open afresh and the month is `partial`; the
+        counterfactual days of the tariff's open period are set equal to the
+        actual ones, so the reset claims no capacity saving for days it cannot
+        re-examine. `powerplan.reset_accounting` is the only caller.
+        """
+        self.accounting = Accounting(self.config, None)
+        for load_id, params in self._params.items():
+            self.accounting.on_load_added(load_id, params.kind, None, now, ShadowCtx(params=params))
+        period = self._tariff.period(now)
+        tz = self.config.tz
+        self._history.reset_counterfactual(
+            period.start.astimezone(tz).date(), period.end.astimezone(tz).date()
+        )
+
     # ------------------------------------------------------ subentry hot paths #
 
     def add_load(self, load: Load, now: datetime) -> None:
@@ -323,8 +340,19 @@ class AccountingAdapter:
                     else _money_data(row.previous[1]),
                     "lifetime_cost": _money_data(row.lifetime[0]),
                     "lifetime_savings": _money_data(row.lifetime[1]),
+                    "price_paid": _price(row.price_paid),
+                    "price_reference": _price(row.price_reference),
                 }
                 for load_id, row in figures.loads.items()
+            },
+            results={
+                "metric_kw": site.metric_kw,
+                "level": site.level,
+                "cf_metric_kw": site.cf_metric_kw,
+                "cf_level": site.cf_level,
+                "price_paid": _price(site.price_paid),
+                "price_reference": _price(site.price_reference),
+                "kwh_counted": site.kwh_counted,
             },
             by_party={
                 "cost": {party: str(money.amount) for party, money in site.cost_by_party.items()},
@@ -386,6 +414,11 @@ def _site_row(site: SiteMonthRec, loads: Any) -> dict[str, Any]:
     }
 
 
+def _price(value: float | None) -> float | None:
+    """Return a price per kWh to four decimals, as `sensor.<site>_price` shows it."""
+    return None if value is None else round(value, 4)
+
+
 def _money_data(value: Money) -> str:
     return f"{value.amount:.2f} {value.currency}"
 
@@ -398,6 +431,7 @@ def _status_data(status: AccountingStatus) -> dict[str, Any]:
         "confidence": status.confidence,
         "per_load": dict(status.per_load),
         "by_party": {kind: dict(parts) for kind, parts in status.by_party.items()},
+        "results": dict(status.results),
         "month_start": encode(status.month_start),
         "since": encode(status.since),
         "pricing_confidence": status.pricing_confidence,
