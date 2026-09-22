@@ -245,6 +245,8 @@ merge:   bench month required for PRs touching core/ (the `bench` check); bench 
 weekly:  bench e2e; release: all four
 matrix:  Python 3.14 (PLAN §7 dec. 1); HA floor and latest stable
 ```
+*(D-0662)* Every PR also runs the **hygiene** gates: `vulture` (no dead Python; `[tool.vulture]` in `pyproject.toml` ignores Home Assistant's hooks and the registries' decorators, `tools/vulture_whitelist.py` lists the reviewed rest), `jscpd` over `custom_components/powerplan`, `tools` and `frontend/src` (duplicated lines under `.jscpd.json`'s `threshold`, 1 % - 0.93 % when set, a ratchet only a maintainer raises) and `knip` in the `frontend` job (no unused file, export or dependency). How to triage a hit is `CONTRIBUTING.md`.
+
 A PR that touches a file owning an INV must reference the INV in its description (a bot comment lists the affected INVs from `inv_report`).
 
 ### 5.9 The reference benchmark

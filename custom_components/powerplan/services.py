@@ -13,7 +13,6 @@ is still not registered.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
@@ -28,6 +27,7 @@ from .doclinks import doc_url
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
+    from datetime import date
 
     from .runtime import Runtime
 
@@ -238,8 +238,3 @@ def async_setup_services(hass: HomeAssistant) -> None:
             # The action's section on actions.md (D14 §5.4).
             description_placeholders={"docs": doc_url("actions", name)},
         )
-
-
-def boost_until(hours: float | None, default_h: float) -> timedelta:
-    """Return how long a boost lasts: the call's hours, else the load's `force_max_hours`."""
-    return timedelta(hours=default_h if hours is None else hours)

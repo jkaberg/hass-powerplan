@@ -368,7 +368,7 @@ async def test_observe_decides_against_the_device_and_logs_each_would_be_value_o
         assert len(observe_lines(caplog)) == 1
 
         floor.setpoint_c = 20.0
-        await runtime.async_set_presence(PresenceMode.VACATION)
+        await runtime.async_set_presence_setting(PresenceMode.VACATION.value)
         await tick_on(hass, freezer, meter, 4)
         lines = observe_lines(caplog)
         assert len(lines) == 2, lines

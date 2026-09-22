@@ -510,11 +510,6 @@ def _lit(value: object) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _quoted(text: str) -> str:
-    """Return `text` safe inside a single-quoted Jinja string."""
-    return text.replace("\\", "\\\\").replace("'", "\\'")
-
-
 def _currency_word(site: _Site) -> str:
     """Return the site's currency as a markdown card writes it: `currency_short` for NOK ("kr"), else the code (G7)."""
     return site.texts["currency_short"] if site.site.currency == "NOK" else site.site.currency

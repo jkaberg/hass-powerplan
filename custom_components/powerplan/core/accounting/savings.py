@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 from ..model import Money
 from ..tariffs.household import Party
-from .ledger import WORST_FIRST, SavingsConfidence, minus, plus, zero
+from .ledger import WORST_FIRST, SavingsConfidence, plus, zero
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -211,8 +211,3 @@ def site_savings_confidence(
     if not material:
         return SavingsConfidence.NONE
     return min(material, key=WORST_FIRST.index)
-
-
-def savings_delta(before: Money, after: Money) -> Money:
-    """Return `after − before` - what a reprice moved, applied to the lifetime once."""
-    return minus(after, before)

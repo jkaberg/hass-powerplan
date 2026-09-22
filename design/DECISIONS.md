@@ -2749,3 +2749,8 @@ A fifth kind writes one `select_option` to `Role.BATTERY_MODE`: a grant of the w
 
 `anker_solix`, `ecoflow_cloud` and `zendure_ha` bind `BATTERY_POWER_SET` to the output number with its scale negated, so a discharge writes the output and a charge clamps to 0. The profile says `output_only`, and the type sets `command_charge_w = 0`, removing the charge command instead of teaching the gate to expect a clamp. Vendor cadence is the gate floor: Anker 300 s and a 360 s read-back (its cloud updates every 5 minutes), EcoFlow and Zendure 60 s. Affects D4 §5.9, §9 38.
 **Rejected:** Zendure's input limit too - a device-specific mode flip that source-only fixtures can't test.
+
+### D-0662 · Dead code and duplication are CI gates: vulture, jscpd, knip
+
+CI's `hygiene` job runs `vulture` (60 % confidence) and `jscpd` (Python and TypeScript, 60 tokens, fails above 1 %); the `frontend` job runs `knip`. HA hooks and registry decorators are ignored by name in `[tool.vulture]`; 76 hand-checked names live in `tools/vulture_whitelist.py`. `CONTRIBUTING.md` says when to run them and how to triage a hit. The first pass removed 27 dead definitions. Duplication stood at 0.93 %, mostly sibling registry modules the design keeps apart. Affects D9 §5.8.
+**Rejected:** skylos - no HA awareness either, and a whitelist is a reviewable record. pylint's `symilar` - Python only.

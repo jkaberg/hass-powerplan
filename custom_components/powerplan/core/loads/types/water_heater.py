@@ -386,11 +386,6 @@ class Legionella:
         """Whether the heater runs its own programme, so powerplan runs none."""
         return not self.enabled
 
-    @property
-    def hold_remaining_s(self) -> float:
-        """Seconds of pasteurisation still owed."""
-        return max(0.0, self.hold_required_s - self.hold_s)
-
 
 @dataclass(frozen=True, slots=True)
 class WaterHeater:

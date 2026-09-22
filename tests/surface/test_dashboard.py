@@ -180,7 +180,6 @@ def _site(
         loads=loads,
         has_production=flags.get("has_production", False),
         has_battery=flags.get("has_battery", False),
-        has_export=False,
         circuits=(),
         groups=(),
     )

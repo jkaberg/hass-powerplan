@@ -6,13 +6,15 @@
   "scripts": {
     "build": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "knip": "knip"
   },
   "dependencies": {
     "echarts": "6.1.0"
   },
   "devDependencies": {
     "esbuild": "0.25.10",
+    "knip": "5.88.1",
     "typescript": "5.9.3",
     "vitest": "4.0.18"
   }

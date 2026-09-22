@@ -71,10 +71,6 @@ DEFAULT_MAX_CONCURRENT_W = 2000.0
 #: What a group's shared cap can plausibly be, in watts.
 MAX_CONCURRENT_W_MIN = 100.0
 MAX_CONCURRENT_W_MAX = 50_000.0
-STARVE_SECONDS_MIN = 60.0
-STARVE_SECONDS_MAX = 7_200.0
-
-
 #: The review's field for the shared cap: kW, stored as `max_concurrent_w` (CTL-15).
 GROUP_MAX_CONCURRENT_KW = "max_concurrent_kw"
 

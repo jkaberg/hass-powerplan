@@ -1356,7 +1356,6 @@ class Runtime:
         self._renewal: CALLBACK_TYPE | None = None
         self._renewal_failures = 0
         self._issues: set[str] = set()
-        self._gate_states: dict[str, Any] = {}
         self._stopped = False
         #: D10's own two sources: `forecasts_adapter` is the engine's
         #: `ForecastHook`, holding the live `HourOfWeekBaseline`; `weather_entity`
@@ -3883,10 +3882,6 @@ class Runtime:
         """Flip the site switch (D8 §5.5), read live on the next tick (INV-47)."""
         self.active = active
         await self._tick_and_plan("knob")
-
-    async def async_set_presence(self, mode: PresenceMode) -> None:
-        """Set the manual presence knob; `vacation` is only ever set here (D4 §2)."""
-        await self.async_set_presence_setting(mode.value)
 
     async def async_set_presence_setting(self, setting: str, until: datetime | None = None) -> None:
         """`select.<site>_presence` / `powerplan.set_presence`: auto, or a mode, optionally until a time."""

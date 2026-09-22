@@ -65,7 +65,6 @@ class SiteLayout:
     loads: tuple[LoadLayout, ...]
     has_production: bool
     has_battery: bool
-    has_export: bool
     circuits: tuple[str, ...]
     groups: tuple[str, ...]
 
@@ -113,7 +112,6 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
         loads=tuple(layouts),
         has_production=runtime.has_production,
         has_battery=any(load.config.type_key == "battery" for load in loads),
-        has_export=runtime.build.export_modifier is not None,
         circuits=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_CIRCUIT),
         groups=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_GROUP),
     )

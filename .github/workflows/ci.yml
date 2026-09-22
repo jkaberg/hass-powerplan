@@ -23,6 +23,7 @@ env:
 # PR - sets the wall clock, not the sum.
 #
 #   lint ─┐
+#   hygiene (vulture · jscpd), frontend (… · knip)
 #   ha (floor, latest) ─┐
 #   core ───────────────┼─► coverage
 #   scenarios ──────────┘
@@ -66,11 +67,35 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # D9 §5.8 (D-0662): no unused file, export or dependency (`frontend/knip.json`).
+      - run: npm run knip
       - name: The committed bundle is the build of these sources
         run: |
           npm run build
           git status --porcelain -- ../custom_components/powerplan/frontend/dist
           test -z "$(git status --porcelain -- ../custom_components/powerplan/frontend/dist)"
+
+  # D9 §5.8 (D-0662): no dead code, and no more duplication than the ceiling.
+  # vulture reads `[tool.vulture]` and `tools/vulture_whitelist.py`; jscpd reads
+  # `.jscpd.json`, whose `threshold` is the ceiling in percent of lines.
+  hygiene:
+    name: vulture · jscpd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.14"
+      - name: Sync the environment
+        run: uv sync
+      - name: vulture - no dead code
+        run: uv run vulture
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: jscpd - duplication under the ceiling
+        run: npx --yes jscpd@3.5.10
 
   # PLAN §7 dec. 1: one Python (3.14), HA floor and latest stable. Only the
   # suites that load Home Assistant can differ between the two lines.

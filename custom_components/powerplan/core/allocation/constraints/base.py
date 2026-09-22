@@ -110,13 +110,6 @@ class AllocCtx:
         grant = self.previous.get(load_id)
         return 0.0 if grant is None else grant.w
 
-    def held_w(self, load_id: str) -> float:
-        """Return what this load is holding now: its previous grant's reservation."""
-        view = self.load(load_id)
-        if view is None:
-            return 0.0
-        return reserved_w(view, self.previous_w(load_id), self.views.get(load_id))
-
     def reserved_of(self, granted: Mapping[str, float], *, without: str = "") -> float:
         """Return what the loads in `granted` reserve, `without` one of them.
 

@@ -841,19 +841,6 @@ def fixed_price_schema(currency: str, *, default: Any = None) -> vol.Schema:
     return vol.Schema({marker: price_selector(currency)})
 
 
-def pre_tickable(key: str) -> bool:
-    """Return whether a modifier can be pre-ticked with no question asked.
-
-    HLD §7.9 (2) says every answer has a default. A modifier with a required
-    option and no default for it - an energy levy, a time-of-use table - has no
-    answer to default to, so it is offered and never pre-ticked; the grid charge
-    then arrives with the tariff preset, which has the numbers and their source
-    (D2 §6, D-0126).
-    """
-    schema = modifiers.entry(key).schema
-    return all(field.default is not None for field in schema if field.required)
-
-
 def offered_modifiers() -> list[str]:
     """Return what the supplier step offers "in addition to the grid tariff" (D13 §6 2a, INV-74).
 

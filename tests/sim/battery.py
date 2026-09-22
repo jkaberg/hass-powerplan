@@ -53,8 +53,6 @@ class BatterySim:
     charge_eff: float = CHARGE_EFF
     discharge_eff: float = DISCHARGE_EFF
     setpoint_w: float = 0.0
-    charged_kwh: float = 0.0
-    discharged_kwh: float = 0.0
 
     def step(self, dt_s: float, command: Command | None, env: Env) -> Reads:
         """Follow the setpoint, clamped to the inverter and to empty and full."""
@@ -68,12 +66,10 @@ class BatterySim:
             room_kwh = (FULL_PCT - self.soc_pct) * per_pct_kwh / self.charge_eff
             power_w = min(self.setpoint_w, self.max_charge_w, room_kwh / hours * 1000.0)
             self.soc_pct += kwh(power_w, dt_s) * self.charge_eff / per_pct_kwh
-            self.charged_kwh += kwh(power_w, dt_s)
         elif self.setpoint_w < 0.0 and hours > 0.0:
             held_kwh = self.soc_pct * per_pct_kwh * self.discharge_eff
             out_w = min(-self.setpoint_w, self.max_discharge_w, held_kwh / hours * 1000.0)
             self.soc_pct -= kwh(out_w, dt_s) / self.discharge_eff / per_pct_kwh
-            self.discharged_kwh += kwh(out_w, dt_s)
             power_w = -out_w
         self.soc_pct = min(FULL_PCT, max(0.0, self.soc_pct))
         return Reads(

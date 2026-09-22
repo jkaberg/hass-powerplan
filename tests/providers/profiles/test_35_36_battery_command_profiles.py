@@ -29,7 +29,7 @@ from custom_components.powerplan.core.loads.gate import (
     Write,
     decide,
 )
-from custom_components.powerplan.providers.profiles import huawei_solar, registry, solax_modbus
+from custom_components.powerplan.providers.profiles import power_command, registry
 from custom_components.powerplan.writegate import Actuation, DeviceCall
 from tests.core.loads.conftest import modulate_kind
 from tests.providers.profiles.conftest import THERMAL_DUMPS, dump_view
@@ -74,25 +74,25 @@ def test_35_36_the_integration_s_own_profile_wins_its_device(fixture: str, key: 
 def test_35_36_no_thermostat_is_a_battery(other: str) -> None:
     """A heater's device is claimed by neither battery profile."""
     view = dump_view(other)
-    assert huawei_solar.PROFILE.match(view).confidence == 0.0
-    assert solax_modbus.PROFILE.match(view).confidence == 0.0
+    assert power_command.HUAWEI.match(view).confidence == 0.0
+    assert power_command.SOLAX.match(view).confidence == 0.0
 
 
 def test_35_huawei_binds_the_power_sensor_as_the_setpoint_s_witness() -> None:
     """The forced power is read back off the battery's charge/discharge power (INV-22)."""
-    match = huawei_solar.PROFILE.match(dump_view(HUAWEI))
+    match = power_command.HUAWEI.match(dump_view(HUAWEI))
 
     assert _bindings(match) == {
         Role.BATTERY_POWER_SET: "sensor.batteries_charge_discharge_power",
         Role.POWER: "sensor.batteries_charge_discharge_power",
         Role.SOC: "sensor.batteries_state_of_capacity",
     }
-    assert huawei_solar.PROFILE.quirks().transport is Transport.MODBUS
+    assert power_command.HUAWEI.quirks().transport is Transport.MODBUS
 
 
 def test_36_solax_binds_the_three_remote_control_entities() -> None:
     """The number, the mode select and the trigger, beside the battery's own sensors."""
-    match = solax_modbus.PROFILE.match(dump_view(SOLAX))
+    match = power_command.SOLAX.match(dump_view(SOLAX))
 
     assert _bindings(match) == {
         Role.BATTERY_POWER_SET: "number.solax_remotecontrol_active_power",
@@ -108,9 +108,9 @@ def test_36_solax_binds_the_three_remote_control_entities() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _huawei() -> huawei_solar.HuaweiBattery:
-    match = huawei_solar.PROFILE.match(dump_view(HUAWEI))
-    return replace(huawei_solar.PROFILE.bind(match.bindings), device_id=HUAWEI_DEVICE)
+def _huawei() -> power_command.HuaweiBattery:
+    match = power_command.HUAWEI.match(dump_view(HUAWEI))
+    return replace(power_command.HUAWEI.bind(match.bindings), device_id=HUAWEI_DEVICE)
 
 
 def test_35_huawei_writes_by_sign_to_the_battery_device() -> None:
@@ -125,30 +125,30 @@ def test_35_huawei_writes_by_sign_to_the_battery_device() -> None:
         domain="huawei_solar",
         service="forcible_charge",
         entity_id="sensor.batteries_charge_discharge_power",
-        data={"power": 3000, "duration": huawei_solar.FORCE_MINUTES},
+        data={"power": 3000, "duration": power_command.FORCE_MINUTES},
         device_id=HUAWEI_DEVICE,
     )
     assert discharge is not None
     assert (discharge.service, discharge.data) == (
         "forcible_discharge",
-        {"power": 2000, "duration": huawei_solar.FORCE_MINUTES},
+        {"power": 2000, "duration": power_command.FORCE_MINUTES},
     )
     assert stop is not None
     assert (stop.service, stop.data, stop.device_id) == ("stop_forcible_charge", {}, HUAWEI_DEVICE)
-    assert 1 <= huawei_solar.FORCE_MINUTES <= 1440, "the action's own range"
+    assert 1 <= power_command.FORCE_MINUTES <= 1440, "the action's own range"
 
 
 def test_35_huawei_without_a_device_writes_nothing() -> None:
     """An action that takes a device and has none to take is not sent (D-0148)."""
-    match = huawei_solar.PROFILE.match(dump_view(HUAWEI))
-    device = huawei_solar.PROFILE.bind(match.bindings)
+    match = power_command.HUAWEI.match(dump_view(HUAWEI))
+    device = power_command.HUAWEI.bind(match.bindings)
 
     assert device.call_for(Write(Role.BATTERY_POWER_SET, value=3000.0)) is None
 
 
-def _solax() -> solax_modbus.SolaxBattery:
-    match = solax_modbus.PROFILE.match(dump_view(SOLAX))
-    return solax_modbus.PROFILE.bind(match.bindings)
+def _solax() -> power_command.SolaxBattery:
+    match = power_command.SOLAX.match(dump_view(SOLAX))
+    return power_command.SOLAX.bind(match.bindings)
 
 
 def test_36_solax_sets_the_target_then_the_mode_then_presses_the_trigger() -> None:
@@ -166,7 +166,7 @@ def test_36_solax_sets_the_target_then_the_mode_then_presses_the_trigger() -> No
         {"value": 3000},
     )
     assert [(each.domain, each.service, each.data) for each in charge.then] == [
-        ("select", "select_option", {"option": solax_modbus.BATTERY_CONTROL}),
+        ("select", "select_option", {"option": power_command.BATTERY_CONTROL}),
         ("button", "press", {}),
     ]
     assert discharge is not None
@@ -179,23 +179,23 @@ def test_36_solax_zero_and_the_release_hand_back_to_the_inverter() -> None:
 
     assert stop is not None
     assert stop.data == {"value": 0}
-    assert stop.then[0].data == {"option": solax_modbus.DISABLED}
+    assert stop.then[0].data == {"option": power_command.DISABLED}
 
 
 def test_36_solax_provisions_the_autorepeat_hour() -> None:
     """The inverter repeats a triggered command for an hour, then its own mode (INV-64)."""
-    (provision,) = solax_modbus.PROFILE.provisions(dump_view(SOLAX))
+    (provision,) = power_command.SOLAX.provisions(dump_view(SOLAX))
 
     assert provision.entity_id == "number.solax_remotecontrol_autorepeat_duration"
-    assert provision.value == float(solax_modbus.AUTOREPEAT_S)
+    assert provision.value == float(power_command.AUTOREPEAT_S)
 
 
 def test_36_solax_without_the_trigger_writes_nothing() -> None:
     """A target the inverter never acts on is not a write (D-0148)."""
-    match = solax_modbus.PROFILE.match(
+    match = power_command.SOLAX.match(
         dump_view(SOLAX, drop=("button.solax_remotecontrol_trigger",))
     )
-    device = solax_modbus.PROFILE.bind(match.bindings)
+    device = power_command.SOLAX.bind(match.bindings)
 
     assert Role.START in match.missing
     assert device.call_for(Write(Role.BATTERY_POWER_SET, value=3000.0)) is None
@@ -232,7 +232,7 @@ async def test_36_the_executor_sends_a_call_s_follow_ups_in_order_blocking(
         return None
 
     gate = gate_factory(read)
-    cfg = solax_modbus.PROFILE.quirks().gate_config(modulate_kind())
+    cfg = power_command.SOLAX.quirks().gate_config(modulate_kind())
     decision = decide(
         Command(writes=(Write(Role.BATTERY_POWER_SET, 3000.0),), reason="plan: charge 3 kW"),
         current=0.0,

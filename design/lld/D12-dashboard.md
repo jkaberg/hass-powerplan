@@ -103,7 +103,7 @@ class SiteLayout:
     entry_id: str; name: str; currency: str
     entities: Mapping[str, str]                                  # site keys → entity_id, enabled only
     loads: tuple[LoadLayout, ...]                                # in the planner's priority order (D5 §5.1)
-    has_production: bool; has_battery: bool; has_export: bool
+    has_production: bool; has_battery: bool
     circuits: tuple[str, ...]; groups: tuple[str, ...]
 ```
 

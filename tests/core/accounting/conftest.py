@@ -54,7 +54,7 @@ from tests.builders.curves import NO3_SHAPE, NORGESPRIS
 from tests.core.tariffs.conftest import evaluator, no_tariff
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Mapping
 
 OSLO = ZoneInfo("Europe/Oslo")
 NOK = "NOK"
@@ -306,11 +306,6 @@ def price_at(import_curve: PriceCurve, start: datetime) -> Decimal:
     slot = import_curve.price_at(start)
     assert slot is not None, f"the curve does not cover {start.isoformat()}"
     return slot.total
-
-
-def money_sum(values: Sequence[Decimal]) -> Decimal:
-    """Sum exact amounts, so a golden's arithmetic is the test's own."""
-    return sum(values, Decimal(0))
 
 
 @pytest.fixture

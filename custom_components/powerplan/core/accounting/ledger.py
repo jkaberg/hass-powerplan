@@ -317,14 +317,6 @@ def month_start_utc(at: datetime, tz: tzinfo) -> datetime:
     return datetime(local.year, local.month, 1, tzinfo=tz).astimezone(UTC)
 
 
-def next_month_start_utc(at: datetime, tz: tzinfo) -> datetime:
-    """Return local midnight on the 1st of the month after `at`'s, as an instant."""
-    local = at.astimezone(tz)
-    year = local.year + (local.month == MONTHS)
-    month = local.month % MONTHS + 1
-    return datetime(year, month, 1, tzinfo=tz).astimezone(UTC)
-
-
 # --------------------------------------------------------------------------- #
 # The ledger
 # --------------------------------------------------------------------------- #

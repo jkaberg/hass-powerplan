@@ -30,6 +30,7 @@ dev = [
     "pytest-cov",
     "pytest-homeassistant-custom-component>=0.13.320",
     "ruff",
+    "vulture",
 ]
 
 # --------------------------------------------------------------------------- #
@@ -37,6 +38,8 @@ dev = [
 # --------------------------------------------------------------------------- #
 [tool.ruff]
 line-length = 100
+# vulture's whitelist is bare attribute references, not code to lint.
+extend-exclude = ["tools/vulture_whitelist.py"]
 target-version = "py314"
 
 [tool.ruff.lint]
@@ -111,6 +114,39 @@ docstring-code-format = true
 # are hand-formatted, normative sketches - several are not valid Python - and
 # the formatter must not touch them.
 exclude = ["*.md"]
+
+# --------------------------------------------------------------------------- #
+# vulture - dead code (D9 §5.8, D-0662). What Home Assistant or a registry calls
+# by name is ignored here; the reviewed rest of today's false positives is
+# `tools/vulture_whitelist.py`. CONTRIBUTING.md says how to triage.
+# --------------------------------------------------------------------------- #
+[tool.vulture]
+paths = ["custom_components", "tools", "tests", "tools/vulture_whitelist.py"]
+min_confidence = 60
+ignore_decorators = [
+    "@register",            # the registries (modifiers, forecasters, types, …)
+    "@*.register",
+    "@section_migrator",    # storage.py's per-section migrators
+    "@pytest.fixture",
+    "@*.setter",
+    "@callback",            # HA event-loop callbacks passed by reference
+]
+ignore_names = [
+    # Home Assistant's hooks: platform and integration entry points, flow steps,
+    # entity methods and class attributes it reads.
+    "async_setup*", "async_unload_entry", "async_migrate_entry", "async_remove_entry",
+    "async_remove_config_entry_device", "async_get_config_entry_diagnostics",
+    "async_step_*", "async_get_options_flow", "async_get_supported_subentry_types",
+    "async_press", "async_turn_on", "async_turn_off", "async_set_native_value",
+    "async_select_option", "async_get_events", "async_added_to_hass",
+    "async_will_remove_from_hass", "async_update", "async_remove",
+    "_attr_*", "_unrecorded_attributes", "PARALLEL_UPDATES", "CONFIG_SCHEMA",
+    "MODULE",                  # each country module, found by the tariff registry
+    "slow_callback_duration",  # asyncio's loop knob, set by the e2e tests
+    "VERSION", "MINOR_VERSION", "device_entry",
+    # pytest's hooks
+    "pytest_*",
+]
 
 # --------------------------------------------------------------------------- #
 # mypy - strict on core/, standard elsewhere (PLAN §7 dec. 2)

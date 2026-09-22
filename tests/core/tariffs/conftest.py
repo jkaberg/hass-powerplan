@@ -43,7 +43,7 @@ from custom_components.powerplan.core.tariffs.rules import loader
 from tests.builders.presets import FIXTURE_PRESETS, fixture_raw
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
 OSLO = ZoneInfo("Europe/Oslo")
 MADRID = ZoneInfo("Europe/Madrid")
@@ -192,12 +192,6 @@ def record_days(
                 confidence=confidence,
             )
         )
-
-
-def record_golden(ev: Evaluator, rows: Iterable[Mapping[str, Any]], tz: tzinfo = OSLO) -> None:
-    """Record the `windows` rows of a golden file."""
-    for row in rows:
-        ev.record_window(closed(datetime.fromisoformat(row["local"]), row["kwh"], tz=tz))
 
 
 def golden(preset_id: str) -> dict[str, Any]:

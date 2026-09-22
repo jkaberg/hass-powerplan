@@ -21,7 +21,7 @@ from .accounting.close import (
     CloseCtx,
     ClosedSlot,
 )
-from .accounting.ledger import LoadMonthRec, SiteMonthRec, SlotConfidence
+from .accounting.ledger import SiteMonthRec, SlotConfidence
 from .accounting.pricing import CurvePair
 from .accounting.savings import site_savings
 from .accounting.shadow.base import LoadParams, ShadowCtx, StoreKind
@@ -403,17 +403,4 @@ def _status_data(status: AccountingStatus) -> dict[str, Any]:
         "pricing_confidence": status.pricing_confidence,
         "estimated_share": status.estimated_share,
         **{key: encode(getattr(status, key)) for key in ACCOUNTING_MONEY_FIELDS},
-    }
-
-
-def load_month_rows(loads: Mapping[str, LoadMonthRec]) -> dict[str, dict[str, Any]]:
-    """Return per-load month rows as the benchmark prints them."""
-    return {
-        load_id: {
-            "kwh": round(rec.kwh, 3),
-            "cost": _money_data(rec.cost),
-            "cf_cost": _money_data(rec.cf_cost),
-            "savings": _money_data(rec.savings),
-        }
-        for load_id, rec in loads.items()
     }

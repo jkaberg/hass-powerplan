@@ -61,8 +61,6 @@ LONG_TERM_PERIOD: Final = "hour"
 #: D10 §5.2: seeding reaches back 60 days by default - the same span D10 §5.6
 #: gives the fits, so one recorder pass can serve both once fits are wired.
 SEED_SPAN_DAYS: Final = 60
-#: The window length a seed bins at - see `async_seed`'s own comment.
-LONG_TERM_WINDOW_MIN: Final = 60
 #: The finest window the seed cuts, where the 5-minute statistics reach (D-0505).
 SEED_WINDOW_MIN: Final = 15
 #: What the recorder converts to: a `kW` charger's mean comes back in W and a

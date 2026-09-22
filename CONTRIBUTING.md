@@ -110,6 +110,20 @@ How a page is written:
 
 In code, every URL is built through `doclinks` over `const.DOCS_URL`. A translation string never holds a URL, only a `{docs}` placeholder.
 
+## Dead code and duplication
+
+CI's `hygiene` job (vulture, jscpd) and the frontend's knip step fail a PR that leaves dead code or pushes duplication over the ceiling. Before merging a branch that adds a module, removes or renames a public function, or changes more than about 300 lines, run them yourself:
+
+```
+uv run vulture
+npx --yes jscpd@3.5.10
+(cd frontend && npm run knip)
+```
+
+A vulture hit is a question, not a verdict, because vulture can't see Home Assistant, the registries or `getattr`. Grep the name first. Code nothing calls gets deleted. A Home Assistant hook or registry entry goes in `[tool.vulture]`. A name that is alive in a way the tool can't see goes in `tools/vulture_whitelist.py`. Never whitelist a name just to make CI pass.
+
+Duplication between sibling registry modules is often the design. Merge a clone only where the LLD's module layout already has a shared home for it. The `threshold` in `.jscpd.json` only ever goes down.
+
 ## Commands
 
 ```

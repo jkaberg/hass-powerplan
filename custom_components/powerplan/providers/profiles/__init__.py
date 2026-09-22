@@ -7,7 +7,7 @@ charger whose Bluetooth transport carries semantics Home Assistant does not expo
 WP4.8a's two cloud chargers, `zaptec` and `easee_cloud`; and WP4.8b's five
 vocabulary chargers, `ocpp`, `wallbox`, `peblar`, `v2c` and `goecharger_api2`,
 each a `VocabularyCharger` (D4 §5.9); WP7.6's two batteries that take a power
-command, `huawei_solar` and `solax_modbus`; WP7.7's two mode batteries, `goodwe`
+command, `huawei_solar` and `solax_modbus` (`power_command.py`); WP7.7's two mode batteries, `goodwe`
 and `sigen`, one `BatteryModeProfile` each (`battery_mode.py`); WP7.8's three
 plug-in batteries, `anker_solix`, `ecoflow_cloud` and `zendure_ha` (`output_limit.py`). The registry
 needed no change to take any of them, and everything thermal goes through the
@@ -22,11 +22,10 @@ from . import (
     generic_number,
     generic_switch,
     goecharger_api2,
-    huawei_solar,
     ocpp,
     output_limit,
     peblar,
-    solax_modbus,
+    power_command,
     v2c,
     wallbox,
     zaptec,
@@ -84,16 +83,15 @@ __all__ = [
     "generic_switch",
     "get",
     "goecharger_api2",
-    "huawei_solar",
     "keys",
     "match",
     "numeric_binding",
     "ocpp",
     "output_limit",
     "peblar",
+    "power_command",
     "quantise_down",
     "register",
-    "solax_modbus",
     "v2c",
     "wallbox",
     "zaptec",

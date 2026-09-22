@@ -1,0 +1,10 @@
+{
+  "path": ["custom_components/powerplan", "tools", "frontend/src"],
+  "format": ["python", "typescript"],
+  "ignore": ["**/frontend/dist/**", "**/node_modules/**", "tools/vulture_whitelist.py"],
+  "minTokens": 60,
+  "threshold": 1,
+  "reporters": ["console"],
+  "gitignore": true,
+  "absolute": false
+}
