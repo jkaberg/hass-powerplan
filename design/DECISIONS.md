@@ -2565,6 +2565,11 @@ Merging the tariff-sources work with main: D11 is the settled-reference ledger, 
 The tariff summary drops "Your grid company decides this, and PowerPlan plans by it:" and its lines for every tariff, keeping the rules, the source and the credit. The step is about what the grid company charges. Affects D13 §6, O10.
 **Rejected:** keeping a line for the capacity step - the plan's behaviour belongs in the docs.
 
+### D-0624 · A pushed tag publishes the release
+
+`.github/workflows/release.yml` runs on a `v*` tag: hassfest and HACS on the tag, a check that the tag equals `manifest.version`, then `gh release create --generate-notes` (a tag with `-` is a pre-release). The root README gains badges (CI, nightly, release, HACS custom, the HA floor) and a new introduction. Affects D14 §2.2 dec. 13, §5.8.
+**Rejected:** a hand-kept changelog - a second record of what the commits already say.
+
 ### D-0625 · The loader's key moves to `__ppKey`; `__ppBundle` is the shim's
 
 `bundle.ts` writes the loader's `?v=` to `globalThis.__ppKey`, and `__PP_BUNDLE__` reads it there. `__ppBundle` is left to `strategy-shim.ts`, which detects an older bundle loaded first by comparing it with its own `BUNDLE`; with the key on `__ppBundle`, the new bundle overwrote the old value first and the toast never showed. Affects D12 §5.17.
@@ -2754,3 +2759,8 @@ A fifth kind writes one `select_option` to `Role.BATTERY_MODE`: a grant of the w
 
 CI's `hygiene` job runs `vulture` (60 % confidence) and `jscpd` (Python and TypeScript, 60 tokens, fails above 1 %); the `frontend` job runs `knip`. HA hooks and registry decorators are ignored by name in `[tool.vulture]`; 76 hand-checked names live in `tools/vulture_whitelist.py`. `CONTRIBUTING.md` says when to run them and how to triage a hit. The first pass removed 27 dead definitions. Duplication stood at 0.93 %, mostly sibling registry modules the design keeps apart. Affects D9 §5.8.
 **Rejected:** skylos - no HA awareness either, and a whitelist is a reviewable record. pylint's `symilar` - Python only.
+
+### D-0663 · No `CHANGELOG.md`: a release's notes are GitHub's own
+
+A release is published with GitHub's generated notes, the diff since the last tag, which HACS shows on update. The user pages link the releases page. D14 decision 13 is replaced. Affects D14 §1, §5.9, §8.
+**Rejected:** a changelog in the household's words - one more record to keep in step with the commits.

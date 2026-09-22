@@ -2,13 +2,23 @@
 
 # PowerPlan
 
-PowerPlan is a Home Assistant integration that runs your home's big appliances when power is cheap, and keeps your home inside the capacity step you choose on your grid bill. It plans each appliance a day ahead from the electricity prices, and steers it through the integrations you already have.
+[![CI](https://github.com/jkaberg/hass-powerplan/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jkaberg/hass-powerplan/actions/workflows/ci.yml)
+[![Nightly](https://github.com/jkaberg/hass-powerplan/actions/workflows/nightly.yml/badge.svg)](https://github.com/jkaberg/hass-powerplan/actions/workflows/nightly.yml)
+[![Release](https://img.shields.io/github/v/release/jkaberg/hass-powerplan?include_prereleases&sort=semver)](https://github.com/jkaberg/hass-powerplan/releases)
+[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Home Assistant 2026.3 or newer](https://img.shields.io/badge/Home%20Assistant-2026.3%2B-18BCF2.svg)](https://www.home-assistant.io/)
 
-- **Cheaper hours.** The car charger, the water heater, and the heating run in the cheapest hours, and are still ready when you need them.
-- **A lower grid fee.** Where your grid company bills by capacity step, PowerPlan keeps every hour under the step you choose.
-- **A safe main fuse.** PowerPlan turns appliances down before the home draws more than the main fuse can carry.
+When is power cheapest today? Will charging the car now push this month's grid fee up a step? Is the water heater running at the wrong time? Will the oven and the car together trip the main fuse?
 
-PowerPlan starts in trial mode: it shows what it would do, and changes nothing until you switch on automatic control.
+PowerPlan answers these every hour and acts on them. It plans your appliances from the day-ahead prices and your grid tariff, keeps usage under the capacity step you choose, and explains each decision on its own dashboard.
+
+- **Your real price.** It fetches your grid company's tariff in many countries, and knows VAT and national taxes by date and region.
+- **Ready when you need it.** The car is charged by the time you set, and rooms and water stay at the temperature you chose.
+- **Priorities.** When something must pause, the least important appliance pauses first.
+- **Presence.** While nobody is home, the heating saves.
+- **What it saved.** Cost and savings for each appliance, compared with running at its usual times.
+- **Your automations.** Entities, actions such as *Run now for a while*, events such as *Peak warning*, and planned runs in the calendar.
+- **Trial mode first.** It shows what it would do and changes nothing until you switch on automatic control.
 
 ## Requirements
 

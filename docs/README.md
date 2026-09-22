@@ -47,6 +47,6 @@ PowerPlan starts in trial mode. It shows what it would do, and changes nothing u
 
 ## The version these pages describe
 
-These pages describe the newest code on `main`. A change you can notice is listed on the [releases page](https://github.com/jkaberg/hass-powerplan/releases), and a section whose behavior changed says since which version.
+These pages describe the newest code on `main`. What changed in each version is on the [releases page](https://github.com/jkaberg/hass-powerplan/releases), and a section whose behavior changed says since which version.
 
 **See also:** the [design documents](../design/README.md), for contributors.

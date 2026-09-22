@@ -1,34 +1,77 @@
 # uv / virtualenv
 .venv/
 venv/
+env/
 __pypackages__/
+.python-version
 
 # python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+*.egg
 *.egg-info/
+.eggs/
 build/
 dist/
+wheels/
+pip-wheel-metadata/
+*.pyc
 
 # tooling caches
 .mypy_cache/
+.dmypy.json
+dmypy.json
 .ruff_cache/
 .pytest_cache/
 .hypothesis/
+.tox/
+.nox/
+.cache/
 
-# coverage
+# test and coverage reports
 .coverage
 .coverage.*
 coverage.xml
 coverage.json
 htmlcov/
+report.xml
+junit*.xml
+*.prof
+*.lprof
 
-.cache/
+# secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.yaml
+
+# Home Assistant: a local config dir for a dev instance
+/config/
+.storage/
+home-assistant.log*
+home-assistant_v2.db*
+
+# frontend (D12 §3): the bundle is committed, the tooling is not
+node_modules/
+npm-debug.log*
+.npm/
+.eslintcache
+*.tsbuildinfo
+!custom_components/powerplan/frontend/dist/
 
 # brand generator (tools/brand/README.md): the unpacked Inter package and the output
 tools/brand/fonts/
 tools/brand/out/
 
-# frontend (D12 §3): the bundle is committed, the tooling is not
-node_modules/
-!custom_components/powerplan/frontend/dist/
+# editors and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

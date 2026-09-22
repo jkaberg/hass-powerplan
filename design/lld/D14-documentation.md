@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Scope | The pages a household and an automator read under `docs/`, the words and markdown they are written in, every place the integration links to them, the tooling that generates and checks them, and the rules that keep them current. |
-| HLD | §6.14 (new, with this LLD); §7 (a cross-cutting line: the pages are part of the surface) |
+| Scope | The pages a household and an automator read under `docs/`, the words and markdown they're written in, every place the integration links to them, the tooling that generates and checks them, and the rules that keep them current. |
+| HLD | §6.14; §7 (a cross-cutting line: the pages are part of the surface) |
 | Depends on | D8 (flows, entities, actions, events, repairs, i18n), D12 (dashboard), D13 (the country and source registries, and the credit note its §6.1 puts in the user docs), and the registries the pages mirror: D1 formats and modifiers, D2 rule templates, D4 device types and profiles, D5 strategies |
 
 ---
@@ -55,21 +55,21 @@ Five patterns recur. P1: a start path kept apart from the reference (all eight).
 
 ### 2.2 Decisions
 
-| # | decision | rule | revises |
-|---|---|---|---|
-| 1 | **`docs/` is the household's folder** | Only the user pages live under `docs/`. The design documents (`HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/`) move to `design/` at the repository root. The move is one idempotent path rewrite across the 137 files that cite them (at `386e5ee`: 87 under `custom_components/`, 30 under `tests/`). DOC.1 runs it when no branch is open, or each open branch re-runs it before it merges | dec. 23: "the design documents keep their paths". Accepted |
-| 2 | **Four kinds of page** | *Start* (tutorial), *Guides* (how-to), *Reference* (catalogues), *Understand* (explanation), after [Diátaxis](https://diataxis.fr/). A page is one kind; the index groups pages by kind | - |
-| 3 | **English, in the household's words** | American English, as HA's style guide asks (§5.1). The glossary's words (review §3). **English only**: no `nb` pages and no `nb` labels on the pages. A household on the `nb` UI reaches the right section through the flow's, the repair's or the card's deep link | dec. 23 kept |
-| 4 | **Stable anchors, friendly headings** | Every section that code links to starts with `<a name="<key>"></a>`, then a heading equal to the key's **en label** ("Cheapest hours before the deadline", not `deadline_fill`). The key itself appears in the section's facts table, for automators | dec. 23 and D8 §5.13: "a heading exactly equal to" the key. Accepted |
-| 5 | **Page paths in household words** | `appliances/<type>.md`, not `loads/<type>.md`; `circuits-groups-rooms.md`, not `groups-circuits-zones.md`. D8 §5.15 rule 7 applies to a URL a household reads too | dec. 23's paths |
-| 6 | **Links point at `main`** | dec. 23 kept. `manifest.documentation` → `…/blob/main/docs/README.md`, the rendered index, instead of `tree/main/docs`, the file listing | D8 §5.12 |
-| 7 | **Every flow step links to its own section** | Every step description except the review steps ends with one `{docs}` link to that step's section. A test allow-list, with a reason for each entry, exempts a step that needs no explanation (`name`). A field links only to a concept, and carries at most one link | D8 §5.13: "wherever the step needs it". Accepted |
-| 8 | **GitHub-native markdown, portable** | Alerts, tables, `<details>`, mermaid, footnotes, task lists, `<picture>` and My links, each used as §5.2 says. No site (dec. 23 kept), but nothing that stops one later | - |
-| 9 | **Facts are generated, prose is written** | `tools/docs.py` writes marked blocks from the registries, `strings.json` and `services.yaml`. A test fails when a block is stale | - |
-| 10 | **pytest enforces it** | `tests/docs/`, in the fast suite. D8 §9 15 moves here | D8 §9 15 |
-| 11 | **Docs change in the same PR as the surface** | The trigger table in §5.9, in `CONTRIBUTING.md`, PLAN §5, the LLD template and the PR description | - |
-| 12 | **Help links on the dashboard** | At most one per card, and only where the card shows a concept the household must understand to act (§5.4) | D12 §5.5. Accepted |
-| 13 | **GitHub's release notes** | No `CHANGELOG.md`. A release is published on GitHub's releases page with its generated notes, the diff since the last tag, and HACS shows that body on update | - |
+| # | decision | rule |
+|---|---|---|
+| 1 | **`docs/` is the household's folder** | Only the user pages live under `docs/`. The design documents (`HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/`) are in `design/` at the repo root, so whoever opens the documentation's address sees only pages meant for them |
+| 2 | **Four kinds of page** | *Start* (tutorial), *Guides* (how-to), *Reference* (catalogues), *Understand* (explanation), after [Diátaxis](https://diataxis.fr/). A page is one kind, and the index groups pages by kind |
+| 3 | **English, in the household's words** | American English, as HA's style guide asks (§5.1), with the glossary's words (UX review §3). **English only**: no `nb` pages and no `nb` labels on the pages. A household on the `nb` UI reaches the right section through the flow's, the repair's or the card's deep link |
+| 4 | **Stable anchors, friendly headings** | Every section code links to starts with `<a name="<key>"></a>`, then a heading equal to the key's **en label** ("Cheapest hours before the deadline", not `deadline_fill`). The key itself is in the section's facts table, for automators |
+| 5 | **Page paths in household words** | `appliances/<type>.md`, not `loads/<type>.md`; `circuits-groups-rooms.md`, not `groups-circuits-zones.md`. D8 §5.15 rule 7 applies to a URL a household reads too |
+| 6 | **Links point at `main`** | `manifest.documentation` → `…/blob/main/docs/README.md`, the rendered index, not `tree/main/docs`, the file listing (PLAN §7 dec. 23) |
+| 7 | **Every flow step links to its own section** | Every step description except the review steps ends with one `{docs}` link to that step's section. A test allow-list, with a reason per entry, exempts a step that needs no explanation (`name`). A field only links to a concept, and carries atmost one link |
+| 8 | **GitHub-native markdown, portable** | Alerts, tables, `<details>`, mermaid, footnotes, task lists, `<picture>` and My links, each used as §5.2 says. No site, but nothing that stops one later |
+| 9 | **Facts are generated, prose is written** | `tools/docs.py` writes marked blocks from the registries, `strings.json` and `services.yaml`, and a test fails when a block is stale |
+| 10 | **pytest enforces it** | `tests/docs/`, in the fast suite (D8 §9 15 lives here) |
+| 11 | **Docs change in the same PR as the surface** | §5.9's trigger table, in `CONTRIBUTING.md`, PLAN §5, the LLD template and the PR description |
+| 12 | **Help links on the dashboard** | Atmost one per card, and only where the card shows a concept the household has to understand to act (§5.4) |
+| 13 | **GitHub's release notes** | No `CHANGELOG.md`. A release is published on GitHub's releases page with its generated notes, the diff since the last tag, and HACS shows that body on update. A pushed tag `vX.Y.Z` runs `.github/workflows/release.yml`: the tag must equal `manifest.version`, and hassfest and HACS pass on it (D-0624, D-0663) |
 
 ---
 
@@ -339,7 +339,7 @@ The prose around a block is written by hand. A value the prose repeats - a defau
 
 ### 5.8 The root README
 
-HACS renders the root `README.md` (`render_readme: true`) as the store page. So it uses **absolute URLs only** (`raw.githubusercontent.com` for images) and no `<picture>`, alert, mermaid or `<details>`. Its contents: the brand image, one paragraph on what PowerPlan does, three bullets on what it does for a home, requirements, the HACS and "add integration" My buttons, "Read the documentation" → `docs/README.md`, the current limitation (the blank HACS icon), and one line for contributors → `design/`.
+HACS renders the root `README.md` (`render_readme: true`) as the store page. So it uses **absolute URLs only** (`raw.githubusercontent.com` for images) and no `<picture>`, alert, mermaid or `<details>`. Its contents: the brand image, the badges (CI, nightly, the latest release, HACS custom, the HA floor), four questions a household asks, one paragraph on how PowerPlan answers them, seven bullets on what else it does for a home - none with a count a generated table owns, so it never goes stale - requirements, the install and setup steps with the HACS and "add integration" My buttons, "Read the documentation" → `docs/README.md`, and one line for contributors → `CONTRIBUTING.md`.
 
 ### 5.9 Keeping the pages current
 
@@ -360,7 +360,7 @@ Where each rule is written is in appendix A. The short form: `CONTRIBUTING.md` n
 
 ### 5.10 Versions and change notes
 
-Links point at `main` (dec. 23). A page describes `main`. Behavior that changed carries "Since v0.x", and each release's notes are GitHub's own (decision 13). The design documents keep their own version lines.
+Links point at `main` (PLAN §7 dec. 23), and a page describes `main`. Behavior that changed carries "Since v0.x", and each release's notes are GitHub's own (decision 13). The design documents keep their own version lines.
 
 ---
 
@@ -378,13 +378,13 @@ None. Versions are git's.
 |---|---|---|
 | a section renamed or removed | a flow, repair or card link lands at the top of the page | §9 1 |
 | a generated block is stale | a wrong fact | §9 5 |
-| a screen label changes and the heading does not | the household cannot match the screen to the page | §9 3 |
+| a screen label changes and the heading doesn't | the household can't match the screen to the page | §9 3 |
 | a screenshot is stale | the picture disagrees with the screen | §5.7's rule and capture comment; review |
-| the repository is private or renamed | every link returns 404 | PLAN §3.0 (the repository is public before v1.0); one Python constant and two TS constants |
+| the repository is private or renamed | every link returns 404 | one Python constant and two TS constants |
 | a household runs an older version than `main` | the page describes newer behavior | "Since v0.x" notes; the releases page |
 | HACS renders the README | broken images, literal `<picture>` | §9 7 |
 | a deep link points into `<details>` | it lands on a closed block | §9 6 (no anchor inside `<details>`) |
-| an outbound link on a page (a source's site, a regulator's document) moves | the credit or the fact can no longer be followed | `tools/docs.py --external` before each release, beside D13's canary (§5.7) |
+| an outbound link on a page (a source's site, a regulator's document) moves | the credit or the fact can't be followed | `tools/docs.py --external` before each release, next to D13's canary (§5.7) |
 
 ---
 
@@ -459,18 +459,17 @@ Page families not written yet are listed in `tests/docs/pages_pending.txt`, the 
 
 ## Appendix A: what changes elsewhere
 
-| file | change | when |
-|---|---|---|
-| `design/PLAN.md` | §1 Definition of done: `tests/docs/` green with an empty pending list, every `docs-*` rule `done` or `exempt`. §3.0f: DOC.1–DOC.5 (appendix B), replacing 6.2a and 6.2b. §5 Working method: "User-visible changes go through the user pages". §7: dec. 23 changed, dec. 40 added. §8: the steelmen of §11 1 and 4. §9: the checklist rows | design |
-| `design/HLD.md` | §6.14 D14, a summary; §7 a cross-cutting line: the user pages are part of the surface | design |
-| `design/README.md` (then `docs/README.md`) | D14 in the roster; the LLD template's items 6 and 8 gain the user pages and the troubleshooting entry | design |
-| `D8` | §5.13 keeps the budgets and placeholders, and points to D14 for the pages and the link form; §5.12 `documentation` → `…/blob/main/docs/README.md`; §9 15 → D14 §9 1, 4 | design |
-| `D12` | §5.5 per-card `documentationURL` anchors; a new §5.14 for the help links; §9 23 | design |
-| `design/` (moved) | `HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/`; `docs/README.md`'s roster and template become `design/README.md`; the 137 citing files rewritten | DOC.1 |
-| `custom_components/powerplan/manifest.json` | `documentation` → `…/blob/main/docs/README.md` | DOC.1 |
-| `custom_components/powerplan/translations/en.json` | "litres" → "liters", "metres" → "meters" (S4; 8 occurrences) | DOC.1 |
-| `docs/images/brand/` | → `docs/images/brand/`; the root README links its image by absolute URL (§5.8) | DOC.1 |
-| `docs/dashboard.md` | rewritten to the §4 frame; "colour" → "color" | DOC.5 |
+| file | change |
+|---|---|
+| `design/PLAN.md` | §1 Definition of done: `tests/docs/` green with an empty pending list, every `docs-*` rule `done` or `exempt`. The DOC work packages (appendix B). §5 Working method: "User-visible changes go through the user pages". §7: dec. 40 |
+| `design/HLD.md` | §6.14 D14, a summary; §7 a cross-cutting line: the user pages are part of the surface |
+| `design/README.md` | D14 in the roster; the LLD template's items 6 and 8 gain the user pages and the troubleshooting entry |
+| `D8` | §5.13 keeps the budgets and placeholders and points here for the pages and the link form; §5.12 `documentation` → `…/blob/main/docs/README.md`; §9 15 → D14 §9 1, 4 |
+| `D12` | §5.5 per-card `documentationURL` anchors; §5.14 the help links; §9 23 |
+| `CONTRIBUTING.md` | a *User documentation* section: a change a household or an automation can see updates its page in the same PR; the PR description's **Docs:** line; §5.9's table, S1–S10 in a line each, §5.2's alert and anchor rules, §5.4's link rule, and `tools/docs.py --write` / `--check` |
+| `custom_components/powerplan/manifest.json` | `documentation` → `…/blob/main/docs/README.md` |
+| `custom_components/powerplan/translations/en.json` | "litres" → "liters", "metres" → "meters" (S4) |
+| `docs/dashboard.md` | written to the §4 frame; "colour" → "color" |
 
 ## Appendix B: work packages (PLAN §3)
 

@@ -1,0 +1,58 @@
+name: release
+
+# PLAN WP6.3, D14 dec. 13 (D-0624, D-0663): a pushed tag `vX.Y.Z` becomes a
+# GitHub release. The tag must equal `manifest.version`, hassfest and HACS must
+# pass on the tag, and the release notes are GitHub's own - the changes since the
+# last tag - which HACS shows when it offers the update. A tag with a `-`
+# (v0.2.0-beta.1) is published as a pre-release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  release:
+    name: GitHub release
+    needs: [hassfest, hacs]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The tag is the manifest's version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          manifest="$(jq -r .version custom_components/powerplan/manifest.json)"
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, manifest.version $manifest"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$VERSION" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "PowerPlan $VERSION" --generate-notes "${flags[@]}"
