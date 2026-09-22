@@ -188,6 +188,31 @@ def test_18b_a_register_drop_reanchors_and_never_yields_a_negative_slot() -> Non
         assert slot.kwh == pytest.approx(1.75, abs=0.01)
 
 
+def test_18c_a_rebound_energy_role_reanchors_instead_of_billing_the_gap() -> None:
+    """The water heater's 3 593 kWh slot (D-0665): a new register is not new energy.
+
+    The live incident: a Z-Wave meter at 2 317 kWh was rebound to a Riemann helper
+    at 5 910 kWh mid-slot; the old anchor was subtracted from the new register.
+    """
+    at = DAY + timedelta(minutes=2)
+    meter = LoadMeter(config(nameplate_w=3000.0), None)
+    for minute, kwh in enumerate((2317.33, 2317.38, 2317.44)):
+        now = at + timedelta(minutes=minute)
+        meter.sample(now, view(), Reading(kwh, at=now, source="sensor.zwave_kwh"), 15)
+    held = meter.state()
+    assert held.slot_kwh == pytest.approx(0.11)
+
+    meter = restart(meter)
+    for minute, kwh in enumerate((5910.59, 5910.64, 5910.69), start=3):
+        now = at + timedelta(minutes=minute)
+        meter.sample(now, view(), Reading(kwh, at=now, source="sensor.riemann_kwh"), 15)
+
+    state = meter.state()
+    assert state.slot_kwh == pytest.approx(0.11 + 0.10), "the slot keeps its energy and runs on"
+    assert state.lifetime_kwh - held.lifetime_kwh == pytest.approx(0.10)
+    assert state.register_source == "sensor.riemann_kwh"
+
+
 # --------------------------------------------------------------------------- #
 # 19 - POWER and ESTIMATED
 # --------------------------------------------------------------------------- #

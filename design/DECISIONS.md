@@ -2764,3 +2764,8 @@ CI's `hygiene` job runs `vulture` (60 % confidence) and `jscpd` (Python and Type
 
 A release is published with GitHub's generated notes, the diff since the last tag, which HACS shows on update. The user pages link the releases page. D14 decision 13 is replaced. Affects D14 §1, §5.9, §8.
 **Rejected:** a changelog in the household's words - one more record to keep in step with the commits.
+
+### D-0665 · A load's register anchor belongs to one entity: a rebound energy role re-anchors
+
+`LoadMeterState.register_source` records the entity the anchor came from; a reading from another entity re-anchors as a reset does, so the slot keeps its energy. A state without the field re-anchors once. A water heater's energy role was rebound from a Z-Wave meter at 2 317 kWh to a Riemann helper at 5 911 kWh, the reload kept the old anchor, and one quarter hour took 3 593 kWh; D3 re-anchored only on a drop. Affects D3 §5.12, §9 18c.
+**Rejected:** a jump guard like the window meter's - needs the register's own report time, which the state doesn't hold.

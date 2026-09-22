@@ -102,6 +102,9 @@ class LoadMeterState:
     last_at: datetime | None = None
     last_w: float | None = None
     last_register_kwh: float | None = None
+    #: The entity `anchor_kwh` was read from. Another entity's anchor means
+    #: nothing to this one's register (D-0665).
+    register_source: str | None = None
     lifetime_kwh: float = 0.0
     gap_s: float = 0.0
     mixed_source: bool = False
@@ -217,6 +220,7 @@ class LoadMeter:
                 mixed_source=mixed,
                 anchor_kwh=None,
                 last_register_kwh=None,
+                register_source=None,
             )
 
         # Neither role: nameplate × on-fraction from the commanded state. The
@@ -235,6 +239,7 @@ class LoadMeter:
             mixed_source=mixed,
             anchor_kwh=None,
             last_register_kwh=None,
+            register_source=None,
         )
 
     def _register(
@@ -253,6 +258,17 @@ class LoadMeter:
 
         if anchor is None:
             anchor = value
+        elif energy.source != st.register_source:
+            # The ENERGY role was rebound: the old entity's anchor subtracted from
+            # the new one's register bills the difference between two unrelated
+            # counters as one slot (D-0665). Re-anchor as on a reset.
+            _LOGGER.info(
+                "%s: energy register is now %s (was %s), re-anchoring",
+                self.config.load_id,
+                energy.source,
+                st.register_source,
+            )
+            anchor = value - st.slot_kwh
         elif previous is not None and value < previous - self.config.reset_drop_kwh:
             # A session counter or a replaced device. The anchor is back-dated by
             # what the slot already holds, so the slot keeps its energy and the
@@ -275,6 +291,7 @@ class LoadMeter:
             last_at=now,
             last_w=None,
             last_register_kwh=value,
+            register_source=energy.source,
             gap_s=gap_s,
             mixed_source=mixed,
         )
