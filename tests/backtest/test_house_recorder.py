@@ -158,7 +158,7 @@ def _log(
     span_to = result.span[1].astimezone(OSLO).isoformat()
     total = result.total
     lines = [
-        f"# House check {_today()} — recorder backtest (NO preset)",
+        f"# House check {_today()} – recorder backtest (NO preset)",
         "",
         "| | |",
         "|---|---|",
@@ -190,7 +190,7 @@ def _log(
         ),
         "",
         (
-            f"- Whole months in the span: **{len(whole)}** — **{len(passed)}** with every "
+            f"- Whole months in the span: **{len(whole)}** – **{len(passed)}** with every "
             f"window under target, **{len(whole) - len(passed)}** with at least one over."
         ),
         f"- Windows over target across the whole span: **{total.over_target}**.",
@@ -217,7 +217,7 @@ def _log(
         (
             "What the recorder could say about each load over the span. `energy` is the load's"
             " own kWh register, `power` its mean-power statistics, `missing` no history at all"
-            " — never a zero (PLAN §6 R8)."
+            " – never a zero (PLAN §6 R8)."
         ),
         "",
         "| load | type | entity | quality | first row | last row | kWh over the span |",
@@ -240,8 +240,8 @@ def _cross_check(check: BacktestResult) -> list[str]:
     """Compare the month's first days with the only independently published numbers."""
     top = sorted(check.windows, key=lambda item: -item.closed.kwh)[:5]
     month = check.months.get("2026-09")
-    metric = "—" if month is None else f"{month.metric_kw:.2f} kW"
-    level = "—" if month is None else month.level_reached
+    metric = "–" if month is None else f"{month.metric_kw:.2f} kW"
+    level = "–" if month is None else month.level_reached
     return [
         "",
         "## Cross-check: 2026-09-01 → 04 against effektstyring's published table",
@@ -263,7 +263,7 @@ def _cross_check(check: BacktestResult) -> list[str]:
             " published hour is one earlier than the hour whose mean power carries that energy,"
             " which is what a fixed +1 offset does to a summer date (CEST read as CET). The"
             " 4.52 kWh hour the README files as d03h23 is 2026-09-04T00:00 here, so over a"
-            " longer span it counts towards the 4th — with the whole of 2026-09-01…06 the"
+            " longer span it counts towards the 4th – with the whole of 2026-09-01…06 the"
             " top-3-distinct-days mean is 4.72 kW rather than 4.54. On these three days both"
             " agree (D2 §2's local-day rule, INV-7)."
         ),
@@ -287,10 +287,10 @@ def _month_row(key: str, row: BacktestMetrics) -> str:
 
 
 def _load_row(item: LoadHistory, total: BacktestMetrics) -> str:
-    first = item.buckets[0][0].astimezone(OSLO).date().isoformat() if item.buckets else "—"
-    last = item.buckets[-1][1].astimezone(OSLO).date().isoformat() if item.buckets else "—"
+    first = item.buckets[0][0].astimezone(OSLO).date().isoformat() if item.buckets else "–"
+    last = item.buckets[-1][1].astimezone(OSLO).date().isoformat() if item.buckets else "–"
     kwh = total.load_kwh.get(item.spec.load_id)
     return (
         f"| {item.spec.load_id} | {item.spec.kind} | `{item.spec.entity}` | {item.quality} "
-        f"| {first} | {last} | {'—' if kwh is None else f'{kwh:.1f}'} |"
+        f"| {first} | {last} | {'–' if kwh is None else f'{kwh:.1f}'} |"
     )

@@ -168,7 +168,7 @@ def _demand(
             "measurement",
             _reading(description),
             f"The plan's demand is measured by {charge.get('measurementPeriod')}, and says: "
-            f"“{description}” — which is it?",
+            f"“{description}” – which is it?",
             MEASUREMENTS,
         )
     )

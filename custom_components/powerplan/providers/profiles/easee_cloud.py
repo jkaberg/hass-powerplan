@@ -177,7 +177,7 @@ class EaseeCloudDevice(ChargerDevice):
             return super().call_for(write)
         if self.device_id is None:
             _LOGGER.warning(
-                "%s: no device to address %s to — not written", self.profile, write.role
+                "%s: no device to address %s to – not written", self.profile, write.role
             )
             return None
         amps = max(0, min(MAX_CURRENT_A, int(quantise_down(float(write.value), 1.0))))
@@ -220,7 +220,7 @@ class EaseeCloud:
             reasons += (
                 (
                     f"{entity.entity_id} is not reporting: the Easee integration ships it "
-                    "disabled — enable it, it is how every limit powerplan sets is read back"
+                    "disabled – enable it, it is how every limit powerplan sets is read back"
                 ),
             )
         return MatchResult(

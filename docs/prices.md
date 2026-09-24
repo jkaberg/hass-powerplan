@@ -148,14 +148,14 @@ A price add-on is a part of your price besides the spot price. PowerPlan adds th
 |---|---|---|
 | Tiered by monthly use | Tiers, Counted over | `cumulative_tier` |
 | Day-type tariff (critical peak days) | Day types, Normal day type, Sensor that announces the day | `day_type` |
-| export_price | — | `export_price` |
+| export_price | – | `export_price` |
 | Fixed state price (Norgespris) | Price per kWh, Cap per month | `fixed_price` |
-| Taxes and levies | — | `levy` |
+| Taxes and levies | – | `levy` |
 | Supplier markup | Multiplier, Markup per kWh | `spot_scale` |
-| State subsidy (strømstøtte) | — | `subsidy_threshold` |
+| State subsidy (strømstøtte) | – | `subsidy_threshold` |
 | Supplier's day and night prices | Periods, Price for other hours | `supplier_tou` |
-| Grid energy charge (day/night) | — | `tou_schedule` |
-| VAT | — | `vat` |
+| Grid energy charge (day/night) | – | `tou_schedule` |
+| VAT | – | `vat` |
 <!-- generated:end modifiers -->
 
 <a name="cumulative_tier"></a>

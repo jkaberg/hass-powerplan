@@ -119,7 +119,7 @@ def run_to_defrost(load: Load, sim: HeatPumpSim) -> tuple[LoadState, LoadCtx, in
         command = result.command
         if state.defrost_since is not None:
             return state, ctx, index
-    raise AssertionError("no defrost in two hours below +3 °C — check the simulator")
+    raise AssertionError("no defrost in two hours below +3 °C – check the simulator")
 
 
 @pytest.mark.inv("INV-29")

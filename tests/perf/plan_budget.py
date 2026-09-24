@@ -60,6 +60,6 @@ def test_plan_p95_is_under_500ms_with_20_loads() -> None:
 
     p95 = _p95(cycles)
     assert p95 < PLAN_P95_BUDGET_MS, (
-        f"plan p95 {p95:.2f} ms over {len(loads)} loads — D9 §5.1's budget is "
+        f"plan p95 {p95:.2f} ms over {len(loads)} loads – D9 §5.1's budget is "
         f"{PLAN_P95_BUDGET_MS:.0f} ms"
     )

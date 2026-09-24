@@ -104,7 +104,7 @@ def test_14_the_sensorless_model_re_anchors_when_the_thermostat_stops_drawing() 
 
     anchored_at = next(i for i, value in enumerate(estimates) if value == pytest.approx(anchor))
     assert estimates[anchored_at - 1] < anchor - 5.0, (
-        "the integrator really was behind — the anchor is a correction, not a no-op"
+        "the integrator really was behind – the anchor is a correction, not a no-op"
     )
     assert estimates[0] == pytest.approx(float(load.config.params["comfort_min_c"]), abs=0.5), (
         "an unknown tank starts at its floor: the pessimistic end (§5.7)"
@@ -167,7 +167,7 @@ def test_14d_the_draw_off_profile_spends_the_household_s_litres_where_they_are_u
     )
     whole_day = draw.litres_between(midnight, midnight + timedelta(days=1), OSLO)
 
-    assert night == pytest.approx(0.0), "nobody showers at 03:00 — which is when we charge"
+    assert night == pytest.approx(0.0), "nobody showers at 03:00 – which is when we charge"
     assert morning == pytest.approx(90.0 * 0.35)
     assert evening == pytest.approx(90.0 * 0.45)
     assert whole_day == pytest.approx(90.0)

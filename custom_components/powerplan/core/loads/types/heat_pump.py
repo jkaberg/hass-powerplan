@@ -408,7 +408,7 @@ class HeatPump:
         """Build the runtime load: one setpoint kind and a room (D4 §5.1)."""
         if cfg.target is None:
             raise ValueError(
-                f"{cfg.load_id}: heat_pump needs a target profile — a comfort "
+                f"{cfg.load_id}: heat_pump needs a target profile – a comfort "
                 "target comes from configuration, never from the device (INV-27)"
             )
         kind = self._kind(cfg)

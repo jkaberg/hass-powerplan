@@ -92,7 +92,7 @@ def _unit(entry: er.RegistryEntry) -> str:
             "\N{SINGLE LEFT-POINTING ANGLE QUOTATION MARK}currency\N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK}",
             entry.unit_of_measurement or "",
         )
-        or "—"
+        or "–"
     )
 
 

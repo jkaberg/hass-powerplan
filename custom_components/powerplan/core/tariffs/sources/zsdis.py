@@ -95,7 +95,7 @@ def _meaning(row: Mapping[str, Any]) -> str:
 def operators(page: bytes) -> list[Operator]:
     """Return ZSDIS with each household programme as a product: the meter's own code."""
     products = tuple(
-        Product(str(row["code"]), f"{row['code']} — {_meaning(row)}")
+        Product(str(row["code"]), f"{row['code']} – {_meaning(row)}")
         for row in sorted(codes(page), key=lambda row: int(row["code"]))
     )
     return [Operator("zsdis", ATTRIBUTION, products=products)]

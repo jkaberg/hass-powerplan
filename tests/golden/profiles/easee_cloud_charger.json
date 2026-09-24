@@ -1,6 +1,6 @@
 {
   "fixture": "easee_cloud_charger",
-  "source": "tests/fixtures/captured/easee_cloud_charger.json — written from nordicopen/easee_hass v0.9.74 as installed, not captured (D-0371): an Easee Home charging at a 16 A dynamic limit.",
+  "source": "tests/fixtures/captured/easee_cloud_charger.json – written from nordicopen/easee_hass v0.9.74 as installed, not captured (D-0371): an Easee Home charging at a 16 A dynamic limit.",
   "note": "D9 §9 7, D4 §9 16. No platform in the dump, so `easee_cloud` matches at its SHAPE_CONFIDENCE on the dynamic-charger-limit sensor beside a status. `current_number` is that sensor, written through easee.set_charger_dynamic_limit by device (D4 §5.10); no switch and no flash limit is writable. `generic_switch` offers itself at 0.4 on the kW power sensor, below the product profile, with its `switch` missing: five switches, none it can tell is the load's.",
   "matches": [
     {

@@ -190,7 +190,7 @@ def render(rows: list[Row], *, title: str) -> str:
 
 def _cell(value: Any) -> str:
     if value is None:
-        return "—"
+        return "–"
     if isinstance(value, float):
         return f"{value:.3f}"
     return str(value)

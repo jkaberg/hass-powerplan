@@ -1,6 +1,6 @@
 {
   "type": "radiator",
-  "about": "D4 §6.5: an 800 W panel heater on a smart plug in a bedroom — room comfort 19/17 °C from §6.1's measured table, `best_save` at a 10 % threshold, two hours off at most, half an hour on at least.",
+  "about": "D4 §6.5: an 800 W panel heater on a smart plug in a bedroom – room comfort 19/17 °C from §6.1's measured table, `best_save` at a 10 % threshold, two hours off at most, half an hour on at least.",
   "ctx": {
     "area": "Soverom",
     "capabilities": [

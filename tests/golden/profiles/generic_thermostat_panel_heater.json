@@ -1,6 +1,6 @@
 {
   "fixture": "generic_thermostat_panel_heater",
-  "source": "tests/fixtures/captured/generic_thermostat_panel_heater.json — a HA `generic_thermostat` over the laundry room's panel heater, captured: one climate entity, 16–23 °C, step 0.1.",
+  "source": "tests/fixtures/captured/generic_thermostat_panel_heater.json – a HA `generic_thermostat` over the laundry room's panel heater, captured: one climate entity, 16–23 °C, step 0.1.",
   "note": "D4 §9 3 and §9 16, the plain-climate row. Confidence 0.6, kind SETPOINT, no provisions: there is no eco setpoint, no floor minimum and no operation-mode select to shed with, so the lever is `climate.set_temperature` quantised by the entity's own `target_temp_step` of 0.1 °C.",
   "matches": [
     {

@@ -93,7 +93,7 @@ def _one(candidates: Sequence[EntityView], what: str, view: DeviceView) -> Entit
     """Return the single candidate, or `None` - ambiguity binds nothing (D4 §5.9)."""
     if len(candidates) > 1:
         _LOGGER.debug(
-            "%s: %s entities could be the %s — binding none of them: %s",
+            "%s: %s entities could be the %s – binding none of them: %s",
             view.name,
             len(candidates),
             what,

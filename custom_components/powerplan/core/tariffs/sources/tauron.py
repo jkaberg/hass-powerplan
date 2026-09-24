@@ -37,9 +37,9 @@ KEY: Final = "tauron"
 PAGE: Final = "https://taniej.tauron-dystrybucja.pl/"
 ATTRIBUTION: Final = "TAURON Dystrybucja S.A."
 PRODUCTS: Final = (
-    Product("g11", "G11 — jednostrefowa"),
-    Product("g12", "G12 — dwustrefowa (dzień / noc)"),
-    Product("g12w", "G12w — dwustrefowa z weekendami"),
+    Product("g11", "G11 – jednostrefowa"),
+    Product("g12", "G12 – dwustrefowa (dzień / noc)"),
+    Product("g12w", "G12w – dwustrefowa z weekendami"),
 )
 GROUPS: Final = ("I", "II", "III", "IV")
 _MARKER: Final = "electricCalculatorConfig = "

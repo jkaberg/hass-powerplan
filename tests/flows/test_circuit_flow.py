@@ -50,7 +50,7 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     assert result["step_id"] == "match", result
     # LOAD-2: a plug is `generic_switch` at 0.4 - below 0.6 the step warns in words.
     assert result["description_placeholders"]["warning"] == (
-        "We are not sure — check that this is the right appliance."
+        "We are not sure – check that this is the right appliance."
     )
     suggested = result["data_schema"]({})
     result = await _answer(hass, result, **suggested)

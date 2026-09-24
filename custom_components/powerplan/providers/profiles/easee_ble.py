@@ -185,7 +185,7 @@ class EaseeBleDevice(BoundDevice):
                 continue
             roles[role] = RoleRead(role=role, options=binding.options, available=False)
         _LOGGER.debug(
-            "%s: no Bluetooth contact (status %s, blocked_by %s) — forgetting %s; "
+            "%s: no Bluetooth contact (status %s, blocked_by %s) – forgetting %s; "
             "the charger may have fallen back to its own maximum",
             self.profile,
             reads.text(Role.STATUS),
@@ -269,7 +269,7 @@ class EaseeBle:
             scale = 1.0 if table is None else declared_scale(entity.unit, table)
             if scale is None:
                 _LOGGER.warning(
-                    "%s: %s declares unit %r, which powerplan cannot read as %s — "
+                    "%s: %s declares unit %r, which powerplan cannot read as %s – "
                     "leaving the role unbound",
                     self.key,
                     entity.entity_id,

@@ -135,4 +135,4 @@ def test_baseline_ready_fires_once_confidence_crosses_the_offer_floor() -> None:
             window_closed=replace(template, start_utc=again_at),
         )
     )
-    assert not again.baseline_ready, "already ready — the edge does not repeat"
+    assert not again.baseline_ready, "already ready – the edge does not repeat"

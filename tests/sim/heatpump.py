@@ -73,7 +73,7 @@ EER_ANCHOR_35 = 3.2
 SOURCES: dict[str, str] = {
     "RATED_W": "D9 §5.9 house spec: air-to-air 1.5 kW rated; D4 §6.4 asks for it always",
     "STANDBY_W": (
-        "D4 §5.14 'an inverter at 23 W does not reserve 3 kW' — 25 W standby/electronics, "
+        "D4 §5.14 'an inverter at 23 W does not reserve 3 kW' – 25 W standby/electronics, "
         "rounded from that observation"
     ),
     "MIN_MODULATION": (
@@ -106,11 +106,11 @@ SOURCES: dict[str, str] = {
     "DEFROST_DRY_FACTOR": "assumed: the interval roughly doubles in dry cold",
     "DEFROST_S": "assumed: a 5-minute reverse-cycle defrost. Replaced by a measured cycle",
     "DEFROST_VALVE_S": (
-        "assumed: 20 s for the four-way valve to swing with the fans stopped — the power dip"
+        "assumed: 20 s for the four-way valve to swing with the fans stopped – the power dip"
     ),
     "DEFROST_RECOVERY_S": "assumed: 2 min at full power after the ice is gone",
     "DEFROST_OUTLET_DROP_K": (
-        "assumed: the indoor outlet air runs ~5 K below room temperature during defrost — the "
+        "assumed: the indoor outlet air runs ~5 K below room temperature during defrost – the "
         "'power up while outlet falls' signature of D4 §5.14"
     ),
     "DEFROST_HEAT_FRACTION": (

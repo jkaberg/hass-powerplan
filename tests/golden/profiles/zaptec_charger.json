@@ -1,7 +1,7 @@
 {
   "fixture": "zaptec_charger",
-  "source": "tests/fixtures/captured/zaptec_charger.json — written from custom-components/zaptec v0.8.7, not captured (D-0371): a Zaptec Go charging at 16 A with its installation as the parent device.",
-  "note": "D9 §9 7, D4 §9 16. No platform in the dump, so `zaptec` matches at its SHAPE_CONFIDENCE on the five operation modes (D4 §5.9). `current_number` binds on the parent device — the installation's Available current (WP4.8a) — and the Charging switch is not bound (D-0372). `generic_number` offers itself at 0.5, below the product profile, with `current_number` missing: the charger's own two A numbers (its min and max current) are ambiguous and bind neither (D4 §5.9).",
+  "source": "tests/fixtures/captured/zaptec_charger.json – written from custom-components/zaptec v0.8.7, not captured (D-0371): a Zaptec Go charging at 16 A with its installation as the parent device.",
+  "note": "D9 §9 7, D4 §9 16. No platform in the dump, so `zaptec` matches at its SHAPE_CONFIDENCE on the five operation modes (D4 §5.9). `current_number` binds on the parent device – the installation's Available current (WP4.8a) – and the Charging switch is not bound (D-0372). `generic_number` offers itself at 0.5, below the product profile, with `current_number` missing: the charger's own two A numbers (its min and max current) are ambiguous and bind neither (D4 §5.9).",
   "matches": [
     {
       "profile": "zaptec",

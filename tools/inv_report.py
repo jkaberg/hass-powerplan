@@ -33,7 +33,7 @@ TESTS = REPO_ROOT / "tests"
 # changes shape, the traceability test fails loudly instead of silently
 # shrinking the safety set.
 _SAFETY_SECTION = re.compile(r"Safety invariants\.\*\*(?P<spec>.*?)are the product", re.DOTALL)
-_RANGE = re.compile(r"^(\d+)\s*[–—-]\s*(\d+)$")
+_RANGE = re.compile(r"^(\d+)\s*[––-]\s*(\d+)$")
 _SINGLE = re.compile(r"^(\d+)$")
 _DECLARED = re.compile(r"\bINV-(\d+)\b")
 

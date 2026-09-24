@@ -315,7 +315,7 @@ class Radiator:
         """Build the runtime load: a relay or a setpoint, and the room (§5.1)."""
         if cfg.target is None:
             raise ValueError(
-                f"{cfg.load_id}: radiator needs a target profile — a comfort target "
+                f"{cfg.load_id}: radiator needs a target profile – a comfort target "
                 "comes from configuration, never from the device (INV-27)"
             )
         kind = self._kind(cfg)

@@ -90,7 +90,7 @@ def decode(kind: Any, raw: Any) -> Any:  # noqa: PLR0911, PLR0912 - one branch p
                 # already means (D7 §7). One bad key must never cost the
                 # whole section, or the whole site.
                 _LOGGER.warning(
-                    "state section: %r's entry %r could not be decoded as %s (%s) — dropped",
+                    "state section: %r's entry %r could not be decoded as %s (%s) – dropped",
                     key,
                     item,
                     value_kind,

@@ -914,8 +914,8 @@ async def test_17c_an_observe_line_says_what_the_device_holds_and_what_would_be_
     with caplog.at_level(logging.INFO):
         await gate.async_apply([actuation(limit(24.0), mode=Mode.OBSERVE)])
 
-    lines = [r.getMessage() for r in caplog.records if "observe —" in r.getMessage()]
-    assert lines == ["Car charger: observe — 16.0 → 24.0 (observe: would have written plan: 24 A)"]
+    lines = [r.getMessage() for r in caplog.records if "observe –" in r.getMessage()]
+    assert lines == ["Car charger: observe – 16.0 → 24.0 (observe: would have written plan: 24 A)"]
     assert not calls
     assert device.values[LIMIT] == "16.0"
 

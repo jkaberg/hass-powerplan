@@ -132,7 +132,7 @@ class GenericSwitch:
         """Say how confident this profile is about `view`, and bind what it finds."""
         specific = _steered_otherwise(view)
         if specific is not None:
-            return no_match(self.key, f"not a plain switch — {specific}")
+            return no_match(self.key, f"not a plain switch – {specific}")
         candidates = _switchables(view)
         if not candidates:
             return no_match(self.key, "no switch on this device")
@@ -141,7 +141,7 @@ class GenericSwitch:
         bindings: list[RoleBinding] = []
         if len(candidates) > 1:
             _LOGGER.debug(
-                "%s: %s entities could be the switch — binding none of them: %s",
+                "%s: %s entities could be the switch – binding none of them: %s",
                 view.name,
                 len(candidates),
                 [entity.entity_id for entity in candidates],

@@ -1,6 +1,6 @@
 {
   "type": "heat_pump",
-  "about": "D4 §6.4: the reference house's air-to-air unit — 1.5 kW rated over the open-plan 60 m², built 2000–2010, band ±1 K, the A2A COP curve of §6.4 shown and editable, and the mains switch listed as never-actuated (INV-29).",
+  "about": "D4 §6.4: the reference house's air-to-air unit – 1.5 kW rated over the open-plan 60 m², built 2000–2010, band ±1 K, the A2A COP curve of §6.4 shown and editable, and the mains switch listed as never-actuated (INV-29).",
   "ctx": {
     "area": "Stue",
     "capabilities": [

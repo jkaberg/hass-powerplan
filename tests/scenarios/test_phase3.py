@@ -409,7 +409,7 @@ def test_the_household_leaves_and_the_hall_s_target_relaxes(
 
     away_targets = [target for _now, presence, target in rows if presence is PresenceMode.AWAY]
     home_targets = [target for _now, presence, target in rows if presence is PresenceMode.HOME]
-    assert away_targets, "the household was never away — the scenario's own premise"
+    assert away_targets, "the household was never away – the scenario's own premise"
     assert home_targets, "the household never came home either"
 
     assert all(target == pytest.approx(HALL_COMFORT_C - AWAY_DELTA_K) for target in away_targets)
@@ -475,7 +475,7 @@ def test_the_evening_runs_clean_and_the_dishwasher_completes_by_ready_by(
     assert result.comfort_violation_min == 0.0
 
     runs = _dishwasher_runs(trail)
-    assert len(runs) == 1, "one programme, one block — not split, not repeated"
+    assert len(runs) == 1, "one programme, one block – not split, not repeated"
     start, end = runs[0]
     assert end - start >= timedelta(hours=2, minutes=30), "close to the full 3 h programme"
     assert end <= DISHWASHER_READY_BY

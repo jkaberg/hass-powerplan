@@ -1287,7 +1287,7 @@ class Engine:
         boundary = _is_boundary_tick(now, site.window_min, site.tz)
         if boundary:
             reasons.append(
-                f"INV-43: ticked at the window boundary {now.isoformat()} — the register "
+                f"INV-43: ticked at the window boundary {now.isoformat()} – the register "
                 "report closes the window, not the clock"
             )
             _LOGGER.warning(
@@ -1310,7 +1310,7 @@ class Engine:
         frozen = frozen_for(meter)
         if frozen:
             reasons.append(
-                f"frozen: {meter.frozen_reason} — every grant held where it was (INV-15, INV-17)"
+                f"frozen: {meter.frozen_reason} – every grant held where it was (INV-15, INV-17)"
             )
 
         # -- 3. closed windows into the tariff, then the PI ---------------- #
@@ -1487,7 +1487,7 @@ class Engine:
         events.extend(_domain_events(edges, ladder_state, report, observations, failed, budget))
         events.extend(_level_events(edges, self._tariff, budget))
         for load_id, error in failed.items():
-            reasons.append(f"{load_id}: failed and held — {error} (INV-45)")
+            reasons.append(f"{load_id}: failed and held – {error} (INV-45)")
             repairs.append(
                 RepairIssue(
                     issue_id=f"load_error_{load_id}",
@@ -2906,7 +2906,7 @@ def _live_warning(budget: Budget, ceiling: Ceiling, meter: MeterSnapshot) -> Sit
         expected_kwh=budget.projected_kwh,
         ceiling_kwh=budget.ceiling_kwh,
         drivers=(("uncontrolled", uncontrolled / 1000.0 * meter.t_rem_h),),
-        advice=("something not controlled by powerplan is running — oven or sauna?",),
+        advice=("something not controlled by powerplan is running – oven or sauna?",),
     )
 
 

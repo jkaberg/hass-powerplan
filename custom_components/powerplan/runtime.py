@@ -2604,7 +2604,7 @@ class Runtime:
     def _adopt_comfort(self, load: Load, value: float, now: datetime) -> None:
         """Make a hand on the dial the appliance's comfort target (amended INV-27)."""
         _LOGGER.info(
-            "site %s: %s set to %.1f by hand — the new comfort target",
+            "site %s: %s set to %.1f by hand – the new comfort target",
             self.site_name,
             load.config.name,
             value,
@@ -4035,7 +4035,7 @@ class Runtime:
             self._persist_sections(frozenset({Section.ACCOUNTING}))
             self.store.mark_dirty(Section.TARIFF)
         _LOGGER.warning(
-            "site %s: the accounting was reset by powerplan.reset_accounting — the month restarts, partial",
+            "site %s: the accounting was reset by powerplan.reset_accounting – the month restarts, partial",
             self.entry.title,
         )
         await self.run_tick("service")

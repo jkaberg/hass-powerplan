@@ -87,7 +87,7 @@ def check(report_path: Path) -> list[str]:
                 totals.add(summary)
         line_pct = totals.line_pct
         if line_pct is None:
-            failures.append(f"{prefix}: no covered file matched — check the path")
+            failures.append(f"{prefix}: no covered file matched – check the path")
             continue
         if line_pct < line_floor:
             failures.append(f"{prefix}: {line_pct:.1f}% lines, floor is {line_floor:.0f}%")
@@ -119,7 +119,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.report.exists():
-        print(f"{args.report} not found — run pytest with --cov-report=json first", file=sys.stderr)
+        print(f"{args.report} not found – run pytest with --cov-report=json first", file=sys.stderr)
         return 2
 
     failures = check(args.report)

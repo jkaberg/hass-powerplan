@@ -95,7 +95,7 @@ SAME_IN_BOTH = frozenset(
         "kW",  # a unit
         "kWh",  # units a price is per (`selector.price_format_options_energy_unit`)
         "MWh",
-        "—",  # nothing
+        "–",  # nothing
         "April",  # months spelled the same in nb (`selector.month`)
         "August",
         "September",
@@ -465,17 +465,17 @@ def assert_in_language(text: str, language: str, names: set[str], where: str) ->
     plain = _strip(text, names)
     if language == "nb":
         english = sorted(set(WORD.findall(plain.lower())) & ENGLISH)
-        assert not english, f"{where}: English in nb: {english} — {text!r}"
-        assert not POINT_DECIMAL.search(plain), f"{where}: point decimal in nb — {text!r}"
+        assert not english, f"{where}: English in nb: {english} – {text!r}"
+        assert not POINT_DECIMAL.search(plain), f"{where}: point decimal in nb – {text!r}"
     else:
-        assert not COMMA_DECIMAL.search(plain), f"{where}: comma decimal in en — {text!r}"
+        assert not COMMA_DECIMAL.search(plain), f"{where}: comma decimal in en – {text!r}"
 
 
 def assert_household_words(text: str, language: str, names: set[str], where: str) -> None:
     """No design word on a screen; the household's glossary instead (§5.15 rule 7)."""
     plain = PLACEHOLDER.sub(" ", _strip(text, names))
     found = sorted({match.lower() for match in DESIGN_WORDS[language].findall(plain)})
-    assert not found, f"{where}: design words {found} — {text!r}"
+    assert not found, f"{where}: design words {found} – {text!r}"
 
 
 def assert_data_only(value: str, names: set[str], where: str) -> None:

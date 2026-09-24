@@ -155,7 +155,7 @@
       },
       "prices_fixed": {
         "title": "What do you pay per kWh?",
-        "description": "With no curve to follow, PowerPlan cannot move usage to a cheaper hour — but it still counts your cost and keeps you in your capacity step. [How this works]({docs})",
+        "description": "With no curve to follow, PowerPlan cannot move usage to a cheaper hour – but it still counts your cost and keeps you in your capacity step. [How this works]({docs})",
         "data": {
           "price": "Price per kWh"
         },
@@ -559,7 +559,7 @@
       },
       "review": {
         "title": "Ready to start",
-        "description": "Here is what PowerPlan understood. Nothing has been saved yet.\n\n**Connection** — {connection}, about {fuse_kw} kW. PowerPlan never lets the whole home go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. {fuse_assumed}\n\n**Meter** — {meter}.\n\n**Prices** — {prices}.\n\n**Grid fee** — {tariff}.\n\n**Forecasts** — {forecasts}\n\n**Presence** — {presence}.\n\n**Notifications** — {notifications}.\n\n**Times** — everything PowerPlan shows and schedules is in **{timezone}**, {timezone_source}.\n\n{first}",
+        "description": "Here is what PowerPlan understood. Nothing has been saved yet.\n\n**Connection** – {connection}, about {fuse_kw} kW. PowerPlan never lets the whole home go above that, and treats a reading beyond ±{plausible_kw} kW as a sensor error. {fuse_assumed}\n\n**Meter** – {meter}.\n\n**Prices** – {prices}.\n\n**Grid fee** – {tariff}.\n\n**Forecasts** – {forecasts}\n\n**Presence** – {presence}.\n\n**Notifications** – {notifications}.\n\n**Times** – everything PowerPlan shows and schedules is in **{timezone}**, {timezone_source}.\n\n{first}",
         "data": {
           "start_in_observe": "Start in trial mode"
         },
@@ -723,7 +723,7 @@
     },
     "abort": {
       "already_configured": "This meter is already set up as a home in PowerPlan.",
-      "reconfigure_successful": "Saved — the home restarts with the new answers."
+      "reconfigure_successful": "Saved – the home restarts with the new answers."
     }
   },
   "entity": {
@@ -1428,8 +1428,8 @@
         "notifications_none": "none",
         "export": "export: {mode}",
         "fuse_assumed": "The fuse size is assumed for your country.",
-        "first_setup": "**What happens first** — {name} starts in trial mode: PowerPlan decides, explains and logs what it would have done, but controls no device until you turn automatic control on. Keep the box ticked for the first few days; they also calibrate the savings figures.",
-        "first_reconfigure": "**What happens now** — whether PowerPlan controls your appliances stays as it is; change it with Automatic control on the home's device."
+        "first_setup": "**What happens first** – {name} starts in trial mode: PowerPlan decides, explains and logs what it would have done, but controls no device until you turn automatic control on. Keep the box ticked for the first few days; they also calibrate the savings figures.",
+        "first_reconfigure": "**What happens now** – whether PowerPlan controls your appliances stays as it is; change it with Automatic control on the home's device."
       }
     },
     "appliance_cycle_appliance": {
@@ -1666,7 +1666,7 @@
         "and": "and",
         "yes": "yes",
         "no": "no",
-        "none": "—",
+        "none": "–",
         "more": "{names} and {count} more",
         "preset_unknown": "Grid company not listed",
         "preset_custom": "Enter it myself",
@@ -1746,7 +1746,7 @@
     },
     "load_text": {
       "options": {
-        "unsure": "We are not sure — check that this is the right appliance.",
+        "unsure": "We are not sure – check that this is the right appliance.",
         "its_target": "its target",
         "shadow_generic_switch": "Without PowerPlan this appliance would run spread evenly through the day; savings are what the plan saves against that.",
         "shadow_generic_switch_none": "Its savings are not shown: PowerPlan can only pause and restore this appliance, not say what running it would otherwise have cost.",
@@ -2017,7 +2017,7 @@
         "card_soc": "State of charge",
         "card_now": "Now",
         "card_expected": "Expected",
-        "card_no_plan": "No plan yet — waiting for prices.",
+        "card_no_plan": "No plan yet – waiting for prices.",
         "card_appliance": "Appliance",
         "card_total": "Total",
         "card_saved": "Saved",
@@ -2696,7 +2696,7 @@
                 "power_w": "The appliance's power draw, in watts.",
                 "preheat": "Advanced: bank heat before an expensive hour.",
                 "ready_temp_c": "Advanced: the temperature the tank is heated to by the ready-by time.",
-                "schedule_entity": "Advanced: a schedule helper — on is comfort, off is the vacation level.",
+                "schedule_entity": "Advanced: a schedule helper – on is comfort, off is the vacation level.",
                 "screed_depth_mm": "Advanced: millimeters of screed over the cable.",
                 "settle_s": "Advanced: seconds after a write before the reading is trusted.",
                 "standby_loss_w": "Advanced: watts the tank loses standing.",
@@ -2820,7 +2820,7 @@
                 "param_allow_grid_charge": "Whether the battery may charge from the grid in cheap hours.",
                 "param_appliance": "What kind of appliance this is.",
                 "param_area_m2": "The heated area, in square meters.",
-                "param_arrival_sources": "Advanced: calendars whose next event is an arrival — a deadline to be back at the comfort target.",
+                "param_arrival_sources": "Advanced: calendars whose next event is an arrival – a deadline to be back at the comfort target.",
                 "param_band_k": "Advanced: the kelvin the room may swing around the target.",
                 "param_building": "When the house was built. It sets the heat loss.",
                 "param_calendar_entity": "Advanced: a calendar whose next event is a departure, earlier than the weekday table.",
@@ -2883,7 +2883,7 @@
                 "param_ready_temp_c": "Advanced: the temperature the tank is heated to by the ready-by time.",
                 "param_reserve_pct": "The share kept back for an outage.",
                 "param_room": "Which room this heats. It sets the comfort and floor temperatures below.",
-                "param_schedule_entity": "Advanced: a schedule helper — on is comfort, off is the vacation level.",
+                "param_schedule_entity": "Advanced: a schedule helper – on is comfort, off is the vacation level.",
                 "param_screed_depth_mm": "Advanced: millimeters of screed over the cable.",
                 "param_sensor": "Which sensor the thermostat regulates on.",
                 "param_settle_s": "Advanced: seconds after a write before the reading is trusted.",
@@ -3012,7 +3012,7 @@
                 "param_allow_grid_charge": "Whether the battery may charge from the grid in cheap hours.",
                 "param_appliance": "What kind of appliance this is.",
                 "param_area_m2": "The heated area, in square meters.",
-                "param_arrival_sources": "Advanced: calendars whose next event is an arrival — a deadline to be back at the comfort target.",
+                "param_arrival_sources": "Advanced: calendars whose next event is an arrival – a deadline to be back at the comfort target.",
                 "param_band_k": "Advanced: the kelvin the room may swing around the target.",
                 "param_building": "When the house was built. It sets the heat loss.",
                 "param_calendar_entity": "Advanced: a calendar whose next event is a departure, earlier than the weekday table.",
@@ -3075,7 +3075,7 @@
                 "param_ready_temp_c": "Advanced: the temperature the tank is heated to by the ready-by time.",
                 "param_reserve_pct": "The share kept back for an outage.",
                 "param_room": "Which room this heats. It sets the comfort and floor temperatures below.",
-                "param_schedule_entity": "Advanced: a schedule helper — on is comfort, off is the vacation level.",
+                "param_schedule_entity": "Advanced: a schedule helper – on is comfort, off is the vacation level.",
                 "param_screed_depth_mm": "Advanced: millimeters of screed over the cable.",
                 "param_sensor": "Which sensor the thermostat regulates on.",
                 "param_settle_s": "Advanced: seconds after a write before the reading is trusted.",
@@ -3172,7 +3172,7 @@
       "step": {
         "user": {
           "title": "Which appliances share a circuit?",
-          "description": "A fuse and the appliances behind it — the garage's 32 A with the charger and the sauna. PowerPlan keeps them under that fuse together, before the main fuse is considered. [How this works]({docs})",
+          "description": "A fuse and the appliances behind it – the garage's 32 A with the charger and the sauna. PowerPlan keeps them under that fuse together, before the main fuse is considered. [How this works]({docs})",
           "data": {
             "name": "Name",
             "fuse_a": "Fuse",
@@ -3255,7 +3255,7 @@
       "step": {
         "user": {
           "title": "Which appliances should take turns?",
-          "description": "Appliances that share power and take turns — six floor loops sharing 2 kW when the hour gets tight. PowerPlan serves the coldest first and rotates so none is left behind. [How this works]({docs})",
+          "description": "Appliances that share power and take turns – six floor loops sharing 2 kW when the hour gets tight. PowerPlan serves the coldest first and rotates so none is left behind. [How this works]({docs})",
           "data": {
             "name": "Name",
             "members": "Appliances in this group"
@@ -3403,7 +3403,7 @@
         },
         "never_substitute": {
           "title": "Should any of these always keep their own source?",
-          "description": "Whatever the ranking says — a bathroom floor that should never wait on the heat pump, say. [How this works]({docs})",
+          "description": "Whatever the ranking says – a bathroom floor that should never wait on the heat pump, say. [How this works]({docs})",
           "data": {
             "never_substitute": "Never substitute"
           },

@@ -404,7 +404,7 @@ class DeviceView:
         ]
         if len(found) > 1:
             _LOGGER.debug(
-                "%s: %s entities match %s — binding none of them: %s",
+                "%s: %s entities match %s – binding none of them: %s",
                 self.name,
                 len(found),
                 list(tokens),
@@ -716,7 +716,7 @@ def numeric_binding(
     scale = 1.0 if table is None else declared_scale(entity.unit, table)
     if scale is None:
         _LOGGER.warning(
-            "%s: %s declares unit %r, which powerplan cannot read as %s — leaving the role unbound",
+            "%s: %s declares unit %r, which powerplan cannot read as %s – leaving the role unbound",
             profile,
             entity.entity_id,
             entity.unit,
@@ -1113,7 +1113,7 @@ def _device_call(
     setter = _SETTERS.get(domain)
     if setter is None:
         _LOGGER.warning(
-            "%s: %s cannot be written — powerplan knows no service for domain %s",
+            "%s: %s cannot be written – powerplan knows no service for domain %s",
             profile,
             entity_id,
             domain,

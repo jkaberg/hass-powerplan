@@ -47,7 +47,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Advanced › Minimum off | Advanced: seconds a switch stays off at least. |
 | Advanced › Command interval | Advanced: seconds between two writes to the device. |
 | Advanced › Follow presence | Advanced: lower the target when nobody is home. |
-| Advanced › Weekly schedule | Advanced: a schedule helper — on is comfort, off is the vacation level. |
+| Advanced › Weekly schedule | Advanced: a schedule helper – on is comfort, off is the vacation level. |
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:water_heater -->

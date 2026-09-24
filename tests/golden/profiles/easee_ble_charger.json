@@ -1,7 +1,7 @@
 {
   "fixture": "easee_ble_charger",
-  "source": "tests/fixtures/captured/easee_ble_charger.json — the reference house's Easee charger over local easee_ble, captured with tools/capture_fixture.py: 24 entities, status `disconnected`, 10 A armed, charger switch off.",
-  "note": "D9 §9 7. A capture carries no platform (GET /api/states does not expose one), so the confidence is easee_ble's SHAPE_CONFIDENCE and not its PLATFORM_CONFIDENCE of 0.95 (D4 §5.9). Every unit, scale, step and range below was read off the entity's own attributes — nothing here is a product table, and a firmware that renames a unit or widens a range changes this file rather than the profile. WP3.1 added the second match: `generic_number` sees a `number` in amps and offers itself at 0.5, below the product profile, with `current_number` missing because three 0–40 A numbers on one device bind none of them.",
+  "source": "tests/fixtures/captured/easee_ble_charger.json – the reference house's Easee charger over local easee_ble, captured with tools/capture_fixture.py: 24 entities, status `disconnected`, 10 A armed, charger switch off.",
+  "note": "D9 §9 7. A capture carries no platform (GET /api/states does not expose one), so the confidence is easee_ble's SHAPE_CONFIDENCE and not its PLATFORM_CONFIDENCE of 0.95 (D4 §5.9). Every unit, scale, step and range below was read off the entity's own attributes – nothing here is a product table, and a firmware that renames a unit or widens a range changes this file rather than the profile. WP3.1 added the second match: `generic_number` sees a `number` in amps and offers itself at 0.5, below the product profile, with `current_number` missing because three 0–40 A numbers on one device bind none of them.",
   "matches": [
     {
       "profile": "easee_ble",

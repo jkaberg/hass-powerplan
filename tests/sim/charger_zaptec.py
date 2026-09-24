@@ -59,8 +59,8 @@ SOURCES: dict[str, str] = {
         "only that frequent changes 'may cause the vehicle to interrupt the charging session'; "
         "replaced by a measured rate when a Zaptec house reports one"
     ),
-    "REARM_S": "see sim/ev.py — the car ignores the charger for about ten minutes after a drop",
-    "MIN_A": "see sim/ev.py — IEC 61851's 6 A floor: 6 A or more offered again resumes the car",
+    "REARM_S": "see sim/ev.py – the car ignores the charger for about ten minutes after a drop",
+    "MIN_A": "see sim/ev.py – IEC 61851's 6 A floor: 6 A or more offered again resumes the car",
     "AMP_EPS": "see sim/ev.py",
     "ZAPTEC_STATUS": (
         "custom-components/zaptec v0.8.7 sensor.py (ZaptecChargeSensor's icon map) and README "

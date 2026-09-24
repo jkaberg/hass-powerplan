@@ -474,7 +474,7 @@ class Ev:
         reason = ctx.reads.text(Role.BLOCKED_BY) or "no reason reported"
         if reason != state.blocked_reason:
             _LOGGER.warning(
-                "%s: granted %.0f A and enabled, drawing nothing for %.0f s — charging blocked by %s",
+                "%s: granted %.0f A and enabled, drawing nothing for %.0f s – charging blocked by %s",
                 load.load_id,
                 held or 0.0,
                 (ctx.now - since).total_seconds(),

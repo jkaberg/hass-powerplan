@@ -493,7 +493,7 @@ def _load_history(
     if found is None and spec.entity.startswith("climate."):
         return LoadHistory(spec, "missing"), (
             f"load {spec.load_id}: {spec.entity} has no power or energy statistic, and a climate "
-            "entity's state is its mode, not the element's duty — nothing is reconstructed"
+            "entity's state is its mode, not the element's duty – nothing is reconstructed"
         )
     states = _read_states(connection, spec.entity, start=start, end=end)
     if states and spec.nameplate_w:
@@ -554,7 +554,7 @@ def _anchor(
     detail = ", ".join(f"{key} {value:.3f}" for key, value in sorted(scores.items()))
     return best, (
         f"register anchor `{best}` chosen against the power history: mean |error| per window "
-        f"in kWh — {detail}"
+        f"in kWh – {detail}"
     )
 
 

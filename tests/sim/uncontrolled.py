@@ -82,7 +82,7 @@ SOURCES: dict[str, str] = {
     "ROAST_FROM_H": "assumed: the roast goes in mid-afternoon for an early dinner",
     "ROAST_TO_H": "assumed: the roast is in the oven by 16:00",
     "LAUNDRY_DAYS_PER_WEEK": "D9 §5.9 house spec: laundry 3× weekly",
-    "LAUNDRY_HEAT_W": "D4 §6.8 washing machine 40 °C, 0.7 kWh / 2 h — the heat is 1.8 kW of it",
+    "LAUNDRY_HEAT_W": "D4 §6.8 washing machine 40 °C, 0.7 kWh / 2 h – the heat is 1.8 kW of it",
     "LAUNDRY_HEAT_S": "D4 §6.8: 18 min at 1.8 kW is 0.54 of the 0.71 kWh the two segments spend",
     "LAUNDRY_TUMBLE_W": "D4 §6.8: the drum and pump for the rest of the programme",
     "LAUNDRY_TUMBLE_S": "D4 §6.8: the two segments total 2 h 00",

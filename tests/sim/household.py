@@ -64,7 +64,7 @@ SOURCES: dict[str, str] = {
     ),
     "COMMUTE_SIGMA_LOG": (
         "assumed: σ = 0.45 on the log, so the 90th-percentile session is about twice the median "
-        "— errands, a cold day, a detour. Replaced by the fitted session distribution"
+        "– errands, a cold day, a detour. Replaced by the fitted session distribution"
     ),
     "PLUG_IN_P": "D9 §5.9 house spec: plugged in on arrival on 90 % of weekdays",
     "WEEKEND_TRIP_P": "assumed: a trip out on about a third of weekend days (D9 §5.9 'weekend trips')",
@@ -83,11 +83,11 @@ SOURCES: dict[str, str] = {
         "Trøndelag schools take vinterferie in week 9 (Oslo takes week 8); D9 §5.9 house spec: "
         "winter break 1 week"
     ),
-    "EASTER_WEEKS": "D9 §5.9 house spec: Easter 1 week — the week containing Maundy Thursday",
+    "EASTER_WEEKS": "D9 §5.9 house spec: Easter 1 week – the week containing Maundy Thursday",
     "SUMMER_WEEKS": (
         "D9 §5.9 house spec: summer 3 weeks; weeks 28–30 are the Norwegian fellesferie"
     ),
-    "WEEKEND_FROM_WEEKDAY": "Saturday (Python weekday 5) — the working week is Mon–Fri",
+    "WEEKEND_FROM_WEEKDAY": "Saturday (Python weekday 5) – the working week is Mon–Fri",
 }
 
 HOME = "home"

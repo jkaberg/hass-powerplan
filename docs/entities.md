@@ -16,45 +16,45 @@ In the tables, `<home>` and `<appliance>` stand for those names as Home Assistan
 <!-- generated:begin entities:home · tools/docs.py writes this block; change the entity, not this table -->
 | Entity | Name | Unit | Where |
 |---|---|---|---|
-| `binary_sensor.<home>_hour_change` | Hour change | — | Diagnostic, off by default |
-| `binary_sensor.<home>_meter_data` | Meter data | — | Diagnostic, off by default |
-| `binary_sensor.<home>_meter_reading` | Meter reading | — | Diagnostic, off by default |
-| `binary_sensor.<home>_peak_warning` | Peak warning | — | shown |
-| `binary_sensor.<home>_tomorrow_s_prices` | Tomorrow's prices | — | shown |
-| `button.<home>_fetch_prices_again` | Fetch prices again | — | Configuration |
-| `button.<home>_plan_again` | Plan again | — | Configuration |
-| `button.<home>_relearn_normal_usage` | Relearn normal usage | — | Configuration, off by default |
-| `button.<home>_reload_this_month_s_peaks` | Reload this month's peaks | — | Configuration, off by default |
-| `calendar.<home>_planned_runs` | Planned runs | — | shown |
-| `event.<home>_events` | Events | — | shown |
+| `binary_sensor.<home>_hour_change` | Hour change | – | Diagnostic, off by default |
+| `binary_sensor.<home>_meter_data` | Meter data | – | Diagnostic, off by default |
+| `binary_sensor.<home>_meter_reading` | Meter reading | – | Diagnostic, off by default |
+| `binary_sensor.<home>_peak_warning` | Peak warning | – | shown |
+| `binary_sensor.<home>_tomorrow_s_prices` | Tomorrow's prices | – | shown |
+| `button.<home>_fetch_prices_again` | Fetch prices again | – | Configuration |
+| `button.<home>_plan_again` | Plan again | – | Configuration |
+| `button.<home>_relearn_normal_usage` | Relearn normal usage | – | Configuration, off by default |
+| `button.<home>_reload_this_month_s_peaks` | Reload this month's peaks | – | Configuration, off by default |
+| `calendar.<home>_planned_runs` | Planned runs | – | shown |
+| `event.<home>_events` | Events | – | shown |
 | `number.<home>_safety_margin` | Safety margin | kWh | Configuration, off by default |
-| `select.<home>_capacity_step_target` | Capacity step target | — | Configuration |
-| `select.<home>_presence` | Presence | — | shown |
-| `select.<home>_strictness` | Strictness | — | Configuration |
+| `select.<home>_capacity_step_target` | Capacity step target | – | Configuration |
+| `select.<home>_presence` | Presence | – | shown |
+| `select.<home>_strictness` | Strictness | – | Configuration |
 | `sensor.<home>_calculation_time` | Calculation time | ms | Diagnostic, off by default |
 | `sensor.<home>_capacity_metric_this_period` | Capacity metric this period | kW | shown |
-| `sensor.<home>_capacity_step_this_month` | Capacity step this month | — | shown |
-| `sensor.<home>_control_level` | Control level | — | Diagnostic |
+| `sensor.<home>_capacity_step_this_month` | Capacity step this month | – | shown |
+| `sensor.<home>_control_level` | Control level | – | Diagnostic |
 | `sensor.<home>_cost_this_month` | Cost this month | ‹currency› | shown |
-| `sensor.<home>_deviations_this_month` | Deviations this month | — | shown |
+| `sensor.<home>_deviations_this_month` | Deviations this month | – | shown |
 | `sensor.<home>_electricity_price_now` | Electricity price now | ‹currency›/kWh | shown |
 | `sensor.<home>_estimated_savings_this_month` | Estimated savings this month | ‹currency› | shown |
-| `sensor.<home>_expected_capacity_step` | Expected capacity step | — | shown |
+| `sensor.<home>_expected_capacity_step` | Expected capacity step | – | shown |
 | `sensor.<home>_expected_usage_this_hour` | Expected usage this hour | kWh | shown |
-| `sensor.<home>_last_decision` | Last decision | — | Diagnostic, off by default |
+| `sensor.<home>_last_decision` | Last decision | – | Diagnostic, off by default |
 | `sensor.<home>_learning` | Learning | % | Diagnostic, off by default |
-| `sensor.<home>_meter_status` | Meter status | — | shown |
-| `sensor.<home>_next_risky_hour` | Next risky hour | — | Diagnostic |
+| `sensor.<home>_meter_status` | Meter status | – | shown |
+| `sensor.<home>_next_risky_hour` | Next risky hour | – | Diagnostic |
 | `sensor.<home>_planned_usage` | Planned usage | kWh | Diagnostic |
 | `sensor.<home>_power_available_now` | Power available now | kW | shown |
-| `sensor.<home>_price_source` | Price source | — | Diagnostic, off by default |
-| `sensor.<home>_prices_known_until` | Prices known until | — | Diagnostic |
+| `sensor.<home>_price_source` | Price source | – | Diagnostic, off by default |
+| `sensor.<home>_prices_known_until` | Prices known until | – | Diagnostic |
 | `sensor.<home>_production_now` | Production now | kW | off by default |
-| `sensor.<home>_recommendation` | Recommendation | — | shown |
+| `sensor.<home>_recommendation` | Recommendation | – | shown |
 | `sensor.<home>_surplus_now` | Surplus now | kW | off by default |
 | `sensor.<home>_target_this_hour` | Target this hour | kWh | shown |
 | `sensor.<home>_usage_this_hour` | Usage this hour | kWh | shown |
-| `switch.<home>_automatic_control` | Automatic control | — | shown |
+| `switch.<home>_automatic_control` | Automatic control | – | shown |
 <!-- generated:end entities:home -->
 
 Where your grid company counts half-hours or quarter-hours instead of hours, the entities for this hour count that period instead, and their names say so.
@@ -66,33 +66,33 @@ Where your grid company bills no capacity step, **Target this hour** and **Capac
 <!-- generated:begin entities:appliance · tools/docs.py writes this block; change the entity, not this table -->
 | Entity | Name | Unit | Where | Appliances |
 |---|---|---|---|---|
-| `button.<appliance>_run_now` | Run now | — | shown | Dishwasher, washer or dryer |
+| `button.<appliance>_run_now` | Run now | – | shown | Dishwasher, washer or dryer |
 | `number.<appliance>_always_charge_to_at_least` | Always charge to at least | % | Configuration | Car charger |
 | `number.<appliance>_charge_to` | Charge to | % | shown | Car charger |
 | `number.<appliance>_never_colder_than` | Never colder than | °C | Configuration, off by default | Floor heating, Heat pump, Panel heater, Water heater |
 | `number.<appliance>_never_warmer_than` | Never warmer than | °C | Configuration, off by default | Floor heating, Heat pump, Panel heater, Water heater |
 | `number.<appliance>_run_now_for_at_most` | Run now for at most | h | Configuration | Car charger, Something else on a switch, Water heater |
-| `select.<appliance>_control` | Control | — | shown | all |
-| `select.<appliance>_priority` | Priority | — | Configuration | all |
-| `select.<appliance>_strategy` | Strategy | — | Configuration | Car charger, Floor heating, Heat pump, Panel heater, Water heater |
+| `select.<appliance>_control` | Control | – | shown | all |
+| `select.<appliance>_priority` | Priority | – | Configuration | all |
+| `select.<appliance>_strategy` | Strategy | – | Configuration | Car charger, Floor heating, Heat pump, Panel heater, Water heater |
 | `sensor.<appliance>_cost_this_month` | Cost this month | ‹currency› | shown | all |
 | `sensor.<appliance>_energy_in_total` | Energy in total | kWh | Diagnostic | all |
 | `sensor.<appliance>_energy_this_month` | Energy this month | kWh | Diagnostic, off by default | all |
 | `sensor.<appliance>_granted_power` | Granted power | W | Diagnostic, off by default | all |
-| `sensor.<appliance>_health` | Health | — | Diagnostic | all |
-| `sensor.<appliance>_learned_charging_efficiency` | Learned charging efficiency | — | Diagnostic, off by default | Car charger |
+| `sensor.<appliance>_health` | Health | – | Diagnostic | all |
+| `sensor.<appliance>_learned_charging_efficiency` | Learned charging efficiency | – | Diagnostic, off by default | Car charger |
 | `sensor.<appliance>_learned_heat_loss` | Learned heat loss | W/K | Diagnostic, off by default | Floor heating, Heat pump, Panel heater |
 | `sensor.<appliance>_learned_heat_up_rate` | Learned heat-up rate | K/h | Diagnostic, off by default | Floor heating, Heat pump, Panel heater |
 | `sensor.<appliance>_learned_rated_power` | Learned rated power | W | Diagnostic, off by default | Floor heating, Panel heater, Water heater |
 | `sensor.<appliance>_learned_standby_loss` | Learned standby loss | W | Diagnostic, off by default | Water heater |
-| `sensor.<appliance>_next_legionella_cycle` | Next legionella cycle | — | shown | Water heater |
-| `sensor.<appliance>_plan_status` | Plan status | — | shown | all |
+| `sensor.<appliance>_next_legionella_cycle` | Next legionella cycle | – | shown | Water heater |
+| `sensor.<appliance>_plan_status` | Plan status | – | shown | all |
 | `sensor.<appliance>_planned_energy` | Planned energy | kWh | Diagnostic, off by default | all |
 | `sensor.<appliance>_reserved_power` | Reserved power | W | Diagnostic, off by default | all |
 | `sensor.<appliance>_savings_this_month` | Savings this month | ‹currency› | shown | Car charger, Dishwasher, washer or dryer, Floor heating, Heat pump, Panel heater, Water heater |
-| `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | — | Configuration | Floor heating, Heat pump, Panel heater |
-| `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | — | Configuration, off by default | Water heater |
-| `time.<appliance>_ready_by` | Ready by | — | shown | Car charger, Dishwasher, washer or dryer, Water heater |
+| `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | – | Configuration | Floor heating, Heat pump, Panel heater |
+| `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | – | Configuration, off by default | Water heater |
+| `time.<appliance>_ready_by` | Ready by | – | shown | Car charger, Dishwasher, washer or dryer, Water heater |
 <!-- generated:end entities:appliance -->
 
 **Appliances** says which kinds of appliance get the entity; "all" means every kind. A home battery gets the entities that fit it when you add one.

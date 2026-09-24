@@ -43,17 +43,17 @@ __all__ = [
 KEY: Final = "elcom"
 API: Final = "https://www.strompreis.elcom.admin.ch/api/graphql"
 PAGE: Final = "https://www.strompreis.elcom.admin.ch"
-ATTRIBUTION: Final = "ElCom — Eidgenössische Elektrizitätskommission"
+ATTRIBUTION: Final = "ElCom – Eidgenössische Elektrizitätskommission"
 #: ElCom's household categories, H4 first: the site's own default (`help-categories`).
 CATEGORIES: Final = (
-    Product("H4", "H4: 4'500 kWh/Jahr — 5-Zimmerwohnung, Elektroherd, Tumbler"),
-    Product("H1", "H1: 1'600 kWh/Jahr — 2-Zimmerwohnung, Elektroherd"),
-    Product("H2", "H2: 2'500 kWh/Jahr — 4-Zimmerwohnung, Elektroherd"),
-    Product("H3", "H3: 4'500 kWh/Jahr — 4-Zimmerwohnung, Elektroherd, Elektroboiler"),
-    Product("H5", "H5: 7'500 kWh/Jahr — Einfamilienhaus, Elektroboiler, Tumbler"),
-    Product("H6", "H6: 25'000 kWh/Jahr — Einfamilienhaus, elektrische Widerstandsheizung"),
-    Product("H7", "H7: 13'000 kWh/Jahr — Einfamilienhaus, Wärmepumpe 5 kW"),
-    Product("H8", "H8: 7'500 kWh/Jahr — grosse, hoch elektrifizierte Eigentumswohnung"),
+    Product("H4", "H4: 4'500 kWh/Jahr – 5-Zimmerwohnung, Elektroherd, Tumbler"),
+    Product("H1", "H1: 1'600 kWh/Jahr – 2-Zimmerwohnung, Elektroherd"),
+    Product("H2", "H2: 2'500 kWh/Jahr – 4-Zimmerwohnung, Elektroherd"),
+    Product("H3", "H3: 4'500 kWh/Jahr – 4-Zimmerwohnung, Elektroherd, Elektroboiler"),
+    Product("H5", "H5: 7'500 kWh/Jahr – Einfamilienhaus, Elektroboiler, Tumbler"),
+    Product("H6", "H6: 25'000 kWh/Jahr – Einfamilienhaus, elektrische Widerstandsheizung"),
+    Product("H7", "H7: 13'000 kWh/Jahr – Einfamilienhaus, Wärmepumpe 5 kW"),
+    Product("H8", "H8: 7'500 kWh/Jahr – grosse, hoch elektrifizierte Eigentumswohnung"),
 )
 _RP_PER_CHF: Final = Decimal(100)
 #: A thousandth of a Rappen per kWh, in CHF: ElCom publishes Rp. to three decimals.

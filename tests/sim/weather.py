@@ -52,9 +52,9 @@ SOURCES: dict[str, str] = {
         "https://en.wikipedia.org/wiki/Stjørdalshalsen (source: METreport 05/2021, "
         "'New Norwegian standard climate normals 1991-2020')"
     ),
-    "MONTHLY_MAX_C": "same table — mean daily maximum, the upper half of the diurnal amplitude",
-    "MONTHLY_MIN_C": "same table — mean daily minimum",
-    "LATITUDE_DEG": "Trondheim lufthavn Værnes, 63.4575° N — the default; a house at another "
+    "MONTHLY_MAX_C": "same table – mean daily maximum, the upper half of the diurnal amplitude",
+    "MONTHLY_MIN_C": "same table – mean daily minimum",
+    "LATITUDE_DEG": "Trondheim lufthavn Værnes, 63.4575° N – the default; a house at another "
     "latitude passes its own to `WeatherSim` (only the solar-position formula reads it, the "
     "climate-normal tables stay Trondheim's, D-0310)",
     "CLEAR_SKY_W_PER_M2": (
@@ -62,7 +62,7 @@ SOURCES: dict[str, str] = {
         "test condition. Replaced by a met.no irradiance series"
     ),
     "DAILY_ANOMALY_SIGMA_K": (
-        "assumed: 4 K standard deviation on the daily anomaly about the normal — the order of "
+        "assumed: 4 K standard deviation on the daily anomaly about the normal – the order of "
         "the interannual spread in the same normals table. Replaced by a fitted σ from "
         "recorder weather history"
     ),
@@ -72,7 +72,7 @@ SOURCES: dict[str, str] = {
         "Replaced by a met.no cloud-cover series"
     ),
     "CLOUD_SIGMA": "assumed: day-to-day spread of the clear-sky fraction",
-    "GROUND_MEAN_C": "the same normals table's annual mean, 6.1 °C — the undisturbed ground follows it",
+    "GROUND_MEAN_C": "the same normals table's annual mean, 6.1 °C – the undisturbed ground follows it",
     "GROUND_AMPLITUDE_K": (
         "assumed: ±3 K seasonal swing at slab depth under an insulated floor. Replaced by a "
         "measured ground sensor"
@@ -83,10 +83,10 @@ SOURCES: dict[str, str] = {
     "COLD_WATER_LAG_DAYS": "assumed: six weeks of lag on the mains",
     "EVENT_RAMP_H": "assumed: a cold snap arrives and leaves over half a day",
     "DAYS_PER_YEAR": "the Gregorian mean year",
-    "MEAN_DAYS_PER_MONTH": "365.2425 / 12 — how a monthly normal is spread over its days",
+    "MEAN_DAYS_PER_MONTH": "365.2425 / 12 – how a monthly normal is spread over its days",
     "EARTH_TILT_DEG": "Earth's axial tilt, 23.45°",
     "COOPER_OFFSET_DAYS": "Cooper (1969) solar declination equation, δ = 23.45° sin(360(284+n)/365)",
-    "DEGREES_PER_HOUR": "the Earth turns 15° an hour — the solar hour angle",
+    "DEGREES_PER_HOUR": "the Earth turns 15° an hour – the solar hour angle",
 }
 
 

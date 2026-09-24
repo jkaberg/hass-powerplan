@@ -140,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         document["since"] = args.since or document.get("since", "")
         path = baselines.save(args.house, document)
         print(
-            f"baseline written: {path.relative_to(ROOT)} — add a line to design/benchmarks/CHANGELOG.md"
+            f"baseline written: {path.relative_to(ROOT)} – add a line to design/benchmarks/CHANGELOG.md"
         )
         return 0
     if args.compare and tier_baseline is None:
@@ -162,8 +162,8 @@ def _months_table(result: object) -> str:
         lines.append(
             f"| {key} | {row.windows} | {row.over_target} | {row.max_window_kwh:.2f} | {row.kwh:.1f} | "
             f"{row.comfort_violation_min:.1f} | {row.deadline_misses} | {row.writes} | "
-            f"{row.fee or '—'} | {row.level or '—'} | {row.cost_energy or '—'} | "
-            f"{row.cost_counterfactual or '—'} | {row.savings or '—'} |"
+            f"{row.fee or '–'} | {row.level or '–'} | {row.cost_energy or '–'} | "
+            f"{row.cost_counterfactual or '–'} | {row.savings or '–'} |"
         )
     return "\n".join(lines)
 

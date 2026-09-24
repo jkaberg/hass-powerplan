@@ -75,7 +75,7 @@ SOURCES: dict[str, str] = {
         "The reference house sets the 80 % it also gave powerplan (D4 §6.2 'charge to 80 %'), "
         "so a car nobody steers stops where the shadow does (D11 §5.3, `nordic_detached@2`)"
     ),
-    "W_PER_AMP_IT230_3P": "see sim/base.py — D3 §5.1, √3 × 230 for a 3φ load in a 230 V IT net",
+    "W_PER_AMP_IT230_3P": "see sim/base.py – D3 §5.1, √3 × 230 for a 3φ load in a 230 V IT net",
 }
 
 #: Charger statuses, in the vocabulary the Easee BLE integration reports.

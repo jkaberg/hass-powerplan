@@ -1,5 +1,5 @@
 {
-  "_": "Golden for the es.2_0td preset — D2 §9 1 and 12, D9 §3. The claim is about a breaker, not a fee: item 1 of the precedence, INV-1.",
+  "_": "Golden for the es.2_0td preset – D2 §9 1 and 12, D9 §3. The claim is about a breaker, not a fee: item 1 of the precedence, INV-1.",
   "preset": "es/2_0td",
   "id": "es.2_0td",
   "tz": "Europe/Madrid",
@@ -12,10 +12,10 @@
     "2026-01-06"
   ],
   "sources": {
-    "periods": "BOE-A-2020-1066 (CNMC Circular 3/2020) art. 7.3–7.4 as amended by Circular 1/2025, read 2026-09-23: 2.0TD's power term uses two periods — punta-llano (P1 + P2 of the energy periods, 08–24 on working weekdays) and valle (00–08, plus all hours of Saturdays, Sundays, 6 January and national holidays). That is `holidays: exclude` on the P1 filter, so a holiday falls through to P2 (D2 §2).",
+    "periods": "BOE-A-2020-1066 (CNMC Circular 3/2020) art. 7.3–7.4 as amended by Circular 1/2025, read 2026-09-23: 2.0TD's power term uses two periods – punta-llano (P1 + P2 of the energy periods, 08–24 on working weekdays) and valle (00–08, plus all hours of Saturdays, Sundays, 6 January and national holidays). That is `holidays: exclude` on the P1 filter, so a holiday falls through to P2 (D2 §2).",
     "limits": "Not a fact about anyone: the template leaves the contracted kW to the household (D2 §6); this golden fills the flow's starting values.",
-    "tolerance": "None assumed (D-0521): the BOE text sets no interruptor tolerance, so the limit is the contract itself — the safe direction.",
-    "no_peak": "HLD §8's ES row: peak component `NoPeak`, hard limit `ContractedPower({P1, P2}, trip)`. Spain bills potencia contratada per day, not a measured peak, so there is no capacity metric and no ceiling — the breaker is the whole constraint.",
+    "tolerance": "None assumed (D-0521): the BOE text sets no interruptor tolerance, so the limit is the contract itself – the safe direction.",
+    "no_peak": "HLD §8's ES row: peak component `NoPeak`, hard limit `ContractedPower({P1, P2}, trip)`. Spain bills potencia contratada per day, not a measured peak, so there is no capacity metric and no ceiling – the breaker is the whole constraint.",
     "windows_priced": "0: nothing is priced on a version with no peak, though the windows are still recorded (INV-11)."
   },
   "windows": [
@@ -42,7 +42,7 @@
     {
       "local": "2026-01-07T08:00:00",
       "limit_w": 4600.0,
-      "why": "P1 starts at 08:00 local — the flip D2 §9 12 asks for"
+      "why": "P1 starts at 08:00 local – the flip D2 §9 12 asks for"
     },
     {
       "local": "2026-01-07T23:59:00",

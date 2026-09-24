@@ -63,7 +63,7 @@ SETTLED = timedelta(minutes=2)
 REMOTE_C = 20.0
 LIMIT = "number.ev_dynamic_charger_current"
 HEAT_PUMP = "climate.heat_pump"
-OBSERVE_LINE = re.compile(r"^(?P<load>.+): observe — (?P<old>\S+) → (?P<new>\S+) \(")
+OBSERVE_LINE = re.compile(r"^(?P<load>.+): observe – (?P<old>\S+) → (?P<new>\S+) \(")
 
 
 def spy_device_calls(

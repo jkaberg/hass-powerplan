@@ -8,16 +8,16 @@ Each appliance follows a plan: the way PowerPlan chooses its hours. The setup pi
 <!-- generated:begin strategies · tools/docs.py writes this block; change the strategy registry, not this table -->
 | Plan | Offered for | Default for | Key |
 |---|---|---|---|
-| Always on | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | — | `always` |
-| Buy low, sell high | Home battery | — | `arbitrage` |
+| Always on | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | – | `always` |
+| Buy low, sell high | Home battery | – | `arbitrage` |
 | Save where it hurts least | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | Panel heater | `best_save` |
 | Cheapest hours | Car charger, Something else on a switch, Heat pump, Panel heater, Water heater | Something else on a switch | `cheapest_hours` |
 | Cheapest hours before the deadline | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | Car charger, Water heater | `deadline_fill` |
 | Bank heat in cheap hours | Floor heating, Heat pump, Panel heater, Water heater | Floor heating, Heat pump | `heat_capacitor` |
 | Shave the peaks | Home battery | Home battery | `peak_shave` |
 | One run before ready-by | Dishwasher, washer or dryer | Dishwasher, washer or dryer | `run_once` |
-| Follow a schedule | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | — | `schedule` |
-| Solar surplus | Car charger, Something else on a switch, Water heater | — | `surplus` |
+| Follow a schedule | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | – | `schedule` |
+| Solar surplus | Car charger, Something else on a switch, Water heater | – | `surplus` |
 <!-- generated:end strategies -->
 
 <a name="always"></a>

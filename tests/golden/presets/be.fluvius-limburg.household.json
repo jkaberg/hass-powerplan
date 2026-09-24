@@ -1,5 +1,5 @@
 {
-  "_": "Golden for the be.fluvius-limburg.household preset — D2 §9 1, 6 and 9, D9 §3. Every number carries its source.",
+  "_": "Golden for the be.fluvius-limburg.household preset – D2 §9 1, 6 and 9, D9 §3. Every number carries its source.",
   "preset": "be/fluvius-limburg",
   "id": "be.fluvius-limburg.household",
   "tz": "Europe/Brussels",
@@ -8,14 +8,14 @@
   "period_key": "2026-12",
   "at_local": "2026-12-20T12:00:00",
   "sources": {
-    "price": "VREG, 'Fluvius Limburg - ELEKTRICITEIT - Tarieflijst periodieke distributienettarieven 2026 - Afname' (FL - 2026 - ELEK.pdf), read 2026-09-23: 'Afnameklanten op laagspanningsnet met piekmeting — Gemiddelde maandpiek EUR/kW/jaar 49,0469384', valid 01/01/2026 to 31/12/2026, excluding VAT. The sheet's minimum contribution for these customers equals 2.5 kW x this rate.",
+    "price": "VREG, 'Fluvius Limburg - ELEKTRICITEIT - Tarieflijst periodieke distributienettarieven 2026 - Afname' (FL - 2026 - ELEK.pdf), read 2026-09-23: 'Afnameklanten op laagspanningsnet met piekmeting – Gemiddelde maandpiek EUR/kW/jaar 49,0469384', valid 01/01/2026 to 31/12/2026, excluding VAT. The sheet's minimum contribution for these customers equals 2.5 kW x this rate.",
     "minimum": "Same page: \"Iedereen betaalt een minimumbijdrage. Die bijdrage komt overeen met een piek van 2,5 kW.\" Fluvius: \"We rekenen bij een digitale meter sowieso een minimale maandpiek van 2.5 kW aan.\"",
-    "metric": "Fluvius, fluvius.be/.../aangerekend: \"het hoogste kwartiervermogen per maand\" — the highest quarter-hour of the month. VREG on the billed figure: \"de 'facturatiepiek' ... Dat is het gemiddelde van de gemiddelde maandpieken van de afgelopen 12 maanden.\" That is per_day = all, per_period = max, period = rolling_months 12.",
+    "metric": "Fluvius, fluvius.be/.../aangerekend: \"het hoogste kwartiervermogen per maand\" – the highest quarter-hour of the month. VREG on the billed figure: \"de 'facturatiepiek' ... Dat is het gemiddelde van de gemiddelde maandpieken van de afgelopen 12 maanden.\" That is per_day = all, per_period = max, period = rolling_months 12.",
     "seed_bills": "Constructed: eleven months at a flat 4.00 kW so the rolling mean is arithmetic anyone can check. Fluvius prints the twelve monthly peaks on the bill, which is what `seed_from_bills` is for (D2 §2).",
     "windows": "One December quarter-hour at 0.25 kWh = 1.00 kW: a quiet month, deliberately under the 2.5 kW minimum so the floor is load-bearing.",
     "metric_kw": "The plain rolling mean, which is what the metric reports: (11 x 4.00 + 1.00) / 12 = 45.00 / 12 = 3.75 kW.",
     "fee": "D2 §5.3: the minimum applies to each month BEFORE the mean. Eleven months bill at 4.00, December at max(1.00, 2.50) = 2.50, so the billed mean is (44.00 + 2.50) / 12 = 46.50 / 12 = 3.875 kW; 3.875 x 49.0469384 / 12 = 15.838074 EUR for the month.",
-    "not_fee": "The same arithmetic in the wrong order — max(mean, 2.50) = 3.75 — gives 3.75 x 49.0469384 / 12 = 15.327168 EUR. The golden asserts the fee is not this (D2 §9 9).",
+    "not_fee": "The same arithmetic in the wrong order – max(mean, 2.50) = 3.75 – gives 3.75 x 49.0469384 / 12 = 15.327168 EUR. The golden asserts the fee is not this (D2 §9 9).",
     "price_period_unit": "BE quotes EUR/kW/year, so the month pays a twelfth (D2 §4, §5.3)."
   },
   "seed_bills": [

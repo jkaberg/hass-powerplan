@@ -18,37 +18,37 @@ PowerPlan keeps only the tariff it reads. Everything else it downloads is droppe
 <!-- generated:begin countries · tools/docs.py writes this block; change the country or source registry, not this table -->
 | Country | Grid tariff fetched from | VAT | Setup also asks |
 |---|---|---|---|
-| Austria | — | 20 % | your region, where its taxes differ; your grid tariff, typed in |
+| Austria | – | 20 % | your region, where its taxes differ; your grid tariff, typed in |
 | Australia | Consumer Data Right | 10 % | nothing more |
 | Belgium | CWaPE and Brugel, Vlaamse Nutsregulator | 6 % | your postcode |
-| Bulgaria | — | 20 % | your grid tariff, typed in |
+| Bulgaria | – | 20 % | your grid tariff, typed in |
 | Switzerland | ElCom | 8.1 % from 2024-01-01 | your postcode |
-| Cyprus | — | 9 %; 19 % from 2027-04-01 | your grid tariff, typed in |
-| Czechia | — | 21 % | your grid tariff, typed in |
-| Germany | — | 19 % | your region, where its taxes differ; your grid tariff, typed in |
+| Cyprus | – | 9 %; 19 % from 2027-04-01 | your grid tariff, typed in |
+| Czechia | – | 21 % | your grid tariff, typed in |
+| Germany | – | 19 % | your region, where its taxes differ; your grid tariff, typed in |
 | Denmark | elpris.dk (Forsyningstilsynet) | 25 % | nothing more |
-| Estonia | — | 24 % | your grid tariff, typed in |
+| Estonia | – | 24 % | your grid tariff, typed in |
 | Spain | Red Eléctrica (ESIOS) | 21 %; 10 % from 2026-08-01, to 10 kW; 21 % from 2026-10-01 | your region, where its taxes differ |
-| Finland | — | 25.5 % | your postcode; your grid tariff, typed in |
-| France | — | 20 % | your region, where its taxes differ; the grid tariff from your bill |
-| United Kingdom | — | 5 %; 0 % from 2026-10-01; 5 % from 2027-04-01 | your region, where its taxes differ; the grid tariff from your bill |
-| Greece | — | 6 % | your region, where its taxes differ; your grid tariff, typed in |
-| Croatia | — | 13 % | your grid tariff, typed in |
-| Hungary | — | 27 % | your grid tariff, typed in |
-| Ireland | — | 9 % | the grid tariff from your bill |
-| Iceland | — | 24 % | your grid tariff, typed in |
-| Italy | — | 10 % | the grid tariff from your bill |
-| Lithuania | — | 21 % | your grid tariff, typed in |
-| Luxembourg | — | 8 % | your grid tariff, typed in |
-| Latvia | — | 21 % | your grid tariff, typed in |
-| Malta | — | 5 % | your grid tariff, typed in |
-| Netherlands | — | 21 % | the grid tariff from your bill |
+| Finland | – | 25.5 % | your postcode; your grid tariff, typed in |
+| France | – | 20 % | your region, where its taxes differ; the grid tariff from your bill |
+| United Kingdom | – | 5 %; 0 % from 2026-10-01; 5 % from 2027-04-01 | your region, where its taxes differ; the grid tariff from your bill |
+| Greece | – | 6 % | your region, where its taxes differ; your grid tariff, typed in |
+| Croatia | – | 13 % | your grid tariff, typed in |
+| Hungary | – | 27 % | your grid tariff, typed in |
+| Ireland | – | 9 % | the grid tariff from your bill |
+| Iceland | – | 24 % | your grid tariff, typed in |
+| Italy | – | 10 % | the grid tariff from your bill |
+| Lithuania | – | 21 % | your grid tariff, typed in |
+| Luxembourg | – | 8 % | your grid tariff, typed in |
+| Latvia | – | 21 % | your grid tariff, typed in |
+| Malta | – | 5 % | your grid tariff, typed in |
+| Netherlands | – | 21 % | the grid tariff from your bill |
 | Norway | Fri Nettleie | 25 % | your postcode; your region, where its taxes differ |
 | Poland | TAURON Dystrybucja | 23 % | nothing more |
-| Portugal | — | 23 % | your region, where its taxes differ; the grid tariff from your bill |
+| Portugal | – | 23 % | your region, where its taxes differ; the grid tariff from your bill |
 | Romania | ANRE | 21 % | nothing more |
 | Sweden | Eltariff, Energimarknadsinspektionen | 25 % | your region, where its taxes differ |
-| Slovenia | — | 22 % | your grid tariff, typed in |
+| Slovenia | – | 22 % | your grid tariff, typed in |
 | Slovakia | Západoslovenská distribučná | 19 % | nothing more |
 | United States | OpenEI (NREL) | asked | your postcode |
 <!-- generated:end countries -->

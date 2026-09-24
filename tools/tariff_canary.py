@@ -250,10 +250,10 @@ async def _cross_check(
             try:
                 operators = await cls().operators(http)  # type: ignore[arg-type]
             except SourceError as err:
-                findings.append(Finding(cls.key, "—", f"no operators: {err}"))
+                findings.append(Finding(cls.key, "–", f"no operators: {err}"))
                 continue
             if not operators:
-                findings.append(Finding(cls.key, "—", "lists no operator"))
+                findings.append(Finding(cls.key, "–", "lists no operator"))
             for operator in operators:
                 try:
                     fetched = await cls().fetch(http, operator.key, None, {})  # type: ignore[arg-type]

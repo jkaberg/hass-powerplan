@@ -1,6 +1,6 @@
 {
   "type": "generic_switch",
-  "about": "D4 §6.7: a pool filter pump named after itself — 750 W, eight hours a day of `cheapest_hours`, and a bound power sensor that beats the nameplate the moment it reports.",
+  "about": "D4 §6.7: a pool filter pump named after itself – 750 W, eight hours a day of `cheapest_hours`, and a bound power sensor that beats the nameplate the moment it reports.",
   "ctx": {
     "area": "Utendørs",
     "device_name": "Basseng pumpe",

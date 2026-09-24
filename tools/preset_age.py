@@ -98,7 +98,7 @@ def _stale_rates(at: date, cutoff: date, months: int) -> list[Stale]:
                 found.append(
                     Stale(
                         name=f"countries/{code.lower()}",
-                        valid_from="—" if rate.valid_from is None else rate.valid_from.isoformat(),
+                        valid_from="–" if rate.valid_from is None else rate.valid_from.isoformat(),
                         verified=rate.verified,
                         source_url=rate.source,
                         note=f"ends {rate.until}" if ending else "",

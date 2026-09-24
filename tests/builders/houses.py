@@ -118,14 +118,14 @@ HOUSE_SOURCES: dict[str, str] = {
     "household": "D9 §5.9: 2 adults + 1 child, vacation weeks at Christmas, winter break, Easter, summer",
     "ev_limit": (
         "assumed: the car's own charge limit is set to the 80 % the household gave powerplan "
-        "(D4 §6.2 'charge to 80 %'); every current EV app has the setting — @2, D-0268"
+        "(D4 §6.2 'charge to 80 %'); every current EV app has the setting – @2, D-0268"
     ),
     "floor_loss": (
-        "fitted: 0.745 W/m²K × the loop's area — `sim/slab.py` run uncontrolled over the winter "
+        "fitted: 0.745 W/m²K × the loop's area – `sim/slab.py` run uncontrolled over the winter "
         "week 2027-01-11…18, mean cable power over mean (screed − outdoor), D11 §9 4's method "
         "and the one-node value D10's fit converges to (WP5.1); answered as the floor type's "
         "advanced `loss_coeff_w_per_k` (D4 §6.1). D4 §6.4's envelope table says 0.7 for a "
-        "2000–2010 house; the ground path and the room node add the rest — @2, D-0268"
+        "2000–2010 house; the ground path and the room node add the rest – @2, D-0268"
     ),
 }
 
@@ -709,18 +709,18 @@ NL_SALDERING_END = datetime(2027, 1, 1, tzinfo=ZoneInfo("Europe/Amsterdam"))
 NL_PV_SOURCES: dict[str, str] = {
     "site": (
         "D9 §5.9: EPEX 15-min, PV 6 kWp, ContractedPower, negative midday; TN 400 V, three "
-        "phase — the Dutch mains standard (unlike Norway's IT 230 V, `sim/base.py`)"
+        "phase – the Dutch mains standard (unlike Norway's IT 230 V, `sim/base.py`)"
     ),
     "tariff": "preset nl/connection (D2, WP4.3a): 3×25 A = 17.25 kW trip, zero tolerance",
     "prices": (
         f"sim/prices.py SOLAR_GLUT: EPEX NL day-ahead annual mean "
         f"{EPEX_NL_MEAN_EUR_PER_KWH} EUR/kWh (TenneT, 2025), a duck-curve shape, negative on "
-        "the more volatile midday hours — see sim/prices.py's own SOURCES for the citations"
+        "the more volatile midday hours – see sim/prices.py's own SOURCES for the citations"
     ),
     "production": (
-        f"D9 §5.9: {NL_PV_ARRAY_KWP} kWp — `sim/production.py`'s PVWatts-simple model, "
+        f"D9 §5.9: {NL_PV_ARRAY_KWP} kWp – `sim/production.py`'s PVWatts-simple model, "
         f"Amsterdam's own latitude ({AMSTERDAM_LATITUDE_DEG}° N) for the sun angle, "
-        "`sim/weather.py`'s Trondheim climate normals kept for outdoor temperature (D-0310) — "
+        "`sim/weather.py`'s Trondheim climate normals kept for outdoor temperature (D-0310) – "
         "the house's heating behaviour is not this house's own point, only PV/ContractedPower/"
         "negative-midday pricing are"
     ),
@@ -876,13 +876,13 @@ BE_QUARTER_SOURCES: dict[str, str] = {
     "tariff": (
         "preset be/fluvius-imewo (D2, WP4.6): 54.2009816 EUR/kW/year excl. VAT from VREG's "
         "Imewo 2026 sheet (was VREG's regional average 53.39), min 2.5 kW, the highest 15-min "
-        "window of a rolling 12 months — every day counts, unlike Tensio's own daily-maximum "
+        "window of a rolling 12 months – every day counts, unlike Tensio's own daily-maximum "
         "exemption (D-0278), which is this house's own point"
     ),
     "prices": (
         "sim/prices.py SPOT_LIKE, reused as-is and read in EUR: this house's own point is the "
         "capacity tariff's window length and averaging period, not a fitted Belgian day-ahead "
-        "shape — replaced by a BELPEX-fitted regime if the energy price itself becomes load-bearing"
+        "shape – replaced by a BELPEX-fitted regime if the energy price itself becomes load-bearing"
     ),
     "main_fuse_a": "assumed: a typical Belgian household connection, 3×40 A",
 }
@@ -1038,7 +1038,7 @@ FI_TEHOMAKSU: dict[str, Any] = {
 FI_LINEAR_SOURCES: dict[str, str] = {
     "site": "D9 §5.9: Linear(free_kw=8); TN 400 V, three phase, 3×25 A (Finland)",
     "tariff": (
-        "FI_TEHOMAKSU: Energiavirasto's määräys (in force 2026-02-02) — the part of the "
+        "FI_TEHOMAKSU: Energiavirasto's määräys (in force 2026-02-02) – the part of the "
         "month's highest 60-minute average above 8 kW is billed; 2.50 EUR/kW/month is "
         "representative, every DSO sets its own (the retired fi/energiavirasto-2026 preset)"
     ),
@@ -1054,12 +1054,12 @@ ES_P2_KW = 9.2
 
 ES_CONTRACTED_SOURCES: dict[str, str] = {
     "site": (
-        "D9 §5.9: P1/P2 trip; TT 400 V three phase (Spain earths TT, REBT ITC-BT-08) — "
+        "D9 §5.9: P1/P2 trip; TT 400 V three phase (Spain earths TT, REBT ITC-BT-08) – "
         "three phase because nordic_detached's loads are"
     ),
     "tariff": (
         "rule template es/2_0td (BOE-A-2020-1066; Circular 3/2020 as amended by 1/2025), "
-        f"filled P1 {ES_P1_KW} kW, P2 {ES_P2_KW} kW — standard steps; the interruptor trips"
+        f"filled P1 {ES_P1_KW} kW, P2 {ES_P2_KW} kW – standard steps; the interruptor trips"
     ),
     "prices": "sim/prices.py SPOT_LIKE read in EUR, as be_quarter (D-0311)",
     "main_fuse_a": "assumed: the ICP follows the contract; the main fuse is 3×25 A",
@@ -1078,12 +1078,12 @@ TEMPO_EUR_PER_KWH: dict[str, tuple[float, float]] = {
 FR_TEMPO_SOURCES: dict[str, str] = {
     "site": (
         "D9 §5.9: day-type events; TT 400 V three phase, 12 kVA (a Tempo house; France earths "
-        "TT, NF C 15-100) — three phase because nordic_detached's loads are"
+        "TT, NF C 15-100) – three phase because nordic_detached's loads are"
     ),
     "tariff": f"rule template fr/kva (TURPE), filled {FR_SUBSCRIBED_KVA} kVA: the Linky trips",
     "prices": (
         "the whole energy price is the Tempo colour's, as the day_type add-on (D1 §5.4) with "
-        "HC 22:00–06:00 and a 06:00 day start: EDF Tempo grid from 2026-02-01 — blue 0.1356/"
+        "HC 22:00–06:00 and a 06:00 day start: EDF Tempo grid from 2026-02-01 – blue 0.1356/"
         "0.1654, white 0.1536/0.1921, red 0.1615/0.7295 EUR/kWh (HC/HP, TTC; hellowatt.fr, "
         "'nouvelle grille des prix au 1er février 2026'); the raw source is FLAT at 0"
     ),
@@ -1560,7 +1560,7 @@ AU_SOLAR_SOURCES: dict[str, str] = {
     "tariff": "AU_WHOLESALE: no demand charge, a flat network charge (assumed, see the constant)",
     "prices": (
         "sim/prices.py SOLAR_GLUT read in AUD: the NEM's duck curve, negative middays in "
-        "spring, as EPEX NL's (D-0312) — the shape is the point, not a fitted NEM level"
+        "spring, as EPEX NL's (D-0312) – the shape is the point, not a fitted NEM level"
     ),
     "export": "the spot price itself, negative when it is (a wholesale pass-through feed-in)",
     "climate": "Sydney Observatory Hill, BOM 1991–2020 normals, via en.wikipedia.org Climate of Sydney",

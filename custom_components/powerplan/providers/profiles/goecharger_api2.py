@@ -59,7 +59,7 @@ PROFILE: Final = register(
         reads=((Role.POWER, Find("sensor", ("power", "total", "now"), "power")),),
         notes=(
             (
-                "the Car state [CODE] sensor ships disabled — enable it, it is how "
+                "the Car state [CODE] sensor ships disabled – enable it, it is how "
                 "powerplan knows whether a car is connected"
             ),
         ),

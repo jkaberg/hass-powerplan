@@ -155,7 +155,7 @@
       },
       "prices_fixed": {
         "title": "Hva betaler du per kWh?",
-        "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time — men den regner fortsatt kostnaden og holder deg i effekttrinnet ditt. [Slik fungerer det]({docs})",
+        "description": "Uten en kurve å følge kan PowerPlan ikke flytte forbruk til en billigere time – men den regner fortsatt kostnaden og holder deg i effekttrinnet ditt. [Slik fungerer det]({docs})",
         "data": {
           "price": "Pris per kWh"
         },
@@ -559,7 +559,7 @@
       },
       "review": {
         "title": "Klar til å starte",
-        "description": "Dette er hva PowerPlan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** — {connection}, omtrent {fuse_kw} kW. PowerPlan lar aldri hele hjemmet gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. {fuse_assumed}\n\n**Måler** — {meter}.\n\n**Priser** — {prices}.\n\n**Nettleie** — {tariff}.\n\n**Prognoser** — {forecasts}\n\n**Tilstedeværelse** — {presence}.\n\n**Varsler** — {notifications}.\n\n**Tider** — alt PowerPlan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n{first}",
+        "description": "Dette er hva PowerPlan forsto. Ingenting er lagret ennå.\n\n**Tilknytning** – {connection}, omtrent {fuse_kw} kW. PowerPlan lar aldri hele hjemmet gå over det, og behandler avlesninger utenfor ±{plausible_kw} kW som sensorfeil. {fuse_assumed}\n\n**Måler** – {meter}.\n\n**Priser** – {prices}.\n\n**Nettleie** – {tariff}.\n\n**Prognoser** – {forecasts}\n\n**Tilstedeværelse** – {presence}.\n\n**Varsler** – {notifications}.\n\n**Tider** – alt PowerPlan viser og planlegger er i **{timezone}**, {timezone_source}.\n\n{first}",
         "data": {
           "start_in_observe": "Start i prøvemodus"
         },
@@ -723,7 +723,7 @@
     },
     "abort": {
       "already_configured": "Denne måleren er allerede satt opp som et hjem i PowerPlan.",
-      "reconfigure_successful": "Lagret — hjemmet starter på nytt med de nye svarene."
+      "reconfigure_successful": "Lagret – hjemmet starter på nytt med de nye svarene."
     }
   },
   "entity": {
@@ -1428,8 +1428,8 @@
         "notifications_none": "ingen",
         "export": "eksport: {mode}",
         "fuse_assumed": "Sikringsstørrelsen er antatt for landet ditt.",
-        "first_setup": "**Hva som skjer først** — {name} starter i prøvemodus: PowerPlan bestemmer, forklarer og logger hva den ville gjort, men styrer ingen enhet før du slår på automatisk styring. La avkryssingen stå de første dagene; de kalibrerer også sparetallene.",
-        "first_reconfigure": "**Hva som skjer nå** — om PowerPlan styrer apparatene dine forblir som det er; endre det med Automatisk styring på hjemmets enhet."
+        "first_setup": "**Hva som skjer først** – {name} starter i prøvemodus: PowerPlan bestemmer, forklarer og logger hva den ville gjort, men styrer ingen enhet før du slår på automatisk styring. La avkryssingen stå de første dagene; de kalibrerer også sparetallene.",
+        "first_reconfigure": "**Hva som skjer nå** – om PowerPlan styrer apparatene dine forblir som det er; endre det med Automatisk styring på hjemmets enhet."
       }
     },
     "appliance_cycle_appliance": {
@@ -1666,7 +1666,7 @@
         "and": "og",
         "yes": "ja",
         "no": "nei",
-        "none": "—",
+        "none": "–",
         "more": "{names} og {count} til",
         "preset_unknown": "Finner ikke mitt nettselskap",
         "preset_custom": "Legg inn selv",
@@ -2017,7 +2017,7 @@
         "card_soc": "Batterinivå",
         "card_now": "Nå",
         "card_expected": "Forventet",
-        "card_no_plan": "Ingen plan ennå — venter på priser.",
+        "card_no_plan": "Ingen plan ennå – venter på priser.",
         "card_appliance": "Apparat",
         "card_total": "Sum",
         "card_saved": "Spart",
@@ -2696,7 +2696,7 @@
                 "power_w": "Apparatets effekt, i watt.",
                 "preheat": "Avansert: lagre varme før en dyr time.",
                 "ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
-                "schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
+                "schedule_entity": "Avansert: en tidsplan-hjelper – på er komfort, av er ferienivået.",
                 "screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
                 "standby_loss_w": "Avansert: watt tanken taper i ro.",
@@ -2836,7 +2836,7 @@
                 "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
                 "param_appliance": "Hva slags apparat dette er.",
                 "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
-                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
+                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst – en frist for å være tilbake på komfortmålet.",
                 "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "param_building": "Når huset ble bygget. Det setter varmetapet.",
                 "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
@@ -2899,7 +2899,7 @@
                 "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
                 "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
                 "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
-                "param_schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
+                "param_schedule_entity": "Avansert: en tidsplan-hjelper – på er komfort, av er ferienivået.",
                 "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "param_sensor": "Hvilken føler termostaten regulerer på.",
                 "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
@@ -3028,7 +3028,7 @@
                 "param_allow_grid_charge": "Om batteriet kan lade fra nettet i billige timer.",
                 "param_appliance": "Hva slags apparat dette er.",
                 "param_area_m2": "Det oppvarmede arealet, i kvadratmeter.",
-                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst — en frist for å være tilbake på komfortmålet.",
+                "param_arrival_sources": "Avansert: kalendere der neste hendelse er en ankomst – en frist for å være tilbake på komfortmålet.",
                 "param_band_k": "Avansert: kelvin rommet kan svinge rundt målet.",
                 "param_building": "Når huset ble bygget. Det setter varmetapet.",
                 "param_calendar_entity": "Avansert: en kalender der neste hendelse er en avreise, tidligere enn ukedagstabellen.",
@@ -3091,7 +3091,7 @@
                 "param_ready_temp_c": "Avansert: temperaturen tanken varmes til innen klartiden.",
                 "param_reserve_pct": "Andelen som holdes tilbake for et strømbrudd.",
                 "param_room": "Hvilket rom dette varmer. Det setter komfort- og gulvtemperaturene under.",
-                "param_schedule_entity": "Avansert: en tidsplan-hjelper — på er komfort, av er ferienivået.",
+                "param_schedule_entity": "Avansert: en tidsplan-hjelper – på er komfort, av er ferienivået.",
                 "param_screed_depth_mm": "Avansert: millimeter støp over kabelen.",
                 "param_sensor": "Hvilken føler termostaten regulerer på.",
                 "param_settle_s": "Avansert: sekunder etter en skriving før avlesningen stoles på.",
@@ -3172,7 +3172,7 @@
       "step": {
         "user": {
           "title": "Hvilke apparater deler en sikringskurs?",
-          "description": "En sikring og apparatene bak den — garasjens 32 A med laderen og badstuen. PowerPlan holder dem under den sikringen sammen, før hovedsikringen vurderes. [Slik fungerer det]({docs})",
+          "description": "En sikring og apparatene bak den – garasjens 32 A med laderen og badstuen. PowerPlan holder dem under den sikringen sammen, før hovedsikringen vurderes. [Slik fungerer det]({docs})",
           "data": {
             "name": "Navn",
             "fuse_a": "Sikring",
@@ -3255,7 +3255,7 @@
       "step": {
         "user": {
           "title": "Hvilke apparater skal bytte på?",
-          "description": "Apparater som deler effekt og tar tur — seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den kaldeste først og roterer slik at ingen blir hengende. [Slik fungerer det]({docs})",
+          "description": "Apparater som deler effekt og tar tur – seks gulvsløyfer som deler 2 kW når timen blir trang. PowerPlan gir den kaldeste først og roterer slik at ingen blir hengende. [Slik fungerer det]({docs})",
           "data": {
             "name": "Navn",
             "members": "Apparater i denne gruppen"
@@ -3403,7 +3403,7 @@
         },
         "never_substitute": {
           "title": "Skal noen av disse alltid beholde sin egen kilde?",
-          "description": "Uansett hva rangeringen sier — en badegulvsløyfe som aldri skal vente på varmepumpen, for eksempel. [Slik fungerer det]({docs})",
+          "description": "Uansett hva rangeringen sier – en badegulvsløyfe som aldri skal vente på varmepumpen, for eksempel. [Slik fungerer det]({docs})",
           "data": {
             "never_substitute": "Aldri erstatt"
           },

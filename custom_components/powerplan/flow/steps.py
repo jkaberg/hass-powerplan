@@ -511,7 +511,7 @@ def meter_values(hass: HomeAssistant, text: Text, roles: Mapping[str, str]) -> s
             f"config.step.meter_roles.sections.{SECTION_PER_PHASE}.data.{role}"
         )
         if value is None:
-            shown, mark = "—", "?"
+            shown, mark = "–", "?"
         elif quantity == "power":
             shown, mark = text.kw(value / 1000.0), "✓"
         elif quantity == "energy":

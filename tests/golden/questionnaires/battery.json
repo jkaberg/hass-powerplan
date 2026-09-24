@@ -1,5 +1,5 @@
 {
-  "about": "D4 §6.6: a 10 kWh LFP home battery behind a 5 kW three-phase hybrid inverter, 20 % reserve, grid charging allowed; peak_shave and arbitrage arrive with PLAN WP5.4 (D-0308) — always is the safe default until then, since neither is a registered Strategy yet.",
+  "about": "D4 §6.6: a 10 kWh LFP home battery behind a 5 kW three-phase hybrid inverter, 20 % reserve, grid charging allowed; peak_shave and arbitrage arrive with PLAN WP5.4 (D-0308) – always is the safe default until then, since neither is a registered Strategy yet.",
   "answers": {
     "allow_grid_charge": true,
     "capacity_kwh": 10.0,

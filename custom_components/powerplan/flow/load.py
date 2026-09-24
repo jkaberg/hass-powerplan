@@ -682,7 +682,7 @@ def explanation_text(text: Text, derived: Derived, answers: Answers, type_key: s
         f"{param_label(text, key)}: {_value(text, type_key, key, value)}"
         for key, value in explanation.params.items()
     ]
-    sentence = f"{text.word('load_type', type_key)} — " + "; ".join(parts) + "."
+    sentence = f"{text.word('load_type', type_key)} – " + "; ".join(parts) + "."
     shadow = _shadow_sentence(text, type_key, derived.params)
     return f"{sentence} {shadow}" if shadow else sentence
 
@@ -1611,9 +1611,9 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         """Return the appliance's device as a link to its page (D8 §5.16, §9 31)."""
         device = dr.async_get(self.hass).async_get(str(self._device_id))
         if device is None:
-            return {"device_name": "—", "device_url": "/config/devices/dashboard"}
+            return {"device_name": "–", "device_url": "/config/devices/dashboard"}
         return {
-            "device_name": device.name_by_user or device.name or "—",
+            "device_name": device.name_by_user or device.name or "–",
             "device_url": f"/config/devices/device/{device.id}",
         }
 

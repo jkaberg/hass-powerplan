@@ -1,6 +1,6 @@
 {
   "fixture": "generic_thermostat_water_heater",
-  "source": "tests/fixtures/captured/generic_thermostat_water_heater.json — a HA `generic_thermostat` over the water heater's relay, captured: one climate entity, 40–80 °C, step 0.1, 70.8 °C in the tank.",
+  "source": "tests/fixtures/captured/generic_thermostat_water_heater.json – a HA `generic_thermostat` over the water heater's relay, captured: one climate entity, 40–80 °C, step 0.1, 70.8 °C in the tank.",
   "note": "D4 §9 3 and §9 16, the plain-climate row, and the ambiguity D4 §5.9 leaves to the questionnaire: a `generic_thermostat` over a tank's relay and one over a panel heater expose the same entity with the same attributes, so the suggestion is `radiator` for both and D4 §6.3's Control question is what makes this one a `water_heater`. The 40–80 °C range is a hint, not evidence.",
   "matches": [
     {

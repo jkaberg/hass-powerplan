@@ -1,5 +1,5 @@
 {
-  "_": "Golden for the no.tensio-ts.household preset — D2 §9 1 and 22, D9 §3. Every number carries its source; a change to the preset or the evaluator changes this file with a source, never the other way round.",
+  "_": "Golden for the no.tensio-ts.household preset – D2 §9 1 and 22, D9 §3. Every number carries its source; a change to the preset or the evaluator changes this file with a source, never the other way round.",
   "preset": "no/tensio-ts",
   "id": "no.tensio-ts.household",
   "tz": "Europe/Oslo",
@@ -16,8 +16,8 @@
   "sources": {
     "steps": "tensio.no/no/kunde/nettleie/nettleiepriser-for-privat, read 2026-09-23: the table the page's CMS files under `south` (Tensio TS; NVE's nettleietariffer for TENSIO TS AS on 2026-09-01 agrees at 131/233/397), from 2026-07-01, NOK/month incl. VAT: 0–2 kW 131, 2–5 kW 233, 5–10 kW 397, 10–15 kW 585, 15–20 kW 775, 20–25 kW 964, 25–50 kW 1655, 50–75 kW 2599, 75–100 kW 3544, 100–150 kW 5117, 150–200 kW 7003, 200–300 kW 10147, 300–400 kW 13925, 400–500 kW 17697, over 500 kW 21473.",
     "windows": "effektstyring README §1, the 2026-09 row of the table verified against 12 months of recorder history: d03h21 5.26, d03h22 4.91, d03h23 4.52, d02h22 4.39, d01h22 3.97 kWh",
-    "metric_kw": "(5.26 + 4.39 + 3.97) / 3 = 13.62 / 3 = 4.54 — the published top-3-daily-maxima mean for 2026-09",
-    "not_metric_kw": "(5.26 + 4.91 + 4.52) / 3 = 14.69 / 3 = 4.896667 — what the mean would be WITHOUT distinct_days (the README's 'top 3 hours ignoring day' column, 4.897). The golden asserts the metric is not this.",
+    "metric_kw": "(5.26 + 4.39 + 3.97) / 3 = 13.62 / 3 = 4.54 – the published top-3-daily-maxima mean for 2026-09",
+    "not_metric_kw": "(5.26 + 4.91 + 4.52) / 3 = 14.69 / 3 = 4.896667 – what the mean would be WITHOUT distinct_days (the README's 'top 3 hours ignoring day' column, 4.897). The golden asserts the metric is not this.",
     "then_add": "constructed, not measured: two evenings that lift the month into the 5-10 kW step and give the free ride something to ride on",
     "metric_after": "(10.60 + 9.15 + 5.26) / 3 = 25.01 / 3 = 8.336667",
     "checkpoints": "hand-computed in the test file; eps 0.30 kWh per 60-min window (D2 §6), cap margin 0.5 kW (D2 §5.4)"
@@ -88,7 +88,7 @@
     ]
   },
   "second_version": {
-    "_": "INV-52: the same five-day month, recorded in January 2027 instead, is billed on the 2027-01-01 version of the test fixture `tests/fixtures/presets/no/tensio-ts-2027.json`. That version is SYNTHETIC and never shipped (PLAN §7 dec. 21) — only the switch is under test, not the numbers.",
+    "_": "INV-52: the same five-day month, recorded in January 2027 instead, is billed on the 2027-01-01 version of the test fixture `tests/fixtures/presets/no/tensio-ts-2027.json`. That version is SYNTHETIC and never shipped (PLAN §7 dec. 21) – only the switch is under test, not the numbers.",
     "fixture": "no/tensio-ts-2027",
     "valid_from": "2027-01-01",
     "month": "2027-01",

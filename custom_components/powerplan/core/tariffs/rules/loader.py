@@ -257,7 +257,7 @@ def validate(raw: Mapping[str, Any], *, source: str = "preset", shipped: bool = 
             _fail(
                 path,
                 "verified is null, so `assumed` must say in one sentence what was "
-                "assumed and why — a number without a source is never silent",
+                "assumed and why – a number without a source is never silent",
                 source,
             )
 

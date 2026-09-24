@@ -158,7 +158,7 @@ SOURCES: dict[str, str] = {
         "by the fitted daily-spread distribution of the 2024–2025 NO3 series (D9 §5.9)"
     ),
     "SHAPE_GAIN_SIGMA": (
-        "assumed: σ = 0.35 on the log of the within-day amplitude — some days are flat, some are "
+        "assumed: σ = 0.35 on the log of the within-day amplitude – some days are flat, some are "
         "3× peak-to-trough"
     ),
     "WINTER_VOLATILITY_FACTOR": "assumed: the within-day amplitude is 1.6× larger in Nov–Feb",
@@ -181,7 +181,7 @@ SOURCES: dict[str, str] = {
     ),
     "HOUR_SHAPE_SOLAR": (
         "assumed: a duck-curve shape (deep midday trough, morning/evening shoulders), the "
-        "pattern EPEX NL is widely reported to show under high solar penetration — no published "
+        "pattern EPEX NL is widely reported to show under high solar penetration – no published "
         "hour-of-day table was found inside the lookup budget, so only the shape's relative form "
         "and the fact that it troughs at midday are load-bearing; replaced by the fitted "
         "hour-of-day means of the EPEX NL series when loaded"
@@ -192,7 +192,7 @@ SOURCES: dict[str, str] = {
     ),
     "SOLAR_VOLATILITY_FACTOR": (
         "assumed: mirrors WINTER_VOLATILITY_FACTOR's role, tuned (test_prices.py) so negative "
-        "midday excursions are a minority of solar-month days, not most of them — replaced by "
+        "midday excursions are a minority of solar-month days, not most of them – replaced by "
         "the fitted EPEX NL negative-hour frequency when loaded"
     ),
 }

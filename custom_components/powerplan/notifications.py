@@ -85,7 +85,7 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "Something big is running",
             (
                 "This hour is heading over its target, and most of the use is something "
-                "PowerPlan does not control — an oven, a sauna?"
+                "PowerPlan does not control – an oven, a sauna?"
             ),
         ),
         "comfort_violation": (
@@ -137,7 +137,7 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "Noe stort er i gang",
             (
                 "Denne timen er på vei over målet, og det meste av forbruket er noe PowerPlan "
-                "ikke styrer — en ovn, en badstue?"
+                "ikke styrer – en ovn, en badstue?"
             ),
         ),
         "comfort_violation": (

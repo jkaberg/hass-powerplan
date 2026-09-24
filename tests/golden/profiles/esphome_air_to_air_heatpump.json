@@ -1,7 +1,7 @@
 {
   "fixture": "esphome_air_to_air_heatpump",
-  "source": "tests/fixtures/captured/esphome_air_to_air_heatpump.json — the reference house's ground-floor air-to-air pump over ESPHome, captured: 8 entities, `heat` at 21 °C, 23 °C indoors, 13 °C outside.",
-  "note": "D4 §9 16, the heat-pump row. Confidence 0.6: a climate entity and no control siblings — fan, preset and swing modes are capabilities, not knobs powerplan steers. `heat_pump` is suggested because `hvac_modes` include heat_cool, dry and fan_only (D4 §5.9); the setpoint's step 0.5 and range 16–30 °C are the entity's own. The outside-temperature sensor binds `outdoor_temp`; the two energy sensors bind neither, being ambiguous; `switch` (NanoeX) is read-only, because a heat pump's switch is never actuated at any stage (INV-29).",
+  "source": "tests/fixtures/captured/esphome_air_to_air_heatpump.json – the reference house's ground-floor air-to-air pump over ESPHome, captured: 8 entities, `heat` at 21 °C, 23 °C indoors, 13 °C outside.",
+  "note": "D4 §9 16, the heat-pump row. Confidence 0.6: a climate entity and no control siblings – fan, preset and swing modes are capabilities, not knobs powerplan steers. `heat_pump` is suggested because `hvac_modes` include heat_cool, dry and fan_only (D4 §5.9); the setpoint's step 0.5 and range 16–30 °C are the entity's own. The outside-temperature sensor binds `outdoor_temp`; the two energy sensors bind neither, being ambiguous; `switch` (NanoeX) is read-only, because a heat pump's switch is never actuated at any stage (INV-29).",
   "matches": [
     {
       "profile": "generic_climate",

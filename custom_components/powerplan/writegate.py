@@ -318,7 +318,7 @@ class WriteGate:
         """
         error = f"no entity bound to {write.role}"
         _LOGGER.warning(
-            "%s: %s — not written (%s)", actuation.name, error, actuation.decision.reason
+            "%s: %s – not written (%s)", actuation.name, error, actuation.decision.reason
         )
         now = dt_util.utcnow()
         return self._report(
@@ -371,7 +371,7 @@ class WriteGate:
                 sent,
                 error=error,
             )
-        _LOGGER.info("%s: %s — retrying next tick", actuation.name, error)
+        _LOGGER.info("%s: %s – retrying next tick", actuation.name, error)
         return self._report(
             actuation,
             Action.TRANSIENT,
@@ -409,16 +409,16 @@ class WriteGate:
         decision = actuation.decision
         if action is Action.OBSERVE:
             _LOGGER.info(
-                "%s: observe — %s → %s (%s)",
+                "%s: observe – %s → %s (%s)",
                 actuation.name,
                 decision.current,
                 decision.value,
                 decision.reason,
             )
         elif action is Action.FAILED and error is None:
-            _LOGGER.warning("%s: not written — %s", actuation.name, decision.reason)
+            _LOGGER.warning("%s: not written – %s", actuation.name, decision.reason)
         elif action is not Action.WRITTEN and error is None:
-            _LOGGER.debug("%s: %s — %s", actuation.name, action, decision.reason)
+            _LOGGER.debug("%s: %s – %s", actuation.name, action, decision.reason)
 
         self._gate[actuation.load_id] = gate
         if self._on_state is not None:
@@ -455,7 +455,7 @@ class WriteGate:
             )
             if deviated:
                 _LOGGER.info(
-                    "%s: read-back of %s says %s, not %s — re-issued next tick",
+                    "%s: read-back of %s says %s, not %s – re-issued next tick",
                     actuation.name,
                     entity_id,
                     current,

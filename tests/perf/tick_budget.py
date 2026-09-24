@@ -84,6 +84,6 @@ def test_tick_p95_is_under_50ms_with_20_loads() -> None:
 
     p95 = _p95(ticks)
     assert p95 < TICK_P95_BUDGET_MS, (
-        f"tick p95 {p95:.2f} ms over {len(loads)} loads — D9 §5.1's budget is "
+        f"tick p95 {p95:.2f} ms over {len(loads)} loads – D9 §5.1's budget is "
         f"{TICK_P95_BUDGET_MS:.0f} ms"
     )

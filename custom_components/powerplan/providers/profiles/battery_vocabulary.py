@@ -611,7 +611,7 @@ class BatteryDevice(BoundDevice):
             watts = -abs(watts)
         levers = None if key is None else row.levers.get(key)
         if levers is None:
-            _LOGGER.warning("%s: no levers for %r — not written", self.profile, write.value)
+            _LOGGER.warning("%s: no levers for %r – not written", self.profile, write.value)
             return None
         values = {} if view is None else self._current(view)
         written = [lever for lever in levers if not lever.check_only and self._addressed(lever)]
@@ -743,7 +743,7 @@ class BatteryDevice(BoundDevice):
         binding = self.bindings.get(lever.role)
         if binding is None:
             _LOGGER.warning(
-                "%s: %s is not bound — the command is not written", self.profile, lever.role
+                "%s: %s is not bound – the command is not written", self.profile, lever.role
             )
             return None
         if lever.press:

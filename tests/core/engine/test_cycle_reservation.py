@@ -69,5 +69,5 @@ def test_a_requested_but_not_started_cycle_reserves_nothing() -> None:
 
     status = snapshot.loads["dishwasher"]
     assert status.granted_w != pytest.approx(MEAN_W), (
-        "no reservation before the appliance itself reports running — an ordinary plan cap"
+        "no reservation before the appliance itself reports running – an ordinary plan cap"
     )

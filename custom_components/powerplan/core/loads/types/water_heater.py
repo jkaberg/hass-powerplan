@@ -513,7 +513,7 @@ class WaterHeater:
         """Build the runtime load: the kind, the tank and the gate (D4 §5.1)."""
         if cfg.target is None:
             raise ValueError(
-                f"{cfg.load_id}: water_heater needs a target profile — a comfort "
+                f"{cfg.load_id}: water_heater needs a target profile – a comfort "
                 "target comes from configuration, never from the device (INV-27)"
             )
         kind = self._kind(cfg)

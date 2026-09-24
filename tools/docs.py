@@ -189,7 +189,7 @@ def render_types(_arg: str | None) -> str:
             (
                 _label("load_type", key),
                 _label("strategy", default),
-                ", ".join(_label("strategy", s) for s in others) or "—",
+                ", ".join(_label("strategy", s) for s in others) or "–",
                 _code(key),
             )
         )
@@ -206,8 +206,8 @@ def render_strategies(_arg: str | None) -> str:
         rows.append(
             (
                 _label("strategy", key),
-                ", ".join(_label("load_type", t) for t in offered) or "—",
-                ", ".join(_label("load_type", t) for t in default) or "—",
+                ", ".join(_label("load_type", t) for t in offered) or "–",
+                ", ".join(_label("load_type", t) for t in default) or "–",
                 _code(key),
             )
         )
@@ -262,7 +262,7 @@ def render_modifiers(_arg: str | None) -> str:
     rows = []
     for key in modifiers.keys():  # noqa: SIM118 - a registry, not a dict
         asks = steps.get(f"modifier_{key}", {}).get("data", {}).values()
-        rows.append((_label("modifier", key), ", ".join(asks) or "—", _code(key)))
+        rows.append((_label("modifier", key), ", ".join(asks) or "–", _code(key)))
     return _table(("Price add-on", "Asks for", "Key"), rows)
 
 
@@ -321,7 +321,7 @@ def render_countries(_arg: str | None) -> str:
         rows.append(
             (
                 module.name,
-                ", ".join(sources) or "—",
+                ", ".join(sources) or "–",
                 _vat(module),
                 "; ".join(asks) or "nothing more",
             )
@@ -374,7 +374,7 @@ def render_actions(_arg: str | None) -> str:
                 texts[name]["name"],
                 # The link points back at this page (D14 §5.4): not repeated in the table.
                 re.sub(r"\s*\[[^\]]*\]\(\{docs\}\)", "", texts[name]["description"]),
-                ", ".join(fields) or "—",
+                ", ".join(fields) or "–",
             )
         )
     return _table(("Action", "Name", "What it does", "Fields"), rows)

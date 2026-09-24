@@ -57,7 +57,7 @@ SOURCES: dict[str, str] = {
     "SCREED_CP_J_PER_KG_K": "D4 §4.3 SlabStore (cp 0.9 kJ/kg·K) expressed in J/kg·K",
     "DEFAULT_SCREED_MM": (
         "QA-slab-storage.md §1 (reference house, 50 mm levelling compound); D4 §6.1 "
-        "derives the product's store at 40 mm — the simulator is the thicker of the two "
+        "derives the product's store at 40 mm – the simulator is the thicker of the two "
         "on purpose (D9 §2)"
     ),
     "DEFAULT_W_PER_M2": (
@@ -92,7 +92,7 @@ SOURCES: dict[str, str] = {
     ),
     "DEFAULT_SWING_K": "D4 §6.1 advanced: swing 1.0 K (bathroom), 1.5 K elsewhere",
     "DEFAULT_MAX_C": "D4 §6.1: wood/parquet and laminate max 27 °C (EN 1264 surface limit)",
-    "DEFAULT_FLOOR_MIN_C": "D4 §6.1: bedroom floor minimum 17 °C — the provisioned hardware floor",
+    "DEFAULT_FLOOR_MIN_C": "D4 §6.1: bedroom floor minimum 17 °C – the provisioned hardware floor",
     "J_PER_KWH": "SI",
 }
 

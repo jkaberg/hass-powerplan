@@ -52,7 +52,7 @@ SOURCES: dict[str, str] = {
     "W_PER_AMP_IT230_3P": "D3 §5.1 unit conversion table (IT_230, 3 phases)",
     "W_PER_AMP_IT230_1P": "D3 §5.1 unit conversion table (IT_230, 1 phase)",
     "SECONDS_PER_HOUR": "SI",
-    "QUARTER_S": "15 min — the slot length D1/D3 use",
+    "QUARTER_S": "15 min – the slot length D1/D3 use",
 }
 
 

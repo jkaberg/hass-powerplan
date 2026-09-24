@@ -119,7 +119,7 @@ def report(rows: Sequence[tuple[str, Decimal, Decimal | None]], day: date) -> st
     if not rows:
         return f"Every EU country module agrees with TEDB on {day} (IE, CY, MT as §9.1 notes)."
     lines = [
-        f"{len(rows)} country module(s) differ from TEDB on {day} — read the authority first:",
+        f"{len(rows)} country module(s) differ from TEDB on {day} – read the authority first:",
         "",
         "| country | TEDB | module |",
         "|---|---|---|",

@@ -588,7 +588,7 @@ def _reason(cycle: CycleState, *, wants: bool, forced: bool) -> str:
     if cycle.phase is CyclePhase.STARTED:
         return "start sent"
     if cycle.phase is CyclePhase.ABORTED:
-        return "aborted — will run again from the start"
+        return "aborted – will run again from the start"
     if forced:
         return "forced"
     if wants:

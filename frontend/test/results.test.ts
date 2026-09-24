@@ -19,7 +19,7 @@ describe("resultLines (§5.19)", () => {
     const lines = resultLines(savings, cost, entity("0", {}), {}, L, "nb", "kr");
     expect(lines).toEqual([
       "Spart 190 kr · effekttrinn 188 · billigere timer 2",
-      "Effekttrinn 5–10 kW — uten PowerPlan 10–15 kW",
+      "Effekttrinn 5–10 kW – uten PowerPlan 10–15 kW",
       "Apparatene betalte 0,74 mot 0,83 kr/kWh",
     ]);
   });
@@ -36,6 +36,6 @@ describe("resultLines (§5.19)", () => {
     const worse = entity("-3.2", { savings_confidence: "ok" });
     expect(resultLines(worse, cost, undefined, {}, L, "nb", "kr")).toEqual(["Kostet 3 kr mer enn uten PowerPlan"]);
     const none = entity("4602.1", { savings_confidence: "none", capacity_step: "5–10 kW", capacity_step_without: "5–10 kW" });
-    expect(resultLines(none, cost, undefined, {}, L, "nb", "kr")).toEqual(["Effekttrinn 5–10 kW — det samme uten PowerPlan"]);
+    expect(resultLines(none, cost, undefined, {}, L, "nb", "kr")).toEqual(["Effekttrinn 5–10 kW – det samme uten PowerPlan"]);
   });
 });

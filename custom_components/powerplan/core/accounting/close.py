@@ -381,7 +381,7 @@ class Accounting:
 
         state.last_slot_utc = slot.start_utc
         _LOGGER.debug(
-            "accounting: slot %s — %.3f kWh, month cost %s, month savings %s",
+            "accounting: slot %s – %.3f kWh, month cost %s, month savings %s",
             slot.start_utc.isoformat(),
             slot.import_kwh,
             ledger.site.cost.amount,

@@ -61,13 +61,13 @@ SOURCES: dict[str, str] = {
     ),
     "REGISTER_REPEAT_P": (
         "assumed: 2 % of hours repeat the previous value (a stale HAN frame). Replaced by a rate "
-        "counted from recorder history — D3 §5.6's latched-mode grace exists for exactly this"
+        "counted from recorder history – D3 §5.6's latched-mode grace exists for exactly this"
     ),
     "PHASE_IMBALANCE": (
         "assumed: 8 % spread between the three phase currents in a single-family house. Replaced "
         "by the captured L1/L2/L3 entities (D3 §5.1 lists them)"
     ),
-    "W_PER_AMP_IT230_3P": "see sim/base.py — D3 §5.1",
+    "W_PER_AMP_IT230_3P": "see sim/base.py – D3 §5.1",
 }
 
 

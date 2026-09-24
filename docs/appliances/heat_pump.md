@@ -42,7 +42,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Advanced › Outdoor sensor | Advanced: an outdoor temperature sensor. |
 | Advanced › Outlet sensor | Advanced: the heat pump's outlet temperature sensor. |
 | Advanced › Follow presence | Advanced: lower the target when nobody is home. |
-| Advanced › Weekly schedule | Advanced: a schedule helper — on is comfort, off is the vacation level. |
+| Advanced › Weekly schedule | Advanced: a schedule helper – on is comfort, off is the vacation level. |
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:heat_pump -->

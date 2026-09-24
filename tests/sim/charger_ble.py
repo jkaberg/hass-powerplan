@@ -58,7 +58,7 @@ SOURCES: dict[str, str] = {
     ),
     "FALLBACK_AFTER_S": (
         "assumed: after 5 min without contact the charger reverts its dynamic current to its own "
-        "maximum — the README's 'the charger may have fallen back to its own 32 A maximum while "
+        "maximum – the README's 'the charger may have fallen back to its own 32 A maximum while "
         "we were blind'"
     ),
     "DROP_SESSION_ON_RECONNECT_P": (

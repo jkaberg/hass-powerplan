@@ -36,7 +36,7 @@ const D_LABELS: Record<string, Record<string, string>> = {
     history: "Historikk", crumb_app: "PowerPlan", done_at: "ferdig ca. {time}",
     need_moved: "{kwh} kWh flyttes", need_hold: "{kwh} kWh holder temperaturen", no_run: "Ingen kjøring planlagt",
     target: "mål {v}", prices_known: "Kjente priser", prices_part: "Anslått for {n} av {m} timer",
-    prices_stale: "Anslått — ingen nye priser siden {time}", cost_for: "≈ {kr} kr",
+    prices_stale: "Anslått – ingen nye priser siden {time}", cost_for: "≈ {kr} kr",
     more_than_ref: "mer enn uten styring", legionella: "Legionella", legionella_next: "neste {date}", planned_word: "planlagt",
   },
   en: {
@@ -46,7 +46,7 @@ const D_LABELS: Record<string, Record<string, string>> = {
     history: "History", crumb_app: "PowerPlan", done_at: "done ≈ {time}",
     need_moved: "{kwh} kWh moved", need_hold: "{kwh} kWh holding temperature", no_run: "No run planned",
     target: "target {v}", prices_known: "Known prices", prices_part: "Estimated for {n} of {m} hours",
-    prices_stale: "Estimated — no new prices since {time}", cost_for: "≈ {kr}",
+    prices_stale: "Estimated – no new prices since {time}", cost_for: "≈ {kr}",
     more_than_ref: "more than without control", legionella: "Legionella", legionella_next: "next {date}", planned_word: "planned",
   },
 };

@@ -656,7 +656,7 @@ def test_a_six_hour_pure_run_lands_every_window_under_target() -> None:
     assert state.runtime.tick_no == ticks
     print(f"\nticks/s: {rate:.0f} ({ticks} ticks in {elapsed:.1f} s)")  # noqa: T201 - the measurement WP0.11 gates
     assert rate > 100, (
-        f"the pure tick runs at {rate:.0f} ticks/s — profile it (WP0.11 gates at 500)"
+        f"the pure tick runs at {rate:.0f} ticks/s – profile it (WP0.11 gates at 500)"
     )
 
 

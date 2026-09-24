@@ -42,7 +42,7 @@ KEY: Final = "anre"
 API: Final = "https://posf.ro/comparator/api/index.php"
 COUNTIES: Final = f"{API}?request=get-judete"
 PAGE: Final = "https://posf.ro/comparator"
-ATTRIBUTION: Final = "ANRE — Autoritatea Națională de Reglementare în Domeniul Energiei"
+ATTRIBUTION: Final = "ANRE – Autoritatea Națională de Reglementare în Domeniul Energiei"
 #: The grid party's lines, in the order the invoice gives them.
 GRID_LINES: Final = ("tarif_serviciu_distributie", "tarif_transport_tl", "tarif_serviciu_sistem")
 #: The state's lines by the RO module's levy keys.

@@ -151,7 +151,7 @@ ECO_SETPOINT_REASON: Final = (
     "setpoint writes (D4 §5.5)"
 )
 HYSTERESIS_REASON: Final = (
-    "the deadband this room tolerates — a wider one is a larger store and fewer "
+    "the deadband this room tolerates – a wider one is a larger store and fewer "
     "commands on the radio"
 )
 
@@ -225,7 +225,7 @@ def _one(candidates: Sequence[EntityView], what: str, view: DeviceView) -> Entit
     """
     if len(candidates) > 1:
         _LOGGER.debug(
-            "%s: %s entities could be the %s — binding none of them: %s",
+            "%s: %s entities could be the %s – binding none of them: %s",
             view.name,
             len(candidates),
             what,
@@ -278,7 +278,7 @@ def _mode_select(view: DeviceView) -> ModeOptions | None:
         )
     if len(found) > 1:
         _LOGGER.debug(
-            "%s: %s selects offer an eco and a heating option — binding none: %s",
+            "%s: %s selects offer an eco and a heating option – binding none: %s",
             view.name,
             len(found),
             [mode.entity_id for mode in found],

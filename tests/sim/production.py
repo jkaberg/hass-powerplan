@@ -35,7 +35,7 @@ SOURCES: dict[str, str] = {
     "STC_W_PER_M2": "the PV industry's standard test condition, 1000 W/m² (IEC 61215)",
     "PERFORMANCE_RATIO": (
         "NREL PVWatts Calculator, default 'System Losses' 14.08 % "
-        "(https://pvwatts.nrel.gov/pvwatts.php) — a fixed derate, no explicit "
+        "(https://pvwatts.nrel.gov/pvwatts.php) – a fixed derate, no explicit "
         "temperature-coefficient model; replaced by a module datasheet's own "
         "NOCT/temperature curve if refined"
     ),

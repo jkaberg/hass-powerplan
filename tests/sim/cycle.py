@@ -34,7 +34,7 @@ DRY_MIN = 59.0
 SOURCES: dict[str, str] = {
     "CIRCULATION_W": (
         "assumed: circulation pump plus electronics, fitted so the segments below total "
-        "0.895 kWh — D4 §6.8's 0.9 kWh eco figure (EU energy-label typicals)"
+        "0.895 kWh – D4 §6.8's 0.9 kWh eco figure (EU energy-label typicals)"
     ),
     "HEAT_W": (
         "assumed: a domestic dishwasher's heating element is 1.8–2.2 kW; 1.8 kW is the low end. "
@@ -48,7 +48,7 @@ SOURCES: dict[str, str] = {
     "DRAIN_MIN": "assumed: as above",
     "RINSE_HEAT_MIN": "assumed: as above",
     "RINSE_MIN": "assumed: as above",
-    "DRY_MIN": "assumed: as above — the seven segments total exactly 180 min",
+    "DRY_MIN": "assumed: as above – the seven segments total exactly 180 min",
 }
 
 #: (label, watts, minutes) - the eco programme, in order.

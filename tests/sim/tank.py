@@ -68,7 +68,7 @@ SOURCES: dict[str, str] = {
     "MAX_C": "D4 §6.3 advanced: max 80 °C",
     "COMFORT_MIN_C": "D4 §5.12: comfort floor 45 °C (below ~50 °C storage favours legionella)",
     "THERMOSTAT_HYSTERESIS_K": (
-        "assumed: 2 K differential on an electronically controlled tank — the reference "
+        "assumed: 2 K differential on an electronically controlled tank – the reference "
         "house's is a `water_heater` entity with a setpoint (D9 §5.9), not the mechanical "
         "cylinder-on-a-plug whose 5–8 K differential is D4 §6.3's `mechanical_thermostat` "
         "case. Replaced by the measured reheat band of the reference house's tank"
@@ -81,7 +81,7 @@ SOURCES: dict[str, str] = {
         "Replaced by a measured two-sensor profile"
     ),
     "MIX_UA_W_PER_K": (
-        "assumed: 15 W/K conduction across the thermocline — slow enough that stratification "
+        "assumed: 15 W/K conduction across the thermocline – slow enough that stratification "
         "survives an evening, fast enough that a tank left alone becomes uniform overnight"
     ),
     "DRAW_L_PER_PERSON_DAY": "D4 §5.7 / §6.3: 45 L per person per day at 55 °C",

@@ -82,7 +82,7 @@ class Find:
         if len(found) != 1:
             if found:
                 _LOGGER.debug(
-                    "%s: %d entities match %s — binding none", view.name, len(found), self.tokens
+                    "%s: %d entities match %s – binding none", view.name, len(found), self.tokens
                 )
             return None
         return found[0]

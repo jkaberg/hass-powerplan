@@ -152,7 +152,7 @@ class AccountingAdapter:
             # A section from before the reference (D11 §5.9.6): its figures are
             # the ones the reference replaces, so the ledger restarts (D-0592).
             _LOGGER.warning(
-                "accounting: store section schema %s is not %s — the ledger restarts",
+                "accounting: store section schema %s is not %s – the ledger restarts",
                 raw.get("schema"),
                 ACCOUNTING_SCHEMA,
             )
