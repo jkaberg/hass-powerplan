@@ -29,6 +29,14 @@ PowerPlan uses these integrations when they are set up: the grid meter's power r
 3. Select **PowerPlan**, then **Download**.
 4. Restart Home Assistant: go to **Settings**, open the menu at the top right, and select **Restart Home Assistant**.
 
+## Install by hand
+
+1. Download the source code (zip) of the latest [release](https://github.com/jkaberg/hass-powerplan/releases), and unpack it.
+2. Copy its `custom_components/powerplan/` folder into the `custom_components/` folder of your Home Assistant configuration. Create that folder if it is missing.
+3. Restart Home Assistant.
+
+A manual install does not update itself. Repeat these steps for each new release.
+
 ## Add PowerPlan to Home Assistant
 
 [![Open your Home Assistant instance and start setting up PowerPlan.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=powerplan)
