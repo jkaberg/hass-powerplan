@@ -1000,16 +1000,14 @@ def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDe
     """Return the bound device a load subentry describes, read live from Home Assistant."""
     profile = profiles.get(str(data[LOAD_PROFILE]))
     bindings = tuple(binding_from_data(row) for row in data.get(LOAD_BINDINGS) or ())
-    device_id = data.get(LOAD_DEVICE_ID)
-    if not device_id:
-        msg = "the load has no device id"
-        raise ValueError(msg)
+    # Entities picked by hand are on no device (D8 §5.2).
+    device_id = str(data[LOAD_DEVICE_ID]) if data.get(LOAD_DEVICE_ID) else None
     # A profile driven through a device action addresses the load's own device (D4 §5.10);
     # a battery row's floor is the household's reserve (D4 §5.9).
     bound = replace(
-        profile.bind(bindings), device_id=str(device_id), params=dict(data.get("params") or {})
+        profile.bind(bindings), device_id=device_id, params=dict(data.get("params") or {})
     )
-    return LiveDevice(hass, str(device_id), bound)
+    return LiveDevice(hass, device_id, bound)
 
 
 def step_index(choice: str) -> int | None:
@@ -2122,10 +2120,16 @@ class Runtime:
                 self.hass,
                 entry_id,
                 f"device_missing_{load_id}",
-                active=hardware is None,
+                # A load on no device has lost nothing: the fallback is its home.
+                active=hardware is None and self._bound_to_device(load_id),
                 placeholders={"load": load.config.name},
                 entry_title=self.site_name,
             )
+
+    def _bound_to_device(self, load_id: str) -> bool:
+        """Whether the load was set up on a hardware device, not on entities alone."""
+        subentry = self.entry.subentries.get(load_id)
+        return subentry is not None and bool(subentry.data.get(LOAD_DEVICE_ID))
 
     def role_on_hardware(self, load_id: str, role: Role) -> bool:
         """Whether a role is bound to an entity of the appliance's own hardware device (§5.16)."""

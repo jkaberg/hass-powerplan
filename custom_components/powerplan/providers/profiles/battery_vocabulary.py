@@ -33,7 +33,7 @@ import logging
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Final
 
@@ -87,6 +87,9 @@ __all__ = [
 
 #: Platform evidence, as every product profile's (D4 §5.9).
 PLATFORM_CONFIDENCE: Final = 0.95
+#: A row with no integration of its own matches by its controls' shape (D4 §5.9,
+#: WP7.14): Zaptec's `SHAPE_CONFIDENCE`.
+SHAPE_CONFIDENCE: Final = 0.8
 
 #: The key of a row's own-optimiser levers: read back, restored on release, never planned.
 VENDOR: Final = "vendor"
@@ -129,6 +132,15 @@ class Expr(StrEnum):
     ENTITY_MAX = "entity_max"
     #: The command's watts as per mille of the inverter's own rate (SAJ's 0–1000).
     PERMILLE = "permille"
+    #: The command's watts ≥ 0 as text: an action whose schema takes a string (sonnen).
+    POWER_TEXT = "power_text"
+    #: The household's charge target, % (the questionnaire's `max_soc`): a floor a
+    #: charge raises to.
+    TARGET = "target"
+    #: The grid power at which the inverter's own regulation leaves the battery at the
+    #: command's watts: measured grid − measured battery + watts, never below 0 for a
+    #: discharge (D6 never exports). Victron's ESS setpoint.
+    GRID_FOR = "grid_for"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +155,11 @@ class Lever:
     service: str | None = None
     #: The action's data; an `Expr` value is computed like a lever's.
     fields: Mapping[str, Value | Expr] = field(default_factory=dict)
+    #: Read back, never written: a sensor that tells one command from another
+    #: (sonnen's battery power, Solis's dispatch state).
+    check_only: bool = False
+    #: An action whose schema takes no target (Solis's `solis_dispatch`).
+    untargeted: bool = False
 
     @property
     def checkable(self) -> bool:
@@ -163,6 +180,15 @@ class Bind:
     options: tuple[str, ...] | None = None
     #: A number with no unit to scale by (SAJ's per mille): bound as it stands.
     plain: bool = False
+    #: A numbered set of entities written as one lever: `{n}` in the tokens runs 1…family
+    #: (Deye's six programs).
+    family: int = 0
+    #: A power the integration signs the other way, positive discharging (sonnen):
+    #: bound with its scale negated, so powerplan reads it by INV-19.
+    negate: bool = False
+    #: A measurement split over a numbered family (a grid per phase): read as the sum
+    #: of the members present, the first one required (Victron's Modbus).
+    summed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +226,8 @@ class BatteryVocabulary:
     """One battery integration as data (D4 §5.9)."""
 
     key: str
+    #: The integration that owns the entities; empty for a row matched by shape alone
+    #: (a YAML package's template entities).
     platform: str
     binds: tuple[Bind, ...]
     #: The levers each command writes, in order; `VENDOR` for the vendor's own mode.
@@ -227,25 +255,32 @@ class BatteryVocabulary:
         """The commands the row has levers for."""
         return frozenset(BatteryCommand(key) for key in self.levers if key != VENDOR)
 
+    @property
+    def optional(self) -> frozenset[Role]:
+        """The roles a device may lack: their levers are left out where unbound."""
+        return frozenset(bind.role for bind in self.binds if not bind.required)
+
     # ------------------------------------------------------------------ match #
 
     def match(self, view: DeviceView) -> MatchResult:
         """Claim a device of this platform that has the row's levers."""
-        if self.platform not in view.platforms:
+        if self.platform and self.platform not in view.platforms:
             return no_match(self.key, f"no {self.platform} platform on this device")
         bindings, reasons = self._bind_view(view)
         # The first control is what tells this row's device from another's on the
         # same platform (SolaX's remote control, Sofar's passive mode: WP7.10).
         if not any(binding.role is self.binds[0].role for binding in bindings):
-            return no_match(self.key, f"a {self.platform} device without the battery's controls")
+            return no_match(
+                self.key, f"a {self.platform or 'device'} without the battery's controls"
+            )
         found = {binding.role for binding in bindings}
         required = [bind.role for bind in self.binds if bind.required] + [Role.SOC]
         missing = tuple(dict.fromkeys(role for role in required if role not in found))
         return MatchResult(
             profile=self.key,
-            confidence=PLATFORM_CONFIDENCE,
+            confidence=PLATFORM_CONFIDENCE if self.platform else SHAPE_CONFIDENCE,
             reasons=(
-                f"platform {self.platform}",
+                f"platform {self.platform}" if self.platform else "the controls' shape",
                 *reasons,
                 *(f"no entity found for {role}" for role in missing),
             ),
@@ -261,7 +296,8 @@ class BatteryVocabulary:
         bindings: list[RoleBinding] = []
         reasons: list[str] = []
         for bind in self.binds:
-            entity = bind.find.entity(view, bind.options)
+            members = _family(bind, view)
+            entity = members[0] if members else None
             if entity is None:
                 continue
             binding = _binding(entity, bind.role, self.key, numeric=bind.numeric, plain=bind.plain)
@@ -272,13 +308,14 @@ class BatteryVocabulary:
                     role=binding.role,
                     entity_id=binding.entity_id,
                     unit=binding.unit,
-                    scale=binding.scale,
+                    scale=-binding.scale if bind.negate else binding.scale,
                     options=binding.options,
                     required=bind.required,
                     step=binding.step,
                     min_value=binding.min_value,
                     max_value=binding.max_value,
                     writable=bind.writable,
+                    also=tuple(member.entity_id for member in members[1:]),
                 )
             )
             reasons.append(f"{bind.role} is {entity.entity_id}")
@@ -330,6 +367,23 @@ class BatteryVocabulary:
         return self.quirks_row
 
 
+def _family(bind: Bind, view: DeviceView) -> list[EntityView]:
+    """Return the bind's entity, or every member of its numbered family in order."""
+    if not bind.family:
+        found = bind.find.entity(view, bind.options)
+        return [] if found is None else [found]
+    members: list[EntityView] = []
+    for n in range(1, bind.family + 1):
+        tokens = tuple(token.replace("{n}", str(n)) for token in bind.find.tokens)
+        found = replace(bind.find, tokens=tokens).entity(view, bind.options)
+        if found is None:
+            if bind.summed and members:
+                continue
+            return []
+        members.append(found)
+    return members
+
+
 def _binding(
     entity: EntityView, role: Role, profile: str, *, numeric: bool, plain: bool = False
 ) -> RoleBinding | None:
@@ -373,6 +427,7 @@ class BatteryDevice(BoundDevice):
         if row is None:
             return reads
         values = {role: _value_of(read) for role, read in reads.roles.items()}
+        values.update(self._summed(view))
         available = all(
             reads.available(lever.role)
             for levers in row.levers.values()
@@ -397,7 +452,7 @@ class BatteryDevice(BoundDevice):
             levers = row.levers.get(key)
             if levers is None or (allowed is not None and key not in allowed):
                 continue
-            checkable = [lever for lever in levers if lever.checkable]
+            checkable = [lever for lever in levers if lever.checkable and self._addressed(lever)]
             if not checkable and allowed is None:
                 continue
             if all(self._holds(lever, key, values) for lever in checkable):
@@ -407,7 +462,7 @@ class BatteryDevice(BoundDevice):
                 return encode(BatteryCommand(key), found)
         return None
 
-    def _holds(  # noqa: PLR0911 - one answer per kind of value a lever writes (D4 §5.9)
+    def _holds(  # noqa: PLR0911, PLR0912 - one answer per kind of value a lever writes (D4 §5.9)
         self, lever: Lever, key: str, values: Mapping[Role, Value | None]
     ) -> bool:
         """Whether the lever's entity holds what `key`'s command writes there."""
@@ -417,29 +472,40 @@ class BatteryDevice(BoundDevice):
             return False
         binding = self.bindings.get(lever.role)
         expr = lever.expr
+        number = _number(current)
+        # A limit handed back is self-use's alone: Victron's −1 is not the hold's 0.
+        if number is not None and self._handed_back(lever.role, number):
+            return expr is Expr.ENTITY_MAX
         if expr is Expr.CONST:
             return _same(current, lever.value, binding)
-        number = _number(current)
         if number is None:
             return False
         if expr is Expr.PERMILLE:
             return number > _SLACK
+        if expr is Expr.GRID_FOR:
+            watts = self._inverse(number, values)
+            if watts is None:
+                return False
+            if key == BatteryCommand.CHARGE:
+                return number > _IDLE_W and watts > _IDLE_W
+            return watts < -_IDLE_W
         if expr in (Expr.POWER, Expr.SIGNED, Expr.NEG_SIGNED):
             signed = -number if expr is Expr.NEG_SIGNED else number
             if expr is Expr.POWER:
-                return number > _IDLE_W
+                return number > _IDLE_W and not self._handed_back(lever.role, number)
             return signed > _IDLE_W if key == BatteryCommand.CHARGE else signed < -_IDLE_W
         reserve = self._reserve()
         if expr is Expr.RESERVE:
             return abs(number - reserve) <= _SLACK
+        if expr is Expr.TARGET:
+            return abs(number - self._target()) <= _SLACK
         if expr is Expr.DEPTH_RESERVE:
             return abs(number - (100.0 - reserve)) <= _SLACK
         if expr is Expr.SOC_UP:
             return number > reserve + _SLACK
         if expr is Expr.DEPTH_SOC_UP:
             return number < 100.0 - reserve - _SLACK
-        top = None if binding is None else binding.max_value
-        return top is not None and number >= top * (binding.scale if binding else 1.0) - _SLACK
+        return self._handed_back(lever.role, number)
 
     def _watts(
         self, levers: tuple[Lever, ...], values: Mapping[Role, Value | None]
@@ -450,6 +516,11 @@ class BatteryDevice(BoundDevice):
                 number = _number(values.get(lever.role))
                 if number is not None:
                     return abs(number)
+            if lever.role is not None and lever.expr is Expr.GRID_FOR:
+                number = _number(values.get(lever.role))
+                watts = None if number is None else self._inverse(number, values)
+                if watts is not None:
+                    return float(round(abs(watts)))
             if lever.role is not None and lever.expr is Expr.PERMILLE:
                 number = _number(values.get(lever.role))
                 if number is not None:
@@ -457,10 +528,64 @@ class BatteryDevice(BoundDevice):
                     return float(round(number / 1000.0 * self._rate(charging=charging)))
         return None
 
+    def _inverse(self, setpoint: float, values: Mapping[Role, Value | None]) -> float | None:
+        """Return the battery watts a grid setpoint means now: `grid_for`'s inverse."""
+        grid, battery = _number(values.get(Role.GRID_POWER)), _number(values.get(Role.POWER))
+        if grid is None or battery is None:
+            return None
+        return setpoint - grid + battery
+
+    def _handed_back(self, role: Role, number: float) -> bool:
+        """Whether a limit stands handed back where the row hands it back (no command).
+
+        At its own maximum, or below 0: Victron's −1, "no limit".
+        """
+        row, binding = self.row, self.bindings.get(role)
+        if row is None or binding is None or binding.max_value is None:
+            return False
+        handed = any(
+            lever.role is role and lever.expr is Expr.ENTITY_MAX
+            for levers in row.levers.values()
+            for lever in levers
+        )
+        top = binding.max_value * binding.scale
+        return handed and (number >= top - _SLACK or number < 0.0)
+
+    def _addressed(self, lever: Lever) -> bool:
+        """Whether the device has the lever's entity: an optional role may be unbound."""
+        row = self.row
+        return not (
+            row is not None
+            and lever.role is not None
+            and lever.role in row.optional
+            and lever.role not in self.bindings
+        )
+
+    def _summed(self, view: DeviceView) -> dict[Role, Value | None]:
+        """Return each measurement bound over a family as its members' sum."""
+        out: dict[Role, Value | None] = {}
+        for role, binding in self.bindings.items():
+            if not binding.also or binding.writable:
+                continue
+            total = 0.0
+            for entity_id in (binding.entity_id, *binding.also):
+                entity = view.get(entity_id)
+                number = None if entity is None or not entity.available else entity.number
+                if number is None:
+                    total = math.nan
+                    break
+                total += number * binding.scale
+            out[role] = None if math.isnan(total) else total
+        return out
+
     def _rate(self, *, charging: bool) -> float:
         """Return the inverter's own rate, W, from the questionnaire (D4 §6.6)."""
         key = "max_charge_w" if charging else "max_discharge_w"
         return float(self.params.get(key, 5000.0))
+
+    def _target(self) -> float:
+        """Return the household's charge target, %: what a charge raises a floor to."""
+        return float(self.params.get("max_soc", 100.0))
 
     def _reserve(self) -> float:
         """Return the household's reserve, %: the lowest floor any lever may write."""
@@ -489,25 +614,29 @@ class BatteryDevice(BoundDevice):
             _LOGGER.warning("%s: no levers for %r — not written", self.profile, write.value)
             return None
         values = {} if view is None else self._current(view)
+        written = [lever for lever in levers if not lever.check_only and self._addressed(lever)]
         pending = [
             lever
-            for lever in levers
+            for lever in written
             if view is None or not lever.checkable or not self._at(lever, watts, values)
         ]
         calls: list[DeviceCall] = []
-        for lever in pending or levers:
+        for lever in pending or written:
             call = self._lever_call(lever, watts, values)
             if call is None:
                 return None
             calls.append(call)
-        head, *rest = calls
+        # A lever over several entities is a call per entity: one flat chain.
+        flat = [each for call in calls for each in (replace(call, then=()), *call.then)]
+        head, *rest = flat
         return DeviceCall(
             domain=head.domain,
             service=head.service,
             entity_id=head.entity_id,
             data=dict(head.data),
             device_id=head.device_id,
-            then=(*head.then, *rest),
+            then=tuple(rest),
+            untargeted=head.untargeted,
         )
 
     def _current(self, view: DeviceView) -> dict[Role, Value | None]:
@@ -519,6 +648,7 @@ class BatteryDevice(BoundDevice):
                 continue
             number = entity.number if binding.unit is not None else None
             found[role] = entity.state if number is None else number * binding.scale
+        found.update(self._summed(view))
         return found
 
     def _at(self, lever: Lever, watts: float | None, values: Mapping[Role, Value | None]) -> bool:
@@ -528,6 +658,9 @@ class BatteryDevice(BoundDevice):
         current = values.get(lever.role)
         if wanted is None or current is None:
             return False
+        number = _number(current)
+        if number is not None and self._handed_back(lever.role, number):
+            return lever.expr is Expr.ENTITY_MAX
         return _same(current, wanted, self.bindings.get(lever.role))
 
     def _value(
@@ -536,7 +669,7 @@ class BatteryDevice(BoundDevice):
         """Return the value `lever` writes for a command of `watts`, in powerplan's units."""
         return self._compute(lever.expr, lever.value, lever.role, watts, values)
 
-    def _compute(  # noqa: PLR0911 - one answer per value expression (D4 §5.9)
+    def _compute(  # noqa: PLR0911, PLR0912 - one answer per value expression (D4 §5.9)
         self,
         expr: Expr | Value | None,
         constant: Value | None,
@@ -553,14 +686,25 @@ class BatteryDevice(BoundDevice):
         signed = 0.0 if watts is None else watts
         if expr is Expr.POWER:
             return abs(signed)
+        if expr is Expr.POWER_TEXT:
+            return f"{abs(signed):.0f}"
         if expr in (Expr.SIGNED, Expr.NEG_SIGNED):
             return signed if expr is Expr.SIGNED else -signed
+        if expr is Expr.GRID_FOR:
+            grid = _number(values.get(Role.GRID_POWER))
+            battery = _number(values.get(Role.POWER))
+            if grid is None or battery is None:
+                return None
+            setpoint = float(round(grid - battery + signed))
+            return max(0.0, setpoint) if signed < 0.0 else setpoint
         if expr is Expr.PERMILLE:
             rate = self._rate(charging=signed >= 0.0)
             return 0.0 if rate <= 0.0 else float(round(abs(signed) / rate * 1000.0))
         reserve = self._reserve()
         if expr is Expr.RESERVE:
             return reserve
+        if expr is Expr.TARGET:
+            return max(reserve, self._target())
         if expr is Expr.DEPTH_RESERVE:
             return 100.0 - reserve
         if expr in (Expr.SOC_UP, Expr.DEPTH_SOC_UP):
@@ -572,10 +716,18 @@ class BatteryDevice(BoundDevice):
             return None
         return binding.max_value * binding.scale
 
-    def _lever_call(
+    def _lever_call(  # noqa: PLR0911 - one return per kind of lever (D4 §5.9)
         self, lever: Lever, watts: float | None, values: Mapping[Role, Value | None]
     ) -> DeviceCall | None:
         """Return the one call a lever makes."""
+        if lever.service is not None and lever.untargeted:
+            domain, _, service = lever.service.partition(".")
+            data = {
+                key: _plain(self._compute(expr, None, None, watts, values))
+                for key, expr in lever.fields.items()
+            }
+            witness = next(iter(self.bindings.values())).entity_id
+            return DeviceCall(domain, service, witness, data, untargeted=True)
         if lever.service is not None:
             if self.device_id is None:
                 _LOGGER.warning("%s: no device to address %s to", self.profile, lever.service)
@@ -601,7 +753,11 @@ class BatteryDevice(BoundDevice):
             return None
         if binding.options:
             value = _option(value, binding.options)
-        return self._call(binding, value)
+        first = self._call(binding, value)
+        more = [self._call(replace(binding, entity_id=other), value) for other in binding.also]
+        if first is None or None in more:
+            return None
+        return replace(first, then=tuple(call for call in more if call is not None))
 
 
 def _key(value: Value) -> tuple[str | None, float | None]:
@@ -1247,6 +1403,765 @@ SOFAR: Final = register(
                 Lever(Role.START, press=True),
             ),
         },
+        quirks_row=_MODBUS,
+    )
+)
+
+
+# --------------------------------------------------------------------------- #
+# WP7.11: power through an action or a plain number
+# --------------------------------------------------------------------------- #
+
+#: Marstek Venus over its local API (`marstek_local_api` 950; jaapp, `services.yaml`,
+#: `button.py`, `sensor.py`): `set_passive_mode` by device, power negative to charge,
+#: for a duration that lapses by itself; the *Auto mode* button is its own
+#: self-use and *AI mode* its optimiser. Read back off *Operating mode* and the
+#: pack power, positive while charging.
+MARSTEK_LOCAL: Final = register(
+    BatteryVocabulary(
+        key="marstek_local_api",
+        platform="marstek_local_api",
+        title="Marstek Local API",
+        binds=(
+            Bind(Role.START, Find("button", ("auto", "mode"))),
+            Bind(Role.BATTERY_ENABLE, Find("button", ("ai", "mode")), required=False),
+            Bind(
+                Role.POWER,
+                Find(
+                    "sensor",
+                    ("power",),
+                    device_class="power",
+                    exclude=("in", "out", "pv", "grid", "ct", "offgrid", "phase", "total"),
+                ),
+                numeric=True,
+                writable=False,
+            ),
+        ),
+        levers={
+            "self_use": (Lever(Role.START, press=True),),
+            "hold": (
+                Lever(
+                    service="marstek_local_api.set_passive_mode",
+                    fields={"power": 0, "duration": 3600},
+                ),
+            ),
+            "charge": (
+                Lever(Role.POWER, expr=Expr.SIGNED, check_only=True),
+                Lever(
+                    service="marstek_local_api.set_passive_mode",
+                    fields={"power": Expr.NEG_SIGNED, "duration": 3600},
+                ),
+            ),
+            "discharge": (
+                Lever(Role.POWER, expr=Expr.SIGNED, check_only=True),
+                Lever(
+                    service="marstek_local_api.set_passive_mode",
+                    fields={"power": Expr.NEG_SIGNED, "duration": 3600},
+                ),
+            ),
+            VENDOR: (Lever(Role.BATTERY_ENABLE, press=True),),
+        },
+        status=Status(
+            find=Find("sensor", ("operating", "mode")),
+            patterns=(
+                (r"^\s*auto", ("self_use",)),
+                (r"^\s*ai\b", (VENDOR,)),
+                (r"^\s*passive", ("charge", "discharge", "hold")),
+            ),
+        ),
+        soc=Find("sensor", ("state", "charge"), device_class="battery"),
+        quirks_row=Quirks(
+            transport=Transport.LOCAL, verify_after_s=60.0, min_interval_s=60.0, tolerance=100.0
+        ),
+    )
+)
+
+#: Sessy (`sessy` 219; PimDoos, `number.py`, `select.py`, sessypy 0.2.6): *Power
+#: Strategy* API and *Power Setpoint* in W, positive discharging (Sessy's local API
+#: documentation). Net zero is its self-use, Idle its hold, Dynamic its optimiser.
+SESSY: Final = register(
+    BatteryVocabulary(
+        key="sessy",
+        platform="sessy",
+        title="Sessy",
+        binds=(
+            Bind(Role.BATTERY_MODE, Find("select", ("power", "strategy"))),
+            Bind(Role.BATTERY_POWER_SET, Find("number", ("power", "setpoint")), numeric=True),
+        ),
+        levers={
+            "self_use": (Lever(Role.BATTERY_MODE, value="nom"),),
+            "hold": (Lever(Role.BATTERY_MODE, value="idle"),),
+            "charge": (
+                Lever(Role.BATTERY_MODE, value="api"),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.NEG_SIGNED),
+            ),
+            "discharge": (
+                Lever(Role.BATTERY_MODE, value="api"),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.NEG_SIGNED),
+            ),
+            VENDOR: (Lever(Role.BATTERY_MODE, value="roi"),),
+        },
+        soc=Find("sensor", ("state", "charge"), device_class="battery"),
+        quirks_row=Quirks(
+            transport=Transport.LOCAL, verify_after_s=30.0, min_interval_s=30.0, tolerance=100.0
+        ),
+    )
+)
+
+#: sonnenBatterie (`sonnenbatterie` 589; weltmeyer, `services.yaml`, `entities.py`,
+#: `sensor_list.py`): manual mode, then `charge_battery` or `discharge_battery` by
+#: device with the power in W; automatic is its self-use and time-of-use or
+#: optimizing its own optimisers. Manual with both at 0 holds. Read back off the
+#: *Operating mode* select and the battery's power, positive discharging.
+SONNEN: Final = register(
+    BatteryVocabulary(
+        key="sonnenbatterie",
+        platform="sonnenbatterie",
+        title="SonnenBatterie",
+        binds=(
+            Bind(Role.BATTERY_MODE, Find("select", ("operating", "mode"))),
+            Bind(
+                Role.POWER,
+                Find("sensor", ("charge", "discharge", "power"), device_class="power"),
+                numeric=True,
+                writable=False,
+                negate=True,
+            ),
+        ),
+        levers={
+            "self_use": (Lever(Role.BATTERY_MODE, value="automatic"),),
+            "hold": (
+                Lever(Role.BATTERY_MODE, value="manual"),
+                Lever(service="sonnenbatterie.discharge_battery", fields={"power": "0"}),
+                Lever(service="sonnenbatterie.charge_battery", fields={"power": "0"}),
+            ),
+            "charge": (
+                Lever(Role.POWER, expr=Expr.SIGNED, check_only=True),
+                Lever(Role.BATTERY_MODE, value="manual"),
+                Lever(service="sonnenbatterie.charge_battery", fields={"power": Expr.POWER_TEXT}),
+            ),
+            "discharge": (
+                Lever(Role.POWER, expr=Expr.SIGNED, check_only=True),
+                Lever(Role.BATTERY_MODE, value="manual"),
+                Lever(
+                    service="sonnenbatterie.discharge_battery", fields={"power": Expr.POWER_TEXT}
+                ),
+            ),
+            VENDOR: (Lever(Role.BATTERY_MODE, value="optimizing"),),
+        },
+        prerequisite="write access for the local API, in the battery's own web interface",
+        soc=Find("sensor", ("percentage", "user"), device_class="battery"),
+        quirks_row=Quirks(
+            transport=Transport.LOCAL, verify_after_s=30.0, min_interval_s=30.0, tolerance=200.0
+        ),
+    )
+)
+
+#: E3/DC (`e3dc_rscp` 748; torbennehmer, `services.py`, `coordinator.py`): the
+#: power mode by device - 0 normal, 1 idle, 2 discharge, 4 charge from the grid -
+#: with its power in W. The integration re-sends it every 10 s while Home Assistant
+#: runs and stops on shutdown, when the E3/DC returns to normal (INV-64). Read back
+#: off *Current operation mode* and *Current power value*.
+E3DC: Final = register(
+    BatteryVocabulary(
+        key="e3dc_rscp",
+        platform="e3dc_rscp",
+        title="E3/DC Remote Storage Control Protocol",
+        binds=(
+            Bind(
+                Role.BATTERY_MODE, Find("sensor", ("current", "operation", "mode")), writable=False
+            ),
+            Bind(
+                Role.BATTERY_POWER_SET,
+                Find("sensor", ("current", "power", "value")),
+                numeric=True,
+                writable=False,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_MODE, value="0", check_only=True),
+                Lever(service="e3dc_rscp.set_power_mode", fields={"power_mode": "0"}),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_MODE, value="1", check_only=True),
+                Lever(service="e3dc_rscp.set_power_mode", fields={"power_mode": "1"}),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_MODE, value="4", check_only=True),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.POWER, check_only=True),
+                Lever(
+                    service="e3dc_rscp.set_power_mode",
+                    fields={"power_mode": "4", "power_value": Expr.POWER},
+                ),
+            ),
+            "discharge": (
+                Lever(Role.BATTERY_MODE, value="2", check_only=True),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.POWER, check_only=True),
+                Lever(
+                    service="e3dc_rscp.set_power_mode",
+                    fields={"power_mode": "2", "power_value": Expr.POWER},
+                ),
+            ),
+        },
+        soc=Find(
+            "sensor", ("state", "charge"), device_class="battery", exclude=("module", "wallbox")
+        ),
+        quirks_row=Quirks(
+            transport=Transport.LOCAL, verify_after_s=30.0, min_interval_s=30.0, tolerance=100.0
+        ),
+    )
+)
+
+#: Solis hybrids with Remote Dispatch firmware (`solis_modbus` 689; Pho3niX90,
+#: `__init__.py` DISPATCH_MODES, `services.yaml`): `solis_dispatch` - hold, charge,
+#: discharge with its power - and `solis_dispatch_stop`, which returns the inverter
+#: to its own storage mode. The action takes no target. Its failsafe, an hour here,
+#: returns the inverter to its own mode when no dispatch arrives (INV-64). Read back
+#: off *Dispatch Active*, *Dispatch Control Mode* and *Dispatch Power Target*
+#: (signed, positive charging).
+SOLIS_MODBUS: Final = register(
+    BatteryVocabulary(
+        key="solis_modbus",
+        platform="solis_modbus",
+        title="Solis Modbus",
+        binds=(
+            Bind(
+                Role.BATTERY_ENABLE,
+                Find("sensor", ("dispatch", "active")),
+                numeric=True,
+                writable=False,
+                plain=True,
+            ),
+            Bind(
+                Role.BATTERY_MODE,
+                Find("sensor", ("dispatch", "control", "mode")),
+                writable=False,
+                plain=True,
+            ),
+            Bind(
+                Role.BATTERY_POWER_SET,
+                Find("sensor", ("dispatch", "power", "target")),
+                numeric=True,
+                writable=False,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_ENABLE, value=0.0, check_only=True),
+                Lever(service="solis_modbus.solis_dispatch_stop", untargeted=True),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_ENABLE, value=1.0, check_only=True),
+                Lever(Role.BATTERY_MODE, value=1.0, check_only=True),
+                Lever(
+                    service="solis_modbus.solis_dispatch",
+                    fields={"mode": "battery_hold", "failsafe_minutes": 60},
+                    untargeted=True,
+                ),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_ENABLE, value=1.0, check_only=True),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.SIGNED, check_only=True),
+                Lever(
+                    service="solis_modbus.solis_dispatch",
+                    fields={
+                        "mode": "battery_charge",
+                        "power_watts": Expr.POWER,
+                        "allow_grid_charge": True,
+                        "failsafe_minutes": 60,
+                    },
+                    untargeted=True,
+                ),
+            ),
+            "discharge": (
+                Lever(Role.BATTERY_ENABLE, value=1.0, check_only=True),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.SIGNED, check_only=True),
+                Lever(
+                    service="solis_modbus.solis_dispatch",
+                    fields={
+                        "mode": "battery_discharge",
+                        "power_watts": Expr.POWER,
+                        "failsafe_minutes": 60,
+                    },
+                    untargeted=True,
+                ),
+            ),
+        },
+        prerequisite="firmware with Remote Dispatch (the Remote Dispatch Capability sensor reads 43605)",
+        quirks_row=_MODBUS,
+    )
+)
+
+
+# --------------------------------------------------------------------------- #
+# WP7.12: the SoC floor - the inverter sets the power, powerplan moves its floor
+# --------------------------------------------------------------------------- #
+
+#: Tesla's cloud: one command every five minutes, read back after two (the
+#: energy site's cloud polling; Teslemetry's is 30 s, Tesla Fleet's slower).
+_TESLA_CLOUD = Quirks(
+    transport=Transport.CLOUD, verify_after_s=120.0, min_interval_s=300.0, tolerance=0.0
+)
+
+
+def _tesla_row(key: str, title: str) -> BatteryVocabulary:
+    """Return a Powerwall on one of Home Assistant's own Tesla integrations.
+
+    Core `select.py`, `number.py`, `switch.py`: *Operation mode* self-consumption, *Backup reserve* as
+    the floor - at the reserve on its own, at the SoC to hold, at the target with
+    *Allow charging from grid* on to charge. *Autonomous* is Tesla's own optimiser.
+    The battery's power reads positive discharging, so it is negated (INV-19).
+    """
+    return BatteryVocabulary(
+        key=key,
+        platform=key,
+        title=title,
+        binds=(
+            Bind(Role.BATTERY_FLOOR, Find("number", ("backup", "reserve")), numeric=True),
+            Bind(Role.BATTERY_MODE, Find("select", ("operation", "mode"))),
+            Bind(Role.BATTERY_GRID_CHARGE, Find("switch", ("allow", "charging", "grid"))),
+            Bind(
+                Role.POWER,
+                Find("sensor", ("battery", "power"), device_class="power"),
+                numeric=True,
+                writable=False,
+                negate=True,
+                required=False,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_MODE, value="self_consumption"),
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_MODE, value="self_consumption"),
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.SOC_UP),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_MODE, value="self_consumption"),
+                Lever(Role.BATTERY_GRID_CHARGE, value=True),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.TARGET),
+            ),
+            VENDOR: (Lever(Role.BATTERY_MODE, value="autonomous"),),
+        },
+        inverter_power=True,
+        prerequisite="the energy command permission, granted when you set up the integration",
+        soc=Find("sensor", ("percentage", "charged"), device_class="battery"),
+        quirks_row=_TESLA_CLOUD,
+    )
+
+
+TESLA_FLEET: Final = register(_tesla_row("tesla_fleet", "Tesla Fleet"))
+TESLEMETRY: Final = register(_tesla_row("teslemetry", "Teslemetry"))
+TESSIE: Final = register(_tesla_row("tessie", "Tessie"))
+
+#: A Powerwall through alandtse/tesla (`tesla_custom` 4 443; `select.py`,
+#: `number.py`): *operation mode* Self-Powered, *grid charging* Yes/No and *backup
+#: reserve*, the same floor as the core rows; Time-Based Control is Tesla's own.
+TESLA_CUSTOM: Final = register(
+    BatteryVocabulary(
+        key="tesla_custom",
+        platform="tesla_custom",
+        title="Tesla Custom Integration",
+        binds=(
+            Bind(Role.BATTERY_FLOOR, Find("number", ("backup", "reserve")), numeric=True),
+            Bind(Role.BATTERY_MODE, Find("select", ("operation", "mode"))),
+            Bind(Role.BATTERY_GRID_CHARGE, Find("select", ("grid", "charging"))),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_MODE, value="Self-Powered"),
+                Lever(Role.BATTERY_GRID_CHARGE, value="No"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_MODE, value="Self-Powered"),
+                Lever(Role.BATTERY_GRID_CHARGE, value="No"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.SOC_UP),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_MODE, value="Self-Powered"),
+                Lever(Role.BATTERY_GRID_CHARGE, value="Yes"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.TARGET),
+            ),
+            VENDOR: (Lever(Role.BATTERY_MODE, value="Time-Based Control"),),
+        },
+        inverter_power=True,
+        soc=Find("sensor", ("battery",), device_class="battery"),
+        quirks_row=_TESLA_CLOUD,
+    )
+)
+
+#: Deye and Sunsynk hybrids through Solarman (`solarman` 10 076; davidrapan,
+#: `inverter_definitions/deye_hybrid.yaml`): the six *Program N SOC* numbers are one
+#: floor and the six *Program N Charging* selects one grid-charge flag, as evcc
+#: steers Deye. *Time of Use* is provisioned on for the whole week. The inverter
+#: sets the power. The programs' times stay the household's.
+SOLARMAN_DEYE: Final = register(
+    BatteryVocabulary(
+        key="solarman",
+        platform="solarman",
+        title="Solarman",
+        binds=(
+            Bind(
+                Role.BATTERY_FLOOR,
+                Find("number", ("program", "{n}", "soc")),
+                numeric=True,
+                family=6,
+            ),
+            Bind(
+                Role.BATTERY_GRID_CHARGE, Find("select", ("program", "{n}", "charging")), family=6
+            ),
+            Bind(
+                Role.BATTERY_ENABLE, Find("switch", ("battery", "grid", "charging")), required=False
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_GRID_CHARGE, value="Disabled"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_GRID_CHARGE, value="Disabled"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.SOC_UP),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_ENABLE, value=True),
+                Lever(Role.BATTERY_GRID_CHARGE, value="Grid"),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.TARGET),
+            ),
+        },
+        inverter_power=True,
+        settings=(
+            Settings(
+                Find("select", ("time", "of", "use")),
+                "Week",
+                "the programs act only while time of use is on, every day",
+            ),
+        ),
+        quirks_row=Quirks(
+            transport=Transport.MODBUS, verify_after_s=60.0, min_interval_s=300.0, tolerance=0.0
+        ),
+    )
+)
+
+#: Fronius GEN24 through Home Assistant's core integration (`fronius` 9 907, with its
+#: Modbus setpoints): only limits - the discharge limit at 0 %
+#: holds, and nothing forces a charge (the core clamps 0–100 %). Its controls exist
+#: only once *Inverter control via Modbus* is on.
+FRONIUS: Final = register(
+    BatteryVocabulary(
+        key="fronius",
+        platform="fronius",
+        title="Fronius",
+        binds=(
+            Bind(
+                Role.BATTERY_DISCHARGE_POWER,
+                Find("number", ("battery", "discharge", "power", "limit")),
+                plain=True,
+            ),
+            Bind(
+                Role.BATTERY_ENABLE, Find("switch", ("battery", "discharge", "power", "limiting"))
+            ),
+            Bind(
+                Role.BATTERY_FLOOR, Find("number", ("battery", "minimum", "reserve")), numeric=True
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_ENABLE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_DISCHARGE_POWER, value=0.0),
+                Lever(Role.BATTERY_ENABLE, value=True),
+            ),
+        },
+        inverter_power=True,
+        prerequisite="Inverter control via Modbus, on the inverter",
+        soc=Find("sensor", ("state", "charge"), device_class="battery"),
+        quirks_row=_MODBUS,
+    )
+)
+
+#: Growatt MIN, SPH and MIX through Home Assistant's core integration with the
+#: OpenAPI token (`growatt_server` 4 480): the on-grid discharge SOC limit as the
+#: floor, *Charge from grid* and the charge SOC limit to charge. The cloud answers
+#: every five minutes, so it is told at most that often.
+GROWATT: Final = register(
+    BatteryVocabulary(
+        key="growatt_server",
+        platform="growatt_server",
+        title="Growatt",
+        binds=(
+            Bind(
+                Role.BATTERY_FLOOR,
+                Find("number", ("battery", "discharge", "soc", "limit", "on", "grid")),
+                numeric=True,
+            ),
+            Bind(Role.BATTERY_GRID_CHARGE, Find("switch", ("charge", "from", "grid"))),
+            Bind(
+                Role.BATTERY_CEILING,
+                Find("number", ("battery", "charge", "soc", "limit")),
+                numeric=True,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.SOC_UP),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_CEILING, expr=Expr.TARGET),
+                Lever(Role.BATTERY_GRID_CHARGE, value=True),
+            ),
+        },
+        inverter_power=True,
+        prerequisite="an OpenAPI token (the classic login locks accounts out)",
+        soc=Find("sensor", ("state", "charge"), device_class="battery"),
+        quirks_row=Quirks(
+            transport=Transport.CLOUD, verify_after_s=300.0, min_interval_s=300.0, tolerance=0.0
+        ),
+    )
+)
+
+#: Solis through its cloud (`solis_cloud_control` 480; mkuthan, `number.py`,
+#: `switch.py`): *Battery Reserve SOC* as the floor, *Allow Grid Charging* with
+#: *Battery Force Charge SOC* at the target to charge.
+SOLIS_CLOUD: Final = register(
+    BatteryVocabulary(
+        key="solis_cloud_control",
+        platform="solis_cloud_control",
+        title="Solis Cloud Control",
+        binds=(
+            Bind(Role.BATTERY_FLOOR, Find("number", ("battery", "reserve", "soc")), numeric=True),
+            Bind(Role.BATTERY_GRID_CHARGE, Find("switch", ("allow", "grid", "charging"))),
+            Bind(
+                Role.BATTERY_CEILING,
+                Find("number", ("battery", "force", "charge", "soc")),
+                numeric=True,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_GRID_CHARGE, value=False),
+                Lever(Role.BATTERY_FLOOR, expr=Expr.SOC_UP),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_CEILING, expr=Expr.TARGET),
+                Lever(Role.BATTERY_GRID_CHARGE, value=True),
+            ),
+        },
+        inverter_power=True,
+        quirks_row=Quirks(
+            transport=Transport.CLOUD, verify_after_s=120.0, min_interval_s=300.0, tolerance=0.0
+        ),
+    )
+)
+
+
+def _victron_levers(
+    setpoint: Role, optimiser_off: str, optimiser_own: str
+) -> dict[str, tuple[Lever, ...]]:
+    """Return a Victron ESS row's levers: a grid setpoint to charge, a discharge limit.
+
+    Charge is the grid setpoint at `grid_for(+W)`, so ESS's own regulation leaves
+    the battery charging at W. Discharge is the setpoint at 0 with the discharge
+    limit at W: ESS covers the house up to W and never exports, the same as
+    `grid_for(−W)` floored at 0, but read back off the limit without the meter and
+    never rewritten as the house moves (D-0675). The hold is the limit at 0.
+    Dynamic ESS writes the same levers, so every command switches it off.
+    """
+    off = Lever(Role.BATTERY_OPTIMISER, value=optimiser_off)
+    return {
+        "self_use": (
+            off,
+            Lever(setpoint, value=0.0),
+            Lever(Role.BATTERY_DISCHARGE_POWER, expr=Expr.ENTITY_MAX),
+        ),
+        "hold": (
+            off,
+            Lever(setpoint, value=0.0),
+            Lever(Role.BATTERY_DISCHARGE_POWER, value=0.0),
+        ),
+        "charge": (
+            off,
+            Lever(Role.BATTERY_DISCHARGE_POWER, expr=Expr.ENTITY_MAX),
+            Lever(setpoint, expr=Expr.GRID_FOR),
+        ),
+        "discharge": (
+            off,
+            Lever(setpoint, value=0.0),
+            Lever(Role.BATTERY_DISCHARGE_POWER, expr=Expr.POWER),
+        ),
+        VENDOR: (Lever(Role.BATTERY_OPTIMISER, value=optimiser_own),),
+    }
+
+
+def _victron_mqtt_row(key: str, title: str) -> BatteryVocabulary:
+    """Return a GX device through the `victron-mqtt` library (core `victron_gx`, `victron_mqtt`).
+
+    `_victron_topics.py`: the *Hub4* device carries `hub4_ac_grid_setpoint` and
+    `hub4_max_discharge_power` - Venus's volatile overrides, written without
+    touching the ESS settings in flash. The battery, the grid meter and *DESS mode*
+    are other devices: the flow asks for the state of charge, the battery's power
+    and the grid's (§5.2), and Dynamic ESS is the household's to switch off.
+    """
+    return BatteryVocabulary(
+        key=key,
+        platform=key,
+        title=title,
+        binds=(
+            Bind(Role.BATTERY_POWER_SET, Find("number", ("grid", "setpoint")), numeric=True),
+            Bind(
+                Role.BATTERY_DISCHARGE_POWER,
+                Find("number", ("maximum", "discharge", "power")),
+                numeric=True,
+            ),
+            Bind(
+                Role.POWER,
+                Find("sensor", ("battery", "power"), device_class="power"),
+                numeric=True,
+                writable=False,
+            ),
+            Bind(
+                Role.GRID_POWER,
+                Find("sensor", ("grid", "power"), device_class="power"),
+                numeric=True,
+                writable=False,
+            ),
+            Bind(Role.BATTERY_OPTIMISER, Find("select", ("dess", "mode")), required=False),
+        ),
+        levers=_victron_levers(Role.BATTERY_POWER_SET, "off", "auto_vrm"),
+        prerequisite="the ESS assistant, with Dynamic ESS off",
+        quirks_row=Quirks(
+            transport=Transport.MQTT, verify_after_s=10.0, min_interval_s=30.0, tolerance=100.0
+        ),
+    )
+
+
+VICTRON_GX: Final = register(_victron_mqtt_row("victron_gx", "Victron GX"))
+VICTRON_MQTT: Final = register(_victron_mqtt_row("victron_mqtt", "Victron MQTT"))
+
+#: A GX device over Modbus TCP (`victron` 1 939; sfstar/hass-victron, `const.py`):
+#: unit 100 carries the ESS grid setpoint (register 2700), the ESS discharge limit
+#: (2704), *Dynamic ESS mode* (5423), the battery and the grid per phase - one
+#: device. The integration exposes the volatile override (2716) read-only, so the
+#: row writes the ESS setting itself; its numbers exist only with write support on.
+VICTRON_MODBUS: Final = register(
+    BatteryVocabulary(
+        key="victron",
+        platform="victron",
+        title="Victron",
+        binds=(
+            Bind(Role.BATTERY_POWER_SET, Find("number", ("ess", "acpowersetpoint")), numeric=True),
+            Bind(
+                Role.BATTERY_DISCHARGE_POWER,
+                Find("number", ("ess", "maxdischargepower")),
+                numeric=True,
+            ),
+            Bind(
+                Role.POWER,
+                Find("sensor", ("system", "battery", "power")),
+                numeric=True,
+                writable=False,
+            ),
+            Bind(
+                Role.GRID_POWER,
+                Find("sensor", ("system", "grid", "l{n}", "power")),
+                numeric=True,
+                writable=False,
+                family=3,
+                summed=True,
+            ),
+            Bind(Role.BATTERY_OPTIMISER, Find("select", ("dynamicess", "mode")), required=False),
+        ),
+        levers=_victron_levers(Role.BATTERY_POWER_SET, "OFF", "AUTO"),
+        prerequisite="write support in the integration's options, and the ESS assistant",
+        soc=Find("sensor", ("system", "battery", "soc")),
+        quirks_row=Quirks(
+            transport=Transport.MODBUS, verify_after_s=30.0, min_interval_s=60.0, tolerance=100.0
+        ),
+    )
+)
+
+
+#: Sungrow SH hybrids through mkaiser's Modbus package (Sungrow-SHx-Inverter-Modbus-
+#: Home-Assistant, `modbus_sungrow.yaml`): template entities on no device, found by
+#: the options of *EMS mode* and *Battery forced charge discharge*. Forced mode
+#: with Stop idles the battery; a forced charge or discharge runs at *Battery forced
+#: charge discharge power*, and a discharge keeps *Battery Min Soc* at the reserve,
+#: since nothing expires (D4 §5.9 fail-safe). *Battery power* is negative charging.
+SUNGROW: Final = register(
+    BatteryVocabulary(
+        key="sungrow_modbus",
+        platform="",
+        title="Sungrow (mkaiser Modbus package)",
+        binds=(
+            Bind(
+                Role.BATTERY_MODE,
+                Find("select", ("ems", "mode")),
+                options=("Self-consumption mode (default)", "Forced mode"),
+            ),
+            Bind(
+                Role.BATTERY_COMMAND_MODE,
+                Find("select", ("battery", "forced", "charge", "discharge")),
+                options=("Stop (default)", "Forced charge", "Forced discharge"),
+            ),
+            Bind(
+                Role.BATTERY_POWER_SET,
+                Find("number", ("battery", "forced", "charge", "discharge", "power")),
+                numeric=True,
+            ),
+            Bind(Role.BATTERY_FLOOR, Find("number", ("battery", "min", "soc")), numeric=True),
+            Bind(
+                Role.POWER,
+                Find(
+                    "sensor",
+                    ("battery", "power"),
+                    device_class="power",
+                    exclude=("charging", "discharging", "charge", "discharge", "max", "raw"),
+                ),
+                numeric=True,
+                writable=False,
+                negate=True,
+                required=False,
+            ),
+        ),
+        levers={
+            "self_use": (
+                Lever(Role.BATTERY_COMMAND_MODE, value="Stop (default)"),
+                Lever(Role.BATTERY_MODE, value="Self-consumption mode (default)"),
+            ),
+            "hold": (
+                Lever(Role.BATTERY_COMMAND_MODE, value="Stop (default)"),
+                Lever(Role.BATTERY_MODE, value="Forced mode"),
+            ),
+            "charge": (
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.POWER),
+                Lever(Role.BATTERY_COMMAND_MODE, value="Forced charge"),
+                Lever(Role.BATTERY_MODE, value="Forced mode"),
+            ),
+            "discharge": (
+                Lever(Role.BATTERY_FLOOR, expr=Expr.RESERVE),
+                Lever(Role.BATTERY_POWER_SET, expr=Expr.POWER),
+                Lever(Role.BATTERY_COMMAND_MODE, value="Forced discharge"),
+                Lever(Role.BATTERY_MODE, value="Forced mode"),
+            ),
+        },
+        soc=Find("sensor", ("battery", "level"), device_class="battery", exclude=("nominal",)),
         quirks_row=_MODBUS,
     )
 )

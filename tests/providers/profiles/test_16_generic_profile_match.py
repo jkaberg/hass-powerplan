@@ -449,38 +449,57 @@ def test_16q_a_kilowatt_setpoint_scales_to_watts() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_16r_the_25_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
+def test_16r_the_38_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
     """Extension is by registry: one module each, registered (D4 §3).
 
     Six since WP4.8a added the two cloud chargers, `zaptec` and `easee_cloud`;
     eleven since WP4.8b added the five vocabulary chargers; thirteen since WP7.6
     added the two batteries that take a power command; fifteen since WP7.7's mode batteries; eighteen since WP7.8's plug-in batteries;
     nineteen since WP7.9's HomeWizard battery group;
-    25 since WP7.10's six mode-then-power batteries.
+    25 since WP7.10's six mode-then-power batteries;
+    30 since WP7.11's five batteries by action or number;
+    38 since WP7.12's eight SoC-floor batteries.
     """
     assert registry.keys() == (
         "anker_solix",
+        "e3dc_rscp",
         "easee_ble",
         "easee_cloud",
         "ecoflow_cloud",
         "foxess_modbus",
+        "fronius",
         "fronius_modbus",
         "generic_climate",
         "generic_number",
         "generic_switch",
         "goecharger_api2",
         "goodwe",
+        "growatt_server",
         "homewizard",
         "huawei_solar",
+        "marstek_local_api",
         "marstek_modbus",
         "ocpp",
         "peblar",
         "saj_h2_modbus",
+        "sessy",
         "sigen",
         "solaredge_modbus_multi",
+        "solarman",
         "solax_modbus",
         "solax_modbus_sofar",
+        "solis_cloud_control",
+        "solis_modbus",
+        "sonnenbatterie",
+        "sungrow_modbus",
+        "tesla_custom",
+        "tesla_fleet",
+        "teslemetry",
+        "tessie",
         "v2c",
+        "victron",
+        "victron_gx",
+        "victron_mqtt",
         "wallbox",
         "zaptec",
         "zendure_ha",

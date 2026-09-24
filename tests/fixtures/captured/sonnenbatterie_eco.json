@@ -1,0 +1,52 @@
+{
+ "name": "sonnenbatterie_eco",
+ "device": "sonnenBatterie",
+ "device_id": "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7",
+ "manufacturer": "sonnen",
+ "model": "sonnenBatterie 10",
+ "platform": "sonnenbatterie",
+ "source": "Not captured: no house here owns a sonnenBatterie (D-0081). Written from weltmeyer/ha_sonnenbatterie 2026.7.1: entities.py's Operating mode select (manual, automatic, timeofuse, optimizing), sensor_list.py's Battery charge/discharge power (Pac_total_W: positive discharging, negative charging) and Battery percentage user (USOC); services.yaml's charge_battery/discharge_battery by device (power as text, W). The states are a battery in automatic at 48 %, discharging 300 W.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "sonnenBatterie Operating mode",
+    "options": [
+     "manual",
+     "automatic",
+     "timeofuse",
+     "optimizing"
+    ]
+   },
+   "entity_id": "select.sonnenbatterie_operating_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "automatic"
+  },
+  {
+   "attributes": {
+    "friendly_name": "sonnenBatterie Battery charge/discharge power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.sonnenbatterie_battery_charge_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "300"
+  },
+  {
+   "attributes": {
+    "friendly_name": "sonnenBatterie Battery percentage user",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.sonnenbatterie_battery_percentage_user",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "48"
+  }
+ ],
+ "entity_count": 3
+}

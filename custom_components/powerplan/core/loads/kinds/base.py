@@ -91,6 +91,8 @@ class Role(StrEnum):
     BATTERY_CHARGE_POWER = "battery_charge_power"
     BATTERY_DISCHARGE_POWER = "battery_discharge_power"
     BATTERY_FLOOR = "battery_floor"
+    #: The state of charge a charge stops at, % (Growatt's charge SOC limit).
+    BATTERY_CEILING = "battery_ceiling"
     BATTERY_GRID_CHARGE = "battery_grid_charge"
     BATTERY_ENABLE = "battery_enable"
     #: A second mode a row sets beside its first (SolarEdge's storage command mode).
@@ -98,6 +100,9 @@ class Role(StrEnum):
     #: A switch that lets it discharge (SAJ's passive discharge).
     BATTERY_DISCHARGE_ENABLE = "battery_discharge_enable"
     BATTERY_OPTIMISER = "battery_optimiser"
+    #: The grid power an inverter regulates to, W, positive importing: what a grid
+    #: setpoint is computed from (Victron's ESS).
+    GRID_POWER = "grid_power"
     SG_A = "sg_a"
     SG_B = "sg_b"
 

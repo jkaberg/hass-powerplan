@@ -1,0 +1,91 @@
+{
+ "name": "fronius_gen24",
+ "device": "Symo GEN24 10.0 Plus",
+ "device_id": "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3",
+ "manufacturer": "Fronius",
+ "model": "Symo GEN24 10.0 Plus",
+ "platform": "fronius",
+ "source": "Not captured: no house here owns a Fronius GEN24 (D-0081). Written from Home Assistant core fronius (dev, core #180261): number.py's AC power limit, Battery charge power limit, Battery discharge power limit and Battery minimum reserve (%, 0–100), switch.py's AC power limiting, Battery charge power limiting, Battery discharge power limiting and Battery grid charging, and the State of charge sensor. The states are a GEN24 with no limit on, at 68 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery discharge power limit",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.symo_gen24_10_0_plus_battery_discharge_power_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery charge power limit",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.symo_gen24_10_0_plus_battery_charge_power_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery minimum reserve",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.symo_gen24_10_0_plus_battery_minimum_reserve",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery discharge power limiting"
+   },
+   "entity_id": "switch.symo_gen24_10_0_plus_battery_discharge_power_limiting",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery charge power limiting"
+   },
+   "entity_id": "switch.symo_gen24_10_0_plus_battery_charge_power_limiting",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus Battery grid charging"
+   },
+   "entity_id": "switch.symo_gen24_10_0_plus_battery_grid_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Symo GEN24 10.0 Plus State of charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.symo_gen24_10_0_plus_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "68"
+  }
+ ],
+ "entity_count": 7
+}

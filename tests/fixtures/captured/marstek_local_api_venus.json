@@ -1,0 +1,109 @@
+{
+ "name": "marstek_local_api_venus",
+ "device": "Marstek VenusE",
+ "device_id": "a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5",
+ "manufacturer": "Marstek",
+ "model": "VenusE",
+ "platform": "marstek_local_api",
+ "source": "Not captured: no house here owns a Marstek Venus (D-0081). Written from jaapp/ha-marstek-local-api 1.2.0.rc7: button.py's Auto mode, AI mode and Manual mode buttons; services.yaml's set_passive_mode (device_id, power W — negative charges — and duration s); sensor.py's State of charge (battery), Operating mode (Auto, AI, Manual, Passive) and Power (the pack, positive while charging), with Power in/out and Grid power beside it. The states are a battery in Auto at 63 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Auto mode"
+   },
+   "entity_id": "button.marstek_venuse_auto_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "unknown"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE AI mode"
+   },
+   "entity_id": "button.marstek_venuse_ai_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "unknown"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Manual mode"
+   },
+   "entity_id": "button.marstek_venuse_manual_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "unknown"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Operating mode"
+   },
+   "entity_id": "sensor.marstek_venuse_operating_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Auto"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venuse_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Power in",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venuse_power_in",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Power out",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venuse_power_out",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE Grid power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venuse_grid_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "250"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek VenusE State of charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venuse_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "63"
+  }
+ ],
+ "entity_count": 9
+}

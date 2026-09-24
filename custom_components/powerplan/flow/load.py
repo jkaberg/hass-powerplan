@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import time
 from typing import TYPE_CHECKING, Any, Final
 
@@ -101,8 +101,6 @@ from custom_components.powerplan.providers.profiles.base import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
@@ -172,6 +170,7 @@ _ROLE_FILTERS: dict[Role, list[EntityWithDeviceFilterSelectorConfig]] = {
     Role.CURRENT_L2: [{"domain": _SENSOR, "device_class": "current"}],
     Role.CURRENT_L3: [{"domain": _SENSOR, "device_class": "current"}],
     Role.SOC: [{"domain": _SENSOR, "device_class": "battery"}],
+    Role.GRID_POWER: [{"domain": _SENSOR, "device_class": "power"}],
     Role.CONNECTED: [{"domain": ["binary_sensor", _SENSOR]}],
     Role.DOOR: [{"domain": "binary_sensor"}],
     Role.STATUS: [{"domain": _SENSOR}],
@@ -217,6 +216,7 @@ def binding_to_data(binding: RoleBinding) -> dict[str, Any]:
         "max_value": binding.max_value,
         "writable": binding.writable,
         "attribute": binding.attribute,
+        "also": list(binding.also),
     }
 
 
@@ -259,6 +259,7 @@ def binding_from_data(row: Mapping[str, Any]) -> RoleBinding:
         max_value=row.get("max_value"),
         writable=bool(row.get("writable", False)),
         attribute=row.get("attribute"),
+        also=tuple(row.get("also") or ()),
     )
 
 
@@ -846,6 +847,9 @@ def _params_from_review(
 _CONTROL_DOMAINS: Final = frozenset(
     {"switch", "climate", "water_heater", "number", "select", "button"}
 )
+#: The device list's last entry: an appliance whose entities are on no device, picked
+#: by hand and matched by shape (D8 §5.2).
+NO_DEVICE: Final = "no_device"
 
 
 def added_devices(entry: ConfigEntry, *, but: str | None = None) -> set[str]:
@@ -994,8 +998,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
 
     def _qctx(self) -> QCtx:
         """Return the context defaults are read against: the HA area, the device, the site's phases."""
-        assert self._device_id is not None
-        device = dr.async_get(self.hass).async_get(self._device_id)
+        device = dr.async_get(self.hass).async_get(self._device_id) if self._device_id else None
         area = None
         if device is not None and device.area_id:
             entry = ar.async_get(self.hass).async_get_area(device.area_id)
@@ -1004,7 +1007,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         best = self._matches[0] if self._matches else None
         return QCtx(
             area=area,
-            device_name=load_title(self.hass, self._device_id, self._device_id),
+            device_name=load_title(self.hass, self._device_id, self._device_id or ""),
             phases=int(electrical.get("phases", 1)) if electrical else None,
             capabilities=best.capabilities if best is not None else frozenset(),
         )
@@ -1164,6 +1167,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         """Show the flow's own device list (CTL-11)."""
         text = await Text.load(self.hass)
         options = device_options(self.hass, text, added_devices(self._get_entry(), but=but))
+        options.append(SelectOptionDict(value=NO_DEVICE, label=text.word("load_text", NO_DEVICE)))
         placeholders = {"type": text.word("load_type", str(self._type))}
         if self.source == "reconfigure":
             placeholders["load"] = self._get_reconfigure_subentry().title
@@ -1198,12 +1202,50 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._device_id, self._view, self._matches = device_id, view, matches
         return None
 
+    def _pick_entities(self, entity_ids: Sequence[str]) -> str | None:
+        """Match entities on no device for the chosen type; return an error key, or `None`."""
+        view = DeviceView.from_entities(self.hass, entity_ids)
+        matches = tuple(
+            match
+            for match in profiles.match(view)
+            if self._type is None or self._type in profiles.get(match.profile).types
+        )
+        if not matches:
+            return "no_profile"
+        self._device_id, self._view, self._matches = None, view, matches
+        return None
+
+    def _unique_id(self) -> str:
+        """Return the subentry's unique id: its device, or on no device its first entity."""
+        return f"{SUBENTRY_LOAD}:{self._device_id or self._bindings[0].entity_id}"
+
+    async def async_step_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick an appliance's entities by hand; a row matches them by shape (D8 §5.2)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = self._pick_entities([str(e) for e in user_input.get("entities") or ()])
+            if error is None:
+                return await self.async_step_match()
+            errors["entities"] = error
+        return self.async_show_form(
+            step_id="entities",
+            data_schema=vol.Schema(
+                {vol.Required("entities"): EntitySelector(EntitySelectorConfig(multiple=True))}
+            ),
+            errors=errors or None,
+            last_step=False,
+        )
+
     async def async_step_device(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """Pick the device from the flow's own list; detection confirms the type (CTL-11)."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            if user_input["device"] == NO_DEVICE:
+                return await self.async_step_entities()
             error = self._pick(str(user_input["device"]))
             if error is None:
                 return await self.async_step_match()
@@ -1440,7 +1482,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             return self.async_create_entry(
                 title=str(user_input["name"]),
                 data=data,
-                unique_id=f"{SUBENTRY_LOAD}:{self._device_id}",
+                unique_id=self._unique_id(),
             )
         text = await Text.load(self.hass)
         return self.async_show_form(
@@ -1517,6 +1559,13 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._bindings = tuple(
             binding_from_data(row) for row in self._stored.get(LOAD_BINDINGS) or ()
         )
+        if not self._device_id and self._bindings:
+            # On no device: its own entities are the view.
+            self._view = DeviceView.from_entities(
+                self.hass, [binding.entity_id for binding in self._bindings]
+            )
+            self._matches = profiles.match(self._view)
+            return await self.async_step_questions(user_input)
         if not self._device_id or dr.async_get(self.hass).async_get(self._device_id) is None:
             # The hardware is gone (`device_missing`): pick its replacement,
             # bind its roles, then the same questions (D8 §5.16).
@@ -1532,6 +1581,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         but = self._get_reconfigure_subentry().subentry_id
         errors: dict[str, str] = {}
         if user_input is not None:
+            if user_input["device"] == NO_DEVICE:
+                return await self.async_step_entities()
             error = self._pick(str(user_input["device"]), but=but)
             if error is None:
                 return await self.async_step_match()
@@ -1601,7 +1652,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             return self.async_update_and_abort(
                 self._get_entry(),
                 subentry,
-                unique_id=f"{SUBENTRY_LOAD}:{self._device_id}",
+                unique_id=self._unique_id(),
                 title=title,
                 data=data,
             )

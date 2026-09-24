@@ -1,0 +1,60 @@
+{
+ "name": "victron_gx_hub4",
+ "device": "Hub4",
+ "device_id": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
+ "manufacturer": "Victron Energy",
+ "model": "Hub4",
+ "platform": "victron_gx",
+ "source": "Not captured: no house here owns a Victron system (D-0081). Written from Home Assistant core victron_gx (dev, entity.py and strings.json) and the victron-mqtt library it shares with tomer-w/ha-victron-mqtt (_victron_topics.py): the Hub4 device's AC grid setpoint (-32767 to 32767 W), Maximum charge power and Maximum discharge power (-1, no limit, to 1000000 W) and Force charge. The battery, the grid meter and DESS mode are other devices (victron_gx_meters). The states are an ESS left to itself: setpoint 0, no limits.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Hub4 AC grid setpoint",
+    "unit_of_measurement": "W",
+    "min": -32767,
+    "max": 32767,
+    "step": 1
+   },
+   "entity_id": "number.hub4_ac_grid_setpoint",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Hub4 Maximum charge power",
+    "unit_of_measurement": "W",
+    "min": -1,
+    "max": 1000000,
+    "step": 1
+   },
+   "entity_id": "number.hub4_maximum_charge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "-1"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Hub4 Maximum discharge power",
+    "unit_of_measurement": "W",
+    "min": -1,
+    "max": 1000000,
+    "step": 1
+   },
+   "entity_id": "number.hub4_maximum_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "-1"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Hub4 Force charge"
+   },
+   "entity_id": "switch.hub4_force_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  }
+ ]
+}

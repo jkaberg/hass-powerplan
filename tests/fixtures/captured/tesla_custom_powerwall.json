@@ -1,0 +1,79 @@
+{
+ "name": "tesla_custom_powerwall",
+ "device": "Home",
+ "device_id": "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1",
+ "manufacturer": "Tesla",
+ "model": "Powerwall 2",
+ "platform": "tesla_custom",
+ "source": "Not captured: no house here owns a Powerwall (D-0081). Written from alandtse/tesla 3.27.0: select.py's operation mode (Self-Powered, Time-Based Control, Backup), grid charging (Yes, No), energy exports and powerwall mode; number.py's backup reserve (%); the energy site's battery sensor. The states are a Powerwall in Time-Based Control at 64 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Home operation mode",
+    "options": [
+     "Self-Powered",
+     "Time-Based Control",
+     "Backup"
+    ]
+   },
+   "entity_id": "select.home_operation_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Time-Based Control"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Home grid charging",
+    "options": [
+     "Yes",
+     "No"
+    ]
+   },
+   "entity_id": "select.home_grid_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Yes"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Home energy exports",
+    "options": [
+     "Nothing",
+     "Solar",
+     "Everything"
+    ]
+   },
+   "entity_id": "select.home_energy_exports",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Solar"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Home backup reserve",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.home_backup_reserve",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "30"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Home battery",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.home_battery",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "64"
+  }
+ ],
+ "entity_count": 5
+}

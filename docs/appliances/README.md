@@ -72,6 +72,8 @@ Choose the kind of appliance. It decides the questions that follow and the plan 
 
 Pick the device that controls the appliance. Devices already added to PowerPlan are marked. When you change an appliance whose device is gone, pick the device that replaced it.
 
+If the appliance's entities are on no device, as with a YAML package, choose **Not on a device: choose the entities** at the end of the list and pick them all. PowerPlan finds what each one is by its shape, asks for any role it cannot find, and puts the appliance's own entities on a PowerPlan device named after it.
+
 <a name="match"></a>
 ### Is this the right device?
 

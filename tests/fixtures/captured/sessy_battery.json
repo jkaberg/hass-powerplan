@@ -1,0 +1,68 @@
+{
+ "name": "sessy_battery",
+ "device": "Sessy",
+ "device_id": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
+ "manufacturer": "Charged B.V.",
+ "model": "Sessy Battery",
+ "platform": "sessy",
+ "source": "Not captured: no house here owns a Sessy (D-0081). Written from PimDoos/ha-sessy 1.0.4 with sessypy 0.2.6: select.py's Power Strategy (SessyPowerStrategy, options api, nom, roi, idle, eco, sessy_connect), number.py's Power Setpoint (W, −2200…2200; positive discharges, Sessy's local API documentation) and the State of Charge sensor. The states are a battery on Net zero at 57 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Sessy Power Strategy",
+    "options": [
+     "api",
+     "nom",
+     "roi",
+     "idle",
+     "eco",
+     "sessy_connect"
+    ]
+   },
+   "entity_id": "select.sessy_power_strategy",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "nom"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sessy Power Setpoint",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "min": -2200,
+    "max": 2200,
+    "step": 1
+   },
+   "entity_id": "number.sessy_power_setpoint",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sessy State of Charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.sessy_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "57"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sessy Power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.sessy_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "-120"
+  }
+ ],
+ "entity_count": 4
+}

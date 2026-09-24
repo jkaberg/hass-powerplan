@@ -114,10 +114,15 @@ class DeviceCall:
     #: the same context: Solax's remote-control trigger after its power number
     #: (D4 §5.9). The read-back still reads this call's entity.
     then: tuple[DeviceCall, ...] = ()
+    #: An action that takes no target at all: its schema refuses a device or an
+    #: entity id (Solis's `solis_dispatch`, D4 §5.9).
+    untargeted: bool = False
 
     @property
     def target(self) -> dict[str, str]:
         """What the call is addressed to: the device when it has one, else the entity."""
+        if self.untargeted:
+            return {}
         if self.device_id is not None:
             return {"device_id": self.device_id}
         return {"entity_id": self.entity_id}

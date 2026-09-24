@@ -1,0 +1,64 @@
+{
+ "name": "victron_gx_meters",
+ "device": "Pylontech battery",
+ "device_id": "c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7",
+ "manufacturer": "Victron Energy",
+ "model": "Pylontech battery",
+ "platform": "victron_gx",
+ "source": "Not captured (D-0081). Written from the same sources as victron_gx_hub4: the entities on the battery, grid-meter and Venus devices that the load flow binds to the Hub4 load's missing roles (Charge, the battery's Power, the grid meter's Power) and DESS mode. A 1.5 kW house with no sun and the battery idle at 64 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Pylontech battery Charge",
+    "unit_of_measurement": "%",
+    "state_class": "measurement",
+    "device_class": "battery"
+   },
+   "entity_id": "sensor.pylontech_battery_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "64"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Pylontech battery Power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.pylontech_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Grid meter Power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.grid_meter_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "1500"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Victron Venus DESS mode",
+    "options": [
+     "off",
+     "auto_vrm",
+     "buy",
+     "sell",
+     "node_red"
+    ]
+   },
+   "entity_id": "select.victron_venus_dess_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  }
+ ]
+}

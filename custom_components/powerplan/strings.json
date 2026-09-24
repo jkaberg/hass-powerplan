@@ -1618,6 +1618,23 @@
         "saj_h2_modbus": "SAJ battery",
         "solaredge_modbus_multi": "SolarEdge battery",
         "solax_modbus_sofar": "Sofar battery",
+        "e3dc_rscp": "E3/DC battery",
+        "marstek_local_api": "Marstek Venus battery (local API)",
+        "sessy": "Sessy battery",
+        "solis_modbus": "Solis battery (Modbus)",
+        "sonnenbatterie": "sonnenBatterie",
+        "fronius": "Fronius battery",
+        "growatt_server": "Growatt battery",
+        "solarman": "Deye or Sunsynk battery (Solarman)",
+        "solis_cloud_control": "Solis battery (cloud)",
+        "victron": "Victron battery (Modbus)",
+        "victron_gx": "Victron battery (GX)",
+        "victron_mqtt": "Victron battery (MQTT)",
+        "sungrow_modbus": "Sungrow battery (Modbus package)",
+        "tesla_custom": "Tesla Powerwall (Tesla Custom)",
+        "tesla_fleet": "Tesla Powerwall (Tesla Fleet)",
+        "teslemetry": "Tesla Powerwall (Teslemetry)",
+        "tessie": "Tesla Powerwall (Tessie)",
         "homewizard": "HomeWizard battery group",
         "huawei_solar": "Huawei battery",
         "solax_modbus": "SolaX battery",
@@ -1755,7 +1772,8 @@
         "store_hydronic": "Water-borne",
         "kind_setpoint": "Thermostat",
         "kind_switch": "On and off",
-        "already_added": "{name} (already added)"
+        "already_added": "{name} (already added)",
+        "no_device": "Not on a device: choose the entities"
       }
     },
     "modifier_cumulative_tier_basis": {
@@ -2382,6 +2400,7 @@
             "role_current_l2": "Current L2",
             "role_current_l3": "Current L3",
             "role_soc": "State of charge",
+            "role_grid_power": "Grid power",
             "role_connected": "Car connected",
             "role_outdoor_temp": "Outdoor temperature",
             "role_outlet_temp": "Outlet temperature",
@@ -2418,6 +2437,7 @@
             "role_current_l2": "The entity for this role.",
             "role_current_l3": "The entity for this role.",
             "role_soc": "The entity for this role.",
+            "role_grid_power": "The entity for this role.",
             "role_connected": "The entity for this role.",
             "role_outdoor_temp": "The entity for this role.",
             "role_outlet_temp": "The entity for this role.",
@@ -2456,6 +2476,7 @@
                 "role_current_l2": "Current L2",
                 "role_current_l3": "Current L3",
                 "role_soc": "State of charge",
+                "role_grid_power": "Grid power",
                 "role_connected": "Car connected",
                 "role_outdoor_temp": "Outdoor temperature",
                 "role_outlet_temp": "Outlet temperature",
@@ -2490,6 +2511,7 @@
                 "role_current_l2": "The entity for this role.",
                 "role_current_l3": "The entity for this role.",
                 "role_soc": "The entity for this role.",
+                "role_grid_power": "The entity for this role.",
                 "role_connected": "The entity for this role.",
                 "role_outdoor_temp": "The entity for this role.",
                 "role_outlet_temp": "The entity for this role.",
@@ -3108,6 +3130,16 @@
           },
           "data_description": {
             "device": "The charger, thermostat, plug or heat pump."
+          }
+        },
+        "entities": {
+          "title": "Which entities make up the appliance?",
+          "description": "For an appliance on no device, such as a YAML package's. Pick all its entities; PowerPlan asks for any role it cannot find. [How this works]({docs})",
+          "data": {
+            "entities": "Entities"
+          },
+          "data_description": {
+            "entities": "The appliance's controls and sensors."
           }
         }
       },

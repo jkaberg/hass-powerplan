@@ -1,0 +1,99 @@
+{
+ "name": "growatt_server_min",
+ "device": "MIN 6000TL-XH",
+ "device_id": "d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4",
+ "manufacturer": "Growatt",
+ "model": "MIN 6000TL-XH",
+ "platform": "growatt_server",
+ "source": "Not captured: no house here owns a Growatt (D-0081). Written from Home Assistant core growatt_server (dev) with the OpenAPI token: strings.json's Battery charge power limit, Battery charge SOC limit, Battery discharge power limit, Battery discharge SOC limit (on-grid) and (off-grid) (%), Charge from grid (switch), and State of charge (SoC). The states are a MIN at 61 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Battery discharge SOC limit (on-grid)",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.min_6000tl_xh_battery_discharge_soc_limit_on_grid",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Battery discharge SOC limit (off-grid)",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.min_6000tl_xh_battery_discharge_soc_limit_off_grid",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Battery charge SOC limit",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.min_6000tl_xh_battery_charge_soc_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Battery charge power limit",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.min_6000tl_xh_battery_charge_power_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Battery discharge power limit",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.min_6000tl_xh_battery_discharge_power_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH Charge from grid"
+   },
+   "entity_id": "switch.min_6000tl_xh_charge_from_grid",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "MIN 6000TL-XH State of charge (SoC)",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.min_6000tl_xh_state_of_charge_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "61"
+  }
+ ],
+ "entity_count": 7
+}

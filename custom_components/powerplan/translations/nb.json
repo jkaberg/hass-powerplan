@@ -1618,6 +1618,23 @@
         "saj_h2_modbus": "SAJ-batteri",
         "solaredge_modbus_multi": "SolarEdge-batteri",
         "solax_modbus_sofar": "Sofar-batteri",
+        "e3dc_rscp": "E3/DC-batteri",
+        "marstek_local_api": "Marstek Venus-batteri (lokalt API)",
+        "sessy": "Sessy-batteri",
+        "solis_modbus": "Solis-batteri (Modbus)",
+        "sonnenbatterie": "sonnen-batteri",
+        "fronius": "Fronius-batteri",
+        "growatt_server": "Growatt-batteri",
+        "solarman": "Deye- eller Sunsynk-batteri (Solarman)",
+        "solis_cloud_control": "Solis-batteri (sky)",
+        "victron": "Victron-batteri (Modbus)",
+        "victron_gx": "Victron-batteri (GX)",
+        "victron_mqtt": "Victron-batteri (MQTT)",
+        "sungrow_modbus": "Sungrow-batteri (Modbus-pakke)",
+        "tesla_custom": "Tesla Powerwall (Tesla Custom-integrasjonen)",
+        "tesla_fleet": "Tesla Powerwall (Tesla Fleet-integrasjonen)",
+        "teslemetry": "Tesla Powerwall (Teslemetry-integrasjonen)",
+        "tessie": "Tesla Powerwall (Tessie-integrasjonen)",
         "homewizard": "HomeWizard-batterigruppe",
         "huawei_solar": "Huawei-batteri",
         "solax_modbus": "SolaX-batteri",
@@ -1755,7 +1772,8 @@
         "store_hydronic": "Vannbåren",
         "kind_setpoint": "Termostat",
         "kind_switch": "Av og på",
-        "already_added": "{name} (allerede lagt til)"
+        "already_added": "{name} (allerede lagt til)",
+        "no_device": "Ikke på en enhet: velg entitetene"
       }
     },
     "modifier_cumulative_tier_basis": {
@@ -2382,6 +2400,7 @@
             "role_current_l2": "Strøm L2",
             "role_current_l3": "Strøm L3",
             "role_soc": "Ladenivå",
+            "role_grid_power": "Netteffekt",
             "role_connected": "Bil tilkoblet",
             "role_outdoor_temp": "Utetemperatur",
             "role_outlet_temp": "Turtemperatur",
@@ -2418,6 +2437,7 @@
             "role_current_l2": "Entiteten for denne rollen.",
             "role_current_l3": "Entiteten for denne rollen.",
             "role_soc": "Entiteten for denne rollen.",
+            "role_grid_power": "Entiteten for denne rollen.",
             "role_connected": "Entiteten for denne rollen.",
             "role_outdoor_temp": "Entiteten for denne rollen.",
             "role_outlet_temp": "Entiteten for denne rollen.",
@@ -2456,6 +2476,7 @@
                 "role_current_l2": "Strøm L2",
                 "role_current_l3": "Strøm L3",
                 "role_soc": "Ladenivå",
+                "role_grid_power": "Netteffekt",
                 "role_connected": "Bil tilkoblet",
                 "role_outdoor_temp": "Utetemperatur",
                 "role_outlet_temp": "Turtemperatur",
@@ -2490,6 +2511,7 @@
                 "role_current_l2": "Entiteten for denne rollen.",
                 "role_current_l3": "Entiteten for denne rollen.",
                 "role_soc": "Entiteten for denne rollen.",
+                "role_grid_power": "Entiteten for denne rollen.",
                 "role_connected": "Entiteten for denne rollen.",
                 "role_outdoor_temp": "Entiteten for denne rollen.",
                 "role_outlet_temp": "Entiteten for denne rollen.",
@@ -3108,6 +3130,16 @@
           },
           "data_description": {
             "device": "Laderen, termostaten, pluggen eller varmepumpen."
+          }
+        },
+        "entities": {
+          "title": "Hvilke entiteter utgjør apparatet?",
+          "description": "For et apparat uten enhet, som i en YAML-pakke. Velg alle entitetene; PowerPlan spør etter det den ikke finner. [Slik fungerer det]({docs})",
+          "data": {
+            "entities": "Entiteter"
+          },
+          "data_description": {
+            "entities": "Apparatets kontroller og sensorer."
           }
         }
       },

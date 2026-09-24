@@ -14,6 +14,8 @@ A battery Home Assistant can set the charge and discharge power of, and its char
 
 Pick the device that controls it. If you do not see it, check that Home Assistant can switch or set it.
 
+A battery steered through a YAML package, such as Sungrow's Modbus package, is on no device: choose **Not on a device: choose the entities** and pick the package's entities.
+
 <a name="match"></a>
 ## Is this the right device?
 

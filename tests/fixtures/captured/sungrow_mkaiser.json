@@ -1,0 +1,175 @@
+{
+ "name": "sungrow_mkaiser",
+ "device": "(no device)",
+ "manufacturer": "Sungrow",
+ "model": "SH10RT",
+ "source": "Not captured: no house here owns a Sungrow (D-0081). Written from mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant, modbus_sungrow.yaml (main): the template selects EMS mode and Battery forced charge discharge with their option maps, the template numbers Battery forced charge discharge power (0 W to the secret's maximum, step 100), Battery Min Soc (0-50 %) and Battery Max Soc, and the Modbus sensors Battery power (negative charging), Battery level, Battery level (nominal), Battery charging power, Battery discharging power, Battery forced charge discharge power and EMS mode selection raw. None of them is on a device; each entity carries its own platform. The states are an SH10RT in self-consumption at 55 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "EMS mode",
+    "options": [
+     "Self-consumption mode (default)",
+     "Forced mode",
+     "External EMS",
+     "VPP"
+    ]
+   },
+   "entity_id": "select.ems_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "template",
+   "state": "Self-consumption mode (default)"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery forced charge discharge",
+    "options": [
+     "Stop (default)",
+     "Forced charge",
+     "Forced discharge"
+    ]
+   },
+   "entity_id": "select.battery_forced_charge_discharge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "template",
+   "state": "Stop (default)"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery forced charge discharge power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 10000,
+    "step": 100,
+    "mode": "auto"
+   },
+   "entity_id": "number.battery_forced_charge_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "template",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery Min Soc",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 50,
+    "step": 1,
+    "mode": "auto"
+   },
+   "entity_id": "number.battery_min_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "template",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery Max Soc",
+    "unit_of_measurement": "%",
+    "min": 50,
+    "max": 100,
+    "step": 1,
+    "mode": "auto"
+   },
+   "entity_id": "number.battery_max_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "template",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery level",
+    "unit_of_measurement": "%",
+    "state_class": "measurement",
+    "device_class": "battery"
+   },
+   "entity_id": "sensor.battery_level",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "55"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery level (nominal)",
+    "unit_of_measurement": "%",
+    "state_class": "measurement",
+    "device_class": "battery"
+   },
+   "entity_id": "sensor.battery_level_nominal",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "60"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery charging power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.battery_charging_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery discharging power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.battery_discharging_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery forced charge discharge power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.battery_forced_charge_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "EMS mode selection raw",
+    "unit_of_measurement": "",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.ems_mode_selection_raw",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "platform": "modbus",
+   "state": "0"
+  }
+ ]
+}

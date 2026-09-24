@@ -1,0 +1,74 @@
+{
+ "name": "solis_cloud_control_inverter",
+ "device": "Solis Inverter",
+ "device_id": "e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5",
+ "manufacturer": "Solis",
+ "model": "RHI-5K-48ES-5G",
+ "platform": "solis_cloud_control",
+ "source": "Not captured: no house here owns a Solis on its cloud (D-0081). Written from mkuthan/solis-cloud-control 1.0.0: number.py's Battery Reserve SOC and Battery Force Charge SOC (%), switch.py's Allow Grid Charging, select.py's Storage Mode, and the battery's SOC. The states are an inverter at 20 % reserve at 49 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Battery Reserve SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.solis_inverter_battery_reserve_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Battery Force Charge SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.solis_inverter_battery_force_charge_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Allow Grid Charging"
+   },
+   "entity_id": "switch.solis_inverter_allow_grid_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Storage Mode",
+    "options": [
+     "Self-Use",
+     "Feed-In Priority",
+     "Off-Grid"
+    ]
+   },
+   "entity_id": "select.solis_inverter_storage_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Self-Use"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Battery SOC",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.solis_inverter_battery_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "49"
+  }
+ ],
+ "entity_count": 5
+}

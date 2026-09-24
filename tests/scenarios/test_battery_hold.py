@@ -78,13 +78,19 @@ def mode() -> tuple[ScenarioResult, _Held]:
 
 
 @pytest.fixture(scope="module")
+def floor() -> tuple[ScenarioResult, _Held]:
+    """Run a floor row with no discharge command - a Powerwall's shape."""
+    return _run(row="floor")
+
+
+@pytest.fixture(scope="module")
 def old() -> tuple[ScenarioResult, _Held]:
     """Run the inverter from before WP7.9's rows once for the module."""
     return _run(hold_as_self_use=True)
 
 
 @pytest.mark.inv("INV-30")
-@pytest.mark.parametrize("which", ["commanded", "mode"])
+@pytest.mark.parametrize("which", ["commanded", "mode", "floor"])
 def test_holds_for_peak_the_battery_keeps_its_charge_while_held(
     which: str, request: pytest.FixtureRequest
 ) -> None:

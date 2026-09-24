@@ -1,0 +1,316 @@
+{
+ "name": "solarman_deye_hybrid",
+ "device": "Deye",
+ "device_id": "b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
+ "manufacturer": "Deye",
+ "model": "SUN-10K-SG04LP3",
+ "platform": "solarman",
+ "source": "Not captured: no house here owns a Deye (D-0081). Written from davidrapan/ha-solarman's inverter_definitions/deye_hybrid.yaml: Program 1–6 SOC (%, 0–100), Program 1–6 Charging (Disabled, Grid, Generator, Both), Program 1–6 Power (W), Time of Use (Disabled, Week, weekdays …), Battery Grid Charging (switch), Battery Max Charging Current (A) and the battery's SOC. The states are six programs at 20 % with no grid charging, time of use every day, at 55 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 1 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_1_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 1 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_1_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 1 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_1_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 2 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_2_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 2 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_2_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 2 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_2_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 3 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_3_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 3 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_3_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 3 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_3_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 4 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_4_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 4 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_4_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 4 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_4_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 5 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_5_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 5 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_5_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 5 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_5_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 6 SOC",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_6_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 6 Charging",
+    "options": [
+     "Disabled",
+     "Grid",
+     "Generator",
+     "Both"
+    ]
+   },
+   "entity_id": "select.deye_program_6_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Program 6 Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 12000,
+    "step": 1
+   },
+   "entity_id": "number.deye_program_6_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Time of Use",
+    "options": [
+     "Disabled",
+     "Monday",
+     "Tuesday",
+     "Wednesday",
+     "Thursday",
+     "Friday",
+     "Saturday",
+     "Sunday",
+     "Weekdays",
+     "Weekend",
+     "Week",
+     "Enabled"
+    ]
+   },
+   "entity_id": "select.deye_time_of_use",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Week"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Battery Grid Charging"
+   },
+   "entity_id": "switch.deye_battery_grid_charging",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Battery Max Charging Current",
+    "unit_of_measurement": "A",
+    "min": 0,
+    "max": 240,
+    "step": 1
+   },
+   "entity_id": "number.deye_battery_max_charging_current",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Deye Battery",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.deye_battery",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "55"
+  }
+ ],
+ "entity_count": 22
+}

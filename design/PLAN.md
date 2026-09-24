@@ -561,10 +561,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 7.8 | Plug-in batteries: output only | done |
 | 7.9 | The battery's four commands | done |
 | 7.10 | Mode then power | done |
-| 7.11 | Power by action or number | todo |
-| 7.12 | The SoC floor | todo |
-| 7.13 | The grid setpoint | todo |
-| 7.14 | A battery on no device | todo |
+| 7.11 | Power by action or number | done |
+| 7.12 | The SoC floor | done |
+| 7.13 | The grid setpoint | done |
+| 7.14 | A battery on no device | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

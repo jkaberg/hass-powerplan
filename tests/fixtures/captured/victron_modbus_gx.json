@@ -1,0 +1,137 @@
+{
+ "name": "victron_modbus_gx",
+ "device": "100",
+ "device_id": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8",
+ "manufacturer": "victron",
+ "model": "100",
+ "platform": "victron",
+ "source": "Not captured (D-0081). Written from sfstar/hass-victron (const.py, number.py, select.py, sensor.py) with write support on (its advanced options): unit 100's settings_ess_acpowersetpoint (register 2700), settings_ess_acpowersetpoint2 (2703), settings_ess_maxdischargepower (2704; 65535 is no limit), settings_dynamicess_mode (5423, options the enum's names), system_battery_power (842), system_battery_soc (843), system_grid_L1..L3_power (908-912) and system_grid_L1 (820). Entity names are the register keys with spaces. A 1.5 kW three-phase house, no sun, the battery idle at 58 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "settings ess acpowersetpoint",
+    "unit_of_measurement": "W",
+    "min": -10000,
+    "max": 10000,
+    "step": 1
+   },
+   "entity_id": "number.victron_settings_ess_acpowersetpoint",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "settings ess acpowersetpoint2",
+    "unit_of_measurement": "W",
+    "min": -10000,
+    "max": 10000,
+    "step": 1
+   },
+   "entity_id": "number.victron_settings_ess_acpowersetpoint2",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "settings ess maxdischargepower",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 5000,
+    "step": 50
+   },
+   "entity_id": "number.victron_settings_ess_maxdischargepower",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "655350"
+  },
+  {
+   "attributes": {
+    "friendly_name": "settings dynamicess mode",
+    "options": [
+     "OFF",
+     "AUTO",
+     "NODE_RED"
+    ]
+   },
+   "entity_id": "select.victron_settings_dynamicess_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "OFF"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system battery power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.victron_system_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system battery soc",
+    "unit_of_measurement": "%",
+    "state_class": "measurement",
+    "device_class": "battery"
+   },
+   "entity_id": "sensor.victron_system_battery_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "58"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system grid L1 power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.victron_system_grid_l1_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "600"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system grid L2 power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.victron_system_grid_l2_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "500"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system grid L3 power",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.victron_system_grid_l3_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "400"
+  },
+  {
+   "attributes": {
+    "friendly_name": "system grid L1",
+    "unit_of_measurement": "W",
+    "state_class": "measurement",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.victron_system_grid_l1",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "600"
+  }
+ ]
+}

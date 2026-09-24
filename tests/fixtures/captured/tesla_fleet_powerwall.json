@@ -1,0 +1,109 @@
+{
+ "name": "tesla_fleet_powerwall",
+ "device": "My Home",
+ "device_id": "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0",
+ "manufacturer": "Tesla",
+ "model": "Powerwall 2",
+ "platform": "tesla_fleet",
+ "source": "Not captured: no house here owns a Powerwall (D-0081). Written from Home Assistant core tesla_fleet (dev): strings.json and select.py's Operation mode (autonomous, backup, self_consumption) and Allow export, number.py's Backup reserve and Off-grid reserve (%), switch.py's Allow charging from grid (on when charging is allowed: not `disallow_charge_from_grid_with_solar_installed`), sensor.py's Percentage charged (battery) and Battery power (positive discharging). The states are a Powerwall self-consuming at 72 %, discharging 600 W.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "My Home Operation mode",
+    "options": [
+     "autonomous",
+     "backup",
+     "self_consumption"
+    ]
+   },
+   "entity_id": "select.my_home_operation_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "self_consumption"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Allow export",
+    "options": [
+     "battery_ok",
+     "never",
+     "pv_only"
+    ]
+   },
+   "entity_id": "select.my_home_allow_export",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "pv_only"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Backup reserve",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.my_home_backup_reserve",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "20"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Off-grid reserve",
+    "unit_of_measurement": "%",
+    "min": 0,
+    "max": 100,
+    "step": 1
+   },
+   "entity_id": "number.my_home_off_grid_reserve",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Allow charging from grid"
+   },
+   "entity_id": "switch.my_home_allow_charging_from_grid",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Storm watch"
+   },
+   "entity_id": "switch.my_home_storm_watch",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "on"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Percentage charged",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.my_home_percentage_charged",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "72"
+  },
+  {
+   "attributes": {
+    "friendly_name": "My Home Battery power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.my_home_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "600"
+  }
+ ],
+ "entity_count": 8
+}

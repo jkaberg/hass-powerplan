@@ -1,0 +1,64 @@
+{
+ "name": "solis_modbus_hybrid",
+ "device": "Solis Inverter",
+ "device_id": "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9",
+ "manufacturer": "Ginlong Solis",
+ "model": "S6-EH3P10K",
+ "platform": "solis_modbus",
+ "source": "Not captured: no house here owns a Solis hybrid (D-0081). Written from Pho3niX90/solis_modbus 4.2.6: __init__.py's solis_dispatch (mode battery_hold/battery_charge/battery_discharge/self_consumption, power_watts, allow_grid_charge, failsafe_minutes; no target) and solis_dispatch_stop; sensor_data/hybrid_sensors.py's Dispatch Active (44100), Dispatch Control Mode (44105: 1 hold, 2 battery, 5 self-consumption), Dispatch Power Target (44106–7, W, positive charging) and Remote Dispatch Capability (34502, 43605 when capable). The states are an inverter out of dispatch at 52 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Dispatch Active"
+   },
+   "entity_id": "sensor.solis_inverter_dispatch_active",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Dispatch Control Mode"
+   },
+   "entity_id": "sensor.solis_inverter_dispatch_control_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "1"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Dispatch Power Target",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.solis_inverter_dispatch_power_target",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Remote Dispatch Capability"
+   },
+   "entity_id": "sensor.solis_inverter_remote_dispatch_capability",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "43605"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Solis Inverter Battery SOC",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.solis_inverter_battery_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "52"
+  }
+ ],
+ "entity_count": 5
+}

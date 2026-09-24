@@ -22,7 +22,7 @@ What PowerPlan does not do, or not yet. Each item says what to do meanwhile, whe
 
 - PowerPlan plans on the solar forecast your energy dashboard shows. Without one, it uses your solar power only as it comes, not ahead.
 - PowerPlan never limits your panels or what they send to the grid.
-- A home battery is steered through its inverter's integration: [Devices](devices.md) lists the ones PowerPlan knows. Home Assistant's own Tesla Powerwall integration offers no way to steer the battery, so PowerPlan can only show it.
+- A home battery is steered through its inverter's integration: [Devices](devices.md) lists the ones PowerPlan knows. Home Assistant's own Tesla Powerwall integration, which talks to the Powerwall on your network, offers no way to steer the battery: use Tesla Fleet, Teslemetry or Tessie. PowerPlan cannot make a Powerwall discharge; it covers your home by itself.
 - Some batteries cannot hold their charge for later: their integration has no setting that stops them discharging. PowerPlan then plans as if they run on their own between the hours it charges or discharges them.
 - Enphase batteries cannot be steered: from Envoy firmware 8.2.4225 the Envoy refuses the settings Home Assistant would change.
 

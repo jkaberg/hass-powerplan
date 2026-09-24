@@ -32,6 +32,7 @@ _ANCHORS: dict[tuple[str, str], str] = {
     (SUBENTRY_ZONE, "user"): "room",
     (SUBENTRY_ZONE, "reconfigure"): "room",
     (SUBENTRY_LOAD, "reconfigure_device"): "device",
+    (SUBENTRY_LOAD, "entities"): "device",
 }
 
 

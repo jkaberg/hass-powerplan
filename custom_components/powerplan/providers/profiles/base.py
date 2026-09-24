@@ -145,6 +145,8 @@ ROLE_UNITS: Final[Mapping[Role, UnitTable]] = {
     Role.BATTERY_CHARGE_POWER: POWER_W,
     Role.BATTERY_DISCHARGE_POWER: POWER_W,
     Role.BATTERY_FLOOR: PERCENT,
+    Role.BATTERY_CEILING: PERCENT,
+    Role.GRID_POWER: POWER_W,
 }
 
 #: The states that mean "I cannot answer" (INV-53), as D3 spells them.
@@ -507,6 +509,27 @@ class DeviceView:
             )
         return cls(name=name, entities=tuple(views))
 
+    @classmethod
+    def from_entities(
+        cls, hass: HomeAssistant, entity_ids: Sequence[str], *, name: str = ""
+    ) -> DeviceView:
+        """Build a view of entities the household picked, on no device (D4 §5.9).
+
+        What `from_hass` reads for a device's own entities - the platform, the
+        registry's memory of an entity with no state - read for each one picked,
+        so a row can match them by shape. An entity the registry does not know
+        (a YAML one with no unique id) is read off its state alone.
+        """
+        registry = er.async_get(hass)
+        views: list[EntityView] = []
+        for entity_id in entity_ids:
+            entry = registry.async_get(entity_id)
+            if entry is not None:
+                views.append(_entity_view(hass, entry))
+                continue
+            views.extend(cls.from_states(hass, [entity_id]).entities)
+        return cls(name=name, entities=tuple(views))
+
 
 def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
     """Return one registry entry as a view, with its state if it has one."""
@@ -606,6 +629,10 @@ class RoleBinding:
     attribute and what it measures is `current_temperature`. Without this a
     thermostat's setpoint could be written but never read back, and INV-22 says
     decisions are made against the entity's own reading.
+    """
+    also: tuple[str, ...] = ()
+    """More entities written with the same value (WP7.12): Deye's six *Program N SOC*
+    numbers are one lever. Read back off `entity_id`, the first.
     """
 
 
@@ -926,7 +953,13 @@ class BoundDevice:
     @property
     def entity_ids(self) -> tuple[str, ...]:
         """Every entity this load reads or writes, for the runtime to subscribe to."""
-        return tuple(dict.fromkeys(binding.entity_id for binding in self.bindings.values()))
+        return tuple(
+            dict.fromkeys(
+                entity_id
+                for binding in self.bindings.values()
+                for entity_id in (binding.entity_id, *binding.also)
+            )
+        )
 
     def binding(self, role: Role) -> RoleBinding | None:
         """Return the binding for `role`, or `None` when nothing is bound to it."""
@@ -1152,7 +1185,8 @@ class LiveDevice:
     """
 
     hass: HomeAssistant
-    device_id: str
+    #: `None` for entities on no device, picked by hand.
+    device_id: str | None
     bound: BoundDevice
 
     @property
@@ -1171,12 +1205,12 @@ class LiveDevice:
         (H.1 F-6, `design/DECISIONS.md` D-0362).
         """
         return self.bound.reads(
-            DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id), now
+            DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id or ""), now
         )
 
     def call_for(self, write: Write) -> DeviceCall | None:
         """Return the service call for `write`, or `None` when its role is unbound."""
-        view = DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id)
+        view = DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id or "")
         return self.bound.call_in(write, view)
 
     def call_for_provision(self, provision: Provision) -> DeviceCall | None:

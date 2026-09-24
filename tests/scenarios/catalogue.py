@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from custom_components.powerplan.core.loads.kinds import ALL_COMMANDS
+from custom_components.powerplan.core.loads.kinds import ALL_COMMANDS, BatteryCommand
 from custom_components.powerplan.core.loads.types.battery import battery_capabilities
 from custom_components.powerplan.core.model import Mode
 from tests.builders.houses import (
@@ -701,12 +701,16 @@ def pv_battery_peak_shave_winter() -> Scenario:
 def battery_holds_for_peak(*, row: str = "commanded", hold_as_self_use: bool = False) -> Scenario:
     """Return the dark January day with a battery its inverter self-uses (D9 §5.3).
 
-    `row` is a commanded-power row (SolaX's shape) or one whose inverter sets the
-    power (GoodWe's); `hold_as_self_use` is the inverter before WP7.9's rows,
-    whose planned hold went out as its own self-use.
+    `row` is a commanded-power row (SolaX's shape), one whose inverter sets the
+    power (GoodWe's), or a floor row with no discharge command (a Powerwall's,
+    WP7.12); `hold_as_self_use` is the inverter before WP7.9's rows, whose planned
+    hold went out as its own self-use.
     """
-    capabilities = battery_capabilities(ALL_COMMANDS, inverter_power=row == "inverter")
-    suffix = {"commanded": "", "inverter": "_mode"}[row] + ("_old" if hold_as_self_use else "")
+    commands = ALL_COMMANDS - {BatteryCommand.DISCHARGE} if row == "floor" else ALL_COMMANDS
+    capabilities = battery_capabilities(commands, inverter_power=row != "commanded")
+    suffix = {"commanded": "", "inverter": "_mode", "floor": "_floor"}[row] + (
+        "_old" if hold_as_self_use else ""
+    )
     return Scenario(
         name=f"battery_holds_for_peak{suffix}",
         house=lambda: house(

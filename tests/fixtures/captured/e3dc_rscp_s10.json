@@ -1,0 +1,58 @@
+{
+ "name": "e3dc_rscp_s10",
+ "device": "E3DC S10",
+ "device_id": "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8",
+ "manufacturer": "E3/DC",
+ "model": "S10 E PRO",
+ "platform": "e3dc_rscp",
+ "source": "Not captured: no house here owns an E3/DC (D-0081). Written from torbennehmer/hacs-e3dc 4.0.0-beta.1: services.yaml's set_power_mode (device_id, power_mode 0 normal · 1 idle · 2 discharging · 3 charging · 4 charging from grid, power_value W) and the sensors Current operation mode (pset-powermode, raw 0–4), Current power value (pset-powervalue, W), State of charge (soc) and a battery module's State of charge. The states are an E3/DC in normal operation at 66 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "E3DC S10 Current operation mode"
+   },
+   "entity_id": "sensor.e3dc_s10_current_operation_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "E3DC S10 Current power value",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.e3dc_s10_current_power_value",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "E3DC S10 State of charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.e3dc_s10_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "66"
+  },
+  {
+   "attributes": {
+    "friendly_name": "E3DC S10 Battery module State of charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.e3dc_s10_battery_module_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "66"
+  }
+ ],
+ "entity_count": 4
+}
