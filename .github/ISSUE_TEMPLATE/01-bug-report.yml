@@ -1,0 +1,83 @@
+name: Bug report
+description: File a bug report.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [Troubleshooting](https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md) first: most repairs and symptoms are explained there.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also tell us what you expected PowerPlan to do.
+      placeholder: "Example: the water heater ran at 17:00, the most expensive hour."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Trigger ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: home-assistant-version
+    attributes:
+      label: Home Assistant version
+      placeholder: 2026.x.x
+    validations:
+      required: true
+
+  - type: input
+    id: integration-version
+    attributes:
+      label: PowerPlan version
+      placeholder: Version from HACS or manifest
+    validations:
+      required: true
+
+  - type: input
+    id: site
+    attributes:
+      label: Country and grid company
+      placeholder: "Example: Norway / Elvia"
+    validations:
+      required: true
+
+  - type: textarea
+    id: appliances
+    attributes:
+      label: Appliances involved
+      description: The appliance type and the integration that controls it.
+      placeholder: "Example: EV charger, Easee"
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Download diagnostics from the home's device page and drag the file here. It holds the last decision and the plan, with nothing private.
+        See [Diagnostics and reporting a problem](https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md#diagnostics).
+
+  - type: textarea
+    id: relevant-log-output
+    attributes:
+      label: Relevant log output
+      description: |
+        Please paste relevant **debug** logs. Redact addresses, tokens and account identifiers.
+        To enable debug logging, see [Diagnostics and reporting a problem](https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md#diagnostics).
+
+        ⚠️ Issues without valid debug logs will be automatically closed.
+      placeholder: |
+        2026-09-25 12:00:00.123 DEBUG (MainThread) [custom_components.powerplan] ...
+      render: shell
+    validations:
+      required: true

@@ -1,0 +1,28 @@
+name: labels
+
+# Creates or updates every label in .github/labels.yml. Labels on GitHub that
+# the file does not name are left alone.
+on:
+  push:
+    branches: [main]
+    paths: [.github/labels.yml]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    name: sync labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create or update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          yq -o=json '.[]' .github/labels.yml | jq -c '.' | while read -r label; do
+            gh label create "$(jq -r .name <<<"$label")" --force \
+              --color "$(jq -r .color <<<"$label")" \
+              --description "$(jq -r .description <<<"$label")"
+          done

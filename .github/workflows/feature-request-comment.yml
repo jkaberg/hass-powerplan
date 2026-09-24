@@ -1,0 +1,32 @@
+name: Comment on feature requests
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  feature-request-comment:
+    if: contains(github.event.issue.labels.*.name, 'enhancement')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Post community note
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: [
+                'Thanks for the feature request! 👋',
+                '',
+                'Just a friendly reminder - this integration is a **voluntary, open-source project** maintained in my spare time, free of charge.',
+                'While I do my best to improve things, my time is limited and feature requests can take a while to get to.',
+                '',
+                'If this feature is important to you, **please strongly consider opening a pull request** - contributions are the fastest way to get new features merged and help keep the project moving forward.',
+                '',
+                'Either way, the request is appreciated and will be reviewed when time allows. 🙏',
+              ].join('\n'),
+            });

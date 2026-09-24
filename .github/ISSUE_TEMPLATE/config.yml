@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md
+    about: Repairs, common symptoms, and how to collect a log and diagnostics.
+  - name: Questions and support
+    url: https://github.com/jkaberg/hass-powerplan/discussions
+    about: Please use Discussions for how-to questions and general support.

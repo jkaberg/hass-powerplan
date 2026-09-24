@@ -1,0 +1,48 @@
+name: Feature request
+description: Suggest an improvement to PowerPlan.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A new appliance, price source or grid tariff is often only a registry entry. If the request is support for your device or grid company, name the integration or the company and link its documentation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Clear and concise problem description.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should be added or changed?
+      placeholder: Describe the proposed behaviour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: User impact
+      description: Why this matters and who benefits.
+      placeholder: Expected benefit for households.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or alternative approaches.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional logs, screenshots, diagnostics or references.
