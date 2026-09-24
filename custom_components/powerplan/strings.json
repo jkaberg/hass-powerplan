@@ -974,7 +974,8 @@
               "restore_mode": "Handed back",
               "battery_charge": "Charging",
               "battery_discharge": "Discharging",
-              "battery_hold": "In its own mode",
+              "battery_hold": "Holding its charge",
+              "battery_self_use": "In its own mode",
               "switch_on": "Switched on",
               "paused": "Paused",
               "not_granted": "No power set aside for it now",
@@ -1241,6 +1242,10 @@
     "engine_failing": {
       "title": "PowerPlan is in fallback mode",
       "description": "PowerPlan failed {failures} times in a row ({error}) and has stopped steering; every appliance is left as it was. Restart Home Assistant; if this comes back, report it with the log."
+    },
+    "battery_control_off": {
+      "title": "A battery is not steered",
+      "description": "PowerPlan cannot steer **{load}** through {integration}. Switch on {setting}, then reload the integration. Until then the battery runs on its own."
     },
     "load_error": {
       "title": "An appliance is on hold",
@@ -1607,6 +1612,13 @@
         "v2c": "V2C (local)",
         "wallbox": "Wallbox (cloud)",
         "zaptec": "Zaptec (cloud)",
+        "foxess_modbus": "Fox ESS battery",
+        "fronius_modbus": "Fronius battery (Modbus)",
+        "marstek_modbus": "Marstek Venus battery",
+        "saj_h2_modbus": "SAJ battery",
+        "solaredge_modbus_multi": "SolarEdge battery",
+        "solax_modbus_sofar": "Sofar battery",
+        "homewizard": "HomeWizard battery group",
         "huawei_solar": "Huawei battery",
         "solax_modbus": "SolaX battery",
         "goodwe": "GoodWe battery",
@@ -1887,9 +1899,10 @@
         "mode_saving": "Energy saving: {value}",
         "mode_comfort": "Comfort: {value}",
         "restore_mode": "Handed back on {value}",
-        "battery_charge": "Charging: {value}",
-        "battery_discharge": "Discharging: {value}",
-        "battery_hold": "In its own mode: {value}",
+        "battery_charge": "Charging",
+        "battery_discharge": "Discharging",
+        "battery_hold": "Holding its charge",
+        "battery_self_use": "In its own mode",
         "switch_on": "Switched on",
         "paused": "Paused",
         "not_granted": "No power set aside for it now",

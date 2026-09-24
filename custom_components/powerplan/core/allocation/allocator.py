@@ -34,7 +34,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from ..model import Grant
+from ..model import Grant, PlanAnswer
 from .budget import PiState
 from .constraints.base import AllocCtx, Constraint, Violation
 from .constraints.circuit import CircuitLimit
@@ -84,6 +84,10 @@ _EPS_W = 1e-6
 _SATISFIED = "satisfied"
 _PLANNED_IDLE = "planned idle"
 _WAITING_FOR_SUN = "waiting for surplus"
+#: A battery held by its plan, filling from the sun.
+_HOLD = "hold"
+#: A battery without a self-use of its own, balanced by the walk.
+_SELF_USE = "self-use"
 #: What `Grant.capped_by` names when the measured surplus bound a grant.
 _SURPLUS = "surplus"
 
@@ -353,11 +357,18 @@ class _Walk:
             )
 
     def serve_rest(self, order: Sequence[LoadView]) -> None:
-        """Walk the remaining loads in descending priority (D6 §5.3 step 5)."""
+        """Walk the remaining loads in descending priority (D6 §5.3 step 5).
+
+        Each grant carries what the load's plan said about the slot (INV-30): a
+        battery's command is chosen from it (D4 §4.2, D6 §5.3).
+        """
         for load in order:
             if load.load_id in self.grants:
                 continue
             self._decide(load)
+            grant = self.grants.get(load.load_id)
+            if grant is not None:
+                self.grants[load.load_id] = replace(grant, answer=self._answer(load))
 
     def apply_violations(self) -> tuple[Violation, ...]:
         """Apply every blunt violation to its own members and nothing else (INV-60).
@@ -459,7 +470,7 @@ class _Walk:
 
     # --------------------------------------------------------------- internals #
 
-    def _decide(self, load: LoadView) -> None:
+    def _decide(self, load: LoadView) -> None:  # noqa: PLR0911 - D6 §5.3 steps 5–8: one return per way a load is decided
         """Decide one load in the priority walk (D6 §5.3 steps 5–8)."""
         demand = load.demand
         stop_ok, _plan_stop = self._gates(load)
@@ -474,6 +485,8 @@ class _Walk:
 
         plan = self.ctx.plans.get(load.load_id)
         plan_cap = None if plan is None else plan.cap_w(self.ctx.now)
+        if self._battery(load) and self._decide_battery(load, plan, plan_cap):
+            return
         if plan_cap is not None and plan_cap < 0.0 and demand.min_w < 0.0:
             # A PLANNED DISCHARGE (D5 §5.8, Phase 7): the plan governs a battery at
             # stage 0, into what the house imports and never into export.
@@ -623,6 +636,52 @@ class _Walk:
         if reason in {_SATISFIED, _PLANNED_IDLE}:
             self.denied.append((load.load_id, reason))
         self._touch_sticky(load, watts)
+
+    def _decide_battery(self, load: LoadView, plan: Plan | None, plan_cap: float | None) -> bool:
+        """Decide a battery's free slot or hold; `False` leaves it to the walk (D6 §5.3)."""
+        demand = load.demand
+        if plan_cap is None and self._emulates_self_use(load):
+            # A FREE SLOT FOR A BATTERY WITHOUT A SELF-USE OF ITS OWN: it discharges
+            # into the measured import as an inverter would, never into export and
+            # never below its reserve (the demand's `min_w`).
+            watts = self._discharge_w(load, -demand.min_w)
+            if watts > _EPS_W and self._sun() <= _EPS_W:
+                self._give(load, -watts, capped_by=(), reason=_SELF_USE)
+                return True
+            return False
+        if plan_cap is None or abs(plan_cap) > _EPS_W:
+            return False
+        # A HOLD (INV-30): no discharge, and the sun may still fill it - the
+        # measured surplus alone, never the grid.
+        follow = self._follow(load, plan)
+        watts = 0.0 if follow is None else max(0.0, min(follow, demand.max_w))
+        if watts > _EPS_W:
+            self._give(load, watts, capped_by=(_SURPLUS,), reason=_HOLD)
+        else:
+            self._give(load, 0.0, capped_by=("plan",), reason=_PLANNED_IDLE, shed=False)
+        return True
+
+    def _answer(self, load: LoadView) -> PlanAnswer:
+        """Return what `load`'s plan says about this slot: none, hold or a power (INV-30)."""
+        plan = self.ctx.plans.get(load.load_id)
+        cap = None if plan is None else plan.cap_w(self.ctx.now)
+        if cap is None:
+            return PlanAnswer.NONE
+        return PlanAnswer.HOLD if abs(cap) <= _EPS_W else PlanAnswer.POWER
+
+    @staticmethod
+    def _battery(load: LoadView) -> bool:
+        """Whether `load` is a battery: the four commands, or a bare number with a store."""
+        return load.kind == "battery" or "chemistry" in load.params
+
+    def _emulates_self_use(self, load: LoadView) -> bool:
+        """Whether the walk does a battery's self-use for it: one with none of its own."""
+        return (
+            self._battery(load)
+            and load.demand.min_w < 0.0
+            and not bool(load.params.get("self_use", False))
+            and self.ctx.stage == 0
+        )
 
     def _discharge_w(self, load: LoadView, planned_w: float) -> float:
         """Return the watts a battery discharges for a planned `planned_w` (D6 §5.3, Phase 7).

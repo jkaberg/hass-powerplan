@@ -142,6 +142,9 @@ ROLE_UNITS: Final[Mapping[Role, UnitTable]] = {
     Role.OUTDOOR_TEMP: TEMPERATURE_C,
     Role.OUTLET_TEMP: TEMPERATURE_C,
     Role.SOC: PERCENT,
+    Role.BATTERY_CHARGE_POWER: POWER_W,
+    Role.BATTERY_DISCHARGE_POWER: POWER_W,
+    Role.BATTERY_FLOOR: PERCENT,
 }
 
 #: The states that mean "I cannot answer" (INV-53), as D3 spells them.
@@ -914,6 +917,11 @@ class BoundDevice:
     Easee cloud's dynamic limit is written by `device_id`, never by entity
     (D4 §5.10, WP4.8a). An entity-addressed profile ignores it.
     """
+    params: Mapping[str, Any] = field(default_factory=dict)
+    """The load's materialised parameters (INV-66), set by the runtime beside
+    `device_id`: a battery row's floor is the household's reserve (D4 §5.9, WP7.9).
+    A profile whose writes need no number of the household's ignores them.
+    """
 
     @property
     def entity_ids(self) -> tuple[str, ...]:
@@ -938,6 +946,16 @@ class BoundDevice:
             )
             return None
         return self._call(binding, write.value)
+
+    def call_in(self, write: Write, view: DeviceView | None) -> DeviceCall | None:
+        """Return the call for `write`, given what the device holds now.
+
+        The same as `call_for` for one entity per role. A battery row writes
+        several levers per command and sends only those not already at their
+        value (INV-21, D4 §5.9), so it reads `view`.
+        """
+        del view
+        return self.call_for(write)
 
     def call_for_provision(self, provision: Provision) -> DeviceCall | None:
         """Return the call that puts a `Provision` on its entity (D4 §2).
@@ -1158,7 +1176,8 @@ class LiveDevice:
 
     def call_for(self, write: Write) -> DeviceCall | None:
         """Return the service call for `write`, or `None` when its role is unbound."""
-        return self.bound.call_for(write)
+        view = DeviceView.from_states(self.hass, self.bound.entity_ids, name=self.device_id)
+        return self.bound.call_in(write, view)
 
     def call_for_provision(self, provision: Provision) -> DeviceCall | None:
         """Return the service call that puts a provision on its entity."""

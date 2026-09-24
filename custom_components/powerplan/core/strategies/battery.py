@@ -38,6 +38,17 @@ export price a surplus charge earns and is taken first. Above
 `surplus_priority_soc` the battery stops charging from the sun and leaves it to
 the loads below it (evcc's `prioritySoc`). Without panels every slot is priced
 at its import price both ways, as before.
+
+**The free slot and the hold (D5 §5.8; HLD INV-30).** A slot the plan
+neither charges nor discharges is the inverter's own self-use (`None`), and
+self-use spends energy: it discharges into the house's own load (D10's baseline)
+and charges from the sun left after the loads above. The forward simulation
+models exactly that, so a committed discharge or `peak_shave`'s reserve that a
+free slot before it would drain is found *starved*; the free slot where the
+import it displaces is cheapest is then held (`0`: no discharge, the sun may
+still fill it) and the walk repeats until nothing starves. A battery that cannot
+hold drops its starved pairs instead; one that cannot be told to discharge
+plans its discharges as self-use (`None`), protected by the same holds.
 """
 
 from __future__ import annotations
@@ -171,8 +182,16 @@ def _simulate(
     discharge_set: set[int],
     forced_w: Mapping[int, float] | None = None,
     sun_soc: float | None = None,
-) -> dict[int, float]:
-    """Walk `rows` in time order, returning each committed slot's envelope in watts.
+    free_w: Mapping[int, float] | None = None,
+    holds: frozenset[int] = frozenset(),
+    can_hold: bool = True,
+) -> tuple[dict[int, float], list[int]]:
+    """Walk `rows` in time order: each committed slot's envelope, and the discharges starved.
+
+    A slot that is neither committed nor held moves the state of charge by its
+    self-use (`free_w`: + charge from the sun, − discharge into the house); a
+    held slot only by the sun's part. A committed discharge that gets less
+    than it asked for is *starved*, and returned in time order.
 
     The state of charge only ever moves by what a slot's own decision, clamped
     to the inverter and to `[reserve_soc, max_soc]`, actually stores or draws -
@@ -182,28 +201,85 @@ def _simulate(
     from the sun stops at `sun_soc` (`surplus_priority_soc`, Phase 7).
     """
     envelopes: dict[int, float] = {}
+    starved: list[int] = []
     soc = level_now
     per_unit = store.capacity_kwh_per_unit()
     charge_cell = (per_unit, store.charge_eff)
     discharge_cell = (per_unit, store.discharge_eff)
     forced = forced_w or {}
+    free = free_w or {}
     for row in rows:
         top = max_soc if sun_soc is None or not row.sun else min(max_soc, sun_soc)
+        asked = 0.0
         if row.index in forced:
             wanted = forced[row.index]
             if wanted >= 0.0:
                 w, soc = _charge(min(wanted, row.charge_cap_w), row.hours, soc, top, charge_cell)
             else:
-                w, soc = _discharge(-wanted, row.hours, soc, reserve_soc, discharge_cell)
+                asked = -wanted
+                w, soc = _discharge(asked, row.hours, soc, reserve_soc, discharge_cell)
         elif row.index in charge_set:
             w, soc = _charge(min(max_charge_w, row.charge_cap_w), row.hours, soc, top, charge_cell)
+            if abs(w) <= _POWER_EPS_W and not can_hold:
+                # Full, and nothing to hold it with: the inverter's own self-use.
+                soc = _drift(
+                    free.get(row.index, 0.0),
+                    row,
+                    soc,
+                    top=top,
+                    reserve_soc=reserve_soc,
+                    bounds=(max_charge_w, max_discharge_w),
+                    cells=(charge_cell, discharge_cell),
+                )
+                continue
         elif row.index in discharge_set:
-            w, soc = _discharge(max_discharge_w, row.hours, soc, reserve_soc, discharge_cell)
+            asked = max_discharge_w
+            w, soc = _discharge(asked, row.hours, soc, reserve_soc, discharge_cell)
         else:
+            # Free or held: the inverter's own self-use, or only the sun while held.
+            drift = free.get(row.index, 0.0)
+            if row.index in holds:
+                drift = max(0.0, drift)
+            soc = _drift(
+                drift,
+                row,
+                soc,
+                top=top,
+                reserve_soc=reserve_soc,
+                bounds=(max_charge_w, max_discharge_w),
+                cells=(charge_cell, discharge_cell),
+            )
             continue
+        if asked > 0.0 and -w < asked - _POWER_EPS_W:
+            starved.append(row.index)
         if abs(w) > _POWER_EPS_W:
             envelopes[row.index] = w
-    return envelopes
+        elif asked == 0.0:
+            # A charge slot with nothing left to charge is a hold, not a free slot:
+            # the plan keeps it full, and self-use would spend it.
+            envelopes[row.index] = 0.0
+    return envelopes, starved
+
+
+def _drift(
+    drift: float,
+    row: _Row,
+    soc: float,
+    *,
+    top: float,
+    reserve_soc: float,
+    bounds: tuple[float, float],
+    cells: tuple[tuple[float, float], tuple[float, float]],
+) -> float:
+    """Return the state of charge after one slot of self-use: + the sun, − the house."""
+    (max_charge_w, max_discharge_w), (charge_cell, discharge_cell) = bounds, cells
+    if drift > 0.0:
+        return _charge(min(drift, max_charge_w), row.hours, soc, top, charge_cell)[1]
+    if drift < 0.0:
+        return _discharge(
+            min(-drift, max_discharge_w), row.hours, soc, reserve_soc, discharge_cell
+        )[1]
+    return soc
 
 
 def _charge(
@@ -282,12 +358,64 @@ def _shave_reservation(
     return forced
 
 
+def _free_w(rows: Sequence[_Row], ctx: PlanContext) -> dict[int, float]:
+    """Return each slot's self-use, W: + the sun left, − the house's own load.
+
+    The sun left after the loads above (D5 §2) charges it; with none left, it
+    covers D10's baseline, the house's own uncontrolled draw. Without forecasts
+    there is nothing to model and a free slot moves nothing, as before.
+    """
+    found: dict[int, float] = {}
+    for row in rows:
+        sun = ctx.surplus.get(row.slot.start, 0.0)
+        if sun > 0.0:
+            found[row.index] = sun
+        elif ctx.forecasts is not None:
+            found[row.index] = -max(0.0, ctx.forecasts.baseline_w(row.slot.start))
+    return found
+
+
+def _hold_for(
+    rows: Sequence[_Row],
+    starved: int,
+    *,
+    free_w: Mapping[int, float],
+    busy: frozenset[int],
+    holds: frozenset[int],
+    value: Decimal | None,
+) -> int | None:
+    """Return the free slot before `starved` to hold, or `None`.
+
+    Among the slots before it that self-use would drain, the one whose displaced
+    import is cheapest - the energy is worth least there. `value` bounds it for an
+    arbitrage discharge (only where holding pays); `None` for `peak_shave`'s
+    reserve, which the capacity axis protects at any price (INV-1).
+    """
+    candidates = [
+        row
+        for row in rows
+        if row.index < starved
+        and row.index not in busy
+        and row.index not in holds
+        and free_w.get(row.index, 0.0) < 0.0
+        and (value is None or row.slot.total < value)
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda row: (row.slot.total, -row.index)).index
+
+
 def _plan_slot(row: _Row, envelope_w: float | None) -> PlanSlot:
-    """Return one slot of the plan: the signed envelope, or nothing to say."""
+    """Return one slot of the plan: the signed envelope, a hold (0), or nothing to say."""
     hours = row.hours
     kwh = 0.0 if envelope_w is None else envelope_w * hours / 1000.0
-    reason = "no plan" if envelope_w is None else ("charge" if envelope_w > 0.0 else "discharge")
     if envelope_w is None:
+        reason = "no plan"
+    elif envelope_w == 0.0:
+        reason = "hold"
+    else:
+        reason = "charge" if envelope_w > 0.0 else "discharge"
+    if envelope_w is None or envelope_w == 0.0:
         price = row.slot.total
     else:
         price = row.charge_price if envelope_w > 0.0 else row.discharge_price
@@ -330,24 +458,72 @@ def _plan(
     charge_set, discharge_set = _candidates(
         rows, exclude=exclude, threshold=threshold, round_trip_eff=round_trip_eff
     )
-    envelopes = _simulate(
-        rows,
-        level_now=level_now,
-        store=store,
-        max_charge_w=max_charge_w,
-        max_discharge_w=max_discharge_w,
-        reserve_soc=reserve_soc,
-        max_soc=max_soc,
-        charge_set=charge_set,
-        discharge_set=discharge_set,
-        forced_w=forced,
-        sun_soc=float(params.get("surplus_priority_soc", 100.0)),
-    )
+    free_w = _free_w(rows, ctx)
+    can_hold = bool(params.get("can_hold", True))
+    holds: frozenset[int] = frozenset()
+
+    def simulate(*, drain: bool = True) -> tuple[dict[int, float], list[int]]:
+        return _simulate(
+            rows,
+            level_now=level_now,
+            store=store,
+            max_charge_w=max_charge_w,
+            max_discharge_w=max_discharge_w,
+            reserve_soc=reserve_soc,
+            max_soc=max_soc,
+            charge_set=charge_set,
+            discharge_set=discharge_set,
+            forced_w=forced,
+            sun_soc=float(params.get("surplus_priority_soc", 100.0)),
+            free_w=free_w if drain else {i: w for i, w in free_w.items() if w > 0.0},
+            holds=holds,
+            can_hold=can_hold,
+        )
+
+    def drained() -> tuple[dict[int, float], list[int]]:
+        # Starved *by self-use*: a discharge short only because the battery ran low
+        # anyway is the partial discharge it always was, not a hold's cue.
+        # Measured as energy: the watts a discharge loses to the drain, not whether it is short.
+        envelopes, starved = simulate()
+        natural, _ = simulate(drain=False)
+        lost = [
+            index
+            for index in starved
+            if envelopes.get(index, 0.0) - natural.get(index, 0.0) > _POWER_EPS_W
+        ]
+        return envelopes, lost
+
+    envelopes, starved = drained()
+    by_index = {row.index: row for row in rows}
+    eff = Decimal(str(round_trip_eff))
+    busy = frozenset(charge_set | discharge_set | set(forced))
+    for _ in rows:  # at most one change per slot: the walk ends
+        if not starved:
+            break
+        first = starved[0]
+        if can_hold:
+            value = None if first in forced else by_index[first].discharge_price * eff
+            hold = _hold_for(rows, first, free_w=free_w, busy=busy, holds=holds, value=value)
+            if hold is not None:
+                holds |= {hold}
+                envelopes, starved = drained()
+                continue
+        if first in discharge_set and charge_set:
+            # Nothing left to hold: the pair does not pay with self-use in between.
+            discharge_set.discard(first)
+            charge_set.discard(max(charge_set, key=lambda i: (by_index[i].charge_price, i)))
+            envelopes, starved = drained()
+            continue
+        starved = starved[1:]
+    if not bool(params.get("can_discharge", True)):
+        # No discharge command: the inverter's self-use serves those slots (D4 §6.6).
+        envelopes = {index: w for index, w in envelopes.items() if w >= 0.0}
+    planned = dict.fromkeys(holds, 0.0) | envelopes
     return build_plan(
         load_id=ctx.load.load_id,
         strategy=key,
         mode=PlanMode.PRICE,
-        slots=tuple(_plan_slot(row, envelopes.get(row.index)) for row in rows),
+        slots=tuple(_plan_slot(row, planned.get(row.index)) for row in rows),
         now=ctx.now,
         currency=ctx.curve_in.currency,
         confidence=confidence_of([row.slot for row in rows if row.index in envelopes]),

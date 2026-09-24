@@ -21,10 +21,12 @@
     "phases": 3
   },
   "derived": {
-    "derivation_version": 1,
+    "derivation_version": 2,
     "explanation_key": "battery_review",
     "explanation_params": {
       "allow_grid_charge": true,
+      "can_discharge": true,
+      "can_hold": true,
       "capacity_kwh": 10.0,
       "chemistry": "lfp",
       "max_charge_kw": 5.0,
@@ -35,6 +37,9 @@
     "group": "storage",
     "params": {
       "allow_grid_charge": true,
+      "battery_commands": [],
+      "battery_power": "commanded",
+      "can_hold": true,
       "capacity_kwh": 10.0,
       "charge_eff": 0.95,
       "chemistry": "lfp",
@@ -51,6 +56,7 @@
       "power_entity": null,
       "power_step_w": 100.0,
       "reserve_soc": 20.0,
+      "self_use": false,
       "soc_entity": null,
       "store": "energy",
       "substitutable": false,
@@ -61,8 +67,11 @@
     "strategy": "peak_shave",
     "strategy_params": {
       "allow_grid_charge": true,
+      "can_discharge": true,
+      "can_hold": true,
       "max_soc": 100.0,
-      "reserve_soc": 20.0
+      "reserve_soc": 20.0,
+      "self_use": false
     }
   },
   "type": "battery"

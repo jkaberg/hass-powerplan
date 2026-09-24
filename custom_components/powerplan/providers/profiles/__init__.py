@@ -15,7 +15,7 @@ generic ones rather than through a profile per brand (HLD §6.4, D4 §11).
 """
 
 from . import (
-    battery_mode,
+    battery_vocabulary,
     easee_ble,
     easee_cloud,
     generic_climate,
@@ -23,9 +23,7 @@ from . import (
     generic_switch,
     goecharger_api2,
     ocpp,
-    output_limit,
     peblar,
-    power_command,
     v2c,
     wallbox,
     zaptec,
@@ -72,7 +70,7 @@ __all__ = [
     "RoleBinding",
     "SessionState",
     "StatusVocabulary",
-    "battery_mode",
+    "battery_vocabulary",
     "best",
     "declared_scale",
     "easee_ble",
@@ -87,9 +85,7 @@ __all__ = [
     "match",
     "numeric_binding",
     "ocpp",
-    "output_limit",
     "peblar",
-    "power_command",
     "quantise_down",
     "register",
     "v2c",

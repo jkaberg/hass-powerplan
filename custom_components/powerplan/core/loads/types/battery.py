@@ -19,8 +19,13 @@ What the type stands for:
   battery charges from surplus only - `Demand.import_w` is 0 and D6 grants it
   the measured surplus and nothing from the grid (D6 §5.3; `design/DECISIONS.md`
   D-0209, D-0651).
-* **Fail-safe** (INV-64): the release value is 0 W - an inverter left at zero
-  neither drains nor overcharges, and the inverter's own controller resumes.
+* **Fail-safe** (INV-64): the release is the inverter's own self-use (the
+  `battery` kind) or 0 W on a bare number (`MODULATE`) - neither drains the
+  battery below what the inverter itself allows.
+* **Four commands** (D4 §4.2): a profile's row says which of self-use,
+  hold, charge and discharge it can do, and whether it writes the watts or the
+  inverter sets them; the type materialises that (INV-66) and the plan never
+  asks for a command the row lacks (D5 §5.8).
 """
 
 from dataclasses import dataclass
@@ -29,7 +34,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
-from ..kinds.battery_mode import BatteryMode, BatteryModeCfg
+from ..kinds.battery import ALL_COMMANDS, BatteryCfg, BatteryCommand, BatteryKind
 from ..kinds.modulate import Modulate, ModulateCfg
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.energy import EnergyStore
@@ -41,22 +46,47 @@ if TYPE_CHECKING:
     from ..stores.base import StoreModel
 
 __all__ = [
-    "BATTERY_MODE_CAPABILITY",
     "CHEMISTRIES",
+    "COMMAND_CAPABILITY",
     "DERIVATION_VERSION",
+    "INVERTER_POWER_CAPABILITY",
     "OUTPUT_ONLY_CAPABILITY",
     "Battery",
     "Chemistry",
+    "battery_capabilities",
 ]
 
-#: What a profile says of an inverter that takes a mode, not a power (D4 §5.9).
-BATTERY_MODE_CAPABILITY: Final = "battery_mode"
-#: What a profile says of a plug-in battery powerplan may only set the output of
-#: (D4 §5.9): its own panels charge it, the command never does.
+#: A command a profile's row can do, as a capability: `battery:hold` (D4 §6.6).
+COMMAND_CAPABILITY: Final = "battery:{command}"
+#: What a row says of an inverter that sets the power itself (a mode, a floor).
+INVERTER_POWER_CAPABILITY: Final = "battery_power:inverter"
+#: What a row says of a battery the command never charges - a plug-in battery
+#: its own panels charge (D4 §5.9): grid charging is not asked.
 OUTPUT_ONLY_CAPABILITY: Final = "output_only"
 
-#: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 1
+#: Bumped whenever a table below changes (INV-66). 2: the four commands.
+DERIVATION_VERSION: Final = 2
+
+
+def battery_capabilities(
+    commands: frozenset[BatteryCommand], *, inverter_power: bool = False
+) -> frozenset[str]:
+    """Return the capabilities a row publishes for its commands (D4 §6.6)."""
+    found = {COMMAND_CAPABILITY.format(command=command) for command in commands}
+    if inverter_power:
+        found.add(INVERTER_POWER_CAPABILITY)
+    if BatteryCommand.CHARGE not in commands:
+        found.add(OUTPUT_ONLY_CAPABILITY)
+    return frozenset(found)
+
+
+def _commands(capabilities: frozenset[str]) -> frozenset[BatteryCommand]:
+    """Return the commands the capabilities name, empty for a bare number."""
+    return frozenset(
+        command
+        for command in BatteryCommand
+        if COMMAND_CAPABILITY.format(command=command) in capabilities
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +159,7 @@ QUESTIONNAIRE = Questionnaire(
             kind=QuestionKind.BOOL,
             default=True,
             help_key="battery_grid_charge",
+            unless=OUTPUT_ONLY_CAPABILITY,
         ),
         Question(
             key="chemistry",
@@ -178,7 +209,7 @@ class Battery:
     """A home battery: signed power, a reserve, a usable window."""
 
     key: ClassVar[str] = "battery"
-    kinds: ClassVar[tuple[str, ...]] = ("modulate", "battery_mode")
+    kinds: ClassVar[tuple[str, ...]] = ("modulate", "battery")
     #: `peak_shave` claims discharge for a threatened ceiling first and lets
     #: `arbitrage` plan the rest - the safer default (D5 §5.8); `always`
     #: stays offered for a household that wants no price steering at all.
@@ -197,9 +228,19 @@ class Battery:
         max_discharge_w = answers.number("max_discharge_kw") * 1000.0
         reserve = answers.number("reserve_pct")
         max_soc = answers.number("max_soc")
+        commands = _commands(ctx.capabilities)
+        can_charge = not commands or BatteryCommand.CHARGE in commands
+        grid_charge = answers.flag("allow_grid_charge") and can_charge
         params: dict[str, Any] = {
-            # An inverter that takes a mode, not a power (GoodWe, Sigenergy; D4 §5.9).
-            "kind": "battery_mode" if BATTERY_MODE_CAPABILITY in ctx.capabilities else "modulate",
+            # A profile's row (D4 §5.9): the four commands; a bare number: MODULATE.
+            "kind": "battery" if commands else "modulate",
+            "battery_commands": sorted(str(command) for command in commands),
+            "battery_power": (
+                "inverter" if INVERTER_POWER_CAPABILITY in ctx.capabilities else "commanded"
+            ),
+            # A bare number holds at 0 W and has no self-use of its own (D6 §5.3).
+            "can_hold": not commands or BatteryCommand.HOLD in commands,
+            "self_use": BatteryCommand.SELF_USE in commands,
             "store": "energy",
             "chemistry": chemistry_key,
             "capacity_kwh": capacity,
@@ -210,12 +251,12 @@ class Battery:
             "nameplate_w": max_charge_w,
             "max_charge_w": max_charge_w,
             # A plug-in battery charges from its own panels: the command is output only.
-            "command_charge_w": 0.0 if OUTPUT_ONLY_CAPABILITY in ctx.capabilities else max_charge_w,
+            "command_charge_w": max_charge_w if can_charge else 0.0,
             "max_discharge_w": max_discharge_w,
             "reserve_soc": reserve,
             "min_soc": reserve + _RESERVE_MARGIN_PCT,
             "max_soc": max_soc,
-            "allow_grid_charge": answers.flag("allow_grid_charge"),
+            "allow_grid_charge": grid_charge,
             "soc_entity": answers.get("soc_entity"),
             "power_entity": answers.get("power_entity"),
             "power_step_w": POWER_STEP_W,
@@ -229,7 +270,10 @@ class Battery:
             strategy_params={
                 "reserve_soc": reserve,
                 "max_soc": max_soc,
-                "allow_grid_charge": answers.flag("allow_grid_charge"),
+                "allow_grid_charge": grid_charge,
+                "can_hold": params["can_hold"],
+                "can_discharge": not commands or BatteryCommand.DISCHARGE in commands,
+                "self_use": params["self_use"],
             },
             # Between the thermal loads and the EV: a battery is a means, not a
             # comfort, and the ladder discharges it before any comfort shed
@@ -244,7 +288,9 @@ class Battery:
                 "reserve_pct": reserve,
                 "max_charge_kw": answers.number("max_charge_kw"),
                 "max_discharge_kw": answers.number("max_discharge_kw"),
-                "allow_grid_charge": answers.flag("allow_grid_charge"),
+                "allow_grid_charge": grid_charge,
+                "can_hold": params["can_hold"],
+                "can_discharge": not commands or BatteryCommand.DISCHARGE in commands,
             },
             derivation_version=DERIVATION_VERSION,
         )
@@ -263,17 +309,26 @@ class Battery:
         )
 
     def _kind(self, cfg: LoadConfig) -> ControlKind:
-        """Return the signed `MODULATE` kind in watts over `BATTERY_POWER_SET` (§4.2).
+        """Return the battery's four commands, or the signed `MODULATE` kind in watts.
 
-        A mode inverter's battery is `BATTERY_MODE` instead: charge, discharge or
-        its own mode, at the inverter's own power (D4 §5.9).
+        A profile's row (D4 §5.9) is the `battery` kind: self-use, hold, charge and
+        discharge, whichever the row has. A bare number (`generic_number`) is a
+        signed `MODULATE` over `BATTERY_POWER_SET` (§4.2).
         """
         params = cfg.params
-        if params.get("kind") == "battery_mode":
-            return BatteryMode(
-                BatteryModeCfg(
-                    charge_w=float(params.get("max_charge_w", 5000.0)),
+        if params.get("kind") == "battery":
+            listed = params.get("battery_commands") or [str(c) for c in ALL_COMMANDS]
+            step = float(params.get("power_step_w", POWER_STEP_W))
+            return BatteryKind(
+                BatteryCfg(
+                    commands=frozenset(BatteryCommand(str(c)) for c in listed),
+                    charge_w=float(
+                        params.get("command_charge_w", params.get("max_charge_w", 5000.0))
+                    ),
                     discharge_w=float(params.get("max_discharge_w", 5000.0)),
+                    commanded=params.get("battery_power", "commanded") != "inverter",
+                    step_w=step,
+                    tolerance_w=step,
                 )
             )
         return Modulate(
@@ -334,7 +389,9 @@ class Battery:
             target=target,
             floor=reserve,
             ceiling=target,
-            violated=soc is not None and soc < reserve,
+            # Materially below: an inverter set to the reserve rests exactly on it,
+            # and a 5 kW grid charge for a hair under it would flap.
+            violated=soc is not None and soc < reserve - _RESERVE_MARGIN_PCT,
             deficit=0.0 if soc is None else target - soc,
             direction="heat",
         )
@@ -410,6 +467,7 @@ class Battery:
             max_value=float(load.config.params.get("max_charge_w", 5000.0)),
             held=load.kind.current(ctx.reads),
             last_restore_at=state.last_target_restore_at,
+            answer=None if grant is None else grant.answer,
         )
 
 

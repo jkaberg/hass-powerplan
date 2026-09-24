@@ -974,7 +974,8 @@
               "restore_mode": "Gitt tilbake",
               "battery_charge": "Lader",
               "battery_discharge": "Utlader",
-              "battery_hold": "I sin egen modus",
+              "battery_hold": "Holder på ladingen",
+              "battery_self_use": "I sin egen modus",
               "switch_on": "Slått på",
               "paused": "Satt på pause",
               "not_granted": "Ingen strøm satt av til den nå",
@@ -1241,6 +1242,10 @@
     "engine_failing": {
       "title": "PowerPlan kjører i nødmodus",
       "description": "PowerPlan feilet {failures} ganger på rad ({error}) og har sluttet å styre; alle apparater er latt være som de var. Start Home Assistant på nytt; kommer dette tilbake, meld det inn med loggen."
+    },
+    "battery_control_off": {
+      "title": "Et batteri styres ikke",
+      "description": "PowerPlan får ikke styrt **{load}** gjennom {integration}. Slå på {setting}, og start integrasjonen på nytt. Til da går batteriet av seg selv."
     },
     "load_error": {
       "title": "Et apparat står på vent",
@@ -1607,6 +1612,13 @@
         "v2c": "V2C (lokal)",
         "wallbox": "Wallbox (skytjeneste)",
         "zaptec": "Zaptec (skytjeneste)",
+        "foxess_modbus": "Fox ESS-batteri",
+        "fronius_modbus": "Fronius-batteri (Modbus)",
+        "marstek_modbus": "Marstek Venus-batteri",
+        "saj_h2_modbus": "SAJ-batteri",
+        "solaredge_modbus_multi": "SolarEdge-batteri",
+        "solax_modbus_sofar": "Sofar-batteri",
+        "homewizard": "HomeWizard-batterigruppe",
         "huawei_solar": "Huawei-batteri",
         "solax_modbus": "SolaX-batteri",
         "goodwe": "GoodWe-batteri",
@@ -1887,9 +1899,10 @@
         "mode_saving": "Energisparing: {value}",
         "mode_comfort": "Komfort: {value}",
         "restore_mode": "Gitt tilbake på {value}",
-        "battery_charge": "Lader: {value}",
-        "battery_discharge": "Utlader: {value}",
-        "battery_hold": "I sin egen modus: {value}",
+        "battery_charge": "Lader",
+        "battery_discharge": "Utlader",
+        "battery_hold": "Holder på ladingen",
+        "battery_self_use": "I sin egen modus",
         "switch_on": "Slått på",
         "paused": "Satt på pause",
         "not_granted": "Ingen strøm satt av til den nå",

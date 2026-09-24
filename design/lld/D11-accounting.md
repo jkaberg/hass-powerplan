@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| HLD section | §6.11, §10 decision 8 (re-settled v0.5.2) |
+| HLD section | §6.11, §10 decision 8 |
 | Depends on | D3 (`LoadMeter` slots, closed windows, import/export), D1 (curves, `Money`, slot confidence), D2 (`bill`, `record_counterfactual`), D4 (store models, `Demand`, learned parameters, target profiles), D10 (outdoor temperature, fit quality) |
 | Consumers | D7 (planning loop, Snapshot, store), D8 (sensors, events), D9 (`BacktestMetrics`, scenarios) |
 | Invariants owned | INV-68, INV-69 |
@@ -46,19 +46,20 @@
 ```
 custom_components/powerplan/core/accounting/
 ├── __init__.py
-├── ledger.py        Ledger, LoadMonthRec, SiteMonthRec, MonthClosed, Lifetime, month_key(), rollover()
+├── ledger.py        Ledger, LoadMonthRec, SiteMonthRec, MonthClosed, Lifetime, month_key(), rollover(), Money helpers
 ├── pricing.py       price_slot(), export_credit(), reprice(), capacity_fee_to_date()
 ├── savings.py       load_savings(), site_savings(), kwh_shifted(), confidence(), calibration()
-├── close.py         Accounting.close_slot(): the once-per-slot step the planning loop calls
+├── close.py         Accounting.close_slot(), ClosedSlot, CloseCtx: the once-per-slot step the planning loop calls
 ├── reference.py     ReferenceKind, reference_of(kind), settle(): the headline counterfactual (§5.9)
 └── shadow/
-    ├── base.py      Shadow protocol, ShadowState, ShadowCtx, registry (by store-model kind)
+    ├── base.py      Shadow protocol, ShadowState, ShadowCtx, LoadParams, registry (by store-model kind)
     ├── thermostat.py   SlabStore / RoomStore / heat pump: hold the target profile, draw when below
     ├── tank.py         TankStore: thermostat at charge_setpoint, draw-off profile, legionella pass-through
     ├── plug_in.py      EnergyStore (ev): charge at max_w from plug-in until required_kwh is delivered
     ├── on_request.py   appliance_cycle: run the profile from the request slot
     ├── schedule.py     generic_switch: hours_per_day spread evenly over the local day
-    └── idle.py         battery: never charges, never discharges
+    ├── idle.py         battery without its own self-use: never charges, never discharges
+    └── self_use.py     battery with one: the inverter's own self-use, from the site's measured flows
 ```
 
 Public API (the rest is private):
@@ -280,9 +281,10 @@ The other rows as built (D-0380…D-0383):
 
 | kind | module | built |
 |---|---|---|
-| `tank` | `tank.py::TankShadow` | the dial is `LoadParams.charge_setpoint` = the subentry's `anchor_c` (`min(ready_temp_c, max_c)`, D-0203); hysteresis 2 K (`LoadParams`' default, `tests/sim/tank.py`'s own); heat in over `C_tank = capacity_kwh_per_unit()`, standby and draw-off out over the water's `C_tank · η` (`charge_eff` = `TankStore.eta`) - the formula above with the element's η paid once, on the way in, as D4 §4.3 does; one-minute sub-steps with the slot's draw-off spread over them. `ShadowCtx.target` (the real load's comfort floor) is not read, so `vacation` changes nothing. **Legionella:** while `legionella_active`, the slot's kWh is the real slot's (`measured_kwh`) and the two net to zero exactly; the shadow's own level goes on under its thermostat, so it leaves the cycle where a plain tank would be. The flag is the tank's in-progress latch, which D4 §5.12 in code sets when the 24 h lead window opens - the pass-through covers the lead window and the hold (D-0382). Measured against `tests/sim/tank.py`: an idle day 1.469 kWh against 1.443 |
-| `schedule` | `schedule.py::ScheduleShadow` | `nameplate · hours_per_day / 24 · dt` with `hours_per_day` from the subentry; stateless; a DST day runs 23/24 or 25/24 of the quota (D-0383) |
+| `tank` | `tank.py::TankShadow` | the dial is `LoadParams.charge_setpoint` = the subentry's `anchor_c` (`min(ready_temp_c, max_c)`, D-0203), hysteresis 2 K (`LoadParams`' default, `tests/sim/tank.py`'s own). Heat in over `C_tank = capacity_kwh_per_unit()`, standby and draw-off out over the water's `C_tank · η` (`charge_eff` = `TankStore.eta`), so the element's η is paid once, on the way in, as D4 §4.3 does. One-minute sub-steps with the slot's draw-off spread over them. `ShadowCtx.target` (the real load's comfort floor) isn't read, so `vacation` changes nothing. **Legionella:** while `legionella_active` the slot's kWh is the real slot's (`measured_kwh`) and the two net to zero exactly, and the shadow's own level goes on under its thermostat, so it leaves the cycle where a plain tank would be. The flag is the tank's in-progress latch, set when the 24 h lead window opens (D4 §5.12), so the pass-through covers the lead window and the hold (D-0382). Against `tests/sim/tank.py` an idle day reads 1.469 kWh against 1.443 |
+| `schedule` | `schedule.py::ScheduleShadow` | `nameplate · hours_per_day / 24 · dt` with `hours_per_day` from the subentry, stateless; a DST day runs 23/24 or 25/24 of the quota (D-0383) |
 | `battery` | `idle.py::IdleShadow` | `kwh = 0`; the measured SoC is carried as the level and read by nothing |
+| `battery` with self-use | `self_use.py::SelfUseShadow` | the house's net before the battery, `n = grid − battery` per slot (INV-19 signs, battery positive charging, D3's grid and the battery's `LoadMeter`), drives an `EnergyStore` with the load's own capacity, limits, efficiencies and reserve: it charges `min(−n, max_charge)` when `n < 0` and discharges `min(n, max_discharge)` when `n > 0`, within `[reserve, max_soc]`, starting at the measured SoC of the first counted slot. It never charges from the grid. `kwh` is its signed energy, priced by the surplus rule like the real battery's (D-0671) |
 
 **Anchoring, the tank's exception (D-0381).** A tank shadow takes a measured level once, at the first close that has one, and is never re-anchored after: its dial holds it inside its band so there's no drift, and the level powerplan steers the real tank to (its comfort floor) is exactly the difference being measured - pulled onto it at a rollover the shadow would book a reheat no plain tank needed. Until a level is measured it starts from its dial. Note that `_blind_for_a_day` measures time since the last anchor, not time without a level, so every other shadow with a measured level is re-anchored daily in `auto` and not only after a day of blindness as (c) says.
 
@@ -348,11 +350,12 @@ Under Norgespris and Tensio's energy charge the whole price signal is 0.14 NOK/k
 
 | Reference | Kinds | Buffer opens | Settles | `cf_kwh` per slot |
 |---|---|---|---|---|
-| `day` | `slab`, `room`, `heat_pump`, `tank`, `schedule` | first counted slot of a local day | the slot that ends the local day; else the first slot of a later day; else the month's rollover | `E × minutes_s / Σ minutes` - the day's own energy spread evenly over the day's buffered slots |
-| `session` | `energy` (EV) | the first slot whose `Demand.wants` is true | the first slot whose `wants` is false (that slot included - the car charged until it stopped, D-0269); a session open 7 days; the rollover | the session's own energy at the charger's full rate (`max_w`, else `nameplate_w`) from the session's first slot - `price_session`; no SoC needed |
-| `run` | `cycle` | the first slot whose `wants` is true (the request) | as `session` | the on-request shadow's per-slot kWh (§5.3), scaled so the run's sum is the run's own energy; a run whose shadow drew nothing is `cf:= actual` |
-| `idle` | `battery` | - (settles at once) | the same slot | 0 |
-| `none` | `none` | - | the same slot | `cf:= actual`, `savings_confidence = none` |
+| `day` | `slab`, `room`, `heat_pump`, `tank`, `schedule` | first counted slot of a local day | the slot that ends the local day; else the first slot of a later day; else the month's rollover | `E × minutes_s / Σ minutes`, the day's own energy spread evenly over its buffered slots |
+| `session` | `energy` (EV) | the first slot whose `Demand.wants` is true | the first slot whose `wants` is false (that slot included, the car charged until it stopped, D-0269); a session open 7 days; the rollover | the session's own energy at the charger's full rate (`max_w`, else `nameplate_w`) from the session's first slot, `price_session`; no SoC needed |
+| `run` | `cycle` | the first slot whose `wants` is true (the request) | as `session` | the on-request shadow's per-slot kWh (§5.3), scaled so the run's sum is the run's own energy; a run whose shadow drew nothing is `cf := actual` |
+| `idle` | `battery` without self-use | - (settles at once) | the same slot | 0 |
+| `self_use` | `battery` with self-use | - (settles at once) | the same slot | the self-use shadow's signed kWh for the slot. Nothing is fitted, its inputs are measured flows and the questionnaire's numbers (D-0671) |
+| `none` | `none` | - | the same slot | `cf := actual`, `savings_confidence = none` |
 
 Whatever the kind, a slot settles at once with `cf := actual` when the mode is `observe` (powerplan did nothing, so it saved nothing - the slot still calibrates the model), `delegated` or `off` (`excluded_slots`), the tank's legionella cycle is running (the protection is due with or without powerplan), or an EV or cycle is outside a session or run.
 
@@ -497,6 +500,7 @@ Items 4–9 and 13 state the **model** figure. The reference:
 34. `price_paid` and `price_reference` over two loads equal `Σ settled_cost / Σ cf_kwh` and `Σ cf_cost / Σ cf_kwh`; a load with reference `none` is left out; under 0.1 kWh counted both are `None`; their difference times `kwh_counted` equals the loads' settled savings to the øre.
 35. `reset_accounting` on a ledger holding a 3 593 kWh slot: afterwards the month's cost, savings and every load's rec are zero, `since` is the reset, the month is `partial`, and the next settled close bills the capacity fee from a zero baseline.
 36. `PeakHistory.reset_counterfactual(period)` sets every counterfactual day of that period to the actual one, leaves other periods and overrides alone, and the next counterfactual bill equals the actual bill.
+37. The self-use counterfactual: a sunny day with a 10 kWh battery whose row has self-use, noon 5 kWh net export and evening 4 kWh net import before the battery. The shadow stores 5 × 0.95 kWh and gives back what the evening needs down to the reserve. A day on which powerplan did exactly that saves 0. A day on which it also grid-charged at night for a 17:00 peak saves the difference, and only that. A `generic_number` battery keeps `idle` (§9 9).
 
 ---
 
@@ -531,3 +535,5 @@ Items 4–9 and 13 state the **model** figure. The reference:
 **Ask "when does it usually run?" for `generic_switch`.** *For:* an honest counterfactual for a pool pump on a timer. *Against:* one more question for a marginal load, and most users answer "whenever". The even spread at the daily mean price is the neutral assumption and the review step says so. **Decision:** even spread, an Advanced question can come with the v1.x weekly editor.
 
 **Only compute savings in the backtest, never live.** *For:* no live model to get wrong, and the backtest has hindsight and the full simulator. *Against:* the household asks "what did it save this month" of a sensor, not a CLI, and the observe-mode calibration only exists live. **Decision:** a live ledger with confidence; the backtest produces the same `BacktestMetrics` through the same `Accounting` class.
+
+**Keep the idle battery as the counterfactual.** *For:* no model, no battery meter, one line. *Against:* without powerplan a hybrid inverter runs its own self-use, charging from the sun and discharging into the evening. The idle house books all of that as powerplan's savings, which is the inverter's work. INV-69 asks that only the policy differs, and the policy without powerplan is the inverter's. On a solar house the self-use value dwarfs what arbitrage adds, so the headline would be mostly someone else's number. **Decision:** `self_use` for a battery whose row has self-use, `idle` for one without (a bare number, which does nothing without powerplan).

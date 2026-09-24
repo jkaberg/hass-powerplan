@@ -407,7 +407,8 @@ def load_reads(  # noqa: PLR0911 - one branch per device type (D4's eight)
             )
         )
     if kind == "battery":
-        # The inverter's setpoint entity, its state of charge and its power (D4 §6.6).
+        # The inverter's setpoint entity, its state of charge and its power (D4 §6.6);
+        # a commanded battery reads its command back off its levers.
         return LoadReads(
             reads=core_reads(
                 at,
@@ -416,6 +417,7 @@ def load_reads(  # noqa: PLR0911 - one branch per device type (D4's eight)
                     Role.SOC: step.values[SOC],
                     Role.POWER: step.power_w,
                 },
+                texts={Role.BATTERY_COMMAND: sim.command} if sim.command is not None else None,
             )
         )
     raise NotImplementedError(f"no read adapter for type {kind!r} yet (D9 §3 runner)")
@@ -554,11 +556,17 @@ class HouseDriver:
         if house.production is not None:
             self.production_w = -house.production.at(now)
             total_w -= self.production_w
-        for load in house.loads:
+        # A battery its inverter balances is stepped last, against the rest.
+        balancing = [
+            load for load in house.loads if getattr(house.sims[load.load_id], "self_use", False)
+        ]
+        for load in [*[each for each in house.loads if each not in balancing], *balancing]:
             sim = house.sims[load.load_id]
             command = pending[load.load_id]
             if load.config.type_key == "ev" and flap_until is not None and now < flap_until:
                 sim.offline_until = flap_until
+            if load in balancing:
+                sim.house_w = total_w + sum(p.power_w for p in self.passive_steps.values())
             step = sim.step(TICK_S, command, env)
             pending[load.load_id] = None
             self.steps[load.load_id] = step

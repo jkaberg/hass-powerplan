@@ -157,6 +157,8 @@ class Command:
     start: bool = False
     #: A signed power setpoint in watts - an inverter's (`sim/battery.py`).
     power_w: float | None = None
+    #: A battery's command - `self_use`, `hold`, `charge:W`, `discharge:W`.
+    battery: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -34,7 +34,7 @@ Runs the appliance whenever it wants to, as if PowerPlan were not there. PowerPl
 <a name="arbitrage"></a>
 ## Buy low, sell high
 
-Charges the battery in the cheapest hours and discharges it in the dearest, when the difference pays for the losses. It keeps the reserve you set.
+Charges the battery in the cheapest hours and discharges it in the dearest, when the difference pays for the losses. In between, the battery runs on its own; where that would spend the charge a dearer hour needs, PowerPlan holds it. It keeps the reserve you set.
 
 | | |
 |---|---|
@@ -89,7 +89,7 @@ Stores heat in the floor, the room or the tank when power is cheap, a little abo
 <a name="peak_shave"></a>
 ## Shave the peaks
 
-Discharges the battery when the home would otherwise go over your target, and recharges it when there is room. It keeps the reserve you set.
+Discharges the battery when the home would otherwise go over your target, and recharges it when there is room. It holds the charge until the hours that need it. It keeps the reserve you set.
 
 | | |
 |---|---|

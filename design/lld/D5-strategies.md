@@ -245,6 +245,15 @@ Cooling: the signs flip (`store.direction`).
 
 `_rows` prices each slot twice: `charge_price` is `effective_price` at the charge cap, and without `allow_grid_charge` the cap is the surplus alone; `discharge_price` is `p_in` where no surplus is left after the loads above (the house imports) and `min(p_out, p_in)` where some is. `_candidates` pairs on those, `_simulate` stops a sunny charge at `surplus_priority_soc`, and `peak_shave`'s reserve charges the cheapest `charge_price` rows within their caps. Both are strategy fields (`allow_grid_charge`, `surplus_priority_soc`, advanced). In the tick the battery's demand says `import_w = 0` (D6 §5.3): the grid only charges it where its plan charges, and a slot the plan leaves `None` charges from the measured surplus alone (D-0651).
 
+**The free slot and the hold** (HLD INV-30, PLAN dec. 44). A battery's plan answers per slot with one of D4 §4.2's four commands: `None` is self-use, `0` is hold, ±w is charge or discharge. Simulating an uncommitted slot as kept energy is wrong - `None` reaches the inverter as its own self-use, which spends that energy on the house. So:
+
+1. **A free slot is simulated as self-use** when the battery has one (`self_use` in its capabilities, D4 §6.6) or D6 follows for it. It discharges into the slot's forecast import (baseline + the planned loads above it − production, D10), up to `max_discharge_w` and down to `reserve_soc`, and charges from the slot's forecast surplus after the loads above it, up to `max_charge_w` and to `min(max_soc, surplus_priority_soc)`. The efficiencies are the store's.
+2. **Starvation turns free slots into holds.** After the ranking and `peak_shave`'s reservation, the walk checks each committed discharge and each reserve slot: does it get the energy it planned? If not, the free slots before it, back to the previous committed charge, become `0` (hold, which still charges from the sun), cheapest displaced import first, until it does - that's where the energy is worth least. A hold slot keeps `surplus_w` as its forecast surplus, so D6 still lets the sun fill it (D6 §5.3).
+3. **A battery that can't hold** (`can_hold = False`) skips step 2, and its arbitrage pairs are only taken where they pay with self-use in every free slot. The plan never counts on energy the hardware won't keep.
+Starvation is the energy a committed discharge loses to the drain compared to a run without it, so a discharge that's short because the battery runs low anyway stays the partial discharge it always was. A committed charge slot with nothing left to charge is a hold (`0`), never `None`: the plan meant to keep the battery full (D-0671).
+
+4. **Commands the row lacks are never planned**: no grid charge without `CHARGE` or without `allow_grid_charge`, and no forced discharge without `DISCHARGE`. `peak_shave` then relies on the self-use discharge in the capacity window, which displaces import exactly as a forced discharge bounded by import would (D6 §5.3).
+
 ### 5.9 Adoption and commitment (INV-32)
 
 ```
@@ -354,8 +363,10 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 
 22. Holding energy (D-0501): a slot `heat_capacitor` holds or banks in, or `best_save` leaves free, carries `hold_kwh` - the store's loss coefficient × (target − outdoor) where known, else the load's measured holding draw - and a coast or postponed slot carries none. `hold_kwh` is priced in `cost_estimate` and never counted in `planned_kwh` (`tests/core/strategies/test_22_holding_energy.py`).
 
-26. *(D-0628)* A kept plan that no longer fits: the EV plans beside a 4 kWh tank plan; the tank (higher priority) re-plans to 7.6 kWh in the same night slots; the EV's fresh plan is under the cost hysteresis, yet the EV adopts it, and no slot ahead holds more than the room + ε_w. A room that moves by less than ε_w keeps the plan (no churn, §9 3).
-27. *(D-0629)* A banked floor holding at +1 K (envelope `max_w`, 0 kWh, hold 0.04 kWh a quarter) reserves 160 W, not `max_w`, and the EV below it plans into the rest; a `deadline_fill` slot still reserves its envelope; a slot at `envelope_w = 0` reserves nothing.
+26. A kept plan that no longer fits (D-0628): the EV plans next to a 4 kWh tank plan, then the tank (higher priority) re-plans to 7.6 kWh in the same night slots. The EV's fresh plan is under the cost hysteresis, yet the EV adopts it, and no slot ahead holds more than the room + ε_w. A room moving by less than ε_w keeps the plan (no churn, §9 3).
+27. A banked floor holding at +1 K (envelope `max_w`, 0 kWh, hold 0.04 kWh a quarter) reserves 160 W, not `max_w`, and the EV below plans into the rest. A `deadline_fill` slot still reserves its envelope, and a slot at `envelope_w = 0` reserves nothing (D-0629).
+28. The held battery: 10 kWh, reserve 20 %, cheap midday at 0.10 and an evening peak at 0.40 from 17:00, a 2 kW baseline from 12:00 and no sun. Arbitrage charges the cheap slots and plans the evening discharge, and the free slots between are `0`, never `None`, so self-use can't spend the charge before 17:00. The same battery with `can_hold = False` takes no pair whose value self-use would spend first.
+29. Self-use in the simulation: on a sunny day with no committed slot the simulated SoC follows the forecast surplus and import. The plan is all `None` with no hold when nothing later needs the energy, and the hold only appears in front of a committed discharge or `peak_shave`'s reserve slot that would starve (INV-30).
 
 ## 10. Deliberately deferred
 
@@ -389,3 +400,5 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 23. The power tier (O23): LU, 7 kW reference power, 0.0765 €/kWh surcharge, an EV needing 30 kWh by 07:00. With a flat night spot it charges at 7 kW − baseline as long as the night allows and only crosses in the slots it needs. With a slot 30 øre cheaper, crossing there beats a later slot under the limit exactly when the saving exceeds 0.0765 €/kWh. The greedy equals brute force on (slot, tier) instances.
 24. A §14a Modul 3 heat pump is planned on its own curve (G13): its cheapest slots follow the Modul 3 NT windows even where the house's curve says otherwise.
 25. An HDO water heater has no energy planned outside its allowed windows (G14), and its demand is met inside them or reported at risk.
+
+**Simulate the free slot as idle and let the profile hold it.** *For:* the planner stays as it is, and the profile could write a hold whenever the plan is free - one change in D4, no forward model of the house's import. *Against:* a battery held in every free slot never does self-use, so it misses the one thing every hybrid inverter does well, and on a sunny day with no committed slot it exports the evening's energy at noon. Self-use also depends on the baseline forecast D10 already gives the planner. **Decision:** simulate self-use, and only hold where a later slot would starve.

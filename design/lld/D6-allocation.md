@@ -218,6 +218,18 @@ allocate():
 
 `allocator.py`: a load **follows** when its plan slot now has `surplus_w > 0` (its `grid_w` is the limit), or its plan charges and its demand limits import, or else when `Demand.import_w` is set - a modulating load always, a relay only at a limit of 0. The measured surplus is one pool per tick, `Σ following loads' draw − grid_w` (their draw is theirs to take again), taken in the walk's order, and a following load is capped at `grid limit + its share`, `capped_by = ("surplus",)`. A surplus-only load's clocks (`AllocState.sun_since`, `import_since`, persisted) start it after `SURPLUS_START_S` (60) with the pool at its floor (`min_surplus_w`, else its `min_w`, a relay's nameplate) and stop it after `SURPLUS_STOP_S` (300) running on import. A zero while it waits is "waiting for surplus", never a shed (INV-25). A **planned** discharge (a negative envelope) is granted at stage 0, bounded by the inverter and by what the house imports without it, so it displaces import and never exports. The battery's `import_w` is 0 outside `force`: the grid only charges it in a slot its plan charges (D-0651).
 
+**From the slot to the battery's command** (HLD INV-30, PLAN dec. 44). A grant of 0 going out as the profile's release is, on most profiles, the inverter's own self-use. So the walk also hands the battery's kind the slot's answer (D4 §4.2):
+
+| the slot | the tick | the command |
+|---|---|---|
+| no plan (`None`) and a battery with its own self-use | no grant is computed, the inverter balances | `SELF_USE` |
+| no plan, and a battery without one (`generic_number`, a passive mode, a bare setpoint) | follows the meter: charges from the measured surplus and discharges into the measured import at stage 0, bounded by `max_discharge_w` and `reserve_soc`, never exporting | `CHARGE` / `DISCHARGE` / `HOLD` at 0 |
+| `0` (hold), sun or not | only follows the measured surplus (`import_w = 0`), never discharges | `HOLD`, or `CHARGE` at the surplus where the row's power is commanded |
+| `+w` | the grid tier where the plan charges from the grid, the surplus where it follows | `CHARGE` at the grant |
+| `−w` | bounded by the inverter and by what the house imports without it | `DISCHARGE` at the grant |
+
+A stage ≥ 1 discharge (step 0a) overrides any of these with `DISCHARGE`. `Grant.answer` carries the slot's answer, and `_decide_battery` does the hold and the bare-number battery's balancing, which stops at stage ≥ 1 and at the reserve (`min_w = 0`). A battery whose row sets its own power (`power = inverter`: a mode or a floor) is counted at its whole inverter while it charges, and at the forecast self-use while it self-uses, which only lowers import (§5.4's relay rule). Its discharge is the self-use discharge, which the walk counts as 0 against the ceiling, like any load that lowers import (D-0671).
+
 ### 5.4 The ladder (INV-36, INV-38)
 
 | stage | trigger (projection from `P_smooth`, τ = 120 s) | action |
@@ -393,10 +405,12 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 22. PI sign: a binding window closed at 80 % utilisation lowers `r_trim`, one at 102 % raises it, and neither moves on a non-binding window.
 23. A 0 W grant to a charging EV without `stop_ok` gives the floor (6 A), never a hold at the previous amps, and `P_free` is charged the floor.
 
-24. *(Phase 7)* Surplus following: in a slot planned with `grid_w = 1 kW` and `surplus_w = 3 kW`, a charger's grant tracks the measured surplus as it falls from 3 kW to 0.5 kW and never makes grid import exceed 1 kW; a surplus-only load starts after 60 s of surplus above `min_surplus_w` and stops after 300 s of import; the ceiling, circuits and stages still cap every grant.
-25. *(Phase 7)* Tick-level battery discharge: at stage ≥ 1 with `soc > reserve_soc` the battery is granted `−min(deficit_w, max_discharge_w)` before any comfort shed; at stage 0 the plan governs; below `reserve_soc` it is never discharged.
-26. *(O23)* A priced limit is no hard limit: LU with a 7 kW reference power - an EV whose plan priced 11 kW in a slot is granted 11 kW, stage 0; with no plan it is granted what keeps the site at 7 kW; `P_hard` is the fuse; stage 4 never follows from the priced limit however long it is exceeded (INV-36).
-27. *(O23)* A tripping limit is unchanged: ES P1 4.6 kW with 10 % / 30 s tolerance still caps `P_allow` and raises `trip_risk` after 15 s over 5.06 kW (test 8's companion).
+24. Surplus following: in a slot planned with `grid_w = 1 kW` and `surplus_w = 3 kW`, a charger's grant tracks the measured surplus as it falls from 3 kW to 0.5 kW and never makes grid import exceed 1 kW. A surplus-only load starts after 60 s of surplus above `min_surplus_w` and stops after 300 s of import, and the ceiling, circuits and stages still cap every grant.
+25. Tick-level battery discharge: at stage ≥ 1 with `soc > reserve_soc` the battery is granted `−min(deficit_w, max_discharge_w)` before any comfort shed, at stage 0 the plan governs, and below `reserve_soc` it's never discharged.
+26. A priced limit isn't a hard limit (O23): LU with a 7 kW reference power - an EV whose plan priced 11 kW in a slot gets 11 kW at stage 0, with no plan it gets what keeps the site at 7 kW. `P_hard` is the fuse, and stage 4 never follows from the priced limit however long it's exceeded (INV-36).
+27. A tripping limit is unchanged: ES P1 4.6 kW with 10 % / 30 s tolerance still caps `P_allow` and raises `trip_risk` after 15 s over 5.06 kW (test 8's companion).
+28. The command from the slot: on a battery with its own self-use a `None` slot sends `SELF_USE` and no grant, and a `0` slot sends `HOLD`. At noon with 1.2 kW measured surplus a hold charges 1.2 kW on a commanded-power row and sends `HOLD` on a mode row, and never discharges. At stage ≥ 1 the discharge overrides the hold (INV-30, D4 §9 40).
+29. Following for a battery without self-use: a `generic_number` battery in a `None` slot with 800 W measured import and SoC above reserve gets −800 W, at 600 W of export +600 W. It never discharges below `reserve_soc` and never into export.
 ---
 
 ## 10. Deliberately deferred
@@ -423,3 +437,5 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 **Let comfort violators be capped by the ceiling.** *For:* never breach the tariff. *Against:* a step costs ~200 NOK/month, a cold bathroom costs trust in the whole system, and only one of them is recoverable. **Decision:** serve comfort, take the breach, say so loudly.
 
 **Running cycles sheddable.** *For:* more headroom in emergencies. *Against:* an interrupted dishwasher is a restarted dishwasher, the energy is spent twice. **Decision:** unsheddable below stage 4.
+
+**Let a battery's `None` slot be idle.** *For:* the walk stays simple, and a battery without a plan doing nothing is the easiest state to reason about under the ceiling. *Against:* every hybrid inverter's own self-use is why a household bought the battery. An idle battery exports noon's surplus and imports the evening's, and most profiles can't even express idle since their release is the self-use. **Decision:** `None` is self-use - the inverter's own where it has one, the walk's following where it has none.

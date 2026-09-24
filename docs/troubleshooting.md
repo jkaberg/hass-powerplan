@@ -24,6 +24,7 @@ What each repair PowerPlan raises means and what to do about it, and the common 
 | An appliance is not answering | no | `delegated_idle` |
 | Savings figure is uncertain | no | `savings_low_confidence` |
 | An appliance is on hold | no | `load_error` |
+| A battery is not steered | no | `battery_control_off` |
 | Notification service missing | no | `notify_service_missing` |
 | Electricity prices are not up to date | no | `prices_stale` |
 | An appliance's device is gone | no | `device_missing` |
@@ -31,6 +32,13 @@ What each repair PowerPlan raises means and what to do about it, and the common 
 <!-- generated:end repairs -->
 
 ## Repairs
+
+<a name="battery_control_off"></a>
+### A battery is not steered
+
+PowerPlan cannot read or change the battery's controls in its inverter's integration. Some integrations ship their controls switched off: SolarEdge Modbus Multi until **Power Control Options** is on, Fronius until **Inverter control via Modbus** is on in the inverter, Sigenergy until its read-only mode is off, and Marstek until its control entities are enabled. The repair names the setting. Until then the battery runs on its own, as it did before PowerPlan.
+
+**What to do:** Switch on the setting the repair names, then reload the integration. The repair clears by itself once PowerPlan reads the battery's controls again.
 
 <a name="engine_failing"></a>
 ### PowerPlan is in fallback mode

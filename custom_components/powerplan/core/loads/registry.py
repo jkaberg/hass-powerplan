@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .kinds.base import ControlKind
-from .kinds.battery_mode import BatteryMode, BatteryModeCfg
+from .kinds.battery import BatteryCfg, BatteryKind
 from .kinds.mode import ModeCfg, ModeKind
 from .kinds.modulate import Modulate, ModulateCfg
 from .kinds.setpoint import Setpoint, SetpointCfg
@@ -38,10 +38,11 @@ class KindEntry:
     config: Callable[..., Any]
 
 
-#: The four kinds of v1, and WP7.7's `battery_mode` (D4 §5.9). `sg_ready` is v1.x
-#: and lands as another row (D4 §10).
+#: The four kinds of v1, and the battery's four commands (D4 §4.2, WP7.9 - it
+#: replaced WP7.7's `battery_mode`). `sg_ready` is v1.x and lands as another row
+#: (D4 §10).
 CONTROL_KINDS: Mapping[str, KindEntry] = {
-    "battery_mode": KindEntry(key="battery_mode", kind=BatteryMode, config=BatteryModeCfg),
+    "battery": KindEntry(key="battery", kind=BatteryKind, config=BatteryCfg),
     "modulate": KindEntry(key="modulate", kind=Modulate, config=ModulateCfg),
     "setpoint": KindEntry(key="setpoint", kind=Setpoint, config=SetpointCfg),
     "mode": KindEntry(key="mode", kind=ModeKind, config=ModeCfg),

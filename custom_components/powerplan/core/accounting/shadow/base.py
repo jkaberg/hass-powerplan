@@ -65,6 +65,8 @@ class StoreKind(StrEnum):
     CYCLE = "cycle"
     SCHEDULE = "schedule"
     BATTERY = "battery"
+    #: A battery whose inverter has a self-use of its own (D11 §5.3).
+    BATTERY_SELF_USE = "battery_self_use"
     NONE = "none"
 
 

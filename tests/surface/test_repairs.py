@@ -255,3 +255,48 @@ async def test_10g_a_loads_low_confidence_for_a_week_raises_and_recovery_clears(
     watch.evaluate(now + timedelta(days=7, hours=2), ok)
     assert _issue(hass, site.entry_id, "savings_low_confidence_ev") is None
     assert "ev" not in watch.low_since
+
+
+async def test_42_a_battery_row_s_controls_off_names_the_setting(hass: HomeAssistant) -> None:
+    """D8 §9 42: unreadable for 15 min, or refusing, names the setting; a read clears."""
+    from types import SimpleNamespace  # noqa: PLC0415 - a fake runtime, this test's only
+
+    from custom_components.powerplan.providers.profiles import battery_vocabulary  # noqa: PLC0415
+
+    device = SimpleNamespace(bound=SimpleNamespace(row=battery_vocabulary.SOLAREDGE))
+
+    def snapshot(*, stale: bool, unhealthy: bool = False) -> Any:
+        health = SimpleNamespace(
+            stale_roles=("battery_command",) if stale else (), unhealthy=unhealthy
+        )
+        return SimpleNamespace(loads={"battery": SimpleNamespace(name="Battery", health=health)})
+
+    watch = repairs.RepairsWatch(
+        runtime=SimpleNamespace(build=SimpleNamespace(devices={"battery": device}))
+    )
+    start = __import__("datetime").datetime(2026, 9, 25, 12, tzinfo=__import__("datetime").UTC)
+
+    wanted, params = watch._battery_control_off(start, snapshot(stale=True))["battery"]
+    assert not wanted, "not fifteen minutes yet"
+    wanted, params = watch._battery_control_off(
+        start + timedelta(minutes=16), snapshot(stale=True)
+    )["battery"]
+    assert wanted
+    assert params == {
+        "load": "Battery",
+        "setting": "Power Control Options, in the integration's options",
+        "integration": "SolarEdge Modbus Multi",
+    }
+    assert watch._battery_control_off(start, snapshot(stale=False, unhealthy=True))["battery"][0], (
+        "a refused write raises it at once"
+    )
+    assert not watch._battery_control_off(start, snapshot(stale=False))["battery"][0]
+    assert "battery" not in watch.control_off_since, "a read clears the clock"
+
+    repairs.async_report(
+        hass, "entry", "battery_control_off_battery", active=True, placeholders=params
+    )
+    issue = _issue(hass, "entry", "battery_control_off_battery")
+    assert issue is not None
+    assert issue.learn_more_url is not None
+    assert issue.learn_more_url.endswith("troubleshooting.md#battery_control_off")

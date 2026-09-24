@@ -70,6 +70,9 @@ CATALOGUE: dict[str, Issue] = {
     "delegated_idle": Issue(ir.IssueSeverity.WARNING),
     "savings_low_confidence": Issue(ir.IssueSeverity.WARNING),
     "load_error": Issue(ir.IssueSeverity.WARNING),
+    # A battery row's controls stay unreadable or refuse writes: the setting the
+    # household must switch on is named (D8 §5.9).
+    "battery_control_off": Issue(ir.IssueSeverity.WARNING),
     "notify_service_missing": Issue(ir.IssueSeverity.WARNING),
     # No known price for the slot in progress for 30 min; the price refresher retries
     # and clears it (D12 §5.15 F12). Gone at restart: the refresher decides anew.
@@ -89,6 +92,8 @@ REGISTER_MISSING_AFTER = timedelta(hours=24)
 #: D8 §5.9: the integral's bias against the register, and for how many windows.
 SCALING_BIAS_FRACTION = 0.05
 SCALING_WINDOWS = 6
+#: D8 §5.9: a battery's command unreadable this long before the household is told.
+BATTERY_CONTROL_OFF_AFTER = timedelta(minutes=15)
 #: D11 §5.5: a load's calibration error over threshold this long before it is worth telling.
 SAVINGS_LOW_CONFIDENCE_AFTER = timedelta(days=7)
 
@@ -166,6 +171,8 @@ class RepairsWatch:
     #: unbroken; popped the moment it reads anything else (INV-63: calibration
     #: never changes a parameter, and this issue never either).
     low_since: dict[str, datetime] = field(default_factory=dict)
+    #: D8 §5.9, per battery: since when its command has been unreadable.
+    control_off_since: dict[str, datetime] = field(default_factory=dict)
 
     def evaluate(self, now: datetime, snapshot: Snapshot) -> None:
         """Compare the conditions to what is raised and change only what changed."""
@@ -188,6 +195,10 @@ class RepairsWatch:
             "tariff_review": {"kept": ", ".join(self.runtime.build.tariff_review)},
             "tariff_stale": {"operator": self.runtime.tariff_operator()},
         }
+        for load_id, (wanted, params) in self._battery_control_off(now, snapshot).items():
+            issue_id = f"battery_control_off_{load_id}"
+            conditions[issue_id] = wanted
+            placeholders[issue_id] = params
         for load_id, wanted in self._savings_low_confidence(now, snapshot).items():
             issue_id = f"savings_low_confidence_{load_id}"
             conditions[issue_id] = wanted
@@ -208,6 +219,36 @@ class RepairsWatch:
                 self.active.add(issue_id)
             else:
                 self.active.discard(issue_id)
+
+    def _battery_control_off(
+        self, now: datetime, snapshot: Snapshot
+    ) -> dict[str, tuple[bool, dict[str, Any]]]:
+        """D8 §5.9: a battery row whose controls stay unreadable or refuse writes.
+
+        Only a row that names a prerequisite - a setting the household switches on
+        (SolarEdge's Power Control Options) - raises it: its text names that setting.
+        """
+        found: dict[str, tuple[bool, dict[str, Any]]] = {}
+        for load_id, device in self.runtime.build.devices.items():
+            row = getattr(getattr(device, "bound", None), "row", None)
+            status = snapshot.loads.get(load_id)
+            if row is None or row.prerequisite is None or status is None:
+                continue
+            if "battery_command" in status.health.stale_roles:
+                since = self.control_off_since.setdefault(load_id, now)
+            else:
+                self.control_off_since.pop(load_id, None)
+                since = None
+            unreadable = since is not None and now - since >= BATTERY_CONTROL_OFF_AFTER
+            found[load_id] = (
+                unreadable or status.health.unhealthy,
+                {
+                    "load": status.name,
+                    "setting": row.prerequisite,
+                    "integration": row.title or row.platform,
+                },
+            )
+        return found
 
     def _meter_stale(self, now: datetime, snapshot: Snapshot) -> bool:
         """D8 §5.9: the power reading is older than ten minutes."""

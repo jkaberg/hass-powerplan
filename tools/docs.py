@@ -216,6 +216,7 @@ def render_strategies(_arg: str | None) -> str:
 
 #: How a control kind steers, in the household's words (D4 §5).
 _KINDS = {
+    "battery": "charges, holds and discharges it",
     "modulate": "sets the power or current",
     "switch": "turns it on and off",
     "mode": "sets its mode",

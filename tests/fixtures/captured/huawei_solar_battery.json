@@ -6,7 +6,7 @@
  "model": "LUNA2000",
  "written_at": "2026-09-22",
  "platform": "huawei_solar",
- "source": "Not captured: no house here owns a Huawei battery (D-0081). Written from wlcrs/huawei_solar (main): sensor.py's battery descriptions — state of capacity (%, device class battery), charge/discharge power (W, device class power, positive while charging), maximum charge and discharge power (W), running status (diagnostic); services.py's forcible charge/discharge actions address this device. The states are a battery at 55 % charging at 2.5 kW.",
+ "source": "Not captured: no house here owns a Huawei battery (D-0081). Written from wlcrs/huawei_solar (main): sensor.py's battery descriptions — state of capacity (%, device class battery), charge/discharge power (W, device class power, positive while charging), maximum charge and discharge power (W), running status (diagnostic); services.py's forcible charge/discharge actions address this device. The states are a battery at 55 % charging at 2.5 kW. Added 2026-09-25 (WP7.9) from number.py's `storage_maximum_discharging_power` (W, 0 to the battery's maximum, entity category config) — the hold — and sensor.py's `HuaweiSolarForcibleChargeEntity`, translated *Forcible charge*, whose state is `Stopped`, `Charging at {power}W for {minutes} minutes` or `Discharging at …` — the forced command's witness.",
  "entities": [
   {
    "attributes": {
@@ -62,7 +62,36 @@
    "last_changed": "2026-09-25T12:00:00+00:00",
    "last_updated": "2026-09-25T12:00:00+00:00",
    "state": "Running"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 5000,
+    "step": 1,
+    "mode": "auto",
+    "friendly_name": "Batteries Maximum discharging power"
+   },
+   "entity_id": "number.batteries_maximum_discharging_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Batteries Forcible charge",
+    "mode": "0",
+    "setting": "0",
+    "charge_power": 0,
+    "discharge_power": 0,
+    "target_soc": 0,
+    "duration": 0
+   },
+   "entity_id": "sensor.batteries_forcible_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Stopped"
   }
  ],
- "entity_count": 5
+ "entity_count": 7
 }

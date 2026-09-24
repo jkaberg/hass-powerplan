@@ -128,6 +128,9 @@ class Question:
     #: A capability the device must have for this question to be asked at all:
     #: `cool` for a heat pump's cooling mode. Left at its default otherwise.
     needs: str | None = None
+    #: A capability that makes this question moot: `output_only` for a battery's
+    #: grid charging, which a battery that cannot take a charge never does.
+    unless: str | None = None
 
     def default_for(self, ctx: QCtx) -> Any:
         """Resolve the default, calling it when it is a function of the context."""

@@ -1,0 +1,67 @@
+{
+ "name": "saj_h2_modbus_inverter",
+ "device": "SAJ",
+ "device_id": "3c2b1a0f9e8d7c6b5a49382716059483",
+ "manufacturer": "SAJ",
+ "model": "H2-8K-S2",
+ "platform": "saj_h2_modbus",
+ "source": "Not captured: no house here owns a SAJ H2 (D-0081). Written from stanus74/home-assistant-saj-h2-modbus v3.1.1: switch.py's Passive Charge Control and Passive Discharge Control, number.py's Passive Battery Charge Power and Passive Battery Discharge Power (no unit: per mille of the inverter's rate, 0–1100, step 100; README Passive Mode). The states are an inverter out of passive mode at 58 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "SAJ Passive Charge Control"
+   },
+   "entity_id": "switch.saj_passive_charge_control",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SAJ Passive Discharge Control"
+   },
+   "entity_id": "switch.saj_passive_discharge_control",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SAJ Passive Battery Charge Power",
+    "min": 0,
+    "max": 1100,
+    "step": 100
+   },
+   "entity_id": "number.saj_passive_bat_charge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SAJ Passive Battery Discharge Power",
+    "min": 0,
+    "max": 1100,
+    "step": 100
+   },
+   "entity_id": "number.saj_passive_bat_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SAJ Battery Energy Percent",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.saj_battery_energy_percent",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "58"
+  }
+ ],
+ "entity_count": 5
+}

@@ -282,6 +282,12 @@ The solar-and-battery part of HLD §9 phase 7, inside v1.0 (dec. 25). **Gate (si
 | **7.6 Battery profiles by power command** | `huawei_solar`, `solax_modbus`; `DeviceCall.then` | D4 §5.9, §5.10, §9 35-36 | D4 §9 35-36 | 7.5, 5.4 |
 | **7.7 Battery profiles by operating mode** | the `battery_mode` kind; `goodwe`, `sigen` | D4 §5.9, §9 37 | D4 §9 37 | 7.6 |
 | **7.8 Plug-in batteries: output only** | `anker_solix`, `ecoflow_cloud`, `zendure_ha` | D4 §5.9, §9 38 | D4 §9 38 | 7.6 |
+| **7.9 The battery's four commands** | one `battery` kind over `BatteryVocabulary` rows; the free slot as self-use; the `self_use` counterfactual | D4 §4.2, §5.9, §9 39-41; D5 §5.8; D6 §5.3; D11 §5.3; dec. 44 | D4 §9 39-41; D5 §9 28-29; D6 §9 28-29; D11 §9 37; `battery_holds_for_peak` | 7.8 |
+| **7.10 Mode then power** | SolarEdge, Fox ESS, Fronius Modbus, Marstek Modbus, SAJ, Sofar, Sigen; `battery_control_off` | D4 §5.9, §9 42; D8 §5.9 | D4 §9 42; D8 §9 42 | 7.9 |
+| **7.11 Power by action or number** | Marstek local API, Sessy, sonnen, E3/DC, Solis Modbus | D4 §5.9, §9 43 | D4 §9 43 | 7.9 |
+| **7.12 The SoC floor** | Tesla (four integrations), Deye and Sunsynk via Solarman, Fronius, Growatt, Solis Cloud | D4 §5.9, §9 44; D6 §5.3 | D4 §9 44 | 7.10 |
+| **7.13 The grid setpoint** | Victron (three integrations) | D4 §5.9, §9 45 | D4 §9 45 | 7.10 |
+| **7.14 A battery on no device** | the flow's no-device branch; `sungrow_modbus` | D8 §5.2, §9 43; D4 §5.9, §9 46 | D8 §9 43; D4 §9 46 | 7.10 |
 
 ### Release
 
@@ -400,6 +406,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 41. **Savings measure timing, not physics** (D11 §5.9). A load's measured energy priced where the uncontrolled device would have drawn it, booked when its day, session or run settles; observe saves nothing; the shadows stay as a model figure shown once calibrated. *Rejected:* fixing the shadows' inputs - every fix is one more parameter that must be right, and under a flat price the signal is smaller than the model error.
 42. **The dashboard uses Home Assistant's own backend only.** The layout from a response action, the spot price from a sensor, retries from a button, the module as a Lovelace resource; no private websocket commands. *Rejected:* keeping the commands - a private protocol to version, test and document.
 43. **A plan fits the room it's given, and the peak warning is about the house.** The warning counts the uncontrolled term and no-vote demands, never a plan (D-0627); a kept plan overlapping its betters' room is replaced (D-0628); a slot reserves its planned draw (D-0629). *Rejected:* plans in the warning - D6 holds every plan under the ceiling, so a plan can't cause a breach.
+44. **A battery takes four commands, and every major inverter gets a row** (D-0670). Self-use, hold, charge and discharge are INV-30's answers for a battery; one data vocabulary runs every row; a battery on no device is reachable; PV curtailment waits for v1.x (a wrong write breaches the grid operator's export cap); a battery's counterfactual is its own inverter's self-use; Enphase is a limitation until a local write path exists. *Rejected:* 0 as the release - a battery held for a capacity window would arrive empty.
 
 ---
 
@@ -552,6 +559,12 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 7.6 | Battery profiles by power command | done |
 | 7.7 | Battery profiles by operating mode | done |
 | 7.8 | Plug-in batteries: output only | done |
+| 7.9 | The battery's four commands | done |
+| 7.10 | Mode then power | done |
+| 7.11 | Power by action or number | todo |
+| 7.12 | The SoC floor | todo |
+| 7.13 | The grid setpoint | todo |
+| 7.14 | A battery on no device | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

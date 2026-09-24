@@ -1,0 +1,92 @@
+{
+ "name": "solax_modbus_sofar_inverter",
+ "device": "Sofar HYD",
+ "device_id": "9d8c7b6a5f4e3d2c1b0a998877665544",
+ "manufacturer": "Sofar",
+ "model": "HYD 6000-EP",
+ "platform": "solax_modbus",
+ "source": "Not captured: no house here owns a Sofar (D-0081). Written from wills106/homeassistant-solax-modbus 2026.09.2's plugin_sofar.py and docs/sofar-energy-storage-modes.md: Energy Storage Mode (charger_use_mode, eight options), Passive: Minimum/Maximum Battery Power (W, −20000…20000, step 100, positive charges), Passive: Desired Grid Power, and the Passive: Update Battery Charge/Discharge button that commits them. The states are an inverter in Self Use at 52 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Sofar Energy Storage Mode",
+    "options": [
+     "Self Use",
+     "Time of Use",
+     "Timing Mode",
+     "Passive Mode",
+     "Peak Cut Mode",
+     "Off-grid Mode",
+     "Generator mode",
+     "Feed-In Priority Mode"
+    ]
+   },
+   "entity_id": "select.sofar_energy_storage_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Self Use"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sofar Passive: Minimum Battery Power",
+    "unit_of_measurement": "W",
+    "min": -20000,
+    "max": 20000,
+    "step": 100
+   },
+   "entity_id": "number.sofar_passive_minimum_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sofar Passive: Maximum Battery Power",
+    "unit_of_measurement": "W",
+    "min": -20000,
+    "max": 20000,
+    "step": 100
+   },
+   "entity_id": "number.sofar_passive_maximum_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sofar Passive: Desired Grid Power",
+    "unit_of_measurement": "W",
+    "min": -100000,
+    "max": 100000,
+    "step": 10
+   },
+   "entity_id": "number.sofar_passive_desired_grid_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sofar Passive: Update Battery Charge/Discharge"
+   },
+   "entity_id": "button.sofar_passive_update_battery_charge_discharge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "unknown"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Sofar Battery Capacity",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.sofar_battery_capacity",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "52"
+  }
+ ],
+ "entity_count": 6
+}

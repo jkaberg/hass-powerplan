@@ -464,6 +464,8 @@ def _asked(question: Question, ctx: QCtx, *, followups: bool) -> bool:
         return False
     if question.needs is not None and question.needs not in ctx.capabilities:
         return False
+    if question.unless is not None and question.unless in ctx.capabilities:
+        return False
     return not (question.key == _SITE_PHASES_KEY and ctx.phases == 1)
 
 

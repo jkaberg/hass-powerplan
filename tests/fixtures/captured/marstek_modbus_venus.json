@@ -1,0 +1,101 @@
+{
+ "name": "marstek_modbus_venus",
+ "device": "Marstek Venus",
+ "device_id": "7a6b5c4d3e2f10a9b8c7d6e5f4a3b2c1",
+ "manufacturer": "Marstek",
+ "model": "Venus E v3",
+ "platform": "marstek_modbus",
+ "source": "Not captured: no house here owns a Marstek Venus (D-0081). Written from ViperRNMC/marstek_venus_modbus 2026.8.1.b1: registers/e_v3.yaml's force_mode (standby, charge, discharge), rs485_control_mode (switch), set_charge_power and set_discharge_power (W, 0–2500, step 50), user_work_mode, battery_soc and one pack's battery_soc_1 (translations/en.json names). The controls ship disabled; here they are enabled. The states are a battery in its own Self Consumption mode at 44 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus Force Mode",
+    "options": [
+     "standby",
+     "charge",
+     "discharge"
+    ]
+   },
+   "entity_id": "select.marstek_venus_force_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "standby"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus RS485 Control Mode"
+   },
+   "entity_id": "switch.marstek_venus_rs485_control_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "off"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus Set Charge Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 2500,
+    "step": 50
+   },
+   "entity_id": "number.marstek_venus_set_charge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus Set Discharge Power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 2500,
+    "step": 50
+   },
+   "entity_id": "number.marstek_venus_set_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus User Work Mode",
+    "options": [
+     "manual",
+     "anti_feed",
+     "trade_mode",
+     "ups"
+    ]
+   },
+   "entity_id": "select.marstek_venus_user_work_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "anti_feed"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus Battery SoC",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venus_battery_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "44"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Marstek Venus Battery Pack 1 SoC",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.marstek_venus_battery_soc_1",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "44"
+  }
+ ],
+ "entity_count": 7
+}

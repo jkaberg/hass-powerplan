@@ -169,6 +169,22 @@ class PlanMode(StrEnum):
     NONE = "none"
 
 
+class PlanAnswer(StrEnum):
+    """What a load's plan says about the slot a grant is for (INV-30, D6 §5.3).
+
+    INV-30's three answers, carried past the allocator: `none` is no plan (control
+    freely), `hold` a planned 0 (stand still) and `power` a planned cap. A grant
+    the walk made without a plan's say - a comfort violator, a stage ≥ 1
+    discharge, a frozen tick - carries no answer. A battery reads it to pick its
+    command: `none` is the inverter's own self-use, `hold` keeps the charge (D4
+    §4.2; PLAN §7 dec. 44).
+    """
+
+    NONE = "none"
+    HOLD = "hold"
+    POWER = "power"
+
+
 class Quality(StrEnum):
     """The state of a reading taken from the outside world (D3 §4).
 
@@ -669,6 +685,8 @@ class Grant:
     stage: int
     blunt: bool
     capped_by: tuple[str, ...]
+    #: What the plan said about this slot, where it had a say (INV-30, D6 §5.3).
+    answer: PlanAnswer | None = None
 
 
 # --------------------------------------------------------------------------- #

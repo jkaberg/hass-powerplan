@@ -2,14 +2,16 @@
 
     on/off (SWITCH, MODE, resistive SETPOINT):  nameplate if granted or already on
     modulating thermostatic (heat pump):        measured + grant margin, ≤ rated
-    modulating controllable (EV, battery):      the grant - what we told it
+    modulating controllable (EV, battery):      the grant - what we told it (a battery
+                                                whose inverter sets the power is told
+                                                its whole rate or nothing, D4 §4.2)
     delegated:                                  nameplate
     running cycle:                              its profile power now
 
-**On the ancestor controller.** The planner paced the tank in fractional watts and the
-allocator subtracted *that*: `granted_w 348.3, measured_w 2940.0`, and `p_free_w` read
-8–9 kW while the house was 1.4 kW over its allowance. An on/off element is a relay, not
-a dimmer - it draws its nameplate or nothing.
+**The lesson.** On the ancestor controller the planner paced the tank in fractional
+watts and the allocator subtracted *that*: `granted_w 348.3, measured_w 2940.0`, and
+`p_free_w` read 8–9 kW while the house was 1.4 kW over its allowance. An on/off element
+is a relay, not a dimmer - it draws its nameplate or nothing.
 
 The mirror image is as bad: reserving `rated_w` for an inverter modulating at 23 W
 eats 3 kW of headroom, starves everything else, and makes the published table read
@@ -39,7 +41,7 @@ GRANT_MARGIN_W = 500.0
 
 #: The control kinds whose draw follows the grant continuously (D4 §4.2). Anything
 #: else is a relay somewhere behind a thermostat, whatever the plan paced it at.
-MODULATING_KINDS = frozenset({"modulate"})
+MODULATING_KINDS = frozenset({"modulate", "battery"})
 
 
 def measured_w(view: ControlledView | None) -> float | None:

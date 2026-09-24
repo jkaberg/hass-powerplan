@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import ClassVar, Literal, Protocol
 
 from ...metering import ElectricalProfile, Reading
-from ...model import Desired, Grant, Mode
+from ...model import Desired, Grant, Mode, PlanAnswer
 
 __all__ = [
     "Action",
@@ -84,6 +84,20 @@ class Role(StrEnum):
     DOOR = "door"
     BATTERY_POWER_SET = "battery_power_set"
     BATTERY_MODE = "battery_mode"
+    #: A battery's command - self-use, hold, charge or discharge with its watts -
+    #: as the profile's row reads it back off its levers (D4 §4.2, §5.9).
+    BATTERY_COMMAND = "battery_command"
+    #: The levers a battery row writes beside a mode and a power (D4 §5.9).
+    BATTERY_CHARGE_POWER = "battery_charge_power"
+    BATTERY_DISCHARGE_POWER = "battery_discharge_power"
+    BATTERY_FLOOR = "battery_floor"
+    BATTERY_GRID_CHARGE = "battery_grid_charge"
+    BATTERY_ENABLE = "battery_enable"
+    #: A second mode a row sets beside its first (SolarEdge's storage command mode).
+    BATTERY_COMMAND_MODE = "battery_command_mode"
+    #: A switch that lets it discharge (SAJ's passive discharge).
+    BATTERY_DISCHARGE_ENABLE = "battery_discharge_enable"
+    BATTERY_OPTIMISER = "battery_optimiser"
     SG_A = "sg_a"
     SG_B = "sg_b"
 
@@ -153,6 +167,7 @@ class ActionReason(StrEnum):
     BATTERY_CHARGE = "battery_charge"
     BATTERY_DISCHARGE = "battery_discharge"
     BATTERY_HOLD = "battery_hold"
+    BATTERY_SELF_USE = "battery_self_use"
     # Switch (D4 §5.6).
     SWITCH_ON = "switch_on"
     PAUSED = "paused"
@@ -397,6 +412,8 @@ class KindCtx:
     held: Value | None = None
     last_restore_at: datetime | None = None
     on_at_w: float | None = None
+    #: What the plan said about this slot (a battery's command, D4 §4.2).
+    answer: PlanAnswer | None = None
 
     def w_per_amp(self) -> float:
         """Watts per ampere for this load's phase count (D3 §5.1)."""

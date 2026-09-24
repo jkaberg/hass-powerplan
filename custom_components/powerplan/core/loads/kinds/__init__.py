@@ -1,7 +1,7 @@
 """Control kinds - how hardware is steered (D4 §3, §4.2, §5.3–5.6).
 
 Four kinds in v1: `MODULATE` (amps or watts, signed), `SETPOINT`, `MODE` and
-`SWITCH`. `SG_READY` is designed (D4 §2) and lands in v1.x as a fifth module
+`SWITCH`, and a battery's four commands, `BATTERY` (D4 §4.2). `SG_READY` is designed (D4 §2) and lands in v1.x as a fifth module
 here, registered the same way - the registry needs no change to take it.
 
 A kind is orthogonal to what the device *is*: the same `Setpoint` drives a tank,
@@ -25,13 +25,22 @@ from .base import (
     Value,
     Write,
 )
-from .battery_mode import DISCHARGE_FROM_W, BatteryMode, BatteryModeCfg, battery_option
+from .battery import (
+    ALL_COMMANDS,
+    DISCHARGE_FROM_W,
+    BatteryCfg,
+    BatteryCommand,
+    BatteryKind,
+    decode,
+    encode,
+)
 from .mode import ECO_TOKENS, ModeCfg, ModeKind, match_option
 from .modulate import AMP_EPS, EV_MIN_A, Modulate, ModulateCfg
 from .setpoint import BAND_MAX_K, Setpoint, SetpointCfg
 from .switch import Switch, SwitchCfg
 
 __all__ = [
+    "ALL_COMMANDS",
     "AMP_EPS",
     "BAND_MAX_K",
     "DISCHARGE_FROM_W",
@@ -39,8 +48,9 @@ __all__ = [
     "EV_MIN_A",
     "Action",
     "ActionReason",
-    "BatteryMode",
-    "BatteryModeCfg",
+    "BatteryCfg",
+    "BatteryCommand",
+    "BatteryKind",
     "Command",
     "ControlKind",
     "Desired",
@@ -61,6 +71,7 @@ __all__ = [
     "SwitchCfg",
     "Value",
     "Write",
-    "battery_option",
+    "decode",
+    "encode",
     "match_option",
 ]

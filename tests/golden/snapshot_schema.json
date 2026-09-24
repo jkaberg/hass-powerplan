@@ -382,6 +382,7 @@
                 "battery_charge",
                 "battery_discharge",
                 "battery_hold",
+                "battery_self_use",
                 "switch_on",
                 "paused",
                 "not_granted",
@@ -998,5 +999,5 @@
       }
     }
   },
-  "schema": 11
+  "schema": 12
 }

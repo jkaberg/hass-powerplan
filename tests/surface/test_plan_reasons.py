@@ -36,8 +36,9 @@ from custom_components.powerplan.core.loads import (
 )
 from custom_components.powerplan.core.loads.gate import Transport, decide
 from custom_components.powerplan.core.loads.kinds import (
-    BatteryMode,
-    BatteryModeCfg,
+    BatteryCfg,
+    BatteryCommand,
+    BatteryKind,
     ControlKind,
     Switch,
     SwitchCfg,
@@ -47,6 +48,7 @@ from custom_components.powerplan.core.model import (
     Desired,
     Money,
     Plan,
+    PlanAnswer,
     PlanMode,
     PlanSlot,
 )
@@ -112,8 +114,9 @@ def _restore(kind: ControlKind, **ctx: Any) -> Emitted:
 
 SELECT = {Role.MODE_SELECT: ["heat", "eco"]}
 RELAY = Switch(SwitchCfg(on_at_w=1000.0))
-BATTERY = BatteryMode(BatteryModeCfg(charge_w=5000.0, discharge_w=5000.0))
-MODES = {Role.BATTERY_MODE: ["general", "eco_charge", "eco_discharge"]}
+BATTERY = BatteryKind(
+    BatteryCfg(commands=frozenset(BatteryCommand), charge_w=5000.0, discharge_w=5000.0)
+)
 BUTTON = Switch(SwitchCfg(on_at_w=1000.0, role=Role.START))
 WATTS = {"unit": "w", "min_value": 1000.0, "max_value": 10000.0, "step": 100.0}
 
@@ -151,10 +154,12 @@ def _kinds() -> list[tuple[ActionReason, Emitted]]:
         (ActionReason.MODE_COMFORT, _apply(mode_kind(), reads=reads(options=SELECT))),
         (ActionReason.RESTORE_MODE, _restore(mode_kind(), reads=reads(options=SELECT))),
         (ActionReason.NO_OPTION, _restore(mode_kind())),
-        # Battery mode (§5.9)
-        (ActionReason.BATTERY_CHARGE, _apply(BATTERY, 5000.0, reads=reads(options=MODES))),
-        (ActionReason.BATTERY_DISCHARGE, _apply(BATTERY, -5000.0, reads=reads(options=MODES))),
-        (ActionReason.BATTERY_HOLD, _apply(BATTERY, 0.0, reads=reads(options=MODES))),
+        # Battery (§4.2): the four commands, and the hand-back
+        (ActionReason.BATTERY_CHARGE, _apply(BATTERY, 5000.0, answer=PlanAnswer.POWER)),
+        (ActionReason.BATTERY_DISCHARGE, _apply(BATTERY, -5000.0, answer=PlanAnswer.POWER)),
+        (ActionReason.BATTERY_HOLD, _apply(BATTERY, 0.0, answer=PlanAnswer.HOLD)),
+        (ActionReason.BATTERY_SELF_USE, _apply(BATTERY, 0.0, answer=PlanAnswer.NONE)),
+        (ActionReason.BATTERY_SELF_USE, _restore(BATTERY)),
         # Switch (§5.6)
         (ActionReason.SWITCH_ON, _apply(RELAY, 2000.0)),
         (ActionReason.PAUSED, _apply(RELAY, 2000.0, shed=True)),

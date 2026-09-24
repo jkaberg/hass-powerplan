@@ -17,7 +17,8 @@ Savings compare what you paid with what the same energy would have cost without 
 
 - a car from the moment it was plugged in, at full power;
 - a thermostat, a floor or a water heater spread evenly over the day;
-- a dishwasher from the moment you asked for it.
+- a dishwasher from the moment you asked for it;
+- a home battery as its inverter would have run it on its own: charging from the solar power your home would otherwise sell, and covering what your home would otherwise buy, never from the grid. A battery PowerPlan sets through a plain number has no mode of its own, and is compared with a battery that stands still.
 
 The difference is the saving. A day's savings are added after midnight, and a car's when its charge is done. In trial mode PowerPlan steers nothing, so it saves nothing.
 

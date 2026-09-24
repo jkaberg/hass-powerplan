@@ -9,7 +9,8 @@ device would have drawn it:
 | `day` | slab, room, heat pump, tank, schedule | evenly over the local day's slots |
 | `session` | EV | at full rate from the plug-in |
 | `run` | cycle | in the programme's shape from the request |
-| `idle` | battery | nowhere - a battery without a controller idles |
+| `idle` | battery without a self-use | nowhere - a battery without a controller idles |
+| `self_use` | battery with a self-use | where its inverter would have charged and discharged it alone |
 | `none` | no store model | where it really was: no savings stated |
 
 Nothing is fitted, so nothing drifts and nothing needs calibrating. Energy is
@@ -40,6 +41,7 @@ class ReferenceKind(StrEnum):
     SESSION = "session"
     RUN = "run"
     IDLE = "idle"
+    SELF_USE = "self_use"
     NONE = "none"
 
 
@@ -53,6 +55,7 @@ REFERENCE_OF: Mapping[StoreKind, ReferenceKind] = {
     StoreKind.ENERGY: ReferenceKind.SESSION,
     StoreKind.CYCLE: ReferenceKind.RUN,
     StoreKind.BATTERY: ReferenceKind.IDLE,
+    StoreKind.BATTERY_SELF_USE: ReferenceKind.SELF_USE,
     StoreKind.NONE: ReferenceKind.NONE,
 }
 
@@ -97,6 +100,9 @@ def settle(buffer: OpenBuffer, rate_w: float | None) -> tuple[PricedSlot, ...]:
         placed = _shaped(slots, energy)
     elif buffer.reference is ReferenceKind.IDLE:
         placed = [0.0 for _ in slots]
+    elif buffer.reference is ReferenceKind.SELF_USE:
+        # The self-use shadow's own signed kWh: what the inverter would have done alone.
+        placed = [slot.shape_kwh for slot in slots]
     else:
         placed = [slot.kwh for slot in slots]
     return tuple(

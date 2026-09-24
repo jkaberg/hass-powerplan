@@ -15,12 +15,12 @@
 
 - The `Load` runtime object and its lifecycle (build from a subentry, provision, tick, apply, release, health).
 - Load **modes** `auto · force · observe · delegated · off` and their transitions.
-- `Demand` - what a load wants, how urgently, by when.
-- **Control kinds**: `MODULATE` (A or W, signed for batteries), `SETPOINT`, `MODE`, `SWITCH`; `SG_READY` designed, built v1.x.
-- **Store models**: `SlabStore`, `RoomStore`, `TankStore`, `EnergyStore` - direction-agnostic, with maxima (INV-56).
+- `Demand`: what a load wants, how urgently, by when.
+- **Control kinds**: `MODULATE` (A or W), `SETPOINT`, `MODE`, `SWITCH`, and `battery` - a battery's four commands, run from its profile's vocabulary (§4.2, §5.9); `SG_READY` designed, built v1.x.
+- **Store models**: `SlabStore`, `RoomStore`, `TankStore`, `EnergyStore`, direction-agnostic, with maxima (INV-56).
 - **Target profiles** (schedule × presence → target) and arrival deadlines (INV-55).
 - **Device types** and their demand logic, latches and questionnaires: `ev`, `water_heater` (incl. legionella, INV-54), `floor_heating`, `heat_pump`, `radiator`, `battery`, `generic_switch`, `appliance_cycle`.
-- **Device profiles**: role vocabulary, auto-binding, read/write adapters, scaling, option matching, provisioning, quirks. **Product profiles exist only for EV chargers and batteries** (integration-specific transports and semantics); thermostats, floor heating and heat pumps are always driven through **generic** profiles that detect capabilities from the entities and take rated power, COP and the like from the questionnaire. v1 profiles: `generic_climate` (with capability detection), `generic_switch`, `generic_number`, `easee_ble`; *(PLAN §7 dec. 24)* the product profiles `zaptec`, `easee_cloud`, `ocpp`, and vocabulary profiles (a status map and quirks over an amp `number`, no logic of their own) for `wallbox`, `peblar`, `v2c`, `keba` and `goecharger_api2` (§5.9).
+- **Device profiles**: role vocabulary, auto-binding, read/write adapters, scaling, option matching, provisioning, quirks. **Product profiles only exist for EV chargers and batteries** (integration-specific transports and semantics); thermostats, floor heating and heat pumps are always driven through **generic** profiles that detect capabilities from the entities and take rated power, COP and the like from the questionnaire. v1 profiles: `generic_climate` (with capability detection), `generic_switch`, `generic_number`, `easee_ble`, the product profiles `zaptec`, `easee_cloud`, `ocpp`, vocabulary profiles (a status map and quirks over an amp `number`, no logic of their own) for `wallbox`, `peblar`, `v2c` and `goecharger_api2` (PLAN §7 dec. 24), and one battery vocabulary row per battery integration (§5.9).
 - The **`WriteGate`** (INV-20 … 24, INV-58).
 - Questionnaire framework and derivations (INV-65, INV-66).
 - Per-load persistence.
@@ -65,10 +65,11 @@ custom_components/powerplan/core/loads/
 │                      vocabulary, which are declared below it in the import graph (D-0060, D-0061)
 ├── kinds/
 │   ├── base.py        ControlKind protocol, Quantised
-│   ├── modulate.py    amps or watts, signed, floor with cliff, step-up ramp, write suppression
+│   ├── modulate.py    amps or watts, floor with cliff, step-up ramp, write suppression
 │   ├── setpoint.py    band around target, tolerance, shed/charge setpoints, min_on/min_off hysteresis
 │   ├── mode.py        option-name matching (eco/heat), atomic toggle
 │   ├── switch.py      on/off, min_on/min_off
+│   ├── battery.py     a battery's four commands over a BatteryVocabulary row (§4.2, §5.9)
 │   └── sg_ready.py    v1.x
 ├── stores/
 │   ├── base.py        StoreModel protocol (direction-agnostic)
@@ -80,7 +81,7 @@ custom_components/powerplan/core/loads/
 │   ├── base.py        DeviceType protocol, registry
 │   ├── ev.py  water_heater.py  floor_heating.py  heat_pump.py  radiator.py  battery.py  generic_switch.py  appliance_cycle.py
 ├── questionnaire.py   Question, Questionnaire, Answers, Derived, derive()/explain() protocol, materialise()
-├── gate.py            WriteGate DECISION (pure): the §5.10 matrix, Decision, GateState, TransportBudget accounting - PLAN §7 dec. 5
+├── gate.py            the WriteGate DECISION (pure): the §5.10 matrix, Decision, GateState, TransportBudget accounting (PLAN §7 dec. 5)
 └── registry.py        device types, control kinds
 
 custom_components/powerplan/providers/profiles/
@@ -89,7 +90,8 @@ custom_components/powerplan/providers/profiles/
 ├── generic_switch.py generic_number.py
 ├── easee_ble.py         EV: integration profile (transport quirks, status vocabulary, read-back)
 ├── zaptec.py easee_cloud.py ocpp.py      EV product profiles (§5.9)
-├── wallbox.py peblar.py v2c.py keba.py goecharger.py   EV vocabulary profiles (§5.9)
+├── wallbox.py peblar.py v2c.py goecharger.py   EV vocabulary profiles (§5.9)
+├── battery_vocabulary.py  BatteryVocabulary, its levers, and one row per battery integration (§5.9)
 └── registry.py
 
 custom_components/powerplan/writegate.py    the EXECUTOR: hass.services.async_call(blocking=True), verify read-back scheduling, token buckets per transport - the only caller of hass.services (INV-3, INV-20); every decision comes from core/loads/gate.py
@@ -183,6 +185,24 @@ class ModeCfg:       comfort_option: str; shed_option: str; match: Literal["exac
 @dataclass(frozen=True)
 class SwitchCfg:     min_on_s: int; min_off_s: int; inverted: bool
 ```
+
+**A battery's four commands** (HLD INV-30, PLAN dec. 44). A battery is steered by one of four commands, never by a bare number that means "self-use" on one inverter and "hold" on another:
+
+```python
+class BatteryCommand(StrEnum):
+    SELF_USE = "self_use"    # the inverter's own balancing; the plan's None
+    HOLD = "hold"            # no discharge; the sun may still fill it; the plan's 0
+    CHARGE = "charge"        # + power: from the grid where the plan says so, else from the sun
+    DISCHARGE = "discharge"  # − power: into the house's import, never beyond it (D6 §5.3)
+
+@dataclass(frozen=True)
+class BatteryCfg:  row: BatteryVocabulary        # §5.9: the levers per command, from the profile
+                   commands: frozenset[BatteryCommand]   # what the row can do; the plan never asks for more
+                   power: Literal["commanded", "inverter"]   # a power lever, or the inverter's own rate (§5.4's relay rule)
+                   reserve_pct: float; charge_target_pct: float  # from the questionnaire (§6.6)
+```
+
+`kinds/battery.py` runs every row (§5.9). `quantise(w, ctx)` takes the grant and the slot's answer (D6 §5.3): a free slot is `SELF_USE`, a planned 0 or a surplus-only follow is `HOLD`, and ±w is `CHARGE` or `DISCHARGE` at w, rounded to the row's step. A row without `SELF_USE` (a bare number, a passive mode) is emulated by D6's following. A row without `HOLD` makes D5 plan every free slot as self-use (§6.6). The release is `SELF_USE` with every lever back at the value recorded before powerplan's first write (INV-26). `generic_number` stays `MODULATE`: 0 W on a bare number is a hold, and it has no self-use of its own.
 
 ### 4.3 Store models (direction-agnostic)
 
@@ -536,6 +556,76 @@ Sources: each integration's own documentation or code; installs from HA's opt-in
 
 **Output-limit rows (D-0661).** `providers/profiles/output_limit.py` holds one `OutputLimitProfile` per plug-in battery. `BATTERY_POWER_SET` binds to the output number with its scale negated, so −400 W writes 400 and a charge clamps to the number's own minimum of 0. The profile says `output_only`, the battery type's derive sets `command_charge_w = 0`, and the kind's charge side stops there, so the gate never chases a charge that cannot land. Rows: `anker_solix` (*System output preset*, cloud, 300 s between writes, a 360 s read-back for Solarbank 2's 5-minute cloud update), `ecoflow_cloud` (*Custom Load Power*, cloud, 60 s), `zendure_ha` (`outputLimit`, MQTT, 60 s, with `electricLevel` as the state of charge). Zendure's `inputLimit` and `acMode` would let powerplan command a charge too; the rows stay output-only.
 
+**The battery vocabulary *(PLAN §7 dec. 44)*.** A survey of 44 solar and battery integrations found every battery control in them to be one of six levers, and every row below is data over those levers. The chargers took the same step (above), for the same reason: the shapes are few, the products many. `providers/profiles/battery_vocabulary.py` holds `BatteryVocabulary` and one instance per row; `kinds/battery.py` is the one executor.
+
+| lever | writes | read back from |
+|---|---|---|
+| `Option(role, words)` | a `select` option matched by words, as §5.5 matches modes | the select |
+| `Number(role, value)` | a `number`, unit and scale read off the entity (W, kW, A, %) | the number |
+| `Switch(role, on)` | a `switch` | the switch |
+| `Press(role)` | a `button`, pressed last | - (the witness of the levers before it) |
+| `Action(service, fields)` | a device-addressed action (§5.10's `DeviceCall`), `blocking=True` | the row's `witness` entity |
+| `Expiring(lever, seconds)` | any of the above, which the device drops by itself after `seconds` | as the lever; re-armed at 80 % of `seconds` |
+
+A lever's `value` is a constant or one of: `power_w` (the command's watts, signed and scaled as the row says), `reserve` (the household's outage reserve, §6.6), `target` (the charge target), `soc_up` (the measured SoC rounded up to the row's step, never below `reserve`), `grid_for(w)` (the grid power at which the inverter's own regulation leaves the battery at `w`: measured grid − measured battery + `w`, with battery power positive while charging, D3's signs) and `prior` (the value recorded before powerplan's first write, INV-26).
+
+A row also names:
+
+- `commands`: which of the four it has.
+- `power`: `commanded` or `inverter`.
+- `prerequisite`: a setting the household must switch on, named in the match's reasons, and in the repair `battery_control_off` when the levers stay unavailable or a write is refused (D8 §5.9).
+- `optimiser`: the vendor's own optimiser, as a lever. It is provisioned off while the load is in control, restored on release, and never touched in `delegated`, which is how a household keeps the vendor's optimiser.
+- `min_interval_s`: the cloud's or the flash's cadence.
+- `witness`: the entities an action is read back from.
+
+**The gate over several levers.** A command is `same` only when every readable lever already holds its value (INV-21). Otherwise the levers that differ are sent in the row's order as one `DeviceCall` chain (`then`): one context, each call `blocking=True`, a `Press` last. The read-back compares each lever (INV-22). A write refused with `ServiceValidationError` is `failed` and names the row's prerequisite. A lever marked `Expiring` is re-armed before it lapses, and a lapse while powerplan watches is a read-back mismatch the gate re-sends.
+
+**Fail-safe (HLD §7.8, INV-64).** A forced charge or discharge uses an expiring lever where the row has one. Where it has none (Sungrow's forced mode, sonnen's manual mode), the row's discharge keeps the inverter's own SoC limit at the household's `reserve`, so a battery left discharging stops there. A floor is never written below `reserve`. A hold or a raised floor left behind costs self-consumption, never safety.
+
+**Power the inverter sets.** A row whose `power` is `inverter` (a mode or a floor) charges at the inverter's own rate. D6 counts its charge at the whole inverter while it runs (§5.4's relay rule, as for `battery_mode`), and a floor row's charge ends when the SoC reaches `target`.
+
+**The rows.** Each row is read from its integration's source, and its fixture is written from that source (D-0081's precedent). A platform cell that starts with "·" means the platform is the row's own name.
+
+| row (WP) | platform · transport | self-use | hold | charge | discharge | prerequisite · optimiser |
+|---|---|---|---|---|---|---|
+| `huawei_solar` (7.9) | `huawei_solar` · Modbus | `stop_forcible_charge`; `storage_maximum_discharging_power` ← `prior` | `storage_maximum_discharging_power` 0 | `Expiring(Action forcible_charge(power_w, 60 min))` | `Expiring(Action forcible_discharge(power_w, 60 min))` | - · the TOU working mode → maximise self-consumption |
+| `solax_modbus` (7.9) | `solax_modbus` (SolaX plugin) · Modbus | `remotecontrol_power_control` Disabled | `Enabled No Discharge` | `Enabled Battery Control`, `remotecontrol_active_power` +W, `Expiring(autorepeat 3600 s)`, `Press trigger` | the same at −W | - |
+| `goodwe` (7.9) | `goodwe` core · local | `operation_mode` general; `battery_discharge_depth` = 100 − `reserve` | `battery_discharge_depth` = 100 − `soc_up` | `eco_charge` (inverter power) | `eco_discharge` (inverter power) | - |
+| `sigen` (7.9 hold, 7.10 power) | `sigen` · Modbus | remote EMS `Maximum self consumption` | `plant_ess_max_discharging_limit` 0 | `Command charging (grid first)`, `plant_ess_max_charging_limit` W | `Command discharging (ESS first)`, `plant_ess_max_discharging_limit` W | `plant_remote_ems_enable` on (provisioned) · - |
+| `anker_solix`, `ecoflow_cloud`, `zendure_ha` (7.9) | as §5.9's WP7.8 rows | output ← `prior` | output 0 | - (its own panels only) | output W | - · the vendor's smart mode |
+| `homewizard` (7.9) | `homewizard` core · local | `battery_group_mode` zero | `zero_charge_only` | `to_full` (inverter power) | - | - · `predictive` → zero |
+| `solaredge_modbus_multi` (7.10) | · Modbus | `Storage Control Mode` ← `prior` | Remote Control, `Storage Command Mode` Charge from Solar Power | Remote Control, Charge from Solar Power and Grid, `Storage Charge Limit` W | Remote Control, Discharge to Minimize Import, `Storage Discharge Limit` W | *Power Control Options* · - ; `Expiring(Storage Command Timeout 3600 s)` |
+| `foxess_modbus` (7.10) | · Modbus | `Work Mode` ← `prior` | `Work Mode` Back-up | Force Charge, `Force Charge Power` kW | Force Discharge, `Force Discharge Power` kW | - · - ; the integration re-sends its remote control, and the inverter drops it when Home Assistant stops |
+| `fronius_modbus` (7.10) | · Modbus + web API | mode Auto | Block discharging | Charge from Grid, `Grid Charge Power` W | Discharge to Grid, `Grid Discharge Power` W | *Inverter control via Modbus* · - |
+| `marstek_modbus` (7.10) | · Modbus | `rs485_control_mode` off | `rs485_control_mode` on, `force_mode` None | `force_mode` Charge, `set_charge_power` W | `force_mode` Discharge, `set_discharge_power` W | - · `user_work_mode` is overridden by RS485 control |
+| `saj_h2_modbus` (7.10) | · Modbus | passive switches off | passive discharge on at 0 | passive charge on, charge power | passive discharge on, discharge power | - · - |
+| `solax_modbus` Sofar (7.10) | `solax_modbus` (Sofar plugin) · Modbus | `charger_use_mode` ← `prior` | passive, `passive_mode_battery_power_min` 0 | passive, min = max = +W | passive, min = max = −W | - · - ; `Expiring(passive_mode_timeout)`, its action back to self-use |
+| `marstek_local_api` (7.11) | · local UDP | the auto-mode button | `Expiring(Action set_passive_mode(0, duration))` | `set_passive_mode(−W, duration)` (negative charges) | `set_passive_mode(+W, duration)` | - · AI mode |
+| `sessy` (7.11) | · local | `Power Strategy` ← `prior` | API, `Power Setpoint` 0 | API, `Power Setpoint` (sign from source) | the same | - · ROI strategy |
+| `sonnenbatterie` (7.11) | · local | `set_operating_mode(automatic)` | manual, `charge_battery(0)` (the battery stops feeding the house) | manual, `charge_battery(W)` | manual, `discharge_battery(W)` | - · `timeofuse`, `optimizing` → automatic |
+| `e3dc_rscp` (7.11) | · local RSCP | `clear_power_limits`, `set_power_mode(0)` | `set_power_limits(max_discharge = 0)` | `set_power_mode(4 grid charge, W)` | `set_power_mode(2, W)` | - · - ; whether the power mode lapses is read in the WP |
+| `solis_modbus` (7.11) | · Modbus | the dispatch ended | `Expiring(Action solis_dispatch)` at 0 W | the dispatch at +W | the dispatch at −W | dispatch-capable firmware (34502 = 0xAA55) · - ; the inverter's own failsafe expires it |
+| `tesla_fleet`, `teslemetry`, `tessie`, `tesla_custom` (7.12) | · cloud, ≥ 300 s | `Operation mode` self_consumption, `Backup reserve` = `reserve`, `Allow charging from grid` off | `Backup reserve` = `soc_up` | `Backup reserve` = `target`, `Allow charging from grid` on (inverter power) | - (export only through Tesla's own time-of-use) | `energy_cmds` scope, a Powerwall · `autonomous` → self_consumption |
+| `solarman` Deye, Sunsynk (7.12) | · local Modbus, ≥ 300 s | `Program 1–6 SOC` = `reserve`, `Program 1–6 Charging` none | `Program 1–6 SOC` = `soc_up` | `Program 1–6 SOC` = `target`, `Program 1–6 Charging` grid, `Battery Max Charging Current` from W | - | `Time of Use` on for every day (provisioned, `prior` kept) · - |
+| `fronius` core (7.12) | · local Modbus | limiting switches ← `prior`, `Battery minimum reserve` = `reserve`, `Battery grid charging` off | `Battery discharge power limit` 0 %, limiting on | - (the core clamps 0–100 %) | - | *Inverter control via Modbus* · - |
+| `growatt_server` (7.12) | core · cloud (token API), 300 s | `prior` values | `Discharge stop SOC` = `soc_up` | `AC charge` on, `Charge stop SOC` = `target`, `Charge power` % | - | the token API (the classic API locks accounts out) · - |
+| `solis_cloud_control` (7.12) | · cloud, ≥ 300 s | `storage_mode` self-use, `battery_reserve_soc` = `reserve` | `battery_reserve_soc` = `soc_up` | `allow_grid_charging` on, `battery_force_charge_soc` = `target` | - | - · - |
+| `victron_gx`, `victron_mqtt`, `victron` (7.13) | · local MQTT or Modbus, per tick, tolerance 100 W | `hub4_ac_grid_setpoint` ← `prior`, `hub4_max_discharge_power` ← `prior` | `hub4_max_discharge_power` 0 | `hub4_ac_grid_setpoint` = `grid_for(+W)` | `hub4_ac_grid_setpoint` = `grid_for(−W)`, never below 0 (D6 never exports) | the ESS assistant · `system_settings_dess_mode` → off |
+| `sungrow_modbus` (7.14) | template entities of the mkaiser package · no device | `EMS mode` Self-consumption, forced command Stop | `EMS mode` Forced, Stop (the battery idles; surplus is exported) | Forced, Forced charge, `Battery forced charge discharge power` W | Forced, Forced discharge, the same power | - · - |
+
+**A battery on no device (D8 §5.2).** `DeviceView.from_entities(hass, entity_ids)` builds a view from the entities the household picks, with no device and no platform, the way `from_dump` builds one from a capture. A row matches it by shape at `SHAPE_CONFIDENCE` (0.80): `sungrow_modbus` by a `select` offering *Forced mode* and *Self-consumption mode (default)* and a second offering *Forced charge*, *Forced discharge* and *Stop (default)*. Its remaining roles bind by the §5.9 rules or are asked. The appliance lands on the fallback device (D8 §5.16).
+
+*(D-0671.)* The kind, the vocabulary and the first seven rows plus `homewizard` follow the table, with four refinements:
+
+- A command is read back from Huawei's *Forcible charge* status sensor where a row has one (`Status`).
+- A row's self-use levers write its own constants. The command's INV-26 prior is the command read back before the first write, and a `vendor` lever set restores a vendor mode (HomeWizard's `predictive`).
+- A hold's floor is written once, on entry, not re-raised as the sun fills the battery.
+- A battery's reserve counts as violated only 1 point below it (`types/battery.py`): an inverter set to the reserve rests on it.
+
+*(D-0672.)* The six mode-then-power rows are as in the table, with four changes. SolarEdge's charge also sets *AC Charge Policy* to Always Allowed. Its *Storage Default Mode* is provisioned to Maximize Self Consumption beside the timeout. Sigen charges with Grid First and discharges with ESS First, its limits in kW as the power. Sofar has no expiring lever. A row claims a device only when its first control is there.
+
+**Integrations no row reaches in v1.0** (D4 §10, `docs/limitations.md`): `enphase_envoy` (Envoy ≥ 8.2.4225 refuses local battery writes), `powerwall` (core, local: none), `sma` and `pysmaplus`, `senec`, `rct_power`, `powerocean`, `fusion_solar`, `kostal_plenticore` (min SoC only), `alphaess` and `givenergy_local` (time-of-use programs only).
+
 ### 5.10 The `WriteGate` - INV-20 … 24, INV-58
 
 **The decision is pure and the execution is not** (PLAN §7 dec. 5). `core/loads/gate.py` holds this matrix, `Decision`, `GateState` and the
@@ -817,6 +907,8 @@ Type (oil-filled · panel · convector · towel rail) → nameplate default 1000
 
 kWh, max charge/discharge kW, reserve % (20), allow grid charging (yes), chemistry LFP/NMC → usable 95/90 %; profile from the inverter integration; strategy `arbitrage` + `peak_shave`. **In code (D-0209):** a signed `MODULATE` kind in watts over `BATTERY_POWER_SET`, step 100 W, no enable role, release value 0 W (INV-64); `EnergyStore(capacity, usable_fraction, reserve_soc, min_soc = reserve + 1, max_soc, charge/discharge efficiency 0.95)`; the demand is signed - `max_w` the inverter's charge limit (0 when grid charging is off), `min_w` minus the discharge limit above the reserve; priority 30, group `storage`. The strategies and the ladder's discharge placement are D5's and D6's.
 
+**What the row tells the questionnaire.** The matched row's `commands` and `power` travel as capabilities (`QCtx.capabilities`, as `output_only` does) and are materialised (INV-66). Without `CHARGE`, *allow grid charging* is not asked and `command_charge_w` is 0. Without `DISCHARGE`, `min_w` is 0 below the self-use the inverter does by itself. Without `HOLD`, `can_hold = False`, and D5 plans every free slot as self-use (D5 §5.8). With `power = inverter`, the charge and discharge kW are the inverter's own rates and are not offered as a command's size. The review reads it back in one sentence: "PowerPlan can charge it from the grid, hold it for later and let it run on its own; it cannot force a discharge." The reserve is the household's outage margin. It is the floor every row's self-use writes and the lowest floor any row may write (INV-64).
+
 ### 6.7 `generic_switch`
 
 What is it (pool pump · sauna · hot tub · ventilation · other) → nameplate default and strategy (`cheapest_hours` with "hours per day" for pool/ventilation; `always` + `force` for sauna/hot tub); power W (measured wins); min on/off. An appliance with no hours per day is **on call** (D-0263): it wants power when the household has it on, when a shed of ours left it wanting, or under `force` - the controller sheds and restores it and never lights it.
@@ -891,11 +983,11 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 
 22. A device-addressed `DeviceCall` sends `device_id`, not `entity_id`, with `blocking=True`, and its read-back reads the bound entity; a profile whose `CURRENT_SET` is device-addressed with no readable entity is refused at match time (§5.10).
 23. `easee_cloud` re-arms: after a plug-in edge the held dynamic limit is sent again even though the gate last sent the same value (the charger has forgotten it); `time_to_live` is 0 on every call.
-24. `zaptec` holds `held_interval` for 900 s after a write unless the write is urgent or blunt; the vocabulary profiles map every status their fixture declares, and an unmapped status is `LINK_DOWN`, never `CONNECTED` (INV-15). *(WP4.8a: 22–24 in `tests/providers/profiles/test_22_*`, `test_23_*`, `test_24_*`; 5, 6 and 16 for both cloud rows in `test_05_06_cloud_chargers.py`, `test_16_zaptec_profile_match.py`, `test_16_easee_cloud_profile_match.py`; the `ev` type's limit-only half in `tests/core/loads/test_ev_limit_pauses.py`.)*
+24. `zaptec` holds `held_interval` for 900 s after a write unless the write is urgent or blunt; the vocabulary profiles map every status their fixture declares, and an unmapped status is `LINK_DOWN`, never `CONNECTED` (INV-15). *(22–24: `tests/providers/profiles/test_22_*`, `test_23_*`, `test_24_*`; 5, 6 and 16 for both cloud rows in `test_05_06_cloud_chargers.py`, `test_16_zaptec_profile_match.py`, `test_16_easee_cloud_profile_match.py`; the `ev` type's limit-only half in `tests/core/loads/test_ev_limit_pauses.py`.)*
 25. Release and restore undo only our own recorded writes, back to what the device held before them: ten starts against a device nobody's record names write nothing (item 1), after our own write one start undoes it; a restart in control undoes our recorded shed and a charger another automation holds at 10 A is left alone; a site that is off writes nothing on the way out or back in; the edge to off undoes our coast (INV-26, INV-27).
 26. Observe decides against the device (`same` before `observe`) and reports each would-be value once, `old → new`, a restart included; a climate setpoint's read-back reads its `temperature` attribute (INV-22).
 27. A power sensor on no device holding 0 W for an hour is read, not stale; a role that stops answering is `transient` with its `since`, cleared when it answers again.
-28. *(D-0497: `GateState.recent_context_ids` - the 8 write contexts before the last - and a parent context of any of them are ours too; a context with a `user_id` is the household's at once; a change with neither is adopted only if it still stands `OVERRIDE_GRACE`, 2 min, later.)* Comfort override: a device setpoint changed by the WriteGate's own last write (matching `last_context_id`) is never adopted as a new target; a setpoint changed by anything else, once `reconciled`, is; a setpoint observed before `reconciled` is held, not adopted, not treated as our own (INV-27).
+28. Comfort override: a device setpoint changed by the WriteGate's own last write (matching `last_context_id`) is never adopted as a new target; a setpoint changed by anything else, once `reconciled`, is; a setpoint observed before `reconciled` is held, not adopted, not treated as our own (INV-27). *(D-0497: `GateState.recent_context_ids`, the 8 write contexts before the last, and a parent context of any of them are ours too; a context with a `user_id` is the household's at once; a change with neither is adopted only if it still stands `OVERRIDE_GRACE`, 2 min, later.)*
 29. Priority migration: a free-numbered load at 22, 23, 37 and 38 rounds to Lav, Normal, Normal and Høy respectively (the D-0411 midpoints); every type's own default (§6) lands on the level this LLD states for it.
 30. `generic_switch`'s sauna/hot_tub/other keep `control = auto` and `strategy = always` through migration, never `control = off`, even though `strategy == "always"` is stored (§6.7, D-0412); a floor-heating or EV load with strategy `always` does migrate to `control = off` (the type has a real price-steering alternative).
 31. *(G13)* A heat pump bound to a §14a Modul 3 tariff: its plan follows its own curve; the house's other loads follow the house's.
@@ -906,15 +998,25 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 36. `solax_modbus`: +3 kW sets battery control, `remotecontrol_active_power` 3000 and the autorepeat, then presses `remotecontrol_trigger`; −2 kW is −2000; a release sets `remotecontrol_power_control` to disabled.
 37. A mode battery (`goodwe`, `sigen`): a positive envelope selects charge, a negative one discharge, 0 the inverter's self-use; D6 counts it at its whole inverter while charging; the discharge depth is its reserve.
 38. An output-limited battery (`anker_solix`, `ecoflow_cloud`, `zendure_ha`): powerplan writes only its output to the house, ≥ 0 W, never a grid charge, no more often than the vendor's cloud cadence.
+
+39. The four commands: for every row's fixture, self-use, hold, +3 kW, −2 kW and a release produce the writes the row names, as one `DeviceCall` chain in the row's order. Only the levers not already at their value are sent (INV-21), and a command the row lacks is never asked for, because the derivation removes it (INV-30).
+40. Hold is not self-use. On `huawei_solar`, `solax_modbus`, `goodwe` and `sigen` a planned 0 writes the row's hold and never its self-use levers, and a free slot writes self-use. A release puts every lever back at its recorded prior (INV-26), and no floor is ever written below the household's reserve (INV-64).
+41. An expiring lever (Huawei's duration, SolaX's autorepeat, SolarEdge's command timeout, Marstek's passive duration, Solis's dispatch) is re-armed at 80 % of its life. Its lapse while powerplan watches is a mismatch the gate re-sends. A row with a forced discharge and no expiring lever keeps the inverter's own SoC limit at the reserve.
+42. A mode-then-power row writes the mode before the power. A prerequisite not met - the levers unavailable, or a write refused - is named in the match and raises `battery_control_off`. The row's optimiser is provisioned off in control, restored on release, and never written in `delegated`.
+43. Action rows: Marstek's negative-charges sign round-trips, and sonnen's `charge_battery(0)` in manual is a hold.
+44. Floor rows: a hold writes the floor at `soc_up`, never below the reserve, and raises it again only when the SoC passes it by the row's step. A charge writes the target and the grid-charge switch, and D6 counts it at the whole inverter. Deye's twelve writes are one chain, at most one per 300 s.
+45. Grid setpoint: with a 1.5 kW house, no sun and the battery idle, a +2 kW charge sets the grid to 3.5 kW. A discharge never sets a negative (export) setpoint, and a change under 100 W is `same`.
+46. `DeviceView.from_entities` over the mkaiser package's entities matches `sungrow_modbus` at 0.80 with the same bindings as a view built from its dump, and the appliance lands on the fallback device.
 ---
 
 ## 10. Deliberately deferred
 
-- A battery steered through time-of-use programs (`solarman`'s Deye/Sunsynk *Program N* slots): powerplan would rewrite the inverter's day plan, a different kind from a setpoint (§5.9's battery table, D-0658).
+- *(PLAN §7 dec. 44)* `solarman`'s Deye and Sunsynk are steered by the SoC of their six programs, not by rewriting the day plan (§5.9). What stays deferred: a battery steered **only** through time-of-use programs - `alphaess` (a cloud schedule with no forced export), `givenergy_local` and GivTCP (timed charge and discharge).
+- *(PLAN §7 dec. 44)* **PV curtailment, `pv_limit` (v1.x).** At a negative export price a kind would lower a PV inverter's output: `apsystems` `max_output`, `hoymiles_wifi` `limit_power_mypower`, core `fronius` `ac_power_limit`, Victron `pvinverter_power_limit`, SolarEdge `Active Power Limit`, Deye `Zero Export power`. The sketch: it only ever lowers; it never raises past the value it found, which may be the grid operator's export cap (Fronius's docs warn that holding its AC limit at 100 % overrides that cap); it acts only after the soaking loads and the battery have taken the surplus; it prefers a lever the device expires; and its release restores the recorded prior (INV-26).
+- Enphase battery control through its cloud (Envoy ≥ 8.2.4225 refuses local writes; no official API). SMA and Kostal battery control over Modbus YAML: no standard package to match, unlike Sungrow's.
 - `SG_READY` kind (v1.x) - a generic kind over two switches/relays, not a product profile.
 - Hydronic floor heating through a heat pump (§5.15, v1.x - needs a real installation to settle the open points).
 - Multi-charger circuits, 1p/3p phase switching, V2H (v1.x).
-- Battery profiles for specific inverters - research first (PLAN WP7.5, before v1.0 since the release is last); only `generic_number` reaches a battery today.
 - Chargers with no amp control (myenergi zappi, Ohme) through an `ev` on `MODE` or `SWITCH`; charging through the car (Tesla Fleet, Teslemetry, Tessie); a second charger on one Zaptec installation (v1.x).
 - KEBA through `keba.set_current`: the core integration is YAML-only and registers no device for the load flow to pick; its failsafe re-send waits for that (v1.x). OCPP chargers with several connectors (one device per connector) and the per-transaction *Session Current Limit* (v1.x).
 - A built-in weekly schedule editor (§10 decision 6 - bind HA `schedule.*` first).
@@ -944,3 +1046,13 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 **Legionella left to the user.** *For:* not our job; many tanks have a program. *Against:* we are the ones holding the tank at 45 °C. **Decision:** default on, skippable when the heater has its own.
 
 **Per-device write limits only (no transport budget).** *For:* simpler. *Against:* six Heatit loops each within their own 10-min limit can still flood a Z-Wave network in one tick. **Decision:** site-level token buckets (INV-58).
+
+**One kind per battery shape - power, mode, floor, grid setpoint *(PLAN §7 dec. 44)*.** *For:* each shape keeps typed semantics - a mode battery's power is the inverter's, a floor battery cannot discharge on command, a grid setpoint needs the meter. A fault in one kind cannot reach a battery of another shape, and three kinds already work. *Against:* four commands times five shapes. The prerequisite, the optimiser, the expiring lever and the gate over several levers would be written in every kind, and the next inverter would pick a kind by guesswork. The research found six levers and no seventh: the differences are data, and the chargers made the same move for the same reason (§5.9). **Decision:** one `battery` kind over `BatteryVocabulary` rows. Typing survives in `commands` and `power`, which the derivation and D6 read.
+
+**Leave a planned 0 as the inverter's self-use.** *For:* the inverter balances every second and powerplan every 10 s, so a household that mostly wants self-use gets it with fewer writes, and some inverters keep a hold's register in flash. *Against:* INV-30. D5's simulation counts a free slot's energy as kept, and self-use spends it, so `peak_shave`'s reserve for a 17:00 capacity window can arrive empty. evcc's vocabulary on about 50 batteries is normal, hold and charge for exactly this reason. **Decision:** hold is a command. It is written at a slot edge (INV-21), free slots stay self-use, and a row that cannot hold makes the plan stop counting on free slots.
+
+**Steer only while the vendor's optimiser is on, or refuse to steer at all.** *For:* the household chose the vendor's optimiser (Tesla's autonomous mode, Victron's Dynamic ESS), and switching it off takes a decision away from them. *Against:* two controllers on one battery each undo the other's writes, and the read-back would log a deviation every poll. The household already has the choice: `delegated` leaves the vendor in charge and never writes (§5.2). **Decision:** in control the row's optimiser lever is provisioned off and restored on release, and in `delegated` it is left alone. The flow's review says so.
+
+**Deye by rewriting its time-of-use programs, or not at all.** *For:* the programs are the household's own day plan, twelve registers change per command, and some Deye settings live in EEPROM. *Against:* `solarman` is the most-installed battery integration in HACS (10 076). evcc steers Deye exactly so, by the six programs' SoC and grid-charge flags. The day plan is recorded as the prior and restored on release (INV-26). INV-21 sends only the registers that change, and the row's 300 s interval bounds the wear. **Decision:** a floor row (§5.9).
+
+**Victron by its limits only (no grid setpoint).** *For:* `hub4_max_discharge_power` and `hub4_max_charge_power` give a hold and a cap without reading the meter, and a limit cannot oscillate. *Against:* a limit cannot make the battery charge from the grid. Victron documents the grid setpoint as ESS's external-control interface, and `grid_for(w)` uses readings D3 already has. **Decision:** the setpoint for charge and discharge, and the discharge limit for hold, with a 100 W tolerance so the setpoint does not chase noise.

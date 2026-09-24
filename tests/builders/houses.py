@@ -315,6 +315,8 @@ def house(
     battery: dict[str, Any] | None = None,
     battery_soc: float = 50.0,
     export: str | None = None,
+    battery_row: frozenset[str] | None = None,
+    battery_hold_as_self_use: bool = False,
 ) -> House:
     """Return the reference house, or a subset of it, ready for one run.
 
@@ -396,8 +398,17 @@ def house(
         sims["sauna"] = SwitchSim()
 
     if battery is not None:
-        loads.append(load_from("battery", {**BATTERY_ANSWERS, **battery}, load_id="battery"))
-        sims["battery"] = BatterySim(soc_pct=battery_soc)
+        # A row's capabilities make it the four-command battery: its
+        # inverter balances the house by itself; without them, a bare number.
+        qctx = None if battery_row is None else {"capabilities": battery_row}
+        loads.append(
+            load_from("battery", {**BATTERY_ANSWERS, **battery}, load_id="battery", qctx=qctx)
+        )
+        sims["battery"] = BatterySim(
+            soc_pct=battery_soc,
+            command=None if battery_row is None else "self_use",
+            hold_as_self_use=battery_hold_as_self_use,
+        )
 
     regimes = (
         PriceRegime(

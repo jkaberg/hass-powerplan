@@ -449,28 +449,37 @@ def test_16q_a_kilowatt_setpoint_scales_to_watts() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_16r_the_eighteen_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
+def test_16r_the_25_profiles_are_registered_and_nothing_switches_on_their_keys() -> None:
     """Extension is by registry: one module each, registered (D4 §3).
 
     Six since WP4.8a added the two cloud chargers, `zaptec` and `easee_cloud`;
     eleven since WP4.8b added the five vocabulary chargers; thirteen since WP7.6
-    added the two batteries that take a power command; fifteen since WP7.7's mode batteries; eighteen since WP7.8's plug-in batteries.
+    added the two batteries that take a power command; fifteen since WP7.7's mode batteries; eighteen since WP7.8's plug-in batteries;
+    nineteen since WP7.9's HomeWizard battery group;
+    25 since WP7.10's six mode-then-power batteries.
     """
     assert registry.keys() == (
         "anker_solix",
         "easee_ble",
         "easee_cloud",
         "ecoflow_cloud",
+        "foxess_modbus",
+        "fronius_modbus",
         "generic_climate",
         "generic_number",
         "generic_switch",
         "goecharger_api2",
         "goodwe",
+        "homewizard",
         "huawei_solar",
+        "marstek_modbus",
         "ocpp",
         "peblar",
+        "saj_h2_modbus",
         "sigen",
+        "solaredge_modbus_multi",
         "solax_modbus",
+        "solax_modbus_sofar",
         "v2c",
         "wallbox",
         "zaptec",

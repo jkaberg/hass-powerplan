@@ -1,0 +1,90 @@
+{
+ "name": "foxess_modbus_inverter",
+ "device": "FoxESS",
+ "device_id": "f0e1d2c3b4a5968778695a4b3c2d1e0f",
+ "manufacturer": "FoxESS",
+ "model": "H1 - LAN",
+ "platform": "foxess_modbus",
+ "source": "Not captured: no house here owns a Fox ESS inverter (D-0081). Written from nathanmarlor/foxess_modbus (main): entity_descriptions.py's Work Mode (Self Use, Feed-in First, Back-up) with modbus_work_mode_select.py's Force Charge and Force Discharge where remote control is supported, modbus_remote_control_config.py's Force Charge Power and Force Discharge Power (kW, 0 to the inverter's capacity, step 0.001), and the Battery SoC and SoH sensors (both device class battery). The states are an H1 self-using at 64 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Work Mode",
+    "options": [
+     "Self Use",
+     "Feed-in First",
+     "Back-up",
+     "Force Charge",
+     "Force Discharge"
+    ]
+   },
+   "entity_id": "select.foxess_work_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Self Use"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Force Charge Power",
+    "unit_of_measurement": "kW",
+    "min": 0,
+    "max": 3.6,
+    "step": 0.001
+   },
+   "entity_id": "number.foxess_force_charge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "3.6"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Force Discharge Power",
+    "unit_of_measurement": "kW",
+    "min": 0,
+    "max": 3.6,
+    "step": 0.001
+   },
+   "entity_id": "number.foxess_force_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "3.6"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery SoC",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.foxess_battery_soc",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "64"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Battery SoH",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.foxess_battery_soh",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "98"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Inverter Battery Power",
+    "unit_of_measurement": "kW",
+    "device_class": "power"
+   },
+   "entity_id": "sensor.foxess_inverter_battery_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0.42"
+  }
+ ],
+ "entity_count": 6
+}

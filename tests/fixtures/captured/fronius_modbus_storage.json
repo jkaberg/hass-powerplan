@@ -1,0 +1,96 @@
+{
+ "name": "fronius_modbus_storage",
+ "device": "Fronius Storage",
+ "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+ "manufacturer": "Fronius",
+ "model": "BYD Battery-Box Premium HVS",
+ "platform": "fronius_modbus",
+ "source": "Not captured: no house here owns a Fronius GEN24 with a battery (D-0081). Written from callifo/fronius_modbus v0.3.3: const.py's STORAGE_MODBUS_SELECT_TYPES (ext_control_mode, translated Storage Control Mode, STORAGE_EXT_CONTROL_MODE's eight options) and number types (grid_charge_power, grid_discharge_power, charge_limit, discharge_limit: W, 0–10100, step 10), and the storage's State of charge sensor. The states are a battery in Auto at 71 %.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage Storage Control Mode",
+    "options": [
+     "Auto",
+     "PV Charge Limit",
+     "Discharge Limit",
+     "PV Charge and Discharge Limit",
+     "Charge from Grid",
+     "Discharge to Grid",
+     "Block Discharging",
+     "Block Charging"
+    ]
+   },
+   "entity_id": "select.fronius_storage_storage_control_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Auto"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage Grid charge power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 10100,
+    "step": 10
+   },
+   "entity_id": "number.fronius_storage_grid_charge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage Grid discharge power",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 10100,
+    "step": 10
+   },
+   "entity_id": "number.fronius_storage_grid_discharge_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "0"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage Charge limit",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 10100,
+    "step": 10
+   },
+   "entity_id": "number.fronius_storage_charge_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage Discharge limit",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 10100,
+    "step": 10
+   },
+   "entity_id": "number.fronius_storage_discharge_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "10100"
+  },
+  {
+   "attributes": {
+    "friendly_name": "Fronius Storage State of charge",
+    "unit_of_measurement": "%",
+    "device_class": "battery",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.fronius_storage_state_of_charge",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "71"
+  }
+ ],
+ "entity_count": 6
+}

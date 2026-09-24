@@ -1004,8 +1004,11 @@ def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDe
     if not device_id:
         msg = "the load has no device id"
         raise ValueError(msg)
-    # A profile driven through a device action addresses the load's own device (D4 §5.10).
-    bound = replace(profile.bind(bindings), device_id=str(device_id))
+    # A profile driven through a device action addresses the load's own device (D4 §5.10);
+    # a battery row's floor is the household's reserve (D4 §5.9).
+    bound = replace(
+        profile.bind(bindings), device_id=str(device_id), params=dict(data.get("params") or {})
+    )
     return LiveDevice(hass, str(device_id), bound)
 
 

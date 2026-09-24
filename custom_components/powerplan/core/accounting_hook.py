@@ -63,7 +63,9 @@ def store_kind_of(load: Load) -> StoreKind:  # noqa: PLR0911 - one branch per st
     if key == "ev" or (isinstance(store, EnergyStore) and key != "battery"):
         return StoreKind.ENERGY
     if key == "battery":
-        return StoreKind.BATTERY
+        # An inverter with a self-use of its own is compared with it.
+        self_use = bool(load.config.params.get("self_use", False))
+        return StoreKind.BATTERY_SELF_USE if self_use else StoreKind.BATTERY
     if key == "heat_pump":
         return StoreKind.HEAT_PUMP
     if isinstance(store, SlabStore):

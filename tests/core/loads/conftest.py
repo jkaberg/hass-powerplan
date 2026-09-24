@@ -509,6 +509,8 @@ def sim_command(command: Command | None) -> SimCommand | None:
                 fields["start"] = bool(write.value)
             case Role.BATTERY_POWER_SET:
                 fields["power_w"] = float(write.value)
+            case Role.BATTERY_COMMAND:
+                fields["battery"] = str(write.value)
             case _:
                 pass
     return SimCommand(**fields)

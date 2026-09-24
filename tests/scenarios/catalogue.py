@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from custom_components.powerplan.core.loads.kinds import ALL_COMMANDS
+from custom_components.powerplan.core.loads.types.battery import battery_capabilities
 from custom_components.powerplan.core.model import Mode
 from tests.builders.houses import (
     FLOOR_GROUP,
@@ -689,6 +691,33 @@ def pv_battery_peak_shave_winter() -> Scenario:
             battery={"allow_grid_charge": True},
             battery_soc=60.0,
             export="spot",
+        ),
+        start=PV_WINTER_START,
+        days=1.0,
+        target_kw=PV_WINTER_TARGET_KW,
+    )
+
+
+def battery_holds_for_peak(*, row: str = "commanded", hold_as_self_use: bool = False) -> Scenario:
+    """Return the dark January day with a battery its inverter self-uses (D9 §5.3).
+
+    `row` is a commanded-power row (SolaX's shape) or one whose inverter sets the
+    power (GoodWe's); `hold_as_self_use` is the inverter before WP7.9's rows,
+    whose planned hold went out as its own self-use.
+    """
+    capabilities = battery_capabilities(ALL_COMMANDS, inverter_power=row == "inverter")
+    suffix = {"commanded": "", "inverter": "_mode"}[row] + ("_old" if hold_as_self_use else "")
+    return Scenario(
+        name=f"battery_holds_for_peak{suffix}",
+        house=lambda: house(
+            day=PV_WINTER_START.date(),
+            price_kind=SPOT_LIKE,
+            pv_kwp=PV_KWP,
+            battery={"allow_grid_charge": True},
+            battery_soc=60.0,
+            export="spot",
+            battery_row=capabilities,
+            battery_hold_as_self_use=hold_as_self_use,
         ),
         start=PV_WINTER_START,
         days=1.0,

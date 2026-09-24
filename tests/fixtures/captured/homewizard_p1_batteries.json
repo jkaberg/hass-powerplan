@@ -1,0 +1,54 @@
+{
+ "name": "homewizard_p1_batteries",
+ "device": "P1 meter",
+ "device_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+ "manufacturer": "HomeWizard",
+ "model": "Wi-Fi P1 Meter",
+ "written_at": "2026-09-24",
+ "platform": "homewizard",
+ "source": "Not captured: no house here owns a HomeWizard Plug-In Battery (D-0081). Written from Home Assistant core `homewizard` (dev): select.py's `battery_group_mode` on the P1 meter (entity category config; options from python-homewizard-energy's `Batteries.Mode`: zero, to_full, standby, zero_charge_only, zero_discharge_only, predictive), sensor.py's `battery_group_power_w` and the meter's own active power. The batteries' state of charge (`state_of_charge_pct`) is on each battery's own device, not this one. The states are the group in HomeWizard's own `predictive` mode.",
+ "entities": [
+  {
+   "attributes": {
+    "options": [
+     "zero",
+     "to_full",
+     "standby",
+     "zero_charge_only",
+     "zero_discharge_only",
+     "predictive"
+    ],
+    "friendly_name": "P1 meter Battery group charging strategy"
+   },
+   "entity_id": "select.p1_meter_battery_group_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "predictive"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement",
+    "friendly_name": "P1 meter Battery group power"
+   },
+   "entity_id": "sensor.p1_meter_battery_group_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "-450"
+  },
+  {
+   "attributes": {
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement",
+    "friendly_name": "P1 meter Power"
+   },
+   "entity_id": "sensor.p1_meter_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "320"
+  }
+ ],
+ "entity_count": 3
+}

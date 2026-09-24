@@ -119,7 +119,25 @@ def same(current: Value | None, desired: Value, tolerance: float) -> bool:
         return _as_bool(current) == _as_bool(desired)
     if isinstance(desired, int | float) and isinstance(current, int | float):
         return abs(float(current) - float(desired)) <= tolerance
+    tagged = _tagged(current), _tagged(desired)
+    if tagged[0] is not None and tagged[1] is not None:
+        # A battery's command with its watts, `charge:3000` (D4 §4.2): the word
+        # exactly, the number within the tolerance - a battery tapering near
+        # full reads a little under what it was told.
+        (word, watts), (want, wanted) = tagged[0], tagged[1]
+        return word == want and abs(watts - wanted) <= tolerance
     return str(current).strip().lower() == str(desired).strip().lower()
+
+
+def _tagged(value: Value) -> tuple[str, float] | None:
+    """Return `word:number` as its two parts, or `None` for any other value."""
+    if not isinstance(value, str) or ":" not in value:
+        return None
+    word, _, number = value.strip().lower().partition(":")
+    try:
+        return word, float(number)
+    except ValueError:
+        return None
 
 
 def _as_bool(value: Value | None) -> bool | None:

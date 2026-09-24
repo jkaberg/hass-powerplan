@@ -1,0 +1,131 @@
+{
+ "name": "solaredge_modbus_multi_inverter",
+ "device": "SolarEdge I1",
+ "device_id": "5e1a2b3c4d5e6f708192a3b4c5d6e7f8",
+ "manufacturer": "SolarEdge",
+ "model": "SE10K-RWS",
+ "platform": "solaredge_modbus_multi",
+ "source": "Not captured: no house here owns a SolarEdge StorEdge (D-0081). Written from WillCodeForCats/solaredge-modbus-multi v4.0.3: select.py (Storage Control Mode, Storage Command Mode, Storage Default Mode, AC Charge Policy with const.py's STORAGE_CONTROL_MODE, STORAGE_MODE, STORAGE_AC_CHARGE_POLICY), number.py (Storage Charge Limit, Storage Discharge Limit in W up to the battery's own maximum, Storage Command Timeout 0–86400 s), all on the inverter's device once Power Control Options is enabled. The battery's State of Energy is on its own device (SolarEdge B1), not here. The states are an inverter self-consuming.",
+ "written_at": "2026-09-24",
+ "entities": [
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Control Mode",
+    "options": [
+     "Disabled",
+     "Maximize Self Consumption",
+     "Time of Use",
+     "Backup Only",
+     "Remote Control"
+    ]
+   },
+   "entity_id": "select.solaredge_i1_storage_control_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Maximize Self Consumption"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Command Mode",
+    "options": [
+     "Solar Power Only (Off)",
+     "Charge from Clipped Solar Power",
+     "Charge from Solar Power",
+     "Charge from Solar Power and Grid",
+     "Discharge to Maximize Export",
+     "Discharge to Minimize Import",
+     "Maximize Self Consumption"
+    ]
+   },
+   "entity_id": "select.solaredge_i1_storage_command_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Maximize Self Consumption"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Default Mode",
+    "options": [
+     "Solar Power Only (Off)",
+     "Charge from Clipped Solar Power",
+     "Charge from Solar Power",
+     "Charge from Solar Power and Grid",
+     "Discharge to Maximize Export",
+     "Discharge to Minimize Import",
+     "Maximize Self Consumption"
+    ]
+   },
+   "entity_id": "select.solaredge_i1_storage_default_mode",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Maximize Self Consumption"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 AC Charge Policy",
+    "options": [
+     "Disabled",
+     "Always Allowed",
+     "Fixed Energy Limit",
+     "Percent of Production"
+    ]
+   },
+   "entity_id": "select.solaredge_i1_ac_charge_policy",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "Disabled"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Charge Limit",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   "entity_id": "number.solaredge_i1_storage_charge_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Discharge Limit",
+    "unit_of_measurement": "W",
+    "min": 0,
+    "max": 5000,
+    "step": 1
+   },
+   "entity_id": "number.solaredge_i1_storage_discharge_limit",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "5000"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 Storage Command Timeout",
+    "unit_of_measurement": "s",
+    "min": 0,
+    "max": 86400,
+    "step": 1
+   },
+   "entity_id": "number.solaredge_i1_storage_command_timeout",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "3600"
+  },
+  {
+   "attributes": {
+    "friendly_name": "SolarEdge I1 AC Power",
+    "unit_of_measurement": "W",
+    "device_class": "power",
+    "state_class": "measurement"
+   },
+   "entity_id": "sensor.solaredge_i1_ac_power",
+   "last_changed": "2026-09-25T12:00:00+00:00",
+   "last_updated": "2026-09-25T12:00:00+00:00",
+   "state": "3200"
+  }
+ ],
+ "entity_count": 8
+}

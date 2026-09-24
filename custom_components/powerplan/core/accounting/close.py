@@ -489,7 +489,8 @@ class Accounting:
         elif own:
             self._settle_own(load_id, entry)
         else:
-            # `idle`: a battery without a controller draws nothing.
+            # `idle`: a battery without a controller draws nothing; `self_use`: one
+            # its inverter runs alone draws what the shadow says.
             self._settle(
                 load_id, settle(OpenBuffer(reference, entry.start_utc.isoformat(), (entry,)), None)
             )
