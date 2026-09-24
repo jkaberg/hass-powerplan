@@ -4,8 +4,8 @@
 |---|---|
 | HLD section | §6.9, §7.5, §9 (gates) |
 | Depends on | every domain (their §9 lists are the inventory this LLD makes executable) |
-| Consumers | CI; every PR |
-| Invariants owned | INV-2, INV-3 (as CI gates); the executability of all others |
+| Consumers | CI, every PR |
+| Invariants owned | INV-2, INV-3 (as CI gates); the executability of all the others |
 
 ---
 
@@ -243,12 +243,12 @@ Every test may carry a marker `@pytest.mark.inv("INV-28")`. `test_inv_traceabili
 
 ```
 PR:      ruff (format + lint) → mypy --strict core/ (providers/ standard) → pytest -m "not perf and not backtest and not bench" --cov (floors) → pytest perf (gated thresholds)
-         → bench smoke (§5.11, table posted to the PR) → hassfest → HACS action → inv_report (artefact) → golden presets → translations completeness
-merge:   bench month required for PRs touching core/ (the `bench` check); bench full nightly on main (label `bench-full` runs it on a PR) - a nightly regression reopens the PR
+         → bench smoke (§5.11, table posted to the PR) → hassfest → HACS action → inv_report (artefact) → golden tariffs → translations completeness
+merge:   bench month required for PRs touching core/ (the `bench` check); bench full nightly on main (label `bench-full` runs it on a PR), a nightly regression reopens the PR
 weekly:  bench e2e; release: all four
 matrix:  Python 3.14 (PLAN §7 dec. 1); HA floor and latest stable
 ```
-*(D-0662)* Every PR also runs the **hygiene** gates: `vulture` (no dead Python; `[tool.vulture]` in `pyproject.toml` ignores Home Assistant's hooks and the registries' decorators, `tools/vulture_whitelist.py` lists the reviewed rest), `jscpd` over `custom_components/powerplan`, `tools` and `frontend/src` (duplicated lines under `.jscpd.json`'s `threshold`, 1 % - 0.93 % when set, a ratchet only a maintainer raises) and `knip` in the `frontend` job (no unused file, export or dependency). How to triage a hit is `CONTRIBUTING.md`.
+Every PR also runs the **hygiene** gates: `vulture` (no dead Python; `[tool.vulture]` in `pyproject.toml` ignores Home Assistant's hooks and the registries' decorators, `tools/vulture_whitelist.py` lists the reviewed rest), `jscpd` over `custom_components/powerplan`, `tools` and `frontend/src` (duplicated lines under `.jscpd.json`'s `threshold`, 0.8 %, a ratchet, with `maxLines` 10 000 and `maxSize` 1 MB so no module is skipped for its size - jscpd's defaults of 1 000 lines and 100 kB skip `runtime.py` and `core/engine.py`) and `knip` in the `frontend` job (no unused file, export or dependency). How to triage a hit is in `CONTRIBUTING.md` (D-0662, D-0677).
 
 A PR that touches a file owning an INV must reference the INV in its description (a bot comment lists the affected INVs from `inv_report`).
 

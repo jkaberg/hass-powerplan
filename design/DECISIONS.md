@@ -2828,3 +2828,8 @@ Rows `tesla_fleet`, `teslemetry`, `tessie` (one data shape), `tesla_custom`, `so
 
 The device list's last entry, *Not on a device: choose the entities*, opens one multi-entity picker; `DeviceView.from_entities` builds the view, and the usual match step shows per-role pickers pre-bound by the row. A `BatteryVocabulary` with an empty `platform` matches on shape alone at 0.80, its first bind's `options` the evidence. `sungrow_modbus` covers the mkaiser package's template entities, setting *Battery Min Soc* to the reserve on a discharge. A load with no device stores `device_id` null, its unique id is `load:<first bound entity>`, and it gets the fallback device with no `device_missing` repair. The type has no role list before a row matches, so one picker plus the match step asks the same questions without a second role table. Affects D4 §5.9, §9 46; D8 §5.2, §9 43.
 **Rejected:** roles first per type, then match - a second role list beside the rows' binds.
+
+### D-0677 · jscpd measures every file; the threshold ratchets to 0.8 %
+
+`.jscpd.json` gets `maxLines` 10 000, `maxSize` 1 MB and `threshold` 0.8. jscpd's defaults skip files over 1 000 lines or 100 kB entirely, from the clones and the denominator: fifteen modules went unmeasured, `runtime.py` and `core/engine.py` among them, and a growing file dropping out moved the ratio with no new clone. With every file measured the tree is at 0.73 %, and the ceiling moves down to 0.8 %. Affects D9 §5.8.
+**Rejected:** splitting large modules under 1 000 lines - splits a module to suit a counting artefact.

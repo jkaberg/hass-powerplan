@@ -71,12 +71,14 @@ def test_44_each_row_wins_its_own_device(fixture: str) -> None:
     assert ROWS[fixture].inverter_power
 
 
-@pytest.mark.parametrize("key", ["tesla_fleet", "teslemetry", "tessie"])
-def test_44_the_three_core_tesla_integrations_are_one_row_each(key: str) -> None:
+@pytest.mark.parametrize("row", [vocab.TESLA_FLEET, vocab.TESLEMETRY, vocab.TESSIE])
+def test_44_the_three_core_tesla_integrations_are_one_row_each(
+    row: vocab.BatteryVocabulary,
+) -> None:
     """Tesla Fleet, Teslemetry and Tessie publish the same energy-site entities."""
-    view = dump_view(TESLA, platform=key)
+    view = dump_view(TESLA, platform=row.key)
 
-    assert registry.best(view).profile == key  # type: ignore[union-attr]
+    assert registry.best(view).profile == row.key  # type: ignore[union-attr]
 
 
 def test_44_tesla_charges_by_raising_the_floor_with_grid_charging_on() -> None:

@@ -3,7 +3,9 @@
   "format": ["python", "typescript"],
   "ignore": ["**/frontend/dist/**", "**/node_modules/**", "tools/vulture_whitelist.py"],
   "minTokens": 60,
-  "threshold": 1,
+  "maxLines": 10000,
+  "maxSize": "1mb",
+  "threshold": 0.8,
   "reporters": ["console"],
   "gitignore": true,
   "absolute": false
