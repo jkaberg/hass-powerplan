@@ -30,8 +30,6 @@ The design of PowerPlan, for contributors. The household's documentation is [`do
 | D13 | The household's price by party - grid company (fetched from the best source tier), supplier contract, state (VAT and levies from the country module); renewal; the flow's tariff steps | 6.13 | D1, D2, D7, D8 | [D13-tariff-sources.md](lld/D13-tariff-sources.md) |
 | D14 | User documentation - the pages under `docs/` for a household and an automator, their words and markdown, every link from the flows, repairs, actions and dashboard, the generated reference, and the rule that a change to the surface changes its page | 6.14 | D8, D12, D13, every registry | [D14-documentation.md](lld/D14-documentation.md) |
 
-Suggested order: D3 → D2 → D1 → D4 → D5 → D6 → D10 → D11 → D7 → D8 → D9. D3 first because the window is the unit everything else counts in; D2 next because its tariff model is the biggest change from effektstyring and D5/D6 both consume it; D10 after D6 because it only *feeds* the planner and the reserve, and its v1 build is small (weather entity + recorder baseline).
-
 ## LLD template
 
 Each LLD uses the same headings so gaps are visible:

@@ -36,6 +36,8 @@ dmypy.json
 coverage.xml
 coverage.json
 htmlcov/
+# the backtest's house logs (tools/backtest.py): local, never committed
+design/benchmarks/house/
 report.xml
 junit*.xml
 *.prof

@@ -48,7 +48,7 @@ The integration tracks the quality scale in `quality_scale.yaml`: Silver at v1.0
 ## Tests
 
 - `tests/core/` runs without Home Assistant. `tests/providers/` and `tests/flows/` use `pytest-homeassistant-custom-component`.
-- A WP's exit criterion is its LLD's §9 list. Write those tests first, and mark a test that guards an invariant with `@pytest.mark.inv("INV-nn")`. `test_inv_traceability` fails when a safety invariant (HLD §7.5) has no marked test. It also fails when an invariant listed in `tests/core/invariants/traceability_pending.txt` has gained one, so delete its line in the same PR.
+- A WP's exit criterion is its LLD's §9 list. Write those tests first, and mark a test that guards an invariant with `@pytest.mark.inv("INV-nn")`. `test_inv_traceability` fails when a safety invariant (HLD §7.5) has no marked test.
 - Physical things are simulators with quirks in `tests/sim/`: a slab that cools, an EV with the 6 A cliff, a charger that drops its Bluetooth link. Static mocks would have passed the broken heat-pump driver this design exists to prevent. Fixtures come from builders in `tests/builders/`, and captured entity dumps live only under `tests/fixtures/captured/`.
 - Scenarios in `tests/scenarios/` are deterministic with seeded noise. A flaky scenario is a bug, not a retry.
 - Never weaken, skip, `xfail` or narrow a test to make a change pass. If a test is wrong, fix it in the same PR and say why.

@@ -2833,3 +2833,8 @@ The device list's last entry, *Not on a device: choose the entities*, opens one 
 
 `.jscpd.json` gets `maxLines` 10 000, `maxSize` 1 MB and `threshold` 0.8. jscpd's defaults skip files over 1 000 lines or 100 kB entirely, from the clones and the denominator: fifteen modules went unmeasured, `runtime.py` and `core/engine.py` among them, and a growing file dropping out moved the ratio with no new clone. With every file measured the tree is at 0.73 %, and the ceiling moves down to 0.8 %. Affects D9 §5.8.
 **Rejected:** splitting large modules under 1 000 lines - splits a module to suit a counting artefact.
+
+### D-0678 · The INV pending list is gone
+
+Every safety invariant in HLD §7.5 has a marked test, so `traceability_pending.txt` held only notes on what covered each group. The ratchet D-0004 set up has done its job: the file goes, and `test_inv_traceability` fails on any safety INV without a marked test, as D9 §5.6 states it. A new safety INV comes with its test in the same PR. Affects D9 §5.6.
+**Rejected:** keeping the empty list for a future INV - an allowance nobody should use.
