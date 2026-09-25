@@ -1,4 +1,4 @@
-![PowerPlan](https://raw.githubusercontent.com/jkaberg/hass-powerplan/main/docs/images/brand/preview.png)
+![PowerPlan](https://raw.githubusercontent.com/jkaberg/hass-powerplan/main/docs/images/brand/logo.png)
 
 # PowerPlan
 
