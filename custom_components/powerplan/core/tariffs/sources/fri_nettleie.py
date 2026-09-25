@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 __all__ = [
+    "ANSWERS",
     "KEY",
     "METHODS",
     "REPOSITORY",
@@ -69,6 +70,8 @@ STALE_AFTER: Final = timedelta(days=365)
 
 #: The methods fri-nettleie names (`tariff-eksempel.yml`) and what they mean here.
 METHODS: Final = ("TRE_DØGNMAX_MND", "MND_MAX", "FEM_VEKTET_ÅR", "OV_TREFASE")
+#: The same methods as the flow offers them: HA's option keys are `[a-z0-9_]`.
+ANSWERS: Final = {method.lower().replace("ø", "o").replace("å", "a"): method for method in METHODS}
 #: `UKJENT`: the collector could not read the rule; the household confirms the usual one.
 UNKNOWN: Final = "UKJENT"
 
@@ -297,13 +300,14 @@ def _fastledd(
         questions.append(
             Question(
                 "method",
-                METHODS[0],
+                next(iter(ANSWERS)),
                 "Fri Nettleie does not say how this company measures your capacity step; "
                 "the usual rule is the mean of the month's three highest hours on different days.",
-                METHODS,
+                tuple(ANSWERS),
             )
         )
-        method = str(answers.get("method", METHODS[0]))
+        answer = str(answers.get("method", next(iter(ANSWERS))))
+        method = ANSWERS.get(answer, answer)
     if method not in METHODS:
         msg = f"{stem}: method {method!r} is not one PowerPlan knows"
         raise QualityError(msg)

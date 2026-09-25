@@ -134,10 +134,10 @@ def test_1_a_file_not_checked_for_a_year_is_confirmed_against_the_bill() -> None
 def test_1_the_method_the_collector_could_not_read_is_asked_with_the_usual_one_chosen() -> None:
     """Tinfos: `UKJENT` and no `terskel_inkludert` - asked; the answers build the copy."""
     asked = {question.key: question for question in _parse("tinfos").questions}
-    assert asked["method"].default == "TRE_DØGNMAX_MND"
-    assert asked["method"].options == fri_nettleie.METHODS
+    assert asked["method"].default == "tre_dognmax_mnd"
+    assert asked["method"].options == tuple(fri_nettleie.ANSWERS)
     assert asked["inclusive"].default is True
-    answered = _parse("tinfos", method="MND_MAX", inclusive=False)
+    answered = _parse("tinfos", method="mnd_max", inclusive=False)
     assert {question.key for question in answered.questions} == {"checked"}
     peak = answered.grid.capacity[-1].rules[0]
     assert isinstance(peak, PeakTariff)

@@ -2126,10 +2126,10 @@
     },
     "tariff_method": {
       "options": {
-        "TRE_DØGNMAX_MND": "Snittet av månedens 3 høyeste timer, på ulike døgn",
-        "MND_MAX": "Månedens høyeste time",
-        "FEM_VEKTET_ÅR": "Årets 5 høyeste uker, vektet etter måned",
-        "OV_TREFASE": "Etter størrelsen på hovedsikringen"
+        "tre_dognmax_mnd": "Snittet av månedens 3 høyeste timer, på ulike døgn",
+        "mnd_max": "Månedens høyeste time",
+        "fem_vektet_ar": "Årets 5 høyeste uker, vektet etter måned",
+        "ov_trefase": "Etter størrelsen på hovedsikringen"
       }
     },
     "tariff_window_min": {

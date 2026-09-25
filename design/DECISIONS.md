@@ -2838,3 +2838,8 @@ The device list's last entry, *Not on a device: choose the entities*, opens one 
 
 Every safety invariant in HLD §7.5 has a marked test, so `traceability_pending.txt` held only notes on what covered each group. The ratchet D-0004 set up has done its job: the file goes, and `test_inv_traceability` fails on any safety INV without a marked test, as D9 §5.6 states it. A new safety INV comes with its test in the same PR. Affects D9 §5.6.
 **Rejected:** keeping the empty list for a future INV - an allowance nobody should use.
+
+### D-0679 · Fri Nettleie's method is asked with ASCII keys
+
+hassfest takes a selector option key only as `[a-z0-9-_]+`, and `TRE_DØGNMAX_MND` fails that. The question offers `fri_nettleie.ANSWERS`' keys (`tre_dognmax_mnd`, `mnd_max`, `fem_vektet_ar`, `ov_trefase`), lower case with ø → o and å → a, and the parser maps the answer back to the file's method. `METHODS` keeps fri-nettleie's own spelling. Affects D13 §5.6.
+**Rejected:** renaming `METHODS` - the codes are the source's, and the parser compares with them.

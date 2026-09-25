@@ -2126,10 +2126,10 @@
     },
     "tariff_method": {
       "options": {
-        "TRE_DØGNMAX_MND": "Mean of the month's 3 highest hours, on different days",
-        "MND_MAX": "The month's highest hour",
-        "FEM_VEKTET_ÅR": "The year's 5 highest weeks, weighted by month",
-        "OV_TREFASE": "By the size of the main fuse"
+        "tre_dognmax_mnd": "Mean of the month's 3 highest hours, on different days",
+        "mnd_max": "The month's highest hour",
+        "fem_vektet_ar": "The year's 5 highest weeks, weighted by month",
+        "ov_trefase": "By the size of the main fuse"
       }
     },
     "tariff_window_min": {
