@@ -40,7 +40,7 @@ starts, whatever the ladder does around it.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -247,7 +247,9 @@ def test_the_tank_states_savings_and_its_legionella_cycle_saves_nothing(
     window opens (`due_at − 24 h`, when the tank's latch sets
     `legionella_in_progress_since`) until the hold completes, the shadow's slot
     is the real slot: the tank's savings do not move across the cycle, while its
-    cost does.
+    cost does. The tank's reference is the day (D11 §5.9.1), so the day open
+    when the lead window opened settles at the next local midnight, inside the
+    cycle: the comparison starts once it has.
     """
     result, trail = expensive_week
     row = result.accounting_per_load["tank"]
@@ -259,7 +261,11 @@ def test_the_tank_states_savings_and_its_legionella_cycle_saves_nothing(
     _first_now, due_at = transitions[0]
     completed_at, _next_due_at = transitions[1]
     lead_open = due_at - timedelta(hours=LEGIONELLA_LEAD_H)  # type: ignore[operator]
-    before = _tank_row_at(trail, lead_open)
+    tz = trail.rows[0][0].tzinfo
+    opened = lead_open.astimezone(tz)
+    settled = datetime.combine(opened.date() + timedelta(days=1), time(), tzinfo=tz)
+    assert settled < completed_at, (settled, completed_at)  # type: ignore[operator]
+    before = _tank_row_at(trail, settled + timedelta(minutes=1))
     after = _tank_row_at(trail, completed_at)
     assert after["kwh"] > before["kwh"], "the cycle drew energy"  # type: ignore[operator]
     assert after["cost"] != before["cost"], "and it cost money"
