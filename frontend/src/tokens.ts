@@ -109,11 +109,6 @@ export function hatchDef(id: string): string {
     + `<rect width="2" height="6" style="fill:var(--pp-hatch)"/></pattern>`;
 }
 
-export function segmented(items: { key: string; label: string; on: boolean }[], attr: string, aria: string): string {
-  return `<div class="seg-group" role="group" aria-label="${esc(aria)}">${items.map((i) =>
-    `<button type="button" class="seg" ${attr}="${esc(i.key)}" data-focus-key="${attr}-${esc(i.key)}" aria-pressed="${i.on}">${esc(i.label)}</button>`).join("")}</div>`;
-}
-
 export function iconButton(icon: string, label: string, act: string, extra = ""): string {
   return `<button type="button" class="ibtn" data-act="${esc(act)}" aria-label="${esc(label)}" title="${esc(label)}" ${extra}><ha-icon icon="${esc(icon)}"></ha-icon></button>`;
 }
