@@ -8,9 +8,10 @@ from tools import preset_age
 
 
 def test_12_nothing_is_stale_on_the_day_it_was_read() -> None:
-    """Every shipped version was read on the same day, the fixture's."""
-    assert preset_age.stale(date(2026, 9, 23)) == []
-    assert preset_age.stale(date(2027, 3, 23)) == [], "six months to the day is not yet stale"
+    """The oldest shipped fact, GB's no-capacity rule, was read on 2026-09-06."""
+    assert preset_age.stale(date(2026, 9, 6)) == []
+    assert preset_age.stale(date(2027, 3, 6)) == [], "six months to the day is not yet stale"
+    assert preset_age.stale(date(2027, 3, 7)) != []
 
 
 def test_12_only_national_rules_age_no_company_price() -> None:
