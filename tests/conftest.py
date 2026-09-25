@@ -11,14 +11,27 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from syrupy.assertion import SnapshotAssertion
 
 pytest_plugins = ("pytest_homeassistant_custom_component",)
 
 #: Measured seconds per xdist group and per slow ungrouped test (`tools/durations.py`).
 DURATIONS = Path(__file__).with_name("durations.json")
+
+
+@pytest.fixture
+def snapshot(snapshot: SnapshotAssertion) -> SnapshotAssertion:
+    """Keep snapshots in `snapshots/`, whichever plugin's `snapshot` pytest loaded last.
+
+    syrupy and pytest-homeassistant-custom-component both define the fixture, and
+    the plugins load in an order that differs between machines.
+    """
+    return snapshot.use_extension(HomeAssistantSnapshotExtension)
 
 
 @pytest.fixture(autouse=True)
