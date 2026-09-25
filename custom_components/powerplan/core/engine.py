@@ -1063,6 +1063,8 @@ class PlanReport:
     adopted: tuple[str, ...] = ()
     plans: Mapping[str, Plan] = field(default_factory=dict)
     uncovered: tuple[str, ...] = ()
+    #: Adopted because the kept plan no longer fit its room (D-0628), not re-decided.
+    refit: tuple[str, ...] = ()
     slots_closed: int = 0
     month_closed: str | None = None
     failed: Mapping[str, str] = field(default_factory=dict)
@@ -2249,6 +2251,7 @@ class Engine:
         plans = state.plans
         adopted: tuple[str, ...] = ()
         uncovered: tuple[str, ...] = ()
+        refit: tuple[str, ...] = ()
         if inputs.curves is None:
             reasons.append("no price curve: the adopted plans stand (D1 §8)")
         else:
@@ -2274,6 +2277,7 @@ class Engine:
             site_plan = plan_all(views, inputs.curves, site_ctx, now, previous=state.plans.plans)
             adopted = tuple(sorted(site_plan.adopted))
             uncovered = site_plan.uncovered
+            refit = tuple(sorted(site_plan.refit))
             plans = PlansState(schema=state.plans.schema, plans=dict(site_plan.plans), built_at=now)
             if adopted:
                 dirty.add(Section.PLANS)
@@ -2378,6 +2382,7 @@ class Engine:
             adopted=adopted,
             plans=plans.plans,
             uncovered=uncovered,
+            refit=refit,
             slots_closed=len(closes),
             month_closed=month_closed,
             failed=dict(failed),

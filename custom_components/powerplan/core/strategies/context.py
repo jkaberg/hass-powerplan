@@ -671,6 +671,8 @@ class SitePlan:
     headroom_left: Headroom
     adopted: frozenset[str] = frozenset()
     built_at: datetime | None = None
+    #: The adopted loads whose kept plan no longer fit its room (D-0628): a forced re-cut.
+    refit: frozenset[str] = frozenset()
 
     @property
     def planned_kwh(self) -> float:

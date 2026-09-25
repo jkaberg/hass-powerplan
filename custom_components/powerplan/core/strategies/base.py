@@ -207,6 +207,7 @@ def plan_all(
     """
     kept: dict[str, Plan] = {}
     adopted: set[str] = set()
+    refit: set[str] = set()
     old = dict(previous or {})
     slots = _window(curves, ctx, now)
     room = (
@@ -277,9 +278,12 @@ def plan_all(
         plan = _with_desired(_closed_outside(plan, view, ctx), view)
 
         held = None if before is None else with_hold_of(before, plan)
+        unfit = held is not None and not _fits(
+            _with_surplus(held, own), pctx.headroom, now, ctx.eps_w
+        )
         take = (
             held is None
-            or not _fits(_with_surplus(held, own), pctx.headroom, now, ctx.eps_w)
+            or unfit
             or should_adopt(
                 held,
                 plan,
@@ -295,10 +299,18 @@ def plan_all(
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)
+        if unfit:
+            refit.add(view.load_id)
         room = room.reserve(_reserved_by(chosen, view, slots))
         surplus = _surplus_left(surplus, chosen)
 
-    return SitePlan(plans=kept, headroom_left=room, adopted=frozenset(adopted), built_at=now)
+    return SitePlan(
+        plans=kept,
+        headroom_left=room,
+        adopted=frozenset(adopted),
+        built_at=now,
+        refit=frozenset(refit),
+    )
 
 
 def _switched(room: Headroom, view: LoadView, slots: Sequence[Slot], ctx: SiteContext) -> Headroom:

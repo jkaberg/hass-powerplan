@@ -2843,3 +2843,8 @@ Every safety invariant in HLD §7.5 has a marked test, so `traceability_pending.
 
 hassfest takes a selector option key only as `[a-z0-9-_]+`, and `TRE_DØGNMAX_MND` fails that. The question offers `fri_nettleie.ANSWERS`' keys (`tre_dognmax_mnd`, `mnd_max`, `fem_vektet_ar`, `ov_trefase`), lower case with ø → o and å → a, and the parser maps the answer back to the file's method. `METHODS` keeps fri-nettleie's own spelling. Affects D13 §5.6.
 **Rejected:** renaming `METHODS` - the codes are the source's, and the parser compares with them.
+
+### D-0680 · A plan replaced because it no longer fits is a forced re-cut
+
+`SitePlan.refit` and `PlanReport.refit` name the loads whose kept plan failed `_fits` (D-0628) this cycle. The scenario runner counts a committed slot those loads drop as a re-cut, not a commitment break: the room their betters left changed, which INV-32 does not protect against. Without it the reference benchmark read three breaks for the EV's evening re-cuts. Affects D5 §5.9; D9 §5.11.
+**Rejected:** comparing the headroom in the runner - the engine already knows which plans it replaced for the room.

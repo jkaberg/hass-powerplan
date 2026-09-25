@@ -981,7 +981,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             result.plans += 1
             result.plan_adoptions += len(report.adopted)
             new_plans = dict(state.plans.plans)
-            changed, broken, recut = _plan_changes(last_plans, new_plans, now)
+            changed, broken, recut = _plan_changes(last_plans, new_plans, now, report.refit)
             for load_id in changed:
                 result.plan_changes += 1
                 result.plan_changes_by_load[load_id] = (
@@ -1140,7 +1140,7 @@ def _shape(envelope_w: float | None) -> str:
 
 
 def _plan_changes(
-    old: Mapping[str, Any], new: Mapping[str, Any], now: datetime
+    old: Mapping[str, Any], new: Mapping[str, Any], now: datetime, refit: Sequence[str] = ()
 ) -> tuple[list[str], list[str], list[str]]:
     """Return the loads whose future changed shape, whose commitment broke, and re-cut.
 
@@ -1149,7 +1149,8 @@ def _plan_changes(
     the same future is the same plan. A plan's *tail* moves with its inputs -
     a tank that heated 0.73 kWh needs one slot fewer - and that is not churn;
     a slot the old plan had **committed** (D5 §5.9, `COMMIT_MIN` ahead, known
-    prices) and the new plan reneges on is (INV-32).
+    prices) and the new plan reneges on is (INV-32). A plan replaced because it
+    no longer fit the room its betters left (`refit`, D-0628) was forced.
     """
     changed: list[str] = []
     broken: list[str] = []
@@ -1172,7 +1173,8 @@ def _plan_changes(
             # re-decided anything - the car is nearly full - so a break is a flip
             # under the same inputs that keeps the energy and moves it.
             shrank = plan.planned_kwh < before.planned_kwh - 1e-6
-            (recut if inputs_changed(before, plan) or shrank else broken).append(load_id)
+            forced = inputs_changed(before, plan) or shrank or load_id in refit
+            (recut if forced else broken).append(load_id)
     return changed, broken, recut
 
 
