@@ -13,9 +13,9 @@
     "echarts": "6.1.0"
   },
   "devDependencies": {
-    "esbuild": "0.25.10",
-    "knip": "5.88.1",
-    "typescript": "5.9.3",
-    "vitest": "4.0.18"
+    "esbuild": "0.28.2",
+    "knip": "6.37.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
   }
 }
