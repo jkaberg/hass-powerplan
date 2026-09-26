@@ -202,7 +202,7 @@ Every adapter, every field: window · metric (`per_day`, `per_period`, `n`, dist
 
 ### 5.7 Cross-check and canary
 
-A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement opens an issue for the maintainer. Tests in the PR suite never touch the network (D9). The canary fetches the way the flow does - `Http`'s conduct, each operator's pre-selected product - and a country's only source listing more than 500 operators is fetched for an even spread of 25 (ElCom, D-0681).
+A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement shows on the maintainer's "Tariff test dashboard" issue, which every run rewrites (D-0684). Tests in the PR suite never touch the network (D9). The canary fetches the way the flow does - `Http`'s conduct, each operator's pre-selected product - and a country's only source listing more than 500 operators is fetched for an even spread of 25 (ElCom, D-0681). Two tiers' copies of a company are compared on products of one kind (dwelling, main fuse, region), a finding only when no pair agrees; a source that lists by postcode alone is asked for a probe postcode; a retailer with no plan is no finding (D-0683).
 
 ### 5.8 Norway's tariff APIs, every one (kraftsystemet.no, "Nettleie API i Norge", each probed)
 
@@ -301,7 +301,7 @@ How each first adapter turns its source's fields into the tariff model (D2 §4).
 | `openei_urdb` | US | NREL's [Utility Rate Database](https://openei.org/services/doc/rest/util_rates/) (`api.openei.org/utility_rates`, a free api.data.gov key; `DEMO_KEY` allows 50 calls a day) | the utilities in the site's state, then their approved residential rates | `startdate`/`enddate`; `demandratestructure` × `demandweekdayschedule`/`demandweekendschedule` → `eligible` and $/kW (rate + `adj`), one version per season generated for the next twelve months; several demand charges → `peaks` (G4); energy schedules → the grid's energy charge |
 | `cwape` | BE (Wallonia, Brussels) | CompaCWaPE's and BruSim's `postal_codes`, `distribution_network_managers`, `offer_simulations` (POST) (D-0575) | the postcode's entries' grid companies | the grid lines of one simulation per meter: rate = yearly amount ÷ kWh, fixed lines per year; the dual rate's day hours asked; `NoPeak` |
 | `sahkonhinta` | FI | Energiavirasto's `getdsocollection` | - (a directory, D-0576) | the postcode's grid companies |
-| `cdr_energy` | AU | the Consumer Data Right product reference data, `GET {brand}/cds-au/v1/energy/plans` and `/plans/{id}` (public, no key; brands from the CDR register) | the retailers with plans for the site's distributor | `effectiveFrom`/`effectiveTo`; each demand charge's `startTime`/`endTime`/`days` → `eligible`, `amount` per `chargePeriod` → `price_period_unit` (`day`, G9); the measurement period always asked |
+| `cdr_energy` | AU | the Consumer Data Right product reference data, `GET {brand}/cds-au/v1/energy/plans` and `/plans/{id}` (public, no key; brands from the CDR register, their plans from the AER's Energy Made Easy where the brand's own host has none, D-0683) | the retailers with plans for the site's distributor | `effectiveFrom`/`effectiveTo`; each demand charge's `startTime`/`endTime`/`days` → `eligible`, `amount` per `chargePeriod` → `price_period_unit` (`day`, G9); the measurement period always asked |
 
 The other adapters (ElCom, ZSDIS, ANRE, Tauron, ESIOS) follow the same shape. Their fields are §5.9's and §5.10's, and each adapter's mapping table is written with it.
 
@@ -551,7 +551,7 @@ Every tariff-related piece that exists before D13, what happens to it, and in wh
 |---|---|---|
 | no tier reachable in the flow | template and `custom` offered | form error `tariff_source_unreachable` |
 | the chosen tier fails the quality check | the next tier; else not supported | the list says so |
-| a T4 page changed shape | the adapter falls to the next tier; the nightly canary opens an issue | - |
+| a T4 page changed shape | the adapter falls to the next tier; the nightly canary shows it on the dashboard issue | - |
 | a T3 key rejected | the next tier; the household told once | form error `tariff_key_rejected` |
 | renewal fails | copy kept, backoff | `tariff_stale` after the last version ends |
 | `refresh_tariff` fails | copy kept | `HomeAssistantError` `tariff_refresh_failed` (source, reason) |

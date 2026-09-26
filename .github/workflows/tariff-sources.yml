@@ -3,7 +3,7 @@ name: tariff-sources
 # D13 §5.7, D9 §5.15: every night, every tariff source's live endpoint with its
 # named User-Agent - the contract of what each adapter reads, and each company
 # compared across the tiers that list it. Never in a household's Home Assistant
-# and never in the PR suite. A finding opens an issue for the maintainer.
+# and never in the PR suite. Each run rewrites the "Tariff test dashboard" issue.
 on:
   schedule:
     - cron: "37 3 * * *"
@@ -35,12 +35,32 @@ jobs:
           set +e
           uv run python tools/tariff_canary.py > canary.md
           echo "status=$?" >> "$GITHUB_OUTPUT"
+          [ -s canary.md ] && echo "report=yes" >> "$GITHUB_OUTPUT"
           cat canary.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Open an issue on a finding
-        if: steps.canary.outputs.status != '0'
+      # One issue, "Tariff test dashboard", rewritten by every run whatever it
+      # found; created only when there is none.
+      - name: Update the tariff test dashboard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="Tariff sources: findings on $(date -u +%F)"
-          gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' | grep -q . \
-            || gh issue create --title "$title" --body-file canary.md
+          title="Tariff test dashboard"
+          {
+            echo "Rewritten by the nightly [tariff-sources]($RUN_URL) run, $(date -u '+%F %H:%M UTC')."
+            echo
+            if [ -s canary.md ]; then
+              cat canary.md
+            else
+              echo "The canary crashed before it could report: see the run's log."
+            fi
+          } > dashboard.md
+          number=$(gh issue list --state all --search "\"$title\" in:title" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -z "$number" ]; then
+            gh issue create --title "$title" --body-file dashboard.md
+          else
+            gh issue edit "$number" --body-file dashboard.md
+          fi
+      - name: Fail on a crash
+        if: steps.canary.outputs.report != 'yes'
+        run: exit 1
