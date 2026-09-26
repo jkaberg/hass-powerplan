@@ -51,15 +51,26 @@ from custom_components.powerplan.core.tariffs.sources import (  # noqa: E402
 from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
-TIMEOUT_S = 30.0
+    from custom_components.powerplan.core.tariffs.sources import Operator
 
 
-class CanaryHttp:
-    """`Http`'s conduct outside Home Assistant: the named User-Agent, the size cap, a cache.
+#: A country's only source listing more than `LIMIT` operators is fetched for `SAMPLE`
+#: of them, evenly spread: nothing to compare them with, and a spread shows the
+#: endpoint's shape. ElCom lists some 2 100 municipalities, at 1-10 s each.
+LIMIT = 500
+SAMPLE = 25
+#: Seconds to wait before asking again after a 429: Energi Data Service sends a
+#: few when the canary asks for every Danish area in a row.
+BACKOFF_S = (5.0, 20.0, 60.0)
 
-    What it downloads is held in memory for the run and released at its end (§5.2 rule 6).
+
+class CanaryHttp(base.Http):
+    """`Http`'s conduct outside Home Assistant: its own session, date and threads.
+
+    The requests, the User-Agent, the size cap and the in-memory cache are
+    `Http`'s own; what it downloads is released at the run's end (§5.2 rule 6).
     """
 
     def __init__(self, session: aiohttp.ClientSession, day: date) -> None:
@@ -77,37 +88,16 @@ class CanaryHttp:
         """Run a parse off the event loop."""
         return await asyncio.to_thread(job, *args)
 
-    def release(self) -> None:
-        """Drop every download."""
-        self._cache.clear()
-        self._parsed.clear()
-
-    async def document(self, url: str, parse: Callable[[bytes], Any]) -> Any:
-        """Return `url` parsed, once for the run."""
-        key = (url, parse)
-        if key not in self._parsed:
-            self._parsed[key] = await self.executor(parse, await self.get(url))
-        return self._parsed[key]
-
-    async def get(self, url: str, **headers: str) -> bytes:
-        """Return `url`'s body, or raise `UnreachableError`."""
-        if url in self._cache:
-            return self._cache[url]
-        try:
-            async with self._session.get(
-                url,
-                headers={"User-Agent": base.USER_AGENT, **headers},
-                timeout=aiohttp.ClientTimeout(total=TIMEOUT_S),
-            ) as answer:
-                if answer.status != 200:  # noqa: PLR2004 - HTTP OK
-                    raise UnreachableError(f"{url}: HTTP {answer.status}")
-                body = await answer.content.read(base.MAX_BYTES + 1)
-        except (aiohttp.ClientError, TimeoutError) as err:
-            raise UnreachableError(f"{url}: {err}") from err
-        if len(body) > base.MAX_BYTES:
-            raise UnreachableError(f"{url}: larger than {base.MAX_BYTES} bytes")
-        self._cache[url] = body
-        return body
+    async def _download(self, url: str, headers: Mapping[str, str]) -> bytes:
+        """Fetch `url`, asking again after a 429 (Too Many Requests)."""
+        for pause in (*BACKOFF_S, None):
+            try:
+                return await super()._download(url, headers)
+            except UnreachableError as err:
+                if pause is None or not str(err).endswith("HTTP 429"):
+                    raise
+            await asyncio.sleep(pause)
+        raise AssertionError  # unreachable: the last pass returns or raises
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,11 +172,14 @@ async def run(countries_: Sequence[str], day: date, time_zone: str) -> list[Find
 async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
     """Compare each Danish area's tariff in force on elpris.dk with Datahub's row (§5.7)."""
     findings: list[Finding] = []
-    static = json.loads(await http.get(elpris_dk.STATIC))
+    try:
+        static = json.loads(await http.get(elpris_dk.STATIC))
+    except (SourceError, ValueError) as err:
+        return [Finding(elpris_dk.KEY, "–", f"no operators: {err}")]
     for operator in elpris_dk.operators(static):
         try:
             area_doc = json.loads(await http.get(elpris_dk.AREA.format(area=operator.key)))
-        except SourceError as err:
+        except (SourceError, ValueError) as err:
             findings.append(Finding(elpris_dk.KEY, operator.name, str(err)))
             continue
         code, owner = elpris_dk.charge_code(area_doc), elpris_dk.owner(static, operator.key)
@@ -198,7 +191,7 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
         since = date.fromisoformat(str(tariffs[-1]["validFrom"]))
         try:
             answer = json.loads(await http.get(datahub_pricelist.query(owner, code, since)))
-        except SourceError as err:
+        except (SourceError, ValueError) as err:
             findings.append(Finding("datahub_pricelist", operator.name, str(err)))
             continue
         theirs = {
@@ -209,6 +202,9 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
             int(h["hoursFrom"]): Decimal(str(h["amount"]))
             for h in tariffs[-1]["distributionAreaChargeHours"]
         }
+        if sorted(hours) != list(range(datahub_pricelist.HOURS)):
+            # the adapter's own fetch reports it: "does not price every hour"
+            continue
         ours = datahub_pricelist.hourly(since, [hours[h] for h in range(datahub_pricelist.HOURS)])
         other = theirs.get(since)
         if other is None:
@@ -246,17 +242,19 @@ async def _cross_check(
         findings.extend(await datahub_check(http, day))
     for country in countries_:
         by_operator: dict[str, list[tuple[str, GridTariff]]] = {}
-        for cls in base.for_country(country):
+        sources = base.for_country(country)
+        for cls in sources:
             try:
-                operators = await cls().operators(http)  # type: ignore[arg-type]
+                operators = await cls().operators(http)
             except SourceError as err:
                 findings.append(Finding(cls.key, "–", f"no operators: {err}"))
                 continue
             if not operators:
                 findings.append(Finding(cls.key, "–", "lists no operator"))
-            for operator in operators:
+            for operator in operators if len(sources) > 1 else sample(operators):
                 try:
-                    fetched = await cls().fetch(http, operator.key, None, {})  # type: ignore[arg-type]
+                    product = await _first_product(cls, http, operator)
+                    fetched = await cls().fetch(http, operator.key, product, {})
                 except SourceError as err:
                     findings.append(Finding(cls.key, operator.name, str(err)))
                     continue
@@ -268,6 +266,25 @@ async def _cross_check(
                     for what in disagreements(grid_a, grid_b, country, day, zone)
                 )
     return findings
+
+
+async def _first_product(
+    cls: type[base.TariffSource], http: CanaryHttp, operator: Operator
+) -> str | None:
+    """Return the product the flow pre-selects: the operator's first, asked where it lists none."""
+    products = operator.products
+    lister = getattr(cls, "products", None)
+    if not products and lister is not None:
+        products = tuple(await lister(cls(), http, operator.key, None))
+    return products[0].key if products else None
+
+
+def sample[T](items: Sequence[T]) -> Sequence[T]:
+    """Return `items`, or `SAMPLE` of them evenly spread past `LIMIT`, the same every night."""
+    if len(items) <= LIMIT:
+        return items
+    step = -(-len(items) // SAMPLE)
+    return items[::step]
 
 
 def report(findings: Sequence[Finding], day: date) -> str:

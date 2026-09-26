@@ -202,7 +202,7 @@ Every adapter, every field: window · metric (`per_day`, `per_period`, `n`, dist
 
 ### 5.7 Cross-check and canary
 
-A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement opens an issue for the maintainer. Tests in the PR suite never touch the network (D9).
+A nightly CI job (never in the household's Home Assistant) fetches every adapter's live endpoint, runs the contract test, and compares each company's tariff across the tiers that exist (T3/T4 against NVE and fri-nettleie): a changed page shape or a disagreement opens an issue for the maintainer. Tests in the PR suite never touch the network (D9). The canary fetches the way the flow does - `Http`'s conduct, each operator's pre-selected product - and a country's only source listing more than 500 operators is fetched for an even spread of 25 (ElCom, D-0681).
 
 ### 5.8 Norway's tariff APIs, every one (kraftsystemet.no, "Nettleie API i Norge", each probed)
 

@@ -154,14 +154,18 @@ class _Answer:
 async def test_11_a_download_is_read_to_its_end_not_to_its_first_piece() -> None:
     """A postcode in the wizard: 4 767 of 404 716 bytes, then "Unknown error"."""
     body = ARCHIVE
-    assert len(await base._whole(_Answer(body))) == len(body)
-    unpack(await base._whole(_Answer(body)))
+    assert len(await base.read_whole(_Answer(body))) == len(body)
+    unpack(await base.read_whole(_Answer(body)))
 
 
 async def test_11_a_download_past_the_cap_stops_one_piece_over() -> None:
     """D13 §11: nothing over 5 MB is read, however it arrives."""
     body = b"x" * (base.MAX_BYTES + 200_000)
-    assert base.MAX_BYTES < len(await base._whole(_Answer(body, 65_536))) <= base.MAX_BYTES + 65_536
+    assert (
+        base.MAX_BYTES
+        < len(await base.read_whole(_Answer(body, 65_536)))
+        <= base.MAX_BYTES + 65_536
+    )
 
 
 def test_11_a_cut_archive_is_a_quality_failure_the_ladder_can_pass() -> None:

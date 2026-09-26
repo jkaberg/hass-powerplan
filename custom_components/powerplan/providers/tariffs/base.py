@@ -37,6 +37,7 @@ __all__ = [
     "for_country",
     "get",
     "keys",
+    "read_whole",
     "register",
 ]
 
@@ -47,7 +48,7 @@ MAX_BYTES: Final = 5 * 1024 * 1024
 TIMEOUT_S: Final = 20.0
 
 
-async def _whole(answer: aiohttp.ClientResponse) -> bytes:
+async def read_whole(answer: aiohttp.ClientResponse) -> bytes:
     """Read a body to its end, stopping one byte past `MAX_BYTES` (D13 §11).
 
     `StreamReader.read(n)` returns whatever has arrived, up to `n` - a 1.5 MB
@@ -124,7 +125,7 @@ class Http:
                 if answer.status not in {200, 201}:
                     msg = f"{url}: HTTP {answer.status}"
                     raise UnreachableError(msg)
-                data = await _whole(answer)
+                data = await read_whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise UnreachableError(f"{url}: {err}") from err
         if len(data) > MAX_BYTES:
@@ -149,7 +150,7 @@ class Http:
                 if answer.status != 200:  # noqa: PLR2004 - HTTP OK
                     msg = f"{url}: HTTP {answer.status}"
                     raise UnreachableError(msg)
-                body = await _whole(answer)
+                body = await read_whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise UnreachableError(f"{url}: {err}") from err
         if len(body) > MAX_BYTES:

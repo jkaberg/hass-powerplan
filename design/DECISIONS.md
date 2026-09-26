@@ -2848,3 +2848,8 @@ hassfest takes a selector option key only as `[a-z0-9-_]+`, and `TRE_DØGNMAX_MN
 
 `SitePlan.refit` and `PlanReport.refit` name the loads whose kept plan failed `_fits` (D-0628) this cycle. The scenario runner counts a committed slot those loads drop as a re-cut, not a commitment break: the room their betters left changed, which INV-32 does not protect against. Without it the reference benchmark read three breaks for the EV's evening re-cuts. Affects D5 §5.9; D9 §5.11.
 **Rejected:** comparing the headroom in the runner - the engine already knows which plans it replaced for the room.
+
+### D-0681 · The canary reads like the flow, and samples a source too long for a night
+
+`CanaryHttp` is `Http` with its own session, date and threads, so the canary reads a body to its end (`read_whole`) and can POST (ElCom), as the flow does. Each operator is fetched with the product the flow pre-selects: its first, asked of the source where the operator lists none (`cdr_energy`). A country's only source listing more than 500 operators is fetched for 25 of them, evenly spread: ElCom's 2 135 municipalities at 1-10 s each don't fit the job's 30 minutes, and with no second tier there is nothing to compare. A 429 is asked again after 5, 20 and 60 s. A document the canary can't read is a finding, never a crash. Affects D13 §5.7.
+**Rejected:** fetching every Swiss municipality in parallel - still over 15 minutes at eight at once, and the regulator's server drops connections.

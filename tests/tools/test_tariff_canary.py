@@ -7,10 +7,15 @@ workflow's, never the PR suite's.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
+
+import pytest
 
 from custom_components.powerplan.core.tariffs.household import (
     EXCL,
@@ -19,8 +24,12 @@ from custom_components.powerplan.core.tariffs.household import (
     from_preset,
     published_levies_at,
 )
+from custom_components.powerplan.core.tariffs.sources import UnreachableError
 from tests.builders.presets import fixture_raw
 from tools import tariff_canary
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 OSLO = ZoneInfo("Europe/Oslo")
 DAY = date(2026, 9, 24)
@@ -107,3 +116,49 @@ async def test_denmarks_elpris_and_datahub_agree_on_the_captured_documents() -> 
     radius = [f for f in findings if f.operator == "Radius Elnet A/S"]
     assert radius == []
     assert findings, "areas 131 and 145 have no Datahub rows captured: said so, not skipped"
+
+
+def test_a_long_only_source_is_sampled_the_same_every_night() -> None:
+    """ElCom's ~2 100 municipalities fit no night: a fixed spread of them does (D-0681)."""
+    municipalities = list(range(2135))
+    picked = tariff_canary.sample(municipalities)
+    assert len(picked) <= tariff_canary.SAMPLE
+    assert picked[0] == 0
+    assert picked[-1] > 2000, "spread over the list, not its head"
+    assert picked == tariff_canary.sample(municipalities)
+    companies = list(range(74))
+    assert tariff_canary.sample(companies) == companies, "fri-nettleie: every company"
+
+
+class _Replies:
+    """A session whose GETs answer with `statuses` in turn, then 200 and `body`."""
+
+    def __init__(self, statuses: list[int], body: bytes) -> None:
+        self.statuses = statuses
+        self.body = body
+        self.asked = 0
+
+    @asynccontextmanager
+    async def get(self, _url: str, **_kwargs: object) -> AsyncIterator[object]:
+        self.asked += 1
+        status = self.statuses.pop(0) if self.statuses else 200
+        body = self.body
+
+        class _Content:
+            async def iter_chunked(self, _size: int) -> AsyncIterator[bytes]:
+                yield body
+
+        yield SimpleNamespace(status=status, content=_Content())
+
+
+async def test_a_429_is_asked_again_and_a_404_is_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Energi Data Service's 429s were a quarter of a night's findings: wait and ask again."""
+    monkeypatch.setattr(tariff_canary, "BACKOFF_S", (0.0, 0.0, 0.0))
+    busy = _Replies([429, 429], b"{}")
+    http = tariff_canary.CanaryHttp(busy, DAY)  # type: ignore[arg-type]
+    assert await http.get("https://example.invalid/busy") == b"{}"
+    assert busy.asked == 3
+    gone = _Replies([404], b"{}")
+    with pytest.raises(UnreachableError, match="HTTP 404"):
+        await tariff_canary.CanaryHttp(gone, DAY).get("https://example.invalid/gone")  # type: ignore[arg-type]
+    assert gone.asked == 1
