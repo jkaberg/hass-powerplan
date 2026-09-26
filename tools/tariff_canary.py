@@ -184,19 +184,23 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
             continue
         code, owner = elpris_dk.charge_code(area_doc), elpris_dk.owner(static, operator.key)
         tariffs = [
-            c for c in area_doc.get("distributionAreaCharges") or () if c.get("chargeId") == code
+            c
+            for c in area_doc.get("distributionAreaCharges") or ()
+            if c.get("chargeId") == code and c.get("billingType") == "flex"
         ]
         if not code or not owner or not tariffs:
             continue
         since = date.fromisoformat(str(tariffs[-1]["validFrom"]))
         try:
-            answer = json.loads(await http.get(datahub_pricelist.query(owner, code, since)))
+            answer = json.loads(await http.get(datahub_pricelist.query(code, since)))
         except (SourceError, ValueError) as err:
             findings.append(Finding("datahub_pricelist", operator.name, str(err)))
             continue
         theirs = {
             v.valid_from: v
-            for v, _ in datahub_pricelist.versions(answer.get("records") or (), code)
+            for v, _ in datahub_pricelist.versions(
+                datahub_pricelist.owned(answer.get("records") or (), owner, operator.key), code
+            )
         }
         hours = {
             int(h["hoursFrom"]): Decimal(str(h["amount"]))

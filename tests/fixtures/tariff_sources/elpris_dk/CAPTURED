@@ -1,1 +1,2 @@
 Captured 2026-09-09 from https://elpris.dk/data/static.json, nationalCharges.json and distributionAreaCharge_{131,145,791}.json (Forsyningstilsynet, open, no key; the files the site's own page loads). D13 §5.9, D-0571.
+Captured 2026-09-26: distributionAreaCharge_{014,051,860}.json - area 014 lists each charge twice, `flex` (hourly) and `fix` (no hours), and a second charge (50001) in force beside its own; 051's `flex` record prices midnight twice and every other hour twice at 0 (D-0682). 860 (Zeanet) lists 43110 only as `fix`, 0.0719 - the night rate of Datahub's table.

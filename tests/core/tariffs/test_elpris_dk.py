@@ -13,9 +13,15 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from custom_components.powerplan.core.tariffs.household import EXCL
 from custom_components.powerplan.core.tariffs.model import NoPeak
-from custom_components.powerplan.core.tariffs.sources import datahub_pricelist, elpris_dk
+from custom_components.powerplan.core.tariffs.sources import (
+    QualityError,
+    datahub_pricelist,
+    elpris_dk,
+)
 from tests.builders.tariff_sources import CAPTURED, FIXTURES
 from tests.core.tariffs.conftest import Holidays
 
@@ -103,3 +109,67 @@ def test_3_datahub_folds_24_hourly_prices_into_periods() -> None:
         Decimal("0.106175"),
         Decimal("0.955573"),
     }
+
+
+def _area(key: str, name: str, datahub: str | None = None):  # type: ignore[no-untyped-def]
+    return elpris_dk.parse(
+        _json("elpris_dk", f"distributionAreaCharge_{key}.json"),
+        _json("elpris_dk", "nationalCharges.json"),
+        _json("datahub", datahub)["records"] if datahub else [],
+        area=key,
+        name=name,
+        fetched=date(2026, 9, 26),
+    ).grid
+
+
+def test_3_a_household_is_billed_flex_not_the_flat_fix_record() -> None:
+    """Aars-Hornum lists AARS-NT-01 as `flex` and as `fix` (no hours), and 50001 beside it (D-0682)."""
+    assert elpris_dk.charge_code(_json("elpris_dk", "distributionAreaCharge_014.json")) == (
+        "AARS-NT-01"
+    )
+    grid = _area("014", "Aars-Hornum El-forsyning")
+    assert [version.valid_from for version in grid.energy] == [date(2023, 11, 1)]
+
+
+def test_3_an_hour_priced_twice_is_read_from_datahub_not_guessed() -> None:
+    """Elinord's 43300 on elpris.dk is Læsø's rows and Elinord's merged; Datahub says flat."""
+    with pytest.raises(QualityError, match="more than once"):
+        _area("051", "Elinord A/S")
+    records = _json("datahub", "43300-from-2026-02-01.json")["records"]
+    elinord = datahub_pricelist.owned(records, "Elinord A/S", "051")
+    assert {row["ChargeOwner"] for row in elinord} == {"Elinord A/S"}
+    grid = elpris_dk.parse(
+        _json("elpris_dk", "distributionAreaCharge_051.json"),
+        _json("elpris_dk", "nationalCharges.json"),
+        elinord,
+        area="051",
+        name="Elinord A/S",
+        fetched=date(2026, 9, 26),
+    ).grid
+    (version,) = grid.energy
+    evening = datetime(2026, 9, 28, 18, tzinfo=COPENHAGEN)
+    assert _price_at(version, evening) == Decimal("0.1864") + ENERGINET
+
+
+def test_3_datahubs_owner_is_found_by_its_own_spelling() -> None:
+    """One owner is the code's; of several, elpris.dk's name, the area-suffixed one first."""
+    rows = [
+        {"ChargeOwner": "Konstant Net A/S - 245"},
+        {"ChargeOwner": "Konstant Net A/S - 151"},
+    ]
+    assert datahub_pricelist.owned(rows, "KONSTANT Net A/S", "151") == [rows[1]]
+    assert datahub_pricelist.owned([{"ChargeOwner": "L-Net A/S"}], "L-NET", "351")
+    assert not datahub_pricelist.owned(rows, "Elinord A/S", "051"), "no namesake, no rows"
+
+
+def test_3_without_flex_hours_datahubs_rows_are_the_tariff() -> None:
+    """Zeanet lists 43110 only as `fix` at 0.0719, the night rate; Datahub has the table."""
+    grid = _area("860", "Zeanet A/S", "zeanet-43110.json")
+    assert [version.valid_from for version in grid.energy] == [date(2026, 9, 1), date(2026, 10, 1)]
+    september, winter = grid.energy
+    night = datetime(2026, 9, 28, 3, tzinfo=COPENHAGEN)
+    assert _price_at(september, night) == Decimal("0.0719") + ENERGINET
+    assert _price_at(september, night.replace(hour=18)) == Decimal("0.2803") + ENERGINET
+    assert _price_at(winter, night.replace(month=11, hour=18)) == Decimal("0.6468") + ENERGINET
+    with pytest.raises(QualityError, match="no hourly tariff"):
+        _area("860", "Zeanet A/S")

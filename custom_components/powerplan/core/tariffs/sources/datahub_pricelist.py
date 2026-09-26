@@ -21,19 +21,44 @@ from ..model import TimeFilter
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-__all__ = ["DATASET", "HOURS", "hourly", "query", "versions"]
+__all__ = ["DATASET", "HOURS", "hourly", "owned", "query", "versions"]
 
 DATASET: Final = "https://api.energidataservice.dk/dataset/DatahubPricelist"
 HOURS: Final = 24
 _TARIFF: Final = "D03"
 
 
-def query(owner: str, code: str, since: date) -> str:
-    """Return the dataset's URL for one company's charge code from `since`."""
-    wanted = f'{{"ChargeOwner":["{owner}"],"ChargeTypeCode":["{code}"],"ChargeType":["{_TARIFF}"]}}'
+def query(code: str, since: date) -> str:
+    """Return the dataset's URL for a charge code from `since`, every owner's.
+
+    Not by owner: Datahub spells owners its own way ("L-Net A/S" where elpris.dk
+    has "L-NET", "Konstant Net A/S - 151" for "KONSTANT Net A/S"), so `owned`
+    picks the company's rows (D-0682).
+    """
+    wanted = f'{{"ChargeTypeCode":["{code}"],"ChargeType":["{_TARIFF}"]}}'
     return (
         f"{DATASET}?filter={quote(wanted)}&start={since.isoformat()}&limit=100&sort=ValidFrom%20asc"
     )
+
+
+def owned(records: Sequence[Mapping[str, Any]], owner: str, area: str) -> list[Mapping[str, Any]]:
+    """Return the rows of the company that owns `area`: the code's only owner, or its namesake.
+
+    A code two companies use (Elinord's and Læsø's 43300) goes to the owner whose
+    name is elpris.dk's, case and punctuation aside, the one suffixed with the
+    area first ("Konstant Net A/S - 151"); no match, no rows.
+    """
+    owners = {str(row.get("ChargeOwner")) for row in records}
+    if len(owners) > 1:
+        wanted = _plain(owner)
+        named = {name for name in owners if _plain(name).startswith(wanted)}
+        suffixed = {name for name in named if _plain(name) == wanted + area}
+        owners = suffixed or (named if len(named) == 1 else set())
+    return [row for row in records if str(row.get("ChargeOwner")) in owners]
+
+
+def _plain(name: str) -> str:
+    return "".join(char for char in name.casefold() if char.isalnum())
 
 
 def versions(

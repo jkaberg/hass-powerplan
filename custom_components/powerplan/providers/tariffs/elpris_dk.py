@@ -61,19 +61,18 @@ class ElprisDk:
     async def fetch(
         self, http: Http, operator: str, product: str | None, answers: Mapping[str, Any]
     ) -> Fetched:
-        """Return one area's copy: elpris.dk's tariff and Datahub's next season."""
+        """Return one area's copy: elpris.dk's tariff and Datahub's rows for its charge."""
         static = await http.document(elpris_dk.STATIC, _json)
         area_doc = await http.document(elpris_dk.AREA.format(area=operator), _json)
         national = await http.document(elpris_dk.NATIONAL, _json)
         owner = elpris_dk.owner(static, operator)
         code = elpris_dk.charge_code(area_doc)
+        since = elpris_dk.charge_since(area_doc) or http.today()
         future: list[Any] = []
         if owner and code:
             try:
-                answer = await http.document(
-                    datahub_pricelist.query(owner, code, http.today()), _json
-                )
-                future = list(answer.get("records") or ())
+                answer = await http.document(datahub_pricelist.query(code, since), _json)
+                future = datahub_pricelist.owned(answer.get("records") or (), owner, operator)
             except SourceError as err:
                 _LOGGER.info("datahub did not answer for %s: %s", owner, err)
         name = next((o.name for o in elpris_dk.operators(static) if o.key == operator), operator)

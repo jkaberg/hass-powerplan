@@ -1,2 +1,4 @@
 Captured 2026-09-09 from https://api.energidataservice.dk/dataset/DatahubPricelist, filter ChargeOwner "Radius Elnet A/S", ChargeTypeCode DT_C_01, ChargeType D03, start 2026-09-01 (Energinet, open, no key): Radius's winter C tariff from 2026-10-01. D13 §5.11, §19 3.
 Also captured the same day with start 2026-04-01 (radius-DT_C_01-from-2026-04-01.json): the season in force and the next, for the canary's elpris.dk ↔ Datahub comparison (§5.7).
+Captured 2026-09-26 with ChargeOwner "Zeanet A/S", ChargeTypeCode 43110, start 2026-09-01 (zeanet-43110.json): the season in force and the winter one, where elpris.dk lists only a `fix` record at the night rate (D-0682).
+Captured 2026-09-26 with ChargeTypeCode 43300 alone, start 2026-02-01 (43300-from-2026-02-01.json): Elinord's rows; Læsø Elnet's 43300 (from 2025-01-01) is before `start`. elpris.dk merges both companies' rows into area 051 (D-0682).

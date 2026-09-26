@@ -22,7 +22,7 @@ from . import datahub_pricelist
 from .base import Fetched, Operator, QualityError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 __all__ = [
     "AREA",
@@ -31,6 +31,7 @@ __all__ = [
     "STATIC",
     "areas_for",
     "charge_code",
+    "charge_since",
     "operators",
     "owner",
     "parse",
@@ -80,17 +81,24 @@ def areas_for(static: Mapping[str, Any], postcode: str) -> list[str]:
     return []
 
 
-def charge_code(area_doc: Mapping[str, Any]) -> str | None:
-    """Return the code of the area's newest tariff - Datahub's `ChargeTypeCode`."""
-    tariffs = sorted(
-        (
-            c
-            for c in area_doc.get("distributionAreaCharges") or ()
-            if c.get("chargeType") == "tariff"
-        ),
+def _tariffs(charges: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Return the tariff records, oldest first."""
+    return sorted(
+        (c for c in charges if c.get("chargeType") == "tariff"),
         key=lambda charge: str(charge["validFrom"]),
     )
+
+
+def charge_code(area_doc: Mapping[str, Any]) -> str | None:
+    """Return the code of the area's newest tariff - Datahub's `ChargeTypeCode`."""
+    tariffs = _tariffs(area_doc.get("distributionAreaCharges") or ())
     return str(tariffs[-1]["chargeId"]) if tariffs else None
+
+
+def charge_since(area_doc: Mapping[str, Any]) -> date | None:
+    """Return when the area's newest tariff began: where Datahub's rows are asked from."""
+    tariffs = _tariffs(area_doc.get("distributionAreaCharges") or ())
+    return date.fromisoformat(str(tariffs[-1]["validFrom"])) if tariffs else None
 
 
 def parse(
@@ -102,15 +110,24 @@ def parse(
     name: str,
     fetched: date,
 ) -> Fetched:
-    """Return one area's copy: the tariff in force, and the seasons Datahub adds."""
+    """Return one area's copy: the tariff in force, and the seasons Datahub adds.
+
+    Each charge is listed as `flex`, priced by the hour, and `fix`, a flat rate for
+    a meter not settled by the hour - a household's smart meter is billed `flex`.
+    Where elpris.dk lists no `flex` hours, its `fix` price is only part of the
+    table (Zeanet's 43110 gives the night rate), so Datahub's rows are the tariff
+    (D-0682).
+    """
     charges = list(area_doc.get("distributionAreaCharges") or ())
-    tariffs = sorted(
-        (c for c in charges if c.get("chargeType") == "tariff"),
-        key=lambda charge: str(charge["validFrom"]),
-    )
-    if not tariffs:
-        msg = f"{KEY}: area {area} publishes no tariff"
-        raise QualityError(msg)
+    code = charge_code(area_doc)
+    # the area's own charge, billed by the hour, and only while it prices anything
+    tariffs = [
+        c
+        for c in _tariffs(charges)
+        if c["chargeId"] == code
+        and c.get("billingType") == "flex"
+        and not (c.get("validTo") and date.fromisoformat(str(c["validTo"])) <= fetched)
+    ]
     extra = sum(
         (
             Decimal(str(row["amount"]))
@@ -121,14 +138,17 @@ def parse(
     )
     energy = []
     last: date | None = None
+    unusable = f"{KEY}: area {area} publishes no hourly tariff"
     for tariff in tariffs:
-        hours = {
-            int(row["hoursFrom"]): Decimal(str(row["amount"]))
-            for row in tariff["distributionAreaChargeHours"]
-        }
+        rows = tariff["distributionAreaChargeHours"]
+        hours = {int(row["hoursFrom"]): Decimal(str(row["amount"])) for row in rows}
+        # Elinord's 43300 is two companies' rows merged: Datahub's is the tariff
+        if len(rows) != len(hours):
+            unusable = f"{KEY}: area {area}'s tariff prices an hour more than once"
+            continue
         if sorted(hours) != list(range(datahub_pricelist.HOURS)):
-            msg = f"{KEY}: area {area}'s tariff does not price every hour"
-            raise QualityError(msg)
+            unusable = f"{KEY}: area {area}'s tariff does not price every hour"
+            continue
         since = date.fromisoformat(str(tariff["validFrom"]))
         energy.append(
             datahub_pricelist.hourly(
@@ -136,11 +156,13 @@ def parse(
             )
         )
         last = date.fromisoformat(str(tariff["validTo"])) if tariff.get("validTo") else None
-    code = str(tariffs[-1]["chargeId"])
-    for version, until in datahub_pricelist.versions(future, code, extra):
-        if version.valid_from > energy[-1].valid_from:
+    for version, until in datahub_pricelist.versions(future, str(code), extra):
+        ended = until is not None and until <= fetched
+        if not ended and (not energy or version.valid_from > energy[-1].valid_from):
             energy.append(version)
             last = until
+    if not energy:
+        raise QualityError(unusable)
     monthly = sum(
         (Decimal(str(c["price"])) for c in charges if c.get("chargeType") == "subscription"),
         Decimal(0),

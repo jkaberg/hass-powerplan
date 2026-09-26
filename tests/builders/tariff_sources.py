@@ -197,10 +197,10 @@ def denmark_http() -> FixtureHttp:
     documents = {
         elpris_dk.STATIC: (folder / "static.json").read_bytes(),
         elpris_dk.NATIONAL: (folder / "nationalCharges.json").read_bytes(),
-        datahub_pricelist.query("Radius Elnet A/S", "DT_C_01", CAPTURED): (
+        datahub_pricelist.query("DT_C_01", CAPTURED): (
             FIXTURES / "datahub" / "radius-DT_C_01.json"
         ).read_bytes(),
-        datahub_pricelist.query("Radius Elnet A/S", "DT_C_01", date(2026, 4, 1)): (
+        datahub_pricelist.query("DT_C_01", date(2026, 4, 1)): (
             FIXTURES / "datahub" / "radius-DT_C_01-from-2026-04-01.json"
         ).read_bytes(),
     }
