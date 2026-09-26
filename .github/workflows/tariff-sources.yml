@@ -43,4 +43,4 @@ jobs:
         run: |
           title="Tariff sources: findings on $(date -u +%F)"
           gh issue list --state open --search "$title in:title" --json number --jq '.[0].number' | grep -q . \
-            || gh issue create --title "$title" --body-file canary.md --label tariff-sources
+            || gh issue create --title "$title" --body-file canary.md
