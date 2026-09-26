@@ -4,6 +4,8 @@
 
 import { PowerplanAppliancesCard } from "./appliances-card";
 import { PowerplanAttentionCard } from "./attention-card";
+import { PowerplanDayProfile } from "./day-profile";
+import { PowerplanLevelCard } from "./level-card";
 import { PowerplanMonthBars } from "./month-bars";
 import { PowerplanPeriodSummary } from "./period-summary";
 import { PowerplanPriceCard } from "./price-card";
@@ -24,3 +26,6 @@ define("powerplan-price-card", PowerplanPriceCard);
 // Iteration 4 (`register-r4.ts`, merged here).
 define("powerplan-attention-card", PowerplanAttentionCard);
 define("powerplan-month-bars", PowerplanMonthBars);
+// Iteration 6 (D12 §5.20).
+define("powerplan-day-profile", PowerplanDayProfile);
+define("powerplan-level-card", PowerplanLevelCard);

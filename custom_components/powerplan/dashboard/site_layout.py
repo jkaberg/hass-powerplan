@@ -52,6 +52,9 @@ class LoadLayout:
     #: The room, for the dialog's subtitle (D12 §5.12 R7): the appliance's own
     #: device's area, else the area of the first entity it steers; "" for none.
     area: str = ""
+    #: The entity and attribute the type's comfort reads (D12 §5.20 V7, D-0697): a
+    #: temperature for heat, the state of charge for a battery or a car; `None` without one.
+    level: tuple[str, str | None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +96,15 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
         soc = None if device is None else device.entity_of(Role.SOC)
         if load.config.type_key == "battery" and soc is not None:
             entities["soc"] = soc
+        role = _level_role(load.config.type_key, load.config.params)
+        if device is not None and role is Role.TEMP_FLOOR and device.entity_of(role) is None:
+            role = Role.TEMP  # as the type's `level()`: the floor sensor, else the air
+        bound = None if device is None or role is None else device.entity_of(role)
+        level = (
+            None
+            if device is None or role is None or bound is None
+            else (bound, device.attribute_of(role))
+        )
         layouts.append(
             LoadLayout(
                 subentry_id=load.load_id,
@@ -101,6 +113,7 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
                 entities=entities,
                 icon=TYPE_ICONS.get(load.config.type_key, "mdi:flash"),
                 area=areas.get(load.load_id, ""),
+                level=level,
             )
         )
     subentries = entry.subentries.values()
@@ -115,6 +128,17 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
         circuits=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_CIRCUIT),
         groups=tuple(s.title for s in subentries if s.subentry_type == SUBENTRY_GROUP),
     )
+
+
+def _level_role(type_key: str, params: Mapping[str, object]) -> Role | None:
+    """Return the role the type's comfort reads (D4's `level`), or `None` for a type without one."""
+    if type_key == "floor_heating":
+        return Role.TEMP if params.get("sensor") == "air" else Role.TEMP_FLOOR
+    if type_key in {"heat_pump", "radiator", "water_heater"}:
+        return Role.TEMP
+    if type_key in {"battery", "ev"}:
+        return Role.SOC
+    return None
 
 
 def _load_areas(

@@ -299,6 +299,8 @@ class Accounting:
         """Build the accounting for `cfg`, resuming `state` when a store had one."""
         self.config = cfg
         self._state = state if state is not None else _fresh_state(cfg)
+        #: The zone of the last closed slot: `_settle` books the day profile by local hour (D11 §5.12).
+        self._tz: tzinfo = UTC
         #: This slot's loads on their own meter: kWh, own price and the house's (G13).
         self._own_meter: list[tuple[float, SlotPrice, SlotPrice]] = []
 
@@ -364,6 +366,7 @@ class Accounting:
         state = self._state
         ledger = state.ledger
         month_closed = None
+        self._tz = ctx.tz
         if not state.opened:
             self._open(slot, ctx)
         elif month_key(slot.start_utc, ctx.tz) != ledger.month:
@@ -566,6 +569,7 @@ class Accounting:
             rec.cf_cost = plus(rec.cf_cost, cf_cost)
             rec.settled_cost = plus(rec.settled_cost, cost)
             rec.kwh_shifted += kwh_shifted(entry.kwh, entry.cf_kwh)
+            ledger.site.book_profile(entry.start_utc.astimezone(self._tz), entry.kwh, entry.cf_kwh)
             accrue_entry_by_party(rec.savings_by_party, entry, counterfactual=True)
             accrue_entry_by_party(rec.savings_by_party, entry, counterfactual=False, sign=-1)
             if currency == ledger.site.cf_energy_cost.currency:

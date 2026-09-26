@@ -430,3 +430,61 @@ def test_26c_a_session_that_ends_while_off_still_settles() -> None:
 
     assert not under_test.accounting.state().open
     assert under_test.accounting.status().loads["ev"].cf_kwh == pytest.approx(3.0)
+
+
+# --------------------------------------------------------------------------- #
+# 38 - the day profile (§5.12)
+# --------------------------------------------------------------------------- #
+
+
+def test_38_the_day_profile_books_settled_energy_by_local_hour() -> None:
+    """6 kWh at 00–06 against its even spread: the profile holds both shapes, equal sums, one date."""
+    under_test = site(import_curve=curve(ORDINARY, days=2, shape=norgespris))
+    under_test.with_load("floor", _floor())
+    for hour in range(24):
+        under_test.close(
+            closed_slot(
+                local(2026, 12, 3, hour, 0).astimezone(UTC),
+                loads={"floor": 1.0 if hour < 6 else 0.0},
+            )
+        )
+    rec = under_test.accounting.state().ledger.site
+    assert rec.hour_kwh[:6] == pytest.approx([1.0] * 6)
+    assert sum(rec.hour_kwh[6:]) == pytest.approx(0.0)
+    assert rec.hour_cf_kwh == pytest.approx([0.25] * 24)
+    assert sum(rec.hour_kwh) == pytest.approx(sum(rec.hour_cf_kwh))
+    assert rec.profile_dates == ["2026-12-03"]
+    assert rec.day_profile("2026-12")["days"] == 1
+
+
+def test_38b_an_observed_slot_adds_the_same_to_both_shapes() -> None:
+    """Observe is its own counterfactual: the two lines only differ where PowerPlan placed energy."""
+    under_test = site(import_curve=curve(ORDINARY, days=2, shape=norgespris))
+    under_test.with_load("floor", _floor(mode=Mode.OBSERVE))
+    for hour in range(3):
+        under_test.close(
+            closed_slot(local(2026, 12, 3, 18 + hour, 0).astimezone(UTC), loads={"floor": 0.5})
+        )
+    rec = under_test.accounting.state().ledger.site
+    assert rec.hour_kwh == pytest.approx(rec.hour_cf_kwh)
+    assert rec.hour_kwh[18:21] == pytest.approx([0.5] * 3)
+
+
+def test_38c_a_rollover_closes_the_profile_and_an_old_state_restores_with_zeros() -> None:
+    """The month closes with its profile; a schema-2 record without the fields reads zeros."""
+    from custom_components.powerplan.core.accounting.ledger import SiteMonthRec  # noqa: PLC0415
+    from custom_components.powerplan.core.state_codec import decode, encode  # noqa: PLC0415
+
+    under_test = site(import_curve=curve(ORDINARY, days=3, shape=norgespris))
+    under_test.with_load("floor", _floor(mode=Mode.OBSERVE))
+    under_test.close(closed_slot(local(2026, 12, 31, 22, 0).astimezone(UTC), loads={"floor": 1.0}))
+    under_test.close(closed_slot(local(2027, 1, 1, 0, 0).astimezone(UTC), loads={"floor": 0.0}))
+    ledger = under_test.accounting.state().ledger
+    assert ledger.history[-1].site.hour_kwh[22] == pytest.approx(1.0)
+    assert sum(ledger.site.hour_kwh) == pytest.approx(0.0)
+    raw = encode(SiteMonthRec.empty("NOK"))
+    for key in ("hour_kwh", "hour_cf_kwh", "profile_dates"):
+        raw.pop(key)
+    old = decode(SiteMonthRec, raw)
+    assert old.hour_kwh == [0.0] * 24
+    assert old.profile_dates == []

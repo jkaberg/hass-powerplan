@@ -320,6 +320,49 @@ export function resultLines(
   return out;
 }
 
+/** One part of the month's cost in the ring (D12 §5.20 V2). */
+export interface CostPart { key: "capacity" | "grid" | "supplier" | "state" | "energy"; value: number }
+
+/**
+ * What the month's cost is made of, by party (D11 §5.8): the capacity fee, the grid company's energy
+ * part, the supplier and the state; without `by_party`, energy and the capacity fee. Parts at zero go.
+ */
+export function costParts(a: Record<string, any> | undefined): CostPart[] {
+  const num = (v: unknown) => { const n = parseFloat(String(v ?? "")); return Number.isFinite(n) ? n : 0; };
+  const capacity = num(a?.capacity_fee);
+  const party = a?.by_party as Record<string, unknown> | undefined;
+  const parts: CostPart[] = party
+    ? [
+        { key: "capacity", value: capacity },
+        { key: "grid", value: Math.max(0, num(party.grid) - capacity) },
+        { key: "supplier", value: num(party.supplier) },
+        { key: "state", value: num(party.state) },
+      ]
+    : [{ key: "energy", value: num(a?.energy_cost) }, { key: "capacity", value: capacity }];
+  return parts.filter((p) => p.value > 0.005);
+}
+
+/**
+ * The planned kWh per hour, by appliance, from `plan`'s raw slots in [t0, t1): the price card's run marks
+ * (D12 §5.20 V3). Hours whose runs sum to 0,05 kWh or less are left out.
+ */
+export function plannedByHour(slots: readonly any[], t0: number, t1: number): Map<number, Map<string, number>> {
+  const out = new Map<number, Map<string, number>>();
+  for (const slot of slots) {
+    const s = Date.parse(slot.start);
+    if (!(s >= t0 && s < t1)) continue;
+    const hour = t0 + Math.floor((s - t0) / 3600e3) * 3600e3;
+    for (const [id, kwh] of Object.entries(slot.planned_kwh ?? {})) {
+      if (!(Number(kwh) > 0)) continue;
+      const row = out.get(hour) ?? new Map<string, number>();
+      row.set(id, (row.get(id) ?? 0) + Number(kwh));
+      out.set(hour, row);
+    }
+  }
+  for (const [hour, row] of out) if ([...row.values()].reduce((a, b) => a + b, 0) <= 0.05) out.delete(hour);
+  return out;
+}
+
 /** Stable per-instance id for SVG defs (several cards can be on one page). */
 let _uid = 0;
 export const newUid = (p: string) => `${p}${++_uid}`;

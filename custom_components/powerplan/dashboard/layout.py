@@ -48,6 +48,8 @@ PRICE_CARD = "custom:powerplan-price-card"
 APPLIANCES_CARD = "custom:powerplan-appliances-card"
 ATTENTION_CARD = "custom:powerplan-attention-card"
 MONTH_BARS = "custom:powerplan-month-bars"
+DAY_PROFILE = "custom:powerplan-day-profile"
+LEVEL_CARD = "custom:powerplan-level-card"
 CUSTOM_CARDS = frozenset(
     {
         TIMELINE_CARD,
@@ -57,6 +59,8 @@ CUSTOM_CARDS = frozenset(
         APPLIANCES_CARD,
         ATTENTION_CARD,
         MONTH_BARS,
+        DAY_PROFILE,
+        LEVEL_CARD,
     }
 )
 #: The Plan card's rail and the appliances card's name column, in px: equal, so
@@ -100,6 +104,8 @@ ENTITY_NAMES: Mapping[str, tuple[str, str]] = {
 #: `plan_status` states in which an appliance draws power now (D8 §5.16).
 RUNNING = ("charging", "running_plan", "run_now")
 _THERMAL = frozenset({"floor_heating", "heat_pump", "radiator", "water_heater"})
+#: Types whose planned runs are discrete blocks: the hour carpet marks their runs (D12 §5.20 V4).
+_RUN_TYPES = frozenset({"ev", "water_heater", "appliance_cycle", "generic_switch", "battery"})
 _CONFIDENCE = ("known", "stale", "estimated", "synthesised")
 #: Languages whose decimal mark is a comma, for the markdown tables (D12 §5.9).
 _DECIMAL_COMMA = frozenset({"nb", "no", "nn", "da", "sv", "de", "fi", "fr", "nl"})
@@ -277,7 +283,9 @@ def _overview(site: _Site) -> list[Card | None]:
         ),
     ]
     if "metric" in e and "level" in e:
-        sections.append(_section(_heading(t["section_capacity"]), _cols(_month_card(site), 12, 6)))
+        sections.append(
+            _section(_heading(t["section_capacity"]), _cols(_month_card(site), 12, "auto"))
+        )
     # (F9): cost and savings so far over daily bars on a fixed 1..N axis - one card for
     # two entity cards (which said "Ukjent") and the statistics graph that labelled days 4:00, 8:00.
     sections.append(
@@ -339,6 +347,8 @@ def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
             _heading(t["section_capacity"]),
             _cols(_peaks_card(site, grid), 12, "auto"),
         ),
+        _section(_heading(t["section_day"]), _cols(_day_profile(site), "full", "auto"), span=2),
+        _section(_heading(t["section_energy"]), _cols(_energy_ring(site, grid), 12, "auto")),
         # The table only, full width; the saving bars were its Spart column drawn again,
         # and the cost-and-savings graph is Forbruk × price, with the day's total in Oppsummering.
         _section(
@@ -376,7 +386,12 @@ def _appliance_view(site: _Site, load: LoadLayout, hidden: Collection[str]) -> d
     if status is not None:
         # The reason in the household's words: HA translates the attribute (B7, D-0481).
         status["state_content"] = ["state", "reason_key"]
-    granted = _tile(e, "granted_power", site.name("granted_power"), {"type": "trend-graph"})
+    level = _level_card(site, load)
+    granted = (
+        level
+        if level is not None
+        else _tile(e, "granted_power", site.name("granted_power"), {"type": "trend-graph"})
+    )
     sections: list[Card | None] = [
         _section(
             _heading(t["section_control"]),
@@ -411,7 +426,7 @@ def _appliance_view(site: _Site, load: LoadLayout, hidden: Collection[str]) -> d
             )
             if "ready_by" in e
             else None,
-            _cols(granted, 12, 2),
+            _cols(granted, 12, "auto" if level is not None else 2),
         ),
         _section(
             _heading(t["section_appliance_plan"]),
@@ -812,11 +827,17 @@ def _price_card(site: _Site) -> Card | None:
         "price_forecast": "price_forecast",
         "fixed_price_savings": "fixed_price_savings",
         "refresh": "refresh_prices",
+        "plan": "plan",
     }
+    # (§5.20 V3) the run marks name the appliances.
     return {
         "type": PRICE_CARD,
         "entry_id": site.site.entry_id,
         "entities": {key: e[source] for key, source in names.items() if source in e},
+        "loads": [
+            {"id": load.subentry_id, "name": load.name, "color": site.colors[load.subentry_id]}
+            for load in site.site.loads
+        ],
     }
 
 
@@ -965,6 +986,17 @@ def _peaks_card(site: _Site, grid: Sequence[str]) -> Card | None:
             if key in e
         },
         "grid_entities": list(grid),
+        # (§5.20 V4) the run-type appliances whose runs the carpet marks.
+        "loads": [
+            {
+                "id": load.subentry_id,
+                "name": load.name,
+                "color": site.colors[load.subentry_id],
+                "status": load.entities["plan_status"],
+            }
+            for load in site.site.loads
+            if load.type in _RUN_TYPES and "plan_status" in load.entities
+        ],
         "labels": _labels(site.texts),
     }
 
@@ -997,10 +1029,94 @@ def _appliances_card(site: _Site, view: str, key: str) -> Card | None:
     }
 
 
+def _day_profile(site: _Site) -> Card | None:
+    """Return the average day with and without PowerPlan (D12 §5.20 V6); needs `savings`."""
+    e = site.site.entities
+    if "savings" not in e:
+        return None
+    return {
+        "type": DAY_PROFILE,
+        "entry_id": site.site.entry_id,
+        "entities": {"savings": e["savings"]},
+        "labels": _labels(site.texts),
+    }
+
+
+def _energy_ring(site: _Site, grid: Sequence[str]) -> Card | None:
+    """Return who used the period's energy, and how much of it moved (D12 §5.20 V5)."""
+    loads = [
+        {
+            "id": load.subentry_id,
+            "name": load.name,
+            "color": site.colors[load.subentry_id],
+            "energy": load.entities["energy"],
+            **(
+                {"savings_month": load.entities["savings_month"]}
+                if "savings_month" in load.entities
+                else {}
+            ),
+        }
+        for load in site.site.loads
+        if "energy" in load.entities
+    ]
+    if not loads:
+        return None
+    return {
+        "type": SUMMARY_CARD,
+        "entry_id": site.site.entry_id,
+        "view": "energy",
+        "loads": loads,
+        "grid_entities": list(grid),
+        "labels": _labels(site.texts),
+    }
+
+
+def _level_card(site: _Site, load: LoadLayout) -> Card | None:
+    """Return an appliance's level, 24 h back and 12 h ahead (D12 §5.20 V7), where it has one."""
+    e, s = load.entities, site.site.entities
+    if load.level is None or "plan_status" not in e:
+        return None
+    entity, attribute = load.level
+    unit = "%" if load.type in {"ev", "battery"} else "°C"
+    entities = {"status": e["plan_status"]}
+    if "plan" in s:
+        entities["plan"] = s["plan"]
+    for key in ("charge_target", "charge_min"):
+        if key in e:
+            entities[key] = e[key]
+    return {
+        "type": LEVEL_CARD,
+        "entry_id": site.site.entry_id,
+        "load": {
+            "id": load.subentry_id,
+            "name": load.name,
+            "color": site.colors[load.subentry_id],
+            "kind": load.type,
+        },
+        "level": {
+            "entity": entity,
+            "unit": unit,
+            **({"attribute": attribute} if attribute else {}),
+        },
+        "entities": entities,
+        "labels": _labels(site.texts),
+    }
+
+
 def _month_card(site: _Site) -> Card:
     """Return the capacity step's gauge (D12 §5.3, `mode: month`); the site shows `metric`."""
     e = site.site.entities
-    keys = ("metric", "level", "projected_level", "advice", "target")
+    # (§5.20 V1) the strip's mark, today's highest hour and the window's length.
+    keys = (
+        "metric",
+        "level",
+        "projected_level",
+        "advice",
+        "target",
+        "savings",
+        "window_used",
+        "plan",
+    )
     return {
         "type": WINDOW_CARD,
         "entry_id": site.site.entry_id,

@@ -18,13 +18,16 @@
 //   v0.8 (D12 §5.16 R2): the spot is price_forecast's slots[].spot and fixed_price, built into the same
 //   `Spot` the powerplan/spot_prices command answered in iteration 4 (`spotFromStates`).
 
-import { Hass, esc, lang, numFmt, timeFmt, localMidnight, fmtTemplate, newUid, pick, keepFocus } from "./r3-util";
+import { Hass, esc, lang, numFmt, timeFmt, localMidnight, fmtTemplate, newUid, pick, keepFocus, plannedByHour } from "./r3-util";
 import { TOKENS, SHARED, alertHtml } from "./tokens";
+import { MARK_CSS, markDot, markSwatch } from "./marks";
 
 interface PriceCfg {
   type: string;
   entry_id?: string;
-  entities: { price: string; price_forecast: string; fixed_price_savings?: string; refresh?: string };
+  entities: { price: string; price_forecast: string; fixed_price_savings?: string; refresh?: string; plan?: string };
+  /** V3 (D12 §5.20): the appliances' names, for the planned runs in an hour's tooltip. */
+  loads?: { id: string; name: string }[];
   spot?: boolean;              // default true
   labels?: Record<string, string>;
 }
@@ -66,6 +69,7 @@ const P_LABELS: Record<string, Record<string, string>> = {
     split: "Kraft {e} + nettleie {g}", estimated: "Anslått", you_save: "Du sparer",
     stale_title: "Prisene er ikke oppdatert", stale_text: "PowerPlan har ikke fått nye priser siden {time}. Planen bruker anslag til prisene er hentet.",
     stale_text_none: "PowerPlan har ingen kjente priser for denne timen. Planen bruker anslag til prisene er hentet.", retry: "Hent på nytt", retrying: "Henter …",
+    saved_fixed: "Spart med fastpris", runs_here: "PowerPlan kjører her", run_line: "{load} {kwh} kWh",
   },
   en: {
     now: "Your price now", unit: "/kWh", saved: "Saved with fixed price in {month}", saved_v: "≈ {v}",
@@ -74,6 +78,7 @@ const P_LABELS: Record<string, Record<string, string>> = {
     split: "Energy {e} + grid {g}", estimated: "Estimated", you_save: "You save",
     stale_title: "Prices are not up to date", stale_text: "PowerPlan has had no new prices since {time}. The plan uses estimates until prices are fetched.",
     stale_text_none: "PowerPlan has no known price for this hour. The plan uses estimates until prices are fetched.", retry: "Fetch again", retrying: "Fetching …",
+    saved_fixed: "Saved with fixed price", runs_here: "PowerPlan runs here", run_line: "{load} {kwh} kWh",
   },
 };
 
@@ -103,7 +108,7 @@ export class PowerplanPriceCard extends HTMLElement {
     const c = this.config;
     if (!c) return;
     const e = c.entities;
-    const k = [h.states[e.price], h.states[e.price_forecast], e.fixed_price_savings && h.states[e.fixed_price_savings],
+    const k = [h.states[e.price], h.states[e.price_forecast], e.fixed_price_savings && h.states[e.fixed_price_savings], e.plan && h.states[e.plan],
       lang(h), h.themes?.darkMode, Math.floor(Date.now() / 60e3), this.width, this.retry];
     if (k.every((v, i) => v === this.key[i])) return;
     this.key = k;
@@ -224,8 +229,18 @@ export class PowerplanPriceCard extends HTMLElement {
     this.geo = { x0, x1, t0, t1, top, bottom, ymax };
     const U = this.uid;
     const g: string[] = [];
+    // V3: under a fixed price the gap to "without" is filled - green where the fixed price is lower, red
+    // where higher - and the cheap bands go, since the grid tariff's own step already shows the cheap hours.
+    const gap = fixed != null && pts.some((p) => p.uten != null);
+    if (gap) {
+      for (const p of pts) {
+        if (p.uten == null || Math.abs(p.uten - p.din) < 1e-4) continue;
+        const [a, b] = p.uten > p.din ? [p.uten, p.din] : [p.din, p.uten];
+        g.push(`<rect class="${p.uten > p.din ? "gap" : "gap over"}" x="${sx(p.s).toFixed(1)}" y="${sy(a).toFixed(1)}" width="${(sx(p.e) - sx(p.s) + 0.4).toFixed(1)}" height="${(sy(b) - sy(a)).toFixed(1)}"/>`);
+      }
+    }
     // cheap bands (lowest quarter of the window's range, future + past)
-    if (pts.length) {
+    if (pts.length && !gap) {
       const lo = Math.min(...pts.map((p) => p.din)), hi = Math.max(...pts.map((p) => p.din));
       if (hi - lo > 1e-4) {
         const thr = lo + (hi - lo) * 0.25;
@@ -275,6 +290,9 @@ export class PowerplanPriceCard extends HTMLElement {
       g.push(`<circle class="dd" cx="${xn.toFixed(1)}" cy="${sy(cur.din).toFixed(1)}" r="5"/>`);
     }
     if (!compact) g.push(`<rect class="np" x="${(xn - 14).toFixed(1)}" y="${top - 20}" width="28" height="16" rx="8"/><text class="nt" x="${xn.toFixed(1)}" y="${top - 8.5}" text-anchor="middle">${esc(this.config!.labels?.now_short ?? "Nå")}</text>`);
+    // V3: every future hour with planned runs carries the PowerPlan mark on the zero line.
+    const runs = this.runsByHour(t0, t1);
+    for (const [hour] of runs) if (hour + 3600e3 > now) g.push(markDot(sx(hour + 1800e3), sy(0), 3));
     // x labels
     const every = compact ? 12 : 6;
     for (let k = 0; k <= 48; k += every) {
@@ -292,14 +310,15 @@ export class PowerplanPriceCard extends HTMLElement {
       <span><i class="l din"></i>${esc(L.your_price)}</span>
       ${pts.some((p) => p.est) ? `<span><i class="l din est"></i>${esc(L.estimated)}</span>` : ""}
       ${pts.some((p) => p.uten != null) ? `<span><i class="l uten"></i>${esc(fixed != null ? L.without : fmtTemplate(L.spot, { area }))}</span>` : ""}
-      <span><i class="sw"></i>${esc(L.cheap)}</span></div>`;
+      ${gap ? `<span><i class="sw gapsw"></i>${esc(L.saved_fixed)}</span>` : `<span><i class="sw"></i>${esc(L.cheap)}</span>`}
+      ${[...runs.keys()].some((hour) => hour + 3600e3 > now) ? `<span>${markSwatch}${esc(L.runs_here)}</span>` : ""}</div>`;
 
     const alert = stale ? `<div class="alertbox">${alertHtml({
       title: L.stale_title, text: compact ? stale.replace(/ Planen bruker.*$| The plan uses.*$/, "") : stale,
       action: c.entities.refresh && this.retry !== "unsupported" ? { label: this.retry === "busy" ? L.retrying : L.retry, act: "refresh" } : undefined,
     })}</div>` : "";
     keepFocus(this.shadowRoot!, () => {
-      this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
+      this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${MARK_CSS}${CSS}</style>
         <ha-card class="${compact ? "compact" : ""}" style="height:${H}px">${svg}${alert}${head}${legend}<div class="tip" hidden></div></ha-card>`;
     });
     // A phone wraps the legend onto a second line: the card grows by it instead of cropping it.
@@ -307,6 +326,21 @@ export class PowerplanPriceCard extends HTMLElement {
     const extra = legendEl ? Math.max(0, legendEl.offsetTop + legendEl.offsetHeight + (compact ? 14 : 16) - H) : 0;
     if (extra) this.shadowRoot!.querySelector<HTMLElement>("ha-card")!.style.height = `${H + extra}px`;
     if (this.pinned != null) this.showTip(this.pinned);
+  }
+
+  /** V3: planned kWh per hour start, by appliance, from `plan`'s slots between `t0` and `t1`. */
+  private runsByHour(t0: number, t1: number): Map<number, Map<string, number>> {
+    const h = this.hassRef!, c = this.config!;
+    return plannedByHour(c.entities.plan ? h.states[c.entities.plan]?.attributes?.slots ?? [] : [], t0, t1);
+  }
+
+  private runLines(hourStart: number, L: Record<string, string>): string {
+    const row = this.runsByHour(hourStart, hourStart + 3600e3).get(hourStart);
+    if (!row) return "";
+    const names = new Map((this.config?.loads ?? []).map((l) => [l.id, l.name]));
+    const nf1 = numFmt(this.hassRef!, 1);
+    return `<div class="sep"><div class="r"><i class="sm-dot"></i><b>${esc(L.runs_here)}</b></div>${[...row.entries()].sort((a, b) => b[1] - a[1])
+      .map(([id, kwh]) => `<div class="sub2">${esc(fmtTemplate(L.run_line, { load: names.get(id) ?? id, kwh: nf1.format(kwh) }))}</div>`).join("")}</div>`;
   }
 
   // ------------------------------------------------------------------ tooltip
@@ -358,7 +392,8 @@ export class PowerplanPriceCard extends HTMLElement {
       <div class="r"><i class="l din"></i><span>${esc(L.your_price)}</span><b>${nf.format(din)}</b></div>
       ${sp?.fixed_price != null ? `<div class="sub2">${esc(fmtTemplate(L.split, { e: nf.format(sp.fixed_price), g: nf.format(din - sp.fixed_price) }))}</div>` : ""}
       ${uten != null ? `<div class="r"><i class="l uten"></i><span>${esc(sp?.fixed_price != null ? L.without : fmtTemplate(L.spot, { area: sp?.area ?? "" }))}</span><b>${nf.format(uten)}</b></div>` : ""}
-      ${uten != null && sp?.fixed_price != null && uten > din ? `<div class="r good sep"><span>${esc(L.you_save)}</span><b>${nf.format(uten - din)} ${esc(L.unit)}</b></div>` : ""}`;
+      ${uten != null && sp?.fixed_price != null && uten > din ? `<div class="r good sep"><span>${esc(L.you_save)}</span><b>${nf.format(uten - din)} ${esc(L.unit)}</b></div>` : ""}
+      ${this.runLines(hourStart, L)}`;
     tip.hidden = false;
     const left = xm + 12 + 240 > W ? xm - 12 - 240 : xm + 12;
     tip.style.left = `${left}px`;
@@ -388,6 +423,11 @@ const CSS = `
   .c .st .lbl { white-space: normal; max-width: 150px; justify-content: flex-end; }
   .st .val { font-size: var(--pp-fs-l); font-weight: var(--pp-fw-m); white-space: nowrap; }
   .band { fill: var(--pp-cheap); }
+  .gap { fill: rgba(var(--rgb-success-color, 67, 160, 71), .2); }
+  .gap.over { fill: rgba(var(--rgb-error-color, 219, 68, 55), .16); }
+  i.sw.gapsw { background: rgba(var(--rgb-success-color, 67, 160, 71), .2); box-shadow: inset 0 0 0 1px rgba(var(--rgb-success-color, 67, 160, 71), .6); }
+  .legend .pp-mark-sw { margin: 0 2px; }
+  .tip i.sm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pp-mark); margin: 0 3px 0 2px; flex: none; }
   .cheapline { fill: var(--pp-cheap-line); }
   .gl0 { stroke: var(--pp-divider); stroke-width: 1; }
   .gl { stroke: var(--pp-divider); stroke-width: 1; stroke-dasharray: 2 4; }

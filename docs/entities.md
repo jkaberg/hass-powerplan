@@ -293,6 +293,7 @@ What the whole home saved this month: every appliance's savings, plus the capaci
 | `capacity_step`, `capacity_step_without` | Your capacity step, and the step you would be on without PowerPlan. |
 | `metric_kw`, `metric_kw_without` | The kW your step is counted from, with and without PowerPlan. |
 | `price_paid`, `price_reference`, `kwh_counted` | What the appliances' counted energy cost per kWh, what it would have cost, and how many kWh that is. |
+| `day_profile`, `previous_day_profile` | This month's and last month's average day for your appliances: `kwh` and `cf_kwh` hold 24 hourly figures with and without PowerPlan, `days` the number of days counted. The dashboard draws them; they are not kept in history. |
 
 Days are counted once they are over, so these figures lag today by up to a day. Key: `savings`.
 

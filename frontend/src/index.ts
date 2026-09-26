@@ -76,6 +76,18 @@ if (!registry.customStrategies.some((entry) => entry.type === "powerplan")) {
       documentationURL: DOCS,
     },
     {
+      type: "powerplan-day-profile",
+      name: "PowerPlan average day",
+      description: "What PowerPlan moved in an average day: with and without it, hour by hour.",
+      documentationURL: DOCS,
+    },
+    {
+      type: "powerplan-level-card",
+      name: "PowerPlan level",
+      description: "An appliance's temperature or charge over the last 24 hours and its plan for the next 12.",
+      documentationURL: DOCS,
+    },
+    {
       type: "powerplan-month-bars",
       name: "PowerPlan – Kostnad per dag",
       description: "Daily cost on a fixed axis for the whole month.",

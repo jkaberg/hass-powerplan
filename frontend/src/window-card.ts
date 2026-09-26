@@ -20,6 +20,8 @@ import {
   type StatRow,
 } from "./energy";
 import { cssVar, type HomeAssistant, moreInfo, numeric, timeZone } from "./ha";
+import { ChartTip, mark, MARK_CSS, markDot, markSwatch, tipAttr } from "./marks";
+import { type Hass, localMidnight } from "./r3-util";
 import { ppStyles } from "./styles";
 import {
   adviceItem,
@@ -30,8 +32,12 @@ import {
   dayKey,
   gauge,
   gaugeFont,
+  carpetAlpha,
+  type CarpetDay,
+  carpetGrid,
+  headroomStrip,
+  runHours,
   moneyFormat,
-  monthGauge,
   niceScale,
   stageTone,
   stageWord,
@@ -55,7 +61,9 @@ type Key =
   | "level"
   | "projected_level"
   | "advice"
-  | "target";
+  | "target"
+  | "savings"
+  | "plan";
 
 interface WindowConfig {
   entry_id: string;
@@ -63,12 +71,13 @@ interface WindowConfig {
   entities: Partial<Record<Key, string>>;
   /** `mode: peaks`: the Energy preferences' grid sources, for days before `window_used`'s statistics. */
   grid_entities?: string[];
+  /** `mode: peaks`: the run-type appliances whose runs the carpet marks (D12 §5.20 V4). */
+  loads?: Array<{ id: string; name: string; status: string }>;
   labels?: Record<string, string>;
 }
 
-/** The hour arc's stroke (H4) and the month arc's (D12 §5.3). */
+/** The hour arc's stroke (H4). */
 const STROKE = 24;
-const MONTH_STROKE = 16;
 
 function arc(cx: number, cy: number, from: number, to: number, r: number): string {
   const [x0, y0] = arcPoint(from, r);
@@ -90,6 +99,10 @@ export class PowerplanWindowCard extends HTMLElement {
   /** The card's height from the section grid (`rows: 6`), so the hour gauge fills it rather than leaving a band. */
   private height = 0;
   private resize?: ResizeObserver;
+  private tip?: ChartTip;
+  /** V1: today's highest hour so far (kWh per window), and the hour it was fetched in. */
+  private todayKwh: number | null = null;
+  private todayHour = -1;
   private period?: Period;
   private unfollow?: () => void;
   private fetched?: {
@@ -98,6 +111,9 @@ export class PowerplanWindowCard extends HTMLElement {
     hours: StatRow[];
     ranking: Array<[string, number]>;
     ceiling: number | null;
+    /** V4: 3–35 days as local days × hours, and the hours an appliance ran on its plan. */
+    carpet?: CarpetDay[];
+    runs?: Map<string, Set<string>>;
   };
 
   public connectedCallback(): void {
@@ -158,7 +174,7 @@ export class PowerplanWindowCard extends HTMLElement {
   }
 
   public getGridOptions(): Record<string, number | string> {
-    return this.config?.mode === "peaks"
+    return this.config?.mode === "peaks" || this.config?.mode === "month"
       ? { columns: 12, rows: "auto", min_columns: 6 }
       : { columns: 12, rows: 6, min_rows: 5, min_columns: 6 };
   }
@@ -169,7 +185,8 @@ export class PowerplanWindowCard extends HTMLElement {
     if (!hass || !config) return;
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
-      this.addEventListener("click", () => {
+      this.addEventListener("click", (event) => {
+        if (event.composedPath().some((node) => node instanceof Element && node.hasAttribute("data-tip"))) return;
         const entities = this.config?.entities;
         const id = this.config?.mode === "month" ? entities?.metric : entities?.window_used;
         if (id) moreInfo(this, id);
@@ -299,14 +316,26 @@ export class PowerplanWindowCard extends HTMLElement {
 
   // ------------------------------------------------------------ mode: month
 
+  /** V1: today's highest hour so far in kW, from `window_used`'s hourly statistics and the hour in progress. */
+  private async fetchToday(): Promise<void> {
+    const hass = this.hassRef, config = this.config;
+    const used = config?.entities.window_used;
+    if (!hass || !used) return;
+    this.todayHour = Math.floor(Date.now() / 3_600_000);
+    const start = localMidnight(hass as unknown as Hass);
+    const rows = await fetchStatistics(hass, { start, end: new Date() }, [used], ["max"], "hour").catch(() => ({}) as Record<string, StatRow[]>);
+    const peak = Math.max(0, ...(rows[used] ?? []).map((row) => row.max ?? 0));
+    this.todayKwh = peak;
+    this.key = [];
+    this.render();
+  }
+
   private renderMonth(hass: HomeAssistant, config: WindowConfig): void {
     const labels = config.labels ?? {};
     const locale = hass.locale.language;
     const two = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const one = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    const kw = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
-    const day = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" });
-    const month = new Intl.DateTimeFormat(locale, { month: "long", timeZone: timeZone(hass) });
+    const day = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
     const metric = numeric(this.state("metric")) ?? 0;
     const level = this.state("level");
     const steps = (level?.attributes.steps as TariffStep[] | undefined) ?? [];
@@ -315,54 +344,63 @@ export class PowerplanWindowCard extends HTMLElement {
     const top = topEntries(items).slice(0, 3);
     const headroom = adviceItem(items, "step_headroom");
     const tips = adviceItem(items, "days_that_matter");
+    const without = Number(this.state("savings")?.attributes.metric_kw_without);
+    if (config.entities.window_used && Math.floor(Date.now() / 3_600_000) !== this.todayHour) void this.fetchToday();
+    // Today's highest hour so far, the hour in progress included, as kW (a window of `window_min`).
+    const windowMin = Number(this.state("plan")?.attributes.window_min) || 60;
+    const now = numeric(this.state("window_used"));
+    const todayKw = this.todayKwh === null && now === null ? null : (Math.max(this.todayKwh ?? 0, now ?? 0) * 60) / windowMin;
 
-    const width = this.cardWidth;
-    const r = Math.min(120, 0.3 * width);
-    const cx = width / 2;
-    const cy = 30 + r;
-    let arcs = "";
-    let ticks = "";
-    let needle = "";
-    let bars = "";
-    if (steps.length) {
-      // M1: coloured by position against the target step, the current step opaque; iteration 5: the
-      // others at 45 %, so every step clears 3:1 on the dark card.
-      const g = monthGauge(metric, steps, targetStep(target?.state, target?.attributes, steps));
-      const gap = 2 / (Math.PI * r);
-      arcs = g.segments
-        .map((seg) => {
-          const from = seg.from / g.max + (seg.from > 0 ? gap / 2 : 0);
-          const to = seg.to / g.max - (seg.to < g.max ? gap / 2 : 0);
-          return `<path d="${arc(cx, cy, from, to, r)}" fill="none" stroke="${TONE_COLOR[seg.tone]}" stroke-width="${MONTH_STROKE}" stroke-opacity="${seg.current ? 1 : 0.45}"/>`;
-        })
-        .join("");
-      ticks = [0, ...g.ticks, g.max]
-        .map((value) => {
-          const [x, y] = arcPoint(value / g.max, r + 18);
-          const label = value === g.max ? `${kw.format(value)} kW` : kw.format(value);
-          return `<text class="end" x="${(cx + x).toFixed(1)}" y="${(cy + y + 4).toFixed(1)}" text-anchor="middle">${escape(label)}</text>`;
-        })
-        .join("");
-      // M2: 3 px, round cap, r + 6 long, a 6 px hub - drawn last, over the arcs and the text.
-      const [nx, ny] = arcPoint(g.needle, r + 6);
-      needle = `<line x1="${cx}" y1="${cy}" x2="${(cx + nx).toFixed(1)}" y2="${(cy + ny).toFixed(1)}" stroke="var(--primary-text-color)" stroke-width="3" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="6" fill="var(--primary-text-color)"/>`;
-      if (top.length) {
-        // M3: the value in kW, 8 px bars on the track, the step's bound dashed and named.
-        const at = (value: number) => `${Math.min(100, (100 * value) / g.barMax).toFixed(1)}%`;
-        const upper = g.upper;
-        const limit = (named: boolean) =>
-          upper === null
-            ? ""
-            : `<span class="limit" style="left:${at(upper)}">${named ? `<span>${escape(`${kw.format(upper)} kW`)}</span>` : ""}</span>`;
-        bars = `<div class="top3"><div class="pp-sub">${escape(fill(labels.top3 ?? "{month}", { month: month.format(Date.now()) }))}</div>${top
-          .map(
-            ([date, value], i) =>
-              `<div class="row"><span>${escape(day.format(Date.parse(date)))}</span><span class="bar"><span class="fill" style="width:${at(value)}"></span>${limit(i === 0)}</span><span class="num">${escape(`${two.format(value)} kW`)}</span></div>`,
-          )
-          .join("")}</div>`;
+    const width = this.cardWidth - 32;
+    const strip = steps.length ? headroomStrip(metric, steps, targetStep(target?.state, target?.attributes, steps)) : null;
+    let svg = "";
+    if (strip) {
+      const pad = 12, ty = 46, th = 10, H = 98;
+      const x = (kw: number) => pad + strip.at(kw) * (width - 2 * pad);
+      const money = (fee: string | null) => {
+        const [amount, currency] = String(fee ?? "").split(" ");
+        return amount && Number.isFinite(Number(amount)) ? moneyFormat(locale, currency ?? "", 0).format(Number(amount)) : "";
+      };
+      const g: string[] = [];
+      strip.segments.forEach((seg, i) => {
+        const x0 = x(seg.from) + (i ? 1 : 0), x1 = x(seg.to) - (i < strip.segments.length - 1 ? 1 : 0);
+        const text = [seg.name, money(seg.fee)].filter(Boolean).join(" · ");
+        g.push(`<rect x="${x0.toFixed(1)}" y="${ty}" width="${Math.max(0, x1 - x0).toFixed(1)}" height="${th}" rx="5" fill="${TONE_COLOR[seg.tone]}" fill-opacity="${seg.current ? 1 : 0.45}"${tipAttr([text])}/>`);
+        if (x1 - x0 > 90) g.push(`<text class="end" x="${((x0 + x1) / 2).toFixed(1)}" y="${ty + th + 32}" text-anchor="middle">${escape(text)}</text>`);
+      });
+      const tipKw = Number(tips?.kw);
+      if (Number.isFinite(tipKw) && tipKw > strip.lo && tipKw < strip.hi) {
+        const fee = headroom ? moneyFormat(locale, String(headroom.currency ?? ""), 0).format(Number(headroom.fee_delta)) : "";
+        const text = fill(labels.tips_at ?? "{kw} kW: +{fee}", { kw: one.format(tipKw), fee });
+        g.push(`<g${tipAttr([text, fill(labels.day_that_tips ?? "", { kw: one.format(tipKw) })])}><rect x="${(x(tipKw) - 12).toFixed(1)}" y="4" width="24" height="${ty - 4}" fill="transparent"/>`
+          + `<line x1="${x(tipKw).toFixed(1)}" y1="${ty - 3}" x2="${x(tipKw).toFixed(1)}" y2="16" stroke="var(--warning-color)" stroke-width="2" stroke-linecap="round"/></g>`);
+        const half = text.length * 3.2;
+        const cx = Math.min(Math.max(x(tipKw), half), width - half);
+        g.push(`<text class="end" x="${cx.toFixed(1)}" y="10" text-anchor="middle">${escape(text)}</text>`);
       }
+      if (todayKw !== null && todayKw >= strip.lo) {
+        const text = fill(labels.today ?? "Today", {});
+        g.push(`<g${tipAttr([text, `${two.format(todayKw)} kW`])}><circle cx="${x(todayKw).toFixed(1)}" cy="${ty - 9}" r="12" fill="transparent"/>`
+          + `<circle cx="${x(todayKw).toFixed(1)}" cy="${ty - 9}" r="4.5" fill="var(--card-background-color, #fff)" stroke="var(--primary-text-color)" stroke-width="2"/></g>`);
+        g.push(`<text class="end" x="${x(todayKw).toFixed(1)}" y="${ty - 20}" text-anchor="middle">${escape(text)}</text>`);
+      }
+      [...top].sort((a, b) => a[1] - b[1]).forEach(([date, kw], i) => {
+        const cy = ty - 9 - i * 9;
+        g.push(`<g${tipAttr([day.format(Date.parse(date)), `${two.format(kw)} kW`, labels.counts ?? ""])}><circle cx="${x(kw).toFixed(1)}" cy="${cy}" r="5.75" fill="var(--card-background-color, #fff)"/>`
+          + `<circle cx="${x(kw).toFixed(1)}" cy="${cy}" r="3.75" fill="var(--primary-text-color)"/></g>`);
+      });
+      g.push(`<rect x="${(x(metric) - 1.5).toFixed(1)}" y="${ty - 4}" width="3" height="${th + 9}" rx="1.5" fill="var(--primary-text-color)"/>`);
+      if (Number.isFinite(without) && without - metric > 0.05) {
+        const yb = ty + th + 9;
+        g.push(`<line x1="${x(metric).toFixed(1)}" y1="${yb}" x2="${x(without).toFixed(1)}" y2="${yb}" stroke="var(--secondary-text-color)" stroke-width="1.5" stroke-linecap="round"/>`);
+        g.push(mark(x(without), yb, [
+          fill(labels.mark_metric ?? "{kw} kW", { kw: two.format(without) }),
+          fill(labels.mark_metric_held ?? "{kw} kW", { kw: two.format(without - metric) }),
+        ]));
+      }
+      svg = `<svg width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" role="img" aria-label="${escape(`${two.format(metric)} kW`)}">${g.join("")}</svg>`;
     }
-    const reading = `${two.format(metric)} kW`;
+    const reading = two.format(metric);
     // Iteration 5: the step's fee rides on the subtitle (it left Strømpris), "397.00 NOK" → "397 kr/mnd".
     const [feeAmount, feeCurrency] = String(level?.attributes.fee ?? "").split(" ");
     const stepFee = feeAmount && Number.isFinite(Number(feeAmount))
@@ -375,55 +413,43 @@ export class PowerplanWindowCard extends HTMLElement {
     const footer: string[] = [];
     const nextFee = headroom ? moneyFormat(locale, String(headroom.currency ?? ""), 0).format(Number(headroom.fee_delta)) : "";
     if (headroom && tips) {
-      footer.push(
-        fill(labels.day_that_tips_step ?? "", {
-          kw: one.format(Number(tips.kw)),
-          next: String(headroom.next_name ?? ""),
-          fee: nextFee,
-        }),
-      );
+      footer.push(fill(labels.day_that_tips_step ?? "", { kw: one.format(Number(tips.kw)), next: String(headroom.next_name ?? ""), fee: nextFee }));
     } else if (headroom) {
-      footer.push(
-        fill(labels.to_next_step ?? "", {
-          kw: one.format(Number(headroom.to_next_kw)),
-          next: String(headroom.next_name ?? ""),
-          fee: nextFee,
-        }),
-      );
+      footer.push(fill(labels.to_next_step ?? "", { kw: one.format(Number(headroom.to_next_kw)), next: String(headroom.next_name ?? ""), fee: nextFee }));
     } else if (tips) footer.push(fill(labels.day_that_tips ?? "", { kw: one.format(Number(tips.kw)) }));
-    const height = steps.length ? cy + 60 : 80;
+    const legend = strip
+      ? [
+          top.length ? `<span><i class="dot"></i>${escape(labels.top_days ?? "")}</span>` : "",
+          todayKw !== null && todayKw >= strip.lo ? `<span><i class="ring"></i>${escape(labels.today ?? "")}</span>` : "",
+          Number.isFinite(without) && without - metric > 0.05 ? `<span>${markSwatch}${escape(labels.without_powerplan ?? "")}</span>` : "",
+        ].join("")
+      : "";
     this.shadowRoot!.innerHTML = `
       <style>
         ${ppStyles}
+        ${MARK_CSS}
         :host { cursor: pointer; }
-        .pp-content { display: flex; flex-direction: column; gap: 12px; }
-        svg { display: block; flex: none; align-self: center; }
-        .value { font-size: 28px; font-weight: 400; fill: var(--primary-text-color); font-variant-numeric: tabular-nums; }
-        .caption { font-size: 12px; fill: var(--secondary-text-color); }
-        .end { font-size: 11px; fill: var(--secondary-text-color); }
-        .top3 { display: flex; flex-direction: column; gap: 6px; }
-        .row { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px; font-size: 12px; }
-        .num { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
-        .bar { position: relative; height: 8px; border-radius: 4px; background: var(--pp-track); }
-        .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--primary-color); }
-        .limit { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--warning-color); }
-        .limit span { position: absolute; bottom: 100%; left: -12px; font-size: 10px; line-height: 12px;
-                      color: var(--secondary-text-color); white-space: nowrap; }
-        .top3 .pp-sub + .row { margin-top: 12px; }
-        .footer { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--divider-color);
+        ha-card { position: relative; }
+        .pp-content { display: flex; flex-direction: column; gap: 10px; }
+        svg { display: block; overflow: visible; }
+        .end { font-size: 11px; fill: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+        .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--secondary-text-color); }
+        .legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .legend .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary-text-color); }
+        .legend .ring { width: 6px; height: 6px; border-radius: 50%; border: 2px solid var(--primary-text-color); }
+        .footer { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--divider-color);
                   font-size: 12px; line-height: 16px; color: var(--secondary-text-color); }
         .footer ha-icon { --mdc-icon-size: 16px; color: var(--warning-color); flex: none; }
       </style>
       <ha-card><div class="pp-content">
-        <svg width="${width - 32}" height="${height}" viewBox="${16} 0 ${width - 32} ${height}" role="img" aria-label="${escape(`${reading} ${caption}`)}">
-          ${arcs}${ticks}
-          <text class="value" x="${cx}" y="${steps.length ? cy + 36 : 40}" text-anchor="middle">${escape(reading)}</text>
-          ${caption ? `<text class="caption" x="${cx}" y="${steps.length ? cy + 54 : 60}" text-anchor="middle">${escape(caption)}</text>` : ""}
-          ${needle}
-        </svg>
-        ${bars}
+        <div><span class="pp-stat-value">${escape(reading)}<span class="pp-stat-unit">kW</span></span>
+          ${caption ? `<div class="pp-sub">${escape(caption)}</div>` : ""}</div>
+        ${svg}
+        ${legend ? `<div class="legend">${legend}</div>` : ""}
         ${footer.length ? `<div class="footer"><ha-icon icon="mdi:lightbulb-outline"></ha-icon><span>${escape(footer.join(" "))}</span></div>` : ""}
       </div></ha-card>`;
+    this.tip ??= new ChartTip(this.shadowRoot!, () => this.shadowRoot!.querySelector("ha-card"));
+    this.tip.reset();
   }
 
   // ------------------------------------------------------------ mode: peaks
@@ -435,14 +461,20 @@ export class PowerplanWindowCard extends HTMLElement {
     const used = config.entities.window_used!;
     const grid = config.grid_entities ?? [];
     const zone = timeZone(hass);
-    const oneDay = period.end.getTime() - period.start.getTime() <= 2 * 86_400_000;
+    const span = period.end.getTime() - period.start.getTime();
+    const oneDay = span <= 2 * 86_400_000;
+    const carpet = !oneDay && span <= 35 * 86_400_000;
     // The month around the period's start: a day counts against its own month.
+    // Noon of the period's first day, so a browser in another zone than HA's still names HA's month.
+    const first = new Date(period.start.getTime() + 12 * 3_600_000);
     const month = {
-      start: new Date(period.start.getFullYear(), period.start.getMonth(), 1),
-      end: new Date(period.start.getFullYear(), period.start.getMonth() + 1, 1),
+      start: new Date(first.getFullYear(), first.getMonth(), 1),
+      end: new Date(first.getFullYear(), first.getMonth() + 1, 1),
     };
     const ids = [used, ...(config.entities.ceiling ? [config.entities.ceiling] : [])];
-    const grain = oneDay ? "hour" : "day";
+    const grain = oneDay || carpet ? "hour" : "day";
+    const statuses = carpet ? (config.loads ?? []) : [];
+    const end = Math.min(period.end.getTime(), Date.now());
     const safe = (p: Promise<Record<string, StatRow[]>>) => p.catch(() => ({}) as Record<string, StatRow[]>);
     const [own, gridStats, ranking] = await Promise.all([
       safe(fetchStatistics(hass, period, ids, ["max", "mean"], grain)),
@@ -450,12 +482,32 @@ export class PowerplanWindowCard extends HTMLElement {
       grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({} as Record<string, StatRow[]>),
       monthRanking(hass, month, { used, grid, advice: this.state("advice")?.attributes.items }, zone),
     ]);
+    // V4: HA's own history of the run-type appliances' `plan_status`, states only.
+    const history = statuses.length
+      ? await hass.callWS<Record<string, Array<{ s: string; lu: number }>>>({
+          type: "history/history_during_period", start_time: period.start.toISOString(), end_time: new Date(end).toISOString(),
+          entity_ids: statuses.map((load) => load.status), minimal_response: true, no_attributes: true, significant_changes_only: false,
+        }).catch(() => ({}))
+      : {};
     if (this.period !== period) return;
     const hours = gridHours(gridStats, grid, (id) => kwhScale(hass, id));
     const fallback = oneDay ? hours : dailyPeaks(hours, zone).map(([day, kwh]) => ({ start: Date.parse(day), end: Date.parse(day), max: kwh }));
     const ownRows = (own[used] ?? []).filter((row) => row.max != null);
     const rows = ownRows.length ? ownRows : fallback;
     const ceilings = (own[ids[1] ?? ""] ?? []).map((row) => row.mean).filter((v): v is number => v != null);
+    if (carpet) {
+      // Before `window_used`'s statistics begin, the grid sources' hourly sum stands in, hour by hour (D4).
+      const own = new Map(ownRows.map((row) => [row.start, row]));
+      const merged = [...hours.filter((row) => !own.has(row.start)), ...ownRows];
+      this.fetched = {
+        period, hours: [], days: [], ranking,
+        ceiling: ceilings.length ? Math.max(...ceilings) : numeric(this.state("ceiling")),
+        carpet: carpetGrid(merged, period.start, new Date(Math.min(period.end.getTime(), end)), zone),
+        runs: runHours(history, Object.fromEntries(statuses.map((load) => [load.status, load.id])), end, zone),
+      };
+      this.render();
+      return;
+    }
     this.fetched = {
       period,
       hours: oneDay ? rows : [],
@@ -464,6 +516,79 @@ export class PowerplanWindowCard extends HTMLElement {
       ceiling: ceilings.length ? Math.max(...ceilings) : numeric(this.state("ceiling")),
     };
     this.render();
+  }
+
+  /** V4 (D12 §5.20): days × hours, each day's highest hour ringed, the counting days' in bold, runs marked. */
+  private renderCarpet(hass: HomeAssistant, config: WindowConfig, carpet: CarpetDay[], data: NonNullable<typeof this.fetched>, style: string): void {
+    const labels = config.labels ?? {};
+    const locale = hass.locale.language;
+    
+    const two = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dayFmt = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+    const counting = countingDays(data.ranking);
+    const ceiling = data.ceiling && data.ceiling > 0 ? data.ceiling : Math.max(1, ...carpet.flatMap((d) => d.cells.map((v) => v ?? 0)));
+    const names = new Map((config.loads ?? []).map((load) => [load.id, load.name]));
+    const width = this.cardWidth - 32, lw = 30, cw = (width - lw) / 24, ch = Math.max(10, Math.min(14, cw * 0.85)), top = 16, gap = 1.5;
+    const height = top + carpet.length * ch + 2;
+    const g: string[] = [];
+    for (const h of [0, 6, 12, 18]) g.push(`<text class="axis" x="${(lw + h * cw + 1).toFixed(1)}" y="11">${String(h).padStart(2, "0")}</text>`);
+    let over = false;
+    carpet.forEach((day, row) => {
+      const y = top + row * ch;
+      const isTop = counting.has(day.day);
+      if (isTop || day.date === 1 || day.date % 5 === 0) {
+        g.push(`<text class="axis${isTop ? " on" : ""}" x="${lw - 6}" y="${(y + ch / 2 + 3.5).toFixed(1)}" text-anchor="end">${day.date}</text>`);
+      }
+      let mh = -1;
+      day.cells.forEach((v, h) => { if (v != null && (mh < 0 || v > day.cells[mh]!)) mh = h; });
+      day.cells.forEach((v, h) => {
+        const x = lw + h * cw;
+        const rect = `x="${(x + gap / 2).toFixed(1)}" y="${(y + gap / 2).toFixed(1)}" width="${(cw - gap).toFixed(1)}" height="${(ch - gap).toFixed(1)}" rx="2"`;
+        if (v == null) { g.push(`<rect ${rect} fill="rgba(var(--rgb-primary-text-color, 20, 20, 20), .045)"/>`); return; }
+        const hot = v > ceiling;
+        over ||= hot;
+        const key = `${day.day} ${String(h).padStart(2, "0")}`;
+        const ran = data.runs?.get(key);
+        const lines = [`${dayFmt.format(Date.parse(day.day))} ${String(h).padStart(2, "0")}–${String((h + 1) % 24).padStart(2, "0")}`, `${two.format(v)} kWh`];
+        if (h === mh) lines.push(isTop ? `${labels.highest_hour ?? ""} · ${labels.counting ?? ""}` : labels.highest_hour ?? "");
+        if (hot) lines.push(labels.over_limit ?? "");
+        for (const id of ran ?? []) lines.push(fill(labels.ran_load ?? "{load}", { load: names.get(id) ?? id }));
+        g.push(`<rect ${rect} fill="${hot ? "var(--error-color)" : `rgba(var(--rgb-primary-color, 0, 154, 199), ${carpetAlpha(v, ceiling).toFixed(3)})`}"${tipAttr(lines, false)}/>`);
+      });
+      if (mh >= 0) {
+        const x = lw + mh * cw;
+        g.push(`<rect x="${(x + gap / 2 + 0.5).toFixed(1)}" y="${(y + gap / 2 + 0.5).toFixed(1)}" width="${(cw - gap - 1).toFixed(1)}" height="${(ch - gap - 1).toFixed(1)}" rx="2" fill="none" stroke="${isTop ? "var(--primary-text-color)" : "rgba(var(--rgb-primary-text-color, 20, 20, 20), .55)"}" stroke-width="${isTop ? 2 : 1}" pointer-events="none"/>`);
+      }
+      day.cells.forEach((v, h) => {
+        if (v == null || !data.runs?.has(`${day.day} ${String(h).padStart(2, "0")}`)) return;
+        const r = Math.max(1.6, Math.min(2.4, ch * 0.17));
+        g.push(`<g pointer-events="none">${markDot(lw + h * cw + cw / 2, y + ch / 2, r)}</g>`);
+      });
+    });
+    const legend = [
+      `<span>0<i class="grad"></i>${escape(`${two.format(ceiling)} kWh`)}</span>`,
+      `<span><i class="sq"></i>${escape(labels.highest_hour ?? "")}</span>`,
+      counting.size ? `<span><i class="sq on"></i>${escape(labels.counting ?? "")}</span>` : "",
+      over ? `<span><i class="sq hot"></i>${escape(labels.over_limit ?? "")}</span>` : "",
+      data.runs?.size ? `<span>${markSwatch}${escape(labels.ran_here ?? "")}</span>` : "",
+    ].join("");
+    this.shadowRoot!.innerHTML = `${style}<style>${MARK_CSS}
+        ha-card { position: relative; }
+        .carpet { display: block; overflow: visible; }
+        .axis.on { fill: var(--primary-text-color); font-weight: 500; }
+        .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--secondary-text-color); }
+        .legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .grad { width: 40px; height: 8px; border-radius: 3px; background: linear-gradient(90deg, rgba(var(--rgb-primary-color, 0, 154, 199), .07), rgba(var(--rgb-primary-color, 0, 154, 199), .95)); }
+        .sq { width: 9px; height: 9px; border-radius: 2px; border: 1px solid rgba(var(--rgb-primary-text-color, 20, 20, 20), .55); }
+        .sq.on { border: 2px solid var(--primary-text-color); width: 7px; height: 7px; }
+        .sq.hot { background: var(--error-color); border-color: var(--error-color); }
+      </style><ha-card><div class="pp-content">
+        <div class="pp-sub">${escape(labels.carpet_hint ?? "")}</div>
+        <svg class="carpet" width="${width}" height="${height.toFixed(0)}" viewBox="0 0 ${width} ${height.toFixed(0)}" role="img" aria-label="${escape(labels.carpet_hint ?? "")}">${g.join("")}</svg>
+        <div class="legend">${legend}</div>
+      </div></ha-card>`;
+    this.tip ??= new ChartTip(this.shadowRoot!, () => this.shadowRoot!.querySelector("ha-card"));
+    this.tip.reset();
   }
 
   private renderPeaks(hass: HomeAssistant, config: WindowConfig): void {
@@ -490,6 +615,10 @@ export class PowerplanWindowCard extends HTMLElement {
         .rows { display: flex; flex-direction: column; }
         .rows .pp-row { min-height: 36px; padding: 6px 0; }
       </style>`;
+    if (data?.carpet?.length) {
+      this.renderCarpet(hass, config, data.carpet, data, style);
+      return;
+    }
     if (!data || (!data.days.length && !data.hours.length)) {
       const text = data ? withoutDate(labels.collecting ?? "") : "";
       this.shadowRoot!.innerHTML = `${style}<ha-card><div class="pp-content">${text ? `<div class="pp-empty">${escape(text)}</div>` : ""}</div></ha-card>`;

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from ..model import Money
 
@@ -210,6 +211,28 @@ class SiteMonthRec:
     level: str | None = None
     cf_metric_kw: float | None = None
     cf_level: str | None = None
+    #: The appliances' settled energy by local hour of day, with powerplan and in the
+    #: reference, and the local dates booked: the average day (D11 §5.12).
+    hour_kwh: list[float] = field(default_factory=lambda: [0.0] * 24)
+    hour_cf_kwh: list[float] = field(default_factory=lambda: [0.0] * 24)
+    profile_dates: list[str] = field(default_factory=list)
+
+    def book_profile(self, local: datetime, kwh: float, cf_kwh: float) -> None:
+        """Add one settled slot to the day profile at its local hour (D11 §5.12)."""
+        self.hour_kwh[local.hour] += kwh
+        self.hour_cf_kwh[local.hour] += cf_kwh
+        day = local.date().isoformat()
+        if day not in self.profile_dates:
+            self.profile_dates.append(day)
+
+    def day_profile(self, month: str) -> dict[str, Any]:
+        """Return the profile as `sensor.<site>_savings` publishes it (D8 §5.5)."""
+        return {
+            "month": month,
+            "kwh": [round(v, 3) for v in self.hour_kwh],
+            "cf_kwh": [round(v, 3) for v in self.hour_cf_kwh],
+            "days": len(self.profile_dates),
+        }
 
     @classmethod
     def empty(cls, currency: str) -> SiteMonthRec:

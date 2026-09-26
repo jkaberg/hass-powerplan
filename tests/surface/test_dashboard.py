@@ -299,8 +299,8 @@ def test_09_sections_come_in_the_phone_order() -> None:
         t["section_capacity"], t["section_month"],
     ]  # fmt: skip
     assert _headings(_view(config, "history")) == [
-        t["section_summary"], t["section_usage"], t["section_capacity"],
-        t["section_cost_per_appliance"], t["section_events"],
+        t["section_summary"], t["section_usage"], t["section_capacity"], t["section_day"],
+        t["section_energy"], t["section_cost_per_appliance"], t["section_events"],
     ]  # fmt: skip
     assert _headings(_subview(config, "tank")) == [
         t["section_control"], t["section_appliance_plan"], t["section_why"], t["section_month"],
@@ -531,9 +531,12 @@ def test_14_the_capacity_step_is_the_month_gauge() -> None:
     assert gauge["mode"] == "month"
     assert gauge["entities"] == {
         key: f"{_domain(key)}.home_{key}"
-        for key in ("metric", "level", "projected_level", "advice", "target")
-    }
-    assert gauge["grid_options"] == {"columns": 12, "rows": 6}
+        for key in (
+            "metric", "level", "projected_level", "advice", "target", "savings", "window_used", "plan",
+        )
+    }  # fmt: skip
+    # (§5.20 V1) the headroom strip is as tall as its content.
+    assert gauge["grid_options"] == {"columns": 12, "rows": "auto"}
 
 
 def test_11_the_logbook_follows_every_appliance() -> None:
@@ -1246,6 +1249,7 @@ def test_20_now_is_price_plan_appliances_and_the_rails_line_up() -> None:
     assert price[1]["entities"] == {
         "price": "sensor.home_price",
         "price_forecast": "sensor.home_price_forecast",
+        "plan": "sensor.home_plan",
     }
     plan = _section(now, EN["section_plan"])["cards"][1]
     lanes = _section(now, EN["section_appliances"])["cards"][1]
@@ -1327,3 +1331,85 @@ def test_20_display_status_holds_a_flap_and_shows_a_hand_at_once() -> None:
     assert (
         held_status(holds, "tv", "manual_override", t0 + timedelta(minutes=5)) == "manual_override"
     )
+
+
+# --------------------------------------------------------------------------- #
+# §9 34 - iteration 6: charts that show what PowerPlan did (D12 §5.20)
+# --------------------------------------------------------------------------- #
+
+
+def test_34_the_level_card_takes_the_power_tile_where_there_is_a_level() -> None:
+    """Heat, a battery and a car with a bound SoC get the level card; the other types keep the tile."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    kinds = (
+        "floor_heating",
+        "heat_pump",
+        "radiator",
+        "water_heater",
+        "battery",
+        "ev",
+        "generic_switch",
+    )
+    loads = tuple(
+        replace(
+            _load(kind, kind, (*TYPE_KEYS[kind], "granted_power")),
+            level=None if kind == "generic_switch" else (f"sensor.{kind}_level", None),
+        )
+        for kind in kinds
+    )
+    config = build([_site(loads)], "2026.9.2", EN)
+    for kind in kinds:
+        cards = _subview_cards(config, kind)
+        types = [card["type"] for card in cards]
+        if kind == "generic_switch":
+            assert "custom:powerplan-level-card" not in types
+            assert any(card.get("entity") == f"sensor.{kind}_granted_power" for card in cards)
+            continue
+        [level] = [card for card in cards if card["type"] == "custom:powerplan-level-card"]
+        assert not any(card.get("entity") == f"sensor.{kind}_granted_power" for card in cards)
+        assert level["level"] == {
+            "entity": f"sensor.{kind}_level",
+            "unit": "%" if kind in {"ev", "battery"} else "°C",
+        }
+        assert level["entities"]["status"] == f"sensor.{kind}_plan_status"
+        assert level["grid_options"] == {"columns": 12, "rows": "auto"}
+
+
+def test_34_the_level_role_follows_the_type() -> None:
+    """The role the level chart reads is the one the type's comfort reads (D-0697)."""
+    from custom_components.powerplan.core.loads.kinds.base import Role  # noqa: PLC0415
+    from custom_components.powerplan.dashboard.site_layout import _level_role  # noqa: PLC0415
+
+    assert _level_role("floor_heating", {}) is Role.TEMP_FLOOR
+    assert _level_role("floor_heating", {"sensor": "air"}) is Role.TEMP
+    assert _level_role("water_heater", {}) is Role.TEMP
+    assert _level_role("battery", {}) is Role.SOC
+    assert _level_role("appliance_cycle", {}) is None
+
+
+def test_34_history_and_the_run_marks() -> None:
+    """History's day and energy cards, the carpet's run-type appliances and the price card's names."""
+    config = build([_nordic()], "2026.9.2", EN, grid_statistics=["sensor.grid_import"])
+    history = _view(config, "history")
+    [day] = [c for c in _section(history, EN["section_day"])["cards"] if c["type"] != "heading"]
+    assert day["type"] == "custom:powerplan-day-profile"
+    assert day["entities"] == {"savings": "sensor.home_savings"}
+    [energy] = [
+        c for c in _section(history, EN["section_energy"])["cards"] if c["type"] != "heading"
+    ]
+    assert energy["view"] == "energy"
+    assert energy["grid_entities"] == ["sensor.grid_import"]
+    assert all("energy" in row for row in energy["loads"])
+    peaks = _section(history, EN["section_capacity"])["cards"][1]
+    kinds = {load.subentry_id: load.type for load in _nordic().loads}
+    assert peaks["loads"]
+    assert {kinds[row["id"]] for row in peaks["loads"]} <= {
+        "ev",
+        "water_heater",
+        "appliance_cycle",
+        "generic_switch",
+        "battery",
+    }
+    price = _section(_view(config, "overview"), EN["section_price"])["cards"][1]
+    assert [row["id"] for row in price["loads"]] == [load.subentry_id for load in _nordic().loads]

@@ -504,6 +504,32 @@ export function monthGauge(metric: number, steps: readonly TariffStep[], target:
   };
 }
 
+/** The headroom strip (D12 §5.20 V1): the current and the next step on one kW axis. */
+export interface Strip {
+  lo: number;
+  hi: number;
+  segments: Array<{ from: number; to: number; tone: Tone; current: boolean; name: string; fee: string | null }>;
+  /** A kW's place on the axis, 0–1, clamped. */
+  at(kw: number): number;
+}
+
+/** The axis from the current step's lower bound to the next step's upper bound; ×1,25 past a top step. */
+export function headroomStrip(metric: number, steps: readonly TariffStep[], target: number | null): Strip | null {
+  if (!steps.length) return null;
+  const gauge = monthGauge(metric, steps, target);
+  const goal = target ?? gauge.index;
+  const shown = [gauge.index, gauge.index + 1].filter((i) => i < steps.length);
+  const lo = steps[gauge.index]!.from_kw;
+  const last = steps[shown[shown.length - 1]!]!;
+  const hi = last.to_kw ?? Math.max(last.from_kw * 1.25, metric * 1.1, lo + 1);
+  const segments = shown.map((i) => {
+    const step = steps[i]!;
+    const tone: Tone = i <= goal ? "ok" : i === goal + 1 ? "warn" : "alert";
+    return { from: step.from_kw, to: step.to_kw ?? hi, tone, current: i === gauge.index, name: step.name, fee: step.fee ?? null };
+  });
+  return { lo, hi, segments, at: (kw: number) => Math.min(1, Math.max(0, (kw - lo) / (hi - lo))) };
+}
+
 /** An `advice` item's params by key (`sensor.<site>_advice` → `items`, D2 §5.11). */
 export function adviceItem(items: unknown, key: string): Record<string, unknown> | undefined {
   if (!Array.isArray(items)) return undefined;
@@ -726,4 +752,190 @@ export function runRows(
 export function gaugeFont(chars: number, radius: number, stroke: number, max = 36): number {
   const room = 2 * (radius - stroke / 2 - 12);
   return Math.max(20, Math.min(max, Math.floor(room / (0.56 * Math.max(chars, 1)))));
+}
+
+// --------------------------------------------------------------------------- //
+// The hour carpet (D12 §5.20 V4)
+// --------------------------------------------------------------------------- //
+
+/** One local day of the carpet: its `YYYY-MM-DD`, its day of the month and 24 hours of kWh (`null`: no statistics). */
+export interface CarpetDay {
+  day: string;
+  date: number;
+  cells: Array<number | null>;
+}
+
+const localParts = (t: number, zone?: string) => {
+  const p = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23", timeZone: zone }).formatToParts(t);
+  const get = (type: string) => p.find((x) => x.type === type)!.value;
+  return { day: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
+};
+
+/**
+ * Rows of hourly `max` into local days × 24 hours over [start, end): a 25-hour day keeps the later of
+ * its repeated hour, a 23-hour day leaves the skipped hour empty.
+ */
+export function carpetGrid(rows: readonly { start: number; max?: number | null }[], start: Date, end: Date, zone?: string): CarpetDay[] {
+  const days = new Map<string, CarpetDay>();
+  for (let t = start.getTime(); t < end.getTime(); t += 3_600_000) {
+    const { day } = localParts(t, zone);
+    if (!days.has(day)) days.set(day, { day, date: Number(day.slice(8)), cells: Array<number | null>(24).fill(null) });
+  }
+  for (const row of [...rows].sort((a, b) => a.start - b.start)) {
+    if (row.max == null || row.start < start.getTime() || row.start >= end.getTime()) continue;
+    const { day, hour } = localParts(row.start, zone);
+    days.get(day)!.cells[hour] = row.max;
+  }
+  return [...days.values()];
+}
+
+/** A cell's fill alpha: 0,07 at nothing, 0,95 at the ceiling (V4). */
+export const carpetAlpha = (kwh: number, ceiling: number) => 0.07 + 0.88 * Math.min(1, Math.max(0, kwh / Math.max(ceiling, 0.1)));
+
+/** The `plan_status` states in which a run-type appliance draws on its plan (V4). */
+export const RUN_STATES = new Set(["charging", "running_plan", "run_now"]);
+
+/**
+ * The local hours (`YYYY-MM-DD HH`) in which an appliance was in a run state for at least `minutes`,
+ * with the appliance ids: from HA's compressed history (`s`, `lu` in seconds), each state lasting
+ * until the next, the last until `end`.
+ */
+export function runHours(
+  history: Record<string, ReadonlyArray<{ s: string; lu: number }>>, ids: Record<string, string>, end: number, zone?: string, minutes = 5,
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [entity, rows] of Object.entries(history)) {
+    const id = ids[entity];
+    if (!id) continue;
+    const per = new Map<string, number>();
+    rows.forEach((row, i) => {
+      if (!RUN_STATES.has(row.s)) return;
+      let t = row.lu * 1000;
+      const until = i + 1 < rows.length ? rows[i + 1]!.lu * 1000 : end;
+      while (t < until) {
+        const next = Math.min(until, (Math.floor(t / 3_600_000) + 1) * 3_600_000);
+        const { day, hour } = localParts(t, zone);
+        const key = `${day} ${String(hour).padStart(2, "0")}`;
+        per.set(key, (per.get(key) ?? 0) + (next - t));
+        t = next;
+      }
+    });
+    for (const [key, ms] of per) {
+      if (ms < minutes * 60_000) continue;
+      out.set(key, (out.get(key) ?? new Set<string>()).add(id));
+    }
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
+// The energy ring (D12 §5.20 V5)
+// --------------------------------------------------------------------------- //
+
+export interface EnergyLoad { id: string; name: string; color: string; kwh: number; moved: number | null }
+export interface EnergySlice { key: string; name: string; color: string; kwh: number; moved: number }
+
+/**
+ * The top four appliances by energy, the rest folded into one (`other`), and the house beyond the
+ * appliances (`rest`, never below 0) when the grid's energy is known.
+ */
+export function energySlices(loads: readonly EnergyLoad[], grid: number | null, otherName: (n: number) => string, restName: string): EnergySlice[] {
+  const used = [...loads].filter((l) => l.kwh > 0.005).sort((a, b) => b.kwh - a.kwh);
+  const top = used.slice(0, 4), tail = used.slice(4);
+  const out: EnergySlice[] = top.map((l) => ({ key: l.id, name: l.name, color: l.color, kwh: l.kwh, moved: l.moved ?? 0 }));
+  if (tail.length) {
+    out.push({ key: "other", name: otherName(tail.length), color: "rgba(var(--rgb-primary-text-color, 20, 20, 20), .28)",
+      kwh: tail.reduce((a, l) => a + l.kwh, 0), moved: tail.reduce((a, l) => a + (l.moved ?? 0), 0) });
+  }
+  if (grid !== null) {
+    const rest = Math.max(0, grid - used.reduce((a, l) => a + l.kwh, 0));
+    if (rest > 0.005) out.push({ key: "rest", name: restName, color: "rgba(var(--rgb-primary-text-color, 20, 20, 20), .5)", kwh: rest, moved: 0 });
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
+// The day profile (D12 §5.20 V6)
+// --------------------------------------------------------------------------- //
+
+/** `sensor.<site>_savings` → `day_profile` (D8 §5.5): a month's 24 local hours with and without PowerPlan. */
+export interface DayProfile { month: string; kwh: number[]; cf_kwh: number[]; days: number }
+
+/** The profile of the month the period starts in, if it is this month's or last month's; else `null`. */
+export function profileView(attributes: Record<string, unknown> | undefined, start: Date, zone?: string): DayProfile | null {
+  const month = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: zone }).format(start).slice(0, 7);
+  for (const key of ["day_profile", "previous_day_profile"]) {
+    const p = attributes?.[key] as DayProfile | null | undefined;
+    if (p && p.month === month && Array.isArray(p.kwh) && p.kwh.length === 24 && p.days > 0) return p;
+  }
+  return null;
+}
+
+export interface ProfileSummary {
+  with: number[];
+  without: number[];
+  /** ½ Σ |with − without| per day: the energy moved in time each day. */
+  movedPerDay: number;
+  /** The run of hours energy left and the run it went to, `[first, end)` local hours, or `null`. */
+  from: [number, number] | null;
+  to: [number, number] | null;
+}
+
+/** A day profile as the card draws it: kWh per hour on an average day, and where the energy moved. */
+export function profileSummary(p: DayProfile): ProfileSummary {
+  const per = (v: number[]) => v.map((x) => x / p.days);
+  const w = per(p.kwh), wo = per(p.cf_kwh);
+  const delta = w.map((x, i) => x - wo[i]!);
+  const movedPerDay = delta.reduce((a, d) => a + Math.abs(d), 0) / 2;
+  // The run of consecutive hours (across midnight) with the largest moved energy of one sign.
+  const run = (sign: 1 | -1): [number, number] | null => {
+    const on = delta.map((d) => d * sign > 0.01);
+    if (on.every(Boolean) || !on.some(Boolean)) return null;
+    const start0 = on.findIndex((x, i) => !x && on[(i + 1) % 24]) + 1;
+    let best: [number, number] | null = null, bestSum = 0, i = 0;
+    while (i < 24) {
+      const h = (start0 + i) % 24;
+      if (!on[h]) { i++; continue; }
+      let len = 0, sum = 0;
+      while (i + len < 24 && on[(start0 + i + len) % 24]) { sum += Math.abs(delta[(start0 + i + len) % 24]!); len++; }
+      if (sum > bestSum) { bestSum = sum; best = [h, (h + len) % 24]; }
+      i += len;
+    }
+    return best;
+  };
+  return { with: w, without: wo, movedPerDay, from: run(-1), to: run(1) };
+}
+
+// --------------------------------------------------------------------------- //
+// The level chart (D12 §5.20 V7)
+// --------------------------------------------------------------------------- //
+
+/** A row of HA's compressed history: state, last updated in seconds, attributes when asked for. */
+export interface HistoryRow { s: string; lu: number; a?: Record<string, unknown> }
+
+/** The level over time from its source's history: the state, or `attribute` of it; unknown values dropped. */
+export function levelSeries(rows: readonly HistoryRow[], attribute?: string): Array<{ t: number; v: number }> {
+  const out: Array<{ t: number; v: number }> = [];
+  let last: unknown;
+  for (const row of rows) {
+    if (attribute) { if (row.a && attribute in row.a) last = row.a[attribute]; } else last = row.s;
+    const v = typeof last === "number" ? last : parseFloat(String(last ?? ""));
+    if (Number.isFinite(v) && row.s !== "unavailable" && row.s !== "unknown") out.push({ t: row.lu * 1000, v });
+  }
+  return out;
+}
+
+/** The lane's past: `run` while drawing on the plan, `wait` while PowerPlan holds the appliance back. */
+export function laneRuns(rows: readonly HistoryRow[], end: number): Array<{ start: number; end: number; kind: "run" | "wait" }> {
+  const kindOf = (s: string) => (RUN_STATES.has(s) ? "run" : s === "waiting" || s === "paused_peak" ? "wait" : null);
+  const out: Array<{ start: number; end: number; kind: "run" | "wait" }> = [];
+  rows.forEach((row, i) => {
+    const kind = kindOf(row.s);
+    if (!kind) return;
+    const start = row.lu * 1000, stop = i + 1 < rows.length ? rows[i + 1]!.lu * 1000 : end;
+    const prev = out[out.length - 1];
+    if (prev && prev.kind === kind && Math.abs(prev.end - start) < 1000) prev.end = stop;
+    else out.push({ start, end: stop, kind });
+  });
+  return out;
 }

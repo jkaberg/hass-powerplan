@@ -2926,7 +2926,7 @@ The day profile (D12 §5.20 V6) needs, per month, the energy with PowerPlan and 
 
 ### D-0696 · Every card is tested in Chromium at every sections-view width
 
-D12 §9 31's harness existed only outside the repository. It is now Vitest's browser mode with Playwright's Chromium in `frontend/test/browser/`, run by CI's `frontend` job, over every card at 320, 390, 768, 1024, 1184 and 1664 px in both themes with geometric assertions. 1024 is added for a tablet in landscape, where HA's sidebar collapses to icons. Affects D9 §5.16, §9 16; D12 §5.20, §9 42.
+D12 §9 31's harness existed only outside the repository. It is now Vitest's browser mode with Playwright's Chromium in `frontend/test/browser/`, run by CI's `frontend` job, over every card at 320, 390, 768, 1024, 1184 and 1664 px in both themes with geometric assertions. 1024 is added for a 1280 px laptop less HA's sidebar, where the sections view has two columns. The harness found two faults in the cards already shipped: the timeline's legend toggles were 16 px high, and its markers were drawn inside ECharts' own flush, which logs an error; both are fixed. Writing it also found that History's peaks card took the month from the browser's zone, so a browser in UTC ranked the last hours of August for an Oslo house; the month is now taken at noon of the period's first day. Affects D9 §5.16, §9 16; D12 §5.20, §9 42.
 **Rejected:** screenshot comparison - differs between the box and CI on fonts alone.
 
 ### D-0697 · The level chart reads the device's own level source, and today's comfort lines

@@ -23,8 +23,11 @@ import {
 import { type HomeAssistant, moreInfo, numeric, timeZone } from "./ha";
 import { ppStyles } from "./styles";
 import { savingsView } from "./r3-util";
+import { ChartTip, MARK_CSS, markSwatch, ring, type Slice, tipAttr } from "./marks";
 import {
   countsDecision,
+  type EnergyLoad,
+  energySlices,
   formatSummary,
   inMonthOf,
   moneyFormat,
@@ -45,11 +48,13 @@ interface SummaryLoad {
   color: string;
   cost_month?: string;
   savings_month?: string;
+  /** `view: energy`: the appliance's `energy` total (D12 §5.20 V5). */
+  energy?: string;
 }
 
 interface SummaryConfig {
   entry_id: string;
-  view?: "summary" | "appliances" | "table";
+  view?: "summary" | "appliances" | "table" | "energy";
   entities?: Partial<Record<Key, string>>;
   grid_entities?: string[];
   loads?: SummaryLoad[];
@@ -97,6 +102,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
   private fetched?: Fetched;
   private fetchedHour = 0;
   private sequence = 0;
+  private tip?: ChartTip;
 
   public setConfig(config: SummaryConfig): void {
     const view = config?.view ?? "summary";
@@ -150,7 +156,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
     });
   }
 
-  private get view(): "summary" | "appliances" | "table" {
+  private get view(): "summary" | "appliances" | "table" | "energy" {
     return this.config?.view ?? "summary";
   }
 
@@ -168,7 +174,10 @@ export class PowerplanPeriodSummary extends HTMLElement {
 
     if (this.view !== "summary") {
       // D5, D6: each appliance's cost and saving over the picked range.
-      const ids = (config.loads ?? []).flatMap((load) => [load.cost_month, load.savings_month]).filter((id): id is string => Boolean(id));
+      const ids = (this.view === "energy"
+        ? [...(config.loads ?? []).map((load) => load.energy), ...(config.grid_entities ?? [])]
+        : (config.loads ?? []).flatMap((load) => [load.cost_month, load.savings_month])
+      ).filter((id): id is string => Boolean(id));
       const stats = await safe(fetchStatistics(hass, period, ids, ["change"]));
       if (sequence !== this.sequence) return;
       this.fetched = { period, kind, mode, stats, peak: undefined, since: {} };
@@ -233,7 +242,8 @@ export class PowerplanPeriodSummary extends HTMLElement {
         if ((event as KeyboardEvent).key === "Enter") open(event);
       });
     }
-    if (this.view === "appliances") this.renderAppliances(hass, config);
+    if (this.view === "energy") this.renderEnergy(hass, config);
+    else if (this.view === "appliances") this.renderAppliances(hass, config);
     else if (this.view === "table") this.renderTable(hass, config);
     else this.renderSummary(hass, config);
   }
@@ -434,6 +444,70 @@ export class PowerplanPeriodSummary extends HTMLElement {
       }</div></div></ha-card>`;
   }
 
+  /** Whether the picker shows the month in progress: month-to-date attributes only speak for it. */
+  private get thisMonth(): boolean {
+    const now = Date.now();
+    return Boolean(this.period && +this.period.start <= now && now < +this.period.end && +this.period.end - +this.period.start > 27 * 86_400_000);
+  }
+
+  /** V5 (D12 §5.20): who used the period's energy, and - this month - how much of it PowerPlan moved. */
+  private renderEnergy(hass: HomeAssistant, config: SummaryConfig): void {
+    const labels = config.labels ?? {};
+    const locale = hass.locale.language;
+    const stats = this.fetched?.stats ?? {};
+    const kwh0 = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+    const kwh1 = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+    const grid = (config.grid_entities ?? []).length
+      ? (config.grid_entities ?? []).reduce((sum, id) => sum + (totalChange(stats[id]) ?? 0) * kwhScale(hass, id), 0)
+      : null;
+    const loads: EnergyLoad[] = (config.loads ?? []).map((load) => ({
+      id: load.id, name: load.name, color: load.color,
+      kwh: load.energy ? (totalChange(stats[load.energy]) ?? 0) * kwhScale(hass, load.energy) : 0,
+      moved: this.thisMonth && load.savings_month ? Number(hass.states[load.savings_month]?.attributes.kwh_shifted) || 0 : null,
+    }));
+    const slices = energySlices(loads, grid && grid > 0 ? grid : null, (n) => fill(labels.other_appliances ?? "{n}", { n: String(n) }), labels.rest_of_house ?? "");
+    const total = slices.reduce((a, x) => a + x.kwh, 0);
+    const appliances = slices.filter((x) => x.key !== "rest").reduce((a, x) => a + x.kwh, 0);
+    const moved = slices.reduce((a, x) => a + x.moved, 0);
+    const pct = (v: number) => `${kwh0.format(total > 0 ? (100 * v) / total : 0)} %`;
+    const ringSlices: Slice[] = slices.map((x) => ({
+      value: x.kwh, color: x.color, moved: x.moved,
+      lines: [x.name, `${kwh1.format(x.kwh)} kWh · ${pct(x.kwh)}`, ...(x.moved > 0.05 ? [fill(labels.moved_of ?? "", { moved: kwh1.format(x.moved), kwh: kwh1.format(x.kwh) })] : [])],
+      movedLines: ["PowerPlan · " + x.name, fill(labels.moved_of ?? "", { moved: kwh1.format(x.moved), kwh: kwh1.format(x.kwh) })],
+    }));
+    const hasRest = slices.some((x) => x.key === "rest");
+    const center: [string, string] = hasRest ? [pct(appliances), labels.controlled ?? ""] : [kwh0.format(appliances), "kWh"];
+    // Stacked under 420 px by a container query: this card draws once per period, not per resize.
+    const size = 140;
+    this.shadowRoot!.innerHTML = `
+      <style>
+        ${ppStyles}
+        ${MARK_CSS}
+        ha-card { position: relative; container-type: inline-size; }
+        .split { display: flex; gap: 16px; align-items: center; }
+        @container (max-width: 419px) { .split { flex-direction: column; align-items: stretch; } .split .pp-ring { align-self: center; } }
+        .rows { flex: 1; min-width: 0; display: grid; }
+        .row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 38px; gap: 8px; align-items: center; min-height: 28px;
+               font-size: 13px; border-bottom: 1px solid var(--divider-color); }
+        .row:last-child { border-bottom: 0; }
+        .row i { width: 10px; height: 10px; border-radius: 3px; }
+        .row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .row .v { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .row .p { text-align: right; font-size: 12px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+        .note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; }
+      </style>
+      <ha-card><div class="pp-content">${
+        this.fetched && total > 0
+          ? `<div class="pp-sub">${escape(fill(labels.energy_total ?? "{kwh}", { kwh: kwh0.format(total) }))}</div>
+            <div class="split">${ring(size, 14, ringSlices, center, `${center[0]} ${center[1]}`)}
+            <div class="rows">${slices.map((x, i) => `<div class="row"${tipAttr(ringSlices[i]!.lines)}><i style="background:${x.color}"></i><span class="n">${escape(x.name)}</span><span class="v">${escape(kwh0.format(x.kwh))} kWh</span><span class="p">${escape(pct(x.kwh))}</span></div>`).join("")}</div></div>
+            ${moved > 0.05 ? `<div class="note">${markSwatch}<span>${escape(fill(labels.moved_total ?? "{kwh}", { kwh: kwh0.format(moved) }))}</span></div>` : ""}`
+          : this.fetched ? `<div class="pp-empty">${escape(withoutDate(labels.collecting ?? ""))}</div>` : ""
+      }</div></ha-card>`;
+    this.tip ??= new ChartTip(this.shadowRoot!, () => this.shadowRoot!.querySelector("ha-card"));
+    this.tip.reset();
+  }
+
   private renderTable(hass: HomeAssistant, config: SummaryConfig): void {
     const labels = config.labels ?? {};
     const locale = hass.locale.language;
@@ -442,8 +516,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
     const cost = rows.reduce((sum, row) => sum + row.cost, 0);
     const saved = rows.reduce((sum, row) => sum + row.saved, 0);
     // D12 §5.19: the kWh each appliance moved - a month-to-date attribute, so only while the picker shows this month.
-    const now = Date.now();
-    const thisMonth = Boolean(this.period && +this.period.start <= now && now < +this.period.end && +this.period.end - +this.period.start > 27 * 86_400_000);
+    const thisMonth = this.thisMonth;
     const kwh = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
     const moved = (row?: SummaryLoad) => {
       if (!thisMonth) return "";

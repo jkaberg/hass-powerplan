@@ -613,14 +613,14 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | 7.12 | The SoC floor | done |
 | 7.13 | The grid setpoint | done |
 | 7.14 | A battery on no device | done |
-| VZ.1 | The mark and the fit harness | todo |
-| VZ.2 | The headroom strip | todo |
-| VZ.3 | The cost ring | todo |
-| VZ.4 | The fixed-price gap and run marks | todo |
-| VZ.5 | The hour carpet | todo |
-| VZ.6 | The energy ring | todo |
-| VZ.7 | The day profile | todo |
-| VZ.8 | The level chart | todo |
+| VZ.1 | The mark and the fit harness | done |
+| VZ.2 | The headroom strip | done |
+| VZ.3 | The cost ring | done |
+| VZ.4 | The fixed-price gap and run marks | done |
+| VZ.5 | The hour carpet | done |
+| VZ.6 | The energy ring | done |
+| VZ.7 | The day profile | done |
+| VZ.8 | The level chart | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

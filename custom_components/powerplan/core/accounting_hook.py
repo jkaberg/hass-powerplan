@@ -271,6 +271,17 @@ class AccountingAdapter:
             reason=f"{len(slot.loads)} load(s) priced",
         )
 
+    def _day_profiles(self) -> dict[str, Any]:
+        """Return this month's and last month's day profile (D11 §5.12, D8 §5.5)."""
+        ledger = self.accounting.state().ledger
+        last = ledger.history[-1] if ledger.history else None
+        return {
+            "day_profile": ledger.site.day_profile(ledger.month)
+            if self.accounting.state().opened
+            else None,
+            "previous_day_profile": None if last is None else last.site.day_profile(last.month),
+        }
+
     def _section(self, status: AccountingStatus) -> dict[str, Any]:
         """Return the `accounting` store section for `status` (D7 §2, §4.2)."""
         return {
@@ -348,6 +359,7 @@ class AccountingAdapter:
                 for load_id, row in figures.loads.items()
             },
             results={
+                **self._day_profiles(),
                 "metric_kw": site.metric_kw,
                 "level": site.level,
                 "cf_metric_kw": site.cf_metric_kw,

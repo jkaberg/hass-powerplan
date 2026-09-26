@@ -918,8 +918,9 @@ class SiteSavingsSensor(_SiteMoneySensor):
     """`sensor.<site>_savings`: month-to-date vs. no powerplan; may be negative."""
 
     def __init__(self, runtime: Runtime) -> None:
-        """Bind to the site."""
+        """Bind to the site; the two day profiles stay out of the recorder (D11 §5.12, INV-61)."""
         super().__init__(runtime, "savings")
+        self._set_unrecorded(frozenset({"day_profile", "previous_day_profile"}))
 
     @property
     def native_value(self) -> Any:
@@ -962,6 +963,9 @@ class SiteSavingsSensor(_SiteMoneySensor):
             "price_paid": results.get("price_paid"),
             "price_reference": results.get("price_reference"),
             "kwh_counted": results.get("kwh_counted"),
+            # D11 §5.12: the appliances' average day with and without powerplan.
+            "day_profile": results.get("day_profile"),
+            "previous_day_profile": results.get("previous_day_profile"),
         }
 
 

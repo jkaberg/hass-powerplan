@@ -49,6 +49,22 @@ async def test_40_the_savings_sensor_carries_the_results(
         assert key in state.attributes, key
 
 
+async def test_48_the_savings_sensor_carries_the_day_profiles_unrecorded(
+    hass: HomeAssistant, site: MockConfigEntry
+) -> None:
+    """`day_profile` and `previous_day_profile` are published and kept out of the recorder (D11 §5.12)."""
+    state = hass.states.get(SAVINGS)
+    assert state is not None
+    assert "day_profile" in state.attributes
+    assert "previous_day_profile" in state.attributes
+    assert state.state_info is not None
+    assert {"day_profile", "previous_day_profile"} <= state.state_info["unrecorded_attributes"]
+    profile = state.attributes["day_profile"]
+    if profile is not None:
+        assert len(profile["kwh"]) == len(profile["cf_kwh"]) == 24
+        assert set(profile) == {"month", "kwh", "cf_kwh", "days"}
+
+
 async def test_40_the_deviations_sensor_sums_the_month(
     hass: HomeAssistant, site: MockConfigEntry
 ) -> None:

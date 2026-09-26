@@ -19,6 +19,8 @@ export const KNOWN_TAGS = new Set([
   "powerplan-price-card",
   "powerplan-attention-card",
   "powerplan-month-bars",
+  "powerplan-day-profile",
+  "powerplan-level-card",
 ]);
 
 const TROUBLESHOOTING = "https://github.com/jkaberg/hass-powerplan/blob/main/docs/troubleshooting.md";
