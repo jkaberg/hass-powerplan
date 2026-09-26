@@ -10,5 +10,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jkaberg/hass-powerplan/issues",
   "requirements": ["holidays>=0.84"],
-  "version": "0.0.1"
+  "version": "0.0.2"
 }
