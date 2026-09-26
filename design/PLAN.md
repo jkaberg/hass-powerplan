@@ -180,6 +180,19 @@ User pages: FA.1 `docs/entities.md` (the projection sensor's attribute); FA.5 `d
 
 User pages: VZ.2–VZ.8 `docs/dashboard.md`; VZ.7 `docs/entities.md` (the savings sensor's two attributes). VZ.1 changes nothing a household sees.
 
+### 3.0m This hour and History
+
+[D12 §5.21](lld/D12-dashboard.md): the hour gauge shows the day's last 12 hours, History marks where PowerPlan held the house back and compares the period with the one before, and its last row is balanced (dec. 47).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **VZ.9 The last 12 hours** | the strip under the hour gauge | D12 §5.21 H1; D-0698 | D12 §9 43, 44, 47 | VZ.1 |
+| **VZ.10 Held back** | the mark on the usage chart and the carpet | D12 §5.21 H2, H3; D-0698 | D12 §9 43, 46, 47 | VZ.9 |
+| **VZ.11 The period before** | the summary's comparison | D12 §5.21 H4; D-0699 | D12 §9 45, 47 | VZ.1 |
+| **VZ.12 History's last row** | the cost table beside the events | D12 §5.21 H5; D-0700 | D12 §9 43 | - |
+
+User pages: VZ.9–VZ.12 `docs/dashboard.md`.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -446,6 +459,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 44. **A battery takes four commands, and every major inverter gets a row** (D-0670). Self-use, hold, charge and discharge are INV-30's answers for a battery; one data vocabulary runs every row; a battery on no device is reachable; PV curtailment waits for v1.x (a wrong write breaches the grid operator's export cap); a battery's counterfactual is its own inverter's self-use; Enphase is a limitation until a local write path exists. *Rejected:* 0 as the release - a battery held for a capacity window would arrive empty.
 45. **The capacity axis measures the house** (D-0685 … D-0693, [the field audit](reviews/field-audit-2026-09.md)). The ladder reads the measured total and never a plan or a forecast (INV-38, INV-62); an idle thermostat holds back what its plan draws; the register has one reader; a kept plan covers the next hour and outside it is `None` (INV-30, INV-32); three missed writes in a row are `not_following` (INV-22); a step the period has passed isn't defended (INV-10); INV-48 stays. *Rejected:* tuning thresholds and margins - the projection opened loaded hours at 106–112 % of the ceiling, above every threshold worth having; an optimiser - a non-goal (HLD §1.2), and it would inherit two numbers that disagree.
 46. **Charts that show what PowerPlan did, and a browser under every card** (D-0694 … D-0697). Seven charts replace or join the cards; one PowerPlan mark, explained by its tooltip, sits wherever PowerPlan acted; the ledger keeps an hour-of-day profile for the average day with and without it; every card is mounted in Chromium at every width HA's sections view gives, light and dark, with geometric assertions. *Rejected:* pixel snapshots - fonts differ between machines and snapshots get re-recorded on reflex; a symbol per kind of action - three glyphs to learn where one mark and a sentence do.
+47. **This hour tells the day, History tells what PowerPlan held back** (D-0698 … D-0700). The hour gauge draws the last 12 hours under its arc; an hour whose control level reached 1 carries the PowerPlan mark wherever hours are drawn; History's summary compares the period with the same time of the one before. *Rejected:* a second hour card - Now already has one metric per pane; a comparison in green and red - it's a comparison, not a verdict.
 
 ---
 
@@ -621,6 +635,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | VZ.6 | The energy ring | done |
 | VZ.7 | The day profile | done |
 | VZ.8 | The level chart | done |
+| VZ.9 | The last 12 hours | todo |
+| VZ.10 | Held back | todo |
+| VZ.11 | The period before | todo |
+| VZ.12 | History's last row | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

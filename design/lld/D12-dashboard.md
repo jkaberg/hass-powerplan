@@ -218,7 +218,7 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 | 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7; the hour carpet over 3–35 days, §5.20 V4) |
 | 4 | `section_day` | 2 | `custom:powerplan-day-profile` full × auto, only where `savings` is shown (§5.20 V6) |
 | 5 | `section_energy` | 1 | period summary `view: energy` 12 × auto, only with appliances that show `energy` (§5.20 V5) |
-| 6 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (§5.11 D6, §5.17) |
+| 6 | `section_cost_per_appliance` | 2 | period summary `view: table` full × auto, following the picker (§5.11 D6, §5.17); span 2 beside the events (§5.21 H5) |
 | 7 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4, worded by `logbook.py` (§5.6) |
 
 Section 3 shows the capacity windows, section 1 the capacity level, the subviews the energy per appliance, and section 2's badge links to the Energy dashboard for the rest.
@@ -624,6 +624,22 @@ Seven charts, each replacing a card element or earning its own place, and one qu
 
 **The fit harness** (`frontend/test/browser/`, D9 §5.16). Vitest's browser mode in Playwright's Chromium mounts every card from `src/` in a copy of HA's sections grid, fed the reference house's states, statistics and history (`frontend/test/fixtures/`) and HA's theme variables, light and dark. For every card at the widths that give each column count and each narrow edge - 320, 390, 768, 1024, 1184, 1664 px - it asserts that nothing inside the card lies outside it, no text is cut except where an ellipsis is the design, every `[data-tip]` target is at least 24 × 24 px, the mark's dot clears 3 : 1 against the card, and no console error is logged.
 
+### 5.21 Iteration 7: this hour and History
+
+"Denne timen" says how the hour is going; it now also says how the day's hours went, and History says where PowerPlan held the house back and how the period compares with the one before (D-0698 … D-0700). §5.17's rules and §5.20's mark hold.
+
+**"Held back".** An hour in which `sensor.<site>_stage`'s hourly `max` is 1 or more is one where PowerPlan held loads back to keep the hour under its limit (D6's ladder). It carries the PowerPlan mark on every chart that draws hours: the strip under the gauge, History's usage chart and the carpet. The tooltip says `card_held_back` with the level reached (`card_stage_level`). A day in which any hour was held back carries the mark on the usage chart's daily bars.
+
+| # | what | where | reads |
+|---|---|---|---|
+| H1 | **The last 12 hours** under the hour gauge: one bar per closed hour, its height the hour's used kWh on the gauge's own scale (0 → the ceiling × 1,2), the limit a dashed line, a bar over its limit in `--error-color` and the others in `--primary-color` at 60 %; the mark under a held-back hour; x labels every 3 hours (6 under 360 px); 44 px, taken from the arc's room | window card `mode: hour` | `window_used` hourly `max`, `ceiling` hourly `mean`, `stage` hourly `max` |
+| H2 | **Held back on the usage chart**: the mark on the zero line under each held-back hour (a day on longer ranges), and a line in the hour's tooltip | History · `section_usage`, timeline `mode: history` | `stage` hourly or daily `max` |
+| H3 | **Held back on the carpet**: the mark in each held-back hour, as a run is (§5.20 V4), with its own tooltip line | History · `section_capacity`, window card `mode: peaks` | `stage` hourly `max` |
+| H4 | **The period against the one before** in the summary: under cost and grid energy, "↓ 12 % mot samme tid i forrige periode" (`card_vs_previous`) in the secondary text colour - a comparison, not a verdict. The previous period is the calendar month before for a month, else the same length just before; either way cut to the time elapsed in the period, so a month in progress meets the same days of the last one. Nothing when the previous period has no statistics or is 0 | History · `section_summary` | `change` of `cost` and the grid sources over both periods |
+| H5 | **The last row balanced**: the cost table spans 2 beside the events log, so no section stands alone on a wide screen | History · `section_cost_per_appliance` span 2 | - |
+
+The hour gauge keeps its 6 rows: the arc's radius already follows the card's height (§5.18 W3), and the strip takes 44 px from it.
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -686,6 +702,12 @@ None. The dashboard is generated on every open. A household that takes control o
 40. `vitest`, V6: `profileView` picks this month, last month or none by the period's start; moved per day is ½ Σ |Δ| ÷ days; the sub-line names 17–21 and 22–02 on the example profile.
 41. `vitest`, V7: `levelSeries` reads a state and an attribute source, drops `unavailable`, and gives the 24 h minimum; `laneRuns` merges the house's TV-stua states into heating and waiting runs.
 42. The fit harness (§5.20): every card of §3 in both themes at 320, 390, 768, 1024, 1184 and 1664 px, nothing outside its card, no clipped text, every tip target ≥ 24 px, the mark ≥ 3 : 1, no console error; CI runs it in the `frontend` job.
+
+43. Iteration 7, layout: the hour card's, the usage chart's and the peaks card's entities carry `stage`; History's cost table spans 2.
+44. `vitest`, H1: `hourStrip` over the house gives 12 closed hours ending with the hour before the one in progress, flags one over its ceiling and one held back (`stage` max 1), and leaves an hour without statistics empty.
+45. `vitest`, H4: `previousPeriod` gives August for September, the same days of August for September in progress, and the 24 h before for a day; `versus` is −12 for 88 against 100 and nothing against 0.
+46. `vitest`, H2, H3: `heldHours` keys the hours with a `stage` max of 1 or more, in the house's zone.
+47. The fit harness mounts the hour card with its strip and History's cards with their marks at every width and in both themes (§9 42).
 
 ---
 

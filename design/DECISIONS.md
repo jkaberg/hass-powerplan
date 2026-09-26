@@ -2934,3 +2934,18 @@ D12 §9 31's harness existed only outside the repository. It is now Vitest's bro
 `plan_status.current` is volatile (a change alone doesn't write a state), so its history can stand still for hours. The level chart reads HA's history of the entity and attribute the type's level role is bound to (`site_layout` via `entity_of` / `attribute_of`: `temp_floor` for a floor with a floor sensor, else `temp`; `soc` for a battery or a car), and draws the comfort and minimum at today's values. Affects D12 §4, §5.20 V7.
 **Rejected:** `plan_status`'s own history with attributes - about 0,4 MB a day for one floor on the house, on every open.
 
+### D-0698 · "Held back" is an hour whose control level reached 1
+
+The owner asked for this hour and History to be improved, in the same spirit as §5.20. The one fact every hour chart can carry about PowerPlan is whether its ladder held loads back that hour, and `sensor.<site>_stage` already has long-term statistics: its hourly `max` of 1 or more is that fact, read through HA's own `recorder/statistics_during_period`. The mark goes on the hour gauge's new 12-hour strip, History's usage chart and the carpet. Affects D12 §5.21.
+**Rejected:** the loads' `paused_peak` history - one request per appliance for what one statistic says.
+
+### D-0699 · The summary compares with the same time of the period before
+
+A month in progress against the whole of last month reads as a saving every 1st. The previous period is cut to the time elapsed in this one: the calendar month before for a month, the same length just before for anything else. The figure is an arrow and a percent in the secondary text colour. Affects D12 §5.21 H4.
+**Rejected:** HA's own energy compare - it lives in the Energy dashboard's collection, which only the Energy dashboard's cards read.
+
+### D-0700 · History's cost table spans two columns beside the events
+
+With the day profile and the energy ring (§5.20), the full-width table left the events log alone on the last row of a wide screen. At span 2 the table keeps its "Flyttet" column from 756 px. Affects D12 §5.1, §5.21 H5.
+**Rejected:** dropping the events log - it is the only place History says what happened.
+
