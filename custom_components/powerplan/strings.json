@@ -2089,7 +2089,6 @@
         "card_carpet_hint": "Each row is a day, each square an hour",
         "card_highest_hour": "The day's highest hour",
         "card_counting": "Counts toward the step",
-        "card_ran_here": "Planned run",
         "card_ran_load": "PowerPlan ran {load} here",
         "card_over_limit": "Over the limit",
         "card_other_appliances": "{n} other appliances",
@@ -2114,7 +2113,11 @@
         "card_charging": "Charging",
         "card_waiting_pp": "PowerPlan waits",
         "card_plan_hold": "Plan: holding",
-        "card_plan_run": "Plan: runs"
+        "card_plan_run": "Plan: runs",
+        "card_held_back": "PowerPlan held the house back this hour",
+        "card_acted": "PowerPlan acted",
+        "card_vs_previous": "{arrow} {pct} % against the same time last period",
+        "card_last_hours": "The last 12 hours"
       }
     },
     "logbook": {

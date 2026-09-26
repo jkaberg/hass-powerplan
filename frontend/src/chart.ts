@@ -1,7 +1,7 @@
 // ECharts, with only what the timeline draws (the markers are `graphic`, T3) - loaded the first time a
 // timeline card renders, so the module every page loads stays small (D12 §5.5).
 
-import { BarChart, CustomChart, LineChart } from "echarts/charts";
+import { BarChart, CustomChart, LineChart, ScatterChart } from "echarts/charts";
 import {
   GraphicComponent,
   GridComponent,
@@ -18,6 +18,8 @@ echarts.use([
   BarChart,
   CustomChart,
   LineChart,
+  // History's held-back marks (D12 §5.21 H2).
+  ScatterChart,
   GraphicComponent,
   GridComponent,
   LegendComponent,

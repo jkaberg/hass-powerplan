@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { costParts, plannedByHour } from "../src/r3-util";
 import plan from "./fixtures/plan.json";
 import {
+  heldHours, hourStrip, previousPeriod, versus,
   carpetAlpha, carpetGrid, energySlices, headroomStrip, laneRuns, levelSeries, profileSummary, profileView, runHours,
   type TariffStep,
 } from "../src/transforms";
@@ -136,5 +137,54 @@ describe("V3 plannedByHour (§9 37)", () => {
   it("leaves out an hour of crumbs", () => {
     const t0 = 0;
     expect(plannedByHour([{ start: new Date(0).toISOString(), planned_kwh: { a: 0.04 } }], t0, 3_600_000).size).toBe(0);
+  });
+});
+
+describe("H1 hourStrip (§9 44)", () => {
+  const now = Date.parse("2026-09-26T17:30:00Z");
+  const hour = (h: number) => Date.parse("2026-09-26T00:00:00Z") + h * 3_600_000;
+  it("gives the 12 closed hours before the one in progress", () => {
+    const used = [{ start: hour(16), max: 10.2 }, { start: hour(15), max: 3.1 }];
+    const strip = hourStrip(used, [{ start: hour(16), mean: 9.7 }, { start: hour(15), mean: 9.7 }], [{ start: hour(15), max: 1 }], now);
+    expect(strip).toHaveLength(12);
+    expect(strip[11]!.start).toBe(hour(16));
+    expect(strip[0]!.start).toBe(hour(5));
+    expect(strip[11]).toMatchObject({ kwh: 10.2, over: true, held: false });
+    expect(strip[10]).toMatchObject({ kwh: 3.1, over: false, held: true });
+    expect(strip[0]).toMatchObject({ kwh: null, over: false, held: false });
+  });
+});
+
+describe("H4 previousPeriod and versus (§9 45)", () => {
+  const zone = "Europe/Oslo";
+  const sep = { start: new Date("2026-08-31T22:00:00Z"), end: new Date("2026-09-30T22:00:00Z") };
+  it("gives August for a whole September", () => {
+    const p = previousPeriod(sep, Date.parse("2026-10-05T00:00:00Z"), zone);
+    expect(p.start.toISOString()).toBe("2026-07-31T22:00:00.000Z");
+    expect(p.end.toISOString()).toBe("2026-08-30T22:00:00.000Z");
+  });
+  it("gives the same days of August for September in progress", () => {
+    const p = previousPeriod(sep, Date.parse("2026-09-26T17:30:00Z"), zone);
+    expect(p.start.toISOString()).toBe("2026-07-31T22:00:00.000Z");
+    expect(p.end.getTime() - p.start.getTime()).toBe(Date.parse("2026-09-26T17:30:00Z") - sep.start.getTime());
+  });
+  it("gives the day before for a day", () => {
+    const day = { start: new Date("2026-09-25T22:00:00Z"), end: new Date("2026-09-26T22:00:00Z") };
+    const p = previousPeriod(day, Date.parse("2026-09-27T00:00:00Z"), zone);
+    expect(p.start.toISOString()).toBe("2026-09-24T22:00:00.000Z");
+    expect(p.end.toISOString()).toBe("2026-09-25T22:00:00.000Z");
+  });
+  it("compares in whole percent, never against nothing", () => {
+    expect(versus(88, 100)).toBe(-12);
+    expect(versus(5, 0)).toBeNull();
+    expect(versus(null, 10)).toBeNull();
+  });
+});
+
+describe("H2, H3 heldHours (§9 46)", () => {
+  it("keys the hours whose control level reached 1, in the house's zone", () => {
+    const rows = [{ start: Date.parse("2026-09-26T16:00:00Z"), max: 1 }, { start: Date.parse("2026-09-26T17:00:00Z"), max: 0 }, { start: Date.parse("2026-09-26T18:00:00Z"), max: 3 }];
+    expect([...heldHours(rows, "Europe/Oslo")]).toEqual(["2026-09-26 18", "2026-09-26 20"]);
+    expect([...heldHours(rows, "Europe/Oslo", true)]).toEqual(["2026-09-26"]);
   });
 });

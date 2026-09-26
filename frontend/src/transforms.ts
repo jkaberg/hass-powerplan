@@ -939,3 +939,78 @@ export function laneRuns(rows: readonly HistoryRow[], end: number): Array<{ star
   });
   return out;
 }
+
+// --------------------------------------------------------------------------- //
+// Iteration 7: this hour and History (D12 §5.21)
+// --------------------------------------------------------------------------- //
+
+const HOUR = 3_600_000;
+type Row = { start: number; max?: number | null; mean?: number | null };
+
+/** One closed hour of the strip under the gauge (H1). */
+export interface StripHour { start: number; kwh: number | null; ceiling: number | null; over: boolean; held: boolean }
+
+/** The `n` closed hours before the one in progress: used kWh, the ceiling, over it, held back (stage max ≥ 1). */
+export function hourStrip(used: readonly Row[], ceiling: readonly Row[], stage: readonly Row[], now: number, n = 12): StripHour[] {
+  const at = (rows: readonly Row[], key: "max" | "mean") => new Map(rows.filter((r) => r[key] != null).map((r) => [r.start, r[key]!]));
+  const u = at(used, "max"), c = at(ceiling, "mean"), s = at(stage, "max");
+  const current = Math.floor(now / HOUR) * HOUR;
+  return Array.from({ length: n }, (_, i) => {
+    const start = current - (n - i) * HOUR;
+    const kwh = u.get(start) ?? null, limit = c.get(start) ?? null;
+    return { start, kwh, ceiling: limit, over: kwh !== null && limit !== null && kwh > limit, held: (s.get(start) ?? 0) >= 1 };
+  });
+}
+
+/** The local hours (`YYYY-MM-DD HH`), or days (`YYYY-MM-DD`), whose `stage` max reached 1: PowerPlan held back (H2, H3). */
+export function heldHours(rows: readonly Row[], zone?: string, daily = false): Set<string> {
+  const out = new Set<string>();
+  for (const row of rows) {
+    if ((row.max ?? 0) < 1) continue;
+    const { day, hour } = localParts(row.start, zone);
+    out.add(daily ? day : `${day} ${String(hour).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+const zoneOffset = (t: number, zone?: string) => {
+  const p = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(t);
+  const g = (type: string) => Number(p.find((x) => x.type === type)!.value);
+  return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) - Math.floor(t / 1000) * 1000;
+};
+/** Local midnight of `y`-`m` (1-based)-`d` in `zone`, as a UTC instant. */
+const zonedMidnight = (y: number, m: number, d: number, zone?: string) => {
+  const guess = Date.UTC(y, m - 1, d);
+  const first = guess - zoneOffset(guess, zone);
+  return guess - zoneOffset(first, zone);
+};
+
+/**
+ * The period to compare with (H4): the calendar month before a calendar month, else the same length just
+ * before; either way cut to the time elapsed in `period` by `now`, so a month in progress meets the same
+ * days of the last one.
+ */
+export function previousPeriod(period: SummaryPeriod, now: number, zone?: string): SummaryPeriod {
+  const start = period.start.getTime(), end = period.end.getTime();
+  const elapsed = Math.max(0, Math.min(now, end) - start);
+  const s = localParts(start, zone), e = localParts(end, zone);
+  const month = s.hour === 0 && s.day.endsWith("-01") && e.hour === 0 && e.day.endsWith("-01") && end - start >= 27 * 86_400_000 && end - start <= 32 * 86_400_000;
+  let from = start - (end - start);
+  if (month) {
+    const [y, m] = s.day.split("-").map(Number) as [number, number];
+    from = m === 1 ? zonedMidnight(y - 1, 12, 1, zone) : zonedMidnight(y, m - 1, 1, zone);
+  }
+  return { start: new Date(from), end: new Date(Math.min(from + elapsed, start)) };
+}
+
+/** The change against the previous figure in whole percent, `null` without one to compare with. */
+export function versus(now: number | null, before: number | null): number | null {
+  if (now === null || before === null || !(before > 0)) return null;
+  return Math.round((100 * (now - before)) / before);
+}
+
+/** An hour's key in `heldHours` and `runHours`: its local `YYYY-MM-DD HH`. */
+export function heldKey(t: number, zone?: string): string {
+  const { day, hour } = localParts(t, zone);
+  return `${day} ${String(hour).padStart(2, "0")}`;
+}

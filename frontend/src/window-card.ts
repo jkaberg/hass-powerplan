@@ -36,6 +36,9 @@ import {
   type CarpetDay,
   carpetGrid,
   headroomStrip,
+  heldHours,
+  hourStrip,
+  type StripHour,
   runHours,
   moneyFormat,
   niceScale,
@@ -76,6 +79,9 @@ interface WindowConfig {
   labels?: Record<string, string>;
 }
 
+/** The carpet's key for an hour PowerPlan held the house back (D12 §5.21 H3), beside the appliances' ids. */
+const HELD = "__held";
+
 /** The hour arc's stroke (H4). */
 const STROKE = 24;
 
@@ -103,6 +109,9 @@ export class PowerplanWindowCard extends HTMLElement {
   /** V1: today's highest hour so far (kWh per window), and the hour it was fetched in. */
   private todayKwh: number | null = null;
   private todayHour = -1;
+  /** H1: the last 12 closed hours, and the hour they were fetched in. */
+  private strip: StripHour[] = [];
+  private stripHour = -1;
   private period?: Period;
   private unfollow?: () => void;
   private fetched?: {
@@ -209,7 +218,52 @@ export class PowerplanWindowCard extends HTMLElement {
 
   // ------------------------------------------------------------- mode: hour
 
+  /** H1 (D12 §5.21): the last 12 closed hours from HA's statistics - used, the ceiling, the control level. */
+  private async fetchStrip(): Promise<void> {
+    const hass = this.hassRef, config = this.config;
+    const e = config?.entities;
+    if (!hass || !e?.window_used) return;
+    this.stripHour = Math.floor(Date.now() / 3_600_000);
+    const now = Date.now(), start = new Date((this.stripHour - 12) * 3_600_000);
+    const ask = (id: string | undefined, type: "max" | "mean") =>
+      id ? fetchStatistics(hass, { start, end: new Date(now) }, [id], [type], "hour").then((r) => r[id] ?? []).catch(() => [] as StatRow[]) : Promise.resolve([] as StatRow[]);
+    const [used, ceiling, stage] = await Promise.all([ask(e.window_used, "max"), ask(e.ceiling, "mean"), ask(e.stage, "max")]);
+    this.strip = hourStrip(used, ceiling, stage, now);
+    this.key = [];
+    this.render();
+  }
+
+  /** H1: the strip's SVG, `width` wide and 44 px high, on the gauge's own scale; "" with no statistics. */
+  private stripSvg(hass: HomeAssistant, labels: Record<string, string>, width: number, ceilingNow: number | null): string {
+    const hours = this.strip;
+    if (!hours.some((h) => h.kwh !== null)) return "";
+    const locale = hass.locale.language;
+    const two = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: timeZone(hass) });
+    const hourOf = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: timeZone(hass) });
+    const top = Math.max(...hours.map((h) => Math.max(h.kwh ?? 0, (h.ceiling ?? ceilingNow ?? 0) * 1.2)), 0.1);
+    const pad = 16, plot = 26, H = 44, slot = (width - 2 * pad) / hours.length;
+    const y = (v: number) => 4 + plot - (Math.min(v, top) / top) * plot;
+    const g: string[] = [];
+    const every = width < 360 ? 6 : 3;
+    hours.forEach((h, i) => {
+      const x = pad + i * slot;
+      const limit = h.ceiling ?? ceilingNow;
+      if (limit !== null) g.push(`<line x1="${x.toFixed(1)}" x2="${(x + slot).toFixed(1)}" y1="${y(limit).toFixed(1)}" y2="${y(limit).toFixed(1)}" stroke="var(--error-color)" stroke-width="1" stroke-dasharray="3 2"/>`);
+      if (h.kwh !== null) {
+        const lines = [`${clock.format(h.start)}–${clock.format(h.start + 3_600_000)}`, `${two.format(h.kwh)} kWh${limit !== null ? ` / ${two.format(limit)}` : ""}`];
+        if (h.held) lines.push(labels.held_back ?? "");
+        g.push(`<rect x="${(x + 1.5).toFixed(1)}" y="${y(h.kwh).toFixed(1)}" width="${Math.max(1, slot - 3).toFixed(1)}" height="${Math.max(1, 4 + plot - y(h.kwh)).toFixed(1)}" rx="2" fill="${h.over ? "var(--error-color)" : "rgba(var(--rgb-primary-color, 0, 154, 199), .6)"}"${tipAttr(lines, false)}/>`);
+      }
+      if (h.held) g.push(`<g pointer-events="none">${markDot(x + slot / 2, 4 + plot, 3)}</g>`);
+      const hour = Number(hourOf.format(h.start));
+      if (hour % every === 0) g.push(`<text class="end" x="${(x + slot / 2).toFixed(1)}" y="${H - 1}" text-anchor="middle">${String(hour).padStart(2, "0")}</text>`);
+    });
+    return `<svg class="strip" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" role="img" aria-label="${escape(labels.last_hours ?? "")}">${g.join("")}</svg>`;
+  }
+
   private renderHour(hass: HomeAssistant, config: WindowConfig): void {
+    if (config.entities.window_used && Math.floor(Date.now() / 3_600_000) !== this.stripHour) void this.fetchStrip();
     const labels = config.labels ?? {};
     const usedEntity = this.state("window_used");
     const used = numeric(usedEntity) ?? 0;
@@ -253,7 +307,8 @@ export class PowerplanWindowCard extends HTMLElement {
     // H4: the radius follows the card; the arc's top sits 40 px down, under the chip. The arc fills the
     // height the section grid gives the card (above the 72 px footer), and never pushes its end labels out.
     const width = this.cardWidth;
-    const room = (this.height || 376) - (cells.length ? 72 : 0) - 40 - 30 - 16;
+    const strip = this.stripSvg(hass, labels, width, hasCeiling ? ceiling : null);
+    const room = (this.height || 376) - (cells.length ? 72 : 0) - 40 - 30 - 16 - (strip ? 48 : 0);
     const r = Math.max(60, Math.min(170, width / 2 - 34, room));
     const cx = width / 2;
     const cy = 40 + r;
@@ -273,6 +328,8 @@ export class PowerplanWindowCard extends HTMLElement {
         .pp-status { position: absolute; top: 12px; right: 16px; color: var(--ha-color-on-${chipRole}-quiet, ${color});
                      background: var(--ha-color-fill-${chipRole}-quiet-resting, color-mix(in srgb, ${color} 16%, transparent)); }
         svg { display: block; flex: none; margin: auto 0; }
+        svg.strip { margin: 0 0 4px; overflow: visible; }
+        ${MARK_CSS}
         .track { fill: none; stroke: var(--pp-track); stroke-width: ${STROKE}; }
         .used { fill: none; stroke: ${color}; stroke-width: ${STROKE}; }
         .projected { fill: none; stroke: ${color}; stroke-opacity: 0.38; stroke-width: ${STROKE}; }
@@ -301,6 +358,7 @@ export class PowerplanWindowCard extends HTMLElement {
           <text class="end" x="${cx - r}" y="${cy + 22}" text-anchor="middle">0</text>
           ${hasCeiling ? `<text class="end" x="${cx + r}" y="${cy + 22}" text-anchor="middle">${escape(`${one.format(ceiling)} kWh`)}</text>` : ""}
         </svg>
+        ${strip}
         ${
           cells.length
             ? `<div class="footer">${cells
@@ -312,6 +370,8 @@ export class PowerplanWindowCard extends HTMLElement {
             : ""
         }
       </ha-card>`;
+    this.tip ??= new ChartTip(this.shadowRoot!, () => this.shadowRoot!.querySelector("ha-card"));
+    this.tip.reset();
   }
 
   // ------------------------------------------------------------ mode: month
@@ -482,6 +542,10 @@ export class PowerplanWindowCard extends HTMLElement {
       grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({} as Record<string, StatRow[]>),
       monthRanking(hass, month, { used, grid, advice: this.state("advice")?.attributes.items }, zone),
     ]);
+    // H3: the hours PowerPlan held the house back, from `stage`'s own statistics.
+    const stage = carpet && config.entities.stage
+      ? await fetchStatistics(hass, { start: period.start, end: new Date(end) }, [config.entities.stage], ["max"], "hour").catch(() => ({}) as Record<string, StatRow[]>)
+      : ({} as Record<string, StatRow[]>);
     // V4: HA's own history of the run-type appliances' `plan_status`, states only.
     const history = statuses.length
       ? await hass.callWS<Record<string, Array<{ s: string; lu: number }>>>({
@@ -505,6 +569,9 @@ export class PowerplanWindowCard extends HTMLElement {
         carpet: carpetGrid(merged, period.start, new Date(Math.min(period.end.getTime(), end)), zone),
         runs: runHours(history, Object.fromEntries(statuses.map((load) => [load.status, load.id])), end, zone),
       };
+      for (const key of heldHours(stage[config.entities.stage ?? ""] ?? [], zone)) {
+        this.fetched.runs!.set(key, (this.fetched.runs!.get(key) ?? new Set<string>()).add(HELD));
+      }
       this.render();
       return;
     }
@@ -552,7 +619,7 @@ export class PowerplanWindowCard extends HTMLElement {
         const lines = [`${dayFmt.format(Date.parse(day.day))} ${String(h).padStart(2, "0")}–${String((h + 1) % 24).padStart(2, "0")}`, `${two.format(v)} kWh`];
         if (h === mh) lines.push(isTop ? `${labels.highest_hour ?? ""} · ${labels.counting ?? ""}` : labels.highest_hour ?? "");
         if (hot) lines.push(labels.over_limit ?? "");
-        for (const id of ran ?? []) lines.push(fill(labels.ran_load ?? "{load}", { load: names.get(id) ?? id }));
+        for (const id of ran ?? []) lines.push(id === HELD ? labels.held_back ?? "" : fill(labels.ran_load ?? "{load}", { load: names.get(id) ?? id }));
         g.push(`<rect ${rect} fill="${hot ? "var(--error-color)" : `rgba(var(--rgb-primary-color, 0, 154, 199), ${carpetAlpha(v, ceiling).toFixed(3)})`}"${tipAttr(lines, false)}/>`);
       });
       if (mh >= 0) {
@@ -570,7 +637,7 @@ export class PowerplanWindowCard extends HTMLElement {
       `<span><i class="sq"></i>${escape(labels.highest_hour ?? "")}</span>`,
       counting.size ? `<span><i class="sq on"></i>${escape(labels.counting ?? "")}</span>` : "",
       over ? `<span><i class="sq hot"></i>${escape(labels.over_limit ?? "")}</span>` : "",
-      data.runs?.size ? `<span>${markSwatch}${escape(labels.ran_here ?? "")}</span>` : "",
+      data.runs?.size ? `<span>${markSwatch}${escape(labels.acted ?? "")}</span>` : "",
     ].join("");
     this.shadowRoot!.innerHTML = `${style}<style>${MARK_CSS}
         ha-card { position: relative; }

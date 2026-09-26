@@ -354,7 +354,8 @@ def _history(site: _Site, grid: Sequence[str]) -> list[Card | None]:
         _section(
             _heading(t["section_cost_per_appliance"]),
             _cols(_appliances_card(site, "table", "cost_month"), "full", "auto"),
-            span=3,
+            # (§5.21 H5) beside the events, so no section stands alone on a wide screen.
+            span=2,
         ),
         _section(
             _heading(t["section_events"]),
@@ -960,7 +961,7 @@ def _history_timeline(site: _Site, grid: Sequence[str]) -> Card:
         "grid_entities": list(grid),
         "entities": {
             key: e[key]
-            for key in ("window_used", "ceiling", "price", "price_forecast", "advice")
+            for key in ("window_used", "ceiling", "price", "price_forecast", "advice", "stage")
             if key in e
         },
         "currency": site.site.currency,
@@ -982,7 +983,7 @@ def _peaks_card(site: _Site, grid: Sequence[str]) -> Card | None:
         "mode": "peaks",
         "entities": {
             key: e[key]
-            for key in ("window_used", "ceiling", "advice", "level", "target")
+            for key in ("window_used", "ceiling", "advice", "level", "target", "stage")
             if key in e
         },
         "grid_entities": list(grid),

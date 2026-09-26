@@ -32,6 +32,8 @@ import {
   inMonthOf,
   moneyFormat,
   periodKind,
+  previousPeriod,
+  versus,
   type PeriodKind,
   sumChanges,
   summaryMode,
@@ -74,6 +76,8 @@ interface Fetched {
   ranking?: Array<[string, number]>;
   /** The earliest statistics row after the period, by id, for a cell that has none. */
   since: Record<string, number>;
+  /** H4: the same statistics over the same time of the period before (D12 §5.21). */
+  previous?: Record<string, StatRow[]>;
 }
 
 interface Cell {
@@ -193,9 +197,11 @@ export class PowerplanPeriodSummary extends HTMLElement {
     // Iteration 5: the highest hour is only this card's without `window_used` (the peaks card has it
     // otherwise); then it is the grid sources' hourly sum (D2).
     const ownPeak = !used && mode !== "capacity";
-    const [stats, gridByHour] = await Promise.all([
+    const before = previousPeriod(period, now.getTime(), zone);
+    const [stats, gridByHour, previous] = await Promise.all([
       safe(fetchStatistics(hass, period, changes, ["change"])),
       ownPeak && mode === "hour" && grid.length ? safe(fetchStatistics(hass, period, grid, ["change"], "hour")) : Promise.resolve({}),
+      before.end > before.start ? safe(fetchStatistics(hass, before, [cost, ...grid].filter((id): id is string => Boolean(id)), ["change"])) : Promise.resolve({}),
     ]);
     const peak = ownPeak ? highest(gridHours(gridByHour, grid, (id) => kwhScale(hass, id))) : undefined;
 
@@ -222,7 +228,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
     }
 
     if (sequence !== this.sequence) return;
-    this.fetched = { period, kind, mode, stats, peak, ranking, since };
+    this.fetched = { period, kind, mode, stats, peak, ranking, since, previous };
     this.key = [];
     this.hass = hass;
   }
@@ -249,6 +255,14 @@ export class PowerplanPeriodSummary extends HTMLElement {
   }
 
   // ------------------------------------------------------------ the summary
+
+  /** H4: "↓ 12 % mot samme tid i forrige periode", or "" without a previous figure (D-0699). */
+  private against(now: number | null, before: number | null, labels: Record<string, string>, locale: string): string {
+    const change = versus(now, before);
+    if (change === null) return "";
+    const arrow = change > 0 ? "↑" : change < 0 ? "↓" : "→";
+    return fill(labels.vs_previous ?? "{arrow} {pct} %", { arrow, pct: new Intl.NumberFormat(locale).format(Math.abs(change)) });
+  }
 
   private renderSummary(hass: HomeAssistant, config: SummaryConfig): void {
     const labels = config.labels ?? {};
@@ -296,7 +310,7 @@ export class PowerplanPeriodSummary extends HTMLElement {
               icon,
               value: formatSummary(total, "money", locale),
               unit: String(hass.states[id]?.attributes.unit_of_measurement ?? ""),
-              sub: "",
+              sub: key === "cost" ? this.against(total, totalChange(fetched?.previous?.[id]), labels, locale) : "",
               entity: id,
             },
       );
@@ -318,7 +332,11 @@ export class PowerplanPeriodSummary extends HTMLElement {
       cells.push(
         kwh === null
           ? missing(name, "mdi:transmission-tower", grid, entity)
-          : { name, icon: "mdi:transmission-tower", value: formatSummary(kwh, "kwh", locale), unit: "kWh", sub: "", entity },
+          : {
+              name, icon: "mdi:transmission-tower", value: formatSummary(kwh, "kwh", locale), unit: "kWh", entity,
+              sub: this.against(kwh, fetched?.previous && grid.some((id) => fetched.previous![id]?.length)
+                ? grid.reduce((sum, id) => sum + (totalChange(fetched.previous![id]) ?? 0) * kwhScale(hass, id), 0) : null, labels, locale),
+            },
       );
     }
 

@@ -1018,7 +1018,7 @@ def test_19_lists_and_tables_are_powerplan_elements_not_markdown() -> None:
     assert "custom:powerplan-runs-card" not in {card["type"] for card in _cards(config)}
     history = _view(config, "history")
     table = _section(history, EN["section_cost_per_appliance"])  # the table only, full width
-    assert table["column_span"] == 3
+    assert table["column_span"] == 2  # §5.21 H5: beside the events
     table = table["cards"]
     assert table[1]["view"] == "table"
     assert table[1]["grid_options"] == {"columns": "full", "rows": "auto"}
@@ -1040,7 +1040,14 @@ def test_19_history_names_its_graphs_and_opens_its_picker_upward() -> None:
     assert history["footer"]["card"]["vertical_opening_direction"] == "up"
     peaks = _section(history, EN["section_capacity"])["cards"][1]
     assert peaks["grid_options"] == {"columns": 12, "rows": "auto"}
-    assert set(peaks["entities"]) == {"window_used", "ceiling", "advice", "level", "target"}
+    assert set(peaks["entities"]) == {
+        "window_used",
+        "ceiling",
+        "advice",
+        "level",
+        "target",
+        "stage",
+    }
 
 
 def test_19_the_subview_s_ready_by_row_and_plan() -> None:
@@ -1413,3 +1420,21 @@ def test_34_history_and_the_run_marks() -> None:
     }
     price = _section(_view(config, "overview"), EN["section_price"])["cards"][1]
     assert [row["id"] for row in price["loads"]] == [load.subentry_id for load in _nordic().loads]
+
+
+# --------------------------------------------------------------------------- #
+# §9 43 - iteration 7: this hour and History (D12 §5.21)
+# --------------------------------------------------------------------------- #
+
+
+def test_43_hour_usage_and_peaks_read_the_control_level() -> None:
+    """The strip, the usage chart and the carpet mark held-back hours from `stage`; the table spans 2."""
+    config = build([_nordic()], "2026.9.2", EN, grid_statistics=["sensor.grid_import"])
+    now = _view(config, "overview")
+    hour = _section(now, EN["section_hour"])["cards"][1]
+    assert hour["entities"]["stage"] == "sensor.home_stage"
+    history = _view(config, "history")
+    usage = _section(history, EN["section_usage"])["cards"][1]
+    peaks = _section(history, EN["section_capacity"])["cards"][1]
+    assert usage["entities"]["stage"] == peaks["entities"]["stage"] == "sensor.home_stage"
+    assert _section(history, EN["section_cost_per_appliance"])["column_span"] == 2

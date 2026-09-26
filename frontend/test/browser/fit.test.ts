@@ -15,7 +15,7 @@ afterAll(() => vi.useRealTimers());
 describe.each(SPECS)("$name", (spec) => {
   test.each(THEMES.flatMap((theme) => WIDTHS.map((width) => [width, theme] as const)))("%i px, %s", async (width, theme) => {
     const m = await mount(spec.tag, spec.config, width, theme, spec.span, spec.rows);
-    if ((import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_PP_SHOTS) await page.screenshot({ path: `__screenshots__/${spec.name.replace(/ /g, "-")}-${width}-${theme}.png`, element: m.frame });
+    if ((import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_PP_SHOTS && m.frame.getBoundingClientRect().height > 0) await page.screenshot({ path: `__screenshots__/${spec.name.replace(/ /g, "-")}-${width}-${theme}.png`, element: m.frame });
     expect(breaches(m)).toEqual([]);
   });
 });

@@ -152,16 +152,17 @@ function rng(seed: number): () => number {
 }
 
 const HOUR = 3_600_000;
-/** 1 Sep 2026 00:00 Europe/Oslo (CEST). */
+/** 1 Sep 2026 00:00 Europe/Oslo (CEST), and 1 Aug, where the generated statistics begin (H4 compares with it). */
 const SEP1 = Date.parse("2026-08-31T22:00:00Z");
+const AUG1 = Date.parse("2026-07-31T22:00:00Z");
 
 /** The house's hourly energy for September to now: kWh per local hour, the three counted days pinned. */
 export const HOURLY: Array<{ start: number; kwh: number }> = (() => {
   const r = rng(20260926);
   const base = [0.7, 0.6, 0.6, 0.6, 0.6, 0.7, 1.2, 2.3, 2.4, 1.6, 1.3, 1.2, 1.3, 1.2, 1.3, 1.6, 2.6, 3.6, 3.9, 3.3, 2.7, 2.0, 1.4, 1.0];
   const out: Array<{ start: number; kwh: number }> = [];
-  for (let t = SEP1; t < NOW.getTime(); t += HOUR) {
-    const day = Math.floor((t - SEP1) / 86_400_000) + 1, hour = Math.round(((t - SEP1) % 86_400_000) / HOUR);
+  for (let t = AUG1; t < NOW.getTime(); t += HOUR) {
+    const day = t < SEP1 ? 0 : Math.floor((t - SEP1) / 86_400_000) + 1, hour = Math.round(((((t - SEP1) % 86_400_000) + 86_400_000) % 86_400_000) / HOUR);
     let kwh = base[hour]! * (0.78 + r() * 0.44);
     if ([22, 23, 0, 1].includes(hour) && r() < 0.7) kwh += 2.4 * (0.8 + r() * 0.4);
     if (hour >= 17 && hour <= 19 && r() < 0.22) kwh += 1.5 + r() * 2.6;
@@ -203,6 +204,8 @@ export function statistics(msg: { statistic_ids: string[]; start_time: string; e
     const load = LOADS.find((l) => loadEntity(l.slug, "energi_totalt") === id);
     if (id === E.window_used) out[id] = per((h) => h.kwh, "max");
     else if (id === E.ceiling) out[id] = per(() => 9.7, "max");
+    // The control level: 1 on the hours heavy enough that the ladder held loads back.
+    else if (id === E.stage) out[id] = per((h) => (h.kwh > 7 ? 1 : 0), "max");
     else if (id === E.grid) out[id] = per((h) => h.kwh, "change");
     else if (load) out[id] = per((h) => (h.kwh * load.energy) / 180 * (total / 1800), "change");
     else if (id === E.cost) out[id] = per((h) => (h.start >= Date.parse("2026-09-25T09:00:00Z") ? h.kwh * 0.83 + (h.start === Date.parse("2026-09-25T09:00:00Z") ? 397 : 0) : 0), "change");

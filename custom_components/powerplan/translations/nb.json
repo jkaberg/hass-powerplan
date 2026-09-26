@@ -2089,7 +2089,6 @@
         "card_carpet_hint": "Hver rad er en dag, hver rute en time",
         "card_highest_hour": "Dagens høyeste time",
         "card_counting": "Teller for trinnet",
-        "card_ran_here": "Planlagt kjøring",
         "card_ran_load": "PowerPlan kjørte {load} her",
         "card_over_limit": "Over grensen",
         "card_other_appliances": "{n} andre apparater",
@@ -2114,7 +2113,11 @@
         "card_charging": "Lader",
         "card_waiting_pp": "PowerPlan venter",
         "card_plan_hold": "Plan: holder",
-        "card_plan_run": "Plan: kjører"
+        "card_plan_run": "Plan: kjører",
+        "card_held_back": "PowerPlan holdt igjen huset denne timen",
+        "card_acted": "PowerPlan grep inn",
+        "card_vs_previous": "{arrow} {pct} % mot samme tid i forrige periode",
+        "card_last_hours": "De siste 12 timene"
       }
     },
     "logbook": {

@@ -23,6 +23,8 @@ import {
   currencyWord,
   type DayPeak,
   dayKey,
+  heldHours,
+  heldKey,
   estimatedRanges,
   legendItems,
   midnights,
@@ -63,6 +65,8 @@ interface TimelineConfig {
     ceiling?: string;
     price?: string;
     advice?: string;
+    /** `mode: history`: the control level, whose statistics say where PowerPlan held back (D12 §5.21 H2). */
+    stage?: string;
   };
   show?: string[];
   currency?: string;
@@ -958,12 +962,14 @@ export class PowerplanTimelineCard extends HTMLElement {
     const early = { start: new Date(period.start.getTime() - HOUR_MS), end: period.end };
     const forecast = hourly && e.price_forecast ? ((hass.states[e.price_forecast]?.attributes.slots as PriceSlot[] | undefined) ?? []) : [];
     const covered = forecast.length > 0 && Date.parse(forecast[0]!.start) <= period.start.getTime();
-    const [usage, ceilingStats, priceStats, peaks, ranking] = await Promise.all([
+    const [usage, ceilingStats, priceStats, peaks, ranking, stageStats] = await Promise.all([
       fetchStatistics(hass, period, sources, ["change"], grain),
       hourly && e.ceiling ? fetchStatistics(hass, period, [e.ceiling], ["mean"], "hour").catch(() => ({})) : Promise.resolve({}),
       hourly && e.price && !covered ? fetchStatistics(hass, early, [e.price], ["mean"], "hour").catch(() => ({})) : Promise.resolve({}),
       !hourly && e.window_used ? fetchStatistics(hass, period, [e.window_used], ["max"], "day").catch(() => ({})) : Promise.resolve({}),
       monthRanking(hass, month, { used: e.window_used, grid: sources, advice: e.advice ? hass.states[e.advice]?.attributes.items : undefined }, zone),
+      // D12 §5.21 H2: the hours (days) PowerPlan held the house back, from `stage`'s statistics.
+      hourly && e.stage ? fetchStatistics(hass, period, [e.stage], ["max"], "hour").catch(() => ({})) : Promise.resolve({}),
     ]);
     if (this.period !== period || !this.isConnected) return;
     const hours = gridHours(usage, sources, (id) => kwhScale(hass, id));
@@ -1059,6 +1065,22 @@ export class PowerplanTimelineCard extends HTMLElement {
           markPoints.push({ coord: [row.start + step / 2, row.max], symbol: "circle", symbolSize: 6, symbolOffset: [0, -6], itemStyle: { color: warning }, label: { show: false } });
         }
       }
+    }
+    // H2: the PowerPlan mark on the zero line under each held-back hour of a day; the axis tooltip names it.
+    // A longer range leaves it to the carpet beside it, where a mark under most days would be noise.
+    const held = hourly ? heldHours(e.stage ? ((stageStats as Record<string, StatRow[]>)[e.stage] ?? []) : [], zone) : new Set<string>();
+    const heldAt = hours.filter((row) => held.has(heldKey(row.start, zone)));
+    if (heldAt.length) {
+      series.push({
+        name: labels.held_back ?? "",
+        type: "scatter",
+        symbol: "circle",
+        symbolSize: 7,
+        z: 10,
+        itemStyle: { color: this.css("--primary-color", "#009ac7"), borderColor: this.css("--card-background-color", "#fff"), borderWidth: 1.75 },
+        tooltip: { valueFormatter: () => "" },
+        data: heldAt.map((row) => [row.start + step / 2, 0]),
+      });
     }
     // The marks ride on the top source, so they sit over the stack.
     const lastSource = sources.length - 1;

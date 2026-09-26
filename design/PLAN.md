@@ -635,10 +635,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | VZ.6 | The energy ring | done |
 | VZ.7 | The day profile | done |
 | VZ.8 | The level chart | done |
-| VZ.9 | The last 12 hours | todo |
-| VZ.10 | Held back | todo |
-| VZ.11 | The period before | todo |
-| VZ.12 | History's last row | todo |
+| VZ.9 | The last 12 hours | done |
+| VZ.10 | Held back | done |
+| VZ.11 | The period before | done |
+| VZ.12 | History's last row | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
