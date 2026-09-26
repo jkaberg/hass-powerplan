@@ -15,13 +15,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 from zoneinfo import ZoneInfo
 
 import aiohttp
@@ -53,7 +54,7 @@ from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from custom_components.powerplan.core.tariffs.sources import Operator
+    from custom_components.powerplan.core.tariffs.sources import Operator, Product
 
 
 #: A country's only source listing more than `LIMIT` operators is fetched for `SAMPLE`
@@ -61,6 +62,8 @@ if TYPE_CHECKING:
 #: endpoint's shape. ElCom lists some 2 100 municipalities, at 1-10 s each.
 LIMIT = 500
 SAMPLE = 25
+#: The postcode a source that lists by postcode alone is asked for: Namur, Phoenix.
+PROBES: Final = {"cwape": "5000", "openei_urdb": "85004"}
 #: Seconds to wait before asking again after a 429: Energi Data Service sends a
 #: few when the canary asks for every Danish area in a row.
 BACKOFF_S = (5.0, 20.0, 60.0)
@@ -206,8 +209,9 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
             int(h["hoursFrom"]): Decimal(str(h["amount"]))
             for h in tariffs[-1]["distributionAreaChargeHours"]
         }
-        if sorted(hours) != list(range(datahub_pricelist.HOURS)):
-            # the adapter's own fetch reports it: "does not price every hour"
+        rows = tariffs[-1]["distributionAreaChargeHours"]
+        if len(rows) != len(hours) or sorted(hours) != list(range(datahub_pricelist.HOURS)):
+            # not a table to compare: the adapter reads Datahub's instead (D-0682)
             continue
         ours = datahub_pricelist.hourly(since, [hours[h] for h in range(datahub_pricelist.HOURS)])
         other = theirs.get(since)
@@ -245,31 +249,136 @@ async def _cross_check(
     if "DK" in countries_:
         findings.extend(await datahub_check(http, day))
     for country in countries_:
-        by_operator: dict[str, list[tuple[str, GridTariff]]] = {}
         sources = base.for_country(country)
+        listed: list[tuple[type[base.TariffSource], list[Operator]]] = []
         for cls in sources:
             try:
-                operators = await cls().operators(http)
+                operators = await cls().operators(http, PROBES.get(cls.key))
             except SourceError as err:
                 findings.append(Finding(cls.key, "–", f"no operators: {err}"))
                 continue
+            except Exception as err:  # an adapter's crash is the finding
+                findings.append(Finding(cls.key, "–", f"crashed listing operators: {err!r}"))
+                continue
             if not operators:
                 findings.append(Finding(cls.key, "–", "lists no operator"))
-            for operator in operators if len(sources) > 1 else sample(operators):
-                try:
-                    product = await _first_product(cls, http, operator)
-                    fetched = await cls().fetch(http, operator.key, product, {})
-                except SourceError as err:
-                    findings.append(Finding(cls.key, operator.name, str(err)))
-                    continue
-                by_operator.setdefault(operator.name, []).append((cls.key, fetched.grid))
-        for name, copies in by_operator.items():
-            for (key_a, grid_a), (key_b, grid_b) in pairwise(copies):
+            listed.append((cls, operators))
+        names = [operator.name for _, operators in listed for operator in operators]
+        shared = {name for name in names if names.count(name) > 1}
+        for cls, operators in listed:
+            findings.extend(
+                await _contract(cls, http, [o for o in operators if o.name not in shared])
+            )
+        for name in sorted(shared):
+            copies = [(cls, o) for cls, operators in listed for o in operators if o.name == name]
+            for (cls_a, op_a), (cls_b, op_b) in pairwise(copies):
                 findings.extend(
-                    Finding(f"{key_a} / {key_b}", name, what)
-                    for what in disagreements(grid_a, grid_b, country, day, zone)
+                    await _compare(
+                        http, (cls_a, op_a), (cls_b, op_b), country=country, day=day, zone=zone
+                    )
                 )
     return findings
+
+
+async def _contract(
+    cls: type[base.TariffSource], http: CanaryHttp, operators: Sequence[Operator]
+) -> list[Finding]:
+    """Fetch each operator a source alone lists, or a spread of a long list (§5.7)."""
+    findings: list[Finding] = []
+    chosen = sample(operators)
+    no_plans = 0
+    for operator in chosen:
+        try:
+            product = await _first_product(cls, http, operator)
+            if product is None and hasattr(cls, "products"):
+                # a retailer with no residential plan: the flow says so (D-0683)
+                no_plans += 1
+                continue
+            await cls().fetch(http, operator.key, product, {})
+        except SourceError as err:
+            findings.append(Finding(cls.key, operator.name, str(err)))
+        except Exception as err:  # an adapter's crash is the finding
+            findings.append(Finding(cls.key, operator.name, f"crashed: {err!r}"))
+    if chosen and no_plans == len(chosen):
+        findings.append(Finding(cls.key, "–", "no operator lists a plan"))
+    return findings
+
+
+async def _compare(
+    http: CanaryHttp,
+    a: tuple[type[base.TariffSource], Operator],
+    b: tuple[type[base.TariffSource], Operator],
+    *,
+    country: str,
+    day: date,
+    zone: ZoneInfo,
+) -> list[Finding]:
+    """Compare one company's like products across two tiers: a finding only if no pair agrees."""
+    (cls_a, op_a), (cls_b, op_b) = a, b
+    source = f"{cls_a.key} / {cls_b.key}"
+    try:
+        keyed_a = _by_kind(await _products(cls_a, http, op_a))
+        keyed_b = _by_kind(await _products(cls_b, http, op_b))
+        common = sorted(set(keyed_a) & set(keyed_b), key=_preferred)
+        if not common:
+            return []
+        kind = common[0]
+        grids_a = [(await cls_a().fetch(http, op_a.key, k, {})).grid for k in keyed_a[kind]]
+        grids_b = [(await cls_b().fetch(http, op_b.key, k, {})).grid for k in keyed_b[kind]]
+    except SourceError as err:
+        return [Finding(source, op_a.name, str(err))]
+    except Exception as err:  # an adapter's crash is the finding
+        return [Finding(source, op_a.name, f"crashed: {err!r}")]
+    found: list[str] = []
+    for grid_a in grids_a:
+        for grid_b in grids_b:
+            differ = disagreements(grid_a, grid_b, country, day, zone)
+            if not differ:
+                return []
+            found = found or differ
+    return [Finding(source, op_a.name, f"{_label(kind)}: {what}") for what in found]
+
+
+async def _products(
+    cls: type[base.TariffSource], http: CanaryHttp, operator: Operator
+) -> tuple[Product, ...]:
+    """Return the operator's products, asked of the source where it lists none."""
+    lister = getattr(cls, "products", None)
+    if operator.products or lister is None:
+        return operator.products
+    return tuple(await lister(cls(), http, operator.key, None))
+
+
+#: A product as two tiers can both name it: dwelling, main fuse in A, region.
+Kind = tuple[str, int | None, str]
+
+
+def kind(name: str) -> Kind:
+    """Return what a product is, read from its name: "Lägenhet 16 A – Stockholm"."""
+    lowered = name.casefold()
+    dwelling = "apartment" if re.search(r"lägenhet|apartment|\blgh\b", lowered) else "house"
+    amps = re.search(r"(\d+)(?:-\d+)?\s*a\b", lowered)
+    region = re.split(r"\s[-–]\s", name)
+    return dwelling, int(amps.group(1)) if amps else None, region[-1] if len(region) > 1 else ""
+
+
+def _by_kind(products: Sequence[Product]) -> dict[Kind, list[str]]:
+    found: dict[Kind, list[str]] = {}
+    for product in products:
+        what = kind(product.name)
+        if what[1] is not None:
+            found.setdefault(what, []).append(product.key)
+    return found
+
+
+def _preferred(what: Kind) -> tuple[bool, bool, Kind]:
+    """Sort a 16 A apartment first: the one product nearly every company lists in both."""
+    return (what[0] != "apartment", what[1] != 16, what)  # noqa: PLR2004 - 16 A
+
+
+def _label(what: Kind) -> str:
+    dwelling, amps, region = what
+    return f"{dwelling} {amps} A" + (f" ({region})" if region else "")
 
 
 async def _first_product(

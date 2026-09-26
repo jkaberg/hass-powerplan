@@ -718,6 +718,7 @@
       "limit_required": "Fyll inn effekten avtalen din gir deg.",
       "postcode_invalid": "Det ser ikke ut som et postnummer her.",
       "tariff_source_unreachable": "Fikk ikke hentet nettselskapene nå. Velg Finner ikke mitt nettselskap eller Legg inn selv, eller prøv igjen senere.",
+      "tariff_no_plans": "Denne leverandøren publiserer ingen strømavtale for husholdninger. Velg en annen, eller Legg inn selv.",
       "price_format_unknown": "PowerPlan kjenner ikke igjen prisene i denne sensoren. Velg formatet som passer.",
       "required": "Dette svaret trengs."
     },

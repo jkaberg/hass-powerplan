@@ -334,8 +334,12 @@ def parse(
                 ("15", "30", "60"),
             )
         )
-    start = datetime.fromtimestamp(int(rate["startdate"]), UTC).date()
-    first = max(start, date(fetched.year, fetched.month, 1))
+    # an approved rate with no start date is in force: from the fetch's month
+    month = date(fetched.year, fetched.month, 1)
+    start = (
+        datetime.fromtimestamp(int(rate["startdate"]), UTC).date() if "startdate" in rate else month
+    )
+    first = max(start, month)
     periods = energy_periods(rate) if rate.get(_STRUCTURE) else ()
     capacity: list[TariffVersion] = []
     energy: list[EnergyVersion] = []

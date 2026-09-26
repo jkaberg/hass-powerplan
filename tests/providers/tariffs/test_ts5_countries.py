@@ -36,6 +36,10 @@ async def test_namur_lists_ores_and_its_dual_rate_copy() -> None:
     assert (ores.key, ores.name) == ("compacwape:117", "ORES")
     fetched = await Cwape().fetch(http, ores.key, "dual", {})  # type: ignore[arg-type]
     assert [q.key for q in fetched.questions] == ["rate_1_hours"]
+    # the platforms answer JSON-LD collections unless asked for JSON (D-0683)
+    gets = {url: headers for url, headers in http.sent.items() if not url.startswith("POST ")}
+    assert gets
+    assert all(headers == {"Accept": "application/json"} for headers in gets.values())
 
 
 async def test_brussels_picks_the_segment_from_the_sites_power() -> None:

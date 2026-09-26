@@ -86,3 +86,14 @@ def test_the_register_lists_every_brand() -> None:
     operators, bases = cdr_energy.brands((FIXTURES / "cdr" / "register-brands.json").read_bytes())
     assert len(operators) == 84
     assert all(bases[o.key].startswith("https://") for o in operators)
+
+
+def test_a_brand_on_its_own_host_is_read_from_energy_made_easy() -> None:
+    """AGL's own base answers 404 for its plans; the AER publishes them (D-0683)."""
+    operators, bases = cdr_energy.brands((FIXTURES / "cdr" / "register-brands.json").read_bytes())
+    key = {operator.name: operator.key for operator in operators}
+    assert bases[key["AGL"]] == "https://cdr.energymadeeasy.gov.au/agl"
+    assert bases[key["Red Energy"]] == "https://cdr.energymadeeasy.gov.au/red-energy"
+    assert bases[key["Snowy Energy"]] == "https://public.cdr.snowyenergy.com.au", (
+        "none there: as listed"
+    )

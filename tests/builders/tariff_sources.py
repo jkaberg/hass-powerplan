@@ -108,6 +108,8 @@ class FixtureHttp:
     documents: dict[str, bytes]
     day: date = CAPTURED
     asked: list[str] = field(default_factory=list)
+    #: The headers each GET sent, by URL.
+    sent: dict[str, dict[str, str]] = field(default_factory=dict)
     released: int = 0
     parsed: dict[str, Any] = field(default_factory=dict)
 
@@ -118,6 +120,7 @@ class FixtureHttp:
     async def get(self, url: str, **headers: str) -> bytes:
         """Return the captured document; a URL not captured is unreachable."""
         self.asked.append(url)
+        self.sent[url] = headers
         if url not in self.documents:
             raise UnreachableError(f"{url}: not captured")
         return self.documents[url]

@@ -433,3 +433,25 @@ async def test_1_elvia_serves_one_zone_and_asks_no_county(
     result = await _answer(hass, result)
     result = await _answer(hass, result, preset="operator:Elvia AS")
     assert result["step_id"] == "tariff_preset"
+
+
+async def test_a_retailer_with_no_plan_says_so(
+    hass: HomeAssistant, ams_meter: str, nordpool_entry: str, persons: list[str]
+) -> None:
+    """A source that lists products on demand and has none: `tariff_no_plans`, not unreachable."""
+    cls = fake("noplans", Tier.T1A, operators=(Operator("aseno", "ASENO"),))
+
+    async def products(self: object, http: object, operator: str, postcode: str | None) -> tuple:
+        return ()
+
+    cls.products = products  # type: ignore[attr-defined]
+    base.register(cls)
+    try:
+        result = await _to_postcode(hass, ams_meter)
+        result = await _answer(hass, result)
+        result = await _answer(hass, result, preset="operator:ASENO")
+        assert result["step_id"] == "tariff"
+        assert result["errors"] == {"base": "tariff_no_plans"}
+        assert cls.calls == [], "nothing fetched without a plan"
+    finally:
+        base.unregister("noplans")

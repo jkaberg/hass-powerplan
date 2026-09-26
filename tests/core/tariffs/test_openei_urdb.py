@@ -168,3 +168,12 @@ def test_07_a_malformed_document_is_refused_by_name() -> None:
 def test_every_peak_is_a_peak_tariff() -> None:
     """The copy builds into the tariff model (D13 §19 4)."""
     assert all(isinstance(rule, PeakTariff) for v in _parse().grid.capacity for rule in v.rules)
+
+
+def test_a_rate_with_no_start_date_is_in_force_from_the_fetch() -> None:
+    """URDB leaves `startdate` out of some approved rates: no crash, the fetch month on."""
+    rate = json.loads(APS.read_bytes())
+    for item in rate["items"]:
+        item.pop("startdate", None)
+    grid = openei_urdb.parse(json.dumps(rate).encode(), "803", fetched=CAPTURED, answers={}).grid
+    assert grid.energy[0].valid_from == date(CAPTURED.year, CAPTURED.month, 1)

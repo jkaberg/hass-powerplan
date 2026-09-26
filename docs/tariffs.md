@@ -77,7 +77,7 @@ Sweden. Every other grid company, from the regulator's yearly household figures.
 <a name="elpris_dk"></a>
 ### elpris.dk (Forsyningstilsynet)
 
-Denmark. Every grid area, with next season's tariff as soon as your grid company registers it.
+Denmark. Every grid area, by the hour, with next season's tariff as soon as your grid company registers it. Where elpris.dk lists no hourly prices for an area, they come from Energinet's Datahub.
 
 <a name="cwape"></a>
 ### CWaPE and Brugel
@@ -122,7 +122,7 @@ United States. Every utility serving your ZIP code, with its current rates and t
 <a name="cdr_energy"></a>
 ### Consumer Data Right
 
-Australia. Every retailer on the national register, and its residential plans for your postcode. Setup asks how the plan's demand charge is measured.
+Australia. Every retailer on the national register, and its residential plans for your postcode, as the AER publishes them on Energy Made Easy. Setup asks how the plan's demand charge is measured. A retailer that publishes no residential electricity plan says so; pick another, or enter it yourself.
 
 ### Countries with a template
 

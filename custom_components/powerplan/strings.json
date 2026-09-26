@@ -718,6 +718,7 @@
       "limit_required": "Enter the power your contract gives you.",
       "postcode_invalid": "That does not look like a postcode here.",
       "tariff_source_unreachable": "Could not fetch the grid companies right now. Pick Grid company not listed or Enter it myself, or try again later.",
+      "tariff_no_plans": "This retailer publishes no residential electricity plan. Pick another, or Enter it myself.",
       "price_format_unknown": "PowerPlan does not recognize this sensor's prices. Choose the format that fits.",
       "required": "This answer is needed."
     },

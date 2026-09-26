@@ -9,7 +9,7 @@ or the renewal and released with it (§5.2 rule 6).
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from custom_components.powerplan.core.tariffs.sources import (
     Credit,
@@ -31,6 +31,8 @@ if TYPE_CHECKING:
 __all__ = ["Cwape"]
 
 _LOGGER = logging.getLogger(__name__)
+#: The platforms answer JSON-LD collections unless asked for JSON (D-0683).
+_JSON: Final = {"Accept": "application/json"}
 
 
 @register
@@ -49,7 +51,7 @@ class Cwape:
         """BruSim prices the connection's power; CompaCWaPE's household tariffs do not."""
         if key != "brusim":
             return None, False
-        return cwape.segment_for(await http.get(f"{host}/connection_power_segments"), kw)
+        return cwape.segment_for(await http.get(f"{host}/connection_power_segments", **_JSON), kw)
 
     async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return the grid companies the regulators' platforms name for the postcode."""
@@ -58,10 +60,14 @@ class Cwape:
         found: list[Operator] = []
         for key, host, _ in cwape.HOSTS:
             try:
-                entries = cwape.postal_codes(await http.get(f"{host}/postal_codes?code={postcode}"))
+                entries = cwape.postal_codes(
+                    await http.get(f"{host}/postal_codes?code={postcode}", **_JSON)
+                )
                 if not entries:
                     continue
-                names = cwape.dnm_names(await http.get(f"{host}/distribution_network_managers"))
+                names = cwape.dnm_names(
+                    await http.get(f"{host}/distribution_network_managers", **_JSON)
+                )
                 segment, _ = await self._segment(http, key, host, None)
                 named = []
                 for postal_id, municipality in entries:
@@ -89,7 +95,7 @@ class Cwape:
         answer = await http.post(
             f"{host}/offer_simulations", cwape.body(postal_id, product or "single", segment)
         )
-        names = cwape.dnm_names(await http.get(f"{host}/distribution_network_managers"))
+        names = cwape.dnm_names(await http.get(f"{host}/distribution_network_managers", **_JSON))
         return cwape.parse(
             answer,
             operator=operator,

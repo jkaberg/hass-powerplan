@@ -162,3 +162,37 @@ async def test_a_429_is_asked_again_and_a_404_is_not(monkeypatch: pytest.MonkeyP
     with pytest.raises(UnreachableError, match="HTTP 404"):
         await tariff_canary.CanaryHttp(gone, DAY).get("https://example.invalid/gone")  # type: ignore[arg-type]
     assert gone.asked == 1
+
+
+def test_like_products_are_compared_across_tiers() -> None:
+    """Eltariff and Ei name a product differently: the dwelling, the fuse and the region pair them."""
+    kind = tariff_canary.kind
+    assert kind("Apartment 16A - Stockholm") == kind("Lägenhet 16 A – Stockholm")
+    assert kind("Fuse 16A - Stockholm") != kind("Villa 16 A – Syd & Mellersta"), "another region"
+    assert kind("Konsumtion 16 A") == kind("Villa 16 A")
+    assert kind("Prislista Lägenhet 16-25A säkringsabonnemang") == kind("Lägenhet 16 A")
+    assert kind("Konsumtion LGH")[1] is None, "no fuse, nothing to pair it with"
+
+
+async def test_a_retailer_with_no_plan_is_no_finding_unless_every_one_is() -> None:
+    """ASENO lists nothing (the flow says so); a source whose every brand lists nothing is one."""
+    from custom_components.powerplan.core.tariffs.sources import (  # noqa: PLC0415
+        Operator,
+        Product,
+        Tier,
+    )
+    from tests.builders.tariff_sources import FixtureHttp, fake  # noqa: PLC0415
+
+    cls = fake("noplans", Tier.T1A, operators=(Operator("aseno", "ASENO"),))
+
+    async def products(self: object, http: object, operator: str, postcode: str | None) -> tuple:
+        return () if operator == "aseno" else (Product("plan", "Plan"),)
+
+    cls.products = products  # type: ignore[attr-defined]
+    http = FixtureHttp({})
+    only = [Operator("aseno", "ASENO")]
+    assert await tariff_canary._contract(cls, http, only) == [  # type: ignore[arg-type]
+        tariff_canary.Finding("noplans", "–", "no operator lists a plan")
+    ]
+    both = [*only, Operator("agl", "AGL")]
+    assert await tariff_canary._contract(cls, http, both) == []  # type: ignore[arg-type]

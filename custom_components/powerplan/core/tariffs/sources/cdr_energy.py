@@ -1,7 +1,9 @@
 """Australia's plans from the Consumer Data Right (D13 §5.5, §5.11; T1a).
 
-The CDR register lists every energy retailer's brand and its public base; each
-brand's `GET …/cds-au/v1/energy/plans` lists its plans with their postcodes, and
+The CDR register lists every energy retailer's brand and its public base; the
+AER publishes every brand's plans on Energy Made Easy, where a large retailer's
+own base answers 404 (D-0683). Each brand's `GET …/cds-au/v1/energy/plans` lists
+its plans with their postcodes, and
 `…/plans/{planId}` gives one in full: per tariff period (a date range each year)
 the energy rates - one rate or time-of-use windows by day - the daily supply
 charge and the demand charges, all excl. GST (the CDR's own rule), in dollars.
@@ -31,11 +33,53 @@ from .base import Fetched, Operator, Product, QualityError, Question, slug
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-__all__ = ["KEY", "REGISTER", "brands", "parse", "plan_url", "plans_url", "products"]
+__all__ = [
+    "EME",
+    "EME_SLUGS",
+    "KEY",
+    "REGISTER",
+    "brands",
+    "parse",
+    "plan_url",
+    "plans_url",
+    "products",
+]
 
 KEY: Final = "cdr_energy"
 REGISTER: Final = "https://api.cdr.gov.au/cdr-register/v1/energy/data-holders/brands/summary"
 ATTRIBUTION: Final = "Consumer Data Right (the brand's product reference data)"
+#: Where the AER publishes the brands' plans: `<EME>/<slug>/cds-au/…`.
+EME: Final = "https://cdr.energymadeeasy.gov.au"
+#: The brands whose register base is their own host, by name, to their Energy Made
+#: Easy slug - each probed on 2026-09-26 and watched by the canary (D-0683).
+EME_SLUGS: Final = {
+    "1st Energy": "1st-energy",
+    "1st Energy (EL Retail Energy)": "energy-locals",
+    "ActewAGL": "actewagl",
+    "AGL": "agl",
+    "Alinta Energy": "alinta",
+    "Amber": "amber",
+    "Arcline by RACV": "arcline",
+    "Aurora Energy": "aurora",
+    "Blue NRG": "blue-nrg",
+    "COVAU PTY LIMITED": "covau",
+    "Diamond Energy": "diamond",
+    "Dodo Power & Gas": "dodo",
+    "EnergyAustralia": "energyaustralia",
+    "ENGIE": "engie",
+    "Ergon Energy Retail": "ergon",
+    "GloBird Energy": "globird",
+    "Kogan Energy": "kogan",
+    "Lumo Energy": "lumo",
+    "Momentum Energy": "momentum",
+    "Nectr": "nectr",
+    "Origin Energy": "origin",
+    "OVO Energy": "ovo-energy",
+    "Powershop": "powershop",
+    "Red Energy": "red-energy",
+    "Sumo Power (legacy)": "sumo-power",
+    "Tango Energy": "tango",
+}
 _DAYS: Final = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 #: The NEM's metering interval: a demand reading is a half-hour's.
 _WINDOW: Final = 30
@@ -71,7 +115,10 @@ def brands(register: bytes) -> tuple[list[Operator], dict[str, str]]:
     bases: dict[str, str] = {}
     for brand in _json(register).get("data") or ():
         key = str(brand.get("dataHolderBrandId") or brand["interimId"])
-        bases[key] = str(brand["publicBaseUri"])
+        name = str(brand["brandName"])
+        bases[key] = (
+            f"{EME}/{EME_SLUGS[name]}" if name in EME_SLUGS else str(brand["publicBaseUri"])
+        )
         found.append(Operator(key, str(brand["brandName"])))
     return sorted(found, key=lambda operator: operator.name), bases
 

@@ -205,6 +205,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._schemes: list[str] = []
         self._typed_vat: Decimal | None = None
         self._unreachable = False
+        self._no_plans = False
 
     # ----------------------------------------------------------------- helpers
 
@@ -1059,6 +1060,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 steps.discover_presets, self._country
             )
             await self._list_operators()
+            error = "tariff_no_plans" if self._no_plans else None
+            if self._unreachable:
+                error = "tariff_source_unreachable"
+            self._no_plans = False
             return self._form(
                 "tariff",
                 steps.tariff_schema(
@@ -1071,7 +1076,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                     text=text,
                     ask_country=self._asks_country,
                 ),
-                errors={"base": "tariff_source_unreachable"} if self._unreachable else None,
+                errors={"base": error} if error else None,
                 placeholders={"credit": credit_note(text, self._credits())},
             )
         country = user_input.get("country") or self._country
@@ -1080,6 +1085,10 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         operator = self._operators.get(self._preset_choice)
         if operator is not None:
             operator = await self._with_products(operator)
+            if not operator.products and _lists_products(operator):
+                # an Australian retailer with no residential electricity plan
+                self._no_plans = True
+                return await self.async_step_tariff()
             self._operator = operator
             if len(operator.products) > 1:
                 return await self.async_step_tariff_product()
@@ -1763,3 +1772,8 @@ __all__ = ["PowerplanConfigFlow"]
 
 #: The grid-company list's value for an operator a source lists (never a file stem).
 OPERATOR_PREFIX: Final = "operator:"
+
+
+def _lists_products(operator: Operator) -> bool:
+    """Return whether the operator's source lists its products on demand (step 1a)."""
+    return bool(operator.source) and hasattr(tariff_sources.get(operator.source), "products")
