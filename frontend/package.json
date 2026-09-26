@@ -1,18 +1,20 @@
 {
   "name": "powerplan-frontend",
   "private": true,
-  "description": "PowerPlan's dashboard strategy and its two cards (D12 §3). Built into custom_components/powerplan/frontend/dist/powerplan.js.",
+  "description": "PowerPlan's dashboard strategy and its two cards (D12 \u00a73). Built into custom_components/powerplan/frontend/dist/powerplan.js.",
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "knip": "knip"
+    "test": "vitest run --project node",
+    "knip": "knip",
+    "test:browser": "vitest run --project browser"
   },
   "dependencies": {
     "echarts": "6.1.0"
   },
   "devDependencies": {
+    "@vitest/browser-playwright": "5.0.1",
     "esbuild": "0.28.2",
     "knip": "6.37.0",
     "typescript": "7.0.2",

@@ -58,7 +58,8 @@ export const ppStyles = `
 
   .pp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; line-height: 16px; }
   .pp-legend .item  { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-                      font: inherit; color: var(--primary-text-color); background: none; border: 0; padding: 0; cursor: pointer; }
+                      font: inherit; color: var(--primary-text-color); background: none; border: 0; padding: 0; cursor: pointer;
+                      min-height: 24px; }
   .pp-legend .item[aria-pressed="false"] { opacity: 0.4; }
   .pp-legend .value { color: var(--secondary-text-color); }
   .pp-swatch { flex: none; width: 10px; height: 10px; border-radius: 3px; }

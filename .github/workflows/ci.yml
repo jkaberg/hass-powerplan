@@ -67,6 +67,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # D9 §5.16 (D-0696): every card in Chromium at every sections-view width, light and dark.
+      - name: The fit harness
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
       # D9 §5.8 (D-0662): no unused file, export or dependency (`frontend/knip.json`).
       - run: npm run knip
       - name: The committed bundle is the build of these sources

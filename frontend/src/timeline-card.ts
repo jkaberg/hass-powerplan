@@ -822,7 +822,8 @@ export class PowerplanTimelineCard extends HTMLElement {
     chart.off("finished");
     chart.on("finished", () => {
       chart.off("finished");
-      this.drawMarkers();
+      // Out of ECharts' own flush: a `setOption` inside it logs "should not be called during main process".
+      setTimeout(() => this.drawMarkers(), 0);
     });
   }
 
