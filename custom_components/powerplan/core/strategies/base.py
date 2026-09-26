@@ -350,10 +350,7 @@ def _planned_draw_w(slot: PlanSlot) -> float:
     a banked or held thermostat - whose standing loss is all it will take. A slot
     told to stand still, or one that discharges, takes nothing from the loads below.
     """
-    if slot.envelope_w is not None and slot.envelope_w <= 0.0:
-        return 0.0
-    draw = (slot.kwh + slot.hold_kwh) / slot.hours * 1000.0
-    return draw if slot.envelope_w is None else min(draw, slot.envelope_w)
+    return slot.planned_draw_w
 
 
 def _surplus(ctx: SiteContext, slots: Sequence[Slot]) -> dict[datetime, float]:

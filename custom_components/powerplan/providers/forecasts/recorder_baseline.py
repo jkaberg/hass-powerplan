@@ -38,6 +38,8 @@ from custom_components.powerplan.core.forecasts.reconstruct import (
 )
 from custom_components.powerplan.core.forecasts.registry import register
 from custom_components.powerplan.core.pricing.model import Field, FieldKind
+from custom_components.powerplan.providers.meters.recorder import RECENT_DAYS as METER_RECENT_DAYS
+from custom_components.powerplan.providers.meters.recorder import async_register_rows
 
 from .base import ForecastUnavailableError
 
@@ -54,7 +56,7 @@ _LOGGER = logging.getLogger(__name__)
 
 #: HA's own short-term statistics retention - beyond this, only the hourly
 #: long-term table has anything left (D10 §5.2).
-RECENT_DAYS: Final = 10
+RECENT_DAYS: Final = METER_RECENT_DAYS
 SHORT_TERM_PERIOD: Final = "5minute"
 LONG_TERM_PERIOD: Final = "hour"
 
@@ -76,19 +78,6 @@ class LoadSource:
     nameplate_w: float
     power_entity_id: str | None = None
     on_off_entity_id: str | None = None
-
-
-async def async_site_register_kwh(
-    hass: HomeAssistant, entity_id: str, start: datetime, end: datetime
-) -> list[tuple[datetime, float]]:
-    """Return the site's cumulative import register, recent and long-term merged (D10 §5.2).
-
-    A `total_increasing` register's own statistic is `sum` - HA's running total
-    for the period, which is exactly the cumulative trace
-    `reconstruct.uncontrolled_history` integrates between (D3 §5.11's own
-    convention, `rows: Iterable[tuple[datetime, float]]`).
-    """
-    return await _statistic_rows(hass, entity_id, start, end, stat_type="sum")
 
 
 async def async_load_power_w(
@@ -211,7 +200,8 @@ async def async_seed(
     load with neither entity id is read not at all and marks the seed `none`.
     """
     start = now - timedelta(days=span_days)
-    site_rows = await async_site_register_kwh(hass, register_entity_id, start, now)
+    # D3's one register reader: each row where its value refers to (D-0687).
+    site_rows = await async_register_rows(hass, register_entity_id, start, now)
     if not site_rows:
         raise ForecastUnavailableError(
             f"{register_entity_id}: no recorder history in the last {span_days} days"
@@ -242,9 +232,11 @@ async def async_seed(
     # house's baseline was never offered (D-0505).
     history = uncontrolled_history(site_rows, controlled, window_min=SEED_WINDOW_MIN, tz=tz)
     seeded = baseline.seed(history)
-    _LOGGER.debug(
-        "recorder_baseline: seeded %d window(s), reconstruction=%s",
+    _LOGGER.info(
+        "recorder_baseline: seeded %d window(s), lag %d h, %d skipped, reconstruction=%s",
         seeded,
+        history.lag_h,
+        history.skipped,
         history.reconstruction.value,
     )
     return history
@@ -296,5 +288,4 @@ __all__ = [
     "async_load_on_off",
     "async_load_power_w",
     "async_seed",
-    "async_site_register_kwh",
 ]

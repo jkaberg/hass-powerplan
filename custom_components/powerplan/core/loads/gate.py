@@ -38,6 +38,7 @@ from .kinds.base import (
 )
 
 __all__ = [
+    "NOT_FOLLOWING_AFTER",
     "TRANSIENT_GRACE_S",
     "TRANSPORT_LIMIT_PER_MIN",
     "UNHEALTHY_AT",
@@ -156,6 +157,11 @@ def _as_bool(value: Value | None) -> bool | None:
     return None
 
 
+#: Read-back deviations in a row on one role that make a load `not_following`:
+#: one dropped write is noise, three is a device that isn't listening (D-0689).
+NOT_FOLLOWING_AFTER: Final = 3
+
+
 @dataclass(frozen=True, slots=True)
 class GateConfig:
     """What this load's gate is allowed to do (D4 §5.10, §7).
@@ -192,7 +198,12 @@ class GateState:
     verify_due: datetime | None = None
     failures: int = 0
     transient_since: datetime | None = None
+    #: The current run of read-back deviations, reset by the first read-back that
+    #: matches: three in a row is `not_following` (INV-22, D-0689).
     deviations: int = 0
+    #: When the current run began: fixed for the whole episode, so publishing it
+    #: doesn't write the recorder on every dropped command (D-0689).
+    deviating_since: datetime | None = None
     last_on_at: datetime | None = None
     last_off_at: datetime | None = None
     last_error: str | None = None
@@ -580,7 +591,12 @@ def verify(
         return state, False
     deviated = state.last_value is not None and not same(current, state.last_value, tolerance)
     return (
-        replace(state, verify_due=None, deviations=state.deviations + (1 if deviated else 0)),
+        replace(
+            state,
+            verify_due=None,
+            deviations=state.deviations + 1 if deviated else 0,
+            deviating_since=(state.deviating_since or now) if deviated else None,
+        ),
         deviated,
     )
 

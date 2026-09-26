@@ -246,7 +246,6 @@
           "p_free_w": "float",
           "p_hard_w": "float",
           "projected_kwh": "float",
-          "projection_source": "Literal",
           "r_trim_kwh": "float",
           "reserve_kwh": "float",
           "sigma_w": "float",
@@ -257,6 +256,12 @@
       ]
     },
     "duration_ms": "float",
+    "expected_kwh": {
+      "one_of": [
+        "float",
+        "None"
+      ]
+    },
     "forecasts": {
       "available": "bool",
       "baseline_ready": "bool",
@@ -505,6 +510,13 @@
         },
         "granted_w": "float",
         "health": {
+          "deviating_since": {
+            "one_of": [
+              "datetime",
+              "None"
+            ]
+          },
+          "deviations": "int",
           "failures": "int",
           "last_error": {
             "one_of": [
@@ -512,6 +524,7 @@
               "None"
             ]
           },
+          "not_following": "bool",
           "ok": "bool",
           "stale_roles": {
             "sequence": "str"
@@ -999,5 +1012,5 @@
       }
     }
   },
-  "schema": 12
+  "schema": 13
 }

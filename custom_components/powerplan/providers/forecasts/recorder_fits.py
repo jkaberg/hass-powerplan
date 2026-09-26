@@ -26,8 +26,9 @@ from custom_components.powerplan.core.forecasts.fit import (
     LoadHistory,
     sessions_from,
 )
+from custom_components.powerplan.providers.meters.recorder import async_register_rows
 
-from .recorder_baseline import async_load_power_w, async_site_register_kwh
+from .recorder_baseline import async_load_power_w
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -114,9 +115,7 @@ async def async_load_history(
     if FitKey.CHARGE_EFFICIENCY in spec.fits and spec.capacity_kwh is not None:
         # The car's SoC is the level series; the register, where bound, the energy (D-0502).
         energy = (
-            ()
-            if spec.energy is None
-            else await async_site_register_kwh(hass, spec.energy, start, end)
+            () if spec.energy is None else await async_register_rows(hass, spec.energy, start, end)
         )
         sessions = sessions_from(
             power,

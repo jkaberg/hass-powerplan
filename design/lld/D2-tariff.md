@@ -253,6 +253,8 @@ Inputs: `now`, `target`, `risk ∈ [0, 1]`, `eps_kwh` (already scaled by D6, ε 
 ```
 if tariff model is NoPeak or not eligible_now: return Ceiling(kwh=+inf, reason="not eligible", eligible=False)
 T_kw       = target_kw(target)                   # step upper bound, target.kw, or auto (5.5)
+if target is a chosen step or kW and metric_now > T_kw and the period's metric can't fall (per_period = mean_top_n or max over a
+   `month`, not `rolling_months`):   T_kw = max(T_kw, target_kw(auto)); unreachable = True        # INV-10, D-0690
 to_kwh(kw) = kw × window_min/60 / w              # weighted kW → raw kWh for THIS window; a weight < 1 lifts the raw ceiling (Ellevio night)
 T_kwh      = to_kwh(T_kw)
 slack_kw   = largest x such that metric(history ∪ {this window = x}) ≤ T_kw      # 5.6; ≥ today_max under per_day = max
@@ -266,8 +268,11 @@ else:                     kwh = max(base, to_kwh(slack_kw) − eps);            
 cap_kw = max(T_kw + cap_margin_kw, today_kw)     # never below what today already paid for (INV-9)
 if risk ≥ 1.0 and pricing is StepTable: cap_kw = max(cap_kw, upper bound of the step above the target)   # the gamble is bounded by one step
 kwh = min(kwh, to_kwh(cap_kw))                   # recomputed from the live target on every read (INV-12)
+if unreachable: reason = "unreachable_target"   # the chosen target applies again from the next period's first window
 return Ceiling(kwh, reason, slack_kw, free_ride=(kwh > base), eligible=True, weight=w)
 ```
+
+**A step the period has passed isn't defended** (INV-10, D-0690). Once `metric_now > T` in a month whose metric can't fall, `feasible(T) = 0` (§5.6): no window this period can bring the bill back to the chosen step, and until the metric passes the next bound the step's fee doesn't change either. Holding the chosen ceiling then costs flexibility and buys nothing. The reference house chose step 1 (2–5 kW, 4.7 kWh) on 26 Sep with September already at 8.97 kW (5–10 kW) and held 4.7 kWh an hour for nothing (`design/reviews/field-audit-2026-09.md` §8). So the effective target is `auto`'s answer (§5.5), the reached step, until the period closes. The select keeps the household's choice, the ceiling's reason says `unreachable_target`, the advice `target_unreachable` carries the date the choice binds again, and from that period's first window it does. A `rolling_months` period is left alone, since an old month leaving can bring the metric under the chosen target.
 
 The **free ride** isn't a rule, it falls out of `slack` under `per_day = max`: once today's entry is `today_max`, any `x ≤ today_max` leaves the metric alone, so `slack ≥ today_max`. The cap therefore never sits below `today_max` - a `(T + 0.5 kW)` cap would silently clamp the free ride to half a kilowatt above the target (PLAN §7 dec. 18). The cap exists so a *lowered* target is honoured on the next read (INV-12) and the risk-1.0 gamble stays within one step. Under BE rolling-12 with `per_day = all`, `slack` for a window is simply the value that keeps this month's max where it is, which is the month's current max - also a free ride *within the month*, however only worth 1/12 of a kW-year. `marginal_cost` (§5.7) tells D6 the difference, and the middle risk setting reads "use the slack today's peak already paid for" in both markets.
 
@@ -325,6 +330,7 @@ The freezing (`_freeze`, `_touch`) is D2's own, run every tick from `ceiling_kwh
 | `rolling_drag` | rolling: the month that leaves the average next and what it was |
 | `coarse_history` | any coarse months in the metric |
 | `contracted_close` | ContractedPower: last window within 10 % of the limit |
+| `target_unreachable` | a chosen target below the metric the period has already reached: "the reached step is held until {date}, then yours" (D-0690) |
 
 ### 5.12 Seeding (`backfill.py`)
 
@@ -469,6 +475,7 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 40. `energy_surcharge` with a night limit 22–06 (G2): the right limit applies on each side of 22:00 and 06:00.
 41. ARERA states one band (G20, D-0611): available power is contracted + 10 %, so the IT template's 3 kW gives `limit_now` 3 000 W with a 300 W tolerance and a trip imminent right past it. No second band until a regulation states one.
 42. Nothing imports `grammar`, `Grammar` or `TariffModel`, and `TariffEvaluator` is satisfied by `Evaluator` (O25).
+43. A step the period has passed (INV-10, D-0690): NO, Tensio, step 1 chosen, top three 9.12/8.94/8.86 → the ceiling is the 5–10 kW bound less ε (9.70 kWh), reason `unreachable_target`, advice `target_unreachable` dated the 1st; the 1st's first window gives 4.70 kWh, reason `flat target`; the select still reads step 1 throughout; a BE rolling-12 month with the metric over the chosen kW keeps the chosen kW.
 
 ---
 
@@ -485,6 +492,10 @@ Events to D7: `level_changed(old, new)`, `level_projected_up(step, when)`, `peri
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Hold a chosen step even when the period has passed it.** *For:* the household chose a step and strict, a strict household wants predictability, and a lean end of month is practice for the next. *Against:* the bill can't change until the metric passes the next bound, so the held ceiling buys 0 and costs EV room and comfort for the rest of the month, and the practice starts again on the 1st anyway. **Decision:** the reached step until the period closes, with the reason on the ceiling (D-0690).
+
+**Advise only.** *For:* never overrides a choice, no INV change. *Against:* the house still sheds for nothing, and an info item on `sensor.<site>_advice` doesn't change a ceiling - the reference house's said `step_headroom` all month. **Decision:** behaviour, with the advice explaining it.
 
 **Named tariff classes instead of a model.** *For:* each class is small, readable and obviously right for its market, and no risk of an unexpressible combination silently misbehaving. *Against:* the survey found atleast eight shapes and they combine (weights + top-3 + distinct days; deductible + monthly max; rolling + minimum), so a class per combination is a class per DSO. **Decision:** a model and one evaluator, with golden tests per template and per adapter standing in for per-class readability.
 

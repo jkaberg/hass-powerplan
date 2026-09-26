@@ -409,6 +409,8 @@ class FloorHeating:
                     comfort_option=str(params.get("comfort_option", "heat")),
                     shed_option=str(params.get("shed_option", "eco")),
                     min_interval_s=interval,
+                    min_on_s=float(params.get("min_on_s", 900.0)),
+                    min_off_s=float(params.get("min_off_s", 900.0)),
                 )
             )
         floor_c = float(params.get("floor_c", 19.0))

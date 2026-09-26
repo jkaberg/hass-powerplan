@@ -104,6 +104,10 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "A device stopped answering",
             "{load} failed {failures} time(s); last error: {last_error}.",
         ),
+        "device_not_following": (
+            "A device isn't following its commands",
+            "{load} didn't apply the last {deviations} commands it was sent.",
+        ),
         "price_source_dead": (
             "No prices for a day",
             "The price source {source} has not delivered for 24 hours.",
@@ -156,6 +160,10 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
             "En enhet sluttet å svare",
             "{load} feilet {failures} gang(er); siste feil: {last_error}.",
         ),
+        "device_not_following": (
+            "En enhet følger ikke kommandoene",
+            "{load} tok ikke i bruk de siste {deviations} kommandoene den fikk.",
+        ),
         "price_source_dead": (
             "Ingen priser på et døgn",
             "Priskilden {source} har ikke levert på 24 timer.",
@@ -190,6 +198,9 @@ class _Params(dict[str, Any]):
 def render(category: str, params: Mapping[str, Any], language: str) -> tuple[str, str]:
     """Return the translated title and body of a category, with `params` filled in."""
     texts = TEXTS.get(language.split("-", maxsplit=1)[0].lower(), TEXTS["en"])
+    if category == "device_unhealthy" and params.get("not_following"):
+        # The same category and policy, its own words (D-0689).
+        category = "device_not_following"
     title, body = texts.get(category) or TEXTS["en"].get(category) or (category, "")
     filled = _Params({key: _short(value) for key, value in params.items()})
     return title.format_map(filled), body.format_map(filled)

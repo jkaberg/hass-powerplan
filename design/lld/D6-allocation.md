@@ -16,7 +16,7 @@
 - The budget chain: ceiling → reserve (σ, baseline, PI trim) → allowance → free power.
 - The `Constraint` protocol and the concrete constraints: site hard limits (fuse, contracted power, external limits), circuits, per-phase amps, groups (rotation), zones (source selection incl. cross-carrier), cycle reservations.
 - The allocator: order, comfort floors, priority, on/off vs modulating grants, stickiness, shed set, EV stop gates, battery placement.
-- The ladder: stages, reasons, escalation guard, de-escalation, projection source.
+- The ladder: stages, reasons, escalation guard, de-escalation, and its projection - the measured total's (INV-38).
 - The proportional trim.
 - Reporting: grants, reservations, shed reasons, breach logging, the unconstrained ask (`unconstrained_ask_w`, a diagnostic - the accounting counterfactual is D11's and the word is reserved for it).
 
@@ -46,13 +46,12 @@ Order: **grid-switched loads → site hard limits → circuits → phases → gr
 **Baseline shrinking the reserve without removing the σ floor.**
 
 ```
-projection_kwh = used + P_smooth × t_rem                                  (no baseline)
-projection_kwh = used + Σ_controlled_planned + ∫ baseline(t) dt over t_rem (with baseline, confidence ≥ 0.6)
+projection_kwh = used + P_smooth × t_rem                                   (always - the measured total, INV-38)
 reserve_kwh    = clamp( max(σ_uc, σ_floor) × k × t_rem + r_trim, min, max )     σ_floor = 300 W default (INV-62)
 ```
-The baseline improves the *projection*, the *reserve* still covers deviation from it using measured σ, never below the floor. When D10's residual σ per hour-of-week is available and confident, `σ_uc` may become `max(σ_resid, σ_floor)`, and the floor stays.
+The baseline shapes the *reserve* and nothing else. When D10's residual σ for the hour of the week is available and the baseline's confidence clears `BASELINE_CONFIDENCE` (0.6, a `core/allocation/budget.py` constant, not imported from D10's `OFFER_CONFIDENCE` of the same value), `σ_uc` may become `max(σ_resid, σ_floor)`, and the floor stays. `Inputs.forecast_baseline`, built by `runtime.py` around `Forecasts.for_budget(now)` (a `BudgetForecast` view next to `for_planner()`), is the bridge, and `core/allocation` never imports `core/forecasts` (D-0320).
 
-`core/engine.py::tick()` computes `controlled_planned_kwh` at step 5, before `budget()`, as `Σ plan.kwh_between(now, now + t_rem_h)` over `state.plans.plans` - the same plans the allocator walks three steps later - and passes it as `budget()`'s defaulted last parameter. `Plan.kwh_between(a, b)` prorates a slot's `envelope_w` by its overlap with `[a, b)`, `None` (no plan) adds nothing. `baseline.confidence >= BASELINE_CONFIDENCE` (0.6, a `core/allocation/budget.py` constant, not imported from D10's `OFFER_CONFIDENCE` of the same value) gates both formula switches together, one number and not two. `Inputs.forecast_baseline`, built by `runtime.py` around `Forecasts.for_budget(now)` (a `BudgetForecast` view next to `for_planner()`), is the bridge, and `core/allocation` never imports `core/forecasts` (D-0319, D-0320).
+**The projection is the house's, never a plan's or a forecast's** (D-0685). From D-0319 until D-0685 a confident baseline switched the projection to `used + Σ plan envelopes + ∫ baseline`. On the reference house that counted a banked floor's cap as a draw, counted a second time the room D5 had already handed the EV for it (D-0629), and counted a charging plan for a car that wasn't plugged in. Loaded hours opened at 106–112 % of the ceiling with the measured total at 17–37 % of it: stage 3 seven hours in a row, fifteen escalations in two nights (`design/reviews/field-audit-2026-09.md` §3). Every plan-driven grant is capped at the budget in §5.3, so a plan can't cause a breach - D7 §5.4 makes the same argument for the warning (D-0627) - and a forecast is never an authority (INV-62). What the household should expect of the window is D7 §5.4's `expected`, published beside the projection (D8 §5.5) and never read by the ladder.
 
 ---
 
@@ -80,7 +79,7 @@ custom_components/powerplan/core/allocation/
 Public API:
 
 ```python
-def budget(ceiling: Ceiling, meter: MeterSnapshot, hard_limit_w: float, pi: PiState, cfg: BudgetCfg, baseline: Baseline | None, controlled_planned_kwh: float = 0.0) -> Budget
+def budget(ceiling: Ceiling, meter: MeterSnapshot, hard_limit_w: float, pi: PiState, cfg: BudgetCfg, baseline: Baseline | None) -> Budget
 def allocate(ctx: AllocCtx, constraints: Sequence[Constraint], cfg: AllocCfg, state: AllocState) -> tuple[Grants, AllocReport, AllocState]
 class Ladder: def update(self, budget: Budget, *, p_total_w, hard: HardLimits, target_kwh, now, cfg) -> LadderState
 def proportional_trim(loads, grants, deficit_w, protected, cfg, *, views, blunt, stop_ok) -> tuple[Grants, float]
@@ -88,7 +87,7 @@ def proportional_trim(loads, grants, deficit_w, protected, cfg, *, views, blunt,
 
 `allocate` takes one frozen `AllocCtx` (`now`, `meter`, `budget`, `electrical`, `loads`, `plans`, `views` (D3's per-load `ControlledView`), `previous` (last tick's grants), `stage`, `blunt`, `frozen`, `hard`, `marginal_cost`), since §5.2, §5.3 and §5.5 need the meter, the per-load measurements and the previous grants, and `prepare()` needs a context anyway. A `Demand` rides on its own `LoadView`. `Ladder.update` reads its numbers off the `Budget` that carries them, plus `p_allow_w` for the clean-tick test. `proportional_trim` returns the grants instead of writing into a report, since `AllocReport` is frozen (§4, D-0162, D-0163).
 
-`budget`'s last parameter, `controlled_planned_kwh: float = 0.0`, exists because §2's formula needs `Σ_controlled_planned` and nothing inside `core/allocation` has the plans at the point `tick()` calls `budget()` (step 5, before `AllocCtx` exists at step 8). The default keeps callers without plans unchanged (D-0319).
+`budget` takes no plans: the projection is the measured total's (§2), so nothing about the plans is needed before `AllocCtx` exists at step 8. D-0319's `controlled_planned_kwh` parameter and `Plan.kwh_between`, its only caller, are gone (D-0685). `Baseline` keeps `confidence` and `residual_sigma_w`; its `energy_kwh` is D7 §5.4's, not the budget's.
 
 ---
 
@@ -102,7 +101,7 @@ class Budget:
     p_allow_w: float                # (ceiling − used − reserve)/t_rem, floored 0, capped by hard limit
     p_hard_w: float                 # min over site hard limits now (fuse, a tripping contracted power, external)
     p_free_w: float                 # p_allow − uncontrolled  (before any load asks; the report carries the residual)
-    projected_kwh: float; projection_source: Literal["smooth", "baseline"]
+    projected_kwh: float            # used + P_smooth × t_rem - the measured total's at every baseline confidence (INV-38, D-0685)
     eligible: bool; free_ride: bool
 
 @dataclass(frozen=True)
@@ -165,13 +164,17 @@ Not eligible (D2 says `+inf`): `P_allow = P_hard`, only the hard limits bind.
 
 ```
 reserved_w(load, grant):
-    on/off kind (SWITCH, MODE, SETPOINT resistive):  nameplate_w if grant > 0 or currently on, else 0   # a relay draws nameplate or nothing
+    on/off kind (SWITCH, MODE, SETPOINT resistive), granted or currently on:  nameplate_w          # a relay draws nameplate or nothing
+    on/off thermostatic, idle:                       its plan's draw for this slot, _planned_draw_w; 0 without a plan   # standing loss, not a margin (D-0686)
+    on/off, not thermostatic, idle:                  0
     modulating thermostatic (heat pump):             measured_w + grant_margin_w (500), capped at rated_w    # an inverter at 23 W doesn't reserve 3 kW
     modulating controllable (EV, battery):           grant (what we told it)
     delegated:                                       nameplate_w
     running cycle:                                   profile power now
 P_free = max(0, P_allow − Σ reserved_w)
 ```
+**An idle thermostat isn't a heat pump** (D-0686). D-0168's margin - measured plus 500 W - is for a *modulating* thermostatic load, an inverter that can ramp inside its own loop. `LoadView.thermostatic` is also true for every `setpoint` and `mode` kind, and the reference house's five idle floors and its tank each held 500 W the whole time: Σ reserved 4 424 W against `P_allow` 4 964 W at a 4.7 kWh ceiling, the entrance floor refused at every hour's start ("1 094 W < 1 200 W"), and the EV, walked last, left with nothing (`design/reviews/field-audit-2026-09.md` §4). An idle on/off thermostat holds back what its plan says it will draw in the slot - `_planned_draw_w`, the same number D5 reserves for it (D-0629) - which for a banked floor is its standing loss. A relay that closes on its own is seen on the next tick (≤ 10 s, D7 §2) and reserves its nameplate from then on (D-0169); the surprise in between is 1.2 kW × 10 s ≈ 3 Wh, and the trim takes it back from the lowest priority.
+
 That's why `p_free_w` can't read 8–9 kW while the house is 1.4 kW over, as the old controller's did: the tank reserves its element, not its paced grant.
 
 What the *walk* judges a load against is `P_allow − uncontrolled_w − Σ reserved(the loads decided BEFORE it)`. That's the same number as "P_free plus its own reservation" whenever the asking load is the only one holding power (§9 21), and the right one when it isn't: subtracting a lower-priority load's current hold would deny a 3 kW tank because a 4.6 kW charger the walk is about to trim is still running. `uncontrolled_w` is explicit since the reserve covers the *deviation* of uncontrolled load, never its level. A shed on/off load whose relay is still closed keeps its reservation until the write lands, so the published `p_free_w` never hands the same watts to two loads. The trim credits itself with the whole reservation, because the relay *will* open (D-0164, D-0169).
@@ -252,6 +255,8 @@ de-escalation: needs de_escalate_ticks (2) ticks in a row with P_total < P_allow
              fuse path only: an extra wall-clock hold of de_escalate_seconds (120) after a fuse breach
 circuit breach: a Violation from CircuitLimit is a fuse_breach for ITS MEMBERS only → stage 4 scoped to the circuit (INV-60)
 ```
+
+**What the projection reads.** `used + P_smooth × t_rem` and nothing else (§2, INV-38, INV-62, D-0685). The group's scarcity test (§5.6), `cap_for_projection` and D7's live warning read the same number. A plan's energy never enters it, and neither does a load that can't draw - a charger with no car is only ever measured.
 
 ### 5.5 Proportional trim (INV-37, INV-38)
 
@@ -383,7 +388,7 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 
 1. Budget chain numbers for the reference case (ceiling 9.70, used 6.0, σ 0.5 kW, t_rem 0.5 h), hand-computed.
 2. ε in kWh: a 300 W "margin" is refused by config, and protection at :05 and :55 is identical.
-3. The reserve shrinks with `t_rem`, and the σ floor holds under a perfect baseline (INV-62). `tests/core/allocation/test_01_budget_chain.py` (the projection switches to `baseline` at `BASELINE_CONFIDENCE`, `Plan.kwh_between` prorates at the slot edges), `test_03_reserve.py` (a confident, near-perfect baseline still floors the reserve at `σ_floor × k × t_rem`, an unconfident one changes nothing) and `tests/core/engine/test_baseline_reserve.py` (the same through a real `tick()`, D10 §9 10's cross-test).
+3. The reserve shrinks with `t_rem`, and the σ floor holds under a perfect baseline (INV-62). `tests/core/allocation/test_01_budget_chain.py` (the projection is `used + P_smooth × t_rem` at every baseline confidence, and a confident baseline changes σ and nothing else), `test_03_reserve.py` (a confident, near-perfect baseline still floors the reserve at `σ_floor × k × t_rem`, an unconfident one changes nothing) and `tests/core/engine/test_baseline_reserve.py` (the same through a real `tick()`, D10 §9 10's cross-test).
 4. PI: outlier and non-binding windows don't move `r_trim`, degraded suppresses binding.
 5. Reservation: tank grant 348 W paced → reserved 3 000 W; heat pump 23 W measured → reserved 523 W, not 3 000.
 6. Comfort violators first at any priority; over allowance → served + breach event.
@@ -411,6 +416,8 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 27. A tripping limit is unchanged: ES P1 4.6 kW with 10 % / 30 s tolerance still caps `P_allow` and raises `trip_risk` after 15 s over 5.06 kW (test 8's companion).
 28. The command from the slot: on a battery with its own self-use a `None` slot sends `SELF_USE` and no grant, and a `0` slot sends `HOLD`. At noon with 1.2 kW measured surplus a hold charges 1.2 kW on a commanded-power row and sends `HOLD` on a mode row, and never discharges. At stage ≥ 1 the discharge overrides the hold (INV-30, D4 §9 40).
 29. Following for a battery without self-use: a `generic_number` battery in a `None` slot with 800 W measured import and SoC above reserve gets −800 W, at 600 W of export +600 W. It never discharges below `reserve_soc` and never into export.
+30. The ladder reads the house (INV-38, INV-62, D-0685): a window at `t = 0` with a 7.36 kW EV plan, three banked floors (2 080 W of envelopes) and a confident 0.95 kW baseline, the measured total at the allowance, gives stage 0; the same with the charger reporting no car gives stage 0; the projection equals `used + P_smooth × t_rem` in both. Scenarios `night_ev_tank_banked_floors` and `ev_plan_no_car` (D9 §5.3).
+31. Idle thermostats (D-0686): five idle `mode` floors with banked plans reserve Σ their plans' draw for the slot, not 5 × 500 W; a floor whose relay closes reserves its nameplate on the next tick (D-0169); a heat pump at 23 W still reserves 523 W (test 5).
 ---
 
 ## 10. Deliberately deferred
@@ -419,10 +426,19 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 - Battery ladder tuning beyond the defaults (needs more devices).
 - Per-phase *balancing* of 3-phase chargers (v1.x).
 - Multi-site coordination.
+- A seam-aware allowance: in a window's last minutes `P_allow` reaches the fuse (25.1 kW on the reference house at 23:58), a grant that ramps then carries its rate into the next window, and the EMA projects it over a full `t_rem` - stage 2 for a few minutes at 00:00 on 26 Sep. Capping the final minutes' allowance at the next window's opening allowance, for a grant still running at the seam, is the fix if `night_ev_tank_banked_floors` still shows stage ≥ 2 at seams with the measured total under the new window's allowance after D-0685. Not before (`design/reviews/field-audit-2026-09.md` §3, C1b).
 
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Project with the plans and the baseline (D-0319), only without the double count.** *For:* the smallest change - prorate the planned draw instead of the envelope and skip loads that can't draw - and the forecast sees a planned 3 kW start at :30 from :00. *Against:* the ladder still reads a forecast (INV-62), so the baseline's own error actuates sheds - the reference house's seed was +1.6 kW at 21:00 (D10 §5.2, D-0687) - and seeing a plan early buys nothing, since §5.3 caps every plan-driven grant at the budget. **Decision:** the measured total (D-0685).
+
+**Project what this tick's grants will draw.** *For:* judges the decision rather than the last tick's state, so the seam carry-over (§10) disappears. *Against:* circular - the stage feeds the walk that makes the grants - and the reservation margins would inflate it again. **Decision:** no; the seam is §10's, measured first.
+
+**A margin for every idle thermostat (D-0168 as the code read it).** *For:* any of them can start at any moment, and more held back is never less safe. *Against:* they don't start together - bathroom 1 drew 300–330 W in one hourly mean of every three to five - and at 4.7 kWh the margins were 74 % of the allowance, which makes the 2–5 kW step, 164 NOK a month, unworkable for the load walked last. **Decision:** the plan's draw (D-0686).
+
+**One site margin: the largest idle thermostat that could start.** *For:* covers the single surprise before the next tick, with no plan needed. *Against:* on the reference snapshot that is the TV-room floor at 1 920 W, which still refused the entrance; and "could start" needs a per-kind test of setpoint against temperature. **Decision:** the plan's draw; a thermostat with no plan reserves 0 and is caught on the next tick.
 
 **Optimise grants (LP) instead of a priority walk.** *For:* handles every constraint jointly, no ordering arguments. *Against:* the walk is the precedence rule made executable (INV-1) and every line of it is explainable in a reason string, and an LP's dual variables aren't something a user reads at 06:00. **Decision:** the walk.
 

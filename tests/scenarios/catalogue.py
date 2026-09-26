@@ -10,6 +10,7 @@ that enable them.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,7 @@ from tests.builders.houses import (
     FLOOR_GROUP,
     FLOOR_LOOPS,
     GARAGE_CIRCUIT,
+    House,
     au_solar,
     be_quarter,
     es_contracted,
@@ -78,6 +80,65 @@ def flat_price_night() -> Scenario:
         house=lambda: house(day=FLAT_START.date(), price_kind=FLAT, ev_soc=0.40, slab_start_c=24.0),
         start=FLAT_START,
         days=0.6,
+    )
+
+
+def night_ev_tank_banked_floors(*, target_kw: float = 10.0) -> Scenario:
+    """Return the field audit's night: the EV, the tank and three banked floors (D-0685, D-0686).
+
+    A Norgespris evening from 18:02: the car planned into the cheap night, the tank to
+    its ready temperature, three bathrooms banking heat. The reference house's ladder
+    went to stage 3 at every loaded hour's start on the plans' envelopes; measured,
+    the house never came near the ceiling.
+    """
+    return Scenario(
+        name="night_ev_tank_banked_floors" + ("" if target_kw == 10.0 else f"_{target_kw:g}kw"),
+        house=lambda: house(
+            day=FLAT_START.date(),
+            price_kind=FLAT,
+            ev_soc=0.40,
+            loops=FLOOR_LOOPS[:3],
+            slab_start_c=23.5,
+        ),
+        start=FLAT_START,
+        days=0.6,
+        target_kw=target_kw,
+        # A seeded, confident baseline, as the reference house had (D-0319's path).
+        baseline_w=1200.0,
+    )
+
+
+class _NoCarHousehold:
+    """The household, except that the car never comes home to plug in."""
+
+    def __init__(self, inner: object) -> None:
+        self._inner = inner
+
+    def day(self, when: date) -> object:
+        return replace(self._inner.day(when), plugs_in=False)  # type: ignore[attr-defined]
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._inner, name)
+
+
+def _without_the_car(built: House) -> House:
+    """Unplug the car for the whole run: the charger stays, the car never comes home."""
+    assert built.ev is not None
+    built.ev.unplug(0.0)
+    built.household = _NoCarHousehold(built.household)  # type: ignore[assignment]
+    return built
+
+
+def ev_plan_no_car() -> Scenario:
+    """Return the same night with no car: the charger's plan can't draw, and adds nothing (D-0685)."""
+    return Scenario(
+        name="ev_plan_no_car",
+        house=lambda: _without_the_car(
+            house(day=FLAT_START.date(), price_kind=FLAT, loops=FLOOR_LOOPS[:3], slab_start_c=23.5)
+        ),
+        start=FLAT_START,
+        days=0.6,
+        baseline_w=1200.0,
     )
 
 

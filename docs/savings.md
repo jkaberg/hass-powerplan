@@ -10,6 +10,8 @@ How PowerPlan counts what you paid, and what it saved you. The figures are on th
 
 Each hour, PowerPlan multiplies the energy the home used by that hour's price, with the grid tariff, taxes and VAT, and adds the capacity fee. **Cost this month** is what your bills should add up to, split by who you pay: your grid company, your supplier and the state.
 
+In the month PowerPlan starts, or after its books are reset, the energy is only counted from that day, while the capacity fee is the whole month's. The sensor then has `partial: true`, and `energy_since` says from when; the dashboard says the same under the month's cost. An appliance's `settled_cost` is the part of its cost its savings are compared with, since the latest hours aren't settled yet.
+
 <a name="savings"></a>
 ## Savings
 

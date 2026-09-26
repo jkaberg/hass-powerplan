@@ -557,6 +557,9 @@ Show how PowerPlan is doing, not only what the month cost. Under Norgespris the 
 | R2 | "Effekttrinn {step} - uten PowerPlan {step_without}" | both steps known | `capacity_step`, `capacity_step_without` (D11 §5.10) |
 | R3 | "Apparatene betalte {paid} mot {reference} kr/kWh" | both prices known | `price_paid`, `price_reference` |
 | R4 | "{n} frister nådd ikke" · "{t} under komfort: {load}" (the load with the most) · "{n} timer over grensen" - each only when above zero, joined on one line | `sensor.<site>_deviations` above zero | D7 §5.10 via D8 |
+| R5 | "Siden {date}: {energy} kr strøm + hele månedens effektledd {fee} kr" | `partial` on `sensor.<site>_cost` | `energy_since`, `energy_cost`, `capacity_fee` (D8 §5.5, D-0692) |
+
+A month the ledger opened after its 1st (a new install, a reset, a discarded store) says so in R5 rather than show a month's fee over a few days' energy as the month's cost (D-0692). The cost table compares a load's `settled_cost` with its `counterfactual_cost`, never the live cost, whose unsettled slots the counterfactual doesn't cover yet.
 
 The month card becomes `rows: auto`: its bars keep their height and the block adds a line per row it shows. A negative saving is said as it is ("kostet {x} kr mer"), in the text colour, never red - the reference is a comparison, not a verdict.
 
@@ -615,6 +618,7 @@ None. The dashboard is generated on every open. A household that takes control o
 31. The layout golden has `badges_wrap: wrap` on every view and the History summary at `rows: auto`; `vitest`: `outlierCap` cuts 424,37 among 14,46 and 15,21 at 1,25 × 15,21 and leaves ordinary days, one day and a zero alone. The harness: every card at 320, 390, 768, 1184 and 1664 px, light and dark, with nothing outside its card and no clipped text but a status line that shows on hover.
 
 32. The month card's entities are `cost`, `savings` and `deviations`, with `load_names` for every appliance, `rows: auto`; `card_moved` in en and nb; `vitest`: `resultLines` over the house's attributes gives R1–R3 and no R4 at zero deviations; R4 names the load with the most comfort minutes; a negative saving reads "kostet … mer"; no savings line at `savings_confidence: none`. The "Flyttet" column's 500 px rule is a container query, seen in the house check.
+33. A partial month (D-0692): with `partial` and `energy_since` the 25th the month card shows R5 and the cost table's saving column compares `settled_cost` with `counterfactual_cost`; a whole month shows neither.
 
 ---
 

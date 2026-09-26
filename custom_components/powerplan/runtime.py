@@ -111,6 +111,7 @@ from .core.engine import (
     Inputs,
     Knobs,
     LoadReads,
+    Notification,
     SiteConfig,
     SitePath,
 )
@@ -202,7 +203,6 @@ from .providers.forecasts.energy_solar import (
 from .providers.forecasts.recorder_baseline import (
     LoadSource,
     async_seed,
-    async_site_register_kwh,
 )
 from .providers.forecasts.recorder_fits import (
     FIT_SPAN_DAYS,
@@ -213,7 +213,11 @@ from .providers.forecasts.recorder_fits import (
 from .providers.forecasts.weather_entity import WeatherEntitySource
 from .providers.meters.circuit import CircuitMeter
 from .providers.meters.ha_sensors import HaSensorsConfig, HaSensorsMeter
-from .providers.meters.recorder import async_register_history, recorder_loaded
+from .providers.meters.recorder import (
+    async_register_history,
+    async_register_rows,
+    recorder_loaded,
+)
 from .providers.prices import (
     ActionSource,
     EntitySource,
@@ -412,7 +416,7 @@ FITS_STATE_KEY = "fits"
 #: How the baseline was seeded: 2 cuts quarter-hour windows from the recent 5-minute
 #: statistics (D-0505); a store at 1 is re-seeded once at startup.
 SEED_VERSION_KEY = "seed_version"
-SEED_VERSION = 2
+SEED_VERSION = 3
 HOLD_STATE_KEY = "hold"
 #: The standard normal's 90th percentile: a slot's baseline P90 is the mean plus this many σ (D-0494).
 P90_Z = 1.2816
@@ -1504,8 +1508,9 @@ class Runtime:
             and self.forecasts_adapter.baseline.state.last_update is not None
             and seeded < SEED_VERSION
         ):
-            # Seeded hourly-only before D-0505: once, a fresh baseline from the
-            # denser seed, as the rebuild button would.
+            # Seeded hourly-only before D-0505, or by the reader that placed each
+            # register row at its period's start before D-0687: once, a fresh
+            # baseline, as the rebuild button would.
             self.hass.async_create_task(self.async_rebuild_baseline())
         elif (
             self.forecasts_adapter is not None
@@ -1596,6 +1601,8 @@ class Runtime:
                 **self.state.forecasts,
                 BASELINE_STATE_KEY: encode(adapter.baseline.state),
                 SEED_VERSION_KEY: SEED_VERSION,
+                # Kept so a lag that fires wrongly - it moves every bin an hour - shows (D-0687).
+                "lag_h": history.lag_h,
             },
         )
         self._persist_sections(frozenset({Section.FORECASTS}))
@@ -1818,7 +1825,7 @@ class Runtime:
         local = now.astimezone(tz)
         since = datetime(local.year, local.month, 1, tzinfo=tz)
         today = datetime(local.year, local.month, local.day, tzinfo=tz)
-        rows = await async_site_register_kwh(self.hass, register, since - timedelta(hours=1), now)
+        rows = await async_register_rows(self.hass, register, since - timedelta(hours=1), now)
         windows = [w for w in reconstruct_windows(rows, 60, tz) if w.start_utc >= since]
         raw = list(self.raw.between(today - timedelta(days=1), now))
         day = since.date()
@@ -3119,7 +3126,17 @@ class Runtime:
             else:
                 self._issues.discard(issue.issue_id)
         for note in effects.notifications:
-            await self.notifications.handle(note)
+            await self.notifications.handle(self._named(note))
+
+    def _named(self, note: Notification) -> Notification:
+        """Return `note` with a load's id in `load` replaced by its name, as the household knows it."""
+        load_id = note.params.get("load")
+        if not isinstance(load_id, str):
+            return note
+        for load in self.build.loads:
+            if load.load_id == load_id:
+                return replace(note, params={**note.params, "load": load.config.name})
+        return note
 
     def _enriched(self, event: HaEvent) -> dict[str, Any]:
         """Return an engine event's data with what only the runtime knows (D8 §5.6)."""

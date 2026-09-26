@@ -13,7 +13,9 @@ no window goes over target with or without it; the old inverter spends the
 charge in the very slots its plan held, about sixty times the energy per held
 tick, and loses most of its holds to the replans that follow. So the scenario
 asserts what the hold does, per tick, rather than a window the day never
-threatens (D-0671).
+threatens (D-0671). A discharge the allocator grants in a held slot is the
+capacity ceiling outranking the plan (INV-1), which the measured projection
+(D-0685) can call for; only what the battery gives beyond its grant counts.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ KWH_PER_W_TICK = TICK_S / 3600.0 / 1000.0
 
 @dataclass
 class _Held:
-    """Per run: the ticks the plan held, and what the battery gave the house in them."""
+    """Per run: the ticks the plan held, and what the battery gave the house unasked in them."""
 
     ticks: int = 0
     out_kwh: float = 0.0
@@ -47,7 +49,9 @@ class _Held:
         if status is None or plan is None or plan.cap_now_w != 0.0:
             return
         self.ticks += 1
-        self.out_kwh += max(0.0, -(status.measured_w or 0.0)) * KWH_PER_W_TICK
+        granted_out_w = max(0.0, -status.granted_w)
+        given_w = max(0.0, -(status.measured_w or 0.0))
+        self.out_kwh += max(0.0, given_w - granted_out_w) * KWH_PER_W_TICK
 
     @property
     def per_tick(self) -> float:

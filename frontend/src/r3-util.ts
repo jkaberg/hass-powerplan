@@ -242,6 +242,7 @@ export const RESULT_LABELS: Record<string, Record<string, string>> = {
     comfort: "{time} under komfort: {load}",
     over_one: "1 time over effektmålet", over: "{n} timer over effektmålet",
     hours: "{h} t", hours_minutes: "{h} t {m} min", minutes: "{m} min",
+    partial: "Siden {date}: {energy} {unit} strøm + hele månedens effektledd {fee} {unit}",
   },
   en: {
     saved: "Saved {total} {unit} · capacity step {capacity} · cheaper hours {energy}",
@@ -254,6 +255,7 @@ export const RESULT_LABELS: Record<string, Record<string, string>> = {
     comfort: "{time} below comfort: {load}",
     over_one: "1 hour over the target", over: "{n} hours over the target",
     hours: "{h} h", hours_minutes: "{h} h {m} min", minutes: "{m} min",
+    partial: "Since {date}: {energy} {unit} energy + the whole month's capacity fee {fee} {unit}",
   },
 };
 
@@ -301,6 +303,19 @@ export function resultLines(
     const over = Number(d.over_windows) || 0;
     if (over > 0) parts.push(over === 1 ? L.over_one : fmtTemplate(L.over, { n: over }));
     if (parts.length) out.push(parts.join(" · "));
+  }
+  // R5: a ledger opened after the 1st shows a few days' energy beside a month's fee (D-0692).
+  const c = cost?.attributes ?? {};
+  if (c.partial && c.energy_since) {
+    const when = new Date(String(c.energy_since));
+    if (!Number.isNaN(when.getTime())) {
+      out.push(fmtTemplate(L.partial, {
+        date: new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(when),
+        energy: f0.format(Math.round(parseFloat(String(c.energy_cost)) || 0)),
+        fee: f0.format(Math.round(parseFloat(String(c.capacity_fee)) || 0)),
+        unit,
+      }));
+    }
   }
   return out;
 }

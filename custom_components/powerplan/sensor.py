@@ -31,8 +31,10 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
 from .core.model import Carrier, Confidence, Snapshot
 from .core.pricing.modifiers.base import SPOT
 from .core.pricing.modifiers.fixed_price import FixedPrice
@@ -46,6 +48,7 @@ from .entity import (
     accrual_reset,
     digest_of,
     money_text,
+    unique_id,
     window_translation_key,
 )
 from .load_entities import load_sensors
@@ -396,7 +399,9 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         suggested_display_precision=2,
         window_named=True,
         value=lambda s, _r: None if s.budget is None else round(s.budget.projected_kwh, 3),
-        attributes=lambda s, _r: {} if s.budget is None else {"source": s.budget.projection_source},
+        attributes=lambda s, _r: {
+            "expected_kwh": None if s.expected_kwh is None else round(s.expected_kwh, 3)
+        },
     ),
     SiteSensorDescription(
         key="ceiling",
@@ -719,6 +724,23 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
 WINDOW_NAMED: frozenset[str] = frozenset(row.key for row in SENSORS if row.window_named)
 
 
+def _rename_monetary_balance(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
+    """Rename the fixed-price saving off its device-class fallback id, once (D-0692).
+
+    Before its translation key was set it registered as `sensor.<site>_monetary_balance`;
+    an id the household chose is left alone, and so is one already taken.
+    """
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, unique_id(entry.entry_id, "fixed_price_savings")
+    )
+    if entity_id is None or not entity_id.endswith("_monetary_balance"):
+        return
+    wanted = entity_id.removesuffix("_monetary_balance") + "_fixed_price_savings"
+    if registry.async_get(wanted) is None:
+        registry.async_update_entity(entity_id, new_entity_id=wanted)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: PowerplanConfigEntry,
@@ -733,6 +755,7 @@ async def async_setup_entry(
         [SiteCostSensor(runtime), SiteSavingsSensor(runtime), SiteDeviationsSensor(runtime)]
     )
     if runtime.has_fixed_price:
+        _rename_monetary_balance(hass, entry)
         entities.append(SiteFixedPriceSavingsSensor(runtime))
     entities.extend(
         SiteSensor(
@@ -868,7 +891,27 @@ class SiteCostSensor(_SiteMoneySensor):
             "since_install": self._since_install(),
             "confidence": None if status is None else status.pricing_confidence,
             "estimated_share": None if status is None else status.estimated_share,
+            # A ledger opened after the 1st carries the month's whole capacity fee
+            # beside the energy since it opened, and says so (D11 §2, D-0692).
+            "partial": None if status is None else _partial(status),
+            "energy_since": None if status is None else _iso(_energy_since(status)),
         }
+
+
+def _energy_since(status: AccountingStatus) -> datetime | None:
+    """Return when this month's energy figures begin: the month's start or the ledger's, the later."""
+    if status.since is None or status.month_start is None:
+        return status.month_start
+    return max(status.since, status.month_start)
+
+
+def _partial(status: AccountingStatus) -> bool:
+    """Whether the ledger opened after the month began."""
+    return (
+        status.since is not None
+        and status.month_start is not None
+        and status.since > status.month_start
+    )
 
 
 class SiteSavingsSensor(_SiteMoneySensor):
@@ -991,6 +1034,9 @@ class SiteFixedPriceSavingsSensor(PowerplanEntity, SensorEntity):
     def __init__(self, runtime: Runtime) -> None:
         """Bind to the site; the unit is the site's own currency."""
         super().__init__(runtime, "fixed_price_savings")
+        # `PowerplanEntity` set the bare key, which has no translation: HA named the
+        # entity by its device class, "Monetary balance" (D-0692).
+        self._attr_translation_key = "site_fixed_price_savings"
         self._attr_native_unit_of_measurement = runtime.build.cfg.currency
 
     @property

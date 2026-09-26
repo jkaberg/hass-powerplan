@@ -76,6 +76,10 @@ class ModeCfg:
     verify_after_s: float = 90.0
     urgent_from_stage: int = 3
     role: Role = Role.MODE_SELECT
+    #: The reversal clock between the comfort and the shed option (D4 §5.5): for a
+    #: floor thermostat the eco flip *is* the relay decision (D-0691).
+    min_on_s: float = 0.0
+    min_off_s: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,8 +153,8 @@ class ModeKind:
         return self.cfg.verify_after_s
 
     def dwell_s(self) -> tuple[float, float]:
-        """Return no dwell: the mode toggle's clock is the command interval (§5.10)."""
-        return (0.0, 0.0)
+        """`min_on` / `min_off` between comfort and shed - the load's own, 0 unless it has one (D-0691)."""
+        return (self.cfg.min_on_s, self.cfg.min_off_s)
 
     def restore_command(self, ctx: KindCtx) -> Command | Hold:
         """Restore the comfort option, unconditionally (§5.5, INV-26)."""

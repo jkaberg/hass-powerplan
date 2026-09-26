@@ -350,7 +350,7 @@ uncontrolled_w = grid_w − Σ controlled_power(view_i)
 
 `reconstruct_windows(rows, window_min, tz)` turns cumulative register rows (the recorder, or HA's long-term statistics `sum`/`state`) into `ClosedWindow`s: interpolate the register at each boundary, difference, and mark `confidence = estimated` where the nearest rows are further than 2 × cadence from the boundary. Used by D2's backfill and D10's baseline. Hourly LTS can never give exact 15-min windows, so the helper returns hourly windows with `window_min = 60` and the caller decides (D2 marks them `coarse`).
 
-`providers/meters/recorder.py::async_register_history` is the HA half for D2's seed. A statistics row is filed under its hour's start S, however its `sum` is the register at the last report inside the hour: S for a latched register (§5.5), S + 1 h − c for one reporting every c seconds. So each row is placed at `S + 1 h − min(c, 1 h)`, where `c` is the median gap between the register's recent *changes of value* - a value republished after `unavailable` isn't a report. With fewer than five gaps rows stay at S (§5.3's default). D10's own reader still places every row at S (D10 §5.2, D-0352).
+`providers/meters/recorder.py::async_register_history` is the HA half for D2's seed. A statistics row is filed under its hour's start S, however its `sum` is the register at the last report inside the hour: S for a latched register (§5.5), S + 1 h − c for one reporting every c seconds. So each row is placed at `S + 1 h − min(c, 1 h)`, where `c` is the median gap between the register's recent *changes of value* - a value republished after `unavailable` isn't a report. With fewer than five gaps rows stay at S (§5.3's default). **This module is the only reader of the register's statistics** (D-0687), one placement rule for both tables: D10's baseline seed and fits and D8's fixed-price saving read through `async_register_rows` (the 5-minute table for the last 10 days, each row at `S + 5 min − min(c, 5 min)`, hourly beyond), D2's period seed through `async_register_history` (hourly alone). D10 once had a reader of its own that placed every row at S; on a register reporting every 10 s that ran the meter a period early against the loads, and the reference house's baseline held 2 990 W at 21:00 against 1 376 W measured, with two negative bins (`design/reviews/field-audit-2026-09.md` §5).
 
 ### 5.12 Per-load energy per price slot (`LoadMeter`), for D11
 
@@ -500,6 +500,7 @@ Provider (`tests/providers/meters/`): `ha_sensors` maps W and kW, unavailable �
 Property: random power traces + random register report jitter, `Σ closed.kwh` over a day equals the register delta within 0.1 %. The same for every `LoadMeter` in REGISTER mode, and `Σ_loads slot.kwh ≤ import slot kWh + export` for consistent traces.
 
 21. `export_limit_w`: `None` behaves as the fuse. A set limit is carried into D5's `PlanContext` unchanged and never enters the capacity axis, which counts import only (INV-19).
+22. One reader, both tables (D-0687): a register reporting every 10 s, read as 5-minute rows, places each at `S + 4 min 50 s` and as hourly rows at `S + 59 min 50 s`; a latched register (one report at HH:00:10) places both at S; and only `providers/meters/recorder.py` asks `statistics_during_period` for an energy `sum`.
 ---
 
 ## 10. Deliberately deferred

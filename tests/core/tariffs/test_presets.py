@@ -470,12 +470,23 @@ _MINIMAL: dict[str, Any] = {
 }
 
 
-def test_target_below_the_reached_step_is_still_honoured() -> None:
-    """A user may aim below what the month reached; D2 §6 warns, D2 §5 obeys."""
+@pytest.mark.inv("INV-10")
+def test_a_step_the_month_has_passed_is_not_defended() -> None:
+    """Step 1 chosen with the month at 5–10 kW: the reached step is held (D2 §9 43, D-0690).
+
+    The reference house on 26 Sep 2026: September at 8.05 kW here, step 1 chosen.
+    Until the month closes the 5–10 kW bound is defended, the reason and the
+    advice say so, and the household's choice is kept for the next month.
+    """
     ev = _ev("no/tensio-ts")
     record_days(ev, {"2026-09-04": 9.15, "2026-09-09": 8.0, "2026-09-15": 7.0})
-    ceiling = ev.ceiling_kwh(local("2026-09-20T12:00:00"), Target("step", step_index=1), 0.0, 0.3)
-    assert ceiling.kwh == pytest.approx(4.7)
+    step_1 = Target("step", step_index=1)
+    ceiling = ev.ceiling_kwh(local("2026-09-20T12:00:00"), step_1, 0.0, 0.3)
+    assert ceiling.kwh == pytest.approx(9.7)
+    assert ceiling.reason == "unreachable_target"
+    ev.target = step_1
+    advice = {item.key: item for item in ev.advice()}
+    assert advice["target_unreachable"].params["until"] == "2026-10-01"
 
 
 def test_the_summary_describes_the_other_shapes() -> None:

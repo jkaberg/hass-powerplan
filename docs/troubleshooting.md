@@ -204,6 +204,10 @@ Reload the page. If it stays blank, check that PowerPlan is loaded under **Setti
 
 Look at the appliance's **Plan status**: it says what PowerPlan plans and why, for example waiting for cheap power or paused to hold the capacity step. In trial mode, PowerPlan steers nothing.
 
+### An appliance's health says Not following
+
+The device accepted PowerPlan's last three commands but didn't apply them, for example a heat pump that keeps its old temperature. PowerPlan keeps controlling it and tries again when it may, and the notification for devices that stop answering tells you. Check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands. It clears by itself the first time a command takes.
+
 <a name="over_target"></a>
 ### An hour went over the target
 

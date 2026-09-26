@@ -114,3 +114,38 @@ async def test_a_car_saved_before_the_soc_answer_was_bound_is_bound_at_setup(
     now = runtime.state.runtime.last_tick_at
     assert now is not None
     assert runtime.build.devices[sub.subentry_id].reads(now).value(Role.SOC) == 87.0
+
+
+async def test_49_an_answered_role_binds_when_its_entity_reports_a_unit(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """D4 §9 49, D7 §9 28, D-0693: a SoC with no unit at setup binds when the unit arrives.
+
+    The reference house's 18:12 start: the car's cloud integration hadn't reported
+    `%` yet, the role stayed unbound, and the car ran without its SoC until the next
+    start 2 h 33 min later. Now the role binds on the sensor's next state.
+    """
+    hass.states.async_set(
+        CAR_SOC_SENSOR, "87", {"unit_of_measurement": "%", "device_class": "battery"}
+    )
+    await _add_car(hass, site, charger)
+    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
+    rows = [row for row in sub.data[LOAD_BINDINGS] if row["role"] != "soc"]
+    hass.config_entries.async_update_subentry(site, sub, data={**sub.data, LOAD_BINDINGS: rows})
+    await hass.async_block_till_done()
+
+    # The car's integration hasn't loaded: no unit, so the reload can't bind it.
+    hass.states.async_set(CAR_SOC_SENSOR, "unknown", {})
+    assert await hass.config_entries.async_reload(site.entry_id)
+    await hass.async_block_till_done()
+    assert "soc" not in [
+        row["role"] for row in site.subentries[sub.subentry_id].data[LOAD_BINDINGS]
+    ]
+
+    hass.states.async_set(
+        CAR_SOC_SENSOR, "88", {"unit_of_measurement": "%", "device_class": "battery"}
+    )
+    await hass.async_block_till_done()
+
+    roles = [row["role"] for row in site.subentries[sub.subentry_id].data[LOAD_BINDINGS]]
+    assert roles.count("soc") == 1

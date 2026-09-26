@@ -59,6 +59,8 @@ In the tables, `<home>` and `<appliance>` stand for those names as Home Assistan
 
 Where your grid company counts half-hours or quarter-hours instead of hours, the entities for this hour count that period instead, and their names say so.
 
+**Expected usage this hour** is where the hour lands if the house keeps drawing what it draws now. It's the number the control level acts on. Its `expected_kwh` attribute is what the hour should reach from your usual usage and what must run regardless, the same estimate a peak warning uses.
+
 Where your grid company bills no capacity step, **Target this hour** and **Capacity metric this period** read *unknown*: there is no target and no metric to report.
 
 ## Each appliance's entities
@@ -126,6 +128,8 @@ Key: `presence`.
 
 The capacity step PowerPlan plans to stay in. **Automatic** holds the step this month's usage has already reached, and never aims above it. **Step 1**, **Step 2**, and so on name your grid company's steps from the lowest, and **Configured kW** keeps the limit you typed in during setup. Key: `target`.
 
+A step below the one this month has already reached can't be kept any more: the month's highest days are already counted. Until the month ends PowerPlan then holds the step the month is on, since using more inside it costs nothing, and the recommendation says so. Your choice stays selected and counts again from the 1st.
+
 <a name="risk"></a>
 ### Strictness
 
@@ -182,6 +186,7 @@ What PowerPlan would tell you about your capacity step this month, one state at 
 | **An old month is leaving the average** | Your grid company averages several months, and a high one drops out soon. |
 | **Some history is estimated** | Part of the month is missing, so the numbers are estimates. |
 | **Close to your contracted power** | Your usage is near the power your contract allows. |
+| **Your step is out of reach this month** | This month has already passed the step you chose, so PowerPlan holds the step it reached until the month ends. Your choice applies again from the 1st. |
 
 Key: `advice`.
 
@@ -264,7 +269,7 @@ Which appliance keeps its power longest when PowerPlan must pause something: **L
 <a name="health"></a>
 ### Health
 
-Whether the appliance's device answers: **OK**, **Transient** after a missed answer, or **Unhealthy** when it keeps failing. It starts diagnostic. Key: `health`.
+Whether the appliance's device answers: **OK**, **Transient** after a missed answer, **Not following** when it accepts commands but three in a row didn't change it, or **Unhealthy** when it keeps failing. A device that isn't following is still controlled, and `deviating_since` says when the commands started to go unanswered. It starts diagnostic. Key: `health`.
 
 <a name="savings_month"></a>
 ### Savings this month

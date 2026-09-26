@@ -196,8 +196,9 @@ __all__ = [
 
 #: The `Snapshot.schema` this engine publishes. D8 reads it; bump it when a
 #: section changes shape (D7 §4.1, the golden in `tests/golden/`). 12: the action reason
-#: `battery_self_use`.
-SnapshotSchema: int = 12
+#: `battery_self_use`. 13: `expected_kwh`; `Budget.projection_source` gone - the projection
+#: is the measured total's (D-0685); `Health.not_following` (D-0689).
+SnapshotSchema: int = 13
 
 #: What the peak warning's EMA is worth after this long without a tick: a gap
 #: wider than this restarts the average rather than extrapolating a dead house.
@@ -1350,19 +1351,8 @@ class Engine:
 
         # -- 5. the budget ------------------------------------------------- #
         hard, runtime = self._hard_limits(now, meter, runtime)
-        controlled_planned_kwh = sum(
-            plan.kwh_between(now, now + timedelta(hours=meter.t_rem_h))
-            for plan in state.plans.plans.values()
-        )
-        budget = build_budget(
-            ceiling,
-            meter,
-            hard.p_hard_w(),
-            pi,
-            site.budget,
-            _baseline(inputs),
-            controlled_planned_kwh,
-        )
+        # The projection is the house's: no plan's energy, no forecast (D-0685).
+        budget = build_budget(ceiling, meter, hard.p_hard_w(), pi, site.budget, _baseline(inputs))
         reasons.append(
             f"budget: ceiling {budget.ceiling_kwh:.2f} kWh − used {budget.used_kwh:.2f} − "
             f"reserve {budget.reserve_kwh:.2f} → allow {budget.p_allow_w:.0f} W"
@@ -1395,6 +1385,7 @@ class Engine:
         )
 
         # -- 8. allocate --------------------------------------------------- #
+        load_views = _with_planned_draw(load_views, state.plans.plans, now)
         ctx = AllocCtx(
             now=now,
             meter=meter,
@@ -1498,6 +1489,7 @@ class Engine:
                 )
             )
         notes.extend(_level_notification(edges, self._tariff, budget))
+        notes.extend(_unhealthy_notifications(events))
 
         snapshot = Snapshot(
             schema=SnapshotSchema,
@@ -1540,6 +1532,9 @@ class Engine:
             warnings=warnings,
             reasons=_trail(reasons, cfg.max_reasons),
             health=health,
+            expected_kwh=_expected_now_kwh(
+                meter, runtime.peak.ema_w, inputs.forecast_baseline, load_views, state.plans.plans
+            ),
         )
         _LOGGER.debug(
             "tick %s: stage %s, allow %.0f W, used %.2f/%.2f kWh, %s commands in %.1f ms",
@@ -2856,14 +2851,43 @@ def _external_limits(events: Sequence[Event], now: datetime) -> tuple[ExternalLi
 def _expected_uncontrolled_kwh(
     baseline: Baseline | None, ema: float | None, start: datetime, hours: float
 ) -> float:
-    """Return a coming window's uncontrolled term (D7 §5.4, D-0319).
+    """Return a coming window's uncontrolled term (D7 §5.4).
 
     D10's baseline once it clears `BASELINE_CONFIDENCE`, else the EMA held for
-    the window - the same gate `budget()` uses for the projection (D6 §2).
+    the window - the same gate `budget()` uses for the reserve's σ (D6 §2).
     """
     if baseline is not None and baseline.confidence >= BASELINE_CONFIDENCE:
         return baseline.energy_kwh(start, hours)
     return 0.0 if ema is None else ema / 1000.0 * hours
+
+
+def _with_planned_draw(
+    views: Sequence[LoadView], plans: Mapping[str, Plan], now: datetime
+) -> tuple[LoadView, ...]:
+    """Return `views` with each relay thermostat's planned draw for this slot (D6 §5.2, D-0686)."""
+    out: list[LoadView] = []
+    for view in views:
+        plan = plans.get(view.load_id)
+        slot = None if plan is None or not view.relay_thermostat else plan.slot_at(now)
+        out.append(view if slot is None else replace(view, planned_draw_w=slot.planned_draw_w))
+    return tuple(out)
+
+
+def _expected_now_kwh(
+    meter: MeterSnapshot | None,
+    ema: float | None,
+    baseline: Baseline | None,
+    views: Sequence[LoadView],
+    plans: Mapping[str, Plan],
+) -> float | None:
+    """Return the window in progress's `expected`: used + what is left of §5.4's terms (D-0685)."""
+    if meter is None or meter.t_rem_h <= 0.0:
+        return None
+    end = meter.now + timedelta(hours=meter.t_rem_h)
+    expected = meter.used_kwh + _expected_uncontrolled_kwh(baseline, ema, meter.now, meter.t_rem_h)
+    for view in views:
+        expected += _urgent_kwh(view, plans.get(view.load_id), meter.now, end)
+    return expected
 
 
 def _urgent_kwh(view: LoadView, plan: Plan | None, start: datetime, end: datetime) -> float:
@@ -3259,6 +3283,25 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
                     },
                 )
             )
+    for load_id, observation in sorted(observations.items()):
+        following = "0" if observation.health.not_following else "1"
+        was = edges.get(f"following:{load_id}", "1")
+        if was == following:
+            continue
+        edges[f"following:{load_id}"] = following
+        events.append(
+            HaEvent(
+                EventKind.DEVICE_UNHEALTHY,
+                {
+                    "load": load_id,
+                    "failures": observation.health.failures,
+                    "last_error": observation.health.last_error,
+                    "recovered": following == "1",
+                    "not_following": True,
+                    "deviations": observation.health.deviations,
+                },
+            )
+        )
     for load_id, error in sorted(failed.items()):
         if edges.get(f"unhealthy:{load_id}") == "1":
             continue
@@ -3270,6 +3313,30 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
             )
         )
     return events
+
+
+def _unhealthy_notifications(events: Sequence[HaEvent]) -> list[Notification]:
+    """Return `device_unhealthy` notifications for this tick's unhealthy edges (D8 §2).
+
+    A load that stops answering and one that stops following its commands
+    (`not_following`, D-0689) each get their own key, and a recovery clears it.
+    """
+    notes: list[Notification] = []
+    for event in events:
+        if event.kind is not EventKind.DEVICE_UNHEALTHY:
+            continue
+        data = event.data
+        prefix = "not_following" if data.get("not_following") else "unhealthy"
+        recovered = bool(data.get("recovered"))
+        notes.append(
+            Notification(
+                category="device_unhealthy",
+                key=f"{prefix}:{data['load']}",
+                params={**data, "cleared": True} if recovered else dict(data),
+                severity="info" if recovered else "warn",
+            )
+        )
+    return notes
 
 
 def _shortfall_kwh(plan: Plan) -> float:

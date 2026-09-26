@@ -71,9 +71,21 @@ def _statistics_during_period_fake(rows_by_entity: dict[str, list[dict]]):
 
 @pytest.fixture(autouse=True)
 def _fake_recorder_instance():
-    with patch(
-        "custom_components.powerplan.providers.forecasts.recorder_baseline.get_instance",
-        return_value=_FakeRecorderInstance(),
+    # The register comes through D3's one reader (D-0687); with no report cadence
+    # known it leaves each row at its period's start, as these rows are written.
+    with (
+        patch(
+            "custom_components.powerplan.providers.forecasts.recorder_baseline.get_instance",
+            return_value=_FakeRecorderInstance(),
+        ),
+        patch(
+            "custom_components.powerplan.providers.meters.recorder.get_instance",
+            return_value=_FakeRecorderInstance(),
+        ),
+        patch(
+            "custom_components.powerplan.providers.meters.recorder._report_cadence_s",
+            return_value=None,
+        ),
     ):
         yield
 
@@ -240,3 +252,75 @@ async def test_the_forward_source_predicts_from_the_already_seeded_baseline(
     series = await source.fetch(timedelta(hours=2), start - timedelta(hours=1))
     assert len(series.points) == 2
     assert series.points[0].value != 0.0
+
+
+async def test_20_a_ten_second_register_seeds_the_evening_step_in_its_own_hour(
+    hass: HomeAssistant,
+) -> None:
+    """D10 §9 20, D-0687: the 22:00 start of a 3 kW load stays out of the 21:00 bin.
+
+    HA-shaped 5-minute rows: each `sum` is the register ten seconds before its
+    period's end, filed under the period's start. Placed at the start, the 22:00
+    step leaked into 21:45's window and the reference house's 21:00 bins read
+    2 990 W against 1 376 W measured; placed where the value refers to, both
+    hours are the house's 1 kW, and nothing goes negative.
+    """
+    now = datetime(2026, 9, 25, 21, 0, tzinfo=UTC)  # 23:00 local
+    start = now - timedelta(hours=3)  # 20:00 local
+    step_at = datetime(2026, 9, 25, 20, 0, tzinfo=UTC)  # 22:00 local
+    five = timedelta(minutes=5)
+
+    def power(at: datetime) -> float:
+        return 1000.0 + (3000.0 if at >= step_at else 0.0)
+
+    register: list[dict] = []
+    load: list[dict] = []
+    total = 0.0
+    at = start - five
+    while at < now:
+        total += power(at) * 5 / 60 / 1000
+        register.append(_stat_row(at, sum=round(total, 6)))
+        # HA's rows carry their `end`: a mean is a step over its own period (D-0483).
+        load.append(
+            {**_stat_row(at, mean=3000.0 if at >= step_at else 0.0), "end": (at + five).timestamp()}
+        )
+        at += five
+
+    def fake(hass, start_t, end_t, statistic_ids, period, units, types):  # noqa: PLR0917
+        del hass, units, types
+        (entity_id,) = statistic_ids
+        rows = register if entity_id == REGISTER_ENTITY else load
+        return {
+            entity_id: [r for r in rows if start_t.timestamp() <= r["start"] < end_t.timestamp()]
+        }
+
+    with (
+        patch(
+            "custom_components.powerplan.providers.forecasts.recorder_baseline."
+            "recorder_statistics.statistics_during_period",
+            side_effect=fake,
+        ),
+        patch(
+            "custom_components.powerplan.providers.meters.recorder._report_cadence_s",
+            return_value=10.0,
+        ),
+    ):
+        baseline = HourOfWeekBaseline(tz=OSLO)
+        history = await async_seed(
+            hass,
+            baseline,
+            register_entity_id=REGISTER_ENTITY,
+            loads=(
+                LoadSource(load_id="tank", nameplate_w=3000.0, power_entity_id=EV_POWER_ENTITY),
+            ),
+            now=now,
+            tz=OSLO,
+            span_days=1,
+        )
+
+    assert history.lag_h == 0
+    before, _sigma, _c = baseline.predict(step_at - timedelta(minutes=30))
+    after, _sigma, _c = baseline.predict(step_at + timedelta(minutes=30))
+    assert before == pytest.approx(1000.0, rel=0.05)
+    assert after == pytest.approx(1000.0, rel=0.05)
+    assert all(row.mean_w >= 0.0 for row in baseline.state.bins)

@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from homeassistant.components.http.server import StaticPathConfig
+from homeassistant.core import Event, EventStateChangedData, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -27,12 +29,14 @@ from .const import (
 )
 from .dashboard import async_remove_dashboard, async_setup_dashboard
 from .entity import async_prepare_site_device
-from .flow.load import binding_from_data, binding_to_data, extra_bindings
+from .flow.load import answered_entities, binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
 from .storage import ENTRY_MINOR_PRICE, migrate_tariff
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.typing import ConfigType
@@ -105,7 +109,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     # call in the loop). Nothing inside it needs the loop: every state and
     # config read it makes is a fast, in-memory one HA allows from either
     # thread.
-    _bind_answered_roles(hass, entry)
+    pending = _bind_answered_roles(hass, entry)
     site = await hass.async_add_executor_job(build_site, hass, entry)
     runtime = Runtime(hass, entry, site)
     entry.runtime_data = runtime
@@ -116,18 +120,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     # releases every load on the way out (INV-26) and restores on the way back
     # in (INV-48) - `Runtime.async_handle_subentry_update` tells them apart.
     entry.async_on_unload(entry.add_update_listener(_async_handle_update))
+    if pending:
+        _watch_unbound(hass, entry, pending)
     _LOGGER.debug("Site %s set up (entry %s): %s", entry.title, entry.entry_id, runtime.startup)
     return True
 
 
-def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:
+def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> set[str]:
     """Bind an answered off-device sensor a subentry saved before the flow bound it (D-0485).
 
     Before `e9ba672` the car's `soc_entity` answer stayed a parameter: `Role.SOC`
     read `None` and the EV was never planned. Only a role the subentry lacks is
     added, so a match-step binding stands; an entity with no state yet binds on
-    a later start. Runs before the update listener exists, so it reloads nothing.
+    a later start - or sooner: the entity ids still waiting come back, and
+    `_watch_unbound` binds them when their state arrives (D-0693). At setup it
+    runs before the update listener exists, so it reloads nothing.
     """
+    pending: set[str] = set()
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_LOAD:
             continue
@@ -144,6 +153,14 @@ def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> No
             )
             if binding.role not in bound
         ]
+        found = {binding.role for binding in missing}
+        pending.update(
+            entity_id
+            for role, entity_id in answered_entities(
+                str(data.get(LOAD_TYPE)), data.get(LOAD_PARAMS) or {}
+            ).items()
+            if role not in bound and role not in found
+        )
         if not missing:
             continue
         _LOGGER.info(
@@ -156,6 +173,39 @@ def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> No
             subentry,
             data={**data, LOAD_BINDINGS: [*rows, *(binding_to_data(b) for b in missing)]},
         )
+    return pending
+
+
+def _watch_unbound(hass: HomeAssistant, entry: PowerplanConfigEntry, entity_ids: set[str]) -> None:
+    """Bind an answered role when its entity reports a unit, not at the next start (D-0693).
+
+    An integration that loads after powerplan (the car's cloud, a heat pump's
+    ESPHome) leaves its sensor without a unit at setup, and the role stays unbound.
+    The subentry update the bind makes is the same hot path as any other.
+    """
+    _LOGGER.warning(
+        "%s: waiting for %s to report a unit before binding it",
+        entry.title,
+        ", ".join(sorted(entity_ids)),
+    )
+    unsub: Callable[[], None] | None = None
+
+    @callback
+    def _retry(event: Event[EventStateChangedData]) -> None:
+        nonlocal unsub
+        del event
+        if not _bind_answered_roles(hass, entry) and unsub is not None:
+            unsub()
+            unsub = None
+
+    unsub = async_track_state_change_event(hass, sorted(entity_ids), _retry)
+
+    @callback
+    def _stop() -> None:
+        if unsub is not None:
+            unsub()
+
+    entry.async_on_unload(_stop)
 
 
 async def _async_handle_update(hass: HomeAssistant, entry: PowerplanConfigEntry) -> None:

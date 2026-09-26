@@ -145,6 +145,24 @@ The build has run in `observe` since phase 1. A read-only audit of it comes befo
 | **RES.3 The month's deviations** | `sensor.<site>_deviations` | D7 §5.10; D8 §5.5 | D7 §9 26; D8 §9 40 | - |
 | **RES.4 The results on the dashboard** | the month card's results; the cost table's moved-kWh column | D12 §5.19 | D12 §9 32 | RES.2, RES.3 |
 
+### 3.0k The capacity axis measures the house
+
+[The field audit](reviews/field-audit-2026-09.md) of the reference house, 23–26 Sep 2026, [D6 §2, §5.2, §5.4](lld/D6-allocation.md), [D3 §5.11](lld/D3-metering.md), [D10 §5.2](lld/D10-forecasts.md), [D5 §5.9](lld/D5-strategies.md), [D4 §5.5, §5.9, §5.10](lld/D4-loads.md), [D2 §5.4](lld/D2-tariff.md), [D8 §5.5, §5.16](lld/D8-ha-surface.md), [D12 §5.19](lld/D12-dashboard.md), INV-10, INV-22, INV-30, INV-32, INV-38, INV-62: the ladder reads the measured total, an idle thermostat reserves what it will draw, the register has one reader, a plan covers the present, a device that ignores its writes says so, and a step the month has passed isn't defended (dec. 45).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **FA.1 The ladder reads the house** | `projected_kwh = used + P_smooth × t_rem`; `controlled_planned_kwh` and `Plan.kwh_between` removed; `expected_kwh` on `sensor.<site>_window_projected` | D6 §2, §5.4; D7 §5.1, §5.4; D8 §5.5; D-0685 | D6 §9 3, 30; D7 §9 27; D8 §9 44; scenarios `night_ev_tank_banked_floors`, `ev_plan_no_car` (D9 §5.3) | - |
+| **FA.2 A slot's draw, not a margin** | an idle on/off thermostat reserves `_planned_draw_w` | D6 §5.2; D-0686 | D6 §9 31; `night_ev_tank_banked_floors` at 4.7 kWh | FA.1 |
+| **FA.3 One register reader** | `async_register_rows` for both tables; D10's seed and the fixed-price saving on it; `lag_h` logged and stored; `seed_version` 3 | D3 §5.11; D10 §5.2; D8 §5.16; D-0687 | D3 §9 22; D10 §9 20 | - |
+| **FA.4 A plan covers the present** | the coverage rule in `should_adopt`; `cap_w` `None` outside every slot | D5 §4, §5.9; INV-30, INV-32; D-0688 | D5 §9 30 | - |
+| **FA.5 Not following** | the `not_following` health state; `deviations`, `last_deviation_at`, role; `device_unhealthy`'s text; the gate state in diagnostics | D4 §5.10, §8; D8 §2, §5.5; INV-22; D-0689 | D4 §9 47; D8 §9 45 | - |
+| **FA.6 The reached step** | `T_eff` while a chosen target is passed; reason `unreachable_target`; advice `target_unreachable` | D2 §5.4, §5.11; D8 §5.5; INV-10; D-0690 | D2 §9 43 | - |
+| **FA.7 The floor's dwell** | `ModeCfg.min_on_s`/`min_off_s` from floor heating's answers | D4 §5.5, §5.10, §6.1; D-0691 | D4 §9 48 | - |
+| **FA.8 Names and partial months** | the translation key and the entity-id migration; `partial`, `energy_since`, `settled_cost`; the month card's R5 | D8 §5.5, §5.16; D12 §5.19; D-0692 | D8 §9 46, 47; D12 §9 33 | - |
+| **FA.9 A role binds when its entity is ready** | a one-shot state listener for an answered role with no unit at setup; `re-bind <role>` after 10 min | D4 §5.9; D7 §5.5; D-0693 | D4 §9 49; D7 §9 28 | - |
+
+User pages: FA.1 `docs/entities.md` (the projection sensor's attribute); FA.5 `docs/entities.md`, `docs/troubleshooting.md` ("a device that doesn't follow"); FA.6 `docs/capacity-tariffs.md`, `docs/entities.md`; FA.8 `docs/entities.md`, `docs/savings.md`, `docs/dashboard.md`. FA.2, FA.3, FA.4, FA.7 and FA.9 change nothing a household sees.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -314,6 +332,8 @@ phase 4 after 0.11 and its domain WPs; phase 5 after 1.1, 3.4, 4.1; the release 
 
 **In parallel:** 0.4 and 0.5 after 0.2; 0.10 and 0.11 after 0.9; phase 4 alongside phases 2-3 once 0.11 exists; 5.1 any time after 1.1. **Never in parallel:** two open PRs that both update a baseline. **Off the critical path by design:** 0.10 and 2.7, because accounting is observation only (INV-68).
 
+**3.0k's order:** FA.3 and FA.1 first - they decide what the house does under a 4.7 kWh target - then FA.2, before any month is run at the 2–5 kW step. FA.4 to FA.8 in any order, FA.9 last. FA.1 and FA.2 move the reference benchmark's digests on purpose and each updates a baseline, so they are never open together.
+
 ---
 
 ## 5. Working method
@@ -407,6 +427,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 42. **The dashboard uses Home Assistant's own backend only.** The layout from a response action, the spot price from a sensor, retries from a button, the module as a Lovelace resource; no private websocket commands. *Rejected:* keeping the commands - a private protocol to version, test and document.
 43. **A plan fits the room it's given, and the peak warning is about the house.** The warning counts the uncontrolled term and no-vote demands, never a plan (D-0627); a kept plan overlapping its betters' room is replaced (D-0628); a slot reserves its planned draw (D-0629). *Rejected:* plans in the warning - D6 holds every plan under the ceiling, so a plan can't cause a breach.
 44. **A battery takes four commands, and every major inverter gets a row** (D-0670). Self-use, hold, charge and discharge are INV-30's answers for a battery; one data vocabulary runs every row; a battery on no device is reachable; PV curtailment waits for v1.x (a wrong write breaches the grid operator's export cap); a battery's counterfactual is its own inverter's self-use; Enphase is a limitation until a local write path exists. *Rejected:* 0 as the release - a battery held for a capacity window would arrive empty.
+45. **The capacity axis measures the house** (D-0685 … D-0693, [the field audit](reviews/field-audit-2026-09.md)). The ladder reads the measured total and never a plan or a forecast (INV-38, INV-62); an idle thermostat holds back what its plan draws; the register has one reader; a kept plan covers the next hour and outside it is `None` (INV-30, INV-32); three missed writes in a row are `not_following` (INV-22); a step the period has passed isn't defended (INV-10); INV-48 stays. *Rejected:* tuning thresholds and margins - the projection opened loaded hours at 106–112 % of the ceiling, above every threshold worth having; an optimiser - a non-goal (HLD §1.2), and it would inherit two numbers that disagree.
 
 ---
 
@@ -477,6 +498,15 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | RES.2 | The step without PowerPlan, the price paid | done |
 | RES.3 | The month's deviations | done |
 | RES.4 | The results on the dashboard | done |
+| FA.1 | The ladder reads the house | todo |
+| FA.2 | A slot's draw, not a margin | todo |
+| FA.3 | One register reader | todo |
+| FA.4 | A plan covers the present | todo |
+| FA.5 | Not following | todo |
+| FA.6 | The reached step | todo |
+| FA.7 | The floor's dwell | todo |
+| FA.8 | Names and partial months | todo |
+| FA.9 | A role binds when its entity is ready | todo |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |

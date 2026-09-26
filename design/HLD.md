@@ -294,7 +294,7 @@ class TariffEvaluator(Protocol):                     # was TariffModel; one gene
 
 **Invariants.**
 - **INV-9** The "free ride" - the slack a window has once the period metric can no longer rise because of it - is **derived** from the tariff model's `slack`, never special-cased. Under `per_day = max` it is daily (once today's max is set, later windows today are free of the peak charge). Under `per_day = all, period = rolling_months` (BE) there is no daily free ride, only a within-month one worth 1/12 of a kW-year, and `marginal_cost` says so (D2 §5.4).
-- **INV-10** The ceiling is exposed as a **cost curve** (`marginal_cost`), and `ceiling_kwh` is the engine's projection of it onto a target. For `StepTable` the target is the step to defend; for `Linear` the target is a user-set kW (v1) - the trade-off against shed cost is a v2 feature.
+- **INV-10** The ceiling is exposed as a **cost curve** (`marginal_cost`), and `ceiling_kwh` is the engine's projection of it onto a target. For `StepTable` the target is the step to defend - and a chosen step below the one the period has already reached can't be defended, so the reached step is, until the period closes (D2 §5.4); for `Linear` the target is a user-set kW (v1) - the trade-off against shed cost is a v2 feature.
 - **INV-11** The model never reads a "level reached" attribute from another integration. It owns its history and computes the level itself (the ratchet bug).
 - **INV-12** A step/level boundary that can move at runtime (user changes target) MUST re-clamp every dependent bound on every read.
 - **INV-52** The evaluator spans a tariff version change inside a billing period (a rolling-12 window straddles at least one 1 January): each window is priced by the version valid at its start; the level is classified on the current version.
@@ -346,6 +346,7 @@ class LoadMeter:        # core, pure; one per load, for D11
 - **INV-19** Power is signed everywhere in `core/`. Production, export and surplus are first-class readings; the capacity axis counts **grid import** only, the price axis may consume surplus (§6.5).
 - **INV-53** No site meter ⇒ the capacity axis is off (`NoPeak`), circuits with their own sub-meter still work, and the price axis is unaffected. Degradation is explicit in the Snapshot, never silent.
 - A load's energy per slot comes from its own register when it has one, else from its power, else from nameplate × on-time marked `estimated`; the source is never hidden (D11 shows it).
+- The site register's history is read by **one** reader, which places every statistics row at the instant its value refers to (D3 §5.11). D2's period seed, D10's baseline seed and the fixed-price saving all read through it; a second reader is how a baseline ended up an hour out of step.
 
 **From effektstyring.** All of `meter.py`: anchor, `recover()`, seam detection, σ window, projection EMA (`projection_tau_s`), plausibility bounds, degraded-gap rule. `voltage`/`phase_factor` move from the EV load to the site profile.
 
@@ -408,7 +409,7 @@ Six questions, all with defaults, and the review step reads back: "A heavy slab 
 **Invariants.**
 - **INV-20** Every write passes the `WriteGate`. A `hass.services` call anywhere else bypasses every rate limit, dwell clock and idempotency check at once.
 - **INV-21** A device is never sent a value it already holds. An `urgent` write - a shed that must land to hold the ceiling, or a retry after a failure - buys past the interval and the dwell clock, never past the tolerance. `urgent` is a WriteGate flag; it is unrelated to the load mode `force`, which bypasses nothing.
-- **INV-22** Decisions are made against the entity's current state, never against what we remember writing. Every write is read back after the poll interval; a deviation is logged, not counted as a failure.
+- **INV-22** Decisions are made against the entity's current state, never against what we remember writing. Every write is read back after the poll interval; a deviation is logged, not counted as a failure. Three in a row on one role are published as `not_following` - still not a failure, and the load stays in allocation (D4 §5.10).
 - **INV-23** Unavailable for less than a grace period is a transient, not a failure; any success resets the failure count; `unhealthy` needs N consecutive failures.
 - **INV-24** All service calls are `blocking=True`, otherwise refusals are swallowed and success is reported for nothing.
 - **INV-25** A zero grant is not a shed. Drivers read the allocator's shed set; a load that simply does not want power is never put into eco.
@@ -466,9 +467,9 @@ class PlanSlot: start; end; envelope_w: float | None      # None = no plan (cont
 Combinators (optional extras on any load, not separate strategies): `threshold(inner, off_above, on_below)`, `merge(a, b, and|or)`, and `opportunistic(inner, below_price)` - below the threshold (typically ≤ 0) every store fills to its **maximum**, not its requirement (INV-51, INV-56).
 
 **Invariants.**
-- **INV-30** Plans pace; the allocator caps a grant at `plan.envelope_w`, never raises it. `None` / `0` / `w` are three different answers and the distinction MUST survive every layer. For a battery the three answers are four commands. `None` is the inverter's own self-use, or powerplan's following where the battery has none. `0` is **hold**: no discharge, while the sun may still fill it. `±w` is charge or discharge. A profile that cannot hold says so, and the plan then counts every free slot as self-use (D4 §4.2, D5 §5.8).
+- **INV-30** Plans pace; the allocator caps a grant at `plan.envelope_w`, never raises it. `None` / `0` / `w` are three different answers and the distinction MUST survive every layer. An instant outside every slot of a plan is `None`. For a battery the three answers are four commands. `None` is the inverter's own self-use, or powerplan's following where the battery has none. `0` is **hold**: no discharge, while the sun may still fill it. `±w` is charge or discharge. A profile that cannot hold says so, and the plan then counts every free slot as self-use (D4 §4.2, D5 §5.8).
 - **INV-31** Strategies see the **composed** curve (energy + grid + taxes), never spot alone, plus per-slot headroom from higher-priority reservations and the tariff's eligible windows - so stores are charged **before** a demand window, not during it.
-- **INV-32** Tie-break is stable `(price, slot_index)`; a new plan is adopted only past a hysteresis relative to the day's spread, doubled when the curve is stale. Under a flat price (Norgespris) float noise MUST NOT re-decide the plan every quarter hour. The hysteresis keeps a plan against **price**, never against the room: a kept plan whose slots ahead reserve more than the headroom the loads above it left, by more than ε_w, is replaced (D5 §5.9, D-0628).
+- **INV-32** Tie-break is stable `(price, slot_index)`; a new plan is adopted only past a hysteresis relative to the day's spread, doubled when the curve is stale. Under a flat price (Norgespris) float noise MUST NOT re-decide the plan every quarter hour. The hysteresis keeps a plan against **price**, never against the room: a kept plan whose slots ahead reserve more than the headroom the loads above it left, by more than ε_w, is replaced (D5 §5.9, D-0628) - and so is a kept plan that doesn't cover the next hour, whatever the hysteresis says.
 - *(O23)* A contracted power whose excess is priced is a **power tier on price**: below it a slot costs the composed price, above it the composed price plus the surcharge; a plan crosses only where that is still the cheapest way to meet its demand (D2 §5.8).
 - **INV-33** Multi-load planning is decomposed by priority: higher priority reserves headroom first, the EV takes the residual. No global solver.
 - **INV-59** A cycle's plan is one contiguous block; once started it is reserved to completion and no stage below 4 sheds it.
@@ -488,7 +489,9 @@ ceiling  = tariff.ceiling_kwh(now, target, risk)             (kWh; ε in kWh, ne
 reserve  = clamp(σ_uncontrolled × k × t_rem + r_trim, min, max)
 E_budget = ceiling − used − reserve
 P_allow  = min(E_budget / t_rem, hard limits now)            (fuse, contracted power for this period, external limits)
-P_free   = max(0, P_allow − Σ reserved_w)                    (reserved = nameplate for on/off loads, measured for modulating;
+P_free   = max(0, P_allow − Σ reserved_w)                    (reserved = nameplate for an on/off load that runs or is granted, its plan's
+                                                              draw when it's an idle thermostat; measured + margin for a modulating heat
+                                                              pump; the grant for a modulating load we command - D6 §5.2;
                                                               a load is judged against P_free PLUS its own current reservation - D6 §5.3)
 ```
 
@@ -504,7 +507,7 @@ P_free   = max(0, P_allow − Σ reserved_w)                    (reserved = name
 | 3 | projected overshoot | proportional trim; rotation tightened; heat pumps coast −1 K |
 | 4 | **blunt** reason only: `fuse_breach` · `trip_risk` (a contracted power that trips) · `spent_window` · `external_limit` | all off except comfort violators and heat pumps |
 
-Escalation is immediate; de-escalation needs two clean ticks (fuse path keeps a wall-clock hold). A projection-driven stage is capped at 3 while the window will still land under target.
+Escalation is immediate; de-escalation needs two clean ticks (fuse path keeps a wall-clock hold). A projection-driven stage is capped at 3 while the window will still land under target. The projection is the measured total's (INV-38): a plan's energy never enters it, since every plan-driven grant is capped at the ceiling already, and neither does a forecast (INV-62). What the household should expect of a window is D7's peak warning, not the ladder.
 
 **Invariants.**
 - **INV-34** ε is subtracted from the energy ceiling, never from `P_allow`; a power margin evaporates exactly when nothing can be corrected.

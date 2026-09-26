@@ -531,6 +531,21 @@ class PlanSlot:
             return None
         return max(0.0, self.envelope_w - self.surplus_w)
 
+    @property
+    def planned_draw_w(self) -> float:
+        """Return the mean watts this slot plans to draw, bounded by its envelope (D-0629).
+
+        The envelope where a strategy cut the slot to its energy; less where the
+        envelope is a cap the load runs free under - a banked or held thermostat -
+        whose standing loss is all it takes. A slot told to stand still, or one that
+        discharges, draws nothing. D5 reserves it for the loads below (D5 §5.1) and
+        D6 holds it back for an idle thermostat (D6 §5.2, D-0686).
+        """
+        if self.envelope_w is not None and self.envelope_w <= 0.0:
+            return 0.0
+        draw = (self.kwh + self.hold_kwh) / self.hours * 1000.0
+        return draw if self.envelope_w is None else min(draw, self.envelope_w)
+
     def contains(self, t: datetime) -> bool:
         """Return whether `t` falls in `[start, end)`."""
         return self.start <= t < self.end
@@ -604,7 +619,9 @@ class Plan:
         if self.mode is PlanMode.NONE or not self.slots:
             return None
         slot = self.slot_at(now)
-        return 0.0 if slot is None else slot.envelope_w
+        # Outside every slot the plan has nothing to say: `None`, never a hold
+        # (INV-30, D-0688). Adoption replaces such a plan before it gets here.
+        return None if slot is None else slot.envelope_w
 
     def desired_state_at(self, now: datetime) -> DesiredState | None:
         """Return the option or delta the plan wants of the device now (D5 §2)."""
@@ -638,29 +655,6 @@ class Plan:
         if index >= len(self._active_starts):
             return None
         return max(self._active_starts[index], now)
-
-    def kwh_between(self, a: datetime, b: datetime) -> float:
-        """Return the energy this plan intends to move over `[a, b)` (D6 §2).
-
-        A load with no plan (`envelope_w is None`) contributes nothing - there is
-        no committed number to sum, the same reading `cap_w` gives it. A slot only
-        partly inside `[a, b)` is prorated by its own overlap, using `envelope_w`
-        rather than the whole-slot `kwh` (D5's own estimate, which does not know
-        about this caller's arbitrary window - the budget's remaining time).
-        """
-        if b <= a:
-            return 0.0
-        total = 0.0
-        for slot in self.slots_between(a, b):
-            if slot.envelope_w is None:
-                continue
-            start = max(slot.start, a)
-            end = min(slot.end, b)
-            if end <= start:
-                continue
-            hours = (end - start).total_seconds() / 3600.0
-            total += slot.envelope_w * hours / 1000.0
-        return total
 
 
 # --------------------------------------------------------------------------- #
@@ -723,3 +717,8 @@ class Snapshot:
     warnings: tuple[SiteWarning, ...]
     health: HealthStatus
     reasons: tuple[str, ...]
+    #: What the household should expect of the window in progress: `used`, the
+    #: uncontrolled term for what is left of it and every no-vote demand - D7
+    #: §5.4's `expected`, never a plan's energy. Published beside the ladder's
+    #: projection and never read by it (D-0685).
+    expected_kwh: float | None = None

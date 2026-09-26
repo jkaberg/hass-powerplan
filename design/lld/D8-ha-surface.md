@@ -32,7 +32,7 @@
 
 **Event payload schemas.** §5.6 - every event has `site_id`, `at`, `kind`, `reason`, plus kind-specific fields; payloads are flat, JSON-serialisable, and versioned with `schema: 1`.
 
-**Notification de-duplication and quiet hours.** Each notification has a `key` (`peak:<window_start>`, `comfort:<load>`, `deadline:<load>:<deadline>`, `unhealthy:<load>`, `price_source:<key>`, `level_up:<period>`); the policy keeps `last_sent[key]` and a per-category `min_interval` (peak 1 h, comfort 30 min, deadline once per deadline, unhealthy 6 h, price source 24 h, level 24 h). A cleared condition resets the key. Quiet hours (site setting, default 22:00–07:00) hold non-urgent categories; `comfort_violation` and `device_unhealthy` for a running EV session are never quiet.
+**Notification de-duplication and quiet hours.** Each notification has a `key` (`peak:<window_start>`, `comfort:<load>`, `deadline:<load>:<deadline>`, `unhealthy:<load>`, `price_source:<key>`, `level_up:<period>`); the policy keeps `last_sent[key]` and a per-category `min_interval` (peak 1 h, comfort 30 min, deadline once per deadline, unhealthy 6 h, price source 24 h, level 24 h). `device_unhealthy` also carries a load that is `not_following` (D-0689), under its own key `not_following:<load>` and its own text: "<load> doesn't follow its commands: <n> writes to <role> not applied since <time>". A cleared condition resets the key. Quiet hours (site setting, default 22:00–07:00) hold non-urgent categories; `comfort_violation` and `device_unhealthy` for a running EV session are never quiet.
 
 **Watching bound helpers.** At flow time a bound `schedule.*`/`calendar.*`/`person.*` entity must exist (validation error otherwise). At runtime D7 tracks their state; if one disappears, a repair `bound_helper_missing` is raised and the load falls back to its constant target / no arrivals / `home` presence.
 
@@ -199,13 +199,13 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `select.<site>_risk` | select | config | on | never / today's paid hours / period average (D2 §6; default **0, strict**; an existing site keeps its materialised value, INV-66) |
 | `number.<site>_margin_kwh` | number | config | off | ε |
 | `sensor.<site>_window_used` | sensor kWh | - | on | attrs: `t_rem_min`, `anchor_kind`, `confidence` |
-| `sensor.<site>_window_projected` | sensor kWh | - | on | |
+| `sensor.<site>_window_projected` | sensor kWh | - | on | the ladder's projection, `used + P_smooth × t_rem` (D6 §2); attr `expected_kwh`, D7 §5.4's current-window expected, never read by the ladder (D-0685) |
 | `sensor.<site>_ceiling` | sensor kWh | - | on | attrs: `reason`, `free_ride`, `eligible` |
 | `sensor.<site>_allowance` | sensor W | - | on | `p_allow_w`; attrs `p_free_w`, `p_hard_w`, `reserve_kwh`, `sigma_w` |
 | `sensor.<site>_stage` | sensor (0–4) | - | on | attrs `reason`, `blunt`, `since` |
 | `sensor.<site>_level` | sensor | - | on | step name / kW; attrs `metric_kw`, `fee`, `confidence`, `top_entries` (small) |
 | `sensor.<site>_projected_level` | sensor | - | on | |
-| `sensor.<site>_advice` | sensor text | - | on | state = first advice; attr `items` |
+| `sensor.<site>_advice` | sensor text | - | on | state = first advice; attr `items`; keys D2 §5.11, `target_unreachable` among them (D-0690) |
 | `sensor.<site>_next_peak_warning` | sensor timestamp | - | on | attrs `expected_kwh`, `ceiling_kwh`, `drivers` |
 | `binary_sensor.<site>_peak_warning` | binary | - | on | |
 | `sensor.<site>_price` | sensor `<CUR>/kWh` | - | on | attrs: components now, min/max/avg today, percentile |
@@ -225,7 +225,7 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `button.<site>_refresh_prices` *(D12 §5.16 R3)* | button | config | on | fetch the prices now through the price refresher (D12 §5.15 F12); the price card's "Hent på nytt" |
 | `button.<site>_replan`, `_rebuild_baseline`, `_rebuild_peak_history` | button | config | on/off/off | `_rebuild_peak_history` re-seeds the open period from the import register's recorder rows, replacing the windows it has; `set_peak` overrides survive (D2 §5.12). Only where an import register is bound |
 | `event.<site>` | event | - | on | HA event entity mirroring the bus events (for the UI's logbook) |
-| `sensor.<site>_cost` | sensor `<CUR>`, `device_class: monetary`, `state_class: total`, `last_reset` = month start | - | on | month-to-date: energy cost − export credit + capacity fee (D11); attrs `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install`, `confidence`, `estimated_share` |
+| `sensor.<site>_cost` | sensor `<CUR>`, `device_class: monetary`, `state_class: total`, `last_reset` = month start | - | on | month-to-date: energy cost − export credit + capacity fee (D11); attrs `energy_cost`, `export_credit`, `capacity_fee`, `previous_month`, `since_install`, `confidence`, `estimated_share`, `partial` and `energy_since` - a month the ledger opened after its 1st carries the whole month's capacity fee (D11 §2) beside the energy since `energy_since`, and says so (D-0692) |
 | `sensor.<site>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date vs. no powerplan (D11); may be **negative**; attrs `energy_savings`, `capacity_savings`, `counterfactual_cost`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`; *(D11 §5.10)* `capacity_step`, `capacity_step_without`, `metric_kw`, `metric_kw_without` (both bills through the last settled day), `price_paid`, `price_reference` (`<CUR>/kWh`), `kwh_counted` |
 | `sensor.<site>_deviations` *(D7 §5.10)* | sensor, `state_class: total`, `last_reset` = the month's start | - | on | the month's deviations: missed deadlines + comfort episodes + windows over the limit; attrs `comfort_min` and `comfort_episodes` (by load id), `deadlines_met`, `deadlines_missed` (by load id), `over_windows`, `windows`, `month`; icon `mdi:clipboard-alert-outline` |
 | v1.x: `sensor.<site>_energy_price` (Energy dashboard compatible) | | | | |
@@ -251,14 +251,14 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 | `sensor.<load>_plan_next` | sensor timestamp | - | on | attrs `planned_kwh`, `cost`, `mode`, `covered`; `slots` on `sensor.<load>_plan` (diagnostic, recorder-excluded) |
 | `binary_sensor.<load>_shed` | binary | - | on | attr `reason` |
 | `sensor.<load>_comfort_state` | sensor text | - | on | current/target/floor/deficit attrs |
-| `sensor.<load>_health` | sensor | diagnostic | on | ok / transient / unhealthy; attrs failures, deviations, stale roles |
+| `sensor.<load>_health` | sensor | diagnostic | on | ok / transient / not_following / unhealthy; attrs failures, deviations (the current run of read-back deviations), last_deviation_at, role, stale roles. `not_following` isn't a failure: the load stays in allocation (INV-22, D-0689) |
 | `sensor.<load>_starved_s` | sensor | diagnostic | off | grouped loads. **In code (D-0294):** `LoadStarvedSensor`, `DURATION`/seconds; state is `LoadStatus.starved_s`, the allocator's own rotation clock (`AllocState.starved_since`) turned into elapsed seconds, 0 while the load has its turn; built only for a load some `runtime.build.groups` entry names (`load_group_sensors`) |
 | `sensor.<load>_next_legionella` | sensor timestamp | - | on | water_heater |
 | `sensor.<load>_session` | sensor | - | on | ev: status, `session_done`, `force_reason`, `blocked_by` |
 | `sensor.<load>_learned_<key>` | sensor | diagnostic | off | D10 fits with quality attrs |
 | `sensor.<load>_energy` | sensor kWh, `device_class: energy`, `state_class: total_increasing` | - | on | lifetime since the load was added (D3 `LoadMeter.lifetime_kwh`); usable as an Energy-dashboard *individual device*; attrs `source` (register / power / estimated) |
 | `sensor.<load>_cost` | sensor `<CUR>`, monetary, total, `last_reset` = month start | - | on | month-to-date energy cost (D11); attrs `kwh`, `avg_price`, `previous_month`, `since_install`, `confidence` |
-| `sensor.<load>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date energy-shift savings vs. this load's counterfactual (D11); may be **negative**; attrs `counterfactual_cost`, `counterfactual_kwh`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`, `calibration_error`, `shadow` (kind); absent for kind `none` *(D-0583)* `unknown` with `reason: no_reference` when the load has no counterfactual (`cf_cost` ≤ 0 under a positive cost), never −cost *(D11 §5.9, D-0591)* the figure is the **settled** reference savings - `cf_cost − settled_cost`, so an open day or session reads its settled part and `pending: true`, never −cost; the guard runs on `settled_cost`; `savings_confidence` is the headline's (`ok`/`none`); `calibration_error` and `model_confidence` describe the shadow, and `model_savings` is present only when `model_confidence` is `ok` *(D11 §5.10)* `price_paid`, `price_reference` over the load's settled energy |
+| `sensor.<load>_savings` | sensor `<CUR>`, monetary, total, `last_reset` | - | on | month-to-date energy-shift savings vs. this load's counterfactual (D11); may be **negative**; attrs `counterfactual_cost`, `settled_cost` (the cost of the slots `counterfactual_cost` covers - the pair to compare, since the state's own cost includes slots not settled yet, D-0692), `counterfactual_kwh`, `kwh_shifted`, `previous_month`, `since_install`, `savings_confidence`, `calibration_error`, `shadow` (kind); absent for kind `none` *(D-0583)* `unknown` with `reason: no_reference` when the load has no counterfactual (`cf_cost` ≤ 0 under a positive cost), never −cost *(D11 §5.9, D-0591)* the figure is the **settled** reference savings - `cf_cost − settled_cost`, so an open day or session reads its settled part and `pending: true`, never −cost; the guard runs on `settled_cost`; `savings_confidence` is the headline's (`ok`/`none`); `calibration_error` and `model_confidence` describe the shadow, and `model_savings` is present only when `model_confidence` is `ok` *(D11 §5.10)* `price_paid`, `price_reference` over the load's settled energy |
 
 A load's device page therefore shows by default: mode, force/run-now, comfort or deadline/SoC, granted, measured, plan next, shed, comfort state, health, energy, cost, savings - twelve or fewer. Everything else is opt-in (HLD §7.9 rule 6).
 
@@ -876,7 +876,7 @@ The gear flow's reconfigure review reads level 1–2 values back **without offer
 
 ---
 
-`plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499); attributes `today`, `kwh` and `today_kwh`. `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
+`plan_status` → `display_status`: its state once it has held 90 s, the device, a hand and the household's own modes at once (D-0497). `sensor.<site>_fixed_price_savings`: this month's saving from a configured fixed price, monetary `total` with the local month's start as `last_reset`, only with a `FixedPrice` modifier (D-0499); attributes `today`, `kwh` and `today_kwh`. Its hours come from D3's one register reader (D3 §5.11, D-0687). Its translation key is `site_fixed_price_savings`, set after `PowerplanEntity.__init__` as `SiteDeviationsSensor` does; the key the base class sets matched no translation, and HA named the entity by its device class, "Monetary balance" - `sensor.<site>_monetary_balance` on the reference house. An entity id still carrying that fallback is renamed once by a registry migration (D-0692). `sensor.<site>_price_forecast` → `area`, `vat`, and `slots[].energy`, `slots[].reference` (D-0495).
 
 ### 5.17 The price by party on screen *(D13 §6, §6.1, §7)*
 
@@ -961,6 +961,10 @@ Where they live: 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11, 12 and 
 41. `powerplan.reset_accounting` needs `site`, is refused for a non-admin, and afterwards `sensor.<site>_cost` and `_savings` read 0 with `last_reset` at the reset; `services.yaml`, `strings.json`, `icons.json` and `docs/actions.md` carry it.
 42. `battery_control_off`: a SolarEdge battery whose storage levers stay unavailable for 15 min raises the repair naming *Power Control Options*, and a Fronius write refused with `ServiceValidationError` raises it naming *Inverter control via Modbus*. It clears on the first landed write, and the load's status says the battery is not steered.
 43. Not on a device: the device list's last entry opens entity pickers for the chosen type's roles. The mkaiser Sungrow entities picked there match `sungrow_modbus` and build a battery on the fallback device (§5.16). A picked set no row matches is refused with `no_profile`, naming the roles it lacked.
+44. `sensor.<site>_window_projected` equals `used + P_smooth × t_rem` with a confident baseline and planned loads, and its `expected_kwh` equals D7 §5.4's current-window expected (D-0685).
+45. `sensor.<load>_health` reads `not_following` after three read-back deviations on one role, carries `deviations`, `last_deviation_at` and the role, and a `device_unhealthy` notification with key `not_following:<load>`; one match returns it to `ok` and clears the notification (D-0689).
+46. Every entity's *effective* `translation_key` - read off the instance after `__init__`, not the class - has a name in `strings.json` and every translation; an entity id carrying a device-class fallback is renamed once (D-0692).
+47. `sensor.<site>_cost` for a month whose ledger opened on the 25th: `partial: true`, `energy_since` the 25th, the whole month's capacity fee (D-0692).
 
 ---
 

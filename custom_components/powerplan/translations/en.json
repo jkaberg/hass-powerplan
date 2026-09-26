@@ -789,7 +789,8 @@
           "free_ride_today": "Today's peak is already paid for",
           "rolling_drag": "An old month is leaving the average",
           "coarse_history": "Some history is estimated",
-          "contracted_close": "Close to your contracted power"
+          "contracted_close": "Close to your contracted power",
+          "target_unreachable": "Your step is out of reach this month"
         }
       },
       "allowance": {
@@ -806,6 +807,7 @@
         "state": {
           "ok": "OK",
           "transient": "Transient",
+          "not_following": "Not following",
           "unhealthy": "Unhealthy"
         }
       },

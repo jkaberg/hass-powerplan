@@ -20,6 +20,7 @@ a requirement the new one covers, or the inputs behind it changed.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING, Final
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "COMMIT_MIN",
+    "COVERAGE",
     "MIN_REPLAN_INTERVAL_S",
     "REQUIREMENT_TOLERANCE",
     "ReplanTrigger",
@@ -49,6 +51,9 @@ REQUIREMENT_TOLERANCE: Final = 0.10
 
 #: Replans are rate-limited to one per load per minute (D5 §8, "replan storm").
 MIN_REPLAN_INTERVAL_S: Final = 60.0
+
+#: How far ahead a kept plan must still reach, or it is replaced (INV-32, D-0688).
+COVERAGE: Final = timedelta(hours=1)
 
 #: What a committed slot costs to move, as a multiple of the threshold (§5.9).
 COMMITMENT_FACTOR: Final = Decimal(2)
@@ -96,7 +101,7 @@ def inputs_changed(old: Plan, new: Plan) -> bool:
     return abs(after - before) > REQUIREMENT_TOLERANCE * max(abs(before), 1e-9)
 
 
-def should_adopt(
+def should_adopt(  # noqa: PLR0911 - one return per §5.9 rule
     old: Plan | None,
     new: Plan,
     policy: HysteresisPolicy,
@@ -125,6 +130,17 @@ def should_adopt(
         # resting setpoint until the deadline on a plan whose slots had all
         # passed, because the residual never moved 10 % and a flat night is never
         # cheaper (`design/DECISIONS.md` D-0253).
+        return True
+    if (
+        old.slots
+        and new.slots
+        and old.slots[-1].end < now + COVERAGE
+        and new.slots[-1].end > max(old.slots[-1].end, now)
+    ):
+        # A plan that doesn't cover the next hour answers nothing about it: a
+        # `best_save` plan never has an active slot for D-0253 to see, and on a
+        # flat curve it costs what its successor costs. A successor that reaches
+        # no further - the curve's own end - changes nothing (INV-32, D-0688).
         return True
     if inputs_changed:
         return True

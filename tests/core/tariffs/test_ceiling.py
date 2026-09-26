@@ -72,17 +72,20 @@ def test_19b_an_estimated_peak_buys_no_free_ride() -> None:
 
 
 @pytest.mark.inv("INV-12")
-def test_19c_lowering_the_target_mid_day_leaves_todays_entry_standing() -> None:
-    """The cap is `max(T + margin, today_max)`: today's 15 kW stands until midnight."""
+def test_19c_lowering_the_target_below_the_reached_step_holds_the_reached_step() -> None:
+    """Today's 15 kW puts the month at 10 kW: a 2–5 kW target is out of reach (D-0690).
+
+    Today and tomorrow alike the ceiling defends the 10–15 kW step the month has
+    reached, and says why; the household's 2–5 kW applies from the next month.
+    """
     ev = with_todays_peak()
     lowered = ev.ceiling_kwh(local("2026-09-15T20:00:00"), STEP_2_5, 0.5, 0.3)
     assert lowered.kwh == pytest.approx(14.7)
-    assert lowered.free_ride is True
+    assert lowered.reason == "unreachable_target"
 
     tomorrow = ev.ceiling_kwh(local("2026-09-16T20:00:00"), STEP_2_5, 0.5, 0.3)
-    assert tomorrow.kwh == pytest.approx(4.7)
-    assert tomorrow.free_ride is False
-    assert tomorrow.reason == "flat target"
+    assert tomorrow.kwh == pytest.approx(14.7)
+    assert tomorrow.reason == "unreachable_target"
 
 
 @pytest.mark.inv("INV-9")
@@ -124,9 +127,11 @@ def test_17_a_changed_target_takes_effect_on_the_next_read() -> None:
 
     assert ev.ceiling_kwh(now, STEP_10_15, 0.0, 0.3).kwh == pytest.approx(14.7)
     assert ev.ceiling_kwh(now, STEP_5_10, 0.0, 0.3).kwh == pytest.approx(9.7)
-    assert ev.ceiling_kwh(now, STEP_2_5, 0.0, 0.3).kwh == pytest.approx(4.7)
-    assert ev.target_w_at(now, STEP_2_5) == pytest.approx(5000.0)
-    assert ev.ceiling_kwh(now, Target("kw", kw=6.25), 0.0, 0.3).kwh == pytest.approx(5.95)
+    assert ev.ceiling_kwh(now, Target("kw", kw=7.5), 0.0, 0.3).kwh == pytest.approx(7.2)
+    # Below the month's 7 kW the reached step is defended instead (INV-10, D-0690).
+    assert ev.ceiling_kwh(now, STEP_2_5, 0.0, 0.3).kwh == pytest.approx(9.7)
+    assert ev.target_w_at(now, STEP_2_5) == pytest.approx(10_000.0)
+    assert ev.ceiling_kwh(now, Target("kw", kw=6.25), 0.0, 0.3).kwh == pytest.approx(9.7)
 
 
 @pytest.mark.inv("INV-12")

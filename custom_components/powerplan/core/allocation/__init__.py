@@ -4,7 +4,7 @@ Both axes meet here. The price axis arrives as a `Plan` per load, the capacity a
 as a `Ceiling` and the hard limits, and this package answers one question per tick:
 **what may each load draw right now, and why**.
 
-    budget(ceiling, meter, hard_limit_w, pi, cfg, baseline, controlled_planned_kwh) → Budget
+    budget(ceiling, meter, hard_limit_w, pi, cfg, baseline) → Budget
     allocate(ctx, constraints, cfg, state)                  → (Grants, AllocReport, AllocState)
     Ladder().update(budget, …)                              → LadderState
     proportional_trim(loads, grants, deficit_w, …)          → (Grants, freed_w)

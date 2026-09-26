@@ -789,7 +789,8 @@
           "free_ride_today": "Dagens topp er allerede betalt",
           "rolling_drag": "En gammel måned faller ut av snittet",
           "coarse_history": "Noe av historikken er anslått",
-          "contracted_close": "Nær den avtalte effekten"
+          "contracted_close": "Nær den avtalte effekten",
+          "target_unreachable": "Trinnet ditt er utenfor rekkevidde denne måneden"
         }
       },
       "allowance": {
@@ -806,6 +807,7 @@
         "state": {
           "ok": "OK",
           "transient": "Forbigående",
+          "not_following": "Følger ikke",
           "unhealthy": "Usunn"
         }
       },

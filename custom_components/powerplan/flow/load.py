@@ -220,6 +220,15 @@ def binding_to_data(binding: RoleBinding) -> dict[str, Any]:
     }
 
 
+def answered_entities(type_key: str, params: Mapping[str, Any]) -> dict[Role, str]:
+    """Return the off-device roles a type's answers name, bound or not (D-0485, D-0693)."""
+    return {
+        role: str(params[key])
+        for key, role in _EXTRA_ROLE_ANSWERS.get(type_key, ())
+        if params.get(key)
+    }
+
+
 def extra_bindings(
     hass: HomeAssistant, type_key: str, params: Mapping[str, Any], *, profile: str
 ) -> tuple[RoleBinding, ...]:

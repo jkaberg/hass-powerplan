@@ -60,7 +60,7 @@ def measured_w(view: ControlledView | None) -> float | None:
     return view.measured_w
 
 
-def reserved_w(
+def reserved_w(  # noqa: PLR0911 - one answer per D6 §5.2 row
     load: LoadView,
     grant_w: float,
     view: ControlledView | None = None,
@@ -77,6 +77,14 @@ def reserved_w(
         idle = load.allowed == () and measured is not None and measured <= on_w
         return 0.0 if idle else load.nameplate_w
 
+    if load.relay_thermostat:
+        # A relay draws its nameplate or nothing. Idle, it holds back what its plan
+        # says it will draw in this slot - a banked floor's standing loss - never a
+        # margin: five idle floors at 500 W each were 74 % of a 4.7 kWh hour. One
+        # that closes on its own is on the next tick at its nameplate (D-0169, D-0686).
+        if grant_w > 0.0 or measured is None or measured > on_w:
+            return load.nameplate_w
+        return max(0.0, load.planned_draw_w)
     if load.thermostatic:
         if measured is None:
             return load.nameplate_w

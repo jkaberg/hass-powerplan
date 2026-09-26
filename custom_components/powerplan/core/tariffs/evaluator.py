@@ -117,6 +117,7 @@ ADVICE_KEYS: tuple[str, ...] = (
     "rolling_drag",
     "coarse_history",
     "contracted_close",
+    "target_unreachable",
 )
 
 
@@ -1084,6 +1085,26 @@ class Evaluator:
             previous_kw=previous,
         )
 
+    def _unreachable(self, target: Target, tariff: PeakTariff, info: _Metric) -> bool:
+        """Whether a chosen target is below what the open period has reached for good (D-0690).
+
+        Only a period whose metric can't fall: a month's `mean_top_n` or `max` once
+        it has its `n` days. A rolling period can fall as an old month leaves, and a
+        partial month's mean falls with every quieter day it gains.
+        """
+        if target.kind == "auto" or info.partial or tariff.period != "month":
+            return False
+        if tariff.per_period not in ("mean_top_n", "max"):
+            return False
+        return info.kw > self._target_kw(target, tariff, info)
+
+    def _effective_target_kw(self, target: Target, tariff: PeakTariff, info: _Metric) -> float:
+        """Return the target to defend: the reached step while the chosen one is passed (INV-10)."""
+        chosen = self._target_kw(target, tariff, info)
+        if self._unreachable(target, tariff, info):
+            return max(chosen, self._target_kw(AUTO, tariff, info))
+        return chosen
+
     def _previous_metrics(self, tariff: PeakTariff, count: int) -> list[float]:
         """Return the metrics of the last `count` closed periods, oldest first.
 
@@ -1174,7 +1195,8 @@ class Evaluator:
             return Ceiling(math.inf, "not eligible", None, False, False, 0.0)
 
         info = self._evaluate(tariff, self._period_key())
-        target_kw = self._target_kw(target, tariff, info)
+        target_kw = self._effective_target_kw(target, tariff, info)
+        unreachable = self._unreachable(target, tariff, info)
         if math.isinf(target_kw):
             return Ceiling(math.inf, "top step", None, False, True, weight)
 
@@ -1197,6 +1219,10 @@ class Evaluator:
         if risk >= RISK_FULL and isinstance(tariff.pricing, StepTable):
             cap_kw = max(cap_kw, tariff.pricing.upper_kw(tariff.pricing.index_for(target_kw)))
         kwh = min(kwh, to_kwh(cap_kw))
+        if unreachable:
+            # The chosen step is passed for good this period: the reached one is
+            # defended until it closes, and the reason says so (INV-10, D-0690).
+            reason = "unreachable_target"
         return Ceiling(kwh, reason, to_kwh(slack_kw), kwh > base, True, weight)
 
     def target_w_at(self, t: datetime, target: Target) -> float:
@@ -1208,7 +1234,14 @@ class Evaluator:
         if weight <= 0.0:
             return math.inf
         info = self._evaluate(tariff, self._period_key())
-        target_kw = self._target_kw(target, tariff, info)
+        start, end = self.period_bounds(self.history.period_start)
+        # A window in the open period defends what that period can still reach;
+        # a later one the household's own choice (INV-10, D-0690).
+        target_kw = (
+            self._effective_target_kw(target, tariff, info)
+            if start <= t < end
+            else self._target_kw(target, tariff, info)
+        )
         return target_kw * 1000.0 / weight
 
     # ------------------------------------------------------- marginal cost
@@ -1297,7 +1330,19 @@ class Evaluator:
             )
         ]
         pricing = tariff.pricing
-        target_kw = self._target_kw(self.target, tariff, info)
+        if self._unreachable(self.target, tariff, info):
+            _, period_end = self.period_bounds(self.history.period_start)
+            out.append(
+                Advice(
+                    key="target_unreachable",
+                    severity="info",
+                    params={
+                        "metric_kw": info.kw,
+                        "until": period_end.astimezone(self.tz).date().isoformat(),
+                    },
+                )
+            )
+        target_kw = self._effective_target_kw(self.target, tariff, info)
         if isinstance(pricing, StepTable):
             index = pricing.index_for(info.kw)
             if index + 1 < len(pricing.steps):

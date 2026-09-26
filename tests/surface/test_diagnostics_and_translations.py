@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock, patch
 
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.powerplan import repairs
@@ -18,8 +21,15 @@ from custom_components.powerplan.diagnostics import (
     async_get_config_entry_diagnostics,
     async_get_device_diagnostics,
 )
-from custom_components.powerplan.entity import window_translation_key
-from custom_components.powerplan.sensor import SENSORS
+from custom_components.powerplan.entity import unique_id, window_translation_key
+from custom_components.powerplan.sensor import (
+    SENSORS,
+    SiteCostSensor,
+    SiteDeviationsSensor,
+    SiteFixedPriceSavingsSensor,
+    SiteSavingsSensor,
+    _rename_monetary_balance,
+)
 from custom_components.powerplan.services import SERVICES
 from tests.runtime.conftest import site_data
 
@@ -120,3 +130,56 @@ def test_12_every_translation_key_the_code_uses_exists_in_both_languages() -> No
                 or key in strings["issues"]
                 or any(key in table for table in entity.values())
             ), (language, key)
+
+
+def test_46_every_dedicated_site_sensor_s_effective_key_is_translated() -> None:
+    """D8 §9 46, D-0692: the key read off the *instance*, after `__init__`, not the class.
+
+    `PowerplanEntity.__init__` sets the bare key; the fixed-price saving's class
+    attribute was shadowed by it, matched no translation, and HA named the entity by
+    its device class - `sensor.<site>_monetary_balance` on the reference house.
+    """
+    runtime = SimpleNamespace(
+        coordinator=MagicMock(),
+        entry=SimpleNamespace(entry_id="entry", title="Site"),
+        build=SimpleNamespace(cfg=SimpleNamespace(currency="NOK")),
+    )
+    with patch("custom_components.powerplan.entity.site_device_info", return_value={}):
+        sensors = [
+            cls(runtime)  # type: ignore[arg-type]
+            for cls in (
+                SiteCostSensor,
+                SiteSavingsSensor,
+                SiteDeviationsSensor,
+                SiteFixedPriceSavingsSensor,
+            )
+        ]
+    for language in ("en", "nb"):
+        entity = _strings(language)["entity"]["sensor"]
+        for sensor in sensors:
+            assert sensor.translation_key in entity, (language, type(sensor).__name__)
+    assert sensors[-1].translation_key == "site_fixed_price_savings"
+
+
+async def test_46_a_fallback_entity_id_is_renamed_once_and_a_chosen_one_is_kept(
+    hass: HomeAssistant,
+) -> None:
+    """`…_monetary_balance` becomes `…_fixed_price_savings`; any other id stays (D-0692)."""
+    entry = MockConfigEntry(domain=DOMAIN, entry_id="entry")
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    row = registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        unique_id("entry", "fixed_price_savings"),
+        suggested_object_id="home_monetary_balance",
+        config_entry=entry,
+    )
+    assert row.entity_id == "sensor.home_monetary_balance"
+
+    _rename_monetary_balance(hass, entry)  # type: ignore[arg-type]
+    assert registry.async_get("sensor.home_fixed_price_savings") is not None
+
+    registry.async_update_entity("sensor.home_fixed_price_savings", new_entity_id="sensor.mine")
+    _rename_monetary_balance(hass, entry)  # type: ignore[arg-type]
+    assert registry.async_get("sensor.mine") is not None

@@ -24,7 +24,7 @@ inflates σ, which inflates the reserve, which triggers more shedding.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ..tariffs import eps_for_window
 
@@ -186,8 +186,9 @@ class Budget:
     #: The allowance less the uncontrolled baseline: free power before any load
     #: asks. `AllocReport.p_free_w` is the residual after the walk (D6 §4).
     p_free_w: float
+    #: `used + P_smooth × t_rem`: the measured total's, whatever the baseline
+    #: says, and never a plan's energy (INV-38, INV-62, D-0685).
     projected_kwh: float
-    projection_source: Literal["smooth", "baseline"]
     eligible: bool
     free_ride: bool
     #: Signed: the ladder has to be able to see that the window is already over.
@@ -302,7 +303,6 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
     pi: PiState,
     cfg: BudgetCfg,
     baseline: Baseline | None,
-    controlled_planned_kwh: float = 0.0,
 ) -> Budget:
     """Return the whole chain's answer for this tick (D6 §3, §5.1, §2).
 
@@ -310,26 +310,19 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
     measure it - has no ceiling at all: only the hard limits bind (item 1 of the
     precedence).
 
-    `baseline`, when its confidence clears `BASELINE_CONFIDENCE`, sharpens the
-    projection to `used + controlled_planned_kwh + ∫baseline` instead of the
-    smoothed-power extrapolation, and may replace the reserve's σ with D10's own
-    residual - `controlled_planned_kwh` is the caller's own Σ over the loads'
-    plans for `[now, now + t_rem)` (`Plan.kwh_between`, D-0319). Below the
-    gate, or with no baseline at all, both stay exactly as they were (D6 §2).
+    `baseline`, when its confidence clears `BASELINE_CONFIDENCE`, may replace the
+    reserve's σ with D10's own residual, floored (INV-62). It never touches the
+    projection: that is `used + P_smooth × t_rem`, the house's, which the ladder
+    reads (INV-38). A plan can't cause a breach - every plan-driven grant is
+    capped at the budget - and a forecast is never an authority (D-0685).
     """
     eps_kwh = eps_for_window(cfg.eps_base_kwh, meter.window_min)
 
     sigma_w = meter.sigma_uncontrolled_w
-    projected_kwh: float | None = None
-    projection_source: Literal["smooth", "baseline"] = "smooth"
     if baseline is not None and baseline.confidence >= BASELINE_CONFIDENCE:
         resid = baseline.residual_sigma_w(meter.now)
         if resid is not None:
             sigma_w = resid
-        projected_kwh = (
-            meter.used_kwh + controlled_planned_kwh + baseline.energy_kwh(meter.now, meter.t_rem_h)
-        )
-        projection_source = "baseline"
 
     reserve = reserve_kwh(
         meter.t_rem_h, sigma_w, pi.r_trim_kwh, cfg, degraded=meter.health.degraded
@@ -342,9 +335,8 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
         p_allow = hard_limit_w
         e_budget = ceiling.kwh - meter.used_kwh - reserve
 
-    if projected_kwh is None:
-        smooth_w = meter.grid_smooth_w if meter.grid_smooth_w is not None else (meter.grid_w or 0.0)
-        projected_kwh = projection_kwh(meter.used_kwh, smooth_w, meter.t_rem_h)
+    smooth_w = meter.grid_smooth_w if meter.grid_smooth_w is not None else (meter.grid_w or 0.0)
+    projected_kwh = projection_kwh(meter.used_kwh, smooth_w, meter.t_rem_h)
     reported_sigma_w = cfg.sigma_floor_w if sigma_w is None else max(sigma_w, cfg.sigma_floor_w)
     return Budget(
         ceiling_kwh=ceiling.kwh,
@@ -358,7 +350,6 @@ def budget(  # noqa: PLR0917 - D6 §3's signature, positional as the LLD writes 
         p_hard_w=hard_limit_w,
         p_free_w=max(0.0, p_allow - (meter.uncontrolled_w or 0.0)),
         projected_kwh=projected_kwh,
-        projection_source=projection_source,
         eligible=ceiling.eligible,
         free_ride=ceiling.free_ride,
         e_budget_kwh=e_budget,

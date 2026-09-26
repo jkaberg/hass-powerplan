@@ -198,8 +198,30 @@ def test_11_a_plan_with_nothing_left_to_give_gives_way() -> None:
 
     assert should_adopt(spent, ahead, POLICY, curve=curve, tz=OSLO, now=NOW)
     assert not should_adopt(spent, also_spent, POLICY, curve=curve, tz=OSLO, now=NOW)
+    # A plan with work ahead that covers the next hour keeps its hysteresis.
+    covering = plan("10.00", slots=(slot(5), slot(70)))
     assert not should_adopt(
-        ahead, plan("10.00", slots=(slot(20),)), POLICY, curve=curve, tz=OSLO, now=NOW
+        covering, plan("10.00", slots=(slot(20), slot(70))), POLICY, curve=curve, tz=OSLO, now=NOW
+    )
+
+
+@pytest.mark.inv("INV-32")
+def test_30_a_kept_plan_that_does_not_cover_the_next_hour_is_replaced() -> None:
+    """D5 §9 30, D-0688: a plan that stops short of the next hour answers nothing about it.
+
+    The reference house's `best_save` floors: every slot free or waiting, never an
+    active one for D-0253 to see, both plans costing 0 on a flat day - and the kept
+    plan's last slot 30 minutes out. The new one reaches further; it wins whatever
+    `h` says. One that reaches no further - the curve's own end - changes nothing.
+    """
+    curve = flat_curve()
+    free = replace(slot(0, minutes=30), envelope_w=None, kwh=0.0)
+    short = plan("0.00", slots=(free,))
+    longer = plan("0.00", slots=(free, replace(slot(30, minutes=120), envelope_w=None, kwh=0.0)))
+
+    assert should_adopt(short, longer, POLICY, curve=curve, tz=OSLO, now=NOW)
+    assert not should_adopt(
+        short, plan("0.00", slots=(free,)), POLICY, curve=curve, tz=OSLO, now=NOW
     )
 
 
@@ -231,3 +253,11 @@ def test_11_a_plan_priced_on_yesterdays_curve_is_compared_on_todays() -> None:
         "on its own prices the stale plan looks cheaper"
     )
     assert should_adopt(old, new, POLICY, curve=curve, tz=OSLO, now=NOW)
+
+
+@pytest.mark.inv("INV-30")
+def test_30_an_instant_outside_every_slot_is_free() -> None:
+    """D5 §9 30, D-0688: past a plan's last slot it has nothing to say - `None`, never a hold."""
+    held = plan("1.00", slots=(replace(slot(0), envelope_w=0.0, kwh=0.0),))
+    assert held.cap_w(NOW + timedelta(minutes=5)) == 0.0
+    assert held.cap_w(NOW + timedelta(minutes=15, seconds=1)) is None

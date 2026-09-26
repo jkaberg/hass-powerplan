@@ -362,13 +362,13 @@ def test_an_ineligible_or_zero_window_leaves_the_day_without_an_entry() -> None:
     assert "2026-09-05T01:00:00+00:00" in ev.history.windows
 
 
-def test_a_target_the_month_has_already_passed_leaves_only_the_free_ride() -> None:
-    """Below the metric there is nothing left to defend but the free ride (D2 §5.4).
+def test_a_target_the_month_has_already_passed_defends_the_reached_step() -> None:
+    """A target the month has passed isn't defended; the reached step is (INV-10, D-0690).
 
     The month stands at 11.17 kW, so no value for today can bring it back under a
-    5 kW target: the target's own slack is 0 and what remains is the 10.5 kW that
-    cannot move the metric either way. Risk 0 ignores it and holds the target;
-    risk 1.0 takes it, bounded by one step above the target (D2 §5.4).
+    5 kW target, and inside the 10–15 kW step the fee can't change either. Holding
+    4.7 kWh would buy nothing: the ceiling defends the reached step's bound and
+    says why. Risk 1.0 still gambles one step above what it defends (D2 §5.4).
     """
     ev = evaluator(no_tariff())
     record_days(ev, {"2026-09-04": 12.0, "2026-09-09": 11.0, "2026-09-15": 10.5})
@@ -379,12 +379,13 @@ def test_a_target_the_month_has_already_passed_leaves_only_the_free_ride() -> No
     assert ev.slack_kw(now, 5.0) == pytest.approx(10.5, abs=1e-9)
 
     careful = ev.ceiling_kwh(now, target, 0.0, 0.3)
-    assert careful.kwh == pytest.approx(4.7)
+    assert careful.kwh == pytest.approx(14.7)
+    assert careful.reason == "unreachable_target"
     assert careful.free_ride is False
 
     gambling = ev.ceiling_kwh(now, target, 1.0, 0.3)
-    assert gambling.kwh == pytest.approx(10.0)
-    assert gambling.free_ride is True
+    assert gambling.kwh == pytest.approx(20.0)
+    assert gambling.reason == "unreachable_target"
 
 
 def test_tiers_integrate_marginally_by_band() -> None:

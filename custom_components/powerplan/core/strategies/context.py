@@ -425,6 +425,14 @@ class LoadView:
     #: **measures** plus room to modulate up, not its rated power (D6 §5.2): an
     #: inverter at 23 W does not reserve 3 kW. Materialised by the device type.
     thermostatic: bool = False
+    #: A relay behind a thermostat - a floor's mode select, a tank's setpoint:
+    #: it draws its nameplate or nothing, and whether it closes is the device's
+    #: call. Idle, it reserves its plan's draw for the slot, not a margin (D6
+    #: §5.2, D-0686). A heat pump modulates and is `thermostatic` alone.
+    relay_thermostat: bool = False
+    #: This slot's planned draw, `PlanSlot.planned_draw_w`, stamped by the tick
+    #: for the allocator; 0 with no plan or outside it.
+    planned_draw_w: float = 0.0
     #: Whether anything below a blunt stage 4 may take this load (D6 §5.5): a
     #: heat pump is `False`, everything else `True`.
     sheddable: bool = True
@@ -547,6 +555,13 @@ def _static_fields(load: Load) -> tuple[dict[str, Any], dict[str, Any]]:
         "target": load.config.target,
         "thermostatic": bool(
             materialised.get("thermostatic", materialised.get("kind") in ("setpoint", "mode"))
+        ),
+        "relay_thermostat": bool(
+            materialised.get(
+                "relay_thermostat",
+                materialised.get("kind") in ("setpoint", "mode")
+                and load.config.type_key != "heat_pump",
+            )
         ),
         "sheddable": bool(materialised.get("sheddable", True)),
         "min_on_s": load.kind.dwell_s()[0],

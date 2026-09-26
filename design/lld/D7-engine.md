@@ -163,7 +163,7 @@ engine.tick(state, inputs):                               # the order that matte
       and a frozen tick still samples them (the ledger wants what was drawn)
   3 closed windows → tariff.record_window; period rollover       (D2)  the counterfactual window is recorded by D11 inside plan(), never here (INV-68)
   4 ceiling = tariff.ceiling_kwh(...)                     (D2)
-  5 budget = budget(ceiling, meter, hard limits, pi, baseline, controlled_planned_kwh)   (D6)
+  5 budget = budget(ceiling, meter, hard limits, pi, baseline)   (D6; projection = the measured total's, D-0685)
   6 ladder.update(projection, P_total, hard limits, …)    (D6)  this tick's stage from the smoothed projection (INV-38); frozen → unchanged, no escalation
   7 demands, comfort = [load.observe(reads)]              (D4)  per-load try/except (INV-45)
   8 grants, report, alloc_state = allocate(…, stage, blunt)   (D6)  stage actions and the trim run inside; frozen → previous grants
@@ -218,7 +218,7 @@ Three things the cycle owes, each in its `[no lock]` half: **the daily fits**, a
 
 `ForecastHook`/`ForecastsAdapter` sits next to `AccountingHook`/`AccountingAdapter`, called from the same `_close_slots` loop off the same `SlotClose`, which is the "baseline per closed window" above. Weather and the baseline's recorder seed are the pseudocode's `[no lock]` executor jobs: `_fetch_weather_if_due` runs there (hourly, and on the bound entity's own change, the `forecast update` trigger), and `async_seed` runs once at startup as its own background task, never blocking the first tick or plan - no baseline yet means a reserve on σ alone, not a block (D10 §8). `Inputs.forecast_confidence`/`.forecast_ready`, computed by the runtime from the same `HourOfWeekBaseline` the hook updates, are what `_forecast_status` republishes into the snapshot (§4.1, D-0313…D-0318).
 
-**The baseline reaches D6 and the peak warning.** `Inputs.forecast_baseline: Baseline | None` is a third field next to `forecast_confidence`/`.forecast_ready`, built by `runtime.py` around the same `Forecasts` object each tick (`_forecast_baseline`, a sibling of `_forecasts_view`). `inputs.forecasts` stays D5's narrow protocol and can't answer D6's questions. Step 5 above sums `Plan.kwh_between(now, now + t_rem_h)` over `state.plans.plans` before calling `budget()`, and §5.4's `_expected_uncontrolled_kwh` reads the same field for the peak warning's uncontrolled term. Neither the engine nor `runtime.py` decides the confidence gate - `budget()` and `_expected_uncontrolled_kwh` each check `baseline.confidence >= BASELINE_CONFIDENCE` (D6 §2), the engine only threads the one object through (D-0319, D-0320).
+**The baseline reaches D6 and the peak warning.** `Inputs.forecast_baseline: Baseline | None` is a third field next to `forecast_confidence`/`.forecast_ready`, built by `runtime.py` around the same `Forecasts` object each tick (`_forecast_baseline`, a sibling of `_forecasts_view`). `inputs.forecasts` stays D5's narrow protocol and can't answer D6's questions. `budget()` reads its residual σ for the reserve, and §5.4's `_expected_uncontrolled_kwh` reads its energy for the peak warning's uncontrolled term. Step 5 sums no plans: the projection is the measured total's (D6 §2, D-0685). Neither the engine nor `runtime.py` decides the confidence gate - `budget()` and `_expected_uncontrolled_kwh` each check `baseline.confidence >= BASELINE_CONFIDENCE` (D6 §2), the engine only threads the one object through (D-0320).
 
 **Plug-in.** The tick fires `ev_connected` on a car's connected edge in either direction (D4 §5.11). The runtime sees it among the tick's `ha_events` and creates a `run_plan("demand")` task, so the plan runs after the tick and never under its lock. The pure runner's household plans at the same tick on its own, so the event moves no scenario digest (D-0281).
 
@@ -250,7 +250,7 @@ There's no cron at `HH:00` running a full tick, the register report is the bound
 
 Until the baseline is confident the warning uses an EMA: `expected = EMA_uncontrolled × window_h` plus the no-vote demands below. Warn once per coming window at ≥ `warn_fraction` (0.95) of the window's flat ceiling, clear below `clear_fraction` (0.85). The live warning for the current window is an edge event keyed on `PeakWarnState.live` (D-0238).
 
-`_expected_uncontrolled_kwh` (`core/engine.py`) is the switch: `inputs.forecast_baseline` (the same field `budget()` reads, D-0320) confident at `BASELINE_CONFIDENCE` (0.6) answers `baseline.energy_kwh(start, hours)` for the coming window, otherwise the EMA term. The live warning needs no extra wiring, it reads `budget.projected_kwh`, which is baseline-aware as soon as `budget()` is (D6 §2). A 500 W EMA that alone would never warn still fires against a confident baseline forecasting 12 kW (D-0319).
+`_expected_uncontrolled_kwh` (`core/engine.py`) is the switch: `inputs.forecast_baseline` (the same field `budget()` reads, D-0320) confident at `BASELINE_CONFIDENCE` (0.6) answers `baseline.energy_kwh(start, hours)` for the coming window, otherwise the EMA term. The live warning reads `budget.projected_kwh`, the measured total's (D6 §2, D-0685), and fires only while the household is the driver: it's about the window in progress, and that is measured. The coming windows are where the baseline speaks, and a 500 W EMA that alone would never warn still fires against a confident baseline forecasting 12 kW. The current window's `expected` - the same terms, over what is left of it, plus `used` - is published as the `expected_kwh` attribute of `sensor.<site>_window_projected` (D8 §5.5), beside the ladder's projection and never read by it.
 
 Computed in the tick from the planning cycle's artefacts, cheap:
 
@@ -272,6 +272,8 @@ A warning is a `SiteWarning` in the snapshot (`binary_sensor.<site>_peak_warning
 
 ```
 async_setup_entry:
+  0 bind answered roles a subentry lacks (D-0485); a role whose entity has no unit yet gets a one-shot state listener that binds it
+    when the unit arrives, and the load's next tick has it - not the next start (D-0693)
   1 load SiteStore; migrate sections; restore the tariff evaluator from `tariff` (history, target, risk, D2 §7, D-0280) before anything holds a reference to its history
   2 build domain objects from entry + subentries (site profile, meter source, price sources, tariff evaluator, loads, groups, zones, circuits, forecasts)
   3 hydrate every load's bound `schedule.*` helper (D4 §4.4), read once and not live; the fetch is I/O and needs HA's entities, so it can't run inside step 2
@@ -402,6 +404,8 @@ Log levels: tick summary at DEBUG, every actuation at INFO (D4), stage changes, 
 25. `refresh_tariff` while a tick runs: the tick isn't delayed, the entry is written without a reload and the next planning call uses the merged copy.
 
 26. `_count_deviations`: 3 ticks 10 s apart with a load in `comfort` count 20 s and one episode, a 20-min gap counts 5 min. An EV whose deadline passes with 0.05 kWh left counts met, with 2 kWh left missed, and one unplugged before isn't judged. A window closed 0.2 kWh over its ceiling counts over, 0.03 kWh over doesn't. The first tick of a new local month starts from zero. Nothing outside `_count_deviations` writes `deviations`.
+27. Step 5 sums no plans (D-0685): a tick with a 7.36 kW EV plan, three banked floors and a confident baseline publishes `projected_kwh = used + P_smooth × t_rem` and stage 0 with the measured total at the allowance; `sensor.<site>_window_projected`'s `expected_kwh` carries §5.4's current-window `expected`.
+28. An answered role binds when its entity is ready (D-0693): a SoC sensor with no unit at setup is unbound, the load plans without it and logs one WARNING; when the sensor reports `%` the role binds, the next tick reads it, and nothing reloads.
 
 ---
 

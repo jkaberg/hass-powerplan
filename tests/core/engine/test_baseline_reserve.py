@@ -1,10 +1,10 @@
-"""D10 §9 10 / D6 §9 3 - the baseline sharpens the projection through a real tick.
+"""D10 §9 10 / D6 §9 3 / D7 §9 27 - the baseline reaches the reserve, never the projection.
 
-The σ floor holds regardless (INV-62, D-0319).
-`core/engine.py::_baseline` reads `Inputs.forecast_baseline` (built by `runtime.py`
-around D10's `HourOfWeekBaseline`, never by the engine - D-0316's pattern) and
-`tick()`'s own step 5 sums `Plan.kwh_between(now, now + t_rem)` over `state.plans`
-for `controlled_planned_kwh` before calling `budget()`. This is the wiring half;
+The σ floor holds regardless (INV-62). `core/engine.py::_baseline` reads
+`Inputs.forecast_baseline` (built by `runtime.py` around D10's
+`HourOfWeekBaseline`, never by the engine - D-0316's pattern), and step 5 sums
+no plans: the projection is the measured total's (INV-38, D-0685), and the
+window's `expected` rides beside it on the snapshot. This is the wiring half;
 `tests/core/allocation/test_01_budget_chain.py` and `test_03_reserve.py` are the
 formula's own unit tests.
 """
@@ -23,9 +23,8 @@ from custom_components.powerplan.core.model import Confidence, Money, Plan, Plan
 from tests.core.engine.conftest import START, curves, engine_for, inputs_at, reference_loads, site
 from tests.core.engine.test_accounting_wiring import GRID_W, both
 
-#: A flat 1 kW envelope spanning well past any window this test ticks through, so
-#: `Plan.kwh_between(now, now + t_rem_h)` is exactly `t_rem_h` kWh - no need to
-#: know the window meter's own boundary arithmetic to predict the number.
+#: A flat 1 kW envelope spanning well past any window this test ticks through: a
+#: plan whose energy D-0319 would have counted into the projection.
 _EV_PLAN = Plan(
     load_id="ev",
     strategy="deadline_fill",
@@ -77,16 +76,23 @@ def _tick(forecast_baseline: _StubBaseline | None) -> Inputs:
     return replace(inputs, forecast_baseline=forecast_baseline)
 
 
-def test_a_confident_baseline_reaches_the_budget_through_a_real_tick() -> None:
-    """Σ_controlled_planned from `state.plans` plus D10's own integral replace `smooth`."""
+@pytest.mark.inv("INV-38")
+@pytest.mark.inv("INV-62")
+def test_27_step_5_sums_no_plans_and_publishes_the_expected_beside_it() -> None:
+    """A planned 1 kW and a confident baseline: the projection is still `used + P_smooth × t_rem`."""
     engine = engine_for(list(reference_loads()))
 
     _state_after, snapshot, _effects = engine.tick(_state(), _tick(_StubBaseline()))
 
     assert snapshot.budget is not None
+    assert snapshot.meter is not None
     budget = snapshot.budget
-    assert budget.projection_source == "baseline"
-    assert budget.projected_kwh == pytest.approx(budget.used_kwh + budget.t_rem_h + 0.5)
+    smooth_w = snapshot.meter.grid_smooth_w or snapshot.meter.grid_w or 0.0
+    assert budget.projected_kwh == pytest.approx(
+        budget.used_kwh + smooth_w / 1000.0 * budget.t_rem_h
+    )
+    assert snapshot.expected_kwh is not None
+    assert snapshot.expected_kwh >= budget.used_kwh + 0.5 - 1e-9
 
 
 def test_the_sigma_floor_holds_even_though_the_baseline_predicts_a_smaller_residual() -> None:
@@ -111,4 +117,8 @@ def test_no_baseline_at_all_keeps_the_projection_smooth() -> None:
     _state_after, snapshot, _effects = engine.tick(_state(), _tick(None))
 
     assert snapshot.budget is not None
-    assert snapshot.budget.projection_source == "smooth"
+    assert snapshot.meter is not None
+    smooth_w = snapshot.meter.grid_smooth_w or snapshot.meter.grid_w or 0.0
+    assert snapshot.budget.projected_kwh == pytest.approx(
+        snapshot.budget.used_kwh + smooth_w / 1000.0 * snapshot.budget.t_rem_h
+    )

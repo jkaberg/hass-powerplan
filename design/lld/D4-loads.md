@@ -403,6 +403,8 @@ restore(): undo our own recorded write, back to what the device held before it (
 
 Available whenever `generic_climate` detects a `select` whose options contain an eco/energy-saving option and a heating option. `comfort_option`/`shed_option` are matched against the entity's `options`, exact first, then fuzzy (eco = the option containing "energy saving" or "eco"; heat = the option starting with "heat" that isn't the eco one - note "Energy saving heating mode" contains "heating"). Shed ⇒ `shed_option`; else the plan's `desired_state` (`comfort` | `shed` from `heat_capacitor`, D5 §2) when the slot carries one; else `comfort_option`. A comfort violation always yields `comfort_option`. One `select_option` per change, no setpoint writes on the hot path (setpoints are provisioned). `release()` puts back the option the select held before powerplan's first write, and only when there's one on record (§5.2, D-0360). Without such a select the loop falls back to `SETPOINT` on the climate entity.
 
+The reversal between `comfort_option` and `shed_option` waits out the load's own `min_on_s`/`min_off_s` - floor heating's 900 s each (§6.1) - like any on/off kind; `urgent` and `blunt` still pass (§5.10 row 7). For a Heatit in floor mode the eco flip *is* the relay decision, eco sitting 1.5–2 K lower, and without the dwell the reference house's bathrooms went heat → eco → heat in 10 min 5 s and 10 min 6 s against 900 s configured (D-0691).
+
 ### 5.6 `SWITCH`
 
 On if granted ≥ nameplate and not shed, off if shed; `min_on_s`/`min_off_s` dwell; `inverted` for normally-closed relays. A `water_heater` on a smart plug uses this kind with the tank's thermostat doing the regulating (INV-64: off is a safe state for a tank with a mechanical thermostat; it's *not* for a tank without one - the flow refuses SWITCH for a tank with no temperature sensor and no mechanical thermostat).
@@ -661,7 +663,7 @@ Decision matrix, in order (first hit wins):
 | 8 | transport budget exhausted and not blunt | `held_budget` |
 | 9 | else write with `blocking=True` (INV-24); schedule verify at `+verify_after_s`; mark settling; consume budget |
 
-`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load), a retry after failure, or a **restore that serves a violated comfort floor** (D-0266) - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next tick re-issues by comparing to the read-back (INV-22). A read-back stamped before the write (`Reads.taken_at`, HA's `last_reported`) is not a read-back yet: the verify stays due and nothing is counted (D-0251). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
+`urgent` = a shed that must happen to hold the ceiling (stage ≥ 2 thermostat, ≥ 3 slab/relay, any reduction for a modulating load), a retry after failure, or a **restore that serves a violated comfort floor** (D-0266) - buys past 6 and 7, never past 3 (INV-21). **A `blunt` reason buys past 6 and 7 as well** (D-0068): it is physical or contractual by definition (INV-36), and a main-fuse shed cannot wait out a 600 s politeness clock. It is a WriteGate flag set by the kind, **not** the load mode `force`: a load in mode `force` passes through every row like any other. Heat pumps have no `urgent` path (compressor protection). `verify()` reads back; deviation → INFO + `deviation` counter (not a failure); the next decision the gate allows re-issues it by comparing to the read-back - the next tick for a charger, the next interval for a heat pump (row 6) - (INV-22). **Three in a row on one role make the load `not_following`** (D-0689): a health state beside `ok`, `transient` and `unhealthy` that isn't a failure. The load stays in allocation, its decisions stay against the read-back, and the first read-back that matches clears it. `GateState.deviations` counts the run (reset on a match), and `sensor.<load>_health` publishes the state with `deviations`, `last_deviation_at` and the role (D8 §5.5). The reference house's heat pump 1 took 2 of 11 setpoint writes over five hours with its health at `ok`, the only trace nine INFO lines (`design/reviews/field-audit-2026-09.md` §7). A read-back stamped before the write (`Reads.taken_at`, HA's `last_reported`) is not a read-back yet: the verify stays due and nothing is counted (D-0251). Success resets `failures` to 0 ("responding again"); `unhealthy = failures ≥ 2`. Exceptions: `ServiceValidationError` → `failed` with the message (a refused write is a real failure); timeouts → `transient` first.
 
 **The executor, concretely.** `writegate.py` is one class,
 `WriteGate(hass, read_state=…, on_state=…)`, and what the runtime calls on it:
@@ -696,6 +698,8 @@ nothing at all (D-0148).
 
 **The tick reads bound entities by id.** `LiveDevice.reads` views exactly the entities the bindings name (`DeviceView.from_states`), on the device or not: the flow binds off-device entities on purpose (`_rebind`, `_extra_bindings`), and the house's tank, a template power sensor and an `integration` energy sensor on no device, would read as stale roles from its first tick under a device-scoped view (D-0362).
 
+**A role binds when its entity is ready** (D-0693). A subentry's answered off-device role that it lacks is bound at setup (`_bind_answered_roles`, D-0485). An entity whose integration hasn't reported a unit yet can't be scaled (§5.9's unit table, INV-53's spirit) and stays unbound, with a WARNING - the reference house's BYD SoC sensor and a heat pump's outdoor temperature at a 18:12 start. That role now gets a one-shot state listener that binds it when the unit arrives, and the load's next tick reads it, instead of waiting for the next start. The listener is cancelled on unload, and a role still unbound after 10 min raises the `re-bind <role>` repair (§8).
+
 **Transport budgets** (INV-58): a site-level `TokenBucket` per transport: `zwave 6/min`, `zigbee 10/min`, `ble 4/min`, `cloud 2/min`, `modbus 20/min`, `local 30/min`, `mqtt 30/min`. Blunt sheds are exempt (a breaker beats a budget); everything else waits its turn, highest priority first.
 
 Defaults per kind (a load's own `command_min_interval` may raise, never lower):
@@ -703,7 +707,7 @@ Defaults per kind (a load's own `command_min_interval` may raise, never lower):
 | kind / profile | tolerance | min interval | verify after | notes |
 |---|---|---|---|---|
 | setpoint (generic) | 0.05 °C | 120 s | 60 s | |
-| generic_climate, MODE kind (Z-Wave thermostats) | exact | 600 s | 90 s | one command per change; ≤ 1 cmd/dev/10 min |
+| generic_climate, MODE kind (Z-Wave thermostats) | exact | 600 s | 90 s | one command per change; ≤ 1 cmd/dev/10 min; dwell = the load's `min_on_s`/`min_off_s` (floor heating 900 s, D-0691) |
 | heat pump setpoint | 0.25 °C | 300 s | 120 s | own `min_setpoint_interval` 900 s and `dwell` 1800 s bind first |
 | easee_ble (amps) | 0.5 A | 30 s | 30 s (poll) | suppression ≥ 2 A or ≥ 60 s stale; shed exempt |
 | zaptec (amps) | 1 A | 900 s | 15 s - the installation's post-write polls (2 s, 7 s) and the 1 s refresh delay; the kind's 60 s settle binds | Zaptec's own 15-min guidance; urgent and blunt sheds still pass (rows 6–8) |
@@ -854,7 +858,7 @@ Common to every load: pick the HA device → suggested type + bindings (§5.9) �
 | Area | m² | nameplate = W/m² × area until measured (p95 of power when heating); kWh/K | slab physics (ρ 2200, cp 0.9) |
 | Sensor | floor · air · both (read from `sensor_mode` where the device exposes it) | what comfort refers to; floor mode ⇒ `TEMP_FLOOR` role | Heatit F/A/A2F modes |
 | Comfort / min / max °C | sliders pre-filled from the above | target profile constant, floor, ceiling | - |
-| *Advanced* | screed depth, loss coefficient, swing K (1.0 bathroom / 1.5 others), min on/off (900 s), command interval (600 s), eco setpoint (= comfort − 2), floor min limit | store, kind, provisions | effektstyring |
+| *Advanced* | screed depth, loss coefficient, swing K (1.0 bathroom / 1.5 others), min on/off (900 s, the mode's reversal dwell too, §5.5), command interval (600 s), eco setpoint (= comfort − 2), floor min limit | store, kind, provisions | effektstyring |
 
 Review: "A heavy slab under wood in a bathroom. powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted by the heat pump."
 
@@ -951,7 +955,7 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 | Write refused (`ServiceValidationError`) | failure with the message; retry as `urgent` next tick | WARNING |
 | Write times out | transient inside `transient_grace_s`, failure past it, on the executor's own clock (D-0143); no settle window left behind | INFO, then WARNING |
 | Role with nothing bound | the command is not sent at all; failure naming the role | WARNING, repair "re-bind <role>" |
-| Write accepted, not applied (BLE) | read-back deviation; re-issued next tick | INFO, `deviations` |
+| Write accepted, not applied (BLE, a device that drops commands) | read-back deviation, re-issued when the gate next allows; three in a row on one role → `not_following`, still allocated (INV-22, D-0689) | INFO; `sensor.<load>_health` = `not_following` with `deviations`; notification category `device_unhealthy` |
 | Option names changed by firmware | `MODE` match fails → unhealthy with the options seen | repair |
 | Scaled number range changed | provision refused → repair | repair |
 | Temperature sensor flatlines | unchanged > 6 h while heating → `unknown`; demand falls back to time-based | WARNING |
@@ -1015,6 +1019,9 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 44. Floor rows: a hold writes the floor at `soc_up`, never below the reserve, and raises it again only when the SoC passes it by the row's step. A charge writes the target and the grid-charge switch, and D6 counts it at the whole inverter. Deye's twelve writes are one chain, at most one per 300 s.
 45. Grid setpoint: with a 1.5 kW house, no sun and the battery idle, a +2 kW charge sets the grid to 3.5 kW. A discharge never sets a negative (export) setpoint: it sets 0 and a discharge limit of W. A change under 100 W is `same`.
 46. `DeviceView.from_entities` over the mkaiser package's entities matches `sungrow_modbus` at 0.80 with the same bindings as a view built from its dump, and the appliance lands on the fallback device.
+47. Not following (INV-22, D-0689): three read-back deviations in a row on a heat pump's setpoint make its health `not_following`; its grant, stage and allocation are unchanged throughout; one read-back that matches clears it; a deviation on one role and a match on another don't combine.
+48. The mode's dwell (D-0691): a floor in `mode` switched to eco at `t` isn't switched back to heat before `t + min_off_s` unless the command is `urgent` or `blunt`, and not to eco again before `min_on_s` after that.
+49. A role binds when its entity is ready (D-0693): a SoC sensor with no unit at setup is unbound with one WARNING; when it reports `%` the role binds without a reload and the next tick plans with the SoC; a role still unbound after 10 min raises `re-bind <role>`.
 ---
 
 ## 10. Deliberately deferred
@@ -1034,6 +1041,12 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Count read-back deviations as failures.** *For:* reuses a path that already notifies and already has a threshold. *Against:* `unhealthy` takes the load out of allocation (§8), so a heat pump that drops one Bluetooth write in ten stops being steered - the reason INV-22 says a deviation isn't a failure. **Decision:** a separate `not_following` state that keeps the load in allocation (D-0689).
+
+**Only the `deviations` attribute D8 §5.5 already listed.** *For:* no new state, no INV change. *Against:* an attribute nobody opens; heat pump 1 spent nearly two hours against the plan with `ok` on its health sensor. **Decision:** the state and the attribute.
+
+**No dwell on a mode select, since the thermostat protects its relay.** *For:* a select isn't a relay; the command interval already limits writes. *Against:* for a floor thermostat the eco flip is the relay decision, the interval limits writes in both directions alike while the dwell is the reversal clock, and §6.1 asked the household for 900 s and used none of it. **Decision:** the load's dwell applies (D-0691).
 
 **Product profiles for thermostats and heat pumps (a `heatit_ztrm`, a `panasonic_comfort_cloud`).** *For:* the reference house's silent failures were all below HA's abstraction - ×10 scaling, an eco option whose name contains "heating"; a profile that knows the product can encode them once. *Against:* every one of those quirks is discoverable from the entities themselves - the number's unit/step/range gives the scale, the select's options give the names - so a *generic* profile with capability detection handles them without a module per brand; heating hardware is described by physics (rated power, COP, area) the user can supply, and powerplan computes forward. Product profiles then only pay for themselves where the *transport* has semantics HA does not expose - EV chargers (session states, read-back over BLE, `charging_blocked_by`) and batteries (inverter modes). **Decision:** integration profiles for EV chargers and batteries; generic capability-detecting profiles for everything thermal, with captured devices as fixtures.
 

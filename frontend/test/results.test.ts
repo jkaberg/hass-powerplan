@@ -38,4 +38,15 @@ describe("resultLines (§5.19)", () => {
     const none = entity("4602.1", { savings_confidence: "none", capacity_step: "5–10 kW", capacity_step_without: "5–10 kW" });
     expect(resultLines(none, cost, undefined, {}, L, "nb", "kr")).toEqual(["Effekttrinn 5–10 kW – det samme uten PowerPlan"]);
   });
+
+  // D12 §9 33: a ledger opened after the 1st says so (D-0692).
+  it("says a partial month's basis in R5, and nothing for a whole month", () => {
+    const partial = entity("457.40", {
+      energy_cost: "60.40 NOK", capacity_fee: "397.00 NOK", partial: true, energy_since: "2026-09-25T09:00:00+00:00",
+    });
+    expect(resultLines(undefined, partial, undefined, {}, L, "nb", "kr")).toEqual([
+      "Siden 25. sep.: 60 kr strøm + hele månedens effektledd 397 kr",
+    ]);
+    expect(resultLines(undefined, cost, undefined, {}, L, "nb", "kr")).toEqual([]);
+  });
 });

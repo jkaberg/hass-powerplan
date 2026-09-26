@@ -31,6 +31,7 @@ from ..metering import ControlledView, ElectricalProfile
 from ..model import Carrier, ComfortState, Demand, Grant, Mode, Quality, Urgency
 from ..tariffs.model import TimeFilter
 from .gate import (
+    NOT_FOLLOWING_AFTER,
     TRANSIENT_GRACE_S,
     Action,
     Command,
@@ -379,6 +380,11 @@ class Health:
     transient_since: datetime | None
     stale_roles: tuple[str, ...]
     last_error: str | None
+    #: Three read-back deviations in a row: the device isn't following its
+    #: commands. Not a failure - the load stays in allocation (INV-22, D-0689).
+    not_following: bool = False
+    deviations: int = 0
+    deviating_since: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -775,6 +781,9 @@ class Load:
             transient_since=min(since) if since else None,
             stale_roles=stale,
             last_error=gate.last_error,
+            not_following=gate.deviations >= NOT_FOLLOWING_AFTER,
+            deviations=gate.deviations,
+            deviating_since=gate.deviating_since,
         )
 
     @staticmethod

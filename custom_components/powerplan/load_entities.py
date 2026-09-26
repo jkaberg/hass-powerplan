@@ -845,6 +845,8 @@ def _health(status: LoadStatus, _runtime: Runtime) -> str:
     health = status.health
     if health.unhealthy:
         return "unhealthy"
+    if health.not_following:
+        return "not_following"
     if health.transient_since is not None or health.stale_roles:
         return "transient"
     return "ok"
@@ -955,9 +957,13 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
             "stale_roles": list(s.health.stale_roles),
             "last_error": s.health.last_error,
             "transient_since": _iso(s.health.transient_since),
+            # Only once the run counts, and only its start: a single dropped write is
+            # noise, and a count that moved with every one would write the recorder
+            # each time (D-0689).
+            "deviating_since": _iso(s.health.deviating_since) if s.health.not_following else None,
         },
         device_class=SensorDeviceClass.ENUM,
-        options=("ok", "transient", "unhealthy"),
+        options=("ok", "transient", "not_following", "unhealthy"),
         category=EntityCategory.DIAGNOSTIC,
     ),
     LoadSensorRow(
@@ -1254,6 +1260,9 @@ class LoadSavingsSensor(_LoadMoneySensor):
         return {
             **self._guarded.attributes,
             "counterfactual_cost": None if row is None else row.get("cf_cost"),
+            # The pair to compare with `counterfactual_cost`: the state's own cost
+            # includes slots the counterfactual hasn't settled yet (D-0692).
+            "settled_cost": None if row is None else row.get("settled_cost"),
             "counterfactual_kwh": None if row is None else row.get("cf_kwh"),
             "kwh_shifted": None if row is None else row.get("kwh_shifted"),
             "previous_month": None if row is None else row.get("previous_savings"),

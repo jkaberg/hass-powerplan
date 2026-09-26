@@ -149,6 +149,24 @@ class Fault:
     circuit: str = ""
 
 
+@dataclass(frozen=True)
+class FlatBaseline:
+    """A confident, flat uncontrolled baseline (D6 §2's `Baseline` protocol)."""
+
+    watts: float
+    confidence: float = 1.0
+
+    def energy_kwh(self, start: datetime, hours: float) -> float:
+        """Return the flat baseline's energy over `hours`."""
+        del start
+        return self.watts / 1000.0 * hours
+
+    def residual_sigma_w(self, t: datetime) -> float | None:
+        """Return a residual σ over the 300 W floor."""
+        del t
+        return 400.0
+
+
 @dataclass(frozen=True, slots=True)
 class Scenario:
     """A house, a start, a number of days, faults, and what must hold (D9 §4)."""
@@ -163,6 +181,10 @@ class Scenario:
     knobs: Callable[[datetime], Knobs] | None = None
     #: Modes forced for the run: one `Mode` for every load, or per load id (D4 §5.2).
     modes: Mode | Mapping[str, Mode] | None = None
+    #: A confident uncontrolled baseline in W, flat: what a site with a seeded D10
+    #: baseline hands the engine (`Inputs.forecast_baseline`). The reference house
+    #: had one when D-0319's projection counted its plans; `None` runs without.
+    baseline_w: float | None = None
 
 
 @dataclass
@@ -190,6 +212,15 @@ class ScenarioResult:
     write_log: list[tuple[datetime, str]] = field(default_factory=list)
     max_writes_per_10min: dict[str, int] = field(default_factory=dict)
     zero_amp_writes: int = 0
+    #: Ticks on which the ladder's stage rose, and its highest stage: the field audit's
+    #: hour-start escalations (D-0685). Not part of the digest.
+    stage_escalations: int = 0
+    stage_max: int = 0
+    last_stage: int = 0
+    #: `(instant, stage, projected kWh, ceiling kWh, P_allow W, t_rem h)` on every rise.
+    escalation_log: list[tuple[datetime, int, float, float, float, float]] = field(
+        default_factory=list
+    )
     ev_stops: int = 0
     #: `breach` events with `breach = "circuit"`: one per edge (D6 §8).
     circuit_breaches: int = 0
@@ -970,6 +1001,9 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             circuits=driver.circuits(now),
             events=_announced(house, now).in_force(now),
             forecasts=pv_forecast,
+            forecast_baseline=None
+            if scenario.baseline_w is None
+            else FlatBaseline(scenario.baseline_w),
         )
 
         # -- plan on D7 §5.2's triggers, never at:00 ---------------------- #
@@ -1276,6 +1310,23 @@ def _measure(  # noqa: PLR0917 - the metrics of one tick
     day: date,
 ) -> None:
     """Accumulate the per-tick metrics the expectations read."""
+    stage = snapshot.ladder.stage
+    if stage > result.last_stage:
+        result.stage_escalations += 1
+        budget = snapshot.budget
+        if budget is not None:
+            result.escalation_log.append(
+                (
+                    now,
+                    stage,
+                    budget.projected_kwh,
+                    budget.ceiling_kwh,
+                    budget.p_allow_w,
+                    budget.t_rem_h,
+                )
+            )
+    result.stage_max = max(result.stage_max, stage)
+    result.last_stage = stage
     if snapshot.meter is not None:
         if snapshot.meter.frozen_reason is not None:
             result.frozen_ticks += 1

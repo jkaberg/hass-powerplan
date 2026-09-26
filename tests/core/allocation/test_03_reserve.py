@@ -74,7 +74,7 @@ def test_03_the_sigma_floor_holds_under_a_perfect_baseline() -> None:
 
 @pytest.mark.inv("INV-62")
 def test_03_a_baseline_is_accepted_and_never_removes_the_floor() -> None:
-    """The baseline sharpens the projection; the reserve keeps its floor (D6 §2)."""
+    """The baseline shapes the reserve and never removes its floor (D6 §2)."""
     snapshot = meter(used_kwh=6.0, t_rem_h=0.5, sigma_w=0.0)
 
     with_baseline = budget(
@@ -85,9 +85,8 @@ def test_03_a_baseline_is_accepted_and_never_removes_the_floor() -> None:
     assert with_baseline.reserve_kwh == pytest.approx(0.225)
     assert with_baseline.reserve_kwh == without.reserve_kwh
     assert with_baseline.sigma_w == pytest.approx(SIGMA_FLOOR_W)
-    assert with_baseline.projection_source == "baseline"
-    assert with_baseline.projected_kwh == pytest.approx(6.0 + 1.2 * 0.5)
-    assert without.projection_source == "smooth"
+    # The projection is the house's either way (INV-38, D-0685).
+    assert with_baseline.projected_kwh == pytest.approx(without.projected_kwh)
 
 
 @pytest.mark.inv("INV-62")
@@ -99,7 +98,6 @@ def test_03_an_unconfident_baseline_changes_nothing() -> None:
     with_shy = budget(ceiling(9.70), snapshot, FUSE_W, PiState(), BudgetCfg(), shy)
     without = budget(ceiling(9.70), snapshot, FUSE_W, PiState(), BudgetCfg(), None)
 
-    assert with_shy.projection_source == "smooth"
     assert with_shy.projected_kwh == pytest.approx(without.projected_kwh)
     assert with_shy.reserve_kwh == pytest.approx(without.reserve_kwh)
 

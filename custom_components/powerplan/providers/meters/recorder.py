@@ -40,10 +40,14 @@ from homeassistant.util import dt as dt_util
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
-__all__ = ["async_register_history", "recorder_loaded"]
+__all__ = ["RECENT_DAYS", "async_register_history", "async_register_rows", "recorder_loaded"]
 
 RECORDER_DOMAIN: Final = "recorder"
 HOUR: Final = timedelta(hours=1)
+FIVE_MINUTES: Final = timedelta(minutes=5)
+#: HA's own short-term statistics retention: the 5-minute table reaches this far
+#: back, the hourly one further (D10 §5.2).
+RECENT_DAYS: Final = 10
 NO_SHIFT: Final = timedelta(0)
 #: How far back, and how many of the register's own state rows, the cadence is taken from.
 CADENCE_LOOKBACK: Final = timedelta(days=1)
@@ -75,12 +79,63 @@ async def async_register_history(
     return [(at + shift, kwh) for at, kwh in rows]
 
 
+async def async_register_rows(
+    hass: HomeAssistant, entity_id: str, start: datetime, end: datetime
+) -> list[tuple[datetime, float]]:
+    """Return `(instant, kWh)` rows from both statistics tables, oldest first (D3 §5.11).
+
+    Hourly rows up to the last `RECENT_DAYS`, 5-minute rows within them, each
+    placed where its value refers to: `S + period − min(c, period)`. The one
+    reader for D10's seed, D10's fits and the fixed-price saving (D-0687); D2's
+    period seed reads the hourly table alone through `async_register_history`.
+    """
+    instance = get_instance(hass)
+    cadence_s = await instance.async_add_executor_job(_report_cadence_s, hass, entity_id, end)
+    recent_from = max(start, end - timedelta(days=RECENT_DAYS))
+    rows: list[tuple[datetime, float]] = []
+    if start < recent_from:
+        hourly = await instance.async_add_executor_job(
+            _sums, hass, entity_id, start - HOUR, recent_from, "hour"
+        )
+        rows.extend(_placed(hourly, HOUR, cadence_s))
+    if recent_from < end:
+        recent = await instance.async_add_executor_job(
+            _sums, hass, entity_id, recent_from, end, "5minute"
+        )
+        rows.extend(_placed(recent, FIVE_MINUTES, cadence_s))
+    rows.sort(key=lambda row: row[0])
+    return rows
+
+
+def _placed(
+    rows: list[tuple[datetime, float]], period: timedelta, cadence_s: float | None
+) -> list[tuple[datetime, float]]:
+    """Return rows moved from their period's start to the instant their `sum` refers to."""
+    shift = (
+        period - min(timedelta(seconds=cadence_s), period) if cadence_s is not None else NO_SHIFT
+    )
+    return [(at + shift, kwh) for at, kwh in rows]
+
+
 def _hourly_sums(
     hass: HomeAssistant, entity_id: str, start: datetime, end: datetime
 ) -> list[tuple[datetime, float]]:
     """Read the register's hourly `sum` rows - always inside the recorder's executor."""
+    return _sums(hass, entity_id, start, end, "hour")
+
+
+def _sums(
+    hass: HomeAssistant, entity_id: str, start: datetime, end: datetime, period: str
+) -> list[tuple[datetime, float]]:
+    """Read one statistics table's `sum` rows, each at its period's start - executor only."""
     answer = recorder_statistics.statistics_during_period(
-        hass, start, end, {entity_id}, "hour", UNITS, {"sum"}
+        hass,
+        start,
+        end,
+        {entity_id},
+        period,  # type: ignore[arg-type]
+        UNITS,
+        {"sum"},
     )
     out: list[tuple[datetime, float]] = []
     for row in answer.get(entity_id, ()):

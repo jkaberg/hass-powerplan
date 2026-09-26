@@ -82,7 +82,7 @@ Public API:
 def plan_all(loads, curves, ctx: SiteContext, now, *, previous: Mapping[str, Plan] | None = None,
              headroom: Headroom | None = None) -> SitePlan              # priority-decomposed, adopts per 5.9
 class Plan:                                                             # declared in core/model.py (D-0130)
-    def cap_w(self, now: datetime) -> float | None            # None = no plan; 0 = stand still; w = cap
+    def cap_w(self, now: datetime) -> float | None            # None = no plan, or an instant outside every slot (INV-30, D-0688); 0 = stand still; w = cap
     def desired_state_at(self, now) -> DesiredState | None
     def idle_seconds_from(self, now, horizon_s: float = 3600) -> float   # for D6's EV stop guard
     def next_active(self, now) -> datetime | None
@@ -260,6 +260,7 @@ Starvation is the energy a committed discharge loses to the drain compared to a 
 should_adopt(old, new):
     if old is None or old.deadline passed or old.covered == False and new.covered: adopt
     if old has no active slot ahead and new has one: adopt                      # a spent plan isn't a plan to keep (D-0253)
+    if old.slots[-1].end < now + 1 h: adopt                                       # a plan that doesn't cover the next hour isn't a plan (INV-32, D-0688)
     if inputs_changed (deadline, requirement ±10 %, mode, presence, curve materially changed): adopt
     if old reserves more than headroom_now + ε_w in any slot ahead: adopt          # the room moved under it, not a price decision (HLD INV-32, D-0628)
     h = policy.threshold(day) × (2 if stale else 1)
@@ -268,6 +269,8 @@ commitment: a slot that has started, or is KNOWN and starts within `commit_min` 
 replan triggers: new curve (prices received), quarter-hour tick, demand change (plug-in, target/deadline knob, presence), forecast update (D10), force edge, action `replan`, startup (D7 §5.2),
                  a production reading ≥ 30 % off its forecast for 15 min (§2)
 ```
+
+**Coverage, not only activity** (D-0688). D-0253 replaces a spent plan when the new one has an active slot ahead, which a deadline load always has. A strategy that only ever says *wait* - `best_save` answers `None` or `0` per slot (§5.5) - never has one, and on a flat curve both plans cost 0, so the difference never clears `h`. The reference house kept three floors' `best_save` plans built 23 Sep 16:02 UTC past their last slot at 25 Sep 16:00, and `cap_w` read the instant after it as "stand still": the TV room, 0.4 K under target, was *planned idle* on a plan three days old (`design/reviews/field-audit-2026-09.md` §6). A kept plan must cover the next hour, or it is replaced whatever the hysteresis says; an hour costs nothing, since a live plan reaches to the curve's end. `cap_w` answers `None` for an instant outside every slot and the load's reason says the plan ran out, so if a kept plan ever did run out the allocator has the load, under every ceiling and floor, rather than a hold.
 
 `h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
 Flat curve (`is_flat(day)`): `flat_policy = fill` (earliest slots first) or `spread` (evenly across the window) per load. Under `fill` the plan is literally the time order, the Norgespris case. `spread` levels the requirement across every usable slot and does **not** raise a slot to `min_w`, so a load with a power floor uses `fill`, the default (D-0137).
@@ -367,6 +370,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 27. A banked floor holding at +1 K (envelope `max_w`, 0 kWh, hold 0.04 kWh a quarter) reserves 160 W, not `max_w`, and the EV below plans into the rest. A `deadline_fill` slot still reserves its envelope, and a slot at `envelope_w = 0` reserves nothing (D-0629).
 28. The held battery: 10 kWh, reserve 20 %, cheap midday at 0.10 and an evening peak at 0.40 from 17:00, a 2 kW baseline from 12:00 and no sun. Arbitrage charges the cheap slots and plans the evening discharge, and the free slots between are `0`, never `None`, so self-use can't spend the charge before 17:00. The same battery with `can_hold = False` takes no pair whose value self-use would spend first.
 29. Self-use in the simulation: on a sunny day with no committed slot the simulated SoC follows the forecast surplus and import. The plan is all `None` with no hold when nothing later needs the energy, and the hold only appears in front of a committed discharge or `peak_shave`'s reserve slot that would starve (INV-30).
+30. A plan covers the present (INV-30, INV-32, D-0688): `best_save` on a flat curve with a kept plan whose last slot ends 30 min from now is replaced by the new plan whatever `h` is; `cap_w` one second past a plan's last slot is `None`, and the load's reason names it.
 
 ## 10. Deliberately deferred
 
@@ -377,6 +381,10 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Outside a plan is `0`, as before D-0688.** *For:* conservative on price - nothing runs unplanned. *Against:* for a relay or a setpoint load `0` holds it off until a comfort floor breaks, so INV-30's stand-still becomes a shed in effect; `None` keeps every ceiling, circuit and floor. **Decision:** `None`, and replace the plan before it gets there.
+
+**A plan TTL instead of a coverage rule.** *For:* generic, one number for every strategy. *Against:* a TTL shorter than the horizon churns against INV-32, and coverage is a TTL already, stated in the plan's own time. **Decision:** coverage of the next hour.
 
 **A joint optimiser (LP/MILP) over all loads.** *For:* provably optimal, handles interactions (tank vs EV headroom) exactly, one algorithm instead of eight. *Against:* opaque to the user ("why did it move my car?"), brittle over a 48 h horizon of estimated prices, needs a solver dependency HA can't ship, and the reference house's problem was never optimality - it was stability and safety. **Decision:** per-load strategies decomposed by priority, the optimiser slot exists for later.
 
