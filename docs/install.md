@@ -14,7 +14,7 @@ Install PowerPlan through HACS, then add it to Home Assistant. This page also co
 | Home Assistant | 2026.3.0 or newer |
 | Uses, when set up | `energy`, `frontend`, `http`, `lovelace`, `recorder`, `nordpool`, `weather`, `zwave_js` |
 | Installs | `holidays>=0.84` |
-| Version | 0.0.2 |
+| Version | 0.0.3 |
 <!-- generated:end requirements -->
 
 PowerPlan uses these integrations when they are set up: the grid meter's power reading, the Nord Pool integration for prices, a weather entity, and the integrations your appliances already use.

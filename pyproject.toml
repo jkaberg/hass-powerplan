@@ -1,6 +1,6 @@
 [project]
 name = "powerplan"
-version = "0.0.2"
+version = "0.0.3"
 description = "Home Assistant custom integration steering flexible loads by price and grid capacity tariff"
 readme = "README.md"
 # 3.14.2 and not 3.14: Home Assistant's own pyproject pins `>=3.14.2` from
