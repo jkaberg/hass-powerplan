@@ -140,6 +140,7 @@ class SiteMonthRec:
     import_kwh: float; export_kwh: float; energy_cost: Money; export_credit: Money
     capacity_fee: Money; cf_capacity_fee: Money; cf_energy_cost: Money
     slots: int; estimated_slots: int; windows_cf: int
+    hour_kwh: list[float]; hour_cf_kwh: list[float]; profile_dates: list[str]   # 24 local hours; the local dates booked (§5.12)
 
 @dataclass(frozen=True)
 class MonthClosed:  month: str; site: SiteMonthRec; loads: Mapping[str, LoadMonthRec]; closed_at: datetime; partial: bool   # partial: install or removal mid-month
@@ -415,6 +416,10 @@ The two prices say the headline in the household's words: "your appliances paid 
 
 Nothing is restated silently: the action is the household's, logged, and the ledger says `partial`. INV-69's "never restated" is about a figure the ledger still stands behind, and a reset withdraws the month's figures instead of correcting them.
 
+### 5.12 The day profile
+
+What PowerPlan did to an average day, for the dashboard (D12 §5.20 V6, D-0695). When a slot settles (§5.9.2), its `kwh` and `cf_kwh` accrue to `SiteMonthRec.hour_kwh[h]` and `hour_cf_kwh[h]`, `h` the local hour the slot starts in, and its local date joins `profile_dates`. Every settled slot counts, the load's own (observe, `off`, legionella) with `cf_kwh = kwh`, so the two lines sum to the same energy by §5.9.1's conservation and only their shape differs. The rest of the house is not in it: the ledger books loads, not the uncontrolled draw. A day that settles after the month rolled over books into the new month, as `kwh_shifted` does. The month closes with its profile, so the savings sensor publishes this month's and last month's (D8 §5.5).
+
 ## 6. Configuration schema
 
 Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off drops the store section and the entities), `calibration_threshold` 0.15, `reprice_days` 7 (bounded by D1's retention). A per-load opt-out of the savings figure doesn't ship in v1, `store_kind_of` alone decides whether a load gets a savings sensor (D-0291). The review step (INV-67) says which counterfactual was picked in plain words: "Without powerplan this floor would hold 22 °C on its own thermostat; savings are what the night charge saves against that."
@@ -503,6 +508,7 @@ Items 4–9 and 13 state the **model** figure. The reference:
 37. The self-use counterfactual: a sunny day with a 10 kWh battery whose row has self-use, noon 5 kWh net export and evening 4 kWh net import before the battery. The shadow stores 5 × 0.95 kWh and gives back what the evening needs down to the reserve. A day on which powerplan did exactly that saves 0. A day on which it also grid-charged at night for a 17:00 peak saves the difference, and only that. A `generic_number` battery keeps `idle` (§9 9).
 
 ---
+38. The day profile (§5.12): two settled days of a water heater moved from 17:00–19:00 to 22:00–00:00 give `hour_kwh` at 22 and 23 and `hour_cf_kwh` at 17 and 18, equal sums, `profile_dates` the two dates; an observe slot adds the same to both; a rollover moves the profile into `MonthClosed` and starts the new month at zeros; a schema-2 state without the fields restores with zeros.
 
 ## 10. Deliberately deferred
 

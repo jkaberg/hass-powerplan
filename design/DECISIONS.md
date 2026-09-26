@@ -2913,3 +2913,24 @@ D2 §5.4: while a chosen target is below the metric a period whose metric can't 
 
 A role `_bind_answered_roles` (D-0485) couldn't bind because its entity had no unit yet gets a one-shot state listener that binds it when the unit arrives, without a reload; the load's next tick reads it, and one still unbound after 10 min raises `re-bind <role>`. The reference house's 18:12 start ran 2 h 33 min with no EV SoC and no heat-pump outdoor temperature. The owner kept INV-48 as written (26 Sep 2026): netting the startup release against the first tick would leave the unload release (INV-26), so a reload still writes and unwrites, and the change isn't worth a new path at startup, where F-1 came from. Affects D4 §5.9, §9 49; D7 §5.5, §9 28.
 **Rejected:** netting the startup release (INV-48 amended) - see above. Netting startup and reload both - an unload not followed by a setup would leave sheds in place, and INV-26 would stop being true.
+
+### D-0694 · One PowerPlan mark on every chart, explained by its tooltip
+
+The owner asked that the charts show, discreetly, where PowerPlan did something. One mark - a 7 px primary dot ringed in the card's colour, a 24 px hit area - sits where it acted: a run it placed or moved, a peak it kept down. A span it held back keeps the lanes' existing hatch. The tooltip's first line says what. Affects D12 §5.20, HLD §6.12.
+**Rejected:** a glyph per kind of action - three symbols to learn on a phone, where one and a sentence do.
+
+### D-0695 · The ledger keeps the appliances' settled energy by local hour of day
+
+The day profile (D12 §5.20 V6) needs, per month, the energy with PowerPlan and without it by hour of day. Both already exist per slot at settlement and were summed and dropped; `SiteMonthRec` now keeps 24 + 24 floats and the booked dates, and the savings sensor publishes this month's and last month's, recorder-excluded. The rest of the house isn't in it: the ledger books loads. `Accounting` keeps the zone of the last closed slot so `_settle` can place a slot by local hour. Affects D11 §4, §5.12; D8 §5.5.
+**Rejected:** a statistic per hour of day - 48 long-term statistics per site for one chart.
+
+### D-0696 · Every card is tested in Chromium at every sections-view width
+
+D12 §9 31's harness existed only outside the repository. It is now Vitest's browser mode with Playwright's Chromium in `frontend/test/browser/`, run by CI's `frontend` job, over every card at 320, 390, 768, 1024, 1184 and 1664 px in both themes with geometric assertions. 1024 is added for a tablet in landscape, where HA's sidebar collapses to icons. Affects D9 §5.16, §9 16; D12 §5.20, §9 42.
+**Rejected:** screenshot comparison - differs between the box and CI on fonts alone.
+
+### D-0697 · The level chart reads the device's own level source, and today's comfort lines
+
+`plan_status.current` is volatile (a change alone doesn't write a state), so its history can stand still for hours. The level chart reads HA's history of the entity and attribute the type's level role is bound to (`site_layout` via `entity_of` / `attribute_of`: `temp_floor` for a floor with a floor sensor, else `temp`; `soc` for a battery or a car), and draws the comfort and minimum at today's values. Affects D12 §4, §5.20 V7.
+**Rejected:** `plan_status`'s own history with attributes - about 0,4 MB a day for one floor on the house, on every open.
+

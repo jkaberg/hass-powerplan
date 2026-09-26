@@ -673,6 +673,8 @@ A month's books can be **reset** by the household (`powerplan.reset_accounting`)
 
 The timeline's price stack is drawn **by party** (grid · supplier · taxes), and every "why" names the party (D13 §7).
 
+Every chart shows, quietly, where PowerPlan acted - one mark whose tooltip says what it did (D12 §5.20) - and every card is tested in a browser at every width HA's sections view gives, light and dark (D9 §5.16).
+
 **Invariants.** No new INV. The dashboard package calls no service and reads no `hass.states` on the server (INV-3); every knob is an existing entity changed through its own service, so the dashboard can do exactly what the entities page can. The large attributes it reads stay recorder-excluded (INV-61).
 
 **Home Assistant's own backend only.** The frontend reaches the integration through the channels HA gives every integration: entity states, a response action, a button, and HA's own `recorder/*`, `repairs/*` and `lovelace/resources` commands. The module is loaded as a Lovelace resource the integration creates, keeps current and removes with the last site. There are no private websocket commands: a test asserts that nothing under `custom_components/powerplan/` imports `websocket_api` (D12 §5.16).

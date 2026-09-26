@@ -431,6 +431,10 @@ The path → tests map is in `CONTRIBUTING.md`, the only copy. It rests on four 
 
 ---
 
+### 5.16 The dashboard in a browser (D12 §5.20)
+
+The cards are tested twice. `vitest` in node covers each card's pure half - the transforms that turn states into what is drawn - with the reference house's numbers. The **fit harness** runs the cards themselves in Chromium (Vitest's browser mode with Playwright, `frontend/test/browser/`, `npm run test:browser`): a copy of HA's sections grid - columns 320–500 px, 32 px gaps (8 px under 600 px), 12 columns per span, 56 px rows - HA's default theme variables light and dark, `ha-card` and `ha-icon` as HA draws them, and a `hass` that answers states, `recorder/statistics_during_period`, `history/history_during_period` and `repairs/list_issues` from `frontend/test/fixtures/`, captured on the reference house. Every card is mounted at 320, 390, 768, 1024, 1184 and 1664 px of screen and in both themes, and the assertions are geometric, never pixel snapshots: nothing outside the card, no clipped text except where the card ellipsises by design, every tooltip target at least 24 × 24 px, the PowerPlan mark at 3 : 1 against the card, and no console error. Each run writes its screenshots to `frontend/test/browser/__screenshots__/` (ignored by git) for review. CI's `frontend` job installs Chromium and runs it (D-0696).
+
 ## 6. Configuration schema
 
 Not applicable, the tooling has CLI flags only: `backtest.py` (`--months --db --csv --tariff --loads --simulate --house --compare --out`), `benchmark.py` (`--house --year --tier smoke|month|full --seed --compare --update-baseline --out --sweep key=a,b,c` (v1.x); the `e2e` tier is `pytest -m e2e`, §5.10, D-0278), `capture_fixture.py` (`--url --token --device --out`), `price_replay.py` (`--regime flat|variable|outage`).
@@ -476,6 +480,7 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 13. Speed without change (§5.13, D-0333): `tools/digests.py` runs every cached scenario fixture and the smoke benchmark on the PR's tree and on its base, each recording every result's digest (`POWERPLAN_DIGESTS`, `tests/scenarios/cache.py`), and one result that moved or went missing fails, whatever the change gains. CI runs it on every PR labelled `speed` (the `digests` job); an unlabelled PR isn't compared, because a behaviour change inside tolerance isn't a forced re-record (D-0331). `tests/scenarios/test_digests.py` holds the recorder and the comparison.
 14. No test in the PR suite opens a socket (a pytest plugin refuses connections outside `127.0.0.1`), and the tariff-source fixtures each name their capture.
 15. `vat_check.py` flags a module whose rate differs from the captured TEDB response and passes one that matches; `preset_age.py` lists a country-module fact verified seven months ago.
+16. The fit harness (§5.16) mounts every card `frontend/src/cards.ts` defines, fails on a card that overflows at 320 px, and runs in CI's `frontend` job.
 
 ---
 

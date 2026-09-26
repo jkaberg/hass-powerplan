@@ -67,7 +67,10 @@ frontend/                      the sources, at the repository root so HACS and t
 ├── src/appliance-dialog.ts    the dialog a row opens (§5.12 R7)
 ├── src/price-card.ts          powerplan-price-card: the price now, today and tomorrow (§5.12 P1–P5)
 ├── src/attention-card.ts      powerplan-attention-card (§5.15 F6)
-├── src/month-bars.ts          powerplan-month-bars (§5.15 F9, §5.19)
+├── src/month-bars.ts          powerplan-month-bars (§5.15 F9, §5.19), its cost ring (§5.20 V2)
+├── src/day-profile.ts         powerplan-day-profile: the average day with and without PowerPlan (§5.20 V6)
+├── src/level-card.ts          powerplan-level-card: an appliance's temperature or charge, 24 h back and 12 h ahead (§5.20 V7)
+├── src/marks.ts               the PowerPlan mark, the ring and the shared chart tooltip (§5.20)
 ├── src/runs-card.ts           powerplan-runs-card: the next runs, defined but no longer laid out (D-0496)
 ├── src/status.ts              a row's status from plan_status as a word, held 90 s (§5.12 R1, R5)
 ├── src/styles.ts, tokens.ts   the style sheet and the theme tokens every card starts from (§5.11, §5.15)
@@ -79,6 +82,8 @@ frontend/                      the sources, at the repository root so HACS and t
 ├── src/transforms.ts          the pure halves: slots → timeline rows, the gauge's scale and colours (§9 7)
 ├── src/ha.ts                  the slice of HA's frontend objects the cards read
 ├── test/*.test.ts             vitest
+├── test/browser/              the fit harness: every card in HA's grid at every width, light and dark (§5.20, D9 §5.16)
+├── test/fixtures/             the reference house's states, statistics and history the harness replays
 └── package.json, package-lock.json, tsconfig.json, esbuild.config.mjs
 ```
 
@@ -97,6 +102,7 @@ class LoadLayout:
     entities: Mapping[str, str]                                  # D8 §5.5 key → entity_id, enabled entities only
     icon: str                                                    # from the type
     area: str = ""                                               # v0.6: the room, from the registries (§5.12 R7)
+    level: tuple[str, str | None] | None = None                  # §5.20 V7: the level role's entity and attribute, `None` without one (D-0697)
 
 @dataclass(frozen=True, slots=True)
 class SiteLayout:
@@ -150,10 +156,25 @@ labels: {…}
 
 type: custom:powerplan-price-card                                  # §5.12
 entry_id: <entry>
-entities: {price, price_forecast, fixed_price_savings, refresh}
+entities: {price, price_forecast, fixed_price_savings, refresh, plan}   # plan: §5.20 V3
+loads: [{id, name}, …]       # the run marks' names (§5.20 V3)
 currency: NOK
 labels: {…}
+
+type: custom:powerplan-day-profile                                 # §5.20 V6
+entry_id: <entry>
+entities: {savings}
+labels: {…}
+
+type: custom:powerplan-level-card                                  # §5.20 V7
+entry_id: <entry>
+load: {id, name, color, kind}
+level: {entity, attribute?, unit}
+entities: {status: <plan_status>, plan, charge_target?, charge_min?}
+labels: {…}
 ```
+
+The window card's `month` mode also takes `savings`, `window_used` and `plan` (§5.20 V1), its `peaks` mode `loads: [{id, name, status}]` of the run-type appliances (V4), and the period summary `view: energy` takes `loads[].energy` (V5).
 
 `build(sites, ha_version, texts, *, language, has_energy_grid, hidden_views, hidden_cards)` takes every site the action was asked for (D-0439): one site keeps the plain paths, several get their views pathed `<path>-<entry_id>` and titled "‹site› · ‹view›" (§5.1). `language` picks the number format (§5.9).
 
@@ -184,7 +205,7 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 | 3 | `section_price` | 2 | `custom:powerplan-price-card` full × auto (§5.12 P1–P5), entities `price`, `price_forecast`, `fixed_price_savings`, `refresh` |
 | 4 | `section_plan` | 3 | heading badge `replan` (`badge_replan`, `tap_action: perform-action button.press`); timeline `hours: 24`, `hours_options: [24, 48]`, `narrow_hours: 12`, `rail_width: 256` (the whole-house forecast, F1), every load with its colour, full × auto |
 | 5 | `section_appliances` | 3 | `custom:powerplan-appliances-card`, every appliance with a `plan_status`, full × auto (R1–R8); `no_loads` markdown without appliances |
-| 6 | `section_capacity` | 1 | window card `mode: month` 12 × 6, only where `metric` and `level` are shown |
+| 6 | `section_capacity` | 1 | window card `mode: month` 12 × auto, only where `metric` and `level` are shown: the headroom strip (§5.20 V1) |
 | 7 | `section_month` | 1 | heading badge: `cost` as an entity badge, `mdi:chart-bar`, named `view_history`, → `{dashboard}/history`; `custom:powerplan-month-bars` (`entity: cost`, `savings`, `deviations`) 12 × auto (§5.15 F9, §5.18 N1–N2, §5.19) |
 | 8 | `section_solar` | 1 | only with `has_production`: `tile`s `production`, `surplus` with `trend-graph` |
 
@@ -194,9 +215,11 @@ Several sites: titles `‹site› · ‹view›`, paths `overview-<entry>`, `his
 |---|---|---|---|
 | 1 | `section_summary` | 3 | `custom:powerplan-period-summary` full × auto (§5.7, §5.18 W7) |
 | 2 | `section_usage` | 2 | heading badge `mdi:arrow-top-right` → `/energy`; the timeline `mode: history` full × auto (§5.7), only with an Energy grid source |
-| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7) |
-| 4 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (§5.11 D6, §5.17) |
-| 5 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4, worded by `logbook.py` (§5.6) |
+| 3 | `section_capacity` | 1 | window card `mode: peaks` 12 × auto (§5.7; the hour carpet over 3–35 days, §5.20 V4) |
+| 4 | `section_day` | 2 | `custom:powerplan-day-profile` full × auto, only where `savings` is shown (§5.20 V6) |
+| 5 | `section_energy` | 1 | period summary `view: energy` 12 × auto, only with appliances that show `energy` (§5.20 V5) |
+| 6 | `section_cost_per_appliance` | 3 | period summary `view: table` full × auto, following the picker (§5.11 D6, §5.17) |
+| 7 | `section_events` | 1 | `logbook` of `event.<site>` and every `plan_status`, `hours_to_show: 48`, 12 × 4, worded by `logbook.py` (§5.6) |
 
 Section 3 shows the capacity windows, section 1 the capacity level, the subviews the energy per appliance, and section 2's badge links to the Energy dashboard for the rest.
 
@@ -204,7 +227,7 @@ Section 3 shows the capacity windows, section 1 the capacity level, the subviews
 
 | # | section | span | cards |
 |---|---|---|---|
-| 1 | `section_control` | 1 | `tile` `control` with `select-options`, `features_position: inline` 12 × 1; `tile` `plan_status` (`card_status`) 12 × 1; the type's controls (below); `ready_by` as a one-row `entities` card, `icon: mdi:clock-check-outline`, 12 × auto; `granted_power` with `trend-graph` where enabled 12 × 2 |
+| 1 | `section_control` | 1 | `tile` `control` with `select-options`, `features_position: inline` 12 × 1; `tile` `plan_status` (`card_status`) 12 × 1; the type's controls (below); `ready_by` as a one-row `entities` card, `icon: mdi:clock-check-outline`, 12 × auto; `custom:powerplan-level-card` 12 × auto where the type has a level source (§5.20 V7), else `granted_power` with `trend-graph` where enabled 12 × 2 |
 | 2 | `section_appliance_plan` | 2 | no heading badge (the legend names the kWh); the timeline single-load: `loads: [this]`, `show: [plan, price]`, `entities.deadline: <plan_status>`, `hours: 24`, `hours_options: [12, 24, 48]`, full × auto |
 | 3 | `section_why` | 2 | one `markdown` (§5.9) full × auto |
 | 4 | `section_month` | 1 | `entity` `cost_month`, `savings_month` 6 × 2 each; `statistic` `energy` (change, calendar month) 12 × 2 |
@@ -567,6 +590,40 @@ The month card becomes `rows: auto`: its bars keep their height and the block ad
 
 Left out: a savings bar per month on History (§5.17 C10 took the savings bars out, and HA's statistics on `sensor.<site>_savings` keep the history), and the model figure (D11 §5.9.5).
 
+### 5.20 Iteration 6: charts that show what PowerPlan did
+
+Seven charts, each replacing a card element or earning its own place, and one quiet sign on every chart where PowerPlan acted (D-0694). The rules of §5.17 hold: one metric once, a status only when it needs you, every mark that carries data at 3 : 1 against the card in both themes.
+
+**The PowerPlan mark** (`marks.ts`). A 7 px dot in `--primary-color`, ringed 1.75 px in the card's colour, placed where PowerPlan acted: it moved or placed a run, kept the month's peak down, held a load back. It carries no text on the chart. Its hit area is 24 × 24 px (WCAG 2.5.8); hover, keyboard focus or a tap shows its tooltip, whose first line names what PowerPlan did. A span where PowerPlan held a load back is the lanes' hatch (§5.12 R4), not a mark. The tooltip (`ChartTip`) is one element per card, shared by every `[data-tip]` in its shadow root, styled as §5.11's tooltip, pinned by a tap and cleared by a tap elsewhere or a scroll.
+
+| # | chart | where | replaces | reads |
+|---|---|---|---|---|
+| V1 | **Headroom strip** | Now · `section_capacity`, window card `mode: month` | the step arc and the top-3 rows | `level.steps`, `metric`, `advice` (`top_entries`, `step_headroom`, `days_that_matter`), `savings.metric_kw_without`, today's highest `window_used` hour, `plan.window_min` |
+| V2 | **Cost ring** | Now · `section_month`, month bars | the 6 px split bar and the cost figure | `cost.by_party`, `capacity_fee`, `export_credit` |
+| V3 | **Fixed-price gap and run marks** | Now · `section_price`, price card | the cheap-hour columns under a fixed price | `price_forecast.slots`, `plan.slots[].planned_kwh`, the loads' names |
+| V4 | **Hour carpet** | History · `section_capacity`, window card `mode: peaks` over 3–35 days | the daily peak bars on that range | `window_used` hourly `max` (the grid sources before its statistics), the month's ranking, `ceiling`, run-type loads' `plan_status` history |
+| V5 | **Energy ring** | History · `section_energy` (new), period summary `view: energy` | - | each load's `energy` `change` and the grid sources' `change` over the period, `savings_month.kwh_shifted` |
+| V6 | **Day profile** | History · `section_day` (new), `custom:powerplan-day-profile` | - | `savings.day_profile`, `previous_day_profile` (D8 §5.5, D11 §5.12) |
+| V7 | **Level chart** | an appliance · `section_control`, `custom:powerplan-level-card` | the `granted_power` trend tile | the bound level source's history (D4's level role), `plan_status` state history and `target`, `floor`, `deadline`; `charge_target`, `charge_min` for a car; `plan.slots` for the next 12 h |
+
+**V1.** The axis runs from the current step's lower bound to the next step's upper bound (the current step's upper × 1,25 when it is the top one). Two segments, 10 px, 2 px apart, coloured by §5.11 M1 against the target step, the current at 100 % and the next at 45 %; under each, its name and fee (12 px). The month's value is a 3 px needle through the track; the three counting days are 7.5 px dots stacked 9 px above it at their own kW; today's highest hour so far a 9 px ring labelled `card_today`; `days_that_matter.kw` a 2 px `--warning-color` line labelled "{kw} kW → +{fee}" (`card_tips_at`) when it lies on the axis. With `metric_kw_without` more than 0,05 kW above the value, a 1.5 px line from the needle's foot to the mark at that kW, tooltip `card_mark_metric` ("Uten PowerPlan {kw} kW …"). Under it the legend and §5.3's one tip sentence. Without steps, the value and caption alone.
+
+**V2.** A 16 px ring, 2 px gaps, the month's cost in its centre (20 px) over `card_cost_so_far`; beside it (under it below 300 px) one row per part with its swatch, name, amount and share: `card_part_capacity` (`capacity_fee`, `--energy-grid-consumption-color`), `card_part_grid` (`by_party.grid` − `capacity_fee`, the same colour at 50 %), `card_part_supplier` (text at 55 %), `card_part_state` (text at 30 %); a part at zero is left out, and an export credit is a row with a minus under the ring, never a slice. Without `by_party` the ring has energy and capacity fee. The results block (§5.19) keeps its lines; R1, the savings line, starts with the mark.
+
+**V3.** Under a fixed price the area between "your price" and "without the fixed price" is filled per hour: `--success-color` at 20 % (26 % dark) where the fixed price is lower, `--error-color` at 16 % where it is higher; the cheap-hour columns go, since the grid tariff's step already shows the cheap hours. Without a fixed price nothing changes. Every future hour whose planned energy sums above 0,05 kWh gets a mark on the zero line, and the hour's tooltip gains a line per appliance with its kWh. The legend adds `card_saved_fixed` and `card_runs_here` only when either shows.
+
+**V4.** Rows are local days, columns local hours (a 25-hour day keeps the later of the repeated hour, a 23-hour day an empty cell), cells `(width − 30) / 24` wide and 10–14 px high, 1.5 px apart. A cell's fill is `--primary-color` at 0,07 + 0,88 × kWh ÷ the ceiling, `--error-color` over it; an hour with no statistics is the empty track. Each day's highest hour has a 1 px ring, the counting days' a 2 px one and their row label in 500 weight. An hour in which a run-type load (EV, water heater, appliance cycle, switch, battery) was `charging`, `running_plan` or `run_now` for at least 5 minutes carries a 2 px mark. Day labels every fifth day and on the counting days. One day keeps §5.7's verdict; a range over 35 days keeps the daily peak bars.
+
+**V5.** The top four appliances by energy in their colours, the rest of the appliances folded into `card_other_appliances`, and `card_rest_of_house` = the grid sources' energy − the appliances' (never below 0), both grey; 14 px, 2 px gaps. The centre reads the appliances' share of the house (`card_controlled`), or their kWh without a grid source. While the picker shows the month in progress, each appliance's `kwh_shifted` is a 3 px primary arc outside its slice from the slice's start, and a line under the ring says the total (`card_moved_total`). Rows as V2's, stacked under the ring below 420 px.
+
+**V6.** The month the picker's start falls in, if it is this month or the last (`day_profile`, `previous_day_profile`), else `card_profile_months`. One column per local hour: the day's average appliance energy with PowerPlan at 20 %, energy moved in at 75 % and energy moved out hatched, the reference as a dashed step line; the headline is the energy moved per day, ½ Σ |kWh − reference| ÷ days (`card_moved_per_day`), and the sub-line names the largest run out and the largest run in ("mest fra 17–21 til 22–02"). An hour's tooltip gives both figures and the difference.
+
+**V7.** The past 24 h and the next 12 h. The level (2 px, text colour) as HA's history gives it: the bound level role's entity, or its attribute (a climate's `current_temperature`); the comfort (`target`) dashed in `--success-color` and the minimum (`floor`, a car's `charge_min`) dashed in `--error-color`, both today's values, labelled at the right where the hours ahead leave room. Under it a 9 px lane: the past from `plan_status`'s states - `running_plan`, `charging`, `run_now` in the appliance's colour, `waiting` and `paused_peak` hatched - and the hours ahead from `plan.slots`: a run solid, holding a 40 % band, a pause hatched. "Nå" and a car's or tank's `deadline` as §5.2's lines. Header: the level now, and for heat "laveste siste døgn {min}" (`card_lowest_24h`). Laid out for the four thermal types, a battery, and a car whose device binds a state of charge; the `granted_power` tile stays for the other types.
+
+**Widths** (§5.18). Every chart draws at its card's measured width, re-drawn by a `ResizeObserver`; text sizes come from `--ha-font-size-*`; a label that would collide is left out before one is clipped, and the axes thin their ticks under 500 px.
+
+**The fit harness** (`frontend/test/browser/`, D9 §5.16). Vitest's browser mode in Playwright's Chromium mounts every card from `src/` in a copy of HA's sections grid, fed the reference house's states, statistics and history (`frontend/test/fixtures/`) and HA's theme variables, light and dark. For every card at the widths that give each column count and each narrow edge - 320, 390, 768, 1024, 1184, 1664 px - it asserts that nothing inside the card lies outside it, no text is cut except where an ellipsis is the design, every `[data-tip]` target is at least 24 × 24 px, the mark's dot clears 3 : 1 against the card, and no console error is logged.
+
 ## 6. Configuration schema
 
 The flows ask nothing. The strategy takes optional YAML: `entry_id` (narrows the dashboard to one site; without it every loaded site is shown, D-0439), `hidden_views` (`overview`, `history`, `appliances`), `hidden_cards` (card types, the Energy dashboard's own option name). `docs/dashboard.md` shows how to add the dashboard, the YAML for versions without the dialog listing, and how to put powerplan's per-load `energy` and `measured` sensors into the Energy preferences so HA's own device graphs and sankey include the loads.
@@ -619,6 +676,16 @@ None. The dashboard is generated on every open. A household that takes control o
 
 32. The month card's entities are `cost`, `savings` and `deviations`, with `load_names` for every appliance, `rows: auto`; `card_moved` in en and nb; `vitest`: `resultLines` over the house's attributes gives R1–R3 and no R4 at zero deviations; R4 names the load with the most comfort minutes; a negative saving reads "kostet … mer"; no savings line at `savings_confidence: none`. The "Flyttet" column's 500 px rule is a container query, seen in the house check.
 33. A partial month (D-0692): with `partial` and `energy_since` the 25th the month card shows R5 and the cost table's saving column compares `settled_cost` with `counterfactual_cost`; a whole month shows neither.
+
+34. Iteration 6, layout: Now's capacity card is `mode: month` 12 × auto with `savings`, `window_used` and `plan` among its entities; the price card has `entities.plan` and `loads` (id and name); History is summary · usage · capacity · day · energy · cost per appliance · events, the day card only with `savings`, the energy view only with loads that show `energy`; an appliance of each thermal type, a battery and a car with a bound SoC get the level card and no `granted_power` tile, the other types keep the tile; the level card's `level.entity` and `level.attribute` are the device's level role (`temp_floor` for a floor with a floor sensor, `temp` for air).
+35. `vitest`, V1: on the house (steps 0–2–5–10–15, metric 8,97, top 9,116 / 8,935 / 8,858, tips 11,95, without 9,33) the axis is 5–15, the needle at 39,7 %, the mark at 43,3 %, the tip line at 69,5 %; the mark is absent when `metric_kw_without` is within 0,05; the top step's axis ends at 1,25 × its lower bound.
+36. `vitest`, V2: `costParts` over the house's attributes gives capacity 397,00, grid energy 15,51, supplier 36,04, state 22,04 (sum 470,59); a part at zero is left out; no `by_party` gives energy and capacity.
+37. `vitest`, V3: `gapCells` fills success where the reference is above the price and error where below, nothing without a fixed price; `runMarks` marks the hours 22, 23, 00 and 01 from the house's plan and names the water heater's 2,92 kWh.
+38. `vitest`, V4: `carpetGrid` places a DST autumn day's 25 hours in 24 cells and a spring day's 23 with one empty; the fill alpha is 0,07 at 0 and 0,95 at the ceiling; the counting days are the ranking's three; an hour with 4 minutes of `charging` has no mark and one with 5 has.
+39. `vitest`, V5: `energySlices` keeps four appliances, folds the rest, and never gives the house below 0; the arcs only while the period is this month.
+40. `vitest`, V6: `profileView` picks this month, last month or none by the period's start; moved per day is ½ Σ |Δ| ÷ days; the sub-line names 17–21 and 22–02 on the example profile.
+41. `vitest`, V7: `levelSeries` reads a state and an attribute source, drops `unavailable`, and gives the 24 h minimum; `laneRuns` merges the house's TV-stua states into heating and waiting runs.
+42. The fit harness (§5.20): every card of §3 in both themes at 320, 390, 768, 1024, 1184 and 1664 px, nothing outside its card, no clipped text, every tip target ≥ 24 px, the mark ≥ 3 : 1, no console error; CI runs it in the `frontend` job.
 
 ---
 
@@ -693,3 +760,9 @@ None. The dashboard is generated on every open. A household that takes control o
 **The spot on a sensor of its own.** *For:* `price_forecast` stays as it is, and the spot's size is its own row's. *Against:* `price_forecast` already carries `area`, `vat` and each slot's `energy` and `reference` for this card (D-0495), and a second curve-sized unrecorded attribute doubles the push. **Decision:** `slots[].spot` and `fixed_price` on `price_forecast`.
 
 **A fixed `rows: 7` for the timeline instead of `rows: auto`.** *For:* level rows (G6) and the height the review measured. *Against:* at 390 px a four-line legend and the readout leave a fixed card about 120 px of plot, and the plot's 180 px floor can't hold inside a fixed height. **Decision:** the card sizes its canvas and grows with its legend (D-0491).
+
+**One mark per kind of action (a moved run, a held peak, a lowered load) instead of one PowerPlan mark.** *For:* the chart would say what happened without a tooltip. *Against:* three new symbols to learn on a dashboard whose rule is less is more, each small enough to confuse with the others on a phone. **Decision:** one mark, the tooltip says what, and a held-back span keeps the lanes' hatch (§5.20).
+
+**Pixel snapshots in the fit harness.** *For:* catches every visual change, not only overflow. *Against:* fonts and anti-aliasing differ between the box and CI, so snapshots fail on nothing and get re-recorded on reflex. **Decision:** geometric assertions (bounds, clipping, target size, contrast), with the screenshots written as artefacts for a human to read.
+
+**The level chart's comfort line from `plan_status`'s own history of `target`.** *For:* a comfort that changed during the day - presence, a schedule - is drawn as it was. *Against:* HA's history carries every attribute on every row, ≈ 0,4 MB a day for one floor on the house, on every open of the page. **Decision:** today's comfort and minimum as lines; the level itself from its own source's history, which is small and exact.
