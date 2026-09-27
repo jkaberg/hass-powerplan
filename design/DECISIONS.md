@@ -2949,3 +2949,28 @@ A month in progress against the whole of last month reads as a saving every 1st.
 With the day profile and the energy ring (§5.20), the full-width table left the events log alone on the last row of a wide screen. At span 2 the table keeps its "Flyttet" column from 756 px. Affects D12 §5.1, §5.21 H5.
 **Rejected:** dropping the events log - it is the only place History says what happened.
 
+### D-0701 · Australia's plans come from the register's `productBaseUri`
+
+The canary of 27 September 2026 found seven brands answering 404 at their register host (Cooperative Power, ENGIE large business, Indigo Power, Next Business Energy, Pacific Blue Retail, RAA Energy, Snowy Energy). The CDR register at `x-v: 2` gives each energy brand a `productBaseUri` - the AER's `cdr.energymadeeasy.gov.au/<slug>` for 80 of 84 brands that day - which is the host of its product reference data. `cdr_energy` reads that field and drops `EME_SLUGS`; the four brands without one (Indigo Power, Snowy Energy, 1st Energy (EL Retail Energy), ENGIE large business) are not listed. Supersedes D-0683's slug table. Affects D13 §5.11, §19 17.
+**Rejected:** keeping the table and adding the seven - it went stale in a day.
+
+### D-0702 · A plan list is read whole, and a shared host keeps the chosen brand's plans
+
+AGL, Origin, ENGIE and Red Energy each list 925-1 000 current plans; the one page of 1 000 cut three of them short without a sign. `products` follows `links.next`, 20 pages at most. Next Business Energy's host also serves Indigo Power's plans, and RAA Energy's and Arcline's host serves others' only: a brand's plans are those whose `brandName` is the brand's (case, spaces and punctuation aside), else all of them where every plan carries one name (Amber Electric, CovaU, Sumo), else none. A tariff period whose rate block is `demandCharges` has no energy rate: its energy is 0, its demand charges the price (Origin, 27 Sep). Affects D13 §5.11.
+**Rejected:** matching brands by the plan's `brand` slug - it differs from the host's slug (`indigo` under `next-business`) and nothing maps a register brand to it.
+
+### D-0703 · elpris.dk's table priced in hour 0 alone is a flat tariff
+
+Datahub publishes a flat tariff as `Price1` with `Price2`-`Price24` empty; elpris.dk writes the same as hour 0 priced and 0 in the other 23. `elpris_dk` read the zeros: Forsyning Elnet, GEV Net and Hammel Elforsyning were billed their grid energy charge from 00:00 to 01:00 and nothing the rest of the day. A table with hour 0 above 0 and every other hour 0 is now the hour-0 price all day, in the adapter and in the canary. Affects D13 §5.11, §19 18.
+**Rejected:** reading Datahub's row for these areas - the table is right once read, and the rule is one line.
+
+### D-0704 · A Swiss municipality merged away isn't offered
+
+ElCom lists Auboranges and Ecublens (FR) after they joined Rue on 1 January 2026, with no tariff for 2026. The list without a postcode keeps the municipalities LINDAS holds an H4 tariff for this year (one SPARQL query, 2 123 of 2 135 on 27 Sep); ElCom's GraphQL times out on 50 in one filter. Affects D13 §5.10, §19 19.
+**Rejected:** a merger table - stale every January; the BFS merger list - one more source for what LINDAS already says.
+
+### D-0705 · The canary retries a dropped connection and remembers what it was told
+
+Ei's workbook failed at 03:59 with a dropped connection and fetched at 10:00; a connection error is now asked again twice (5 and 30 s) before it is a finding. Eltariff and Ei disagree on E.ON Stockholm's apartment rate (0,6468 against 0,5376) and on Kraftringen's and Skånska Energi's (0,16 against 0,1673): Ei's figure for E.ON is Eltariff's house rate, and Eltariff, the operator's own API, is the copy used. `tools/tariff_canary_known.json` acknowledges a finding by its exact text with a reason and a date; it is left out while unchanged and for 180 days. Affects D13 §5.7, §19 20.
+**Rejected:** dropping Ei's check for these companies - a blind spot for good.
+

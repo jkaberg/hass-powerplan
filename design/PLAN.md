@@ -193,6 +193,19 @@ User pages: VZ.2–VZ.8 `docs/dashboard.md`; VZ.7 `docs/entities.md` (the saving
 
 User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 
+### 3.0n The tariff canary's findings of 27 September
+
+[D13 §5.7, §5.10, §5.11](lld/D13-tariff-sources.md), [the Tariff test dashboard](https://github.com/jkaberg/hass-powerplan/issues/6): four sources fixed and the canary made quieter where the finding isn't ours (dec. 48).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **TC.1 Australia's plans** | the register at `x-v: 2`, `productBaseUri`, every page, the brand's own plans, `demandCharges` periods | D13 §5.11; D-0701, D-0702 | D13 §19 17 | - |
+| **TC.2 Denmark's flat tables** | hour 0 alone read as the whole day, in the adapter and the canary | D13 §5.11; D-0703 | D13 §19 18 | - |
+| **TC.3 Switzerland's live municipalities** | LINDAS's set for the list without a postcode; the retired municipality's message | D13 §5.10; D-0704 | D13 §19 19 | - |
+| **TC.4 The canary** | retries on a dropped connection; `tariff_canary_known.json` | D13 §5.7; D-0705 | D13 §19 20 | - |
+
+User pages: TC.1 `docs/tariffs.md` where it names Australia's source; the others change nothing a household reads.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -460,6 +473,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 45. **The capacity axis measures the house** (D-0685 … D-0693, [the field audit](reviews/field-audit-2026-09.md)). The ladder reads the measured total and never a plan or a forecast (INV-38, INV-62); an idle thermostat holds back what its plan draws; the register has one reader; a kept plan covers the next hour and outside it is `None` (INV-30, INV-32); three missed writes in a row are `not_following` (INV-22); a step the period has passed isn't defended (INV-10); INV-48 stays. *Rejected:* tuning thresholds and margins - the projection opened loaded hours at 106–112 % of the ceiling, above every threshold worth having; an optimiser - a non-goal (HLD §1.2), and it would inherit two numbers that disagree.
 46. **Charts that show what PowerPlan did, and a browser under every card** (D-0694 … D-0697). Seven charts replace or join the cards; one PowerPlan mark, explained by its tooltip, sits wherever PowerPlan acted; the ledger keeps an hour-of-day profile for the average day with and without it; every card is mounted in Chromium at every width HA's sections view gives, light and dark, with geometric assertions. *Rejected:* pixel snapshots - fonts differ between machines and snapshots get re-recorded on reflex; a symbol per kind of action - three glyphs to learn where one mark and a sentence do.
 47. **This hour tells the day, History tells what PowerPlan held back** (D-0698 … D-0700). The hour gauge draws the last 12 hours under its arc; an hour whose control level reached 1 carries the PowerPlan mark wherever hours are drawn; History's summary compares the period with the same time of the one before. *Rejected:* a second hour card - Now already has one metric per pane; a comparison in green and red - it's a comparison, not a verdict.
+48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
 
 ---
 
@@ -639,6 +653,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | VZ.10 | Held back | done |
 | VZ.11 | The period before | done |
 | VZ.12 | History's last row | done |
+| TC.1 | Australia's plans | todo |
+| TC.2 | Denmark's flat tables | todo |
+| TC.3 | Switzerland's live municipalities | todo |
+| TC.4 | The canary | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
