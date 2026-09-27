@@ -203,6 +203,7 @@ User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 | **TC.2 Denmark's flat tables** | hour 0 alone read as the whole day, in the adapter and the canary | D13 §5.11; D-0703 | D13 §19 18 | - |
 | **TC.3 Switzerland's live municipalities** | LINDAS's set for the list without a postcode; the retired municipality's message | D13 §5.10; D-0704 | D13 §19 19 | - |
 | **TC.4 The canary** | retries on a dropped connection; `tariff_canary_known.json` | D13 §5.7; D-0705 | D13 §19 20 | - |
+| **TC.5 The flow's path, live** | each fetched copy answered, stored, read back and priced; bounds and the hour-0 shape; three products per retailer | D13 §5.7; D-0706 | D13 §19 21 | TC.4 |
 
 User pages: none change - `docs/tariffs.md` already says Australia's plans are the AER's on Energy Made Easy and that a retailer without plans says so; the rest is a source reading its publisher right.
 
@@ -473,7 +474,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 45. **The capacity axis measures the house** (D-0685 … D-0693, [the field audit](reviews/field-audit-2026-09.md)). The ladder reads the measured total and never a plan or a forecast (INV-38, INV-62); an idle thermostat holds back what its plan draws; the register has one reader; a kept plan covers the next hour and outside it is `None` (INV-30, INV-32); three missed writes in a row are `not_following` (INV-22); a step the period has passed isn't defended (INV-10); INV-48 stays. *Rejected:* tuning thresholds and margins - the projection opened loaded hours at 106–112 % of the ceiling, above every threshold worth having; an optimiser - a non-goal (HLD §1.2), and it would inherit two numbers that disagree.
 46. **Charts that show what PowerPlan did, and a browser under every card** (D-0694 … D-0697). Seven charts replace or join the cards; one PowerPlan mark, explained by its tooltip, sits wherever PowerPlan acted; the ledger keeps an hour-of-day profile for the average day with and without it; every card is mounted in Chromium at every width HA's sections view gives, light and dark, with geometric assertions. *Rejected:* pixel snapshots - fonts differ between machines and snapshots get re-recorded on reflex; a symbol per kind of action - three glyphs to learn where one mark and a sentence do.
 47. **This hour tells the day, History tells what PowerPlan held back** (D-0698 … D-0700). The hour gauge draws the last 12 hours under its arc; an hour whose control level reached 1 carries the PowerPlan mark wherever hours are drawn; History's summary compares the period with the same time of the one before. *Rejected:* a second hour card - Now already has one metric per pane; a comparison in green and red - it's a comparison, not a verdict.
-48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
+48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. The canary runs each copy it fetches through the flow's own path - answered, stored, read back and priced (D-0706). *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
 
 ---
 
@@ -657,6 +658,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TC.2 | Denmark's flat tables | done |
 | TC.3 | Switzerland's live municipalities | done |
 | TC.4 | The canary | done |
+| TC.5 | The flow's path, live | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
