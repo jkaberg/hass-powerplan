@@ -43,6 +43,7 @@ from custom_components.powerplan.core.tariffs.household import (  # noqa: E402
     TaxZone,
     spec,
 )
+from custom_components.powerplan.core.tariffs.rules import loader  # noqa: E402
 from custom_components.powerplan.core.tariffs.sources import (  # noqa: E402
     SourceError,
     UnreachableError,
@@ -54,7 +55,7 @@ from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
 
-    from custom_components.powerplan.core.tariffs.sources import Operator, Product
+    from custom_components.powerplan.core.tariffs.sources import Fetched, Operator, Product
 
 
 #: A country's only source listing more than `LIMIT` operators is fetched for `SAMPLE`
@@ -74,6 +75,23 @@ RETRY_S = (5.0, 30.0)
 KNOWN = REPO_ROOT / "tools" / "tariff_canary_known.json"
 #: Days an acknowledgement holds before the finding is shown again.
 KNOWN_DAYS = 180
+#: The highest a household's grid-and-tax price per kWh may be before it's read as broken, by
+#: currency: about 3 € a kWh, ten times Europe's dearest grid and tax part (D-0706). The
+#: canary's alone - the integration never refuses a household's real tariff.
+BOUNDS: Final[dict[str, Decimal]] = {
+    currency: Decimal(value)
+    for currency, value in {
+        "EUR": "3", "CHF": "3", "GBP": "3", "USD": "3.5", "CAD": "5", "AUD": "5", "NZD": "5",
+        "NOK": "35", "SEK": "35", "DKK": "25", "PLN": "15", "RON": "15", "CZK": "80", "HUF": "1200",
+    }.items()
+}  # fmt: skip
+#: A day's grid energy priced in this many hours or fewer, every other at 0, is a flat tariff read as
+#: its first hour (D-0703); a plan with free hours prices more (D-0706).
+FEW_HOURS = 4
+#: Products fetched per operator of a source that lists them on demand: first, middle, last (D-0706).
+PRODUCTS = 3
+#: The answers a server gives while it's down for a moment: asked again like a dropped connection.
+_GATEWAY: Final = frozenset({"HTTP 502", "HTTP 503", "HTTP 504"})
 _ANSWERED = re.compile(r"HTTP \d{3}$")
 #: A finding's dates: the week compared moves every night, the figures don't.
 _DATES = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?)?")
@@ -132,8 +150,9 @@ class CanaryHttp(base.Http):
 
 
 def _retry(err: UnreachableError, pauses: Iterator[float]) -> float | None:
-    """Return how long to wait before asking again: a dropped connection only, twice (D-0705)."""
-    if _ANSWERED.search(str(err)):
+    """Return how long to wait before asking again, twice: a dropped connection, a 502/503/504 (D-0705)."""
+    answered = _ANSWERED.search(str(err))
+    if answered and answered.group(0) not in _GATEWAY:
         return None
     return next(pauses, None)
 
@@ -302,7 +321,14 @@ async def _cross_check(
         shared = {name for name in names if names.count(name) > 1}
         for cls, operators in listed:
             findings.extend(
-                await _contract(cls, http, [o for o in operators if o.name not in shared])
+                await _contract(
+                    cls,
+                    http,
+                    [o for o in operators if o.name not in shared],
+                    country=country,
+                    day=day,
+                    zone=zone,
+                )
             )
         for name in sorted(shared):
             copies = [(cls, o) for cls, operators in listed for o in operators if o.name == name]
@@ -316,20 +342,40 @@ async def _cross_check(
 
 
 async def _contract(
-    cls: type[base.TariffSource], http: CanaryHttp, operators: Sequence[Operator]
+    cls: type[base.TariffSource],
+    http: CanaryHttp,
+    operators: Sequence[Operator],
+    *,
+    country: str,
+    day: date,
+    zone: ZoneInfo,
 ) -> list[Finding]:
-    """Fetch each operator a source alone lists, or a spread of a long list (§5.7)."""
+    """Fetch each operator a source alone lists, or a spread of a long list, and run the flow's path (§5.7)."""
     findings: list[Finding] = []
     chosen = sample(operators)
     no_plans = 0
     for operator in chosen:
         try:
-            product = await _first_product(cls, http, operator)
-            if product is None and hasattr(cls, "products"):
+            products = await _products_to_try(cls, http, operator)
+            if not products and hasattr(cls, "products"):
                 # a retailer with no residential plan: the flow says so (D-0683)
                 no_plans += 1
                 continue
-            await cls().fetch(http, operator.key, product, {})
+            for product in products or [None]:
+                fetched = await cls().fetch(http, operator.key, product, {})
+                findings.extend(
+                    Finding(cls.key, operator.name, what)
+                    for what in await flow_path(
+                        cls,
+                        http,
+                        operator.key,
+                        product,
+                        fetched,
+                        country=country,
+                        day=day,
+                        zone=zone,
+                    )
+                )
         except SourceError as err:
             findings.append(Finding(cls.key, operator.name, str(err)))
         except Exception as err:  # an adapter's crash is the finding
@@ -337,6 +383,73 @@ async def _contract(
     if chosen and no_plans == len(chosen):
         findings.append(Finding(cls.key, "–", "no operator lists a plan"))
     return findings
+
+
+async def flow_path(
+    cls: type[base.TariffSource],
+    http: CanaryHttp,
+    operator: str,
+    product: str | None,
+    fetched: Fetched,
+    *,
+    country: str,
+    day: date,
+    zone: ZoneInfo,
+) -> list[str]:
+    """Return what stops the flow's own path on a fetched copy (D13 §5.7, D-0706).
+
+    The questions answered with their defaults and the copy fetched again from the cache;
+    the copy stored and read back as `_apply_fetched` does; a week's two days priced.
+    """
+    if fetched.questions:
+        answers = {question.key: question.default for question in fetched.questions}
+        try:
+            fetched = await cls().fetch(http, operator, product, answers)
+        except SourceError as err:
+            return [f"refuses its own questions' defaults: {err}"]
+    try:
+        price = HouseholdPrice(
+            grid=fetched.grid, supplier=SupplierContract(), state=StateTerms(zone=TaxZone(country))
+        )
+        stored = loader.from_raw(loader.dump(spec(price)), source="flow")
+        stored.version_at(day)
+        loader.summarize(stored, day)
+    except Exception as err:  # every way the stored copy can fail is the finding
+        return [f"stores but {err!r}"]
+    return priced(fetched.grid, country, day, zone)
+
+
+def priced(grid: GridTariff, country: str, day: date, zone: ZoneInfo) -> list[str]:
+    """Return a week's two days' hours that don't price, price out of bounds, or are the hour-0 shape."""
+    found: list[str] = []
+    bound = BOUNDS.get(grid.currency)
+    monday = day - timedelta(days=day.weekday())
+    for moment in (monday, monday + timedelta(days=6)):
+        version = grid.energy_at(moment)
+        charged = 0
+        for hour in range(24):
+            when = datetime.combine(moment, time(hour), tzinfo=zone)
+            try:
+                value = paid(grid, country, when.astimezone(UTC), zone)
+            except Exception as err:  # an hour the chain can't price is the finding
+                found.append(f"{moment} {hour:02d}:00 doesn't price: {err!r}")
+                break
+            if value < 0 or (bound is not None and value > bound):
+                found.append(f"{moment} {hour:02d}:00 prices {value} {grid.currency}/kWh")
+                break
+            if version is not None:
+                own = next(
+                    (
+                        p.price
+                        for p in version.periods
+                        if p.when is None or p.when.matches(when, zone, NoHolidays())
+                    ),
+                    version.fallback,
+                )
+                charged += own > 0
+        if 0 < charged <= FEW_HOURS:
+            found.append(f"grid energy on {moment} priced in {charged} hour(s) of 24")
+    return found
 
 
 async def _compare(
@@ -358,8 +471,19 @@ async def _compare(
         if not common:
             return []
         kind = common[0]
-        grids_a = [(await cls_a().fetch(http, op_a.key, k, {})).grid for k in keyed_a[kind]]
-        grids_b = [(await cls_b().fetch(http, op_b.key, k, {})).grid for k in keyed_b[kind]]
+        copies_a = [(k, await cls_a().fetch(http, op_a.key, k, {})) for k in keyed_a[kind]]
+        copies_b = [(k, await cls_b().fetch(http, op_b.key, k, {})) for k in keyed_b[kind]]
+        path: list[Finding] = []
+        for cls, op, copies in ((cls_a, op_a, copies_a), (cls_b, op_b, copies_b)):
+            for k, fetched in copies:
+                path.extend(
+                    Finding(cls.key, op.name, what)
+                    for what in await flow_path(
+                        cls, http, op.key, k, fetched, country=country, day=day, zone=zone
+                    )
+                )
+        grids_a = [fetched.grid for _, fetched in copies_a]
+        grids_b = [fetched.grid for _, fetched in copies_b]
     except SourceError as err:
         return [Finding(source, op_a.name, str(err))]
     except Exception as err:  # an adapter's crash is the finding
@@ -369,9 +493,9 @@ async def _compare(
         for grid_b in grids_b:
             differ = disagreements(grid_a, grid_b, country, day, zone)
             if not differ:
-                return []
+                return path
             found = found or differ
-    return [Finding(source, op_a.name, f"{_label(kind)}: {what}") for what in found]
+    return path + [Finding(source, op_a.name, f"{_label(kind)}: {what}") for what in found]
 
 
 async def _products(
@@ -416,15 +540,25 @@ def _label(what: Kind) -> str:
     return f"{dwelling} {amps} A" + (f" ({region})" if region else "")
 
 
-async def _first_product(
+async def _products_to_try(
     cls: type[base.TariffSource], http: CanaryHttp, operator: Operator
-) -> str | None:
-    """Return the product the flow pre-selects: the operator's first, asked where it lists none."""
-    products = operator.products
+) -> list[str]:
+    """Return the products to fetch: the pre-selected one, or the first, middle and last of a list asked on demand."""
+    if operator.products:
+        return [operator.products[0].key]
     lister = getattr(cls, "products", None)
-    if not products and lister is not None:
-        products = tuple(await lister(cls(), http, operator.key, None))
-    return products[0].key if products else None
+    if lister is None:
+        return []
+    listed = [product.key for product in await lister(cls(), http, operator.key, None)]
+    return spread(listed, PRODUCTS)
+
+
+def spread[T](items: Sequence[T], n: int) -> list[T]:
+    """Return `n` of `items` spread from the first to the last, each once (D-0706)."""
+    if len(items) <= n:
+        return list(items)
+    picks = sorted({round(i * (len(items) - 1) / (n - 1)) for i in range(n)})
+    return [items[i] for i in picks]
 
 
 def sample[T](items: Sequence[T]) -> Sequence[T]:

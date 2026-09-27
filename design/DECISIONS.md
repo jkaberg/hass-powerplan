@@ -2971,7 +2971,7 @@ ElCom lists Auboranges and Ecublens (FR) after they joined Rue on 1 January 2026
 
 ### D-0705 · The canary retries a dropped connection and remembers what it was told
 
-Ei's workbook failed at 03:59 with a dropped connection and fetched at 10:00; a connection error is now asked again twice (5 and 30 s) before it is a finding. Eltariff and Ei disagree on E.ON Stockholm's apartment rate (0,6468 against 0,5376) and on Kraftringen's and Skånska Energi's (0,16 against 0,1673): Ei's figure for E.ON is Eltariff's house rate, and Eltariff, the operator's own API, is the copy used. `tools/tariff_canary_known.json` acknowledges a finding by its text, dates aside and figures kept, with a reason and a date; it is left out while unchanged and for 180 days. Affects D13 §5.7, §19 20.
+Ei's workbook failed at 03:59 with a dropped connection and fetched at 10:00; a connection error, or a 502/503/504 (ElCom answered 503 during a run on the 27th), is now asked again twice (5 and 30 s) before it is a finding. Eltariff and Ei disagree on E.ON Stockholm's apartment rate (0,6468 against 0,5376) and on Kraftringen's and Skånska Energi's (0,16 against 0,1673): Ei's figure for E.ON is Eltariff's house rate, and Eltariff, the operator's own API, is the copy used. `tools/tariff_canary_known.json` acknowledges a finding by its text, dates aside and figures kept, with a reason and a date; it is left out while unchanged and for 180 days. Affects D13 §5.7, §19 20.
 **Rejected:** dropping Ei's check for these companies - a blind spot for good.
 
 ### D-0706 · The canary runs each live copy through the flow's own path

@@ -658,7 +658,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TC.2 | Denmark's flat tables | done |
 | TC.3 | Switzerland's live municipalities | done |
 | TC.4 | The canary | done |
-| TC.5 | The flow's path, live | todo |
+| TC.5 | The flow's path, live | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

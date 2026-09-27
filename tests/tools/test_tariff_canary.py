@@ -194,11 +194,11 @@ async def test_a_retailer_with_no_plan_is_no_finding_unless_every_one_is() -> No
     cls.products = products  # type: ignore[attr-defined]
     http = FixtureHttp({})
     only = [Operator("aseno", "ASENO")]
-    assert await tariff_canary._contract(cls, http, only) == [  # type: ignore[arg-type]
+    assert await tariff_canary._contract(cls, http, only, country="NO", day=DAY, zone=OSLO) == [  # type: ignore[arg-type]
         tariff_canary.Finding("noplans", "–", "no operator lists a plan")
     ]
     both = [*only, Operator("agl", "AGL")]
-    assert await tariff_canary._contract(cls, http, both) == []  # type: ignore[arg-type]
+    assert await tariff_canary._contract(cls, http, both, country="NO", day=DAY, zone=OSLO) == []  # type: ignore[arg-type]
 
 
 class _Dropped(_Replies):
@@ -230,6 +230,9 @@ async def test_20_a_dropped_connection_is_asked_again_twice(
     with pytest.raises(UnreachableError):
         await tariff_canary.CanaryHttp(thrice, DAY).get("https://example.invalid/ei")  # type: ignore[arg-type]
     assert thrice.asked == 3, "the first try and two more"
+    busy = _Replies([503], b"{}")
+    assert await tariff_canary.CanaryHttp(busy, DAY).get("https://example.invalid/elcom") == b"{}"  # type: ignore[arg-type]
+    assert busy.asked == 2, "a 503 is a server down for a moment"
     answered = _Replies([500], b"{}")
     with pytest.raises(UnreachableError, match="HTTP 500"):
         await tariff_canary.CanaryHttp(answered, DAY).get("https://example.invalid/down")  # type: ignore[arg-type]
@@ -278,3 +281,91 @@ def test_20_the_shipped_acknowledgements_are_well_formed() -> None:
         assert set(row) == {"source", "operator", "what", "reason", "since"}
         date.fromisoformat(row["since"])
         assert row["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# D13 §19 21 - the flow's path, live (D-0706)
+# --------------------------------------------------------------------------- #
+
+
+def _one_rate(price: str, *free: tuple[int, int]):  # type: ignore[no-untyped-def]
+    """Tensio's copy with one energy rate all day, and 0 in the `free` hours (minutes)."""
+    from custom_components.powerplan.core.tariffs.household import (  # noqa: PLC0415
+        EnergyPeriod,
+        EnergyVersion,
+    )
+    from custom_components.powerplan.core.tariffs.model import TimeFilter  # noqa: PLC0415
+
+    grid = _tensio()
+    periods = tuple(
+        EnergyPeriod(when=TimeFilter(hours=(span,)), price=Decimal(0), name="free") for span in free
+    )
+    version = EnergyVersion(valid_from=date(2026, 1, 1), periods=periods, fallback=Decimal(price))
+    return replace(grid, energy=(version,))
+
+
+def test_21_a_flat_tariff_read_as_its_first_hour_is_a_finding() -> None:
+    """Denmark's area 357 the old way: 0,0375 at 00 and 0 in the other 23 (D-0703)."""
+    grid = _one_rate("0", (0, 60))
+    first_only = replace(
+        grid,
+        energy=(
+            replace(
+                grid.energy[0],
+                periods=(replace(grid.energy[0].periods[0], price=Decimal("0.0375")),),
+            ),
+        ),
+    )
+    found = tariff_canary.priced(first_only, "NO", DAY, OSLO)
+    assert any("priced in 1 hour(s) of 24" in what for what in found)
+
+
+def test_21_free_hours_at_midday_are_no_finding() -> None:
+    """An Australian-style plan free from 11 to 14 prices 21 hours: not the hour-0 shape."""
+    assert tariff_canary.priced(_one_rate("0.30", (660, 840)), "NO", DAY, OSLO) == []
+
+
+def test_21_a_price_out_of_bounds_is_a_finding() -> None:
+    """Above the currency's bound is read as broken; an ordinary price isn't."""
+    assert tariff_canary.priced(_one_rate("0.30"), "NO", DAY, OSLO) == []
+    [found] = tariff_canary.priced(_one_rate("40"), "NO", DAY, OSLO)[:1]
+    assert "NOK/kWh" in found
+    assert tariff_canary.BOUNDS["EUR"] == Decimal(3)
+
+
+async def test_21_a_copy_that_stores_badly_or_refuses_its_defaults_is_a_finding() -> None:
+    """The flow's step 1c and `_apply_fetched` on a fetched copy (D-0706)."""
+    from custom_components.powerplan.core.tariffs.sources import (  # noqa: PLC0415
+        Fetched,
+        QualityError,
+        Question,
+    )
+    from tests.builders.tariff_sources import FixtureHttp  # noqa: PLC0415
+
+    class Asks:
+        key = "asks"
+
+        async def fetch(
+            self, http: object, operator: str, product: object, answers: dict
+        ) -> Fetched:
+            if answers:
+                raise QualityError("asks: the default is refused")
+            return Fetched(_tensio(), questions=(Question("measurement", "year", "why"),))
+
+    http = FixtureHttp({})
+    kw = {"country": "NO", "day": DAY, "zone": OSLO}
+    refused = await tariff_canary.flow_path(
+        Asks, http, "x", None, await Asks().fetch(http, "x", None, {}), **kw
+    )  # type: ignore[arg-type]
+    assert refused == ["refuses its own questions' defaults: asks: the default is refused"]
+    broken = Fetched(replace(_tensio(), capacity=()))
+    [stores] = await tariff_canary.flow_path(Asks, http, "x", None, broken, **kw)  # type: ignore[arg-type]
+    assert stores.startswith("stores but ")
+    assert await tariff_canary.flow_path(Asks, http, "x", None, Fetched(_tensio()), **kw) == []  # type: ignore[arg-type]
+
+
+def test_21_three_products_spread_over_a_retailers_list() -> None:
+    """200 plans: the first, the 101st and the last; three or fewer: all of them."""
+    plans = [f"p{i}" for i in range(200)]
+    assert tariff_canary.spread(plans, tariff_canary.PRODUCTS) == ["p0", "p100", "p199"]
+    assert tariff_canary.spread(["a", "b"], 3) == ["a", "b"]
