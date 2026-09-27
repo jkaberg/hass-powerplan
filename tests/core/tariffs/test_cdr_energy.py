@@ -75,25 +75,70 @@ def test_a_kva_charge_asks_the_power_factor() -> None:
 def test_a_brands_plans_for_a_postcode() -> None:
     """Residential only; a postcode keeps the plans that include it."""
     plans = (FIXTURES / "cdr" / "gee-plans.json").read_bytes()
-    everywhere = cdr_energy.products(plans, None)
-    toowoomba = cdr_energy.products(plans, "4350")
+    everywhere = cdr_energy.products([plans], None)
+    toowoomba = cdr_energy.products([plans], "4350")
     assert 0 < len(toowoomba) < len(everywhere)
     assert "GEE1037096MRE1@EME" in [p.key for p in everywhere]
+    # its plans say "GEE Energy " with a space: still the brand's
+    assert cdr_energy.products([plans], None, "GEE Energy") == everywhere
 
 
-def test_the_register_lists_every_brand() -> None:
-    """84 energy brands, each with its public base."""
-    operators, bases = cdr_energy.brands((FIXTURES / "cdr" / "register-brands.json").read_bytes())
-    assert len(operators) == 84
-    assert all(bases[o.key].startswith("https://") for o in operators)
+REGISTER = FIXTURES / "cdr" / "register-brands.json"
 
 
-def test_a_brand_on_its_own_host_is_read_from_energy_made_easy() -> None:
-    """AGL's own base answers 404 for its plans; the AER publishes them (D-0683)."""
-    operators, bases = cdr_energy.brands((FIXTURES / "cdr" / "register-brands.json").read_bytes())
+def test_17_the_register_gives_each_brand_its_product_host() -> None:
+    """At x-v 2, `productBaseUri`; a brand without one takes its ABN's other brand's (D-0701)."""
+    operators, bases = cdr_energy.brands(REGISTER.read_bytes())
     key = {operator.name: operator.key for operator in operators}
+    assert len(operators) == 84
     assert bases[key["AGL"]] == "https://cdr.energymadeeasy.gov.au/agl"
-    assert bases[key["Red Energy"]] == "https://cdr.energymadeeasy.gov.au/red-energy"
-    assert bases[key["Snowy Energy"]] == "https://public.cdr.snowyenergy.com.au", (
-        "none there: as listed"
-    )
+    assert bases[key["Next Business Energy"]] == "https://cdr.energymadeeasy.gov.au/next-business"
+    assert bases[key["Indigo Power"]] == bases[key["Next Business Energy"]], "the same ABN"
+    assert bases[key["Snowy Energy"]] == bases[key["Red Energy"]]
+
+
+def test_17_a_brand_with_no_host_and_no_sibling_is_not_listed() -> None:
+    """Neither `productBaseUri` nor a brand with its ABN: not offered."""
+    register = json.loads(REGISTER.read_bytes())
+    register["data"] = [
+        {
+            "dataHolderBrandId": "x",
+            "brandName": "Nowhere",
+            "abn": "1",
+            "publicBaseUri": "https://x",
+        },
+        *register["data"][:2],
+    ]
+    operators, _ = cdr_energy.brands(json.dumps(register).encode())
+    assert "Nowhere" not in [operator.name for operator in operators]
+
+
+def test_17_a_shared_host_keeps_the_chosen_brands_plans() -> None:
+    """Next Business Energy's host serves Indigo Power's plans too (D-0702)."""
+    page = (FIXTURES / "cdr" / "next-business-plans.json").read_bytes()
+    indigo = cdr_energy.products([page], None, "Indigo Power")
+    nbe = cdr_energy.products([page], None, "Next Business Energy")
+    assert indigo
+    assert nbe
+    assert not {p.key for p in indigo} & {p.key for p in nbe}
+    assert cdr_energy.products([page], None, "RAA Energy") == (), "none of RAA's on this host"
+
+
+def test_17_every_page_is_read() -> None:
+    """`links.next` names the next page; the last has none."""
+    first = json.dumps({"data": {"plans": []}, "links": {"next": "https://h/p2"}}).encode()
+    last = json.dumps({"data": {"plans": []}, "links": {"self": "https://h/p2"}}).encode()
+    assert cdr_energy.next_page(first) == "https://h/p2"
+    assert cdr_energy.next_page(last) is None
+
+
+def test_17_a_period_priced_by_demand_alone_has_no_energy_rate() -> None:
+    """Origin's `demandCharges` rate block: energy 0, the demand charge the price."""
+    plan = json.loads(PLAN.read_bytes())
+    period = plan["data"]["electricityContract"]["tariffPeriod"][0]
+    period["rateBlockUType"] = "demandCharges"
+    for key in ("singleRate", "timeOfUseRates"):
+        period.pop(key, None)
+    fetched = _parse(json.dumps(plan).encode(), measurement="month", demand_price="0.1")
+    assert fetched.grid.energy[0].fallback == 0
+    assert fetched.grid.capacity[0].rules

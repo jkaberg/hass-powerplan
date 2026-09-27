@@ -72,6 +72,10 @@ class UnreachableError(SourceError):
     """No answer: network, a 401/403, a captcha, a `robots.txt` disallow (§5.2 rule 3)."""
 
 
+class NotFoundError(UnreachableError):
+    """A 404: the source has nothing at this address - a brand that publishes no plans (D-0702)."""
+
+
 class QualityError(SourceError):
     """An answer the quality check refuses (§5.6): a field wrong, or a code outside the table."""
 

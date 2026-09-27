@@ -204,7 +204,7 @@ User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 | **TC.3 Switzerland's live municipalities** | LINDAS's set for the list without a postcode; the retired municipality's message | D13 §5.10; D-0704 | D13 §19 19 | - |
 | **TC.4 The canary** | retries on a dropped connection; `tariff_canary_known.json` | D13 §5.7; D-0705 | D13 §19 20 | - |
 
-User pages: TC.1 `docs/tariffs.md` where it names Australia's source; the others change nothing a household reads.
+User pages: none change - `docs/tariffs.md` already says Australia's plans are the AER's on Energy Made Easy and that a retailer without plans says so; the rest is a source reading its publisher right.
 
 ### Phase 0 - Pure core and the backtest gate
 
@@ -653,10 +653,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | VZ.10 | Held back | done |
 | VZ.11 | The period before | done |
 | VZ.12 | History's last row | done |
-| TC.1 | Australia's plans | todo |
-| TC.2 | Denmark's flat tables | todo |
-| TC.3 | Switzerland's live municipalities | todo |
-| TC.4 | The canary | todo |
+| TC.1 | Australia's plans | done |
+| TC.2 | Denmark's flat tables | done |
+| TC.3 | Switzerland's live municipalities | done |
+| TC.4 | The canary | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

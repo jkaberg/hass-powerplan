@@ -1,9 +1,11 @@
 """Australia's plans from the Consumer Data Right (D13 §5.5, §5.11; T1a).
 
-The CDR register lists every energy retailer's brand and its public base; the
-AER publishes every brand's plans on Energy Made Easy, where a large retailer's
-own base answers 404 (D-0683). Each brand's `GET …/cds-au/v1/energy/plans` lists
-its plans with their postcodes, and
+The CDR register lists every energy retailer's brand and, read at `x-v: 2`, the
+host of its product data (`productBaseUri`, the AER's Energy Made Easy for most),
+a brand without one taking its ABN's other brand's (D-0701). A host can serve
+several brands, so a brand's plans are picked out by name (D-0702). Each
+brand's `GET …/cds-au/v1/energy/plans` lists its plans with their postcodes, a
+page at a time, and
 `…/plans/{planId}` gives one in full: per tariff period (a date range each year)
 the energy rates - one rate or time-of-use windows by day - the daily supply
 charge and the demand charges, all excl. GST (the CDR's own rule), in dollars.
@@ -34,11 +36,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 __all__ = [
-    "EME",
-    "EME_SLUGS",
     "KEY",
     "REGISTER",
     "brands",
+    "next_page",
     "parse",
     "plan_url",
     "plans_url",
@@ -48,38 +49,6 @@ __all__ = [
 KEY: Final = "cdr_energy"
 REGISTER: Final = "https://api.cdr.gov.au/cdr-register/v1/energy/data-holders/brands/summary"
 ATTRIBUTION: Final = "Consumer Data Right (the brand's product reference data)"
-#: Where the AER publishes the brands' plans: `<EME>/<slug>/cds-au/…`.
-EME: Final = "https://cdr.energymadeeasy.gov.au"
-#: The brands whose register base is their own host, by name, to their Energy Made
-#: Easy slug - each probed on 2026-09-26 and watched by the canary (D-0683).
-EME_SLUGS: Final = {
-    "1st Energy": "1st-energy",
-    "1st Energy (EL Retail Energy)": "energy-locals",
-    "ActewAGL": "actewagl",
-    "AGL": "agl",
-    "Alinta Energy": "alinta",
-    "Amber": "amber",
-    "Arcline by RACV": "arcline",
-    "Aurora Energy": "aurora",
-    "Blue NRG": "blue-nrg",
-    "COVAU PTY LIMITED": "covau",
-    "Diamond Energy": "diamond",
-    "Dodo Power & Gas": "dodo",
-    "EnergyAustralia": "energyaustralia",
-    "ENGIE": "engie",
-    "Ergon Energy Retail": "ergon",
-    "GloBird Energy": "globird",
-    "Kogan Energy": "kogan",
-    "Lumo Energy": "lumo",
-    "Momentum Energy": "momentum",
-    "Nectr": "nectr",
-    "Origin Energy": "origin",
-    "OVO Energy": "ovo-energy",
-    "Powershop": "powershop",
-    "Red Energy": "red-energy",
-    "Sumo Power (legacy)": "sumo-power",
-    "Tango Energy": "tango",
-}
 _DAYS: Final = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 #: The NEM's metering interval: a demand reading is a half-hour's.
 _WINDOW: Final = 30
@@ -110,23 +79,63 @@ def plan_url(base: str, plan: str) -> str:
 
 
 def brands(register: bytes) -> tuple[list[Operator], dict[str, str]]:
-    """Return the register's energy brands as operators, and each one's public base."""
+    """Return the register's energy brands with a product host, and each one's host (D-0701).
+
+    The host is the brand's `productBaseUri`; a brand without one takes that of a
+    brand with the same ABN - Indigo Power's is Next Business Energy's - and a
+    brand with neither isn't offered.
+    """
+    rows = list(_json(register).get("data") or ())
+    by_abn: dict[str, str] = {}
+    for brand in rows:
+        if brand.get("abn") and brand.get("productBaseUri"):
+            by_abn.setdefault(str(brand["abn"]), str(brand["productBaseUri"]))
     found: list[Operator] = []
     bases: dict[str, str] = {}
-    for brand in _json(register).get("data") or ():
+    for brand in rows:
+        host = brand.get("productBaseUri") or by_abn.get(str(brand.get("abn") or ""))
+        if not host:
+            continue
         key = str(brand.get("dataHolderBrandId") or brand["interimId"])
-        name = str(brand["brandName"])
-        bases[key] = (
-            f"{EME}/{EME_SLUGS[name]}" if name in EME_SLUGS else str(brand["publicBaseUri"])
-        )
+        bases[key] = str(host)
         found.append(Operator(key, str(brand["brandName"])))
     return sorted(found, key=lambda operator: operator.name), bases
 
 
-def products(document: bytes, postcode: str | None) -> tuple[Product, ...]:
-    """Return a brand's residential electricity plans, those for the postcode where given."""
+def next_page(document: bytes) -> str | None:
+    """Return the plan list's next page, `None` on the last."""
+    link = (_json(document).get("links") or {}).get("next")
+    return str(link) if link else None
+
+
+def _name(text: str) -> str:
+    """Return a brand's name for matching: case, spaces and punctuation aside."""
+    return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def own_plans(plans: Sequence[Mapping[str, Any]], brand: str) -> list[Mapping[str, Any]]:
+    """Return the brand's plans on a host that may serve several brands (D-0702).
+
+    Those carrying the brand's name; else all of them where every plan carries one
+    name (the host is the brand's under its trading name: "Amber Electric" for
+    "Amber"); else none.
+    """
+    mine = [plan for plan in plans if _name(str(plan.get("brandName") or "")) == _name(brand)]
+    if mine:
+        return mine
+    names = {_name(str(plan.get("brandName") or "")) for plan in plans}
+    return list(plans) if len(names) == 1 else []
+
+
+def products(
+    pages: Sequence[bytes], postcode: str | None, brand: str | None = None
+) -> tuple[Product, ...]:
+    """Return a brand's residential electricity plans over every page, those for the postcode where given."""
+    plans = [plan for page in pages for plan in (_json(page).get("data") or {}).get("plans") or ()]
+    if brand is not None:
+        plans = own_plans(plans, brand)
     found: list[Product] = []
-    for plan in (_json(document).get("data") or {}).get("plans") or ():
+    for plan in plans:
         if plan.get("customerType") != "RESIDENTIAL":
             continue
         geography = plan.get("geography") or {}
@@ -182,6 +191,9 @@ def _energy(period: Mapping[str, Any], since: date) -> EnergyVersion:
             for window in block.get("timeOfUse") or ()
         )
         return EnergyVersion(valid_from=since, periods=periods)
+    if kind == "demandCharges":
+        # A period priced by demand alone has no per-kWh rate; its demand charges are the price (D-0702).
+        return EnergyVersion(valid_from=since, periods=(), fallback=Decimal(0))
     msg = f"{KEY}: a {kind} rate block the model cannot say"
     raise QualityError(msg)
 

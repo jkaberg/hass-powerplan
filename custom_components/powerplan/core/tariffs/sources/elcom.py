@@ -17,9 +17,11 @@ is the category's flat average (D-0602). The energy price is the supplier's. Pur
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final
+from urllib.parse import urlencode
 
 from ..household import EXCL, EnergyVersion, FeeVersion, GridTariff, Provenance
 from ..model import NoPeak, TariffVersion
@@ -32,6 +34,9 @@ __all__ = [
     "API",
     "CATEGORIES",
     "KEY",
+    "LINDAS",
+    "live",
+    "live_url",
     "municipalities",
     "municipalities_query",
     "observations_query",
@@ -43,6 +48,10 @@ __all__ = [
 KEY: Final = "elcom"
 API: Final = "https://www.strompreis.elcom.admin.ch/api/graphql"
 PAGE: Final = "https://www.strompreis.elcom.admin.ch"
+#: The federal linked-data store holding the same ElCom figures: which municipalities are live (D-0704).
+LINDAS: Final = "https://ld.admin.ch/query"
+_CUBE: Final = "https://energy.ld.admin.ch/elcom/electricityprice"
+_MUNICIPALITY: Final = re.compile(r"/municipality/(\d+)\b")
 ATTRIBUTION: Final = "ElCom – Eidgenössische Elektrizitätskommission"
 #: ElCom's household categories, H4 first: the site's own default (`help-categories`).
 CATEGORIES: Final = (
@@ -92,6 +101,37 @@ def observations_query(municipality: str, category: str, year: int) -> dict[str,
     return {
         "query": f'query {{ observations(locale: "de", filters: {{{filters}}}) {{ {_FIELDS} }} }}'
     }
+
+
+def live_url(year: int, category: str) -> str:
+    """Return LINDAS's query for the municipalities with a `category` tariff in `year` (D-0704)."""
+    query = (
+        "PREFIX cube: <https://cube.link/> "
+        f"PREFIX strom: <{_CUBE}/dimension/> "
+        "SELECT DISTINCT ?municipality WHERE { "
+        f"<{_CUBE}> cube:observationSet/cube:observation ?obs . "
+        f'?obs strom:period "{year}"^^<http://www.w3.org/2001/XMLSchema#gYear> ; '
+        f"strom:category <{_CUBE}/category/{category}> ; strom:municipality ?municipality . }}"
+    )
+    return f"{LINDAS}?{urlencode({'query': query})}"
+
+
+def live(document: bytes) -> set[str]:
+    """Return the municipality ids of LINDAS's answer; `QualityError` when it names none."""
+    try:
+        rows = json.loads(document)["results"]["bindings"]
+    except (ValueError, KeyError, TypeError) as err:
+        msg = f"{KEY}: LINDAS's answer is not SPARQL JSON: {err}"
+        raise QualityError(msg) from err
+    found = {
+        match.group(1)
+        for row in rows
+        if (match := _MUNICIPALITY.search(str((row.get("municipality") or {}).get("value", ""))))
+    }
+    if not found:
+        msg = f"{KEY}: LINDAS names no municipality"
+        raise QualityError(msg)
+    return found
 
 
 def _data(document: bytes, field: str) -> list[dict[str, Any]]:
@@ -163,7 +203,11 @@ def parse(
             row, questions = _row(rows, answers)
             versions.append((year, row))
     if not versions:
-        msg = f"{KEY}: no {category} tariff for municipality {municipality}"
+        # a municipality merged into another keeps its id and last year's figures (D-0704)
+        msg = (
+            f"{KEY}: no {category} tariff for municipality {municipality} this year - "
+            "a municipality that merged into another has none; choose the one it joined"
+        )
         raise QualityError(msg)
     latest = versions[-1][1]
     key = slug("ch", municipality, str(latest["operator"]), category, KEY)

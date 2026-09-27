@@ -1,0 +1,23 @@
+[
+  {
+    "source": "eltariff / ei_household",
+    "operator": "E.ON Energidistribution AB",
+    "what": "apartment 16 A (Stockholm): energy at …: 1.258500 against 1.122000",
+    "reason": "Ei's workbook gives E.ON Stockholm's apartment 53.76 öre, which is Eltariff's house rate (GEESMÅ-16); Eltariff's apartment product GEELGH-16 is 64.68. Eltariff (T1a, the operator's own API) is the copy used (D-0705).",
+    "since": "2026-09-27"
+  },
+  {
+    "source": "eltariff / ei_household",
+    "operator": "Kraftringen Nät AB",
+    "what": "house 16 A: energy at …: 0.65000 against 0.659125",
+    "reason": "Eltariff has 16.00 öre all year (its 2025-06-01 and 2026-07-01 versions), Ei 16.73 for 2026. Eltariff is the copy used (D-0705).",
+    "since": "2026-09-27"
+  },
+  {
+    "source": "eltariff / ei_household",
+    "operator": "Skånska Energi Nät AB",
+    "what": "house 16 A: energy at …: 0.65000 against 0.659125",
+    "reason": "The same product and figures as Kraftringen's in both sources. Eltariff is the copy used (D-0705).",
+    "since": "2026-09-27"
+  }
+]

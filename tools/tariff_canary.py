@@ -52,7 +52,7 @@ from custom_components.powerplan.core.tariffs.sources import (  # noqa: E402
 from custom_components.powerplan.providers.tariffs import base  # noqa: E402
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterator, Mapping, Sequence
 
     from custom_components.powerplan.core.tariffs.sources import Operator, Product
 
@@ -67,6 +67,16 @@ PROBES: Final = {"cwape": "5000", "openei_urdb": "85004"}
 #: Seconds to wait before asking again after a 429: Energi Data Service sends a
 #: few when the canary asks for every Danish area in a row.
 BACKOFF_S = (5.0, 20.0, 60.0)
+#: Seconds to wait before asking again after a dropped connection or a timeout: Ei's
+#: workbook failed at 03:59 and fetched at 10:00 (D-0705). An HTTP answer isn't retried.
+RETRY_S = (5.0, 30.0)
+#: The findings the maintainer has read and that no fix of ours can settle (D-0705).
+KNOWN = REPO_ROOT / "tools" / "tariff_canary_known.json"
+#: Days an acknowledgement holds before the finding is shown again.
+KNOWN_DAYS = 180
+_ANSWERED = re.compile(r"HTTP \d{3}$")
+#: A finding's dates: the week compared moves every night, the figures don't.
+_DATES = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:[+-]\d{2}:\d{2}|Z)?)?")
 
 
 class CanaryHttp(base.Http):
@@ -92,15 +102,40 @@ class CanaryHttp(base.Http):
         return await asyncio.to_thread(job, *args)
 
     async def _download(self, url: str, headers: Mapping[str, str]) -> bytes:
-        """Fetch `url`, asking again after a 429 (Too Many Requests)."""
+        """Fetch `url`, asking again after a 429 (Too Many Requests) or a dropped connection."""
+        dropped = iter(RETRY_S)
         for pause in (*BACKOFF_S, None):
-            try:
-                return await super()._download(url, headers)
-            except UnreachableError as err:
-                if pause is None or not str(err).endswith("HTTP 429"):
-                    raise
+            while True:
+                try:
+                    return await super()._download(url, headers)
+                except UnreachableError as err:
+                    wait = _retry(err, dropped)
+                    if wait is None:
+                        if pause is None or not str(err).endswith("HTTP 429"):
+                            raise
+                        break
+                await asyncio.sleep(wait)
             await asyncio.sleep(pause)
         raise AssertionError  # unreachable: the last pass returns or raises
+
+    async def _send(self, url: str, body: Mapping[str, Any]) -> bytes:
+        """POST, asking again after a dropped connection (ElCom's "Server disconnected")."""
+        dropped = iter(RETRY_S)
+        while True:
+            try:
+                return await super()._send(url, body)
+            except UnreachableError as err:
+                wait = _retry(err, dropped)
+                if wait is None:
+                    raise
+            await asyncio.sleep(wait)
+
+
+def _retry(err: UnreachableError, pauses: Iterator[float]) -> float | None:
+    """Return how long to wait before asking again: a dropped connection only, twice (D-0705)."""
+    if _ANSWERED.search(str(err)):
+        return None
+    return next(pauses, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,7 +248,7 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
         if len(rows) != len(hours) or sorted(hours) != list(range(datahub_pricelist.HOURS)):
             # not a table to compare: the adapter reads Datahub's instead (D-0682)
             continue
-        ours = datahub_pricelist.hourly(since, [hours[h] for h in range(datahub_pricelist.HOURS)])
+        ours = datahub_pricelist.hourly(since, elpris_dk.day_prices(hours))
         other = theirs.get(since)
         if other is None:
             findings.append(
@@ -414,6 +449,36 @@ def report(findings: Sequence[Finding], day: date) -> str:
     return "\n".join(lines)
 
 
+def _undated(what: str) -> str:
+    return _DATES.sub("…", what)
+
+
+def acknowledged(findings: Sequence[Finding], day: date, path: Path = KNOWN) -> list[Finding]:
+    """Leave out the findings the maintainer has acknowledged, dates aside, for `KNOWN_DAYS` (D-0705).
+
+    An entry older than that shows its finding again, dated, so it is read again.
+    """
+    known = json.loads(path.read_text("utf-8")) if path.exists() else []
+    since = {
+        (row["source"], row["operator"], _undated(row["what"])): date.fromisoformat(row["since"])
+        for row in known
+    }
+    kept: list[Finding] = []
+    for finding in findings:
+        when = since.get((finding.source, finding.operator, _undated(finding.what)))
+        if when is None:
+            kept.append(finding)
+        elif (day - when).days > KNOWN_DAYS:
+            kept.append(
+                Finding(
+                    finding.source,
+                    finding.operator,
+                    f"{finding.what} (acknowledged {when}: read again)",
+                )
+            )
+    return kept
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Print the report; exit 1 on any finding, so the workflow opens an issue."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -422,7 +487,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--time-zone", default="UTC", help="the zone a day's hours are read in")
     args = parser.parse_args(argv)
     chosen = args.country or [code for code in countries.codes() if base.for_country(code)]
-    findings = asyncio.run(run(chosen, args.at, args.time_zone))
+    findings = acknowledged(asyncio.run(run(chosen, args.at, args.time_zone)), args.at)
     print(report(findings, args.at))
     return 1 if findings else 0
 

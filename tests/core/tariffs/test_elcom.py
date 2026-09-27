@@ -85,10 +85,42 @@ async def test_a_postcode_finds_its_municipality_and_the_copy_follows() -> None:
 
 
 async def test_without_a_postcode_every_municipality_is_listed() -> None:
-    """2 135 municipalities, Basel's H2 among them."""
+    """ElCom's 2 135 kept to the 2 117 LINDAS holds a 2026 tariff for, Basel's H2 among them."""
     http = switzerland_http()
     found = await Elcom().operators(http)  # type: ignore[arg-type]
-    assert len(found) == 2135
+    assert len(found) == 2117
     fetched = await Elcom().fetch(http, "2701", "H2", {})  # type: ignore[arg-type]
     assert fetched.grid.operator == "IWB Industrielle Werke Basel"
     assert fetched.grid.energy[0].fallback == Decimal("0.18795")
+
+
+async def test_19_a_merged_municipality_is_not_offered() -> None:
+    """Auboranges joined Rue on 1 January 2026: gone from the list, Rue kept (D-0704)."""
+    names = {op.name for op in await Elcom().operators(switzerland_http())}  # type: ignore[arg-type]
+    assert "Auboranges" not in names
+    assert "Ecublens (FR)" not in names
+    assert "Rue" in names
+
+
+async def test_19_without_lindas_the_list_is_elcoms() -> None:
+    """LINDAS unreachable: ElCom's whole list, as before."""
+    http = switzerland_http()
+    http.documents.pop(elcom.live_url(CAPTURED.year, "H4"))
+    assert len(await Elcom().operators(http)) == 2135  # type: ignore[arg-type]
+
+
+def test_19_lindas_names_the_live_municipalities() -> None:
+    """The ids of the answer's municipality URIs; an answer naming none is refused."""
+    found = elcom.live((FIXTURES / "elcom" / "lindas-2026-H4.json").read_bytes())
+    assert len(found) == 2123
+    assert "2097" in found
+    assert "2061" not in found
+    with pytest.raises(QualityError):
+        elcom.live(b'{"results": {"bindings": []}}')
+
+
+def test_19_a_retired_municipality_asks_for_the_one_it_joined() -> None:
+    """No tariff this year: the message says why and what to choose."""
+    empty = b'{"data":{"observations":[]}}'
+    with pytest.raises(QualityError, match="merged"):
+        elcom.parse({2026: empty, 2027: empty}, "2061", "H4", fetched=CAPTURED, answers={})

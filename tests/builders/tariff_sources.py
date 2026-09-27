@@ -266,7 +266,8 @@ def switzerland_http() -> FixtureHttp:
         post_key(elcom.API, elcom.search_query("3011")): (folder / "search-3011.json").read_bytes(),
         post_key(elcom.API, elcom.municipalities_query()): (
             folder / "municipalities.json"
-        ).read_bytes(),
+        ).read_bytes(),  # D-0704: the municipalities with a tariff this year, from LINDAS
+        elcom.live_url(CAPTURED.year, "H4"): (folder / "lindas-2026-H4.json").read_bytes(),
     }
     for municipality, category in (("351", "H4"), ("2701", "H2")):
         documents[post_key(elcom.API, elcom.observations_query(municipality, category, 2026))] = (

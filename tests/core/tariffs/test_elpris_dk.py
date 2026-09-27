@@ -173,3 +173,30 @@ def test_3_without_flex_hours_datahubs_rows_are_the_tariff() -> None:
     assert _price_at(winter, night.replace(month=11, hour=18)) == Decimal("0.6468") + ENERGINET
     with pytest.raises(QualityError, match="no hourly tariff"):
         _area("860", "Zeanet A/S")
+
+
+def test_18_a_table_priced_in_hour_0_alone_is_that_price_all_day() -> None:
+    """Forsyning Elnet's STR-NT-02: 0,0375 in hour 0 and 0 after is 0,0375 every hour (D-0703)."""
+    fetched = elpris_dk.parse(
+        _json("elpris_dk", "distributionAreaCharge_357.json"),
+        _json("elpris_dk", "nationalCharges.json"),
+        [],
+        area="357",
+        name="Forsyning Elnet A/S",
+        fetched=date(2026, 9, 27),
+    )
+    version = fetched.grid.energy[-1]
+    prices = {period.price for period in version.periods} | {version.fallback}
+    assert prices == {Decimal("0.0375") + ENERGINET}
+    assert version.valid_from == date(2026, 1, 1)
+    # equal to Datahub's row, `Price1` with the other hours empty
+    assert (
+        elpris_dk.day_prices({0: Decimal("0.0375"), **{h: Decimal(0) for h in range(1, 24)}})
+        == [Decimal("0.0375")] * 24
+    )
+
+
+def test_18_a_table_with_two_hours_priced_is_read_as_it_is() -> None:
+    """Only hour 0 alone is Datahub's convention; a night rate from 01:00 stays."""
+    hours = {h: Decimal(0) for h in range(24)} | {0: Decimal("0.2"), 1: Decimal("0.1")}
+    assert elpris_dk.day_prices(hours)[:3] == [Decimal("0.2"), Decimal("0.1"), Decimal(0)]

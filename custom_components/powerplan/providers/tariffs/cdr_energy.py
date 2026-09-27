@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from custom_components.powerplan.core.tariffs.sources import (
     Credit,
     Fetched,
+    NotFoundError,
     Operator,
     Product,
     QualityError,
@@ -29,6 +30,10 @@ if TYPE_CHECKING:
 __all__ = ["CdrEnergy"]
 
 _LIST: Final = {"x-v": "1"}
+#: The register's version that carries each brand's `productBaseUri` (D-0701).
+_REGISTER: Final = {"x-v": "2"}
+#: The most pages of plans read for one brand: 20 000 plans (D-0702).
+_PAGES: Final = 20
 _DETAIL: Final = {"x-v": "3"}
 
 
@@ -43,7 +48,7 @@ class CdrEnergy:
     credit: ClassVar[Credit | None] = Credit("Consumer Data Right", "https://www.cdr.gov.au", None)
 
     async def _brands(self, http: Http) -> tuple[list[Operator], dict[str, str]]:
-        return cdr_energy.brands(await http.get(cdr_energy.REGISTER, **_LIST))
+        return cdr_energy.brands(await http.get(cdr_energy.REGISTER, **_REGISTER))
 
     async def operators(self, http: Http, postcode: str | None = None) -> list[Operator]:
         """Return every energy retailer's brand; its plans are asked once it is chosen."""
@@ -53,13 +58,25 @@ class CdrEnergy:
     async def products(
         self, http: Http, operator: str, postcode: str | None
     ) -> tuple[Product, ...]:
-        """Return the brand's residential electricity plans for the postcode."""
-        _, bases = await self._brands(http)
+        """Return the brand's residential electricity plans for the postcode, over every page."""
+        found, bases = await self._brands(http)
         base = bases.get(operator)
         if base is None:
             msg = f"{cdr_energy.KEY}: no brand {operator!r}"
             raise QualityError(msg)
-        return cdr_energy.products(await http.get(cdr_energy.plans_url(base), **_LIST), postcode)
+        name = next(brand.name for brand in found if brand.key == operator)
+        pages: list[bytes] = []
+        url: str | None = cdr_energy.plans_url(base)
+        try:
+            while url is not None and len(pages) < _PAGES:
+                pages.append(await http.get(url, **_LIST))
+                url = cdr_energy.next_page(pages[-1])
+        except NotFoundError:
+            # a host with no plan list: a brand that publishes none (D-0702)
+            if not pages:
+                return ()
+            raise
+        return cdr_energy.products(pages, postcode, name)
 
     async def fetch(
         self, http: Http, operator: str, product: str | None, answers: Mapping[str, Any]

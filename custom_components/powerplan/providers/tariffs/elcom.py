@@ -14,6 +14,7 @@ from custom_components.powerplan.core.tariffs.sources import (
     Credit,
     Fetched,
     Operator,
+    SourceError,
     Tier,
     elcom,
 )
@@ -47,9 +48,18 @@ class Elcom:
             if found:
                 # The site's search ranks the postcode's own municipality first.
                 return elcom.operators(found[:1])
-        return elcom.operators(
-            elcom.municipalities(await http.post(elcom.API, elcom.municipalities_query()))
-        )
+        found = elcom.municipalities(await http.post(elcom.API, elcom.municipalities_query()))
+        # ElCom keeps a merged municipality listed; LINDAS says which have a tariff this year (D-0704).
+        try:
+            current = elcom.live(
+                await http.get(
+                    elcom.live_url(http.today().year, elcom.CATEGORIES[0].key),
+                    Accept="application/sparql-results+json",
+                )
+            )
+        except SourceError:
+            return elcom.operators(found)
+        return elcom.operators([row for row in found if row[0] in current])
 
     async def fetch(
         self, http: Http, operator: str, product: str | None, answers: Mapping[str, Any]

@@ -7,6 +7,7 @@ workflow's, never the PR suite's.
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date
@@ -15,6 +16,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+import aiohttp
 import pytest
 
 from custom_components.powerplan.core.tariffs.household import (
@@ -30,6 +32,7 @@ from tools import tariff_canary
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+    from pathlib import Path
 
 OSLO = ZoneInfo("Europe/Oslo")
 DAY = date(2026, 9, 24)
@@ -196,3 +199,82 @@ async def test_a_retailer_with_no_plan_is_no_finding_unless_every_one_is() -> No
     ]
     both = [*only, Operator("agl", "AGL")]
     assert await tariff_canary._contract(cls, http, both) == []  # type: ignore[arg-type]
+
+
+class _Dropped(_Replies):
+    """A session whose first `drops` GETs lose the connection."""
+
+    def __init__(self, drops: int, body: bytes) -> None:
+        super().__init__([], body)
+        self.drops = drops
+
+    @asynccontextmanager
+    async def get(self, url: str, **kwargs: object) -> AsyncIterator[object]:
+        if self.drops:
+            self.drops -= 1
+            self.asked += 1
+            raise aiohttp.ServerDisconnectedError
+        async with super().get(url, **kwargs) as answer:
+            yield answer
+
+
+async def test_20_a_dropped_connection_is_asked_again_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ei's workbook failed at 03:59 on a dropped connection and fetched at 10:00 (D-0705)."""
+    monkeypatch.setattr(tariff_canary, "RETRY_S", (0.0, 0.0))
+    once = _Dropped(1, b"{}")
+    assert await tariff_canary.CanaryHttp(once, DAY).get("https://example.invalid/ei") == b"{}"  # type: ignore[arg-type]
+    assert once.asked == 2
+    thrice = _Dropped(3, b"{}")
+    with pytest.raises(UnreachableError):
+        await tariff_canary.CanaryHttp(thrice, DAY).get("https://example.invalid/ei")  # type: ignore[arg-type]
+    assert thrice.asked == 3, "the first try and two more"
+    answered = _Replies([500], b"{}")
+    with pytest.raises(UnreachableError, match="HTTP 500"):
+        await tariff_canary.CanaryHttp(answered, DAY).get("https://example.invalid/down")  # type: ignore[arg-type]
+    assert answered.asked == 1, "an HTTP answer is not a dropped connection"
+
+
+def test_20_an_acknowledged_finding_is_left_out_until_its_figure_changes(tmp_path: Path) -> None:
+    """Dates aside, figures kept; 180 days, then shown again with its date (D-0705)."""
+    known = tmp_path / "known.json"
+    known.write_text(
+        json.dumps(
+            [
+                {
+                    "source": "a / b",
+                    "operator": "E.ON",
+                    "what": "apartment: energy at …: 1.25 against 1.12",
+                    "reason": "r",
+                    "since": "2026-09-27",
+                }
+            ]
+        ),
+        "utf-8",
+    )
+    same = tariff_canary.Finding(
+        "a / b", "E.ON", "apartment: energy at 2026-10-05T00:00:00+00:00: 1.25 against 1.12"
+    )
+    moved = tariff_canary.Finding(
+        "a / b", "E.ON", "apartment: energy at 2026-10-05T00:00:00+00:00: 1.30 against 1.12"
+    )
+    other = tariff_canary.Finding(
+        "a / b", "Vattenfall", "apartment: energy at 2026-10-05T00:00:00+00:00: 1.25 against 1.12"
+    )
+    assert tariff_canary.acknowledged([same, moved, other], date(2026, 10, 5), known) == [
+        moved,
+        other,
+    ]
+    [again] = tariff_canary.acknowledged([same], date(2027, 4, 1), known)
+    assert "acknowledged 2026-09-27" in again.what
+
+
+def test_20_the_shipped_acknowledgements_are_well_formed() -> None:
+    """Each entry has a source, an operator, a finding, a reason and a date."""
+    rows = json.loads(tariff_canary.KNOWN.read_text("utf-8"))
+    assert rows
+    for row in rows:
+        assert set(row) == {"source", "operator", "what", "reason", "since"}
+        date.fromisoformat(row["since"])
+        assert row["reason"]

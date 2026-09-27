@@ -32,6 +32,7 @@ __all__ = [
     "areas_for",
     "charge_code",
     "charge_since",
+    "day_prices",
     "operators",
     "owner",
     "parse",
@@ -101,6 +102,18 @@ def charge_since(area_doc: Mapping[str, Any]) -> date | None:
     return date.fromisoformat(str(tariffs[-1]["validFrom"])) if tariffs else None
 
 
+def day_prices(hours: Mapping[int, Decimal]) -> list[Decimal]:
+    """Return a `flex` table's 24 prices; one priced in hour 0 alone is that price all day (D-0703).
+
+    Datahub publishes a flat tariff as `Price1` with the other hours empty, and
+    elpris.dk writes it as hour 0 priced and 0 in the other 23.
+    """
+    prices = [hours[hour] for hour in range(datahub_pricelist.HOURS)]
+    if prices[0] > 0 and not any(prices[1:]):
+        return [prices[0]] * datahub_pricelist.HOURS
+    return prices
+
+
 def parse(
     area_doc: Mapping[str, Any],
     national: Mapping[str, Any],
@@ -151,9 +164,7 @@ def parse(
             continue
         since = date.fromisoformat(str(tariff["validFrom"]))
         energy.append(
-            datahub_pricelist.hourly(
-                since, [hours[h] + extra for h in range(datahub_pricelist.HOURS)]
-            )
+            datahub_pricelist.hourly(since, [price + extra for price in day_prices(hours)])
         )
         last = date.fromisoformat(str(tariff["validTo"])) if tariff.get("validTo") else None
     for version, until in datahub_pricelist.versions(future, str(code), extra):

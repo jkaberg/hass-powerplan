@@ -16,6 +16,7 @@ import aiohttp
 
 from custom_components.powerplan.core.tariffs.sources import (
     Credit,
+    NotFoundError,
     Operator,
     Tier,
     UnreachableError,
@@ -147,6 +148,9 @@ class Http:
                 headers={"User-Agent": USER_AGENT, **headers},
                 timeout=aiohttp.ClientTimeout(total=TIMEOUT_S),
             ) as answer:
+                if answer.status == 404:  # noqa: PLR2004 - HTTP Not Found
+                    msg = f"{url}: HTTP 404"
+                    raise NotFoundError(msg)
                 if answer.status != 200:  # noqa: PLR2004 - HTTP OK
                     msg = f"{url}: HTTP {answer.status}"
                     raise UnreachableError(msg)
