@@ -118,6 +118,9 @@ class _NoCarHousehold:
         return replace(self._inner.day(when), plugs_in=False)  # type: ignore[attr-defined]
 
     def __getattr__(self, name: str) -> object:
+        # unpickling looks up `__setstate__` before `_inner` exists: without this it recursed
+        if name.startswith("__") or name == "_inner":
+            raise AttributeError(name)
         return getattr(self._inner, name)
 
 

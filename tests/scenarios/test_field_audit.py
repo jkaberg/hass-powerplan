@@ -66,3 +66,15 @@ def test_at_4_7_kwh_the_car_still_reaches_its_target_by_departure(tight: Scenari
     assert tight.over_target == 0
     assert tight.deadline_misses == 0
     assert tight.ev_soc_at_departure == pytest.approx(0.80, abs=0.005)
+
+
+def test_the_carless_household_survives_the_cache() -> None:
+    """Unpickling asked `__setstate__` of the wrapper before `_inner` existed and recursed (CI, 27 Sep)."""
+    import pickle  # noqa: PLC0415
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from tests.scenarios.catalogue import _NoCarHousehold  # noqa: PLC0415
+
+    household = _NoCarHousehold(SimpleNamespace(people=2))
+    again = pickle.loads(pickle.dumps(household))
+    assert again.people == 2

@@ -117,7 +117,14 @@ def cached[T](module: str, name: str, run: Callable[[], T]) -> T:
             try:
                 with entry.open("rb") as handle:
                     return _recorded(module, name, pickle.load(handle))
-            except OSError, pickle.PickleError, EOFError, AttributeError, ImportError:
+            except (
+                OSError,
+                pickle.PickleError,
+                EOFError,
+                AttributeError,
+                ImportError,
+                RecursionError,
+            ):
                 _LOGGER.warning("simulation cache: %s unreadable, recomputing", entry.name)
         result = _recorded(module, name, run())
         try:
