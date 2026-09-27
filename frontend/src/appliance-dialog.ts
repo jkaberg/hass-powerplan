@@ -37,7 +37,7 @@ const D_LABELS: Record<string, Record<string, string>> = {
     need_moved: "{kwh} kWh flyttes", need_hold: "{kwh} kWh holder temperaturen", no_run: "Ingen kjøring planlagt",
     target: "mål {v}", prices_known: "Kjente priser", prices_part: "Anslått for {n} av {m} timer",
     prices_stale: "Anslått – ingen nye priser siden {time}", cost_for: "≈ {kr} kr",
-    more_than_ref: "mer enn uten styring", legionella: "Legionella", legionella_next: "neste {date}", planned_word: "planlagt",
+    extra_cost: "Merkostnad", legionella: "Legionella", legionella_next: "neste {date}", planned_word: "planlagt",
   },
   en: {
     control: "Control", deadline: "Ready by", plan: "Next 24 hours", why: "Why this plan", month: "This month",
@@ -47,7 +47,7 @@ const D_LABELS: Record<string, Record<string, string>> = {
     need_moved: "{kwh} kWh moved", need_hold: "{kwh} kWh holding temperature", no_run: "No run planned",
     target: "target {v}", prices_known: "Known prices", prices_part: "Estimated for {n} of {m} hours",
     prices_stale: "Estimated – no new prices since {time}", cost_for: "≈ {kr}",
-    more_than_ref: "more than without control", legionella: "Legionella", legionella_next: "next {date}", planned_word: "planned",
+    extra_cost: "Extra cost", legionella: "Legionella", legionella_next: "next {date}", planned_word: "planned",
   },
 };
 
@@ -75,7 +75,9 @@ export function openApplianceDialog(host: HTMLElement, hass: Hass, load: LoadCfg
 export class PowerplanApplianceDialog extends HTMLElement {
   standalone = false;
   private _hass?: Hass;
-  private params?: Params;
+  // Not `params`: HA's dialog manager takes an element with a `params` property for a new-style dialog and
+  // drops it on close, so the next open got a fresh element without hass and threw before showModal.
+  private args?: Params;
   private dlg?: HTMLDialogElement;
   private kids: { el: any }[] = [];
   private key: unknown[] = [];
@@ -87,8 +89,8 @@ export class PowerplanApplianceDialog extends HTMLElement {
   set hass(h: Hass) {
     this._hass = h;
     for (const c of this.kids) c.el.hass = h;
-    if (!this.params) return;
-    const l = this.params.load, c = this.params.cfg;
+    if (!this.args) return;
+    const l = this.args.load, c = this.args.cfg;
     const ids = [l.status, l.control, l.deadline, l.cost, l.savings, l.energy, l.legionella, c.entities.plan, c.entities.price_forecast];
     const k = [...ids.map((id) => (id ? h.states[id] : undefined)), Math.floor(Date.now() / 60e3)];
     if (k.every((v, i) => v === this.key[i])) return;
@@ -98,7 +100,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
   get hass(): Hass | undefined { return this._hass; }
 
   async showDialog(params: Params): Promise<void> {
-    this.params = params;
+    this.args = params;
     this.key = [];
     this.renderShell();
     await this.mountBuiltins();
@@ -121,7 +123,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
   private onClosed(): void {
     if (this.poll) clearInterval(this.poll);
     this.ro?.disconnect();
-    this.params = undefined;
+    this.args = undefined;
     this.kids = [];
     this.dispatchEvent(new CustomEvent("dialog-closed", { bubbles: true, composed: true, detail: { dialog: TAG } }));
     if (this.standalone) this.remove();
@@ -129,13 +131,13 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
   private L(): Record<string, string> {
     const h = this._hass!;
-    return { ...pick(STATUS_LABELS, h), ...pick(D_LABELS, h), ...(this.params?.cfg.labels ?? {}) };
+    return { ...pick(STATUS_LABELS, h), ...pick(D_LABELS, h), ...(this.args?.cfg.labels ?? {}) };
   }
 
   // ---------------------------------------------------------------- static part
   private renderShell(): void {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    const { load } = this.params!;
+    const { load } = this.args!;
     const L = this.L();
     const crumb = [load.area, L.crumb_app].filter(Boolean).map(esc).join(`<span class="sep" aria-hidden="true">›</span>`);
     this.shadowRoot!.innerHTML = `<style>${TOKENS}${SHARED}${CSS}</style>
@@ -188,7 +190,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
     if (e.target === dlg) { this.closeDialog(); return; } // backdrop
     const b = (e.target as HTMLElement).closest("[data-act]") as HTMLElement | null;
     if (!b) return;
-    const { load } = this.params!;
+    const { load } = this.args!;
     const act = b.dataset.act;
     const menu = this.shadowRoot!.querySelector(".menu") as HTMLElement;
     const trigger = this.shadowRoot!.querySelector('[data-act="menu"]') as HTMLElement;
@@ -229,7 +231,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
   /** HA's own tile (select feature) and row (time) elements, full width. */
   private async mountBuiltins(): Promise<void> {
-    const { load } = this.params!;
+    const { load } = this.args!;
     const L = this.L();
     const ctl = this.shadowRoot!.getElementById("ctl");
     if (!ctl) return;
@@ -260,7 +262,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
   // ---------------------------------------------------------------- live part
   private renderDynamic(): void {
-    const hass = this._hass, p = this.params, root = this.shadowRoot;
+    const hass = this._hass, p = this.args, root = this.shadowRoot;
     if (!hass || !p || !root) return;
     const { load, cfg } = p;
     const L = this.L();
@@ -317,8 +319,8 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const stats = root.getElementById("stats");
     if (stats) {
       const unitOf = (e?: HassEntity) => (e?.attributes.unit_of_measurement === "NOK" ? "kr" : e?.attributes.unit_of_measurement ?? "");
-      const cell = (label: string, value: string, unit: string, sub = "") =>
-        `<div class="stat"><span class="sl">${esc(label)}</span><span class="sv">${esc(value)} <small>${esc(unit)}</small></span>${sub ? `<span class="ss">${esc(sub)}</span>` : ""}</div>`;
+      const cell = (label: string, value: string, unit: string) =>
+        `<div class="stat"><span class="sl">${esc(label)}</span><span class="sv">${esc(value)} <small>${esc(unit)}</small></span></div>`;
       const ce = load.cost ? hass.states[load.cost] : undefined;
       const se = load.savings ? hass.states[load.savings] : undefined;
       const ee = load.energy ? hass.states[load.energy] : undefined;
@@ -327,7 +329,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
       const costKnown = c !== null && !(c < 0.005 && (e ?? 0) > 0.05);        // 0,00 kr with 8,5 kWh used = not computed yet
       const html =
         (costKnown ? cell(L.cost, nf2.format(c!), unitOf(ce)) : "") +
-        (se && !sv.missing ? cell(L.savings, nf2.format(sv.value!), unitOf(se), sv.value! < 0 ? L.more_than_ref : "") : "") +
+        (se && !sv.missing ? cell(sv.value! < 0 ? L.extra_cost : L.savings, nf2.format(Math.abs(sv.value!)), unitOf(se)) : "") +
         (e !== null ? cell(L.energy, nf2.format(e), unitOf(ee)) : "");
       stats.innerHTML = html;
       const h3 = stats.previousElementSibling as HTMLElement | null;
@@ -339,7 +341,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
   /** Price confidence for the hours that matter (the chosen runs, else the next 24 h). */
   private priceState(ws: { start: Date; end: Date }[]): { text: string; warn: boolean } {
-    const hass = this._hass!, L = this.L(), cfg = this.params!.cfg;
+    const hass = this._hass!, L = this.L(), cfg = this.args!.cfg;
     const pe = cfg.entities.price_forecast ? hass.states[cfg.entities.price_forecast] : undefined;
     const tf = timeFmt(hass);
     if (!pe || ["unknown", "unavailable"].includes(pe.state)) {
@@ -360,7 +362,7 @@ export class PowerplanApplianceDialog extends HTMLElement {
 
   /** One lane (same encoding as Apparater) + axis, sized to the body width. */
   private renderLane(): void {
-    const hass = this._hass, p = this.params, box = this.shadowRoot?.getElementById("plan");
+    const hass = this._hass, p = this.args, box = this.shadowRoot?.getElementById("plan");
     if (!hass || !p || !box) return;
     const W = Math.round(box.clientWidth);
     if (!W) return;
@@ -466,7 +468,6 @@ const CSS = `
   .stat .sl { font-size: var(--pp-fs-s); color: var(--pp-text2); }
   .stat .sv { font-size: var(--pp-fs-xl); }
   .stat small { font-size: var(--pp-fs-s); color: var(--pp-text2); }
-  .stat .ss { font-size: var(--pp-fs-s); line-height: 16px; color: var(--pp-text2); }
   @media ${SHEET_MQ} {
     dialog { width: 100vw; max-width: 100vw; margin: auto 0 0 0; max-height: calc(100vh - 56px); border-radius: 28px 28px 0 0;
              padding-bottom: env(safe-area-inset-bottom); transition: transform var(--pp-anim) ease-out; }
