@@ -243,17 +243,19 @@ async def test_20_a_dropped_connection_is_asked_again_twice(
 
 
 class _Failing(_Replies):
-    """A session whose every GET raises `err`."""
+    """A session whose GETs raise `err`, or answer as `_Replies` without one."""
 
-    def __init__(self, err: BaseException) -> None:
+    def __init__(self, err: BaseException | None) -> None:
         super().__init__([], b"")
         self.err = err
 
     @asynccontextmanager
-    async def get(self, _url: str, **_kwargs: object) -> AsyncIterator[object]:
-        self.asked += 1
-        raise self.err
-        yield  # a generator, for the context manager
+    async def get(self, url: str, **kwargs: object) -> AsyncIterator[object]:
+        if self.err is not None:
+            self.asked += 1
+            raise self.err
+        async with super().get(url, **kwargs) as answer:
+            yield answer
 
 
 async def test_23_an_answer_aiohttp_cant_read_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
