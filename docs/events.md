@@ -163,7 +163,7 @@ triggers:
 <a name="level_changed"></a>
 ### Capacity step changed
 
-The capacity step changed. `projected` is `true` when the month is heading there, and `false` when it is reached.
+The capacity step changed. `projected` is `true` when the month is heading there, and `false` when it is reached. A new month starting from the lowest step does not count as a change; [Billing period closed](#period_closed) marks the month's end.
 
 ```yaml
 triggers:

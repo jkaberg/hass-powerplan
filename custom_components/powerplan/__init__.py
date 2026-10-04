@@ -150,6 +150,7 @@ def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> se
                 str(data.get(LOAD_TYPE)),
                 data.get(LOAD_PARAMS) or {},
                 profile=str(data.get(LOAD_PROFILE) or ""),
+                skip=bound,
             )
             if binding.role not in bound
         ]

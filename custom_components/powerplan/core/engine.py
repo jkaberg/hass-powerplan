@@ -1491,7 +1491,7 @@ class Engine:
             boundary_tick=boundary,
         )
         events.extend(_domain_events(edges, ladder_state, report, observations, failed, budget))
-        events.extend(_level_events(edges, self._tariff, budget))
+        events.extend(_level_events(edges, self._tariff, budget, now))
         for load_id, error in failed.items():
             reasons.append(f"{load_id}: failed and held – {error} (INV-45)")
             repairs.append(
@@ -3487,20 +3487,30 @@ def _shortfall_kwh(plan: Plan) -> float:
     return round(max(0.0, required * (1.0 - min(1.0, max(0.0, plan.coverage)))), 3)
 
 
-def _level_events(edges: dict[str, str], tariff: TariffEvaluator, budget: Budget) -> list[HaEvent]:
-    """Return `level_changed` on the actual level's edge and on the projected one's (D8 §5.6)."""
+def _level_events(
+    edges: dict[str, str], tariff: TariffEvaluator, budget: Budget, now: datetime
+) -> list[HaEvent]:
+    """Return `level_changed` on the actual level's edge and on the projected one's (D8 §5.6).
+
+    An edge remembers the period it was seen in: a new period's first level seeds
+    it without an event, since `period_closed` announces the close and "5–10 kW →
+    0–2 kW, metric 0" on the 1st says nothing (D-0716). An edge stored before
+    that carries no period and reads as this one.
+    """
     events: list[HaEvent] = []
+    period = tariff.period(now).key
     level = tariff.level()
     projected = tariff.projected_level(budget.projected_kwh)
     for edge, current, flag in (
         ("level_actual", level, False),
         ("level_projected", projected, True),
     ):
-        was = edges.get(edge)
-        if was == current.name:
+        stored = edges.get(edge)
+        edges[edge] = f"{period}|{current.name}"
+        if stored is None:
             continue
-        edges[edge] = current.name
-        if was is None:
+        seen, _, was = stored.rpartition("|")
+        if was == current.name or seen not in ("", period):
             continue
         events.append(
             HaEvent(

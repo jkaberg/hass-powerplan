@@ -149,3 +149,31 @@ async def test_49_an_answered_role_binds_when_its_entity_reports_a_unit(
 
     roles = [row["role"] for row in site.subentries[sub.subentry_id].data[LOAD_BINDINGS]]
     assert roles.count("soc") == 1
+
+
+async def test_51_a_bound_role_is_not_checked_again_at_setup(
+    hass: HomeAssistant,
+    site: MockConfigEntry,
+    charger: FakeHouse,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """D4 §9 51, D-0715: a start before the car's integration has loaded logs nothing.
+
+    The reference house logged "declares unit None … leaving the role unbound" at
+    every start, for a SoC role its subentry bound all along.
+    """
+    hass.states.async_set(
+        CAR_SOC_SENSOR, "87", {"unit_of_measurement": "%", "device_class": "battery"}
+    )
+    await _add_car(hass, site, charger)
+    sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
+    assert "soc" in [row["role"] for row in sub.data[LOAD_BINDINGS]]
+
+    hass.states.async_set(CAR_SOC_SENSOR, "unknown", {})
+    caplog.clear()
+    assert await hass.config_entries.async_reload(site.entry_id)
+    await hass.async_block_till_done()
+
+    assert "leaving the role unbound" not in caplog.text
+    roles = [row["role"] for row in site.subentries[sub.subentry_id].data[LOAD_BINDINGS]]
+    assert roles.count("soc") == 1

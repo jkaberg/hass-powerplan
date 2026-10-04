@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import time
 from typing import TYPE_CHECKING, Any, Final
 
@@ -230,7 +230,12 @@ def answered_entities(type_key: str, params: Mapping[str, Any]) -> dict[Role, st
 
 
 def extra_bindings(
-    hass: HomeAssistant, type_key: str, params: Mapping[str, Any], *, profile: str
+    hass: HomeAssistant,
+    type_key: str,
+    params: Mapping[str, Any],
+    *,
+    profile: str,
+    skip: Collection[Role] = (),
 ) -> tuple[RoleBinding, ...]:
     """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only.
 
@@ -238,12 +243,13 @@ def extra_bindings(
     household picked - the profile it reached from never saw it, so there is
     no `MatchResult` binding to start from, only the answer itself. The flow
     calls it on every answer; setup calls it for a subentry saved before an
-    answer was bound (D-0485).
+    answer was bound (D-0485), with the roles it already binds in `skip`: the
+    unit check, and its warning, are for a role still to bind (D-0715).
     """
     out: list[RoleBinding] = []
     for key, role in _EXTRA_ROLE_ANSWERS.get(type_key, ()):
         entity_id = params.get(key)
-        if not entity_id:
+        if not entity_id or role in skip:
             continue
         view = DeviceView.from_states(hass, [str(entity_id)]).get(str(entity_id))
         if view is None:
