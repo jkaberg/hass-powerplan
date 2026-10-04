@@ -790,7 +790,8 @@
           "rolling_drag": "En gammel måned faller ut av snittet",
           "coarse_history": "Noe av historikken er anslått",
           "contracted_close": "Nær den avtalte effekten",
-          "target_unreachable": "Trinnet ditt er utenfor rekkevidde denne måneden"
+          "target_unreachable": "Trinnet ditt er utenfor rekkevidde denne måneden",
+          "step_below": "Trinnet under var innen rekkevidde forrige måned"
         }
       },
       "allowance": {

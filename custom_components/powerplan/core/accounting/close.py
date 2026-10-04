@@ -200,6 +200,12 @@ class AccountingState:
     #: a window's counterfactual is the sum of the slots inside it, whichever
     #: slot D7 happens to hand the window over with (D-0267). Pruned per window.
     slot_deltas: dict[str, float] = field(default_factory=dict)
+    #: Each settled slot's load energy, keyed like `slot_deltas`, until its window
+    #: flushes into `window_steered` (§5.13).
+    slot_steered: dict[str, float] = field(default_factory=dict)
+    #: The steered loads' energy in each recorded tariff window of the open period,
+    #: keyed by the window's UTC start (ISO): the levelled book's input (§5.13).
+    window_steered: dict[str, float] = field(default_factory=dict)
     #: Closed tariff windows whose slots are not all settled yet (§5.9.4).
     pending_windows: tuple[ClosedWindow, ...] = ()
     #: The end of the last window recorded in the counterfactual book.
@@ -261,6 +267,10 @@ class SiteFigures:
     level: str | None = None
     cf_metric_kw: float | None = None
     cf_level: str | None = None
+    #: The levelled bill's metric and step, and last month's step below (§5.13).
+    levelled_metric_kw: float | None = None
+    levelled_level: str | None = None
+    step_below: Mapping[str, str] | None = None
     #: The counted loads' price paid and reference price per kWh, and the kWh they cover.
     price_paid: float | None = None
     price_reference: float | None = None
@@ -576,6 +586,7 @@ class Accounting:
                 ledger.site.cf_energy_cost = plus(ledger.site.cf_energy_cost, minus(cf_cost, cost))
             key = entry.start_utc.isoformat()
             state.slot_deltas[key] = state.slot_deltas.get(key, 0.0) + entry.cf_kwh - entry.kwh
+            state.slot_steered[key] = state.slot_steered.get(key, 0.0) + entry.kwh
             savings = plus(savings, minus(cf_cost, cost))
             self._mark_settled(load_id, entry)
         ledger.lifetime.accrue_load(load_id, 0.0, zero(currency), savings)
@@ -718,6 +729,12 @@ class Accounting:
                 if window.start_utc <= datetime.fromisoformat(key) < end
             ]
             cf_kwh = max(0.0, window.kwh + sum(inside))
+            steered = sum(
+                kwh
+                for key, kwh in state.slot_steered.items()
+                if window.start_utc <= datetime.fromisoformat(key) < end
+            )
+            state.window_steered[window.start_utc.isoformat()] = steered
             self._surcharge(window, cf_kwh, ctx)
             ctx.tariff.record_counterfactual(
                 replace(window, kwh=cf_kwh, avg_kw=cf_kwh / (window.window_min / 60.0))
@@ -727,6 +744,11 @@ class Accounting:
             state.slot_deltas = {
                 key: delta
                 for key, delta in state.slot_deltas.items()
+                if datetime.fromisoformat(key) >= end
+            }
+            state.slot_steered = {
+                key: kwh
+                for key, kwh in state.slot_steered.items()
                 if datetime.fromisoformat(key) >= end
             }
             state.pending_windows = state.pending_windows[1:]
@@ -781,6 +803,18 @@ class Accounting:
         site.cf_capacity_fee = capacity_fee_to_date(cf_bill, state.cf_fee_at_month_start)
         site.metric_kw, site.level = actual_bill.metric_kw, actual_bill.level.name
         site.cf_metric_kw, site.cf_level = cf_bill.metric_kw, cf_bill.level.name
+        # §5.13: the steered energy levelled within each day, through the same bill.
+        state.window_steered = {
+            key: kwh
+            for key, kwh in state.window_steered.items()
+            if datetime.fromisoformat(key) >= period.start
+        }
+        levelled_bill = ctx.tariff.bill(period, levelled(through, state.window_steered))
+        site.levelled_metric_kw = levelled_bill.metric_kw
+        site.levelled_level = levelled_bill.level.name
+        site.levelled_fee_delta = (
+            actual_bill.capacity_fee.amount - levelled_bill.capacity_fee.amount
+        )
         # Re-stated per settlement rather than accumulated, so the lifetime takes
         # the change and never the whole figure twice.
         state.ledger.lifetime.accrue_site(
@@ -1025,6 +1059,9 @@ class Accounting:
             level=ledger.site.level,
             cf_metric_kw=ledger.site.cf_metric_kw,
             cf_level=ledger.site.cf_level,
+            levelled_metric_kw=ledger.site.levelled_metric_kw,
+            levelled_level=ledger.site.levelled_level,
+            step_below=ledger.step_below(),
             price_paid=price_paid,
             price_reference=price_reference,
             kwh_counted=kwh_counted,
@@ -1069,6 +1106,81 @@ def _last_slot_of_the_day(slot: ClosedSlot, tz: tzinfo) -> bool:
 def _rate_w(params: LoadParams) -> float | None:
     """Return the charger's full rate, for the `session` reference (D11 §5.9.1)."""
     return params.max_w if params.max_w is not None else params.nameplate_w
+
+
+def levelled(history: PeakHistory, steered: Mapping[str, float]) -> PeakHistory:
+    """Return `history` with each day's steered energy water-filled over its windows (§5.13).
+
+    Per day, a window's energy less what the steered loads drew in it is fixed;
+    the steered energy fills the day's lowest windows first, up to the lowest
+    level that holds it. A day with a window the tariff doesn't weigh puts it
+    all there. An upper bound: it can't know when a car is home. A view like
+    `_through`: new dicts, shared records.
+    """
+    hours = history.window_min / 60.0
+    # A meter window may be finer than the tariff's: each steered entry goes to
+    # the tariff window it starts in (window_min divides the hour, D2 §4).
+    in_window: dict[datetime, float] = {}
+    for key, kwh in steered.items():
+        at = datetime.fromisoformat(key)
+        start = at - timedelta(
+            minutes=at.minute % history.window_min, seconds=at.second, microseconds=at.microsecond
+        )
+        in_window[start] = in_window.get(start, 0.0) + kwh
+    by_day: dict[str, list[tuple[datetime, float, float, float]]] = {}
+    for key, rec in history.windows.items():
+        start = datetime.fromisoformat(key)
+        kwh = in_window.get(start, 0.0)
+        uc_kw = max(0.0, rec.kw_raw - kwh / hours)
+        by_day.setdefault(rec.day, []).append((start, uc_kw, kwh, rec.weight))
+    days = dict(history.days)
+    for day, rows in by_day.items():
+        actual = days.get(date.fromisoformat(day))
+        if actual is None:
+            continue
+        rows.sort()
+        total = sum(kwh for _, _, kwh, _ in rows)
+        if any(weight <= 0.0 for _, _, _, weight in rows):
+            level = 0.0
+        else:
+            level = _water_level([uc for _, uc, _, _ in rows], total / hours)
+        raw = [max(uc, level) for _, uc, _, _ in rows]
+        weighted = [value * weight for value, (_, _, _, weight) in zip(raw, rows, strict=True)]
+        top = max(range(len(rows)), key=lambda index: weighted[index])
+        days[date.fromisoformat(day)] = replace(
+            actual,
+            max_weighted_kw=weighted[top],
+            max_raw_kw=raw[top],
+            window_start=rows[top][0],
+            entries=tuple(weighted),
+        )
+    return PeakHistory(
+        window_min=history.window_min,
+        period_start=history.period_start,
+        schema=history.schema,
+        windows=history.windows,
+        days=days,
+        months=history.months,
+        counterfactual_days=history.counterfactual_days,
+        overrides=history.overrides,
+        seeded_from=history.seeded_from,
+    )
+
+
+def _water_level(floors: list[float], volume: float) -> float:
+    """Return the lowest level over `floors` whose gaps hold `volume` (in kW·windows)."""
+    if not floors:
+        return 0.0
+    ordered = sorted(floors)
+    level = ordered[0]
+    filled = 0.0
+    for count, floor in enumerate(ordered[1:], start=1):
+        step = (floor - level) * count
+        if filled + step >= volume:
+            return level + (volume - filled) / count
+        filled += step
+        level = floor
+    return level + (volume - filled) / len(ordered)
 
 
 def _through(history: PeakHistory, last_day: date) -> PeakHistory:

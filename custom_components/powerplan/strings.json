@@ -790,7 +790,8 @@
           "rolling_drag": "An old month is leaving the average",
           "coarse_history": "Some history is estimated",
           "contracted_close": "Close to your contracted power",
-          "target_unreachable": "Your step is out of reach this month"
+          "target_unreachable": "Your step is out of reach this month",
+          "step_below": "The step below was within reach last month"
         }
       },
       "allowance": {

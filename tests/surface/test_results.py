@@ -133,3 +133,60 @@ async def test_35_reset_accounting_restarts_the_books(
     assert all(rec.cost.amount == 0 for rec in restarted.loads.values())
     assert history.counterfactual_days.keys() >= history.days.keys()
     assert runtime.state.accounting == runtime.adapter.section()
+
+
+async def test_50_the_step_below_is_advice_and_the_levelled_step_an_attribute(
+    hass: HomeAssistant, site: MockConfigEntry
+) -> None:
+    """D8 §9 50, D-0717: last month's levelled step under its actual one is advice, never a target."""
+    from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+
+    from custom_components.powerplan.entity import unique_id  # noqa: PLC0415
+
+    runtime: Runtime = site.runtime_data
+    snapshot = runtime.coordinator.data
+    assert snapshot is not None
+    results = {
+        **snapshot.accounting.results,
+        "levelled_level": "2–5 kW",
+        "levelled_metric_kw": 4.2,
+        "step_below": {"month": "2026-09", "step": "2–5 kW", "fee_delta": "164", "currency": "NOK"},
+    }
+    runtime.coordinator.async_set_updated_data(
+        replace(snapshot, accounting=replace(snapshot.accounting, results=results))
+    )
+    await hass.async_block_till_done()
+
+    savings = hass.states.get(SAVINGS)
+    assert savings is not None
+    assert savings.attributes["capacity_step_levelled"] == "2–5 kW"
+    assert savings.attributes["metric_kw_levelled"] == pytest.approx(4.2)
+
+    advice_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, unique_id(site.entry_id, "advice")
+    )
+    assert advice_id is not None
+    advice = hass.states.get(advice_id)
+    assert advice is not None
+    items = advice.attributes["items"]
+    (below,) = [item for item in items if item["key"] == "step_below"]
+    assert below == {
+        "key": "step_below",
+        "severity": "info",
+        "month": "2026-09",
+        "step": "2–5 kW",
+        "fee_delta": "164",
+        "currency": "NOK",
+    }
+    assert "step_below" in advice.attributes["options"]
+
+    runtime.coordinator.async_set_updated_data(
+        replace(
+            snapshot,
+            accounting=replace(snapshot.accounting, results={**results, "step_below": None}),
+        )
+    )
+    await hass.async_block_till_done()
+    advice = hass.states.get(advice_id)
+    assert advice is not None
+    assert not [item for item in advice.attributes["items"] if item["key"] == "step_below"]

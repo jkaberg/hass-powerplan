@@ -187,6 +187,7 @@ What PowerPlan would tell you about your capacity step this month, one state at 
 | **Some history is estimated** | Part of the month is missing, so the numbers are estimates. |
 | **Close to your contracted power** | Your usage is near the power your contract allows. |
 | **Your step is out of reach this month** | This month has already passed the step you chose, so PowerPlan holds the step it reached until the month ends. Your choice applies again from the 1st. |
+| **The step below was within reach last month** | Last month would have fit a lower capacity step if your appliances had spread their energy evenly over each day. The item names the step and the monthly saving. To try it, choose that step as your target. |
 
 Key: `advice`.
 
@@ -292,6 +293,7 @@ What the whole home saved this month: every appliance's savings, plus the capaci
 | `capacity_savings`, `energy_savings` | The part from a lower capacity step, and the part from cheaper hours. |
 | `capacity_step`, `capacity_step_without` | Your capacity step, and the step you would be on without PowerPlan. |
 | `metric_kw`, `metric_kw_without` | The kW your step is counted from, with and without PowerPlan. |
+| `capacity_step_levelled`, `metric_kw_levelled` | The step, and its kW, if your appliances had spread their energy evenly over each day. This is the best your appliances could do: a car that isn't home can't charge at noon. |
 | `price_paid`, `price_reference`, `kwh_counted` | What the appliances' counted energy cost per kWh, what it would have cost, and how many kWh that is. |
 | `day_profile`, `previous_day_profile` | This month's and last month's average day for your appliances: `kwh` and `cf_kwh` hold 24 hourly figures with and without PowerPlan, `days` the number of days counted. The dashboard draws them; they are not kept in history. |
 

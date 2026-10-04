@@ -26,6 +26,11 @@ The difference is the saving. A day's savings are added after midnight, and a ca
 
 With solar panels, the solar power an appliance used is priced at what you would have been paid for selling it, and the rest at your price for buying. The same rule prices the house without PowerPlan, which has the same panels. A battery's cost is the solar power it stored, at the selling price, less what it covered in the evening, at the buying price. Your home's total cost does not change; only its split between the appliances does.
 
+<a name="step_below"></a>
+## The step below
+
+Each month PowerPlan also works out the capacity step your home would have reached if the appliances it steers had spread their energy evenly over each day. It is the best they could have done, not a promise: a car that isn't home can't charge at noon, and a water heater still has to be hot in the morning. When that step is lower than the one you reached, **Recommendation** says so for the following month, with what it would save. You decide whether to choose it as your target.
+
 <a name="confidence"></a>
 ## Confidence
 

@@ -211,6 +211,11 @@ class SiteMonthRec:
     level: str | None = None
     cf_metric_kw: float | None = None
     cf_level: str | None = None
+    #: The levelled bill's (D11 §5.13): the steered energy spread evenly over each day,
+    #: an upper bound on what steering could reach, and its fee under the actual one.
+    levelled_metric_kw: float | None = None
+    levelled_level: str | None = None
+    levelled_fee_delta: Decimal | None = None
     #: The appliances' settled energy by local hour of day, with powerplan and in the
     #: reference, and the local dates booked: the average day (D11 §5.12).
     hour_kwh: list[float] = field(default_factory=lambda: [0.0] * 24)
@@ -420,6 +425,31 @@ class Ledger:
             return None
         last = self.history[-1]
         return (last.site.cost, closed_site_savings(last))
+
+    def step_below(self) -> dict[str, str] | None:
+        """Return the step last month could have reached levelled, when it was cheaper (§5.13).
+
+        `None` unless the last closed month's levelled step is another step with a
+        lower fee: the advice `step_below` says it for the month that follows.
+        """
+        if not self.history:
+            return None
+        last = self.history[-1]
+        site = last.site
+        delta = site.levelled_fee_delta
+        if (
+            delta is None
+            or delta <= 0
+            or site.levelled_level is None
+            or site.levelled_level == site.level
+        ):
+            return None
+        return {
+            "month": last.month,
+            "step": site.levelled_level,
+            "fee_delta": str(delta),
+            "currency": site.capacity_fee.currency,
+        }
 
     def previous_load(self, load_id: str) -> tuple[Money, Money] | None:
         """Return last month's `(cost, savings)` for one load, or `None`."""

@@ -118,6 +118,9 @@ ADVICE_KEYS: tuple[str, ...] = (
     "coarse_history",
     "contracted_close",
     "target_unreachable",
+    # D11's levelled book says it, not `advice()`: listed so the enum and the
+    # translations carry it (D2 §5.11, D-0717).
+    "step_below",
 )
 
 

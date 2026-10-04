@@ -40,7 +40,7 @@ from .core.pricing.modifiers.base import SPOT
 from .core.pricing.modifiers.fixed_price import FixedPrice
 from .core.pricing.modifiers.vat import Vat, energy_vat_rate
 from .core.pricing.party import StateVat, split
-from .core.tariffs.evaluator import ADVICE_KEYS
+from .core.tariffs.evaluator import ADVICE_KEYS, Advice
 from .core.tariffs.household import vat_at
 from .core.tariffs.model import StepTable
 from .entity import (
@@ -62,7 +62,6 @@ if TYPE_CHECKING:
     from . import PowerplanConfigEntry
     from .core.engine import AccountingStatus, DeviationsState
     from .core.model import Plan, PriceCurve
-    from .core.tariffs.evaluator import Advice
 
 #: Every entity is pushed by the coordinator; none polls (HA rule `parallel-updates`).
 PARALLEL_UPDATES = 0
@@ -318,6 +317,16 @@ ADVICE_STATES: tuple[str, ...] = (
 )
 
 
+def _advice(snapshot: Snapshot) -> list[Advice]:
+    """Return D2's advice and, after it, D11's `step_below` for last month (D-0717)."""
+    rows = [] if snapshot.tariff is None else list(snapshot.tariff.advice)
+    status = snapshot.accounting
+    below = None if status is None else status.results.get("step_below")
+    if below:
+        rows.append(Advice(key="step_below", severity="info", params=dict(below)))
+    return rows
+
+
 def advice_state(advice: Sequence[Advice] | None) -> str:
     """Return the most severe advice - a warning before any info - else `all_good`."""
     items = [row for row in advice or () if row.key != "top_entries"]
@@ -495,13 +504,10 @@ SENSORS: tuple[SiteSensorDescription, ...] = (
         key="advice",
         device_class=SensorDeviceClass.ENUM,
         options=list(ADVICE_STATES),
-        value=lambda s, _r: advice_state(None if s.tariff is None else s.tariff.advice),
+        value=lambda s, _r: advice_state(_advice(s)),
         attributes=lambda s, _r: {
-            "items": []
-            if s.tariff is None
-            else [
-                {"key": row.key, "severity": row.severity, **dict(row.params)}
-                for row in s.tariff.advice
+            "items": [
+                {"key": row.key, "severity": row.severity, **dict(row.params)} for row in _advice(s)
             ]
         },
         unrecorded=frozenset({"items"}),
@@ -960,6 +966,9 @@ class SiteSavingsSensor(_SiteMoneySensor):
             "capacity_step_without": results.get("cf_level"),
             "metric_kw": results.get("metric_kw"),
             "metric_kw_without": results.get("cf_metric_kw"),
+            # D11 §5.13: the steered energy spread evenly over each day, an upper bound.
+            "capacity_step_levelled": results.get("levelled_level"),
+            "metric_kw_levelled": results.get("levelled_metric_kw"),
             "price_paid": results.get("price_paid"),
             "price_reference": results.get("price_reference"),
             "kwh_counted": results.get("kwh_counted"),

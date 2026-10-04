@@ -25,6 +25,8 @@ The target is the capacity step you want to stay in. PowerPlan plans every hour 
 - **Automatic** keeps you in the step you have already reached this month. Early in the month that is the lowest step; after a cold week it may be higher, and there is no point saving hours that no longer count.
 - A fixed step keeps you there, even if it means pausing more.
 
+Automatic never aims below the step you reached, because a lower step is a trade: the car may not be full by morning. When last month shows a lower step was within reach, **Recommendation** tells you, and you can choose it. See [The step below](savings.md#step_below).
+
 <a name="strictness"></a>
 ## How strict
 
