@@ -129,10 +129,12 @@ def parse(
     a meter not settled by the hour - a household's smart meter is billed `flex`.
     Where elpris.dk lists no `flex` hours, its `fix` price is only part of the
     table (Zeanet's 43110 gives the night rate), so Datahub's rows are the tariff
-    (D-0682).
+    (D-0682). Where it lists no tariff at all (Tarm's after its October season),
+    `future` is the owner's household tariff from Datahub, and its code is the one
+    not yet ended (D-0707).
     """
     charges = list(area_doc.get("distributionAreaCharges") or ())
-    code = charge_code(area_doc)
+    code = charge_code(area_doc) or datahub_pricelist.code_at(future, fetched)
     # the area's own charge, billed by the hour, and only while it prices anything
     tariffs = [
         c

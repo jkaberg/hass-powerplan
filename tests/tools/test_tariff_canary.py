@@ -18,6 +18,9 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
+from aiohttp.http_exceptions import HttpProcessingError
+from multidict import CIMultiDict, CIMultiDictProxy
+from yarl import URL
 
 from custom_components.powerplan.core.tariffs.household import (
     EXCL,
@@ -237,6 +240,41 @@ async def test_20_a_dropped_connection_is_asked_again_twice(
     with pytest.raises(UnreachableError, match="HTTP 500"):
         await tariff_canary.CanaryHttp(answered, DAY).get("https://example.invalid/down")  # type: ignore[arg-type]
     assert answered.asked == 1, "an HTTP answer is not a dropped connection"
+
+
+class _Failing(_Replies):
+    """A session whose every GET raises `err`."""
+
+    def __init__(self, err: BaseException) -> None:
+        super().__init__([], b"")
+        self.err = err
+
+    @asynccontextmanager
+    async def get(self, _url: str, **_kwargs: object) -> AsyncIterator[object]:
+        self.asked += 1
+        raise self.err
+        yield  # a generator, for the context manager
+
+
+async def test_23_an_answer_aiohttp_cant_read_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ei's workbook was "0, message=''" on four nights: a redirect loop, or what broke the read (D-0707)."""
+    monkeypatch.setattr(tariff_canary, "RETRY_S", (0.0, 0.0))
+    url = "https://example.invalid/ei.xlsx"
+    info = aiohttp.RequestInfo(URL(url), "GET", CIMultiDictProxy(CIMultiDict()), URL(url))
+    hops = (SimpleNamespace(headers={"Location": "/login"}),) * 10
+    garbled = aiohttp.ClientResponseError(info, ())
+    garbled.__cause__ = HttpProcessingError()
+    garbled.__cause__.__cause__ = AssertionError()
+    for err, said in (
+        (aiohttp.TooManyRedirects(info, hops), "redirected 10 times, last to /login"),  # type: ignore[arg-type]
+        (garbled, "an answer that doesn't read: AssertionError()"),
+        (TimeoutError(), "no answer in 20 s"),
+    ):
+        session = _Failing(err)
+        with pytest.raises(UnreachableError) as raised:
+            await tariff_canary.CanaryHttp(session, DAY).get(url)  # type: ignore[arg-type]
+        assert str(raised.value) == f"{url}: {said}"
+        assert session.asked == 3, "not an HTTP answer: asked again twice"
 
 
 def test_20_an_acknowledged_finding_is_left_out_until_its_figure_changes(tmp_path: Path) -> None:

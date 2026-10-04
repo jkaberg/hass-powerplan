@@ -21,11 +21,14 @@ from ..model import TimeFilter
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-__all__ = ["DATASET", "HOURS", "hourly", "owned", "query", "versions"]
+__all__ = ["DATASET", "HOURS", "code_at", "hourly", "household", "owned", "query", "versions"]
 
 DATASET: Final = "https://api.energidataservice.dk/dataset/DatahubPricelist"
 HOURS: Final = 24
 _TARIFF: Final = "D03"
+#: The `Note` 31 companies give a household's tariff (2026-10-04): how an area elpris.dk
+#: lists no tariff for is found (D-0707).
+_HOUSEHOLD: Final = "Nettarif C"
 
 
 def query(code: str, since: date) -> str:
@@ -39,6 +42,30 @@ def query(code: str, since: date) -> str:
     return (
         f"{DATASET}?filter={quote(wanted)}&start={since.isoformat()}&limit=100&sort=ValidFrom%20asc"
     )
+
+
+def household(at: date) -> str:
+    """Return the dataset's URL for every company's household tariff from the year before `at`.
+
+    For an area elpris.dk lists no tariff for: `owned` picks its owner's rows and
+    `code_at` the code that bills (D-0707).
+    """
+    wanted = f'{{"ChargeType":["{_TARIFF}"],"Note":["{_HOUSEHOLD}"]}}'
+    since = date(at.year - 1, 1, 1)
+    return (
+        f"{DATASET}?filter={quote(wanted)}&start={since.isoformat()}&limit=0&sort=ValidFrom%20asc"
+    )
+
+
+def code_at(records: Sequence[Mapping[str, Any]], at: date) -> str | None:
+    """Return the code of the newest record not ended at `at`: Tarm's TEV-NT-01T, not its TEV-NT-01."""
+    live = [
+        row
+        for row in records
+        if not row.get("ValidTo") or datetime.fromisoformat(str(row["ValidTo"])).date() > at
+    ]
+    newest = max(live, key=lambda row: str(row["ValidFrom"]), default=None)
+    return None if newest is None else str(newest["ChargeTypeCode"])
 
 
 def owned(records: Sequence[Mapping[str, Any]], owner: str, area: str) -> list[Mapping[str, Any]]:

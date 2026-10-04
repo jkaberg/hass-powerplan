@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from custom_components.powerplan.core.tariffs.sources import Tier
+from custom_components.powerplan.core.tariffs.sources import Tier, datahub_pricelist
 from custom_components.powerplan.providers.tariffs import base, ladder
 from custom_components.powerplan.providers.tariffs.ei_household import EiHousehold
 from custom_components.powerplan.providers.tariffs.elpris_dk import ElprisDk
@@ -82,3 +82,12 @@ async def test_denmark_without_datahub_keeps_the_tariff_in_force() -> None:
     fetched = await ElprisDk().fetch(http, "791", None, {})  # type: ignore[arg-type]
     assert [v.valid_from for v in fetched.grid.energy] == [date(2026, 4, 1)]
     assert fetched.grid.valid_to == date(2026, 9, 30)
+
+
+async def test_22_an_area_elpris_lists_no_tariff_for_asks_datahub_for_its_owners() -> None:
+    """Tarm: elpris.dk lists its subscription alone; Datahub's household tariffs give the rest (D-0707)."""
+    http = denmark_http()
+    fetched = await ElprisDk().fetch(http, "384", None, {})  # type: ignore[arg-type]
+    assert datahub_pricelist.household(http.today()) in http.asked
+    assert [v.valid_from for v in fetched.grid.energy] == [date(2026, 10, 1)]
+    assert fetched.grid.operator == "Tarm Elværk Net A/S"

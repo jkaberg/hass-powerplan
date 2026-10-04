@@ -200,3 +200,44 @@ def test_18_a_table_with_two_hours_priced_is_read_as_it_is() -> None:
     """Only hour 0 alone is Datahub's convention; a night rate from 01:00 stays."""
     hours = {h: Decimal(0) for h in range(24)} | {0: Decimal("0.2"), 1: Decimal("0.1")}
     assert elpris_dk.day_prices(hours)[:3] == [Decimal("0.2"), Decimal("0.1"), Decimal(0)]
+
+
+def _household(owner: str, area: str, fetched: date) -> Any:
+    """Parse an area elpris.dk lists no tariff for, with its owner's Datahub rows."""
+    records = _json("datahub", "nettarif-c-from-2025-01-01.json")["records"]
+    return elpris_dk.parse(
+        _json("elpris_dk", f"distributionAreaCharge_{area}.json"),
+        _json("elpris_dk", "nationalCharges.json"),
+        datahub_pricelist.owned(records, owner, area),
+        area=area,
+        name=owner,
+        fetched=fetched,
+    ).grid
+
+
+def test_22_an_area_elpris_lists_no_tariff_for_is_billed_its_owners_nettarif_c() -> None:
+    """Tarm lists only its subscription from 1 October: Datahub's TEV-NT-01T is the tariff (D-0707)."""
+    records = _json("datahub", "nettarif-c-from-2025-01-01.json")["records"]
+    tarm = datahub_pricelist.owned(records, "Tarm Elværk Net A/S", "384")
+    assert {row["ChargeOwner"] for row in tarm} == {"Tarm Elværk Net A/S"}
+    # TEV-NT-01, priced 0 in every hour, ends the day TEV-NT-01T begins
+    assert datahub_pricelist.code_at(tarm, date(2026, 9, 24)) == "TEV-NT-01T"
+    grid = _household("Tarm Elværk Net A/S", "384", date(2026, 10, 4))
+    (version,) = grid.energy
+    assert version.valid_from == date(2026, 10, 1)
+    peak = datetime(2026, 10, 5, 17, tzinfo=COPENHAGEN)
+    assert _price_at(version, peak) == Decimal("0.5986") + ENERGINET
+    assert _price_at(version, peak.replace(hour=3)) == Decimal("0.0665") + ENERGINET
+    assert grid.valid_to == date(2026, 12, 31)
+    assert grid.fixed_fee[0].amount == Decimal(77) + Decimal("15.5833")
+    with pytest.raises(QualityError, match="no hourly tariff"):
+        _area("384", "Tarm Elværk Net A/S")
+
+
+def test_22_every_season_datahub_has_registered_follows() -> None:
+    """FLOW lists no tariff either; FE1 NT-01's autumn and winter seasons are the copy."""
+    grid = _household("FLOW Elnet A/S", "533", date(2026, 10, 4))
+    assert [version.valid_from for version in grid.energy] == [date(2026, 10, 1), date(2026, 12, 1)]
+    winter = datetime(2027, 1, 4, 17, tzinfo=COPENHAGEN)
+    assert _price_at(grid.energy[-1], winter) == Decimal("0.5567") + ENERGINET
+    assert grid.valid_to == date(2027, 3, 31)

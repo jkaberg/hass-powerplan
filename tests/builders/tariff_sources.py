@@ -190,7 +190,7 @@ def sweden_http() -> FixtureHttp:
 
 
 def denmark_http() -> FixtureHttp:
-    """Serve elpris.dk's documents for areas 131, 145 and 791, and Radius's Datahub rows."""
+    """Serve elpris.dk's documents for areas 131, 145, 384 and 791, Radius's Datahub rows and the household tariffs."""
     from custom_components.powerplan.core.tariffs.sources import (  # noqa: PLC0415
         datahub_pricelist,
         elpris_dk,
@@ -206,8 +206,11 @@ def denmark_http() -> FixtureHttp:
         datahub_pricelist.query("DT_C_01", date(2026, 4, 1)): (
             FIXTURES / "datahub" / "radius-DT_C_01-from-2026-04-01.json"
         ).read_bytes(),
+        datahub_pricelist.household(CAPTURED): (
+            FIXTURES / "datahub" / "nettarif-c-from-2025-01-01.json"
+        ).read_bytes(),
     }
-    for area in ("131", "145", "791"):
+    for area in ("131", "145", "384", "791"):
         documents[elpris_dk.AREA.format(area=area)] = (
             folder / f"distributionAreaCharge_{area}.json"
         ).read_bytes()

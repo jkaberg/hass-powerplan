@@ -1,6 +1,7 @@
 """elpris.dk's fetcher, with Datahub for the next season (D13 §5.9; T1a, D-0571).
 
-Three documents from elpris.dk and, for the area's owner, one Datahub query;
+Three documents from elpris.dk and, for the area's owner, one Datahub query: the
+area's charge code, or every household tariff where elpris.dk lists none (D-0707);
 Datahub down leaves the copy with the tariff in force. Every document is held for
 the flow or the renewal and released with it (§5.2 rule 6).
 """
@@ -69,9 +70,15 @@ class ElprisDk:
         code = elpris_dk.charge_code(area_doc)
         since = elpris_dk.charge_since(area_doc) or http.today()
         future: list[Any] = []
-        if owner and code:
+        if owner:
+            # an area elpris.dk lists no tariff for is billed its owner's household tariff (D-0707)
+            url = (
+                datahub_pricelist.query(code, since)
+                if code
+                else datahub_pricelist.household(http.today())
+            )
             try:
-                answer = await http.document(datahub_pricelist.query(code, since), _json)
+                answer = await http.document(url, _json)
                 future = datahub_pricelist.owned(answer.get("records") or (), owner, operator)
             except SourceError as err:
                 _LOGGER.info("datahub did not answer for %s: %s", owner, err)

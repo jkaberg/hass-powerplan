@@ -66,6 +66,24 @@ async def read_whole(answer: aiohttp.ClientResponse) -> bytes:
     return b"".join(chunks)
 
 
+def _unreachable(url: str, err: aiohttp.ClientError | TimeoutError) -> UnreachableError:
+    """Say what failed: aiohttp words a redirect loop and an answer it can't read as "0, message=''".
+
+    Ei's workbook failed so on 4 of 8 canary nights, and fetched from Norway the same day (D-0707).
+    """
+    if isinstance(err, aiohttp.TooManyRedirects):
+        last = err.history[-1].headers.get("Location") if err.history else None
+        return UnreachableError(f"{url}: redirected {len(err.history)} times, last to {last}")
+    if isinstance(err, aiohttp.ClientResponseError) and not err.status:
+        cause: BaseException = err
+        while cause.__cause__ is not None:
+            cause = cause.__cause__
+        return UnreachableError(f"{url}: an answer that doesn't read: {cause!r}")
+    if isinstance(err, TimeoutError):
+        return UnreachableError(f"{url}: no answer in {TIMEOUT_S:.0f} s")
+    return UnreachableError(f"{url}: {err}")
+
+
 class Http:
     """One flow's or one renewal's requests, cached in memory for its life (§5.2 rules 2, 6).
 
@@ -128,7 +146,7 @@ class Http:
                     raise UnreachableError(msg)
                 data = await read_whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise UnreachableError(f"{url}: {err}") from err
+            raise _unreachable(url, err) from err
         if len(data) > MAX_BYTES:
             msg = f"{url}: larger than {MAX_BYTES} bytes"
             raise UnreachableError(msg)
@@ -156,7 +174,7 @@ class Http:
                     raise UnreachableError(msg)
                 body = await read_whole(answer)
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise UnreachableError(f"{url}: {err}") from err
+            raise _unreachable(url, err) from err
         if len(body) > MAX_BYTES:
             msg = f"{url}: larger than {MAX_BYTES} bytes"
             raise UnreachableError(msg)

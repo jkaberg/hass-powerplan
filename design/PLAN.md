@@ -195,7 +195,7 @@ User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 
 ### 3.0n The tariff canary's findings of 27 September
 
-[D13 §5.7, §5.10, §5.11](lld/D13-tariff-sources.md), [the Tariff test dashboard](https://github.com/jkaberg/hass-powerplan/issues/6): four sources fixed and the canary made quieter where the finding isn't ours (dec. 48).
+[D13 §5.7, §5.10, §5.11](lld/D13-tariff-sources.md), [the Tariff test dashboard](https://github.com/jkaberg/hass-powerplan/issues/6): four sources fixed and the canary made quieter where the finding isn't ours (dec. 48). TC.6–TC.7 are the findings of 4 October.
 
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
@@ -204,6 +204,8 @@ User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 | **TC.3 Switzerland's live municipalities** | LINDAS's set for the list without a postcode; the retired municipality's message | D13 §5.10; D-0704 | D13 §19 19 | - |
 | **TC.4 The canary** | retries on a dropped connection; `tariff_canary_known.json` | D13 §5.7; D-0705 | D13 §19 20 | - |
 | **TC.5 The flow's path, live** | each fetched copy answered, stored, read back and priced; bounds and the hour-0 shape; three products per retailer | D13 §5.7; D-0706 | D13 §19 21 | TC.4 |
+| **TC.6 Denmark's areas without a tariff** | the owner's "Nettarif C" from Datahub where elpris.dk lists none (Tarm, FLOW, 4 October) | D13 §5.9; D-0707 | D13 §19 22 | - |
+| **TC.7 A failed fetch says why** | a redirect loop, an unreadable answer and a timeout named, not `0, message=''` (Ei) | D13 §5.7; D-0707 | D13 §19 23 | TC.4 |
 
 User pages: none change - `docs/tariffs.md` already says Australia's plans are the AER's on Energy Made Easy and that a retailer without plans says so; the rest is a source reading its publisher right.
 
@@ -659,6 +661,8 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TC.3 | Switzerland's live municipalities | done |
 | TC.4 | The canary | done |
 | TC.5 | The flow's path, live | done |
+| TC.6 | Denmark's areas without a tariff | done |
+| TC.7 | A failed fetch says why | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
