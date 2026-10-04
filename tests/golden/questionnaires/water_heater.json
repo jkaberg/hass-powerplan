@@ -79,7 +79,8 @@
     },
     "strategy": "deadline_fill",
     "strategy_params": {
-      "min_block_min": 30.0
+      "min_block_min": 30.0,
+      "prefer_late": true
     },
     "priority": 40,
     "group": null,

@@ -683,7 +683,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TC.6 | Denmark's areas without a tariff | done |
 | TC.7 | A failed fetch says why | done |
 | FB.1 | A deadline the load still asks for | done |
-| FB.2 | The tank finishes at its deadline | todo |
+| FB.2 | The tank finishes at its deadline | done |
 | FB.3 | Retried until it answers, a repair meanwhile | todo |
 | FB.4 | Our own cut is ours | todo |
 | FB.5 | `plan_adopted` on a visible change | todo |

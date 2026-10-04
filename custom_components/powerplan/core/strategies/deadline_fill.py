@@ -276,7 +276,12 @@ def _fill_spread(candidates: Sequence[_Candidate], required: float) -> dict[int,
 
 
 def _fill_blocks(
-    candidates: Sequence[_Candidate], required: float, *, min_block_min: int, min_w: float
+    candidates: Sequence[_Candidate],
+    required: float,
+    *,
+    min_block_min: int,
+    min_w: float,
+    prefer_late: bool = False,
 ) -> dict[int, float]:
     """Fill in contiguous blocks of at least `min_block_min` minutes (§5.3).
 
@@ -290,6 +295,10 @@ def _fill_blocks(
     set's mean, then drop dear run ends the cover can spare. Never a run
     shorter than the block: a tank element that cycles every quarter hour
     wears out, and a charger that does dislikes it (§5.3, D-0199).
+
+    Equal blocks tie to the earliest, or with `prefer_late` to the latest stop,
+    and so do an extension's equal neighbours: a tank whose block ends at its
+    deadline is at its target when it is wanted (D-0710).
     """
     by_index = {row.index: row for row in candidates}
     blocks = _blocks(by_index, min_block_min)
@@ -311,7 +320,14 @@ def _fill_blocks(
         open_blocks = free_blocks()
         if not open_blocks:
             break
-        block = min(open_blocks, key=lambda item: (item.mean, item.start, item.stop))
+        block = min(
+            open_blocks,
+            key=(
+                (lambda item: (item.mean, -item.stop, -item.start))
+                if prefer_late
+                else (lambda item: (item.mean, item.start, item.stop))
+            ),
+        )
         used.update(range(block.start, block.stop))
 
         # Not yet covered: extend the run while the adjacent slot beats the best
@@ -319,7 +335,7 @@ def _fill_blocks(
         while capacity_of(used) + _EPS_KWH < required:
             rest = free_blocks()
             bar = min((item.mean for item in rest), default=None)
-            nxt = _cheapest_adjacent(by_index, used, bar)
+            nxt = _cheapest_adjacent(by_index, used, bar, prefer_late=prefer_late)
             if nxt is None:
                 break
             used.add(nxt)
@@ -329,7 +345,7 @@ def _fill_blocks(
     # cost (§5.3, D-0199). Stops as soon as the cheapest neighbour would raise it.
     while used:
         mean = _weighted_mean_price(by_index, used)
-        nxt = _cheapest_adjacent(by_index, used, mean)
+        nxt = _cheapest_adjacent(by_index, used, mean, prefer_late=prefer_late)
         if nxt is None:
             break
         used.add(nxt)
@@ -463,7 +479,11 @@ def _blocks(by_index: Mapping[int, _Candidate], min_block_min: int) -> tuple[_Bl
 
 
 def _cheapest_adjacent(
-    by_index: Mapping[int, _Candidate], used: set[int], bar: Decimal | None
+    by_index: Mapping[int, _Candidate],
+    used: set[int],
+    bar: Decimal | None,
+    *,
+    prefer_late: bool = False,
 ) -> int | None:
     """Return the cheapest unused slot touching `used`, if it beats `bar` (§5.3)."""
     touching = {
@@ -474,7 +494,9 @@ def _cheapest_adjacent(
     }
     if not touching:
         return None
-    best = min(touching, key=lambda index: (by_index[index].price, index))
+    best = min(
+        touching, key=lambda index: (by_index[index].price, -index if prefer_late else index)
+    )
     if bar is not None and by_index[best].price >= bar:
         return None
     return best
@@ -535,7 +557,13 @@ def plan_one(
     elif force:
         taken = _fill_time_order(candidates, required_kwh, min_w=min_w)
     elif min_block_min > 0:
-        taken = _fill_blocks(candidates, required_kwh, min_block_min=min_block_min, min_w=min_w)
+        taken = _fill_blocks(
+            candidates,
+            required_kwh,
+            min_block_min=min_block_min,
+            min_w=min_w,
+            prefer_late=prefer_late,
+        )
     elif flat and banded:
         # A flat price is not flat energy under a priced limit or beside surplus:
         # the tier above the limit is dearer and the sun cheaper, so the night

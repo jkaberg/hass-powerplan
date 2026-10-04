@@ -482,7 +482,12 @@ class WaterHeater:
         return Derived(
             params=params,
             strategy=self.default_strategy,
-            strategy_params={"min_block_min": max(MIN_BLOCK_MIN, params["min_on_s"] / 60.0)},
+            # A block that ends at the deadline is at its target when it is
+            # wanted, not six hours cooler (D-0710).
+            strategy_params={
+                "min_block_min": max(MIN_BLOCK_MIN, params["min_on_s"] / 60.0),
+                "prefer_late": True,
+            },
             # Above the floor loops' 30 and below the heat pumps' 50: a tank
             # coasts for hours where a room coasts for minutes, and a cold shower
             # is noticed where a slab drifting half a degree is not

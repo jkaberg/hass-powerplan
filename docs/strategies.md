@@ -67,7 +67,7 @@ Runs the appliance for the hours a day you set, in the cheapest of them. Nothing
 <a name="deadline_fill"></a>
 ## Cheapest hours before the deadline
 
-Charges or heats in the cheapest hours before the time you set, and stops when the appliance is full. If time runs short, it runs whatever the price.
+Charges or heats in the cheapest hours before the time you set, and stops when the appliance is full. If time runs short, it runs whatever the price. Where several hours cost the same, a car charges in the first of them and a water heater heats in the last, so the water is hot at the time you set.
 
 | | |
 |---|---|
