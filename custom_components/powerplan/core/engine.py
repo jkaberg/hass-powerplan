@@ -39,7 +39,7 @@ import functools
 import logging
 import math
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
@@ -1434,7 +1434,14 @@ class Engine:
         # -- 10. the warnings ---------------------------------------------- #
         runtime = _ema(runtime, meter, frozen, cfg)
         warnings, runtime, warn_events, warn_notes = self._warnings(
-            runtime, inputs, budget, ceiling, meter, load_views, state.plans.plans
+            runtime,
+            inputs,
+            budget,
+            ceiling,
+            meter,
+            load_views,
+            state.plans.plans,
+            settling_cut=_settling_cut(views.values()),
         )
         events.extend(warn_events)
         notes.extend(warn_notes)
@@ -1963,6 +1970,8 @@ class Engine:
         meter: MeterSnapshot,
         views: Sequence[LoadView],
         plans: Mapping[str, Plan],
+        *,
+        settling_cut: bool = False,
     ) -> tuple[tuple[SiteWarning, ...], RuntimeState, list[HaEvent], list[Notification]]:
         """Return the peak warnings for the coming windows (D7 §5.4).
 
@@ -2067,7 +2076,11 @@ class Engine:
         events.extend(cleared_events)
         notes.extend(cleared_notes)
 
-        live = _live_warning(budget, ceiling, meter)
+        # Our own cut still settling counts at its commanded power, so the
+        # uncontrolled term holds our draw: the live warning neither fires nor
+        # clears until it lands (D-0713).
+        live = None if settling_cut else _live_warning(budget, ceiling, meter)
+        live_key = runtime.peak.live if settling_cut else None if live is None else live.key
         if live is not None:
             warnings.append(live)
             if live.key != runtime.peak.live:
@@ -2082,7 +2095,7 @@ class Engine:
                         severity="warn",
                     )
                 )
-        elif runtime.peak.live is not None:
+        elif runtime.peak.live is not None and not settling_cut:
             events.append(
                 HaEvent(
                     EventKind.PEAK_WARNING,
@@ -2110,7 +2123,7 @@ class Engine:
         peak = replace(
             runtime.peak,
             warned=tuple(sorted(w for w in warned if w >= meter.window_start_utc)),
-            live=None if live is None else live.key,
+            live=live_key,
         )
         return tuple(warnings), replace(runtime, peak=peak), events, notes
 
@@ -2922,6 +2935,17 @@ def _unplanned_want(view: LoadView, plan: Plan | None, start: datetime, end: dat
 #: A live over-projection is worth a warning only when the household itself is
 #: the driver: below this share of the total the controller's own loads are.
 _LIVE_UNCONTROLLED_SHARE: Final = 0.6
+
+
+def _settling_cut(views: Iterable[ControlledView]) -> bool:
+    """Whether one of our own cuts is still on its way: commanded under measured (D-0713)."""
+    return any(
+        view.settling
+        and view.commanded_w is not None
+        and view.measured_w is not None
+        and view.commanded_w < view.measured_w
+        for view in views
+    )
 
 
 def _live_warning(budget: Budget, ceiling: Ceiling, meter: MeterSnapshot) -> SiteWarning | None:
