@@ -56,6 +56,8 @@ def test_05_no_generated_block_is_stale() -> None:
         "types",
         "strategies",
         "profiles",
+        "readme_plans",
+        "readme_devices",
         "formats",
         "modifiers",
         "repairs",

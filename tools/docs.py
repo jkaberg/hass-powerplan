@@ -239,6 +239,46 @@ def render_profiles(_arg: str | None) -> str:
     return _table(("Profile", "For", "PowerPlan"), rows)
 
 
+#: A generic profile in the household's words: the device it steers, of any make.
+_GENERIC = {
+    "generic_climate": "any thermostat",
+    "generic_number": "any power or current setting",
+    "generic_switch": "any switch",
+}
+
+
+def render_readme_plans(_arg: str | None) -> str:
+    """`README.md` at the root: every plan, the appliances it is the default for, the others."""
+    type_keys = device_types.keys()
+    rows = []
+    for key in strategies.keys():  # noqa: SIM118 - a registry, not a dict
+        offered = [t for t in type_keys if key in strategies.supports(t)]
+        default = [t for t in offered if device_types.get(t).default_strategy == key]
+        rows.append(
+            (
+                _label("strategy", key),
+                ", ".join(_label("load_type", t) for t in default) or "–",
+                ", ".join(_label("load_type", t) for t in offered if t not in default) or "–",
+            )
+        )
+    return _table(("Plan", "Default for", "Also offered for"), rows)
+
+
+def render_readme_devices(_arg: str | None) -> str:
+    """`README.md` at the root: every appliance and the profiles that steer it, generic ones last."""
+    rows = []
+    for key in device_types.keys():  # noqa: SIM118 - a registry, not a dict
+        serving = [p for p in profiles.keys() if key in profiles.get(p).types]  # noqa: SIM118
+        named = [_code(p) for p in serving if p not in _GENERIC]
+        rows.append(
+            (
+                _label("load_type", key),
+                ", ".join([*named, *(_GENERIC[p] for p in serving if p in _GENERIC)]),
+            )
+        )
+    return _table(("Appliance", "Devices"), rows)
+
+
 def render_formats(_arg: str | None) -> str:
     """`prices.md`: every price format, the integration it reads and how."""
     rows = []
@@ -415,6 +455,8 @@ RENDERERS: dict[str, Callable[[str | None], str]] = {
     "types": render_types,
     "strategies": render_strategies,
     "profiles": render_profiles,
+    "readme_plans": render_readme_plans,
+    "readme_devices": render_readme_devices,
     "formats": render_formats,
     "modifiers": render_modifiers,
     "countries": render_countries,
@@ -438,8 +480,8 @@ def render(block_id: str) -> str:
 
 
 def pages() -> list[Path]:
-    """Return every user page, sorted."""
-    return sorted(DOCS.rglob("*.md"))
+    """Return every user page, sorted, and the root README last."""
+    return [*sorted(DOCS.rglob("*.md")), REPO_ROOT / "README.md"]
 
 
 def blocks(text: str) -> Iterator[re.Match[str]]:

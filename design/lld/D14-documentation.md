@@ -318,6 +318,7 @@ A URL is `{DOCS_URL}/{page}.md#{anchor}`, with `DOCS_URL = https://github.com/jk
 | `types` | appliances/README.md | the device-type registry | appliance, default plan, what it needs |
 | `strategies` | strategies.md | the strategy registry | plan, good for, default for |
 | `profiles` | devices.md | the profile registry | brand and model, integration, what PowerPlan controls |
+| `readme_plans`, `readme_devices` | the root README.md | the strategy and device-type registries; the profile registry | plan, default for, also offered for; appliance, the profiles that steer it, generic ones last (D-0708) |
 | `countries` | tariffs.md | D13's country registry | country, grid sources in ladder order, VAT, what the flow asks |
 | `sources` | tariffs.md | D13's source registry | source, countries, what it provides, credit and licence (D13 §6.1 puts the credit in the user docs) |
 | `formats`, `modifiers` | prices.md | the format and modifier registries | integration, what PowerPlan reads, how it is set up |
@@ -339,7 +340,7 @@ The prose around a block is written by hand. A value the prose repeats - a defau
 
 ### 5.8 The root README
 
-HACS renders the root `README.md` (`render_readme: true`) as the store page. So it uses **absolute URLs only** (`raw.githubusercontent.com` for images) and no `<picture>`, alert, mermaid or `<details>`. Its contents: the brand image, the badges (CI, nightly, the latest release, HACS custom, the HA floor), four questions a household asks, one paragraph on how PowerPlan answers them, seven bullets on what else it does for a home - none with a count a generated table owns, so it never goes stale - requirements, the install and setup steps with the HACS and "add integration" My buttons, "Read the documentation" → `docs/README.md`, and one line for contributors → `CONTRIBUTING.md`.
+HACS renders the root `README.md` (`render_readme: true`) as the store page. So it uses **absolute URLs only** (`raw.githubusercontent.com` for images) and no `<picture>`, alert, mermaid or `<details>`. Its contents: the brand image, the badges (CI, nightly, the latest release, HACS custom, the HA floor), one paragraph on what PowerPlan does for a home and one on why it exists, the bullets on what it does - none with a count a generated table owns, so it never goes stale - the plans and the devices it supports out of the box as the `readme_plans` and `readme_devices` blocks (§5.6, D-0708), requirements, the install and setup steps with the HACS and "add integration" My buttons, "Read the documentation" → `docs/README.md`, and one line for contributors → `CONTRIBUTING.md`.
 
 ### 5.9 Keeping the pages current
 

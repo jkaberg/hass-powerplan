@@ -8,22 +8,62 @@
 [![Discussions](https://img.shields.io/github/discussions/jkaberg/hass-powerplan)](https://github.com/jkaberg/hass-powerplan/discussions)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jkaberg)
 
-PowerPlan decides when your appliances run: the car charger, water heater, floor heating, heat pump and home battery. It plans from the day-ahead prices and your grid tariff, and keeps each hour under the capacity step you pick.
+PowerPlan decides when your home's big appliances run. It moves the car charger, water heater, floor heating, heat pump and home battery into the cheapest hours. It also keeps every hour under the capacity step on your grid bill, and the home under its main fuse.
 
 I built it for my own house in Norway, where the grid fee follows the highest hours each month. It runs there every day, and the dashboard shows what it plans and why.
 
-What it does:
+![PowerPlan dashboard](https://raw.githubusercontent.com/jkaberg/hass-powerplan/main/docs/images/dashboard-stack.png)
 
-- fetches your grid company's tariff (many countries), with VAT and taxes by date and region
-- charges the car by the time you set, and keeps rooms and hot water at your temperature
-- pauses the least important appliance first when something has to give
-- saves on heating while nobody is home
-- shows cost and savings per appliance
-- exposes entities, actions, events and planned runs in the calendar for your own automations
+## What it does
+
+- **Plans up to two days ahead.** Each appliance gets the cheapest hours that still have it ready in time. Tomorrow's prices are used as soon as they are published.
+- **Keeps each hour under your capacity step.** The meter is read every few seconds, and when the hour heads over your target, the least important appliance pauses first.
+- **Protects your fuses.** The main fuse and each circuit's fuse come before any price or plan.
+- **Keeps your home comfortable.** No room, floor or water tank drops below its lowest temperature, and the car is charged by the time it leaves.
+- **Fetches your grid tariff** from the regulator or the grid companies in many countries, with VAT and taxes by date and region. Where no source covers yours, you type it in from your bill.
+- **Reads your electricity price** from Nord Pool, ENTSO-e, Tibber, Octopus Energy, Energi Data Service and other integrations, and adds what your supplier charges on top.
+- **Uses your solar panels and home battery.** Solar power you would otherwise sell can charge the car or heat water, and the battery can shave peaks or buy low and sell high.
+- **Saves while nobody is home.** Heating turns down when you are away or on vacation.
+- **Counts cost and savings.** The month's cost is split by grid company, supplier and state, and each appliance's savings are measured against running without PowerPlan.
+- **Works with your automations.** Entities, actions, events and a calendar of planned runs, so a button or a script can start or pause an appliance.
 
 It starts in trial mode, where it only shows what it would do. Nothing is switched until you turn on **Automatic control**.
 
-![ PowerPlan dashboard](https://raw.githubusercontent.com/jkaberg/hass-powerplan/main/docs/images/dashboard-stack.png)
+## Plans
+
+Each appliance follows a plan, the way PowerPlan chooses its hours. Every kind of appliance starts on its default plan, and you can change it on the appliance. [Plans](https://github.com/jkaberg/hass-powerplan/blob/main/docs/strategies.md) explains each one.
+
+<!-- generated:begin readme_plans · tools/docs.py writes this block; change the strategy registry, not this table -->
+| Plan | Default for | Also offered for |
+|---|---|---|
+| Always on | – | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
+| Buy low, sell high | – | Home battery |
+| Save where it hurts least | Panel heater | Floor heating, Something else on a switch, Heat pump, Water heater |
+| Cheapest hours | Something else on a switch | Car charger, Heat pump, Panel heater, Water heater |
+| Cheapest hours before the deadline | Car charger, Water heater | Dishwasher, washer or dryer, Home battery, Floor heating, Something else on a switch, Heat pump, Panel heater |
+| Bank heat in cheap hours | Floor heating, Heat pump | Panel heater, Water heater |
+| Shave the peaks | Home battery | – |
+| One run before ready-by | Dishwasher, washer or dryer | – |
+| Follow a schedule | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
+| Solar surplus | – | Car charger, Something else on a switch, Water heater |
+<!-- generated:end readme_plans -->
+
+## Devices
+
+PowerPlan recognizes these devices when you add an appliance, and steers each through its own Home Assistant integration. Anything else it steers through a thermostat, a switch or a power setting Home Assistant already has. [Devices](https://github.com/jkaberg/hass-powerplan/blob/main/docs/devices.md) says what each one needs.
+
+<!-- generated:begin readme_devices · tools/docs.py writes this block; change the profile registry, not this table -->
+| Appliance | Devices |
+|---|---|
+| Dishwasher, washer or dryer | any switch |
+| Home battery | `anker_solix`, `e3dc_rscp`, `ecoflow_cloud`, `foxess_modbus`, `fronius`, `fronius_modbus`, `goodwe`, `growatt_server`, `homewizard`, `huawei_solar`, `marstek_local_api`, `marstek_modbus`, `saj_h2_modbus`, `sessy`, `sigen`, `solaredge_modbus_multi`, `solarman`, `solax_modbus`, `solax_modbus_sofar`, `solis_cloud_control`, `solis_modbus`, `sonnenbatterie`, `sungrow_modbus`, `tesla_custom`, `tesla_fleet`, `teslemetry`, `tessie`, `victron`, `victron_gx`, `victron_mqtt`, `zendure_ha`, any power or current setting |
+| Car charger | `easee_ble`, `easee_cloud`, `goecharger_api2`, `ocpp`, `peblar`, `v2c`, `wallbox`, `zaptec`, any power or current setting |
+| Floor heating | any thermostat |
+| Something else on a switch | any power or current setting, any switch |
+| Heat pump | any thermostat |
+| Panel heater | any thermostat, any switch |
+| Water heater | any thermostat |
+<!-- generated:end readme_devices -->
 
 ## Requirements
 
