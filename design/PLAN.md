@@ -686,7 +686,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | FB.2 | The tank finishes at its deadline | done |
 | FB.3 | Retried until it answers, a repair meanwhile | done |
 | FB.4 | Our own cut is ours | done |
-| FB.5 | `plan_adopted` on a visible change | todo |
+| FB.5 | `plan_adopted` on a visible change | done |
 | FB.6 | Two false signals | todo |
 | FB.7 | The levelled step | todo |
 | 6.3 | Release v1.0 | todo |

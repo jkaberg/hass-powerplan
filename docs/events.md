@@ -128,7 +128,7 @@ triggers:
 <a name="plan_adopted"></a>
 ### New plan adopted
 
-An appliance got a new plan. `planned_kwh`, `cost`, and `next_start` describe it.
+An appliance got a plan that differs from the last one announced: another mode, a different start, the deadline now covered or not, or planned energy that moved by more than half a kilowatt-hour and a quarter. `planned_kwh`, `cost`, and `next_start` describe it. A plan that is only re-cut, for example as a floor's temperature moves, is not announced.
 
 ```yaml
 triggers:

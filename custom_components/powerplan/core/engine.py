@@ -773,6 +773,9 @@ class EventsState:
 OVER_WINDOW_KWH = 0.05
 #: A deadline is met when no more than this was still wanted before it (D7 §5.10).
 DEADLINE_MET_KWH = 0.1
+#: How far a plan's energy moves before `plan_adopted` says so again (D-0714).
+PLAN_ANNOUNCE_KWH: Final = 0.5
+PLAN_ANNOUNCE_SHARE: Final = 0.25
 #: How long a device stays `unhealthy` or `not_following` before it is a repair and a
 #: notification: two heat-pump intervals, past a BLE reconnect or one dropped write (D-0711).
 DEVICE_ISSUE_AFTER: Final = timedelta(minutes=30)
@@ -2297,6 +2300,8 @@ class Engine:
                 reasons.append(f"adopted: {', '.join(adopted)}")
             for load_id in adopted:
                 plan = site_plan.plans[load_id]
+                if not _announced(edges, load_id, plan, now):
+                    continue
                 events.append(
                     HaEvent(
                         EventKind.PLAN_ADOPTED,
@@ -3442,6 +3447,38 @@ _DEVICE_NOTE_KEYS: Final = {
     "device_unhealthy": "unhealthy",
     "device_not_following": "not_following",
 }
+
+
+def _announced(edges: dict[str, str], load_id: str, plan: Plan, now: datetime) -> bool:
+    """Return whether an adopted plan is news to the household, and remember it (D-0714).
+
+    A plan is adopted whenever its inputs move - a floor's temperature in its
+    digest, a charging car's requirement - and that is right for the plan. The
+    event fires when the mode, the coverage or the start changes (a running
+    plan starts `now`), or the planned energy moves past the last announced by
+    more than `PLAN_ANNOUNCE_KWH` and `PLAN_ANNOUNCE_SHARE` of it.
+    """
+    start = plan.next_active(now)
+    when = (
+        "none"
+        if start is None
+        else "now"
+        if start <= now + timedelta(minutes=1)
+        else start.isoformat()
+    )
+    kwh = float(plan.planned_kwh or 0.0)
+    shown = f"{plan.mode.value}|{int(plan.covered)}|{when}"
+    key = f"plan:{load_id}"
+    stored = edges.get(key)
+    if stored is not None:
+        before, _, last_kwh = stored.rpartition("|")
+        drift = abs(kwh - float(last_kwh))
+        if before == shown and drift <= max(
+            PLAN_ANNOUNCE_KWH, PLAN_ANNOUNCE_SHARE * float(last_kwh)
+        ):
+            return False
+    edges[key] = f"{shown}|{kwh:.3f}"
+    return True
 
 
 def _shortfall_kwh(plan: Plan) -> float:
