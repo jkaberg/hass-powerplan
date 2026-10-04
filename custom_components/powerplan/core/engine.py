@@ -773,6 +773,9 @@ class EventsState:
 OVER_WINDOW_KWH = 0.05
 #: A deadline is met when no more than this was still wanted before it (D7 §5.10).
 DEADLINE_MET_KWH = 0.1
+#: How long a device stays `unhealthy` or `not_following` before it is a repair and a
+#: notification: two heat-pump intervals, past a BLE reconnect or one dropped write (D-0711).
+DEVICE_ISSUE_AFTER: Final = timedelta(minutes=30)
 #: The most one tick adds to a comfort count, so a gap in the ticks is not counted.
 DEVIATIONS_TICK_CAP_S = 300.0
 
@@ -1489,7 +1492,9 @@ class Engine:
                 )
             )
         notes.extend(_level_notification(edges, self._tariff, budget))
-        notes.extend(_unhealthy_notifications(events))
+        device_repairs, device_notes = _device_issues(edges, observations, now)
+        repairs.extend(device_repairs)
+        notes.extend(device_notes)
 
         snapshot = Snapshot(
             schema=SnapshotSchema,
@@ -3320,28 +3325,99 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
     return events
 
 
-def _unhealthy_notifications(events: Sequence[HaEvent]) -> list[Notification]:
-    """Return `device_unhealthy` notifications for this tick's unhealthy edges (D8 §2).
+def _device_issues(
+    edges: dict[str, str], observations: Mapping[str, Any], now: datetime
+) -> tuple[list[RepairIssue], list[Notification]]:
+    """Return the repair and the notification for a device away 30 min (D8 §2, §5.9, D-0711).
 
-    A load that stops answering and one that stops following its commands
-    (`not_following`, D-0689) each get their own key, and a recovery clears it.
+    The gate keeps retrying a load that is `unhealthy` or `not_following` for as
+    long as it takes (D4 §8); what the household sees waits until the condition
+    has held `DEVICE_ISSUE_AFTER` unbroken, so a BLE reconnect or one dropped
+    write raises nothing. The since lives in `edges`, so the repair and its
+    notification run on one clock, and the first tick it answers clears both.
     """
+    repairs: list[RepairIssue] = []
     notes: list[Notification] = []
-    for event in events:
-        if event.kind is not EventKind.DEVICE_UNHEALTHY:
-            continue
-        data = event.data
-        prefix = "not_following" if data.get("not_following") else "unhealthy"
-        recovered = bool(data.get("recovered"))
+
+    def clear(load_id: str, raised: str) -> None:
+        repairs.append(
+            RepairIssue(issue_id=f"{raised}_{load_id}", translation_key=raised, active=False)
+        )
         notes.append(
             Notification(
                 category="device_unhealthy",
-                key=f"{prefix}:{data['load']}",
-                params={**data, "cleared": True} if recovered else dict(data),
-                severity="info" if recovered else "warn",
+                key=f"{_DEVICE_NOTE_KEYS[raised]}:{load_id}",
+                params={"load": load_id, "cleared": True},
+                severity="info",
             )
         )
-    return notes
+        del edges[f"device_issue:{load_id}"]
+
+    # A load that is gone takes its repair with it.
+    for key in [key for key in edges if key.startswith("device_")]:
+        load_id = key.split(":", 1)[1]
+        if load_id not in observations:
+            if key.startswith("device_issue:"):
+                clear(load_id, edges[key])
+            else:
+                del edges[key]
+    for load_id, observation in sorted(observations.items()):
+        health = observation.health
+        kind = (
+            "device_not_following"
+            if health.not_following
+            else "device_unhealthy"
+            if health.unhealthy
+            else None
+        )
+        since_key, raised_key = f"device_since:{load_id}", f"device_issue:{load_id}"
+        raised = edges.get(raised_key)
+        if raised is not None and raised != kind:
+            # Answering again, or the other condition: what was raised goes.
+            clear(load_id, raised)
+            raised = None
+        if kind is None:
+            edges.pop(since_key, None)
+            continue
+        # The clock is the condition's own: the other one starts it again.
+        held, _, since = edges.get(since_key, "").partition("@")
+        if held != kind:
+            since = now.isoformat()
+            edges[since_key] = f"{kind}@{since}"
+        if raised is not None or now - datetime.fromisoformat(since) < DEVICE_ISSUE_AFTER:
+            continue
+        edges[raised_key] = kind
+        params = {
+            "load": load_id,
+            "since": since,
+            "failures": health.failures,
+            "last_error": health.last_error,
+            "deviations": health.deviations,
+            "not_following": kind == "device_not_following",
+        }
+        repairs.append(
+            RepairIssue(
+                issue_id=f"{kind}_{load_id}",
+                translation_key=kind,
+                params={"load": load_id},
+            )
+        )
+        notes.append(
+            Notification(
+                category="device_unhealthy",
+                key=f"{_DEVICE_NOTE_KEYS[kind]}:{load_id}",
+                params=params,
+                severity="warn",
+            )
+        )
+    return repairs, notes
+
+
+#: The repair row each condition raises, and its notification's key prefix (D8 §2).
+_DEVICE_NOTE_KEYS: Final = {
+    "device_unhealthy": "unhealthy",
+    "device_not_following": "not_following",
+}
 
 
 def _shortfall_kwh(plan: Plan) -> float:

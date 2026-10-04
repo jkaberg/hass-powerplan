@@ -179,8 +179,8 @@ def test_09h_the_texts_render_in_both_languages_and_tolerate_a_missing_placehold
     )
     assert "9.90" in body_en
     assert title_en != title_nb
-    _title, body = render("device_unhealthy", {"load": "ev"}, "en")
-    assert "{failures}" in body
+    _title, body = render("device_unhealthy", {}, "en")
+    assert "{load}" in body
 
 
 @pytest.mark.parametrize(
@@ -198,3 +198,19 @@ def test_09i_quiet_hours_read_the_flows_shapes(data: Any, start: time, end: time
     assert quiet.covers(datetime(2026, 1, 15, 23, 45, tzinfo=UTC))
     assert not quiet.covers(datetime(2026, 1, 15, 12, 0, tzinfo=UTC))
     assert QuietHours.from_data(None) is None
+
+
+async def test_49_a_device_that_stopped_answering_waits_for_the_morning(
+    hass: HomeAssistant,
+) -> None:
+    """D8 §9 49, D-0711: `device_unhealthy` is no longer urgent - quiet hours hold it."""
+    policy = _policy(hass, quiet=QuietHours(time(22, 0), time(7, 0)))
+    zone = __import__("zoneinfo").ZoneInfo(hass.config.time_zone)
+    quiet_at = datetime(2026, 1, 15, 23, 0, tzinfo=zone).astimezone(UTC)
+    note = _note("device_unhealthy", "unhealthy:ev", load="ev", not_following=False)
+    assert await policy.handle(note, quiet_at) is None
+    assert policy.sent == []
+    _title, body = render("device_unhealthy", {"load": "Billader"}, "en")
+    assert "keeps trying" in body
+    _title, body = render("device_unhealthy", {"load": "HP1", "not_following": True}, "nb")
+    assert "HP1" in body

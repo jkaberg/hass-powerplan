@@ -525,7 +525,7 @@
         "data_description": {
           "peak_warning": "Denne timen er på vei over effektmålet ditt.",
           "comfort_violation": "Et rom eller en tank gikk under grensen du satte.",
-          "device_unhealthy": "En styrt enhet sluttet å svare.",
+          "device_unhealthy": "En styrt enhet har ikke svart, eller fulgt kommandoene, på 30 minutter.",
           "notify_service": "Hvilken varslingstjeneste kategoriene satt til Send det til telefonen min bruker.",
           "quiet_start": "Bare det som haster slipper gjennom etter dette.",
           "quiet_end": "Vanlige varsler starter igjen på dette tidspunktet."
@@ -1325,6 +1325,14 @@
     "pv_forecast_unavailable": {
       "title": "En solprognose kan ikke leses",
       "description": "{site}: Home Assistants energiprognose kunne ikke leses ({error}), så PowerPlan planlegger uten solprognose. Sjekk at integrasjonen for solprognosen er lastet."
+    },
+    "device_unhealthy": {
+      "title": "Et apparat svarer ikke",
+      "description": "**{load}** har ikke svart PowerPlan på 30 minutter. PowerPlan fortsetter å sende kommandoene og fjerner denne meldingen når det svarer. Blir den stående, sjekk enheten og integrasjonen i Home Assistant."
+    },
+    "device_not_following": {
+      "title": "Et apparat følger ikke kommandoene",
+      "description": "**{load}** har ikke fulgt kommandoene fra PowerPlan på 30 minutter. PowerPlan fortsetter å sende dem og fjerner denne meldingen når apparatet følger dem. Blir den stående, sjekk enheten og integrasjonen i Home Assistant."
     }
   },
   "selector": {

@@ -74,6 +74,10 @@ CATALOGUE: dict[str, Issue] = {
     # household must switch on is named (D8 §5.9).
     "battery_control_off": Issue(ir.IssueSeverity.WARNING),
     "notify_service_missing": Issue(ir.IssueSeverity.WARNING),
+    # An appliance that hasn't answered, or followed its commands, for 30 min: the
+    # gate keeps retrying, and the first answer clears it (D8 §5.9, D-0711).
+    "device_unhealthy": Issue(ir.IssueSeverity.WARNING, persistent=False),
+    "device_not_following": Issue(ir.IssueSeverity.WARNING, persistent=False),
     # No known price for the slot in progress for 30 min; the price refresher retries
     # and clears it (D12 §5.15 F12). Gone at restart: the refresher decides anew.
     "prices_stale": Issue(ir.IssueSeverity.WARNING, persistent=False),

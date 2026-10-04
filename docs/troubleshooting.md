@@ -26,6 +26,8 @@ What each repair PowerPlan raises means and what to do about it, and the common 
 | An appliance is on hold | no | `load_error` |
 | A battery is not steered | no | `battery_control_off` |
 | Notification service missing | no | `notify_service_missing` |
+| An appliance is not answering | no | `device_unhealthy` |
+| An appliance is not following its commands | no | `device_not_following` |
 | Electricity prices are not up to date | no | `prices_stale` |
 | An appliance's device is gone | no | `device_missing` |
 | A PV forecast cannot be read | no | `pv_forecast_unavailable` |
@@ -131,6 +133,20 @@ An entity an appliance needs, such as its power sensor or its switch, no longer 
 
 **What to do:** Open the appliance's **Change setup** and pick the entity again.
 
+<a name="device_unhealthy"></a>
+### An appliance is not answering
+
+The appliance's device has not answered PowerPlan for 30 minutes. PowerPlan keeps sending its commands, and the repair goes away by itself when the device answers. A device that drops off for a minute, such as a charger on Bluetooth, raises nothing.
+
+**What to do:** If it stays, open the device in Home Assistant and check that its integration is running and the device is online.
+
+<a name="device_not_following"></a>
+### An appliance is not following its commands
+
+The device accepts PowerPlan's commands but has not applied them for 30 minutes, for example a heat pump that keeps its old temperature. PowerPlan keeps sending them, and the repair goes away by itself the first time a command takes.
+
+**What to do:** If it stays, check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands.
+
 <a name="device_missing"></a>
 ### An appliance's device is gone
 
@@ -206,7 +222,7 @@ Look at the appliance's **Plan status**: it says what PowerPlan plans and why, f
 
 ### An appliance's health says Not following
 
-The device accepted PowerPlan's last three commands but didn't apply them, for example a heat pump that keeps its old temperature. PowerPlan keeps controlling it and tries again when it may, and the notification for devices that stop answering tells you. Check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands. It clears by itself the first time a command takes.
+The device accepted PowerPlan's last three commands but didn't apply them, for example a heat pump that keeps its old temperature. PowerPlan keeps controlling it and tries again when it may. After 30 minutes it becomes the repair [An appliance is not following its commands](#device_not_following). Check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands. It clears by itself the first time a command takes.
 
 <a name="over_target"></a>
 ### An hour went over the target

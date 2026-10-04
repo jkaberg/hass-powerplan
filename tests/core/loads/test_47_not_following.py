@@ -8,12 +8,12 @@ first read-back that matches ends it. Nothing about allocation changes (INV-22).
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 
-from custom_components.powerplan.core.engine import EventKind, HaEvent
-from custom_components.powerplan.core.engine import _unhealthy_notifications as notifications
-from custom_components.powerplan.core.loads import Mode
+from custom_components.powerplan.core.engine import DEVICE_ISSUE_AFTER, _device_issues
+from custom_components.powerplan.core.loads import Health, Mode
 from custom_components.powerplan.core.loads.gate import NOT_FOLLOWING_AFTER, decide, verify
 from tests.core.loads.conftest import NOW, budget, gate_config, gate_state
 from tests.core.loads.test_07_write_gate_matrix import SETPOINT_22
@@ -51,31 +51,16 @@ def test_47_a_run_of_deviations_counts_and_one_match_ends_it() -> None:
 
 @pytest.mark.inv("INV-22")
 def test_47_not_following_raises_and_clears_its_own_notification() -> None:
-    """`device_unhealthy` carries it under its own key, and a recovery clears it (D8 §2)."""
-    start = HaEvent(
-        EventKind.DEVICE_UNHEALTHY,
-        {
-            "load": "hp1",
-            "failures": 0,
-            "last_error": None,
-            "recovered": False,
-            "not_following": True,
-            "deviations": 3,
-        },
-    )
-    end = HaEvent(
-        EventKind.DEVICE_UNHEALTHY,
-        {
-            "load": "hp1",
-            "failures": 0,
-            "last_error": None,
-            "recovered": True,
-            "not_following": True,
-            "deviations": 0,
-        },
-    )
-    (raised,) = notifications([start])
-    (cleared,) = notifications([end])
+    """`device_unhealthy` carries it under its own key, and a recovery clears it (D8 §2).
+
+    Since D-0711 the notification waits until the condition has held 30 min.
+    """
+    edges: dict[str, str] = {}
+    away = {"hp1": SimpleNamespace(health=Health(False, False, 0, None, (), None, True, 3))}
+    back = {"hp1": SimpleNamespace(health=Health(True, False, 0, None, (), None))}
+    assert _device_issues(edges, away, NOW) == ([], [])
+    _repairs, (raised,) = _device_issues(edges, away, NOW + DEVICE_ISSUE_AFTER)
+    _repairs, (cleared,) = _device_issues(edges, back, NOW + DEVICE_ISSUE_AFTER * 2)
     assert raised.category == "device_unhealthy"
     assert raised.key == "not_following:hp1"
     assert not raised.params.get("cleared")

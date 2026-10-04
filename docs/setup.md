@@ -546,14 +546,14 @@ Pick everyone whose being away makes the home away. The home counts as away when
 <a name="notifications"></a>
 ### What should PowerPlan tell you?
 
-PowerPlan tells you about three things by default: a coming peak, comfort that could not be kept, and a device that stopped responding. Everything else is an entity you can put on a dashboard. A persistent notification always works; pick a notify service to get messages on your phone, and set quiet hours if you like.
+PowerPlan tells you about three things by default: a coming peak, comfort that could not be kept, and a device that has not responded for 30 minutes. Everything else is an entity you can put on a dashboard. A persistent notification always works; pick a notify service to get messages on your phone, and set quiet hours if you like.
 
 <!-- generated:begin fields:config.notifications · tools/docs.py writes this block; change strings.json, not this table -->
 | Question | What it asks |
 |---|---|
 | Peak warning | This hour is heading over your capacity target. |
 | Comfort missed | A room or a tank went below the floor you set. |
-| Device not responding | A controlled device stopped answering. |
+| Device not responding | A controlled device has not answered, or followed its commands, for 30 minutes. |
 | Notify service | Which notify service the categories set to Send it to my phone use. |
 | Quiet from | Nothing but the urgent gets through after this. |
 | Quiet until | Normal notifications resume at this time. |

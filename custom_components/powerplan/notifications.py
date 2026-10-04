@@ -63,8 +63,9 @@ MIN_INTERVAL: dict[str, timedelta | None] = {
 }
 DEFAULT_INTERVAL = timedelta(hours=1)
 
-#: D8 §2: never held by quiet hours.
-URGENT_CATEGORIES = frozenset({"comfort_violation", "device_unhealthy", "safe_mode"})
+#: D8 §2: never held by quiet hours. A device that stops answering is retried and is a
+#: repair; it waits for the morning (D-0711).
+URGENT_CATEGORIES = frozenset({"comfort_violation", "safe_mode"})
 
 #: The engine's category names that D8 §5.8 spells differently.
 CATEGORY_ALIASES = {"engine": "safe_mode", "level_step": "level_up"}
@@ -102,11 +103,11 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "device_unhealthy": (
             "A device stopped answering",
-            "{load} failed {failures} time(s); last error: {last_error}.",
+            "{load} has not answered for 30 minutes. PowerPlan keeps trying.",
         ),
         "device_not_following": (
             "A device isn't following its commands",
-            "{load} didn't apply the last {deviations} commands it was sent.",
+            "{load} has not followed its commands for 30 minutes. PowerPlan keeps sending them.",
         ),
         "price_source_dead": (
             "No prices for a day",
@@ -158,11 +159,11 @@ TEXTS: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "device_unhealthy": (
             "En enhet sluttet å svare",
-            "{load} feilet {failures} gang(er); siste feil: {last_error}.",
+            "{load} har ikke svart på 30 minutter. PowerPlan prøver videre.",
         ),
         "device_not_following": (
             "En enhet følger ikke kommandoene",
-            "{load} tok ikke i bruk de siste {deviations} kommandoene den fikk.",
+            "{load} har ikke fulgt kommandoene sine på 30 minutter. PowerPlan sender dem på nytt.",
         ),
         "price_source_dead": (
             "Ingen priser på et døgn",

@@ -525,7 +525,7 @@
         "data_description": {
           "peak_warning": "This hour is heading over your capacity target.",
           "comfort_violation": "A room or a tank went below the floor you set.",
-          "device_unhealthy": "A controlled device stopped answering.",
+          "device_unhealthy": "A controlled device has not answered, or followed its commands, for 30 minutes.",
           "notify_service": "Which notify service the categories set to Send it to my phone use.",
           "quiet_start": "Nothing but the urgent gets through after this.",
           "quiet_end": "Normal notifications resume at this time."
@@ -1325,6 +1325,14 @@
     "pv_forecast_unavailable": {
       "title": "A PV forecast cannot be read",
       "description": "{site}: Home Assistant's energy forecast could not be read ({error}), so PowerPlan plans without a solar forecast. Check that your solar forecast integration is loaded."
+    },
+    "device_unhealthy": {
+      "title": "An appliance is not answering",
+      "description": "**{load}** has not answered PowerPlan for 30 minutes. PowerPlan keeps sending its commands and removes this message when it answers. If it stays, check the device and its integration in Home Assistant."
+    },
+    "device_not_following": {
+      "title": "An appliance is not following its commands",
+      "description": "**{load}** has not followed PowerPlan's commands for 30 minutes. PowerPlan keeps sending them and removes this message when the appliance follows. If it stays, check the device and its integration in Home Assistant."
     }
   },
   "selector": {

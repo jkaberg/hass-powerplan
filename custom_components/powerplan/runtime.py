@@ -3118,7 +3118,7 @@ class Runtime:
                 self.entry.entry_id,
                 issue.issue_id,
                 active=issue.active,
-                placeholders=issue.params,
+                placeholders=self._named_params(issue.params),
                 entry_title=self.site_name,
             )
             if issue.active:
@@ -3130,13 +3130,18 @@ class Runtime:
 
     def _named(self, note: Notification) -> Notification:
         """Return `note` with a load's id in `load` replaced by its name, as the household knows it."""
-        load_id = note.params.get("load")
+        params = self._named_params(note.params)
+        return note if params is note.params else replace(note, params=params)
+
+    def _named_params(self, params: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Return `params` with a load's id in `load` replaced by its name, or `params` itself."""
+        load_id = params.get("load")
         if not isinstance(load_id, str):
-            return note
+            return params
         for load in self.build.loads:
             if load.load_id == load_id:
-                return replace(note, params={**note.params, "load": load.config.name})
-        return note
+                return {**params, "load": load.config.name}
+        return params
 
     def _enriched(self, event: HaEvent) -> dict[str, Any]:
         """Return an engine event's data with what only the runtime knows (D8 §5.6)."""
