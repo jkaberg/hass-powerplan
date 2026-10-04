@@ -2988,3 +2988,48 @@ On 4 October 2026 elpris.dk listed Tarm Elværk Net (384, since 1 October) and F
 
 The owner asked for the store page to list the plans and the devices PowerPlan supports out of the box. D14 §5.8 kept the README free of anything a generated table owns, so it never goes stale; a hand-typed list of 10 plans and 42 device profiles would. `tools/docs.py` now treats the root README as a page and writes two blocks into it: `readme_plans` (plan, the appliances it is the default for, the others it is offered for) and `readme_devices` (each appliance and the profiles that steer it, the generic ones in the household's words last). Neither cell carries a link, since `_cell` unwraps them; the prose above each table links to its docs page. Affects D14 §5.6, §5.8.
 **Rejected:** brand names for the profiles - the registry has none, and a hand-kept name table is the staleness §5.8 avoids. Reusing the `types`, `strategies` and `profiles` tables - their key columns read as noise on a store page, and `profiles` lists 42 rows.
+
+### D-0709 · A deadline is armed only while the load asks for it
+
+`_count_deviations` arms a deadline on a tick when the demand wants energy or its requirement is met (`required_kwh ≤ 0.1`); a demand that stops wanting with its requirement unmet has withdrawn it, and a withdrawn deadline isn't judged (D7 §5.10). The EV kept its departure and its requirement while no car was connected, so five of its six September–October "misses" at the reference house were nights it wasn't plugged in, and the sixth a session the car ended at 98 %. The tank's `wants` is `level < target − 1 K`, so a tank inside its band arms as met and the tank's four real misses stay misses.
+**Rejected:** dropping the EV's deadline from its demand while no car is connected - the plan for an absent car still needs it, and the dashboard shows it; judging by `urgency` - a `none` urgency also means "at target", which is a deadline met.
+
+### D-0710 · A block honours `prefer_late`, and the tank derives it
+
+`_fill_blocks` ties equal blocks to the latest stop and an extension's equal neighbours to the later slot when `prefer_late` is set; before, the parameter reached `_fill_priced` only, so the tank (`min_block_min` 30) always heated at the night's first slot. The water heater derives `prefer_late: true`: its block ends at the deadline, so it is at its target when wanted, loses less heat, and no longer starts with the car's earliest-first fill. A tank derived before keeps its stored parameters (INV-66) until **Change setup** is saved on it; the parameter has no field of its own in the flows.
+**Rejected:** a looser deadline band for the tank - the misses were real, the plan coasted six hours; a top-up rule near the deadline - a 30 min block can't fit the last 15 minutes, which is how the four misses happened.
+
+### D-0711 · A device that stops answering is retried, and a repair after 30 min
+
+The gate already retried without limit, paced by the command interval; the surface was the defect. `_unhealthy_notifications` sent a notification on every edge, and the recovery cleared the key, so the 6 h interval never applied, and the category was urgent. Now the engine keeps `device_since:<load>` in the `events` edges while `sensor.<load>_health` reads `unhealthy` or `not_following`; at 30 min unbroken it raises `device_unhealthy_<load>` or `device_not_following_<load>` (a `RepairIssue`, not persistent; two rows, since a placeholder can't be translated) and sends one `device_unhealthy` notification, and the first tick at anything else clears both. `device_unhealthy` leaves `URGENT_CATEGORIES`: quiet hours hold it. The bus event keeps every edge. Thirty minutes is two heat-pump intervals (900 s): one dropped write or a BLE reconnect never raises it. Owner, 4 Oct 2026: "keep retrying til they respond, with a repair in hass".
+**Rejected:** a hold in `NotificationPolicy` - the repair and the notification would run on two clocks; switching the category off at the house - a real failure would go unseen.
+
+### D-0712 · No seam cap: every cap at a window's end moves energy into the next
+
+The reference house went to stage 2 or 3 for under a minute at three hh:00 seams, the charger cut from 32 A to 6 A and ramped back, because `P_allow = E_budget / t_rem` lets a window with budget left run a charger to its cap in its last minutes and the 120 s EMA carries that power over the whole next window. D6 §10 named a cap for its last minutes. Three were built and run through the scenario catalogue in the last `4 × projection_tau_s` (480 s): the whole allowance capped where the next window opens in stage 0, `(thresholds[0] × C_next − R_next) / window_h`, cost the car enough that `night_ev_tank_banked_floors_5kw` left at 79.93 % against its 80 %; capped at the stage-2 line, `thresholds[1]`, it shed the tank at hh:52, the tank's 10 min dwell moved 0.3 kWh into the next window and a scripted household burst took `legionella_expensive_week`'s window to 6.12 kWh against 6.0 (5.86 without); the walk's residual for modulating loads only, 6.07 kWh. Every cap at a window's end moves energy into the next window, and a window with a household burst in it then has less room. The seam costs current churn and a sub-minute stage blip, not money or comfort, so the item stays deferred (D6 §10).
+**Rejected:** shipping any of the three - a window over its ceiling is the one thing the capacity axis promises not to do; the plan fraction at 0.85 - the sprint isn't the plan's, and at 4.7 kWh it costs the car 0.47 kWh every hour of the night.
+
+### D-0713 · The live warning waits while our own cut settles
+
+A settling load counts at its commanded power in the meter's split (INV-18), so in the seconds after a cut the uncontrolled term holds our own draw: at 1 Oct 23:00:24 UTC the house named 8.44 kWh "uncontrolled" with the EV at 5.4 kW and the tank at 2.9 kW. `_live_warning` returns nothing while any `ControlledView` is `settling` with `commanded_w` under `measured_w` (D7 §5.4).
+**Rejected:** counting settling loads at their measured power everywhere - INV-18's square wave would come back into σ; a second-tick confirmation for every live warning - it delays a real oven by a tick for a case we can name.
+
+### D-0714 · `plan_adopted` fires on a change the household can see
+
+Plans are adopted and stored as D5 §5.9 says; the event fires when the adopted plan differs from the last one announced for the load (edge `plan:<load>`) in `mode`, `covered`, start - `now` for a running plan - or `planned_kwh` by more than max(0.5 kWh, 25 %). At the reference house 235 of 2 213 adoptions in eight days were such changes; the rest were a floor's temperature in its digest and a charging car's requirement.
+**Rejected:** fewer adoptions - the plan has to follow its inputs; a time-based throttle - it would delay the one change that matters by as much as it drops the ones that don't.
+
+### D-0715 · `extra_bindings` skips the roles a subentry binds
+
+`_bind_answered_roles` called `extra_bindings` for every answered role and filtered afterwards, so a start whose bound SoC sensor hadn't reported a unit yet logged "declares unit None … leaving the role unbound" for a role that stayed bound. `extra_bindings` takes `skip`, the subentry's bound roles, and checks only the rest.
+**Rejected:** lowering the log level - the same warning is right for a role that is really unbound (D-0693).
+
+### D-0716 · No `level_changed` on a period's first tick
+
+The edges `level_actual` and `level_projected` carry the period they were seen in; the first level of a new period seeds them without an event. Every month at the reference house began with "5–10 kW → 0–2 kW, metric 0". `period_closed` announces the close.
+**Rejected:** suppressing a change to a lower level - a real fall inside a rolling period is news.
+
+### D-0717 · D11 bills a levelled book, and the advice names the step below
+
+Beside the actual and the counterfactual bill, D11 bills the period's days with the steered loads' energy water-filled over each day's windows (D11 §5.13): `window_steered[key]` accrues each settled slot's load energy beside `slot_deltas`, and the levelled `DayRec`s go through the same `tariff.bill`. `SiteMonthRec` gains `levelled_metric_kw`, `levelled_level`, `levelled_capacity_fee`; `sensor.<site>_savings` publishes the first two; a closed month whose levelled fee is under the actual one sets `AccountingStatus.step_below`, and the advice sensor carries `step_below` in the month that follows. The key is in D2's `ADVICE_KEYS` so the enum and the translations carry it, though D2 doesn't compute it.
+**Rejected:** a third book in D2's `PeakHistory` - a stored schema change for a figure only D11 reads; an `auto` that aims below the reached step - the book is an upper bound, and D2 §11 keeps that gamble the household's.

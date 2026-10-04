@@ -8,7 +8,7 @@ The design of PowerPlan, for contributors. The household's documentation is [`do
 | [PLAN.md](PLAN.md) | Project plan: work packages per phase with their LLD §9 exit tests, the critical path, risks, decisions, alternatives, checklist |
 | [DECISIONS.md](DECISIONS.md) | Decision log: what the code forced that the HLD and the LLDs didn't decide, with the rejected alternative (PLAN §7 dec. 6) |
 | `lld/` | One low-level design per domain (below). Each settles the open questions of its HLD section and defines modules, types, algorithms, storage, configuration, failure modes, tests and alternatives |
-| `reviews/` | Reviews the LLDs cite by item id: the household's screens ([ux-review](reviews/ux-review.md)) and device attachment ([device-attachment](reviews/device-attachment.md)) |
+| `reviews/` | Reviews the LLDs cite by item id: the household's screens ([ux-review](reviews/ux-review.md)), device attachment ([device-attachment](reviews/device-attachment.md)), and the reference house's field audits ([2026-09](reviews/field-audit-2026-09.md), [2026-10](reviews/field-audit-2026-10.md)) |
 | `benchmarks/` | The reference benchmark's changelog: every baseline change and why |
 
 ## LLD roster

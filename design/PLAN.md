@@ -209,6 +209,22 @@ User pages: VZ.9–VZ.12 `docs/dashboard.md`.
 
 User pages: none change - `docs/tariffs.md` already says Australia's plans are the AER's on Energy Made Easy and that a retailer without plans says so; the rest is a source reading its publisher right.
 
+### 3.0o The house's first fortnight
+
+[The second field audit](reviews/field-audit-2026-10.md) of the reference house, 24 Sep – 4 Oct 2026, [D7 §5.2, §5.4, §5.10](lld/D7-engine.md), [D5 §5.3](lld/D5-strategies.md), [D4 §5.9, §5.12, §8](lld/D4-loads.md), [D6 §10](lld/D6-allocation.md), [D8 §2, §5.5, §5.6, §5.9](lld/D8-ha-surface.md), [D11 §5.13](lld/D11-accounting.md), [D2 §5.11](lld/D2-tariff.md): the deviations count only what could be met, the tank finishes at its deadline, a flaky device is a repair and not a notification per flap, our own cut at a seam is no longer blamed on the household, the household hears about plans it can see change, and the step below shows when the steered appliances could have reached it (dec. 49).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **FB.1 A deadline the load still asks for** | the arming rule in `_count_deviations` | D7 §5.10; D-0709 | D7 §9 29 | - |
+| **FB.2 The tank finishes at its deadline** | `prefer_late` in `_fill_blocks`; the water heater derives it | D5 §5.3, §6; D4 §5.12; D-0710 | D5 §9 31; D4 §9 50 | - |
+| **FB.3 Retried until it answers, a repair meanwhile** | the `device_unhealthy` repair after 30 min; the notification with it, not urgent | D8 §2, §5.8, §5.9; D4 §8; HLD §4; D-0711 | D8 §9 49; D4 §9 50 | - |
+| **FB.4 Our own cut is ours** | the live warning waits for our own settle; the seam cap tried and left deferred | D7 §5.4; D6 §10; D-0712, D-0713 | D7 §9 31 | - |
+| **FB.5 `plan_adopted` on a visible change** | the announced-plan edge | D7 §5.2; D8 §5.6; D-0714 | D7 §9 30 | - |
+| **FB.6 Two false signals** | bound roles skipped by `extra_bindings`; no `level_changed` at a rollover; §9's FA rows | D4 §5.9; D8 §5.6; D-0715, D-0716 | D4 §9 51; D7 §9 32 | - |
+| **FB.7 The levelled step** | D11's levelled book; `metric_kw_levelled`, `capacity_step_levelled`; advice `step_below` | D11 §5.13; D2 §5.11; D8 §5.5; D-0717 | D11 §9 39; D8 §9 50 | - |
+
+User pages: FB.1 `docs/entities.md`; FB.2 `docs/appliances/water_heater.md`, `docs/strategies.md`; FB.3 `docs/troubleshooting.md`, `docs/setup.md`; FB.4 none; FB.5 and FB.6 `docs/events.md`; FB.7 `docs/entities.md`, `docs/savings.md`, `docs/capacity-tariffs.md`.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -380,6 +396,8 @@ phase 4 after 0.11 and its domain WPs; phase 5 after 1.1, 3.4, 4.1; the release 
 
 **3.0k's order:** FA.3 and FA.1 first - they decide what the house does under a 4.7 kWh target - then FA.2, before any month is run at the 2–5 kW step. FA.4 to FA.8 in any order, FA.9 last. FA.1 and FA.2 move the reference benchmark's digests on purpose and each updates a baseline, so they are never open together.
 
+**3.0o's order:** FB.1–FB.3 first - they make the deviations sensor and the notifications true - then FB.4–FB.7 in any order. FB.2 moves the reference benchmark's digests on purpose.
+
 ---
 
 ## 5. Working method
@@ -477,6 +495,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 46. **Charts that show what PowerPlan did, and a browser under every card** (D-0694 … D-0697). Seven charts replace or join the cards; one PowerPlan mark, explained by its tooltip, sits wherever PowerPlan acted; the ledger keeps an hour-of-day profile for the average day with and without it; every card is mounted in Chromium at every width HA's sections view gives, light and dark, with geometric assertions. *Rejected:* pixel snapshots - fonts differ between machines and snapshots get re-recorded on reflex; a symbol per kind of action - three glyphs to learn where one mark and a sentence do.
 47. **This hour tells the day, History tells what PowerPlan held back** (D-0698 … D-0700). The hour gauge draws the last 12 hours under its arc; an hour whose control level reached 1 carries the PowerPlan mark wherever hours are drawn; History's summary compares the period with the same time of the one before. *Rejected:* a second hour card - Now already has one metric per pane; a comparison in green and red - it's a comparison, not a verdict.
 48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. The canary runs each copy it fetches through the flow's own path - answered, stored, read back and priced (D-0706). *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
+49. **The house's first fortnight** (D-0709 … D-0717, [the second field audit](reviews/field-audit-2026-10.md)). A deadline is judged only while the load asks for it; a tank's block ends at its deadline; a device that stops answering is retried until it answers and is a repair after 30 min, with the notification sent once beside it and held by quiet hours; the live warning waits while our own cut settles, and the seam cap stays deferred - three versions each moved energy into the next window and one pushed a scenario over its ceiling; `plan_adopted` announces a change the household can see; D11 bills a levelled book and the advice names the step below when the steered appliances could have reached it. The house keeps its 5–10 kW target through the winter: a target is each site's own select, nothing is built for it (owner, 4 Oct 2026). *Rejected:* switching the noisy notification category off (a real failure would go unseen), a seam cap (it moves energy into the next window), and an `auto` that aims below the reached step (an upper bound is not a promise).
 
 ---
 
@@ -547,15 +566,15 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | RES.2 | The step without PowerPlan, the price paid | done |
 | RES.3 | The month's deviations | done |
 | RES.4 | The results on the dashboard | done |
-| FA.1 | The ladder reads the house | todo |
-| FA.2 | A slot's draw, not a margin | todo |
-| FA.3 | One register reader | todo |
-| FA.4 | A plan covers the present | todo |
-| FA.5 | Not following | todo |
-| FA.6 | The reached step | todo |
-| FA.7 | The floor's dwell | todo |
-| FA.8 | Names and partial months | todo |
-| FA.9 | A role binds when its entity is ready | todo |
+| FA.1 | The ladder reads the house | done |
+| FA.2 | A slot's draw, not a margin | done |
+| FA.3 | One register reader | done |
+| FA.4 | A plan covers the present | done |
+| FA.5 | Not following | done |
+| FA.6 | The reached step | done |
+| FA.7 | The floor's dwell | done |
+| FA.8 | Names and partial months | done |
+| FA.9 | A role binds when its entity is ready | done |
 | 0.1 | Scaffold and loadable shell | done |
 | 0.2 | D3 metering | done |
 | 0.3 | D2 tariff | done |
@@ -663,6 +682,13 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | TC.5 | The flow's path, live | done |
 | TC.6 | Denmark's areas without a tariff | done |
 | TC.7 | A failed fetch says why | done |
+| FB.1 | A deadline the load still asks for | todo |
+| FB.2 | The tank finishes at its deadline | todo |
+| FB.3 | Retried until it answers, a repair meanwhile | todo |
+| FB.4 | Our own cut is ours | todo |
+| FB.5 | `plan_adopted` on a visible change | todo |
+| FB.6 | Two false signals | todo |
+| FB.7 | The levelled step | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

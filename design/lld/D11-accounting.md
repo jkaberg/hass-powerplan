@@ -420,6 +420,25 @@ Nothing is restated silently: the action is the household's, logged, and the led
 
 What PowerPlan did to an average day, for the dashboard (D12 §5.20 V6, D-0695). When a slot settles (§5.9.2), its `kwh` and `cf_kwh` accrue to `SiteMonthRec.hour_kwh[h]` and `hour_cf_kwh[h]`, `h` the local hour the slot starts in, and its local date joins `profile_dates`. Every settled slot counts, the load's own (observe, `off`, legionella) with `cf_kwh = kwh`, so the two lines sum to the same energy by §5.9.1's conservation and only their shape differs. The rest of the house is not in it: the ledger books loads, not the uncontrolled draw. A day that settles after the month rolled over books into the new month, as `kwh_shifted` does. The month closes with its profile, so the savings sensor publishes this month's and last month's (D8 §5.5).
 
+### 5.13 The levelled step
+
+*(D-0717, `design/reviews/field-audit-2026-10.md` §8)* What the steered appliances could have done for the capacity step, as a third book beside the actual and the counterfactual one. When a slot settles, each load's `kwh` accrues to `window_steered[<window key>]` of the tariff window it falls in, beside `slot_deltas` (§5.9.4); the open month keeps only its own keys. When the actual and the counterfactual bills are made (`_bill_settled`), the levelled one is made from the same `PeakHistory` through the same last settled day:
+
+```
+for each day d of the period, with h = window_min / 60:
+    rows      ← d's windows in history.windows, each with kw_raw, weight, steered_kwh = window_steered.get(key, 0)
+    uc_kw     ← max(0, kw_raw − steered_kwh / h)                     # what the house drew besides the steered loads
+    S         ← Σ steered_kwh
+    if some window of d weighs 0: L ← 0                              # the steered energy goes where the tariff doesn't look
+    else: L ← the lowest level with Σ max(0, L − uc_kw) × h ≥ S      # water-filling over the day's windows
+    levelled_days[d] ← DayRec over max(uc_kw, L) × weight per window (entries, max_weighted_kw, max_raw_kw)
+levelled_bill ← tariff.bill(period, history with days = levelled_days)  # INV-69: one code path for all three books
+```
+
+`SiteMonthRec` carries `levelled_metric_kw`, `levelled_level` and `levelled_capacity_fee` beside the counterfactual's (§5.10), and `AccountingStatus` publishes the first two on `sensor.<site>_savings` as `metric_kw_levelled` and `capacity_step_levelled`. At a month's close the closed record keeps them; when its levelled step's fee is under the actual one's, `AccountingStatus.step_below` = `{month, step, fee_delta}`, and D8 adds the advice `step_below` for the month that follows (D2 §5.11).
+
+**An upper bound, labelled so.** The book doesn't know when a car is home, or that a tank can't heat at noon for a shower at 07:00; it says what levelling the steered energy within each day would have reached, never what the house will reach. It is advice: below the reached step stays a gamble the household picks (D2 §5.5, §11). On the reference house from 24 Sep the EV and the tank, serialised inside the night alone, would have held 4.7 kWh an hour on 9 of 11 nights (the review's F7); the book, levelling over the whole day, is more generous still.
+
 ## 6. Configuration schema
 
 Nothing is asked in the flows. Advanced (site): `accounting_enabled` (on; off drops the store section and the entities), `calibration_threshold` 0.15, `reprice_days` 7 (bounded by D1's retention). A per-load opt-out of the savings figure doesn't ship in v1, `store_kind_of` alone decides whether a load gets a savings sensor (D-0291). The review step (INV-67) says which counterfactual was picked in plain words: "Without powerplan this floor would hold 22 °C on its own thermostat; savings are what the night charge saves against that."
@@ -509,6 +528,7 @@ Items 4–9 and 13 state the **model** figure. The reference:
 
 ---
 38. The day profile (§5.12): two settled days of a water heater moved from 17:00–19:00 to 22:00–00:00 give `hour_kwh` at 22 and 23 and `hour_cf_kwh` at 17 and 18, equal sums, `profile_dates` the two dates; an observe slot adds the same to both; a rollover moves the profile into `MonthClosed` and starts the new month at zeros; a schema-2 state without the fields restores with zeros.
+39. The levelled book (D-0717): a day of 24 hourly windows, each with 1.2 kWh besides the steered loads and 10 kWh steered at 22:00 and again at 23:00, levels to 2.033 kW in every window; with one weight-0 window that day its levelled peak is 1.2 kW; a day with nothing steered levels to its actual peak; the period's levelled bill goes through `tariff.bill` and lands in `SiteMonthRec`; a month closed at 5–10 kW with a levelled 2–5 kW sets `step_below` to the step and the fee difference, one closed at the same step leaves it `None`.
 
 ## 10. Deliberately deferred
 

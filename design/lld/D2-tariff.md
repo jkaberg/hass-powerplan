@@ -331,6 +331,7 @@ The freezing (`_freeze`, `_touch`) is D2's own, run every tick from `ceiling_kwh
 | `coarse_history` | any coarse months in the metric |
 | `contracted_close` | ContractedPower: last window within 10 % of the limit |
 | `target_unreachable` | a chosen target below the metric the period has already reached: "the reached step is held until {date}, then yours" (D-0690) |
+| `step_below` | the last closed period's levelled step (D11 §5.13) was below its actual one: "{month} would have fitted {step} with your appliances spread evenly over each day - {fee_delta} less a month. Choose it as your target to try". D11 computes it and D8 adds it to the sensor's items; the evaluator only lists the key, so the enum carries it (D-0717) |
 
 ### 5.12 Seeding (`backfill.py`)
 
