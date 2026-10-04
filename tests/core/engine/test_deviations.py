@@ -1,4 +1,4 @@
-"""D7 §9 26 - the month's deviations, counted in the tick (D7 §5.10).
+"""D7 §9 26, 29 - the month's deviations, counted in the tick (D7 §5.10).
 
 Comfort time and episodes, deadlines met and missed, and windows over their
 ceiling, per local calendar month. The counters are observations: nothing but
@@ -19,9 +19,14 @@ OSLO = ZoneInfo("Europe/Oslo")
 T0 = datetime(2026, 9, 25, 5, 0, tzinfo=UTC)
 
 
-def _demand(deadline: datetime | None = None, required_kwh: float | None = None) -> Demand:
+def _demand(
+    deadline: datetime | None = None,
+    required_kwh: float | None = None,
+    *,
+    wants: bool | None = None,
+) -> Demand:
     return Demand(
-        wants=deadline is not None,
+        wants=deadline is not None if wants is None else wants,
         required_kwh=required_kwh,
         deadline=deadline,
         min_w=0.0,
@@ -132,3 +137,45 @@ def test_26d_nothing_but_count_deviations_writes_them() -> None:
         if path.name != "engine.py" and "runtime.deviations" in path.read_text(encoding="utf-8")
     ]
     assert readers == []
+
+
+def test_29_a_deadline_is_judged_only_while_the_load_asks_for_it() -> None:
+    """D-0709: a car not connected, or a session the car ended, has withdrawn its deadline.
+
+    The reference house counted five "misses" on nights the charger read
+    `disconnected` at 06:00, and one for a car that stopped itself at 98 %
+    (`design/reviews/field-audit-2026-10.md` §2). A demand that no longer wants
+    energy while its requirement is unmet isn't judged; one whose requirement is
+    met is, and counts met. A tank's `wants` is `level < target - 1 K`.
+    """
+    deadline = T0 + timedelta(hours=8)
+    before = deadline - timedelta(seconds=10)
+    demands = {
+        # No car: the departure and the 40 kWh stay on the demand, `wants` is off.
+        "no_car": _demand(deadline, 40.0, wants=False),
+        "short": _demand(deadline, 2.0),
+        "full": _demand(deadline, 0.0, wants=False),
+        # The car ended its session at 98 % of a 100 % target.
+        "car_stopped": _demand(deadline, 1.9, wants=False),
+        # A tank inside its 1 K band (74.3 against 75 °C) is at its target.
+        "tank_in_band": _demand(deadline, 0.0, wants=False),
+        # A tank below it (73.9 °C) still owes 0.38 kWh and wants it.
+        "tank_below": _demand(deadline, 0.38),
+    }
+    state = _tick(DeviationsState(), T0, None, demands=demands)
+    state = _tick(state, before, T0, demands=demands)
+    state = _tick(state, deadline, before, demands={})
+    assert state.deadline_met == {"full": 1, "tank_in_band": 1}
+    assert state.deadline_missed == {"short": 1, "tank_below": 1}
+    assert state.deadline_at == {}
+
+
+def test_29b_a_car_unplugged_before_its_deadline_withdraws_it() -> None:
+    """Plugged in and owing at 22:00, unplugged at 05:30: the 06:00 deadline isn't judged."""
+    deadline = T0 + timedelta(hours=8)
+    state = _tick(DeviationsState(), T0, None, demands={"ev": _demand(deadline, 20.0)})
+    unplugged = deadline - timedelta(minutes=30)
+    state = _tick(state, unplugged, T0, demands={"ev": _demand(deadline, 6.0, wants=False)})
+    state = _tick(state, deadline, unplugged, demands={"ev": _demand(deadline, 6.0, wants=False)})
+    assert state.deadline_met == {}
+    assert state.deadline_missed == {}

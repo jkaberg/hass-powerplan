@@ -304,7 +304,7 @@ What PowerPlan's plans cost you this month, counted as they happen. The number i
 
 | Attribute | Meaning |
 |---|---|
-| `deadlines_met`, `deadlines_missed` | For each appliance with a ready-by time, how often it was ready and how often it was not. |
+| `deadlines_met`, `deadlines_missed` | For each appliance with a ready-by time, how often it was ready and how often it was not. A ready-by time the appliance stopped asking for is not counted, for example a car that isn't plugged in at its departure. |
 | `comfort_min`, `comfort_episodes` | For each appliance, the minutes below its comfort temperature and how many times it went below. |
 | `over_windows`, `windows` | Hours that ended over the target, out of the hours counted. |
 

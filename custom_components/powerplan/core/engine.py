@@ -3139,7 +3139,8 @@ def _count_deviations(
     Comfort: the seconds since the last tick while below the floor, capped at
     `DEVIATIONS_TICK_CAP_S`, and an episode on the edge into it. A deadline is judged
     on the first tick at or after it, by what the demand still wanted on the tick
-    before; one withdrawn before it passes is not judged. A closed window is over
+    before; one withdrawn before it passes is not judged, and a demand that no
+    longer wants energy with its requirement unmet has withdrawn it. A closed window is over
     when it passed its ceiling by more than `OVER_WINDOW_KWH`.
     """
     month = now.astimezone(tz).strftime("%Y-%m")
@@ -3173,8 +3174,12 @@ def _count_deviations(
             pending = None
         demand = demands.get(load_id)
         if demand is not None and demand.deadline is not None and demand.deadline > now:
-            deadline_at[load_id] = demand.deadline.isoformat()
-            deadline_kwh[load_id] = max(0.0, demand.required_kwh or 0.0)
+            required = max(0.0, demand.required_kwh or 0.0)
+            # A demand that stops wanting with its requirement unmet - no car
+            # connected, a session the car ended - has withdrawn it (D-0709).
+            if demand.wants or required <= DEADLINE_MET_KWH:
+                deadline_at[load_id] = demand.deadline.isoformat()
+                deadline_kwh[load_id] = required
     return DeviationsState(
         month=month,
         comfort_s=comfort_s,
