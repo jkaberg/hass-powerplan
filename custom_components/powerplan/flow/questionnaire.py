@@ -682,7 +682,9 @@ def marker(key: str, default: Any) -> Any:
 
 def advanced_section(fields: Mapping[Any, Any]) -> Any:
     """Wrap `fields` in the collapsed advanced section (INV-65, D-0129)."""
-    return section(vol.Schema(dict(fields)), {"collapsed": True})
+    # `Any`: HA 2026.10 types a section's schema as probatio's, the floor as voluptuous'.
+    schema: Any = vol.Schema(dict(fields))
+    return section(schema, {"collapsed": True})
 
 
 def render(

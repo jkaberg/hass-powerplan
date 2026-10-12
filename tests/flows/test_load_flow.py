@@ -33,6 +33,7 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.loads.types.ev import DERIVATION_VERSION
 from custom_components.powerplan.entity import unique_id
+from custom_components.powerplan.flow.load import device_entries
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -264,7 +265,7 @@ async def test_04_every_ev_entity_exists_and_a_knob_reaches_the_next_tick(  # no
         )
         is None
     )
-    assert site.entry_id not in load_device.config_entries
+    assert site.entry_id not in device_entries(load_device)
     assert runtime.site_device_id is not None
     for platform, key, category, enabled in EV_ENTITIES:
         entity_id = registry.async_get_entity_id(

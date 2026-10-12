@@ -25,6 +25,7 @@ from custom_components.powerplan.const import (
     LOAD_TITLE_USER_SET,
     SUBENTRY_LOAD,
 )
+from custom_components.powerplan.flow.load import device_entries
 from tests.flows.test_load_flow import _add_charger, _answer
 
 if TYPE_CHECKING:
@@ -69,7 +70,7 @@ def _replace_charger(hass: HomeAssistant, charger: FakeHouse) -> str:
     source = devices.async_get(old.device_id)
     assert source is not None
     new = devices.async_get_or_create(
-        config_entry_id=source.primary_config_entry or next(iter(source.config_entries)),
+        config_entry_id=next(iter(device_entries(source))),
         identifiers={("easee", "ev-reincluded")},
         manufacturer=source.manufacturer,
         model=source.model,
@@ -98,7 +99,7 @@ async def test_23_the_appliance_adds_no_device_and_shows_the_brand(
     assert set(rows.values()) == {charger.loads["ev"].device_id}
     hardware = dr.async_get(hass).async_get(str(charger.loads["ev"].device_id))
     assert hardware is not None
-    assert site.entry_id not in hardware.config_entries
+    assert site.entry_id not in device_entries(hardware)
     shown = [hass.states.get(entity_id) for entity_id in rows]
     assert all(
         state.attributes.get("entity_picture") == BRAND_ICON_URL

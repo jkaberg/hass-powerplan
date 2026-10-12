@@ -98,6 +98,10 @@ SCALING_BIAS_FRACTION = 0.05
 SCALING_WINDOWS = 6
 #: D8 §5.9: a battery's command unreadable this long before the household is told.
 BATTERY_CONTROL_OFF_AFTER = timedelta(minutes=15)
+
+#: A confirm step with no fields. `Any`: HA 2026.10 types a flow's schema as
+#: probatio's, the 2026.3 floor as voluptuous', and both accept this at runtime.
+_CONFIRM: Any = vol.Schema({})
 #: D11 §5.5: a load's calibration error over threshold this long before it is worth telling.
 SAVINGS_LOW_CONFIDENCE_AFTER = timedelta(days=7)
 
@@ -334,7 +338,7 @@ class AcknowledgeSafeModeFlow(RepairsFlow):
             if runtime is not None:
                 await runtime.async_acknowledge_safe_mode()
             return self.async_create_entry(data={})
-        return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
+        return self.async_show_form(step_id="confirm", data_schema=_CONFIRM)
 
 
 class ConfirmTariffReviewFlow(RepairsFlow):
@@ -357,7 +361,7 @@ class ConfirmTariffReviewFlow(RepairsFlow):
             if runtime is not None:
                 runtime.confirm_tariff_review()
             return self.async_create_entry(data={})
-        return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
+        return self.async_show_form(step_id="confirm", data_schema=_CONFIRM)
 
 
 async def async_create_fix_flow(

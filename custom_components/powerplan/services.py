@@ -51,7 +51,9 @@ PRESENCE_MODES = ("auto", "home", "away", "vacation")
 _SITE: dict[Any, Any] = {vol.Optional("site"): cv.string}
 _LOAD: dict[Any, Any] = {vol.Required("load"): cv.string, **_SITE}
 
-SCHEMAS: dict[str, vol.Schema] = {
+#: `Any`: HA 2026.10 types an action's schema as probatio's, the 2026.3 floor as
+#: voluptuous', and both accept these at runtime.
+SCHEMAS: dict[str, Any] = {
     SERVICE_REPLAN: vol.Schema(_SITE),
     SERVICE_REBUILD_BASELINE: vol.Schema(_SITE),
     SERVICE_RELEASE: vol.Schema(_LOAD),

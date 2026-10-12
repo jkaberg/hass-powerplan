@@ -956,7 +956,7 @@ def device_options(hass: HomeAssistant, text: Text, added: set[str]) -> list[Sel
         device = item if isinstance(item, dr.DeviceEntry) else devices.async_get(str(item))
         if device is None:
             continue
-        if device.config_entries & own or device.disabled_by is not None:
+        if device_entries(device) & own or device.disabled_by is not None:
             continue
         if not any(
             entity.domain in _CONTROL_DOMAINS and entity.disabled_by is None
@@ -1702,3 +1702,15 @@ class LoadSubentryFlow(ConfigSubentryFlow):
 
 
 LOAD_DERIVATION_VERSION_KEY = "derivation_version"
+
+
+def device_entries(device: dr.DeviceEntry) -> set[str]:
+    """Return the config entries `device` belongs to, on either side of HA 2026.10.
+
+    2026.10 gives a device one entry, `config_entry_id`, and raises in tests on
+    `config_entries`; the 2026.3 floor has only the set.
+    """
+    if hasattr(device, "config_entry_id"):
+        entry_id = device.config_entry_id
+        return set() if entry_id is None else {entry_id}
+    return set(device.config_entries)
