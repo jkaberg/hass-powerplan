@@ -45,7 +45,7 @@ Charges the battery in the cheapest hours and discharges it in the dearest, when
 <a name="best_save"></a>
 ## Save where it hurts least
 
-Keeps the appliance at comfort and pauses it in the hours where pausing costs least comfort and saves most money. It never lets the room fall below its lowest temperature.
+Keeps the appliance at comfort and pauses it in the hours where pausing costs least comfort and saves most money. It never lets the room fall below its lowest temperature. When pausing would save less than 4 % of what the heating costs, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
 
 | | |
 |---|---|
@@ -78,13 +78,20 @@ Charges or heats in the cheapest hours before the time you set, and stops when t
 <a name="heat_capacitor"></a>
 ## Bank heat in cheap hours
 
-Stores heat in the floor, the room or the tank when power is cheap, a little above comfort, and lets it coast through expensive hours. It never goes above the highest temperature you allow.
+Stores heat in the floor, the room or the tank when power is cheap, a little above comfort, and lets it coast through expensive hours. It never goes above the highest temperature you allow. An appliance that only switches between comfort and an energy-saving mode cannot store heat above comfort, and when the rest of the plan would save less than 4 %, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
 
 | | |
 |---|---|
 | Good for | floor heating and heat pumps, which hold heat for hours |
 | Needs | a comfort temperature and a highest temperature |
 | Key | `heat_capacitor` |
+
+<a name="worth_it"></a>
+## When a plan is not worth it
+
+Floor heating, heat pumps and panel heaters on **Save where it hurts least** or **Bank heat in cheap hours** only follow their plan when moving their heating in time is worth at least 4 % of what the heating costs. Otherwise PowerPlan leaves the appliance at comfort on its own thermostat, and the [New plan adopted](events.md#plan_adopted) event says "left to its thermostat" with what moving it would have earned. With a fixed price, such as Norgespris, only the grid's night rate is left to gain, and that is often less. When the prices spread out again, the plan comes back once it is worth 6 %.
+
+Capacity control does not change: PowerPlan still turns heating down to keep the hour under your capacity step, and it still protects the lowest temperature.
 
 <a name="peak_shave"></a>
 ## Shave the peaks

@@ -1415,7 +1415,7 @@ class Engine:
                 ContractedPowerLimit(hard.contracted),
                 PricedLimitCap(self._tariff.priced_limit_now(now)),
                 *self._cycle_reservations(load_states),
-                *self._zone_constraints(inputs.curves, inputs.outdoor_c),
+                *self._zone_constraints(inputs.curves, _outdoor_c(inputs)),
                 *_external_limits(inputs.events, now),
             ),
             site.alloc,
@@ -1724,7 +1724,7 @@ class Engine:
             setpoint_delta=0.0,
             desired=None,
             calendar=row.calendar if row is not None else (),
-            outdoor_c=inputs.outdoor_c,
+            outdoor_c=_outdoor_c(inputs),
             indoor_c=inputs.indoor_c,
             zone=inputs.site.tz,
         )
@@ -2292,7 +2292,11 @@ class Engine:
             )
             site_plan = plan_all(views, inputs.curves, site_ctx, now, previous=state.plans.plans)
             adopted = tuple(sorted(site_plan.adopted))
-            uncovered = site_plan.uncovered
+            # At risk only while the load asks for it: a car not plugged in keeps
+            # its plan and its departure (D-0709), and a plan that cannot run is
+            # not a deadline anyone is about to miss (D-0720).
+            asking = {view.load_id for view in views if view.demand.wants}
+            uncovered = tuple(lid for lid in site_plan.uncovered if lid in asking)
             refit = tuple(sorted(site_plan.refit))
             plans = PlansState(schema=state.plans.schema, plans=dict(site_plan.plans), built_at=now)
             if adopted:
@@ -2571,7 +2575,7 @@ class Engine:
             site_export_kwh=0.0 if site_export is None else site_export.kwh,
             site_production_kwh=None if site_production is None else site_production.kwh,
             site_confidence="estimated" if estimated or site_import is None else "exact",
-            outdoor_c=inputs.outdoor_c,
+            outdoor_c=_outdoor_c(inputs),
             loads=loads,
             window_closed=window,
             presence=_presence_now(inputs),
@@ -3457,6 +3461,11 @@ def _announced(edges: dict[str, str], load_id: str, plan: Plan, now: datetime) -
     event fires when the mode, the coverage or the start changes (a running
     plan starts `now`), or the planned energy moves past the last announced by
     more than `PLAN_ANNOUNCE_KWH` and `PLAN_ANNOUNCE_SHARE` of it.
+
+    A running plan that has less left is delivering, not changing: the drop is
+    remembered without an event, so the next comparison starts from it (D-0722).
+    The reference house announced each quarter's remainder of every charge and
+    every tank block, 29.8 → 20.5 → 15.4 → … → 0 kWh.
     """
     start = plan.next_active(now)
     when = (
@@ -3472,9 +3481,12 @@ def _announced(edges: dict[str, str], load_id: str, plan: Plan, now: datetime) -
     stored = edges.get(key)
     if stored is not None:
         before, _, last_kwh = stored.rpartition("|")
-        drift = abs(kwh - float(last_kwh))
-        if before == shown and drift <= max(
-            PLAN_ANNOUNCE_KWH, PLAN_ANNOUNCE_SHARE * float(last_kwh)
+        last = float(last_kwh)
+        if before == shown and when == "now" and kwh < last:
+            edges[key] = f"{shown}|{kwh:.3f}"
+            return False
+        if before == shown and abs(kwh - last) <= max(
+            PLAN_ANNOUNCE_KWH, PLAN_ANNOUNCE_SHARE * last
         ):
             return False
     edges[key] = f"{shown}|{kwh:.3f}"
@@ -3840,6 +3852,18 @@ def _curves_stale(curves: Curves | None, now: datetime) -> bool:
         if slot is not None and slot.confidence is not Confidence.KNOWN:
             return True
     return False
+
+
+def _outdoor_c(inputs: Inputs) -> float | None:
+    """Return the site's outdoor temperature now: the live read, else D10's hour (D-0719).
+
+    `Inputs.outdoor_c` is a measurement the runtime hands in; without one the
+    weather forecast for the hour in progress stands in, so a zone ranks a heat
+    pump at today's COP and not at its curve's coldest anchor (D6 §5.7).
+    """
+    if inputs.outdoor_c is not None:
+        return inputs.outdoor_c
+    return None if inputs.forecasts is None else inputs.forecasts.outdoor_c(inputs.now)
 
 
 def _forecast_status(inputs: Inputs) -> ForecastStatus:

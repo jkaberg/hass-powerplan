@@ -51,7 +51,7 @@ from ..loads import PresenceMode
 from ..loads.stores.base import StoreCtx, StoreModel
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
-from .base import free_plan, register
+from .base import free_plan, peak_windows, register
 from .deadline_fill import plan_one
 from .deadlines import needs
 from .holding import holding_kwh
@@ -226,26 +226,6 @@ def _ranked(
     return out
 
 
-def _peaks(ctx: PlanContext, window: Sequence[Slot]) -> tuple[tuple[datetime, datetime], ...]:
-    """Return the eligible windows that are actually **peak** windows (§5.7 step 5).
-
-    An eligible window is only a peak if some of the horizon is not one: the
-    Norwegian tariff model is eligible around the clock, so every hour would be "peak"
-    and the strategy would coast for two days. Where weights differ, the heaviest
-    windows are the peak - Ellevio's half-weight night is not what a store banks
-    against (`design/DECISIONS.md` D-0196).
-    """
-    if not ctx.tariff_eligible or not window:
-        return ()
-    heaviest = max(weight for _, _, weight in ctx.tariff_eligible)
-    peaks = tuple((start, end) for start, end, weight in ctx.tariff_eligible if weight >= heaviest)
-    covered = sum((end - start).total_seconds() for start, end in peaks)
-    horizon = (window[-1].end - window[0].start).total_seconds()
-    if covered >= horizon - 1e-6:
-        return ()
-    return peaks
-
-
 def _bank_before(
     window: Sequence[Slot],
     peaks: Sequence[tuple[datetime, datetime]],
@@ -303,6 +283,8 @@ def _desired(kind: str, delta_k: float, *, banking: bool | None) -> DesiredState
 class HeatCapacitor:
     """Bank in the cheap slots, coast in the dear ones, inside the store (D5 §5.7)."""
 
+    #: Its plan only moves energy in time: D5 §5.9a judges whether that pays (D-0724).
+    paces_by_price: ClassVar[bool] = True
     key: ClassVar[str] = "heat_capacitor"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "heat_pump", "radiator", "water_heater"}
@@ -410,7 +392,7 @@ def _shape(
     outdoor = None if ctx.forecasts is None else ctx.forecasts.outdoor_c(ctx.now)
 
     ranks = _ranked(window, fills, ctx)
-    peaks = _peaks(ctx, window) if bool(params["respect_tariff_windows"]) else ()
+    peaks = peak_windows(ctx, window) if bool(params["respect_tariff_windows"]) else ()
     before = _bank_before(
         window,
         peaks,

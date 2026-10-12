@@ -12,8 +12,11 @@ Response shape, an *entity service*: `hass.services.async_call` on an entity
 service aggregates by entity id
 (`homeassistant/helpers/service.py::entity_service_call`), so the answer is
 `{entity_id: {"forecast": [Forecast,...]}}`; a `Forecast` is HA's own
-`TypedDict` - `datetime` (ISO, Required) and `native_temperature` among its
-optional fields, one entry per hour for `type: "hourly"`.
+`TypedDict` - `datetime` (ISO, Required) and `temperature`, one entry per hour
+for `type: "hourly"`. The action converts before it answers
+(`WeatherEntity._convert_forecast` pops `native_temperature` and writes
+`temperature` in the unit system's own unit), so `native_temperature` never
+reaches a caller and reading it dropped every point (D-0719).
 """
 
 from __future__ import annotations
@@ -22,8 +25,10 @@ import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
+from homeassistant.const import UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError, ServiceNotFound
 from homeassistant.util import dt as dt_util
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from custom_components.powerplan.core.forecasts.model import ForecastKind, Series, SeriesPoint
 from custom_components.powerplan.core.forecasts.registry import register
@@ -133,8 +138,9 @@ class WeatherEntitySource:
             horizon
         )  # the entity answers whatever it has; nothing here truncates it (INV-7's spirit)
         raw = await async_get_forecasts(self._hass, entity_id=self._entity_id)
+        unit = self._hass.config.units.temperature_unit
         points = tuple(
-            point for point in (_point(entry, now) for entry in raw) if point is not None
+            point for point in (_point(entry, now, unit) for entry in raw) if point is not None
         )
         _LOGGER.debug("weather %s: %d forecast point(s)", self._entity_id, len(points))
         return Series(
@@ -146,14 +152,19 @@ class WeatherEntitySource:
         )
 
 
-def _point(entry: Any, now: datetime) -> SeriesPoint | None:
-    """Turn one `Forecast` dict into an hour-long `SeriesPoint`, or `None` if unusable."""
+def _point(entry: Any, now: datetime, unit: str) -> SeriesPoint | None:
+    """Turn one `Forecast` dict into an hour-long `SeriesPoint` in °C, or `None` if unusable.
+
+    `temperature` arrives in the unit system's `unit` (°F on an imperial
+    install), and the series is always °C.
+    """
     if not isinstance(entry, dict):
         return None
     start = dt_util.parse_datetime(str(entry.get("datetime") or ""))
-    temperature = entry.get("native_temperature")
+    temperature = entry.get("temperature")
     if start is None or temperature is None:
         return None
+    temperature = TemperatureConverter.convert(float(temperature), unit, UnitOfTemperature.CELSIUS)
     hours_ahead = (start - now).total_seconds() / SECONDS_PER_HOUR
     return SeriesPoint(
         start=start,

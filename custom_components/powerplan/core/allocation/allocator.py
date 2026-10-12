@@ -563,6 +563,7 @@ class _Walk:
 
         room = self.ceiling_w - self.reserved_running
         if load.kind in MODULATING_KINDS:
+            room += self._own_cut_in_flight(load)
             watts = self._quantise(
                 load, min(want, room), stop_ok=stop_ok, session=self._session(load)
             )
@@ -873,6 +874,29 @@ class _Walk:
         watts and the headroom is charged the floor (INV-28, INV-39, D6 §9 23).
         """
         return load.quantise(max(0.0, watts), stop_ok=stop_ok, session_active=session)
+
+    def _own_cut_in_flight(self, load: LoadView) -> float:
+        """Return the part of `uncontrolled_w` that is this load's own cut, still in flight (D-0718).
+
+        While a write settles D3 counts the load at its commanded watts (INV-18),
+        and until the device follows, the meter still carries its old draw: the
+        residual comes up short by exactly `measured − commanded`, and cutting again
+        on it walked one 2 kW cut down to the 6 A floor at every hour's start on the
+        reference house. That much is given back to this load's own room, and only
+        while the device still draws more than it was told; once it follows, or on a
+        blunt stage, nothing is. Its plan, the surplus it follows and the hard limits
+        still bind through `want`, and a stop stays a stop.
+        """
+        view = self.ctx.view(load.load_id)
+        if (
+            self.ctx.blunt
+            or view is None
+            or not view.settling
+            or view.commanded_w is None
+            or view.measured_w is None
+        ):
+            return 0.0
+        return max(0.0, view.measured_w - view.commanded_w)
 
     def _session(self, load: LoadView) -> bool:
         """Whether this load is running now: a stopped charger stays stopped (§5.3)."""

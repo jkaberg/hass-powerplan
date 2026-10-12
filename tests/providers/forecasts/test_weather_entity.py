@@ -68,7 +68,7 @@ class FakeWeather:
 def _entry(hours_ahead: float, temp_c: float) -> dict[str, object]:
     return {
         "datetime": (NOW + timedelta(hours=hours_ahead)).isoformat(),
-        "native_temperature": temp_c,
+        "temperature": temp_c,
     }
 
 
@@ -165,9 +165,9 @@ async def test_entries_with_no_temperature_or_bad_datetime_are_skipped(
         return {
             ENTITY_ID: {
                 "forecast": [
-                    {"datetime": NOW.isoformat(), "native_temperature": -1.0},
+                    {"datetime": NOW.isoformat(), "temperature": -1.0},
                     {"datetime": NOW.isoformat()},  # no temperature
-                    {"native_temperature": -3.0},  # no datetime
+                    {"temperature": -3.0},  # no datetime
                     "not even a dict",
                 ]
             }
@@ -180,3 +180,28 @@ async def test_entries_with_no_temperature_or_bad_datetime_are_skipped(
     series = await source.fetch(timedelta(hours=48), NOW)
     assert len(series.points) == 1
     assert series.points[0].value == pytest.approx(-1.0)
+
+
+async def test_the_action_answers_temperature_not_native_temperature(
+    hass: HomeAssistant,
+) -> None:
+    """The answer Home Assistant gives: `temperature`, converted; `native_*` is popped (D-0719).
+
+    Reading `native_temperature` dropped every point of every forecast, so D10 never
+    had an outdoor temperature on the reference house.
+    """
+    fake = FakeWeather([{"datetime": NOW.isoformat(), "temperature": 4.1, "humidity": 74}])
+    fake.register(hass)
+    series = await WeatherEntitySource(hass, entity_id=ENTITY_ID).fetch(timedelta(hours=48), NOW)
+    assert [point.value for point in series.points] == [pytest.approx(4.1)]
+
+
+async def test_an_imperial_install_is_converted_to_celsius(hass: HomeAssistant) -> None:
+    """`temperature` is in the unit system's unit: 41 °F is 5 °C in the series."""
+    from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM  # noqa: PLC0415
+
+    hass.config.units = US_CUSTOMARY_SYSTEM
+    FakeWeather([_entry(0, 41.0)]).register(hass)
+    series = await WeatherEntitySource(hass, entity_id=ENTITY_ID).fetch(timedelta(hours=48), NOW)
+    assert series.unit == "°C"
+    assert series.points[0].value == pytest.approx(5.0)

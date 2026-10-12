@@ -20,6 +20,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal, Protocol
 
+from ..loads.stores.thermal import RoomStore, SlabStore
 from ..model import Carrier, Desired, Mode, PlanMode
 from ..pricing import Field, FieldKind, Schema
 from .adoption import inputs_changed, should_adopt
@@ -34,6 +35,7 @@ from .context import (
     effective_curve,
     with_rewards,
 )
+from .holding import comfort_target, holding_kwh
 from .plan import build_plan, with_hold_of
 
 if TYPE_CHECKING:
@@ -48,6 +50,7 @@ __all__ = [
     "get",
     "keys",
     "params_of",
+    "peak_windows",
     "plan_all",
     "register",
     "supports",
@@ -275,6 +278,7 @@ def plan_all(
             params,
             partner=_partner(view, pctx),
         )
+        plan = _worth_it(plan, view, pctx, before, ctx.worth_share)
         plan = _with_desired(_closed_outside(plan, view, ctx), view)
 
         held = None if before is None else with_hold_of(before, plan)
@@ -311,6 +315,129 @@ def plan_all(
         built_at=now,
         refit=frozenset(refit),
     )
+
+
+def peak_windows(
+    ctx: PlanContext, window: Sequence[Slot] | Sequence[PlanSlot]
+) -> tuple[tuple[datetime, datetime], ...]:
+    """Return the eligible windows that are actually **peak** windows (§5.7 step 5).
+
+    An eligible window is only a peak if some of the horizon is not one: the
+    Norwegian tariff model is eligible around the clock, so every hour would be "peak"
+    and the strategy would coast for two days. Where weights differ, the heaviest
+    windows are the peak - Ellevio's half-weight night is not what a store banks
+    against (`design/DECISIONS.md` D-0196).
+    """
+    if not ctx.tariff_eligible or not window:
+        return ()
+    heaviest = max(weight for _, _, weight in ctx.tariff_eligible)
+    peaks = tuple((start, end) for start, end, weight in ctx.tariff_eligible if weight >= heaviest)
+    covered = sum((end - start).total_seconds() for start, end in peaks)
+    horizon = (window[-1].end - window[0].start).total_seconds()
+    if covered >= horizon - 1e-6:
+        return ()
+    return peaks
+
+
+def _worth_it(
+    plan: Plan,
+    view: LoadView,
+    ctx: PlanContext,
+    before: Plan | None,
+    band: tuple[float, float] | None,
+) -> Plan:
+    """Return `plan`, or hands-off when its timing cannot pay (D5 §5.9a, D-0724).
+
+    The estimate is the headline's own (D11 §5.9.1 `day`): the plan's draw per slot,
+    `kwh + hold_kwh` (`hold_kwh` alone for a `mode` device, which cannot bank), priced at the slots' time-weighted mean against what it pays
+    where the plan puts it. What a coast saves in losses is not credited, and the
+    recovery after it is not charged: timing only, nothing fitted. A plan with no
+    energy anyone can price is weighed by its hours instead: each hour it lets the
+    store draw counts the same, each it stands still or coasts counts nothing.
+
+    Only a thermal store's price plan from a strategy that paces by price
+    (`paces_by_price`, `heat_capacitor` and `best_save`) is judged: a schedule is
+    the household's own window, a forced, urgent or comfort demand
+    is never a plan to gate, an EV or a tank is a deadline whose hands-off is worse
+    (charge at plug-in, reheat at the day price), and a tariff with peak windows
+    pays a coast in capacity the energy estimate cannot see. Hands-off is a plan
+    with nothing to say (INV-30): the device holds its own comfort, and capacity,
+    comfort floors and hard limits still bind it in the allocator (INV-1).
+    """
+    paces = bool(getattr(get(view.strategy), "paces_by_price", False))
+    if (
+        band is None
+        or not paces
+        or plan.mode is not PlanMode.PRICE
+        or not isinstance(view.store, SlabStore | RoomStore)
+    ):
+        return plan
+    if not plan.slots or peak_windows(ctx, plan.slots):
+        return plan
+    # A `mode` device banks nothing: its comfort option is its own setpoint, so a
+    # bank row's energy is never drawn and only what holding costs is real.
+    banks = view.kind != "mode"
+    weights = [slot.hold_kwh + (slot.kwh if banks else 0.0) for slot in plan.slots]
+    if sum(weights) <= 0.0:
+        # Nothing priced the store's draw yet (no fit, no measured holding): each
+        # hour the plan lets it draw weighs the same, each one it stands still none.
+        weights = [0.0 if _stands_still(slot) else slot.hours for slot in plan.slots]
+    energy = sum(weights)
+    hours = sum(slot.hours for slot in plan.slots)
+    share = 0.0
+    if energy > 0.0 and hours > 0.0:
+        mean = sum(float(slot.price) * slot.hours for slot in plan.slots) / hours
+        paid = sum(
+            weight * float(slot.price) for weight, slot in zip(weights, plan.slots, strict=True)
+        )
+        share = 0.0 if mean <= 0.0 else (energy * mean - paid) / (energy * mean)
+    gated_before = (
+        before is not None and before.mode is PlanMode.NONE and before.strategy == plan.strategy
+    )
+    if share >= (band[1] if gated_before else band[0]):
+        return plan
+    return _hands_off(
+        plan, ctx, reason=f"left to its thermostat: moving it would earn {share * 100:.1f} %"
+    )
+
+
+def _hands_off(plan: Plan, ctx: PlanContext, *, reason: str) -> Plan:
+    """Return `plan` with no decision left in it: free slots that still hold comfort (D-0724).
+
+    `cap_w` answers `None` (INV-30) and no slot carries a desired state, so the
+    device holds its own comfort. What holding costs stays in every slot, at the
+    comfort target - a coast slot included, since the thermostat now holds it
+    there too - so the loads below still plan around the draw (§5.1, D-0629).
+    """
+    demand = ctx.load.demand
+    slots = []
+    for slot in plan.slots:
+        target = comfort_target(ctx, demand, slot.start)
+        hold = slot.hold_kwh if target is None else holding_kwh(ctx, slot.start, slot.end, target)
+        slots.append(
+            replace(slot, envelope_w=None, desired_state=None, kwh=0.0, hold_kwh=hold, reason="")
+        )
+    return build_plan(
+        load_id=plan.load_id,
+        strategy=plan.strategy,
+        mode=PlanMode.NONE,
+        slots=tuple(slots),
+        now=ctx.now,
+        currency=ctx.curve_in.currency,
+        required_kwh=plan.required_kwh,
+        deadline=plan.deadline,
+        reason=reason,
+    )
+
+
+def _stands_still(slot: PlanSlot) -> bool:
+    """Whether a slot keeps the store from drawing: a zero envelope, or a coast (D5 §5.12)."""
+    desired = slot.desired_state
+    if slot.envelope_w is not None and slot.envelope_w <= 0.0:
+        return True
+    if isinstance(desired, Desired):
+        return desired is Desired.SHED
+    return desired is not None and desired < 0.0
 
 
 def _switched(room: Headroom, view: LoadView, slots: Sequence[Slot], ctx: SiteContext) -> Headroom:

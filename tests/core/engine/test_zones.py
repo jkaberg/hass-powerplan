@@ -11,6 +11,7 @@ that change tick to tick.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 from custom_components.powerplan.core.allocation import ZoneSource, ZoneSpec
@@ -111,3 +112,63 @@ def test_no_zones_configured_reports_nothing_and_costs_nothing() -> None:
     )
 
     assert snapshot.alloc.zones == {}
+
+
+#: The reference house's pump curve (D4 §5.14): 1.8 at −15 °C, 3.8 at +7 °C.
+_HOUSE_CURVE = CopCurve.from_mapping({-15.0: 1.8, -5.0: 2.6, 0.0: 3.0, 7.0: 3.8, 15.0: 4.5})
+
+
+class _Forecast:
+    """D10's narrow view with only the hour's outdoor temperature (D5 §2)."""
+
+    def __init__(self, outdoor_c: float | None) -> None:
+        self._outdoor_c = outdoor_c
+
+    def outdoor_c(self, _t: object) -> float | None:
+        return self._outdoor_c
+
+    def surplus_w(self, _t: object) -> float:
+        return 0.0
+
+    def baseline_w(self, _t: object) -> float | None:
+        return None
+
+
+def _curved_zone(**kwargs: object) -> tuple[str, ...]:
+    """Return the chosen source of a pump on the house's curve beside a resistive slab."""
+    spec = ZoneSpec(
+        key=ZONE_KEY,
+        members=frozenset({"pump", "slab"}),
+        sources=(
+            ZoneSource(load_id="pump", efficiency=_HOUSE_CURVE),
+            ZoneSource(load_id="slab", efficiency=CopCurve.flat(1.0)),
+        ),
+    )
+    cfg = site()
+    engine = Engine(
+        cfg,
+        window_meter(cfg),
+        evaluator(),
+        (floor_load(load_id="pump"), floor_load(load_id="slab")),
+        zones=(spec,),
+    )
+    inputs = replace(
+        inputs_at(cfg, START, grid_w=0.0, loads=_cold_reads(), curves_=curves(START)), **kwargs
+    )
+    _state, snapshot, _effects = engine.tick(EngineState(), inputs)
+    return snapshot.alloc.zones[ZONE_KEY].chosen
+
+
+def test_with_no_outdoor_temperature_at_all_the_pump_is_ranked_at_its_coldest_anchor() -> None:
+    """Blind, COP 1.8 sits under `min_cop` 2.0 - the pessimistic default stands (D4 §5.14)."""
+    assert _curved_zone(outdoor_c=None) == ("slab",)
+
+
+def test_a_measured_outdoor_temperature_reaches_the_zone() -> None:
+    """6 °C is COP ≈ 3.7: the pump carries the zone (D-0719; the house's zones never saw it)."""
+    assert _curved_zone(outdoor_c=6.0) == ("pump",)
+
+
+def test_without_a_measurement_the_forecast_hour_reaches_the_zone() -> None:
+    """No outdoor sensor, a weather forecast: the hour in progress ranks the pump (D-0719)."""
+    assert _curved_zone(outdoor_c=None, forecasts=_Forecast(6.0)) == ("pump",)

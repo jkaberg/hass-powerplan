@@ -66,6 +66,11 @@ class LadderCfg:
     de_escalate_ticks: int = 2
     hysteresis_w: float = 300.0
     fuse_hold_s: float = 120.0
+    #: How far under a stage's own threshold the projection has to fall before the
+    #: ladder leaves it, as a fraction of the ceiling (D-0721). Without it a house
+    #: running at 85 % flipped 0 ↔ 1 every 20 s (6 and 12 Oct 2026): the clean-tick test reads the
+    #: allowance, which is nowhere near binding there.
+    de_escalate_band: float = 0.02
 
 
 #: The default knobs, as a singleton: a mutable default is a bug waiting to happen
@@ -276,6 +281,21 @@ class Ladder:
         )
         current = self._state
         clean = p_total_w < budget.p_allow_w - cfg.hysteresis_w
+        if raw < current.stage and not blunt and cfg.de_escalate_band > 0.0:
+            # The way down reads lowered thresholds: a Schmitt trigger on the
+            # projection, the way up is unchanged (D-0721).
+            banded, banded_reason, _blunt = stage_for(
+                budget,
+                p_total_w=p_total_w,
+                hard=hard,
+                target_kwh=target_kwh,
+                cfg=replace(cfg, thresholds=_lowered(cfg.thresholds, cfg.de_escalate_band)),
+            )
+            if banded > raw:
+                raw = min(banded, current.stage)
+                reason = _annotate(
+                    banded_reason, f"held: {cfg.de_escalate_band * 100:.0f} % band to leave"
+                )
 
         if raw > current.stage:
             hold = reason_key(reason) == "fuse_breach"
@@ -317,3 +337,9 @@ class Ladder:
             reason=current.reason if current.blunt else reason,
         )
         return self._state
+
+
+def _lowered(thresholds: tuple[float, float, float], band: float) -> tuple[float, float, float]:
+    """Return the projection thresholds less `band`, the way out of a stage (D-0721)."""
+    low, mid, high = thresholds
+    return (low - band, mid - band, high - band)

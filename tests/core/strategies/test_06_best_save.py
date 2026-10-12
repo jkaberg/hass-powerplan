@@ -58,7 +58,8 @@ def planned(**params: object) -> Plan:
         params=params,
         demand=demand(required_kwh=3.0, deadline=None, min_w=0.0, max_w=THERMAL_W),
     )
-    return plan_all([view], curves_of(source), site_ctx(), NOW).plans["loop_bath"]
+    # The strategy's own rules, not D5 §5.9a's site gate (D-0724): judged by nothing.
+    return plan_all([view], curves_of(source), site_ctx(worth_share=None), NOW).plans["loop_bath"]
 
 
 def off_slots(plan: Plan) -> list[PlanSlot]:

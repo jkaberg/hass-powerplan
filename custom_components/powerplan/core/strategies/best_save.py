@@ -163,6 +163,8 @@ def _slot(slot: Slot, *, postponed: bool, kind: str, hold_kwh: float = 0.0) -> P
 class BestSave:
     """Off where waiting pays, free everywhere else (D5 §5.5, §6)."""
 
+    #: Its plan only moves energy in time: D5 §5.9a judges whether that pays (D-0724).
+    paces_by_price: ClassVar[bool] = True
     key: ClassVar[str] = "best_save"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "heat_pump", "radiator", "water_heater", "generic_switch"}

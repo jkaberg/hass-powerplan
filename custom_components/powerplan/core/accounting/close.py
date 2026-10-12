@@ -1230,6 +1230,9 @@ def _attributed(slot: ClosedSlot) -> dict[str, float]:
     loads = {load_id: row.kwh for load_id, row in slot.loads.items()}
     if slot.production_kwh is not None:
         pool = max(0.0, slot.production_kwh - slot.export_kwh)
+    elif slot.export_kwh <= 0.0:
+        # Nothing measured says there was any sun (D-0723).
+        pool = 0.0
     else:
         charged = sum(kwh for kwh in loads.values() if kwh > 0.0)
         pool = max(0.0, slot.export_kwh - slot.import_kwh + charged)
@@ -1256,6 +1259,14 @@ def _counterfactual_surplus(slot: ClosedSlot) -> float:
     The same panels less the uncontrolled consumption: `export − import + Σ
     controlled kWh`, measured, whatever the production sensor says. The other
     shadows' own draw is ignored (§5.3's stated approximation).
+
+    Without a production reading, a slot that exported nothing had no sun anyone
+    can show (D-0723). The formula is then `Σ loads − import`, a difference of two
+    meters, and the loads' own sensors read a few per cent over the grid meter at
+    8 kW: on the reference house, which has never exported a watt-hour, it gave
+    every shadow 0.1–0.2 kWh of free surplus in one slot in seven.
     """
+    if slot.production_kwh is None and slot.export_kwh <= 0.0:
+        return 0.0
     controlled = sum(row.kwh for row in slot.loads.values())
     return max(0.0, slot.export_kwh - slot.import_kwh + controlled)

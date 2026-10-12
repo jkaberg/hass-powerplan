@@ -252,6 +252,7 @@ stage_for(...):
     `spent_window` is a blunt reason because the ceiling (ε-reduced) has been CONSUMED, not projected
 escalation: immediate
 de-escalation: needs de_escalate_ticks (2) ticks in a row with P_total < P_allow − hysteresis_w (300)    # ~20 s, not two minutes
+             and reads the thresholds less de_escalate_band (0.02) on the way down: 85 % in, under 83 % out (D-0721)
              fuse path only: an extra wall-clock hold of de_escalate_seconds (120) after a fuse breach
 circuit breach: a Violation from CircuitLimit is a fuse_breach for ITS MEMBERS only → stage 4 scoped to the circuit (INV-60)
 ```
@@ -271,6 +272,8 @@ for load in candidates:
     deficit_w −= freed ; trimmed.append(load) ; if deficit_w ≤ 0: break
 settle rule: a load written within its settle window is skipped (the deficit may be our own write) unless blunt
 ```
+
+The walk knows the same thing (D-0718): while a modulating load's own write settles and its measured draw is still above the commanded one, `measured − commanded` - the part of `uncontrolled_w` that is its own old draw under INV-18 - is added back to its own room. Never on a blunt stage; its plan, the surplus it follows and the hard limits bind through `want`, and a stop stays a stop. Cutting again on the shortened residual walked a 2 kW cut down to the 6 A floor at the start of each loaded hour on the reference house.
 
 ### 5.6 Groups and rotation (INV-41)
 
@@ -418,6 +421,8 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 29. Following for a battery without self-use: a `generic_number` battery in a `None` slot with 800 W measured import and SoC above reserve gets −800 W, at 600 W of export +600 W. It never discharges below `reserve_soc` and never into export.
 30. The ladder reads the house (INV-38, INV-62, D-0685): a window at `t = 0` with a 7.36 kW EV plan, three banked floors (2 080 W of envelopes) and a confident 0.95 kW baseline, the measured total at the allowance, gives stage 0; the same with the charger reporting no car gives stage 0; the projection equals `used + P_smooth × t_rem` in both. Scenarios `night_ev_tank_banked_floors` and `ev_plan_no_car` (D9 §5.3).
 31. Idle thermostats (D-0686): five idle `mode` floors with banked plans reserve Σ their plans' draw for the slot, not 5 × 500 W; a floor whose relay closes reserves its nameplate on the next tick (D-0169); a heat pump at 23 W still reserves 523 W (test 5).
+32. The walk's own cut in flight (D-0718): a charger cut to 19 A and settling while it still draws 28 A, under an allowance whose true residual is 19 A, keeps 19 A (10 A before); settled, the walk's own answer stands; a blunt stage takes it lower. Scenario `pv_no_battery_ev_waits` still charges nothing at night.
+33. The de-escalation band (D-0721): a projection hovering 84–85 % stays at stage 1; 82 % leaves after two clean ticks; 85 % still escalates at once and 84.9 % doesn't; stage 3 is left under 98 %.
 ---
 
 ## 10. Deliberately deferred

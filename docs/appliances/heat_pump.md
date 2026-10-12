@@ -47,6 +47,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:heat_pump -->
 
+The **Outdoor sensor** is also the home's outdoor temperature: in a [room](../circuits-groups-rooms.md#room) with a heat pump and a floor, PowerPlan compares them at today's temperature. Without a sensor it uses the weather entity's forecast for the current hour.
+
 <a name="questions_followup"></a>
 ## How far should preheat go?
 

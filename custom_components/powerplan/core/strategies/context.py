@@ -676,6 +676,10 @@ class SiteContext:
     plan_fraction: float = 1.0
     #: D3 §4's export cap, handed to each `PlanContext` unchanged (D3 §9 21).
     export_limit_w: float | None = None
+    #: D5 §5.9a (D-0724): the share of its energy's cost a thermal store's price
+    #: plan must earn by its timing - to be adopted, and to come back once left to
+    #: its thermostat. `None` judges nothing.
+    worth_share: tuple[float, float] | None = (0.04, 0.06)
 
 
 @dataclass(frozen=True, slots=True)

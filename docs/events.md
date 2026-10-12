@@ -117,7 +117,7 @@ triggers:
 <a name="deadline_at_risk"></a>
 ### Deadline at risk
 
-An appliance may not be ready by its time. `shortfall_kwh` is what is missing, and `reason` says why.
+An appliance may not be ready by its time. `shortfall_kwh` is what is missing, and `reason` says why. It fires only while the appliance asks for energy: a car that is not plugged in raises nothing, and plugging it in raises the event if its plan is still short.
 
 ```yaml
 triggers:
@@ -128,7 +128,7 @@ triggers:
 <a name="plan_adopted"></a>
 ### New plan adopted
 
-An appliance got a plan that differs from the last one announced: another mode, a different start, the deadline now covered or not, or planned energy that moved by more than half a kilowatt-hour and a quarter. `planned_kwh`, `cost`, and `next_start` describe it. A plan that is only re-cut, for example as a floor's temperature moves, is not announced.
+An appliance got a plan that differs from the last one announced: another mode, a different start, the deadline now covered or not, or planned energy that moved by more than half a kilowatt-hour and a quarter. `planned_kwh`, `cost`, and `next_start` describe it. A plan that is only re-cut, for example as a floor's temperature moves, is not announced, and neither is a running plan that has less left as it delivers its energy.
 
 ```yaml
 triggers:

@@ -2693,6 +2693,7 @@ class Runtime:
                 load_params={key: dict(value) for key, value in self.load_params.items()},
             ),
             curves=self.curves,
+            outdoor_c=_bound_outdoor_c(loads),
             transport=self.gate.budget,
             trigger=trigger,
             forecasts=self._forecasts_view(now),
@@ -4170,3 +4171,17 @@ def _by_load(adapter: AccountingAdapter | None) -> list[dict[str, Any]]:
         }
         for load_id, rec in sorted(closed.loads.items())
     ]
+
+
+def _bound_outdoor_c(loads: Mapping[str, LoadReads]) -> float | None:
+    """Return the site's measured outdoor temperature: a load's bound outdoor sensor (D-0719).
+
+    A heat pump's outdoor unit reports the air at its own coil, which is what a
+    zone's COP ranking needs; without one the engine falls back to the weather
+    forecast's hour. The first by load id, so two sensors never trade places.
+    """
+    for load_id in sorted(loads):
+        value = loads[load_id].reads.value(Role.OUTDOOR_TEMP)
+        if value is not None:
+            return float(value)
+    return None

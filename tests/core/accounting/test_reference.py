@@ -109,6 +109,35 @@ def test_24_a_floor_heated_at_night_is_booked_at_the_days_end_against_its_even_s
     assert figures.kwh_shifted == pytest.approx((6 * 0.75 + 18 * 0.25) / 2)
 
 
+def test_24d_a_house_with_no_sun_gives_its_counterfactual_no_free_surplus() -> None:
+    """Test 24's night floor, its sensor 2 % over the grid meter, nothing exported: still 0.56 (D-0723).
+
+    Without a production reading the counterfactual's surplus was `Σ loads − import`
+    whenever positive, so on the reference house - no panels, 0 kWh exported in 22
+    months - every shadow ate a little free sun the real load paid for, and every
+    heating appliance read a loss.
+    """
+    under_test = site(import_curve=curve(ORDINARY, days=2, shape=norgespris))
+    under_test.with_load("floor", _floor())
+    for hour in range(24):
+        drawn = 1.0 if hour < 6 else 0.0
+        under_test.close(
+            closed_slot(
+                local(2026, 12, 3, hour, 0).astimezone(UTC),
+                loads={"floor": drawn},
+                import_kwh=drawn * 0.98,
+            )
+        )
+
+    figures = under_test.accounting.status().loads["floor"]
+    assert not figures.pending
+    assert figures.cost.amount == Decimal("4.4274")
+    assert figures.cf_cost.amount == Decimal("4.9874"), (
+        "the even spread, all of it at the import price"
+    )
+    assert figures.savings.amount == Decimal("0.5600")
+
+
 def test_24b_a_day_whose_last_slot_never_closed_settles_on_the_next_days_first() -> None:
     """HA down over midnight: the day is settled the moment a later day's slot arrives."""
     under_test = site(import_curve=curve(ORDINARY, days=2, shape=norgespris))

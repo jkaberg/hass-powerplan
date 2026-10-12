@@ -275,6 +275,22 @@ replan triggers: new curve (prices received), quarter-hour tick, demand change (
 `h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
 Flat curve (`is_flat(day)`): `flat_policy = fill` (earliest slots first) or `spread` (evenly across the window) per load. Under `fill` the plan is literally the time order, the Norgespris case. `spread` levels the requirement across every usable slot and does **not** raise a slot to `min_w`, so a load with a power floor uses `fill`, the default (D-0137).
 
+### 5.9a A thermal store's price plan must pay for itself (D-0724)
+
+```
+_worth_it(plan, view, ctx, before, band = SiteContext.worth_share (0.04, 0.06)):
+    judged only if band ≠ None, the strategy paces by price (`paces_by_price`: heat_capacitor, best_save),
+             plan.mode = PRICE, the store is a slab or a room, and the tariff has no peak window in the horizon
+    w_s   = hold_kwh_s + (kwh_s unless view.kind = mode)          # a mode device's comfort is its own setpoint: it can't bank
+    if Σ w = 0: w_s = slot hours, 0 where the slot stands still or coasts
+    share = (Σw · p̄ − Σ w_s·p_s) / (Σw · p̄),  p̄ = the slots' time-weighted mean price      # D11 §5.9.1's `day` reference, ex ante
+    keep the plan if share ≥ band[1] when `before` was hands-off (NONE, same strategy), else band[0]
+    otherwise: _hands_off - mode NONE, "left to its thermostat: moving it would earn x %", every slot kept free
+               (no envelope, no desired state, kwh 0) with what holding the comfort target costs in it
+```
+
+Called in `plan_all` between `combine` and `_with_desired`. Hands-off is a plan with nothing to say (INV-30) that still states its holding draw, coast slots included, so the loads below plan around it (§5.1, D-0629): the device holds its comfort option or setpoint, and the allocator still sheds it for the ceiling, defends its comfort floor and applies every hard limit (INV-1). Only timing is credited: a coast's lower losses aren't, and neither is the recovery after it, so the estimate is the figure the headline will later book. A deadline load (EV, tank) is never judged: its hands-off is charging at plug-in or reheating at the day price, and its plans demonstrably pay. A schedule is the household's own window. A tariff with peak windows pays a coast in capacity, which the energy estimate can't see. On the reference house under Norgespris (0.8779 / 0.7379 NOK/kWh) the most any heating plan can earn is 11 %; its floors' evening coast earned ≈ 2 %, heat pump 2's dip under 1 %, and all are hands-off. On a volatile NO3 day both strategies keep their plans.
+
 ### 5.10 Stop horizons for D6
 
 `idle_seconds_from(now)` = seconds until the plan's next slot with `envelope_w > 0` (or `horizon` if none), the horizon of a *plan* stop. D6 combines it with the window horizon for a *budget* stop (INV-39).
@@ -409,5 +425,6 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 23. The power tier (O23): LU, 7 kW reference power, 0.0765 €/kWh surcharge, an EV needing 30 kWh by 07:00. With a flat night spot it charges at 7 kW − baseline as long as the night allows and only crosses in the slots it needs. With a slot 30 øre cheaper, crossing there beats a later slot under the limit exactly when the saving exceeds 0.0765 €/kWh. The greedy equals brute force on (slot, tier) instances.
 24. A §14a Modul 3 heat pump is planned on its own curve (G13): its cheapest slots follow the Modul 3 NT windows even where the house's curve says otherwise.
 25. An HDO water heater has no energy planned outside its allowed windows (G14), and its demand is met inside them or reported at risk.
+26. The worth-it gate (D-0724): under the house's Norgespris day/night prices a `mode` floor's `heat_capacitor` plan and a `best_save` plan are hands-off with a reason and `cap_w = None`; a `setpoint` store's night bank keeps its plan; on a volatile NO3 day both keep theirs; an EV is never judged, nor `schedule`; `worth_share = None` judges nothing; a plan at 2.1 % clears a 2 % entry but not a 2.5 % way back; a tariff with a peak window is not judged.
 
 **Simulate the free slot as idle and let the profile hold it.** *For:* the planner stays as it is, and the profile could write a hold whenever the plan is free - one change in D4, no forward model of the house's import. *Against:* a battery held in every free slot never does self-use, so it misses the one thing every hybrid inverter does well, and on a sunny day with no committed slot it exports the evening's energy at noon. Self-use also depends on the baseline forecast D10 already gives the planner. **Decision:** simulate self-use, and only hold where a later slot would starve.

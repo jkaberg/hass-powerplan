@@ -71,3 +71,16 @@ def test_30c_a_running_plan_starts_now() -> None:
     later = T0 + timedelta(minutes=15)
     assert not _announced(edges, "ev", _plan(start=later), later)
     assert _announced(edges, "ev", _plan(start=None), later + timedelta(minutes=15))
+
+
+def test_30d_a_running_plan_delivering_its_energy_is_not_news() -> None:
+    """A charge in progress: 29.8 → 20.5 → … → 1.0 kWh left is silent; a new need is news (D-0722)."""
+    edges: dict[str, str] = {}
+    assert _announced(edges, "ev", _plan(kwh=29.8, start=T0), T0)
+    remaining = (20.5, 15.4, 10.6, 6.7, 4.8, 1.9, 1.0)
+    for cycle, kwh in enumerate(remaining, start=1):
+        at = T0 + timedelta(minutes=15 * cycle)
+        assert not _announced(edges, "ev", _plan(kwh=kwh, start=at), at)
+    later = T0 + timedelta(hours=2)
+    assert _announced(edges, "ev", _plan(kwh=1.0 + 2.0, start=later), later), "measured from 1.0"
+    assert _announced(edges, "ev", _plan(kwh=0.0, start=None), later), "finished: the start moved"
