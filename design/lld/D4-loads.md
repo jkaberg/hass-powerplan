@@ -774,6 +774,7 @@ re-arms from whatever the charger now says - which, after a lost write, is its o
 legionella_due_at = last_completed + interval_days
 if now ≥ legionella_due_at − lead_h (default 24): Demand.urgency = LEGIONELLA, deadline = legionella_due_at, required = kWh to legionella_temp, price_sensitive = True until due_at − 6 h, then False
 in progress: hold charge_setpoint = legionella_temp until temp ≥ legionella_temp − 1 K for hold_min (default 60) → last_completed = now, event `legionella_completed`
+any time (D-0742): the coldest probe (`TEMP_BOTTOM`, else `TEMP`, else the sensorless estimate) ≥ legionella_temp − 1 K for hold_min → last_completed = now, the same event: a tank that charges hot pasteurises itself and the cycle never opens
 built-in program (questionnaire "yes"): skip; the review says so
 cannot complete within lead (element too small / shed too often) → warning event, never silently dropped
 ```
@@ -1049,6 +1050,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 53. Measured at setup (D-0731): a floor whose power and temperature have 10 days of history with 39 coasts gets `coast_tau_h` and `nameplate_w` from them, materialised and shown with their source on the review; with no history it gets the type's default and the review says so; an override under **Advanced** wins and survives re-derivation; the flow's reads run in an executor job and never in the event loop.
 54. A foil measured as a foil (D-0740): 16 m² of foil under laminate derives 960 W (60 W/m²), under tile 1 920 W; config entry minor version 7 gives a foil still on the mat table's rating the foil's, puts a `coast_tau_h` outside [2, 48] h back to 10 h, and leaves a measured rating, a mat under tile, a typed `coast_tau_h`, a slab and every other type alone. `tests/surface/test_foil_migration.py`.
 55. A tank measured at setup (D-0741): measured 2 904 W, 148 W and 6.24 kWh/day derive `nameplate_w` 2 904, `standby_loss_w` 148, `draw_kwh_day` 6.2; a typed standby of 80 W stands; nothing measured keeps 3 000 W, 60 W and no daily figure; the profile then spends 6.2 kWh a day; a tank reading 69 / 64 / 28 °C top to bottom has level 53.7 °C, 64 °C with the centre probe alone; the probe answers bind as `TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`, and top and lower are suggested from the centre probe's device by name. `tests/core/loads/test_55_tank_measured.py`, `tests/flows/test_tank_probes.py`.
+56. A tank that pasteurises itself (D-0742): ten nights at 75 °C top to bottom each move `last_completed` and the cycle never opens; 75 °C at the top over 40 °C at the bottom credits nothing and the cycle opens in its lead window; a tank with one probe is credited on it. INV-54's week under a plan that never charges still completes before its interval. `tests/core/loads/test_56_natural_pasteurisation.py`, `test_11_legionella.py`.
 ---
 
 ## 10. Deliberately deferred

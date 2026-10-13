@@ -73,6 +73,7 @@ def week(
     days: float = 8.0,
     desired: Desired | None = Desired.SHED,
     presence: PresenceMode = PresenceMode.HOME,
+    completions: list[datetime] | None = None,
 ) -> tuple[LoadState, list[tuple[datetime, float]]]:
     """Run the tank under a plan that never says charge, and log the setpoints.
 
@@ -94,7 +95,10 @@ def week(
             desired=desired,
             zone=OSLO,
         )
+        before = state.legionella_last_completed
         state, _ = load.observe(state, ctx)
+        if completions is not None and state.legionella_last_completed != before and before:
+            completions.append(at)
         state, result = load.apply(grant(0.0), state, ctx)
         command = result.command
         if command is not None:
@@ -109,14 +113,15 @@ def test_11_the_cycle_completes_under_a_plan_that_never_says_charge() -> None:
     sim = tank_sim()
     state = LoadState()
 
-    state, written = week(load, state, sim)
+    completions: list[datetime] = []
+    state, written = week(load, state, sim, completions=completions)
 
     params = load.config.params
     interval = timedelta(days=float(params["legionella_interval_days"]))
     completed = state.legionella_last_completed
     assert completed is not None
     assert completed > START, "the cycle ran: the adoption stamp has moved on"
-    assert completed <= START + interval, "and it ran before the interval ran out (INV-54)"
+    assert completions[0] <= START + interval, "and it ran before the interval ran out (INV-54)"
     assert sim.legionella_cycles >= 1, "the water itself reached the band, not just our model"
     assert state.legionella_in_progress_since is None, "a completed cycle is not still running"
 

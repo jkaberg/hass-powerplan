@@ -73,7 +73,7 @@ By default the tank is heated in the cheapest hours before the morning's ready-b
 
 ## Everyday use
 
-Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour.
+Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour. Each time the coldest water in the tank stays at the legionella temperature for the hold time anyway, after a hot charge, that counts, and the next cycle moves on. A tank with a **Bottom probe** is judged by it, because the bottom is the coldest water.
 
 ## Limits
 

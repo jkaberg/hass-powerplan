@@ -198,7 +198,7 @@ triggers:
 <a name="legionella"></a>
 ### Legionella cycle
 
-A water heater's legionella cycle is `due`, `started`, `completed`, or `at_risk`.
+A water heater's legionella cycle is `due`, `started`, `completed`, or `at_risk`. `completed` also fires when the tank's coldest water stays hot enough for the hold time on its own, for example after a night's charge; the next cycle is then due one interval later.
 
 ```yaml
 triggers:

@@ -861,10 +861,10 @@ class WaterHeater:
         )
         return remember(state, ctx.now, **{TANK_C: estimate.temp_c})
 
-    def _legionella_latch(  # noqa: PLR0911 - start, hold, lose, complete, skip: five outcomes
+    def _legionella_latch(
         self, load: Load, state: LoadState, ctx: LoadCtx
     ) -> LoadState:
-        """Start, hold and complete the cycle (§5.12, INV-54)."""
+        """Start, hold and complete the cycle, or credit the tank's own (§5.12, INV-54, D-0742)."""
         params = load.config.params
         if not bool(params.get("legionella", True)):
             if state.legionella_in_progress_since is None:
@@ -882,15 +882,16 @@ class WaterHeater:
             state = replace(state, legionella_last_completed=ctx.now)
 
         cycle = self.legionella(load, state, ctx)
-        if not cycle.in_progress:
-            if cycle.active:
+        # Any hour the coldest water holds the band counts, scheduled or not: a
+        # tank that charges to 75 °C every night has pasteurised itself and owes
+        # no cycle (INV-54 asks for the temperature, not for a cycle, D-0742).
+        coldest = self._coldest(load, state, ctx)
+        in_band = coldest is not None and coldest >= cycle.temp_c - LEGIONELLA_BAND_K
+        if not in_band:
+            state = remember(state, ctx.now, **{LEGIONELLA_HOLD_S: None})
+            if not cycle.in_progress and cycle.active:
                 return replace(state, legionella_in_progress_since=ctx.now)
             return state
-
-        level = self.level(load, state, ctx)
-        in_band = level is not None and level >= cycle.temp_c - LEGIONELLA_BAND_K
-        if not in_band:
-            return remember(state, ctx.now, **{LEGIONELLA_HOLD_S: None})
 
         held = recall(state, LEGIONELLA_HOLD_S)
         accumulated = 0.0 if held is None else held.value + (ctx.now - held.at).total_seconds()
@@ -904,7 +905,21 @@ class WaterHeater:
                 ctx.now,
                 **{LEGIONELLA_HOLD_S: None},
             )
+        if not cycle.in_progress and cycle.active:
+            state = replace(state, legionella_in_progress_since=ctx.now)
         return remember(state, ctx.now, **{LEGIONELLA_HOLD_S: accumulated})
+
+    def _coldest(self, load: Load, state: LoadState, ctx: LoadCtx) -> float | None:
+        """Return the coldest water the tank reads - the bottom probe where there is one (D-0742).
+
+        Helsedirektoratet asks for the temperature *below the element* too, and
+        the bottom of a stratified tank is where the bacteria are found. One
+        probe, or the sensorless estimate, is all there is to go by.
+        """
+        if load.config.params.get("sensorless"):
+            return self.level(load, state, ctx)
+        probes = _probes(ctx)
+        return min(probes) if probes else None
 
     # ------------------------------------------------------------------ demand #
 
