@@ -471,6 +471,11 @@ Z-TRM has two air-temperature sensors, one of which reads 0.0 °C. Role tokens a
 therefore a *subset* test over the entity's own words - `{dynamic, charger,
 current}` picks the limit out of `dynamic charger current`, `dynamic circuit
 current` and `max charger current`.
+The entity's own words are its registry `translation_key` and `original_name`;
+only an entity with neither (a dump, an entity the registry does not know, a main
+entity) falls back to its object id and friendly name. The friendly name carries
+the device's name, so a charger renamed "EV Charger" would otherwise put
+`charger` on its circuit limit too (D-0725).
 
 **A required role that does not bind is named, not hidden.** `MatchResult.missing`
 carries the roles, the confidence is unchanged, and the flow says which one it

@@ -21,6 +21,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.providers.profiles import DeviceView, easee_cloud, registry
 from tests.providers.profiles.conftest import as_record, dump_view, entities_of, load_dump
 
@@ -109,3 +110,57 @@ async def test_d9_07d_the_registries_build_the_same_easee_cloud_charger(
     assert from_registries.profile == from_dump.profile == "easee_cloud"
     assert from_registries.confidence == easee_cloud.PLATFORM_CONFIDENCE
     assert entities_of(from_registries) == entities_of(from_dump)
+
+
+async def test_d9_07e_a_renamed_charger_still_binds_its_dynamic_limit(
+    hass: HomeAssistant,
+) -> None:
+    """#11: "EV Charger" put `charger` on the circuit limit, and the tie bound neither.
+
+    The roles match on what the integration named the entity - its translation
+    key and original name - not on the friendly name the household's device name
+    sits in front of.
+    """
+    document = load_dump("easee_cloud_charger")
+    entry = MockConfigEntry(domain="easee", title="Easee")
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    device = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("easee", "EH123456")},
+        manufacturer="Easee",
+        model="Easee Home",
+        name="Carport",
+    )
+    devices.async_update_device(device.id, name_by_user="EV Charger")
+    circuit = {
+        "entity_id": "sensor.carport_dynamic_circuit_limit",
+        "state": "32",
+        "attributes": {
+            "friendly_name": "Carport Dynamic circuit limit",
+            "unit_of_measurement": "A",
+            "device_class": "current",
+        },
+    }
+    entities = er.async_get(hass)
+    for captured in [*document["entities"], circuit]:
+        entity_id = str(captured["entity_id"])
+        domain, object_id = entity_id.split(".", 1)
+        own = str(captured["attributes"]["friendly_name"]).removeprefix("Carport ")
+        entities.async_get_or_create(
+            domain,
+            "easee",
+            object_id,
+            device_id=device.id,
+            suggested_object_id=object_id,
+            original_name=own,
+            translation_key=object_id.removeprefix("carport_"),
+        )
+        attributes = {**captured["attributes"], "friendly_name": f"EV Charger {own}"}
+        hass.states.async_set(entity_id, captured["state"], attributes)
+    await hass.async_block_till_done()
+
+    match = easee_cloud.PROFILE.match(DeviceView.from_hass(hass, device.id))
+
+    assert entities_of(match).get(Role.CURRENT_SET.value) == "sensor.carport_dynamic_charger_limit"
+    assert match.missing == ()

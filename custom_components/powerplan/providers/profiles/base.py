@@ -238,6 +238,12 @@ class EntityView:
     #: (D4 §6 as sharpened for WP U.2). An access point's LED and a PoE port
     #: are configuration of a network device, not a load to switch.
     entity_category: str | None = None
+    #: The words the integration gave the entity itself - its registry
+    #: `translation_key` and `original_name` - or `None` when nothing says.
+    #: The friendly name carries the device's name in front, and a household
+    #: that renames its Easee to "EV Charger" puts `charger` on every entity
+    #: of it (#11).
+    own_name: str | None = None
 
     @property
     def configuration(self) -> bool:
@@ -325,8 +331,9 @@ class EntityView:
         return None if not self.available else _as_float(self.attributes.get(key))
 
     def tokens(self) -> frozenset[str]:
-        """Lower-case words of the object id and the friendly name (D4 §5.9)."""
-        return frozenset(_TOKENS.findall(f"{self.object_id} {self.name}".lower()))
+        """Lower-case words of the entity's own name, else of its id and friendly name (D4 §5.9)."""
+        words = self.own_name if self.own_name is not None else f"{self.object_id} {self.name}"
+        return frozenset(_TOKENS.findall(words.lower()))
 
     def named(self, *tokens: str) -> bool:
         """Whether every one of `tokens` appears in this entity's words."""
@@ -535,6 +542,9 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
     """Return one registry entry as a view, with its state if it has one."""
     state = hass.states.get(entry.entity_id)
     category = None if entry.entity_category is None else str(entry.entity_category)
+    own_name = (
+        " ".join(part for part in (entry.translation_key, entry.original_name) if part) or None
+    )
     if state is None:
         return EntityView(
             entity_id=entry.entity_id,
@@ -542,6 +552,7 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
             attributes=_registry_attributes(entry),
             platform=entry.platform,
             entity_category=category,
+            own_name=own_name,
         )
     return EntityView(
         entity_id=entry.entity_id,
@@ -550,6 +561,7 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
         platform=entry.platform,
         last_reported=state.last_reported,
         entity_category=category,
+        own_name=own_name,
     )
 
 
