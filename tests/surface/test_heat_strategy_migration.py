@@ -72,6 +72,6 @@ def test_35_what_is_complete_and_what_is_not_heating_is_left_alone() -> None:
     assert migrate_heat_strategy(_load("floor_heating", "best_save", "mode")) is None
 
 
-def test_35_minor_5_is_where_a_new_entry_starts() -> None:
+def test_35_minor_5_comes_before_where_a_new_entry_starts() -> None:
     """A new entry needs no migration."""
-    assert ENTRY_MINOR == ENTRY_MINOR_HEAT_PAIRS == 5
+    assert ENTRY_MINOR > ENTRY_MINOR_HEAT_PAIRS == 5

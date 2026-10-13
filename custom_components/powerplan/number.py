@@ -32,7 +32,7 @@ async def async_setup_entry(
 ) -> None:
     """Create the margin number."""
     runtime = entry.runtime_data
-    async_add_entities([MarginNumber(runtime)])
+    async_add_entities([MarginNumber(runtime)], config_subentry_id=runtime.site_subentry_id)
     runtime.setup_load_platform(async_add_entities, load_numbers)
 
 

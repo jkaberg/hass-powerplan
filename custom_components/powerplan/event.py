@@ -29,7 +29,8 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the site's event entity."""
-    async_add_entities([SiteEventEntity(entry.runtime_data)])
+    runtime = entry.runtime_data
+    async_add_entities([SiteEventEntity(runtime)], config_subentry_id=runtime.site_subentry_id)
 
 
 class SiteEventEntity(PowerplanEntity, EventEntity):

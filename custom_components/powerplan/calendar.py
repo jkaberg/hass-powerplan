@@ -37,7 +37,8 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Create the site's plan calendar."""
-    async_add_entities([SitePlanCalendar(entry.runtime_data)])
+    runtime = entry.runtime_data
+    async_add_entities([SitePlanCalendar(runtime)], config_subentry_id=runtime.site_subentry_id)
 
 
 def plan_events(

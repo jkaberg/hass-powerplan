@@ -40,7 +40,10 @@ async def async_setup_entry(
 ) -> None:
     """Create the three selects."""
     runtime = entry.runtime_data
-    async_add_entities([PresenceSelect(runtime), TargetSelect(runtime), RiskSelect(runtime)])
+    async_add_entities(
+        [PresenceSelect(runtime), TargetSelect(runtime), RiskSelect(runtime)],
+        config_subentry_id=runtime.site_subentry_id,
+    )
     runtime.setup_load_platform(async_add_entities, load_selects)
 
 

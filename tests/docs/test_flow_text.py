@@ -60,7 +60,9 @@ def _document(language: str) -> dict[str, Any]:
 
 
 def _flows(document: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    return [("config", document["config"]), *document["config_subentries"].items()]
+    # The `site` subentry has no flow of its own, so no steps (D-0739).
+    flows = document["config_subentries"].items()
+    return [("config", document["config"]), *((k, v) for k, v in flows if "step" in v)]
 
 
 def _leaves(node: Any, path: str = "") -> list[tuple[str, str]]:

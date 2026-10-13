@@ -110,6 +110,17 @@ GROUP_CEILING_FRACTION: Final = "ceiling_fraction"
 GROUP_STARVE_SECONDS: Final = "starve_seconds"
 
 # --------------------------------------------------------------------------- #
+# The site's own subentry (D8 §5.5, D-0739)
+# --------------------------------------------------------------------------- #
+#: A marker with no data: the home device and the site's entities sit under it,
+#: so the integration page lists the site beside its appliances rather than
+#: under "devices that don't belong to a sub-entry". The site's settings stay in
+#: `entry.data`; the type is not in `async_get_supported_subentry_types`, so
+#: there is no "add" button and no gear of its own.
+SUBENTRY_SITE: Final = "site"
+SITE_SUBENTRY_UNIQUE_ID: Final = "site"
+
+# --------------------------------------------------------------------------- #
 # Zone subentries (D6 §6 `ZoneSubentryData`, D8 §5.3)
 # --------------------------------------------------------------------------- #
 SUBENTRY_ZONE: Final = "zone"

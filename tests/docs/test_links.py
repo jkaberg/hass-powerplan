@@ -60,7 +60,7 @@ def _step_urls() -> list[tuple[str, str]]:
             for url in doclinks.step_placeholders("config", step_id).values()
         ]
     for flow, body in data["config_subentries"].items():
-        for step_id in body["step"]:
+        for step_id in body.get("step", {}):
             if flow == SUBENTRY_LOAD and step_id in TYPE_STEPS:
                 for type_key in device_types.keys():  # noqa: SIM118 - a registry, not a dict
                     found += [

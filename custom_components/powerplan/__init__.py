@@ -29,7 +29,7 @@ from .const import (
     SUBENTRY_LOAD,
 )
 from .dashboard import async_remove_dashboard, async_setup_dashboard
-from .entity import async_prepare_site_device
+from .entity import async_ensure_site_subentry, async_prepare_site_device
 from .flow.load import answered_entities, binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
@@ -38,6 +38,7 @@ from .storage import (
     ENTRY_MINOR_ENTITY_REFS,
     ENTRY_MINOR_HEAT_PAIRS,
     ENTRY_MINOR_PRICE,
+    ENTRY_MINOR_SITE_SUBENTRY,
     migrate_coast_tau,
     migrate_heat_strategy,
     migrate_tariff,
@@ -105,6 +106,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
     Minor version 5: a heating load on `heat_capacitor` gets the `bank_k` its
     lever allows, and a radiator's unread `threshold_pct` becomes `min_saving`
     (D-0728, D-0729, D-0738). Every load keeps its strategy.
+
+    Minor version 6: the home device and the site's entities move under the
+    `site` subentry, so the integration page has no "devices that don't belong
+    to a sub-entry" group (D-0739). Unique ids, entity ids and history stay.
     """
     if entry.version > 1:
         return False
@@ -149,6 +154,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
             entry.title,
             f": {', '.join(moved)}" if moved else "",
         )
+    if entry.minor_version < ENTRY_MINOR_SITE_SUBENTRY:
+        await async_ensure_site_subentry(hass, entry)
+        hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_SITE_SUBENTRY)
+        _LOGGER.info("%s: the home device moved under its own subentry", entry.title)
     return True
 
 
@@ -161,8 +170,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) ->
     # config read it makes is a fast, in-memory one HA allows from either
     # thread.
     pending = _bind_answered_roles(hass, entry)
+    # Before the update listener exists, so recreating a deleted one reloads nothing.
+    site_subentry_id = await async_ensure_site_subentry(hass, entry)
     site = await hass.async_add_executor_job(build_site, hass, entry)
     runtime = Runtime(hass, entry, site)
+    runtime.site_subentry_id = site_subentry_id
     entry.runtime_data = runtime
     await async_prepare_site_device(hass, runtime)
     await runtime.start()

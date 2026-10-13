@@ -776,7 +776,7 @@ async def async_setup_entry(
         )
         for carrier in runtime.build.carrier_sources
     )
-    async_add_entities(entities)
+    async_add_entities(entities, config_subentry_id=runtime.site_subentry_id)
     runtime.setup_load_platform(async_add_entities, load_sensors)
 
 

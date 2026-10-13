@@ -108,7 +108,11 @@ async def test_13b_an_old_entry_is_migrated_to_registry_ids(
     roles = entry.data["meter"]["roles"]
     assert roles["grid_power"] == grid.id
     assert roles["import_register"] == IMPORT_REGISTER
-    (circuit,) = entry.subentries.values()
+    (circuit,) = (
+        subentry
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SUBENTRY_CIRCUIT
+    )
     assert circuit.data[CIRCUIT_SUB_METER] == sub_meter.id
 
 

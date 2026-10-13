@@ -54,7 +54,7 @@ def _steps() -> dict[str, dict[str, str | None]]:
     data = strings()
     flows = [("config", data["config"]), *data["config_subentries"].items()]
     for flow, body in flows:
-        for step_id, step in body["step"].items():
+        for step_id, step in body.get("step", {}).items():
             placeholders = doclinks.step_placeholders(flow, step_id)
             if not placeholders:
                 continue

@@ -1229,6 +1229,9 @@
     },
     "site_fuse_only": {
       "name": "Fuse only"
+    },
+    "site_subentry": {
+      "name": "Common"
     }
   },
   "exceptions": {
@@ -3487,6 +3490,9 @@
         "not_enough_loads": "Add at least two appliances first: a room needs two appliances that heat the same space. [What to do]({docs})",
         "reconfigure_successful": "The room was updated."
       }
+    },
+    "site": {
+      "entry_type": "Whole home"
     }
   },
   "options": {

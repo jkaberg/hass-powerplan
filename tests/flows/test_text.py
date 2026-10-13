@@ -44,6 +44,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_CIRCUIT,
     SUBENTRY_GROUP,
     SUBENTRY_LOAD,
+    SUBENTRY_SITE,
     SUBENTRY_ZONE,
     TRANSPORTS,
 )
@@ -804,7 +805,9 @@ async def test_18c_every_subentry_step_renders_data_only_in_the_language(
         await hass.async_block_till_done()
 
     for subentry_id in [ids["ev"], ids["tank"]] + [
-        s.subentry_id for s in site.subentries.values() if s.subentry_type != SUBENTRY_LOAD
+        s.subentry_id
+        for s in site.subentries.values()
+        if s.subentry_type not in (SUBENTRY_LOAD, SUBENTRY_SITE)
     ]:
         await _reconfigure(hass, site, subentry_id, language)
 
@@ -959,7 +962,7 @@ def test_15_every_step_is_titled_as_a_question(language: str) -> None:
     document = DOCUMENTS[language]
     steps = {f"config.{key}": step for key, step in document["config"]["step"].items()}
     for kind, flow in document["config_subentries"].items():
-        steps |= {f"{kind}.{key}": step for key, step in flow["step"].items()}
+        steps |= {f"{kind}.{key}": step for key, step in flow.get("step", {}).items()}
     statements = sorted(
         f"{where}: {step.get('title')}"
         for where, step in steps.items()

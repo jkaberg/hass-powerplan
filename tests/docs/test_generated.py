@@ -118,7 +118,7 @@ def _tables(hass: HomeAssistant, site: MockConfigEntry, types: dict[str, str]) -
         device_name = (device.name_by_user or device.name) if device else ""
         name = names[entry.domain][entry.translation_key]["name"]
         subentry = entry.config_subentry_id
-        if subentry is None:
+        if subentry not in types:  # the home device's, under the `site` subentry (D-0739)
             row = (
                 _pattern(entry.entity_id, device_name or "", "home"),
                 name,

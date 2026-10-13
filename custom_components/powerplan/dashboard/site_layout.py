@@ -83,7 +83,7 @@ def site_layout(hass: HomeAssistant, entry: PowerplanConfigEntry) -> SiteLayout:
             continue
         key = row.unique_id.removeprefix(prefix)
         subentry = row.config_subentry_id
-        if subentry is None:
+        if subentry in (None, runtime.site_subentry_id):
             site[key] = row.entity_id
         else:
             by_load.setdefault(subentry, {})[key.removeprefix(f"{subentry}_")] = row.entity_id

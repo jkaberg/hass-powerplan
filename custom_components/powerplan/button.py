@@ -38,7 +38,7 @@ async def async_setup_entry(
         entities.append(RebuildBaselineButton(runtime))
     if runtime.has_register:
         entities.append(RebuildPeakHistoryButton(runtime))
-    async_add_entities(entities)
+    async_add_entities(entities, config_subentry_id=runtime.site_subentry_id)
     runtime.setup_load_platform(async_add_entities, load_buttons)
 
 

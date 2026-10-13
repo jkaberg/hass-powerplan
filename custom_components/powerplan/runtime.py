@@ -84,6 +84,7 @@ from .const import (
     SUBENTRY_CIRCUIT,
     SUBENTRY_GROUP,
     SUBENTRY_LOAD,
+    SUBENTRY_SITE,
     SUBENTRY_ZONE,
     ZONE_CAPACITY_PENALTY,
     ZONE_MEMBERS,
@@ -1250,6 +1251,9 @@ class Runtime:
         #: load device can carry `via_device_id` rather than the deprecated
         #: `via_device` (HA rule, 2027.8.0).
         self.site_device_id: str | None = None
+        #: The `site` subentry the home device and every site entity sit under
+        #: (D-0739), set by `async_setup_entry` before `start()`.
+        self.site_subentry_id: str | None = None
         #: The home device's model in words and its version, assembled before
         #: `start()` registers it (`entity.async_prepare_site_device`).
         self.site_model: str | None = None
@@ -1402,7 +1406,11 @@ class Runtime:
         # race the site's own entities, which may register in the same batch.
         self.site_device_id = (
             dr.async_get(self.hass)
-            .async_get_or_create(config_entry_id=self.entry.entry_id, **site_device_info(self))
+            .async_get_or_create(
+                config_entry_id=self.entry.entry_id,
+                config_subentry_id=self.site_subentry_id,
+                **site_device_info(self),
+            )
             .id
         )
         if self.state.tariff is not None:
@@ -2527,6 +2535,11 @@ class Runtime:
             if subentry_id in old and new[subentry_id] != old[subentry_id]
         ]
         if not (added_ids or removed_ids or updated_ids):
+            return
+        if any(old[subentry_id][0] == SUBENTRY_SITE for subentry_id in removed_ids):
+            # Deleting the site's own row removed the home device and its
+            # entities; the reload's setup puts them back under a new one (D-0739).
+            await self.hass.config_entries.async_reload(entry.entry_id)
             return
         for subentry_id in removed_ids:
             if old[subentry_id][0] == SUBENTRY_LOAD:

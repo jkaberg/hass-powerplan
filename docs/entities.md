@@ -7,7 +7,7 @@ Every entity PowerPlan adds, what its state means, and where you find it. Use th
 
 ## Where the entities live
 
-Each home gets a device named after the home, and its entities start with the home's name. An appliance's entities sit on the appliance's own device, next to the entities its own integration made, and start with its name.
+Each home gets a device named after the home, and its entities start with the home's name. On the integration's page the device sits under its own row, **Common**, beside the appliances. Deleting that row removes the device and its entities. PowerPlan adds them back straight away, with the same entity ids. An appliance's entities sit on the appliance's own device, next to the entities its own integration made, and start with its name.
 
 In the tables, `<home>` and `<appliance>` stand for those names as Home Assistant writes them in an entity id. **Where** says whether an entity shows on the device page, sits under **Configuration** or **Diagnostic**, and whether it starts switched off. To switch one on, select it on the device page, then **Settings** > **Enabled**.
 

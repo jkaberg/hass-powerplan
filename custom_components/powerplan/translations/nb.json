@@ -1229,6 +1229,9 @@
     },
     "site_fuse_only": {
       "name": "Bare sikring"
+    },
+    "site_subentry": {
+      "name": "Felles"
     }
   },
   "exceptions": {
@@ -3487,6 +3490,9 @@
         "not_enough_loads": "Legg til minst to apparater først: et rom trenger to apparater som varmer samme sted. [Hva du gjør]({docs})",
         "reconfigure_successful": "Rommet ble oppdatert."
       }
+    },
+    "site": {
+      "entry_type": "Hele hjemmet"
     }
   },
   "options": {

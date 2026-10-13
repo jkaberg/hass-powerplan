@@ -385,8 +385,10 @@ ENTRY_MINOR_ENTITY_REFS: Final = 3
 ENTRY_MINOR_COAST_TAU: Final = 4
 #: Config entry minor version 5: `bank_k` written in, the radiator's threshold read (D-0728, D-0738).
 ENTRY_MINOR_HEAT_PAIRS: Final = 5
+#: Config entry minor version 6: the site device and entities sit under the `site` subentry (D-0739).
+ENTRY_MINOR_SITE_SUBENTRY: Final = 6
 #: The minor version a new entry is created at, and every migration ends on.
-ENTRY_MINOR: Final = ENTRY_MINOR_HEAT_PAIRS
+ENTRY_MINOR: Final = ENTRY_MINOR_SITE_SUBENTRY
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy

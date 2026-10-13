@@ -17,20 +17,25 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 from homeassistant.loader import async_get_integration
 
-from .const import BRAND_ICON_URL, DOMAIN
+from .const import BRAND_ICON_URL, DOMAIN, SITE_SUBENTRY_UNIQUE_ID, SUBENTRY_SITE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
 
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from .core.engine import AccountingStatus, LoadStatus
@@ -42,6 +47,7 @@ __all__ = [
     "SITE_MANUFACTURER",
     "LoadEntity",
     "PowerplanEntity",
+    "async_ensure_site_subentry",
     "async_prepare_site_device",
     "fallback_identifier",
     "git_commit",
@@ -176,6 +182,59 @@ async def async_prepare_site_device(hass: HomeAssistant, runtime: Runtime) -> No
     version = str(integration.version) if integration.version is not None else "0"
     commit = await hass.async_add_executor_job(git_commit, Path(__file__).parent)
     runtime.sw_version = version if commit is None else f"{version} ({commit})"
+
+
+def site_subentry_id(entry: ConfigEntry) -> str | None:
+    """Return the id of the site's own subentry, `None` before it exists (D-0739)."""
+    for subentry_id, subentry in entry.subentries.items():
+        if subentry.subentry_type == SUBENTRY_SITE:
+            return subentry_id
+    return None
+
+
+async def async_ensure_site_subentry(hass: HomeAssistant, entry: ConfigEntry) -> str:
+    """Put the home device and the site's entities under the `site` subentry (D-0739).
+
+    Creates the subentry when it is missing - on migration, and again after a
+    household deleted it from the integration page, which removed the device
+    and its entities with it; the next setup brings them back under the same
+    unique ids, so the entity ids and their history stand. Its title is
+    `device.site_subentry.name` in the system language: a subentry title is
+    stored, not translated. Then moves whatever of the entry sits outside every
+    subentry - the home device and its entities - into it.
+    """
+    subentry_id = site_subentry_id(entry)
+    if subentry_id is None:
+        strings = await async_get_translations(hass, hass.config.language, "device", {DOMAIN})
+        title = strings.get(f"component.{DOMAIN}.device.site_subentry.name") or "Common"
+        subentry = ConfigSubentry(
+            data=MappingProxyType({}),
+            subentry_type=SUBENTRY_SITE,
+            title=title,
+            unique_id=SITE_SUBENTRY_UNIQUE_ID,
+        )
+        hass.config_entries.async_add_subentry(entry, subentry)
+        subentry_id = subentry.subentry_id
+    devices = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+        if hasattr(device, "config_subentry_id"):
+            # HA from 2026.10: a device has one entry and one subentry.
+            if device.config_subentry_id is None:
+                devices.async_update_device(device.id, new_config_subentry_id=subentry_id)
+        elif None in device.config_entries_subentries.get(entry.entry_id, ()):
+            # Before it: a set per entry, moved by an add and a remove.
+            devices.async_update_device(
+                device.id,
+                add_config_entry_id=entry.entry_id,
+                add_config_subentry_id=subentry_id,
+                remove_config_entry_id=entry.entry_id,
+                remove_config_subentry_id=None,
+            )
+    entities = er.async_get(hass)
+    for row in er.async_entries_for_config_entry(entities, entry.entry_id):
+        if row.config_subentry_id is None:
+            entities.async_update_entity(row.entity_id, config_subentry_id=subentry_id)
+    return subentry_id
 
 
 def site_device_info(runtime: Runtime) -> DeviceInfo:

@@ -136,7 +136,10 @@ async def async_setup_entry(
 ) -> None:
     """Create the site's binary sensors."""
     runtime = entry.runtime_data
-    async_add_entities([SiteBinarySensor(runtime, description) for description in BINARY_SENSORS])
+    async_add_entities(
+        [SiteBinarySensor(runtime, description) for description in BINARY_SENSORS],
+        config_subentry_id=runtime.site_subentry_id,
+    )
 
 
 class SiteBinarySensor(PowerplanEntity, BinarySensorEntity):
