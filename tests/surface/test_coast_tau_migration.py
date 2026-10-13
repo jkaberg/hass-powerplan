@@ -58,6 +58,7 @@ def test_what_is_already_there_and_other_types_are_left_alone() -> None:
     assert migrate_coast_tau(_load("water_heater", litres=300.0)) is None
 
 
-def test_minor_4_is_where_a_new_entry_starts() -> None:
-    """A new entry needs no migration."""
-    assert ENTRY_MINOR == ENTRY_MINOR_COAST_TAU == 4
+def test_minor_4_comes_before_where_a_new_entry_starts() -> None:
+    """A new entry needs no migration; minor 4 is one of the steps an old one takes."""
+    assert ENTRY_MINOR_COAST_TAU == 4
+    assert ENTRY_MINOR >= ENTRY_MINOR_COAST_TAU

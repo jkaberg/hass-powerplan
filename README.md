@@ -38,10 +38,10 @@ Each appliance follows a plan, the way PowerPlan chooses its hours. Every kind o
 |---|---|---|
 | Always on | – | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
 | Buy low, sell high | – | Home battery |
-| Save where it hurts least | Panel heater | Floor heating, Something else on a switch, Heat pump, Water heater |
+| Save where it hurts least | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
 | Cheapest hours | Something else on a switch | Car charger, Heat pump, Panel heater, Water heater |
 | Cheapest hours before the deadline | Car charger, Water heater | Dishwasher, washer or dryer, Home battery, Floor heating, Something else on a switch, Heat pump, Panel heater |
-| Bank heat in cheap hours | Floor heating, Heat pump | Panel heater, Water heater |
+| Move heat to cheaper hours | Floor heating, Heat pump, Panel heater | Water heater |
 | Shave the peaks | Home battery | – |
 | One run before ready-by | Dishwasher, washer or dryer | – |
 | Follow a schedule | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |

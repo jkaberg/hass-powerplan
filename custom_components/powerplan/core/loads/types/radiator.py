@@ -2,9 +2,9 @@
 
 The simplest thermal load in the house and the one with the least to give: a
 panel heater has no store worth the name, so what it can offer is a *short* pause
-in an expensive half-hour, which is exactly what `best_save` asks of it - shed
-when the slot is more than 10 % above the day's mean, never off for more than two
-hours, never on for less than thirty minutes.
+in an expensive half-hour, which is what `heat_capacitor` pauses it for: only
+where a later slot is 10 % cheaper, never longer than the room takes to reach its
+lowest temperature, never on for less than thirty minutes (D-0728).
 
 Two ways in, both of them in §6.5: a plug in front of it (`SWITCH`, with the
 heater's own dial doing the regulating - INV-64's safe state, because a dial is
@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 2
+DERIVATION_VERSION: Final = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +76,9 @@ HEATER_TYPES: Mapping[str, HeaterType] = {
     "towel_rail": HeaterType(watts=500.0, area_m2=6.0),
 }
 
-#: `best_save`'s three numbers, straight out of §6.5.
-SAVE_THRESHOLD_PCT: Final = 10.0
-SAVE_MAX_OFF_MIN: Final = 120.0
+#: The saving a pause must clear, §6.5's 10 % as `heat_capacitor`'s fraction (D-0729).
+SAVE_MIN_SAVING: Final = 0.10
+#: The shortest a heater stays on, §6.5's 30 minutes.
 SAVE_MIN_ON_MIN: Final = 30.0
 
 #: How far above comfort a room may be banked (`design/DECISIONS.md` D-0206).
@@ -240,8 +240,8 @@ class Radiator:
 
     key: ClassVar[str] = "radiator"
     kinds: ClassVar[tuple[str, ...]] = ("switch", "setpoint")
-    strategies: ClassVar[tuple[str, ...]] = ("best_save", "heat_capacitor", "always")
-    default_strategy: ClassVar[str] = "best_save"
+    strategies: ClassVar[tuple[str, ...]] = ("heat_capacitor", "best_save", "always")
+    default_strategy: ClassVar[str] = "heat_capacitor"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
@@ -296,10 +296,11 @@ class Radiator:
         return Derived(
             params=params,
             strategy=self.default_strategy,
+            # A plug leaves the regulating to the heater's own dial, at comfort: it can
+            # pause the heater, never raise the room above it (D-0728).
             strategy_params={
-                "threshold_pct": SAVE_THRESHOLD_PCT,
-                "max_off_min": SAVE_MAX_OFF_MIN,
-                "min_on_min": SAVE_MIN_ON_MIN,
+                "min_saving": SAVE_MIN_SAVING,
+                "bank_k": 0.0 if control == "plug" else BANK_ABOVE_COMFORT_K,
             },
             priority=defaults.priority,
             group="radiators",
@@ -311,8 +312,7 @@ class Radiator:
                 "nameplate_w": nameplate_w,
                 "comfort_c": comfort_c,
                 "floor_c": floor_c,
-                "threshold_pct": SAVE_THRESHOLD_PCT,
-                "max_off_min": SAVE_MAX_OFF_MIN,
+                "threshold_pct": SAVE_MIN_SAVING * 100.0,
             },
             derivation_version=DERIVATION_VERSION,
         )

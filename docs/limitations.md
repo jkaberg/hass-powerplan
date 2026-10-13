@@ -17,7 +17,7 @@ What PowerPlan does not do, or not yet. Each item says what to do meanwhile, whe
 - A charger whose integration adds no device, such as KEBA, cannot be added.
 - A dishwasher, washer or dryer without remote start can only be told the best time, not started.
 - A heat pump plans heating or cooling as you set it; switch **Plan for cooling** yourself when the season changes.
-- A water heater on **Bank heat in cheap hours** only heats for its ready-by times: PowerPlan cannot yet tell how fast a tank cools to room air. Use **Cheapest hours before the deadline** for a tank.
+- A water heater on **Move heat to cheaper hours** only heats for its ready-by times: PowerPlan cannot yet tell how fast a tank cools to room air. Use **Cheapest hours before the deadline** for a tank.
 
 ## Solar and batteries
 

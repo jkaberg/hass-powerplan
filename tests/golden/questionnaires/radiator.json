@@ -53,11 +53,10 @@
       "volume_m3": 30.0,
       "coast_tau_h": null
     },
-    "strategy": "best_save",
+    "strategy": "heat_capacitor",
     "strategy_params": {
-      "threshold_pct": 10.0,
-      "max_off_min": 120.0,
-      "min_on_min": 30.0
+      "min_saving": 0.1,
+      "bank_k": 0.0
     },
     "priority": 30,
     "group": "radiators",
@@ -69,9 +68,8 @@
       "nameplate_w": 800.0,
       "comfort_c": 19.0,
       "floor_c": 17.0,
-      "threshold_pct": 10.0,
-      "max_off_min": 120.0
+      "threshold_pct": 10.0
     },
-    "derivation_version": 2
+    "derivation_version": 3
   }
 }

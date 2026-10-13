@@ -62,7 +62,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 2
+DERIVATION_VERSION: Final = 3
 
 #: `LoadState.learned` keys this type owns: the previous outlet and power sample
 #: the defrost detector compares against (`design/DECISIONS.md` D-0200).
@@ -381,6 +381,9 @@ class HeatPump:
             # (`design/DECISIONS.md` D-0205).
             strategy_params={
                 "band_k": band_k,
+                # The plan moves the room inside the same band the kind clamps to (D-0728).
+                "bank_k": band_k,
+                "coast_k": band_k,
                 "preheat": params["preheat"],
                 "preheat_max_outdoor_c": params["preheat_max_outdoor_c"],
                 "cop_curve": params["cop_curve"],

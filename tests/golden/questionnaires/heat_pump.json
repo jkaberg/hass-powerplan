@@ -85,6 +85,8 @@
     "strategy": "heat_capacitor",
     "strategy_params": {
       "band_k": 1.0,
+      "bank_k": 1.0,
+      "coast_k": 1.0,
       "preheat": false,
       "preheat_max_outdoor_c": 5.0,
       "cop_curve": {
@@ -110,6 +112,6 @@
       "cop_at_minus_seven": 2.44,
       "preheat": false
     },
-    "derivation_version": 2
+    "derivation_version": 3
   }
 }

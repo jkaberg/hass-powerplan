@@ -166,6 +166,8 @@ class BestSave:
     #: Its plan only moves energy in time: D5 §5.9a judges whether that pays (D-0724).
     paces_by_price: ClassVar[bool] = True
     key: ClassVar[str] = "best_save"
+    #: Offered to every heating type beside `heat_capacitor`, the default: the
+    #: household who wants pauses bounded by the clock may choose them (D-0738).
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "heat_pump", "radiator", "water_heater", "generic_switch"}
     )

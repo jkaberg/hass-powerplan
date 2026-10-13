@@ -872,7 +872,7 @@ What was measured is materialised like any derived value (INV-66), shown on the 
 |---|---|---|---|
 | Room | bathroom · living · kitchen · hall · bedroom · other (HA area) | comfort 24/22/22/21/19 °C; floor 21/19/19/19/17; priority 30 (bathroom 32); `substitutable = room ≠ bathroom` | effektstyring config (measured comfort in the reference house); bathrooms warm by intent |
 | Floor covering | tile/stone · wood/parquet · laminate · vinyl · carpet | `max_c` 30 / **27** / 27 / 28 / 28; comfort range hint | EN 1264 surface limit 29 °C occupied zones; wood/laminate manufacturers commonly 27 °C |
-| Heating type | cable in screed · foil/mat under covering · water-borne · don't know (= cable) | store `SlabStore(screed 40 mm)` / `RoomStore(thin)` / hydronic (setpoint only, `nameplate_w = 0`, links to a heat source - §5.15, v1.x); strategy `heat_capacitor` for all three (the foil was `best_save` until D-0728); `bank_k` 1.0 on a SETPOINT thermostat, 0 on a MODE one, whose comfort option is its own setpoint; W/m² 80 / 120 / - | typical electric cable 60–100 W/m², mats 100–150 W/m² (manufacturer ranges) |
+| Heating type | cable in screed · foil/mat under covering · water-borne · don't know (= cable) | store `SlabStore(screed 40 mm)` / `RoomStore(thin)` / hydronic (setpoint only, `nameplate_w = 0`, links to a heat source - §5.15, v1.x); strategy `heat_capacitor` for all three (the foil was `best_save` until D-0728; `best_save` is still offered, D-0738); `bank_k` 1.0 on a SETPOINT thermostat, 0 on a MODE one, whose comfort option is its own setpoint; W/m² 80 / 120 / - | typical electric cable 60–100 W/m², mats 100–150 W/m² (manufacturer ranges) |
 | Area | m² | nameplate = W/m² × area until measured (p95 of power when heating); kWh/K | slab physics (ρ 2200, cp 0.9) |
 | Sensor | floor · air · both (read from `sensor_mode` where the device exposes it) | what comfort refers to; floor mode ⇒ `TEMP_FLOOR` role | Heatit F/A/A2F modes |
 | Comfort / min / max °C | sliders pre-filled from the above | target profile constant, floor, ceiling | - |
@@ -931,7 +931,7 @@ and the only one a plan may stop outright. The golden answers are
 
 ### 6.5 `radiator`
 
-Type (oil-filled · panel · convector · towel rail) → nameplate default 1000/800/1200/500 W (measured wins) and `RoomStore` mass hint; room type → comfort default; control (plug → SWITCH, thermostat entity → SETPOINT); group `radiators`; strategy `heat_capacitor` (`min_saving` 0.10, `bank_k` 0 on a plug, whose own dial regulates, else `BANK_ABOVE_COMFORT_K` 2.0 per D-0206; until D-0728 it was `best_save` with a `threshold_pct` nothing read, D-0729).
+Type (oil-filled · panel · convector · towel rail) → nameplate default 1000/800/1200/500 W (measured wins) and `RoomStore` mass hint; room type → comfort default; control (plug → SWITCH, thermostat entity → SETPOINT); group `radiators`; strategy `heat_capacitor` (`min_saving` 0.10, `bank_k` 0 on a plug, whose own dial regulates, else `BANK_ABOVE_COMFORT_K` 2.0 per D-0206; until D-0728 it was `best_save` with a `threshold_pct` nothing read, D-0729; `best_save` is still offered, D-0738).
 
 ### 6.6 `battery` (type built with the D4 types; strategies in phase 5)
 
@@ -1042,7 +1042,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 49. A role binds when its entity is ready (D-0693): a SoC sensor with no unit at setup is unbound with one WARNING; when it reports `%` the role binds without a reload and the next tick plans with the SoC; a role still unbound after 10 min raises `re-bind <role>`.
 50. Retried until it answers (D-0711, D-0710): a charger whose writes failed 40 times in a row is `unhealthy` and still gets the write once its command interval is up - retries are paced by row 6, never capped; a heat pump `not_following` for two hours gets its setpoint re-issued at every interval. A water heater derived from fresh answers carries `prefer_late: true`; one stored without it keeps its parameters.
 51. Bound roles are skipped (D-0715): a subentry that binds `soc` to a sensor with no unit yet logs no WARNING at setup and keeps its binding; a subentry that lacks the role still logs one and gets the listener (§9 49).
-52. A lever that can't bank derives `bank_k` 0 (D-0728, D-0729): a MODE floor, a foil floor on MODE and a plug radiator derive `heat_capacitor` with `bank_k` 0; a SETPOINT floor 1.0, a thermostat radiator 2.0, a heat pump its band; the radiator writes `min_saving` 0.10 and no `threshold_pct`; no thermal type offers `best_save`.
+52. A lever that can't bank derives `bank_k` 0 (D-0728, D-0729): a MODE floor, a foil floor on MODE and a plug radiator derive `heat_capacitor` with `bank_k` 0; a SETPOINT floor 1.0, a thermostat radiator 2.0, a heat pump its band; the radiator writes `min_saving` 0.10 and no `threshold_pct`; every thermal type offers `best_save`, none as its default (D-0738).
 53. Measured at setup (D-0731): a floor whose power and temperature have 10 days of history with 39 coasts gets `coast_tau_h` and `nameplate_w` from them, materialised and shown with their source on the review; with no history it gets the type's default and the review says so; an override under **Advanced** wins and survives re-derivation; the flow's reads run in an executor job and never in the event loop.
 ---
 

@@ -454,7 +454,7 @@ class PlanSlot: start; end; envelope_w: float | None      # None = no plan (cont
 |---|---|---|
 | `deadline_fill` | effektstyring planner | cheapest slots covering `required_kwh` before the deadline; `force` → time order, deadline ignored. Greedy is exact for one load. |
 | `cheapest_hours` | powersaver Lowest Price | N cheapest slots in a window; optional consecutive; optional max price |
-| `best_save` | powersaver Best Save | off in slots where saving vs. the next on-slot exceeds a threshold, bounded by max-off / min-on; a load without a store only (D-0728) |
+| `best_save` | powersaver Best Save | off in slots where saving vs. the next on-slot exceeds a threshold, bounded by max-off / min-on; offered for heating beside `heat_capacitor`, the default (D-0738) |
 | `heat_capacitor` | powersaver Heat Capacitor + effektstyring preheat/coast | a stretch to stay off in (dear by price, full by capacity) becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest, filled before it; dear slots no stretch covers are paused if waiting saves a minimum; the store's coast measured at setup and refined daily; heat pumps' fills gated on outdoor temperature (D-0727, D-0732) |
 | `arbitrage`, `peak_shave` | new | battery: charge cheap / discharge expensive with a round-trip-efficiency floor; discharge when the window projects over the ceiling |
 | `schedule` | powersaver Fixed Schedule | fixed windows |

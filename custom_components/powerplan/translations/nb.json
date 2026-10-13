@@ -1107,7 +1107,7 @@
         "state": {
           "deadline_fill": "Billigste timer før fristen",
           "cheapest_hours": "Billigste timer",
-          "heat_capacitor": "Lagre varme i billige timer",
+          "heat_capacitor": "Flytt varme til billigere timer",
           "best_save": "Spar der det svir minst",
           "peak_shave": "Kapp toppene",
           "arbitrage": "Kjøp billig, selg dyrt",
@@ -1667,7 +1667,7 @@
         "best_save": "Spar der det svir minst",
         "cheapest_hours": "Billigste timer",
         "deadline_fill": "Billigste timer før fristen",
-        "heat_capacitor": "Lagre varme i billige timer",
+        "heat_capacitor": "Flytt varme til billigere timer",
         "observe": "Prøvemodus",
         "opportunistic": "Bare når det er billig",
         "peak_shave": "Kapp toppene",

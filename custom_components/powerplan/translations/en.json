@@ -1107,7 +1107,7 @@
         "state": {
           "deadline_fill": "Cheapest hours before the deadline",
           "cheapest_hours": "Cheapest hours",
-          "heat_capacitor": "Bank heat in cheap hours",
+          "heat_capacitor": "Move heat to cheaper hours",
           "best_save": "Save where it hurts least",
           "peak_shave": "Shave the peaks",
           "arbitrage": "Buy low, sell high",
@@ -1667,7 +1667,7 @@
         "best_save": "Save where it hurts least",
         "cheapest_hours": "Cheapest hours",
         "deadline_fill": "Cheapest hours before the deadline",
-        "heat_capacitor": "Bank heat in cheap hours",
+        "heat_capacitor": "Move heat to cheaper hours",
         "observe": "Trial mode",
         "opportunistic": "Only when cheap",
         "peak_shave": "Shave the peaks",

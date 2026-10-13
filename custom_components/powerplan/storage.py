@@ -383,8 +383,10 @@ ENTRY_MINOR_PRICE: Final = 2
 ENTRY_MINOR_ENTITY_REFS: Final = 3
 #: Config entry minor version 4: every heating load carries its coast time constant (D-0730).
 ENTRY_MINOR_COAST_TAU: Final = 4
+#: Config entry minor version 5: `bank_k` written in, the radiator's threshold read (D-0728, D-0738).
+ENTRY_MINOR_HEAT_PAIRS: Final = 5
 #: The minor version a new entry is created at, and every migration ends on.
-ENTRY_MINOR: Final = ENTRY_MINOR_COAST_TAU
+ENTRY_MINOR: Final = ENTRY_MINOR_HEAT_PAIRS
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
@@ -579,3 +581,43 @@ def migrate_coast_tau(data: Mapping[str, Any]) -> dict[str, Any] | None:
     else:
         return None
     return {**data, "params": params}
+
+
+# --------------------------------------------------------------------------- #
+# One strategy for heating (D-0728, D-0729) - config entry minor version 5
+# --------------------------------------------------------------------------- #
+
+#: The heating types (D4 §6.1, §6.3–6.5).
+HEATING_TYPES: Final = frozenset({"floor_heating", "heat_pump", "radiator", "water_heater"})
+
+
+def migrate_heat_strategy(data: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a heating load's subentry completed for HM.3, or `None` to leave it (D-0728, D-0738).
+
+    The strategy the household has stays - `best_save` is still offered for
+    heating (D-0738). A load on `heat_capacitor` gets the `bank_k` its lever
+    allows written in once (INV-66): 0 where it cannot hold the store above
+    comfort (a `mode` thermostat, a radiator on a plug), its band for a heat
+    pump, else v1's 1 K. A radiator's `threshold_pct`, which nothing read,
+    becomes the `min_saving` it meant (D-0729).
+    """
+    if data.get("type") not in HEATING_TYPES:
+        return None
+    params = dict(data.get("params") or {})
+    strategy_params = dict(data.get("strategy_params") or {})
+    strategy = str(data.get("strategy") or "")
+    before = (strategy, dict(strategy_params))
+    if "threshold_pct" in strategy_params:
+        strategy_params["min_saving"] = float(strategy_params.pop("threshold_pct")) / 100.0
+    if strategy == "heat_capacitor" and "bank_k" not in strategy_params:
+        if data.get("type") == "heat_pump":
+            band = float(strategy_params.get("band_k") or params.get("band_k") or 1.0)
+            strategy_params["bank_k"] = band
+            strategy_params["coast_k"] = band
+        elif params.get("kind") in {"mode", "switch"}:
+            strategy_params["bank_k"] = 0.0
+        elif data.get("type") != "water_heater":
+            strategy_params["bank_k"] = 1.0
+    if (strategy, strategy_params) == before:
+        return None
+    return {**data, "strategy": strategy, "strategy_params": strategy_params}

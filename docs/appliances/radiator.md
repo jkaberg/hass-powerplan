@@ -53,7 +53,7 @@ The panel heater has no follow-up question.
 
 ## The plan
 
-By default PowerPlan keeps the room at comfort and pauses the heater where it saves most, never below the room's lowest temperature. The other plans it offers are listed on [Appliances](README.md#radiator); each is explained on [Plans](../strategies.md).
+By default PowerPlan keeps the room at comfort and pauses the heater in expensive hours, for as long as the room stays above its lowest temperature. A heater with its own thermostat may also be warmed up to 2 °C above comfort before a long expensive stretch; one on a plug only pauses. The other plans it offers are listed on [Appliances](README.md#radiator); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 

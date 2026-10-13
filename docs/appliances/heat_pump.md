@@ -58,7 +58,7 @@ This follow-up comes after **Preheat** is turned on: above the outdoor temperatu
 
 ## The plan
 
-By default the room stores heat within a band around comfort in cheap hours. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
+By default the room is warmed within its band before expensive hours, and the heat pump stays off through them as long as the room stays in the band. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 

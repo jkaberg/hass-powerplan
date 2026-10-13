@@ -61,21 +61,22 @@
     },
     "strategy": "heat_capacitor",
     "strategy_params": {
-      "swing_k": 1.0
+      "swing_k": 1.0,
+      "bank_k": 0.0
     },
     "priority": 32,
     "group": "floor_heating",
     "explanation_key": "floor_heating_review",
     "explanation_params": {
-      "comfort_c": 24.0,
+      "room": "bathroom",
       "covering": "wood",
+      "store": "slab",
+      "comfort_c": 24.0,
       "max_c": 27.0,
       "nameplate_w": 960.0,
-      "room": "bathroom",
-      "store": "slab",
       "strategy": "heat_capacitor",
       "substitutable": false
     },
-    "derivation_version": 2
+    "derivation_version": 3
   }
 }

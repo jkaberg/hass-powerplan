@@ -36,8 +36,10 @@ from .services import async_setup_services
 from .storage import (
     ENTRY_MINOR_COAST_TAU,
     ENTRY_MINOR_ENTITY_REFS,
+    ENTRY_MINOR_HEAT_PAIRS,
     ENTRY_MINOR_PRICE,
     migrate_coast_tau,
+    migrate_heat_strategy,
     migrate_tariff,
 )
 
@@ -99,6 +101,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
 
     Minor version 4: every heating load gets the coast time constant its type
     derives today, written in once (D-0730, INV-66).
+
+    Minor version 5: a heating load on `heat_capacitor` gets the `bank_k` its
+    lever allows, and a radiator's unread `threshold_pct` becomes `min_saving`
+    (D-0728, D-0729, D-0738). Every load keeps its strategy.
     """
     if entry.version > 1:
         return False
@@ -130,6 +136,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
                 hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
         hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_COAST_TAU)
         _LOGGER.info("%s: heating loads carry their coast time constant", entry.title)
+    if entry.minor_version < ENTRY_MINOR_HEAT_PAIRS:
+        moved = []
+        for subentry in entry.subentries.values():
+            migrated = migrate_heat_strategy(subentry.data)
+            if migrated is not None:
+                hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
+                moved.append(subentry.title)
+        hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_HEAT_PAIRS)
+        _LOGGER.info(
+            "%s: heating plans completed%s",
+            entry.title,
+            f": {', '.join(moved)}" if moved else "",
+        )
     return True
 
 

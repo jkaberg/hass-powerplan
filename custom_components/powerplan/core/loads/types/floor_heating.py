@@ -58,7 +58,7 @@ __all__ = [
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
 #: it was derived with, and nothing recomputes behind the user's back (INV-66).
-DERIVATION_VERSION: Final = 2
+DERIVATION_VERSION: Final = 3
 
 #: How far ahead a loop looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -110,7 +110,7 @@ class HeatingType:
 #: and the slab model is the conservative one - it plans a fill it can coast on.
 HEATING_TYPES: Mapping[str, HeatingType] = {
     "cable_in_screed": HeatingType("slab", "heat_capacitor", 80.0, 40.0),
-    "foil_or_mat": HeatingType("room", "best_save", 120.0, 0.0),
+    "foil_or_mat": HeatingType("room", "heat_capacitor", 120.0, 0.0),
     "water_borne": HeatingType("hydronic", "heat_capacitor", None, 40.0),
     "dont_know": HeatingType("slab", "heat_capacitor", 80.0, 40.0),
 }
@@ -399,7 +399,9 @@ class FloorHeating:
         return Derived(
             params=params,
             strategy=heating.strategy,
-            strategy_params={"swing_k": swing_k},
+            # A `mode` thermostat's comfort option is its own setpoint: it cannot hold
+            # the floor above comfort, so it only pauses (D-0724, D-0728).
+            strategy_params={"swing_k": swing_k, "bank_k": 0.0 if kind == "mode" else 1.0},
             priority=defaults.priority,
             group="floor_heating",
             explanation_key="floor_heating_review",
