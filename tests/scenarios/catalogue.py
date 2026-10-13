@@ -381,7 +381,7 @@ def circuit_garage_32a() -> Scenario:
 #: cap. Loops summed are ~5 kW nameplate against the group's 2 kW.
 FLOOR_ROTATION_START = datetime(2027, 1, 14, 17, 7, 17, tzinfo=OSLO)
 FLOOR_ROTATION_DAYS = 0.3
-FLOOR_ROTATION_TARGET_KW = 8.0
+FLOOR_ROTATION_TARGET_KW = 6.0
 
 
 def floor_group_rotation() -> Scenario:
@@ -401,6 +401,36 @@ def floor_group_rotation() -> Scenario:
         start=FLOOR_ROTATION_START,
         days=FLOOR_ROTATION_DAYS,
         target_kw=FLOOR_ROTATION_TARGET_KW,
+    )
+
+
+#: PLAN 3.0p's exit (D-0732, D-0735): a cold January afternoon into the evening,
+#: the whole reference house on spot prices under its 10 kW target (the 5–10 kW
+#: step). The runner wires no D10 (D9 §5.14), so the planner sees no baseline
+#: and capacity stretches come only from tariff windows; what this run shows is
+#: the engine under `heat_capacitor` with the gate (D-0724) deciding.
+FLOOR_COAST_START = datetime(2027, 1, 12, 12, 7, 17, tzinfo=OSLO)
+FLOOR_COAST_DAYS = 0.45
+FLOOR_COAST_TARGET_KW = 10.0
+
+
+def floors_coast_the_evening() -> Scenario:
+    """Return the cold evening the floors are planned through under `heat_capacitor` (D-0732)."""
+    return Scenario(
+        name="floors_coast_the_evening",
+        house=lambda: house(
+            day=FLOOR_COAST_START.date(),
+            price_kind=SPOT_LIKE,
+            loops=FLOOR_LOOPS,
+            ev_soc=0.35,
+            slab_start_c=23.0,
+            tank_top_c=62.0,
+            tank_bottom_c=50.0,
+        ),
+        start=FLOOR_COAST_START,
+        days=FLOOR_COAST_DAYS,
+        target_kw=FLOOR_COAST_TARGET_KW,
+        baseline_w=1200.0,
     )
 
 

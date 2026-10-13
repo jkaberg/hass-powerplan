@@ -56,7 +56,7 @@ The floor heating has no follow-up question.
 
 ## The plan
 
-By default the floor stores heat a little above comfort when power is cheap, and coasts when it is dear. It never goes under the room's lowest temperature, and never above what the covering allows. The other plans it offers are listed on [Appliances](README.md#floor_heating); each is explained on [Plans](../strategies.md).
+By default the floor stays off through expensive hours and through hours your home has no room for, after warming just enough beforehand to last them. It never goes under the room's lowest temperature, and never above what the covering allows. The other plans it offers are listed on [Appliances](README.md#floor_heating); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 

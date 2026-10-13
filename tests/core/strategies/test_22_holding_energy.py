@@ -61,13 +61,21 @@ def test_22c_heat_capacitor_holds_with_energy_and_coasts_without() -> None:
     plan = capacitor_planned(view=capacitor_view(), forecasts=weather)
     before = capacitor_planned(view=capacitor_view(), forecasts=Weather(outdoor=-5.0))
     for slot in plan.slots:
-        if slot.envelope_w == 0.0:
+        if slot.reason.startswith("stay off") or slot.reason == "paused":
             assert slot.hold_kwh == 0.0
         else:
             assert slot.hold_kwh >= 400.0 * slot.hours / 1000.0 - 1e-9
     # Holding is priced and kept apart: it never counts as moving the store (coverage).
-    assert plan.planned_kwh == pytest.approx(before.planned_kwh)
-    assert plan.hold_kwh > 5.0
+    # What a pause recovers is the holding it skipped, so it moves with the draw (D-0727).
+    assert plan.planned_kwh == pytest.approx(sum(slot.kwh for slot in plan.slots))
+    assert before.planned_kwh == pytest.approx(sum(slot.kwh for slot in before.slots))
+    held = sum(
+        slot.hours
+        for slot in plan.slots
+        if not (slot.reason.startswith("stay off") or slot.reason == "paused")
+    )
+    assert held > 0.0
+    assert plan.hold_kwh >= 400.0 * held / 1000.0 - 1e-9
     assert plan.cost_estimate.amount > before.cost_estimate.amount
 
 

@@ -232,7 +232,7 @@ User pages: FB.1 `docs/entities.md`; FB.2 `docs/appliances/water_heater.md`, `do
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **HM.1 Measured at setup** | `coast_tau_h` on `SlabStore`/`RoomStore` with D4's defaults; D10's `coast_tau_h` fit and its spread gate; `fit_all` called by the load flow, `QCtx.measured`, the derivations preferring it, the review naming its source | D4 §4.3, §5.7, §6, §6.1; D10 §5.6; D-0730, D-0731 | D4 §9 53; D10 §9 21; the fits on the reference house's recorder land within 10 % of D-0730's figures | - |
-| **HM.2 Heat moved by the store** | `heat_capacitor`'s stretches (price and capacity) as coast-sized deadlines, the top-up inside a stretch, the pause pairs, the per-move reason; schema `bank_k`, `coast_k`, `min_saving`, `min_saving_absolute` in, `delta_k`, `quantiles`, `bank_scale_with_cold` out; the benchmark baseline updated | D5 §5.7, §6; D-0727, D-0732 | D5 §9 8, 32, 34, 36, with 3, 22 and 26 still green; scenarios phase0 and phase3, plus a cold-evening scenario at the 5–10 kW step in which the floors coast 17:00–20:00 and every hour stays under it; smoke `--compare` with the heating loads' savings on the spot year at or above the baseline's | HM.1 |
+| **HM.2 Heat moved by the store** | `heat_capacitor`'s stretches (price and capacity) as coast-sized deadlines, the top-up inside a stretch, the pause pairs, the per-move reason; schema `bank_k`, `coast_k`, `min_saving`, `min_saving_absolute` in, `delta_k`, `quantiles`, `bank_scale_with_cold` out; the benchmark baseline updated | D5 §5.7, §6; D-0727, D-0732 | D5 §9 8, 32, 34, 36, with 3, 22 and 26 still green; scenarios phase0 and phase3, plus `floors_coast_the_evening` at the 10 kW target, every hour under it and every loop's plan followed or handed back with its reason (D-0735); smoke `--compare` with the heating loads' savings on the spot year at or above the baseline's | HM.1 |
 | **HM.3 One strategy for heating** | `best_save.supports = {generic_switch}`; `bank_k` and `min_saving` derived per type; config entry minor version 4 (`ENTRY_MINOR_HEAT_PAIRS`) in `async_migrate_entry`; the label **Move heat to cheaper hours** | D5 §5.5, §6; D4 §6.1, §6.4, §6.5; D-0728, D-0729 | D5 §9 6, 33, 35; D4 §9 52; the e2e day | HM.2 |
 
 User pages: HM.1 `docs/appliances/floor_heating.md`, `docs/appliances/radiator.md`, `docs/appliances/heat_pump.md` and `docs/setup.md` (what the flow measures, and that a new sensor gets the defaults). HM.2 `docs/strategies.md` (what the strategy does and its numbers) and `docs/capacity-tariffs.md` (heating stays off through a full hour when it can). HM.3 `docs/strategies.md`, with the generated table and a "Since v0.x" note that a heating appliance's **Save where it hurts least** became **Move heat to cheaper hours**, which pauses only, and that an automation selecting `best_save` for it must select `heat_capacitor`; also `docs/appliances/radiator.md`, `docs/appliances/floor_heating.md` and `docs/appliances/README.md` (the default per type).
@@ -709,7 +709,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | FB.6 | Two false signals | done |
 | FB.7 | The levelled step | done |
 | HM.1 | Measured at setup | done |
-| HM.2 | Heat moved by the store | todo |
+| HM.2 | Heat moved by the store | in progress |
 | HM.3 | One strategy for heating | todo |
 | 6.3 | Release v1.0 | todo |
 

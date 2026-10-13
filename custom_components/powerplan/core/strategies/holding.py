@@ -48,8 +48,8 @@ def holding_kwh(ctx: PlanContext, start: datetime, end: datetime, target: float)
         return 0.0
     coeff = store.loss_coeff_w_per_k if isinstance(store, SlabStore) else store.heat_loss_w_per_k
     forecasts = ctx.forecasts
-    if coeff is not None and forecasts is not None:
-        outdoor = forecasts.outdoor_c(start)
+    if coeff is not None:
+        outdoor = ctx.outdoor_at(start)
         if outdoor is not None:
             drive = outdoor - target if store.direction == "cool" else target - outdoor
             return max(0.0, coeff * drive) * hours / 1000.0

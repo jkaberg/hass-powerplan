@@ -20,8 +20,6 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-import pytest
-
 from custom_components.powerplan.core.loads import CalendarEvent, PresenceMode
 from custom_components.powerplan.core.strategies import (
     ReplanTrigger,
@@ -94,13 +92,13 @@ def fills(plan: Plan, source: str) -> list[Any]:
 
 
 def test_13_away_lowers_every_setpoint_the_plan_asks_for() -> None:
-    """The plan banks around the lowered target, not around the comfort one."""
-    home = planned(presence=PresenceMode.HOME)
+    """The plan banks around the lowered target, not around the comfort one.
+
+    `bank_k` (1 K by default) is the most a fill raises the target it is given.
+    """
     away = planned(presence=PresenceMode.AWAY)
 
-    assert max(setpoints(home, PresenceMode.HOME)) == pytest.approx(
-        max(setpoints(away, PresenceMode.AWAY)) + AWAY_DELTA
-    )
+    assert max(setpoints(away, PresenceMode.AWAY)) <= COMFORT_C - AWAY_DELTA + 1.0 + 1e-9
     assert max(setpoints(away, PresenceMode.AWAY)) < COMFORT_C
 
 

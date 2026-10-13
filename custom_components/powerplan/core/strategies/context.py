@@ -607,6 +607,14 @@ class PlanContext:
     #: `curve_in` priced at this load's draw with that surplus (`effective_curve`);
     #: `None` where there is no surplus, and `effective` is then `curve_in`.
     curve_eff: PriceCurve | None = None
+    #: The outdoor temperature measured now, where the house reads one (D-0719):
+    #: what a coast is sized against when D10 has no forecast (D-0734).
+    outdoor_now: float | None = None
+
+    def outdoor_at(self, t: datetime) -> float | None:
+        """Return D10's outdoor forecast at `t`, else the reading now held flat (D-0734)."""
+        forecast = None if self.forecasts is None else self.forecasts.outdoor_c(t)
+        return self.outdoor_now if forecast is None else forecast
 
     @property
     def effective(self) -> PriceCurve:
@@ -676,6 +684,8 @@ class SiteContext:
     plan_fraction: float = 1.0
     #: D3 §4's export cap, handed to each `PlanContext` unchanged (D3 §9 21).
     export_limit_w: float | None = None
+    #: The outdoor temperature measured now, handed to each `PlanContext` (D-0734).
+    outdoor_now: float | None = None
     #: D5 §5.9a (D-0724): the share of its energy's cost a thermal store's price
     #: plan must earn by its timing - to be adopted, and to come back once left to
     #: its thermostat. `None` judges nothing.

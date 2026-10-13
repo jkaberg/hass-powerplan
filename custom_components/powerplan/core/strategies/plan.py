@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 __all__ = [
     "COMMIT_MIN",
     "COVER_EPS_KWH",
+    "STAY_OFF_FOR_CAPACITY",
     "TRUST",
     "DesiredState",
     "Plan",
@@ -98,6 +99,11 @@ def desired_for(kind: str, delta_k: float) -> DesiredState | None:
 #: How close to the requirement counts as covered, in kWh. A margin is energy,
 #: never power, and one milliwatt-hour is the float noise of summing
 #: two hundred slots - not a shortfall anybody can feel.
+#: The reason a slot carries when a plan stays off because the house is full
+#: (D5 §5.7, D-0732): the capacity pays for it, which an energy estimate cannot
+#: see, so D5 §5.9a's gate does not judge such a plan.
+STAY_OFF_FOR_CAPACITY: Final = "stay off in the window"
+
 COVER_EPS_KWH: Final = 1e-6
 
 #: The commitment window in minutes (D5 §5.9): a `KNOWN` slot starting inside it

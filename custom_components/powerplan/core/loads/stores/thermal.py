@@ -20,6 +20,7 @@ because INV-64 refuses a relay-controlled tank that has no mechanical thermostat
 in the first place (D4 §6.3) - so there is always a dial to anchor on.
 """
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, tzinfo
 from typing import Final
@@ -39,6 +40,8 @@ __all__ = [
     "SensorlessModel",
     "SlabStore",
     "TankStore",
+    "coast_hours_tau",
+    "level_needed",
 ]
 
 #: Screed: density kg/m³ and specific heat kJ/kgK (D4 §4.3).
@@ -68,6 +71,31 @@ def _deficit(level_now: float, target: float, direction: StoreDirection) -> floa
     if direction == "cool":
         return max(0.0, level_now - target)
     return max(0.0, target - level_now)
+
+
+def coast_hours_tau(tau_h: float, level: float, limit: float, outdoor: float) -> float:
+    """Return how long a store at `level` coasts before it reaches `limit` (D4 §5.7, D-0730).
+
+    `T(t) = T_out + (T − T_out)·e^(−t/τ)`, either direction. Already past the
+    limit is 0; a limit the outdoor temperature never pulls it to is infinite.
+    """
+    above = level - outdoor
+    at_limit = limit - outdoor
+    if (level - limit) * above <= 0.0:
+        return 0.0
+    if at_limit * above <= 0.0:
+        return math.inf
+    return tau_h * math.log(above / at_limit)
+
+
+def level_needed(tau_h: float, limit: float, outdoor: float, hours: float) -> float:
+    """Return the level that coasts `hours` and ends at `limit` (D5 §5.7, D-0732)."""
+    return outdoor + (limit - outdoor) * math.exp(hours / tau_h)
+
+
+def _loss_from_tau(capacity_kwh_per_k: float, tau_h: float | None) -> float | None:
+    """Return the W/K a store's own fall implies, `C·1000/τ`, or `None` without `τ` (D-0730)."""
+    return None if tau_h is None or tau_h <= 0.0 else capacity_kwh_per_k * 1000.0 / tau_h
 
 
 def _loss_kwh(coeff_w_per_k: float | None, level_now: float, ctx: StoreCtx, hours: float) -> float:
@@ -106,9 +134,12 @@ class SlabStore:
             return None
         bounded = min(target, self.max_c) if self.direction != "cool" else max(target, self.min_c)
         hours = hours_until(deadline, ctx.now)
+        coeff = self.loss_coeff_w_per_k
+        if coeff is None:
+            coeff = _loss_from_tau(self.capacity_kwh_per_unit(), self.coast_tau_h)
         return self.capacity_kwh_per_unit() * _deficit(
             level_now, bounded, self.direction
-        ) + _loss_kwh(self.loss_coeff_w_per_k, level_now, ctx, hours)
+        ) + _loss_kwh(coeff, level_now, ctx, hours)
 
     def max_level(self) -> float:
         """Return the covering's maximum - 27 °C under wood, 30 °C over tile (INV-56)."""
@@ -119,8 +150,15 @@ class SlabStore:
         return self.min_c
 
     def coast_hours(self, level_now: float, floor: float, ctx: StoreCtx) -> float | None:
-        """How long the slab holds above `floor`, or `None` unfitted (§5.7)."""
-        if self.loss_coeff_w_per_k is None or ctx.outdoor_c is None:
+        """How long the slab holds above `floor`, or `None` unfitted (§5.7).
+
+        From its own fall `τ` where known (D-0730), else from the loss coefficient.
+        """
+        if ctx.outdoor_c is None:
+            return None
+        if self.coast_tau_h is not None:
+            return coast_hours_tau(self.coast_tau_h, level_now, floor, ctx.outdoor_c)
+        if self.loss_coeff_w_per_k is None:
             return None
         inside = ctx.indoor_c if ctx.indoor_c is not None else level_now
         loss_kw = self.loss_coeff_w_per_k * abs(inside - ctx.outdoor_c) / 1000.0
@@ -176,9 +214,12 @@ class RoomStore:
             return None
         bounded = min(target, self.max_c) if self.direction != "cool" else max(target, self.min_c)
         hours = hours_until(deadline, ctx.now)
+        coeff = self.heat_loss_w_per_k
+        if coeff is None:
+            coeff = _loss_from_tau(self.thermal_mass_kwh_per_k, self.coast_tau_h)
         return self.thermal_mass_kwh_per_k * _deficit(
             level_now, bounded, self.direction
-        ) + _loss_kwh(self.heat_loss_w_per_k, level_now, ctx, hours)
+        ) + _loss_kwh(coeff, level_now, ctx, hours)
 
     def max_level(self) -> float:
         """Return the room's cap (INV-56)."""
@@ -190,7 +231,11 @@ class RoomStore:
 
     def coast_hours(self, level_now: float, floor: float, ctx: StoreCtx) -> float | None:
         """How long the room holds above `floor`, or `None` unfitted (§5.7)."""
-        if self.heat_loss_w_per_k is None or ctx.outdoor_c is None:
+        if ctx.outdoor_c is None:
+            return None
+        if self.coast_tau_h is not None:
+            return coast_hours_tau(self.coast_tau_h, level_now, floor, ctx.outdoor_c)
+        if self.heat_loss_w_per_k is None:
             return None
         loss_kw = self.heat_loss_w_per_k * abs(level_now - ctx.outdoor_c) / 1000.0
         if loss_kw <= 0.0:

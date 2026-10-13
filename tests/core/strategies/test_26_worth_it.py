@@ -21,6 +21,7 @@ from custom_components.powerplan.core.strategies.base import _worth_it
 from tests.builders.curves import ORDINARY, raw_days
 from tests.core.strategies.conftest import (
     NOW,
+    Weather,
     curve,
     curves_of,
     demand,
@@ -54,8 +55,13 @@ def _floor(strategy: str, kind: str) -> LoadView:
     )
 
 
+#: The house's October weather: a coast needs an outdoor temperature to be sized (D-0732).
+OCTOBER = Weather(outdoor=5.0)
+
+
 def _planned(view: LoadView, source: PriceCurve, **site: object) -> Plan:
-    return plan_all([view], curves_of(source), site_ctx(**site), NOW).plans[view.load_id]
+    context = site_ctx(**{"forecasts": OCTOBER, **site})
+    return plan_all([view], curves_of(source), context, NOW).plans[view.load_id]
 
 
 def test_26_a_mode_floor_under_norgespris_is_left_to_its_thermostat() -> None:
@@ -106,16 +112,16 @@ def test_26_the_gate_can_be_switched_off() -> None:
 
 
 def _raw_plan(view: LoadView, **ctx: object) -> tuple[Plan, object]:
-    pctx = plan_ctx(HOUSE, load=view, **ctx)
+    pctx = plan_ctx(HOUSE, load=view, **{"forecasts": OCTOBER, **ctx})
     plan = get(view.strategy).plan(view.demand, pctx, params_of(view.strategy, view.params))
     return plan, pctx
 
 
 def test_26_leaving_hands_off_needs_more_than_entering_it() -> None:
-    """2.1 % clears a 2 % entry but not a 2.5 % way back: no flip-flop at the line."""
+    """0.9 % clears a 0.8 % entry but not a 1.2 % way back: no flip-flop at the line."""
     view = _floor("heat_capacitor", "mode")
     plan, pctx = _raw_plan(view)
-    band = (0.02, 0.025)
+    band = (0.008, 0.012)
 
     assert _worth_it(plan, view, pctx, None, band).mode is PlanMode.PRICE
     gated = _worth_it(plan, view, pctx, None, (0.04, 0.06))

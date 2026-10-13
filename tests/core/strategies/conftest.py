@@ -252,9 +252,11 @@ def battery_view(**kwargs: Any) -> LoadView:
     return LoadView(**options)
 
 
-def slab_store() -> SlabStore:
-    """Return the bathroom slab: 12 m² under 40 mm of screed (D4 §6.1)."""
-    return SlabStore(area_m2=12.0, screed_mm=40.0, loss_coeff_w_per_k=None, max_c=27.0)
+def slab_store(coast_tau_h: float | None = 60.0) -> SlabStore:
+    """Return the bathroom slab: 12 m² under 40 mm of screed, coasting at `τ` 60 h (D4 §6.1, D-0730)."""
+    return SlabStore(
+        area_m2=12.0, screed_mm=40.0, loss_coeff_w_per_k=None, max_c=27.0, coast_tau_h=coast_tau_h
+    )
 
 
 def bathroom_target(**kwargs: Any) -> TargetProfile:

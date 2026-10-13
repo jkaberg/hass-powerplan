@@ -342,16 +342,18 @@ def test_a_defrost_run_is_never_shed(cold_night: tuple[ScenarioResult, _Trail]) 
     """D4 §5.14: power up while the outlet falls is a signature, never a reason to shed.
 
     The evening's own ordinary squeeze (D9 §5.9's EV, late) still sheds the
-    pump on its own terms - that shed just never lands inside a defrost run.
+    pump on its own terms - and where the ladder asks inside a defrost run, the
+    pump is not written and keeps drawing until the run ends (D-0736).
     """
-    _result, trail = cold_night
+    result, trail = cold_night
     runs = _near_rated_runs(trail)
     assert runs, "no defrost run to check"
-    by_time = dict(trail.rows)
+    writes = [at for at, load_id in result.write_log if load_id == "heat_pump"]
     for start, end in runs:
-        during = [now for now in by_time if start <= now <= end]
-        shed = [now for now in during if by_time[now].loads["heat_pump"].shed]
-        assert not shed, (start, end, shed)
+        # The ladder may ask (`LoadStatus.shed` is the allocator's request); the type
+        # refuses while it defrosts (`KindCtx.shed` forced off, D4 §5.14), so the
+        # pump is never written inside a run - a run is consecutive rated draw (D-0736).
+        assert not [at for at in writes if start <= at <= end], (start, end)
 
 
 # --------------------------------------------------------------------------- #

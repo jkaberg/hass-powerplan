@@ -78,12 +78,17 @@ Charges or heats in the cheapest hours before the time you set, and stops when t
 <a name="heat_capacitor"></a>
 ## Bank heat in cheap hours
 
-Stores heat in the floor, the room or the tank when power is cheap, a little above comfort, and lets it coast through expensive hours. It never goes above the highest temperature you allow. An appliance that only switches between comfort and an energy-saving mode cannot store heat above comfort, and when the rest of the plan would save less than 4 %, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
+Keeps the appliance off through expensive hours, and through hours when your home has no room under its capacity step. Before such a run of hours, it warms the floor, the room or the tank just enough to stay above the lowest temperature you allow until the run ends. How much is worked out from how fast the appliance cools, which PowerPlan measures from its history.
+
+When the highest temperature you allow is not enough to last the whole run, the appliance heats a little inside it, spread evenly, so no hour gets the whole top-up. A single expensive hour with no run around it is paused if a cheaper hour soon after can make up for it. Every move must save at least 10 % on the hours it skips. An appliance that only switches between comfort and an energy-saving mode cannot store heat above comfort, so it only pauses; see [When a plan is not worth it](#worth_it).
+
+> [!NOTE]
+> Since v0.0.11, this plan sizes its warm-up from how fast the appliance cools, and stays off through full hours of the capacity step. Before that it warmed by a fixed degree in the cheapest quarter of the day.
 
 | | |
 |---|---|
 | Good for | floor heating and heat pumps, which hold heat for hours |
-| Needs | a comfort temperature and a highest temperature |
+| Needs | a comfort temperature, a lowest and a highest temperature, and an outdoor temperature or a weather forecast |
 | Key | `heat_capacitor` |
 
 <a name="worth_it"></a>
@@ -91,7 +96,7 @@ Stores heat in the floor, the room or the tank when power is cheap, a little abo
 
 Floor heating, heat pumps and panel heaters on **Save where it hurts least** or **Bank heat in cheap hours** only follow their plan when moving their heating in time is worth at least 4 % of what the heating costs. Otherwise PowerPlan leaves the appliance at comfort on its own thermostat, and the [New plan adopted](events.md#plan_adopted) event says "left to its thermostat" with what moving it would have earned. With a fixed price, such as Norgespris, only the grid's night rate is left to gain, and that is often less. When the prices spread out again, the plan comes back once it is worth 6 %.
 
-Capacity control does not change: PowerPlan still turns heating down to keep the hour under your capacity step, and it still protects the lowest temperature.
+A plan that stays off because your home is full is always followed: what it saves is in the capacity step, which the 4 % does not count. Capacity control does not change: PowerPlan still turns heating down to keep the hour under your capacity step, and it still protects the lowest temperature.
 
 <a name="peak_shave"></a>
 ## Shave the peaks

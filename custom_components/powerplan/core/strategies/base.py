@@ -36,7 +36,7 @@ from .context import (
     with_rewards,
 )
 from .holding import comfort_target, holding_kwh
-from .plan import build_plan, with_hold_of
+from .plan import STAY_OFF_FOR_CAPACITY, build_plan, with_hold_of
 
 if TYPE_CHECKING:
     from ..model import Demand, Plan, PlanSlot, Slot
@@ -257,6 +257,7 @@ def plan_all(
             holidays=ctx.holidays,
             previous=before,
             export_limit_w=ctx.export_limit_w,
+            outdoor_now=ctx.outdoor_now,
             surplus=own,
             curve_eff=(
                 None
@@ -359,8 +360,9 @@ def _worth_it(
     (`paces_by_price`, `heat_capacitor` and `best_save`) is judged: a schedule is
     the household's own window, a forced, urgent or comfort demand
     is never a plan to gate, an EV or a tank is a deadline whose hands-off is worse
-    (charge at plug-in, reheat at the day price), and a tariff with peak windows
-    pays a coast in capacity the energy estimate cannot see. Hands-off is a plan
+    (charge at plug-in, reheat at the day price), and a tariff with peak windows -
+    or a plan that stays off because the house is full (D-0732) - pays a coast in
+    capacity the energy estimate cannot see. Hands-off is a plan
     with nothing to say (INV-30): the device holds its own comfort, and capacity,
     comfort floors and hard limits still bind it in the allocator (INV-1).
     """
@@ -372,7 +374,11 @@ def _worth_it(
         or not isinstance(view.store, SlabStore | RoomStore)
     ):
         return plan
-    if not plan.slots or peak_windows(ctx, plan.slots):
+    if (
+        not plan.slots
+        or peak_windows(ctx, plan.slots)
+        or any(slot.reason == STAY_OFF_FOR_CAPACITY for slot in plan.slots)
+    ):
         return plan
     # A `mode` device banks nothing: its comfort option is its own setpoint, so a
     # bank row's energy is never drawn and only what holding costs is real.
