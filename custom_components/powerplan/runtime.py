@@ -41,6 +41,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from . import entity_refs
 from .const import (
     CIRCUIT_FUSE_A,
     CIRCUIT_MEMBERS,
@@ -638,7 +639,7 @@ class SiteBuild:
 
 def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     """Build the site's domain objects from what the flow materialised (INV-66)."""
-    data = entry.data
+    data = entity_refs.live(hass, entry.data)
     # The site zone is the environment's unless the flow had to ask (D-0120).
     zone = str(data.get(CONF_TIMEZONE) or hass.config.time_zone)
     tz = dt_util.get_time_zone(zone)
@@ -800,7 +801,7 @@ def build_loads(
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_LOAD:
             continue
-        data = subentry.data
+        data = entity_refs.live(hass, subentry.data)
         try:
             load = load_from_subentry(
                 subentry.subentry_id, subentry.title, data, electrical, grid=grid
@@ -831,7 +832,7 @@ def build_circuits(
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_CIRCUIT:
             continue
-        data = subentry.data
+        data = entity_refs.live(hass, subentry.data)
         members = frozenset(str(member) for member in data.get(CIRCUIT_MEMBERS) or ())
         missing = members - load_ids
         if missing:
@@ -1482,6 +1483,11 @@ class Runtime:
             self._track(
                 self.hass.bus.async_listen(
                     dr.EVENT_DEVICE_REGISTRY_UPDATED, self._on_device_registry_updated
+                )
+            )
+            self._track(
+                self.hass.bus.async_listen(
+                    er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_entity_registry_updated
                 )
             )
         self._log_step("platforms")
@@ -2182,6 +2188,28 @@ class Runtime:
         if title and title != subentry.title:
             self.hass.config_entries.async_update_subentry(self.entry, subentry, title=title)
 
+    @callback
+    def _on_entity_registry_updated(self, event: Event[er.EventEntityRegistryUpdatedData]) -> None:
+        """Reload the site when an entity it stores is renamed (#13, D-0726).
+
+        The config holds the entity's registry id, which a rename leaves alone,
+        but every subscription, read and write the site set up holds the old
+        entity id. A reload resolves them again (INV-26, INV-48 on the way).
+        """
+        data = event.data
+        if data["action"] != "update" or "old_entity_id" not in data:
+            return
+        entity = er.async_get(self.hass).async_get(data["entity_id"])
+        if entity is None or entity.id not in entity_refs.referenced(self.entry):
+            return
+        _LOGGER.info(
+            "%s: %s was renamed to %s, reloading",
+            self.entry.title,
+            data["old_entity_id"],
+            data["entity_id"],
+        )
+        self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+
     def _add_entities_for(
         self,
         load: Load,
@@ -2280,15 +2308,16 @@ class Runtime:
         are D4's cold-path retry loop, not yet wired for any load (WP2.6 adds no
         provisioning that startup itself does not already skip).
         """
+        data = entity_refs.live(self.hass, subentry.data)
         try:
             load = load_from_subentry(
                 subentry.subentry_id,
                 subentry.title,
-                subentry.data,
+                data,
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
             )
-            device = device_from_subentry(self.hass, subentry.data)
+            device = device_from_subentry(self.hass, data)
         except KeyError, ValueError:
             _LOGGER.exception(
                 "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
@@ -2381,15 +2410,16 @@ class Runtime:
         if load_id not in self.build.devices:
             await self._add_load(subentry)
             return
+        data = entity_refs.live(self.hass, subentry.data)
         try:
             load = load_from_subentry(
                 load_id,
                 subentry.title,
-                subentry.data,
+                data,
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
             )
-            device = device_from_subentry(self.hass, subentry.data)
+            device = device_from_subentry(self.hass, data)
         except KeyError, ValueError:
             _LOGGER.exception(
                 "load %s (%s) cannot be rebuilt and keeps its previous configuration",

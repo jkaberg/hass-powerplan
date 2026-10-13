@@ -24,7 +24,7 @@ from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.model import Confidence, Slot
 from custom_components.powerplan.core.pricing import modifiers, party
 from custom_components.powerplan.core.tariffs import NoPeak, household
-from custom_components.powerplan.storage import ENTRY_MINOR_PRICE, migrate_tariff
+from custom_components.powerplan.storage import ENTRY_MINOR_ENTITY_REFS, migrate_tariff
 from tests.builders.curves import OSLO, context, no3_shape
 from tests.builders.presets import fixture_raw
 from tests.runtime.conftest import site_data
@@ -71,7 +71,7 @@ async def test_06_an_entry_on_no_tensio_starts_on_a_copy_the_renewal_fetches(
     data["prices"]["modifiers"] = [VAT, _levy("0.0813")]
     entry = await _start(hass, "TENSIO", data)
 
-    assert entry.minor_version == ENTRY_MINOR_PRICE
+    assert entry.minor_version == ENTRY_MINOR_ENTITY_REFS
     tariff = entry.data["tariff"]
     price = household.from_json(tariff["price"])
     assert (price.grid.provenance.source, price.grid.operator_key) == ("fri_nettleie", "tensio-ts")

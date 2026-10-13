@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType, section
+from homeassistant.helpers import entity_registry as er
 
+from custom_components.powerplan import entity_refs
 from custom_components.powerplan.const import (
     CONF_ACTIVE,
     CONF_ELECTRICAL,
@@ -235,7 +237,13 @@ async def test_the_full_path_creates_a_site_in_observe(
     assert derived["plausible_w"][1] == pytest.approx(1.2 * derived["fuse_w"])
     assert data[CONF_ELECTRICAL]["per_phase_limit_a"] == 63.0
 
-    assert data[CONF_METER]["roles"]["import_register"] == "sensor.dataskap_strommaler_energy"
+    # Stored by registry id, which a rename leaves alone (#13, D-0726).
+    register = er.async_get(hass).async_get("sensor.dataskap_strommaler_energy")
+    assert register is not None
+    assert data[CONF_METER]["roles"]["import_register"] == register.id
+    assert entity_refs.live(hass, data)[CONF_METER]["roles"]["import_register"] == (
+        "sensor.dataskap_strommaler_energy"
+    )
 
     prices = data[CONF_PRICES]
     assert prices["sources"][0]["key"] == "nordpool_action"
@@ -331,7 +339,7 @@ async def test_the_fuse_only_path_has_no_prices_and_no_tariff(
     result = await _answer(hass, result, start_in_observe=True)
     await hass.async_block_till_done()
 
-    data = result["data"]
+    data = entity_refs.live(hass, result["data"])
     assert data[CONF_PATH] == OnboardingPath.FUSE_ONLY
     assert data[CONF_PRICES] is None
     assert data[CONF_TARIFF] is None

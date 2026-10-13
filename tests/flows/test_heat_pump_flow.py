@@ -19,6 +19,7 @@ import pytest
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.powerplan import entity_refs
 from custom_components.powerplan.const import LOAD_BINDINGS, SUBENTRY_LOAD
 from custom_components.powerplan.core.loads.kinds.base import Role
 from tests.flows.test_load_flow import _answer
@@ -87,7 +88,9 @@ async def test_the_outlet_sensor_answer_becomes_a_binding_the_match_step_never_s
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
 
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
-    bindings = {row["role"]: row["entity_id"] for row in sub.data[LOAD_BINDINGS]}
+    bindings = {
+        row["role"]: row["entity_id"] for row in entity_refs.live(hass, sub.data)[LOAD_BINDINGS]
+    }
     assert bindings["outdoor_temp"] == "sensor.heat_pump_outside_temperature"
     assert bindings["outlet_temp"] == STAND_IN_OUTLET_SENSOR
 
@@ -130,7 +133,11 @@ async def test_reconfigure_replaces_the_outlet_binding_never_duplicates_it(
     assert result["reason"] == "reconfigure_successful"
 
     sub = site.subentries[sub.subentry_id]
-    outlet_rows = [row for row in sub.data[LOAD_BINDINGS] if row["role"] == "outlet_temp"]
+    outlet_rows = [
+        row
+        for row in entity_refs.live(hass, sub.data)[LOAD_BINDINGS]
+        if row["role"] == "outlet_temp"
+    ]
     assert len(outlet_rows) == 1, outlet_rows
     assert outlet_rows[0]["entity_id"] == second_sensor
 
@@ -172,7 +179,9 @@ async def test_reconfigure_binds_a_power_meter_on_another_device(
     assert result["reason"] == "reconfigure_successful"
 
     sub = site.subentries[sub.subentry_id]
-    power_rows = [row for row in sub.data[LOAD_BINDINGS] if row["role"] == "power"]
+    power_rows = [
+        row for row in entity_refs.live(hass, sub.data)[LOAD_BINDINGS] if row["role"] == "power"
+    ]
     assert [row["entity_id"] for row in power_rows] == [PLUG_METER]
     result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
     assert result["data_schema"]({})["advanced"]["role_power"] == PLUG_METER

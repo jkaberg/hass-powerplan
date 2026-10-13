@@ -47,7 +47,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
-from custom_components.powerplan import doclinks
+from custom_components.powerplan import doclinks, entity_refs
 from custom_components.powerplan.const import (
     CONF_METER,
     CONF_TARIFF,
@@ -1496,7 +1496,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             data = self._materialise(user_input, params, manual)
             return self.async_create_entry(
                 title=str(user_input["name"]),
-                data=data,
+                data=entity_refs.stored(self.hass, data),
                 unique_id=self._unique_id(),
             )
         text = await Text.load(self.hass)
@@ -1509,7 +1509,12 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                     self.hass, self._device_id, text.word("load_type", str(self._type))
                 ),
                 produces=ROLE_PRODUCTION_POWER
-                in ((self._get_entry().data.get(CONF_METER) or {}).get("roles") or {}),
+                in (
+                    (entity_refs.live(self.hass, self._get_entry().data.get(CONF_METER)) or {}).get(
+                        "roles"
+                    )
+                    or {}
+                ),
             ).extend(grid_binding_fields(self._site_price(), text, str(self._type))),
             description_placeholders={
                 "explanation": explanation_text(
@@ -1567,7 +1572,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Ask the same questions, pre-filled from the subentry (D8 §5.2)."""
         subentry = self._get_reconfigure_subentry()
-        self._stored = dict(subentry.data)
+        self._stored = entity_refs.live(self.hass, subentry.data)
         self._type = str(self._stored[LOAD_TYPE])
         self._profile = self._stored.get(LOAD_PROFILE)
         self._device_id = self._stored.get(LOAD_DEVICE_ID)
@@ -1669,7 +1674,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 subentry,
                 unique_id=self._unique_id(),
                 title=title,
-                data=data,
+                data=entity_refs.stored(self.hass, data),
             )
         text = await Text.load(self.hass)
         owned = ENTITY_SETTINGS.get(type_key, frozenset())

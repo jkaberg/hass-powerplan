@@ -28,7 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
-from custom_components.powerplan import doclinks
+from custom_components.powerplan import doclinks, entity_refs
 from custom_components.powerplan.const import (
     CIRCUIT_FUSE_A,
     CIRCUIT_MEMBERS,
@@ -231,9 +231,11 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
                     self._get_entry(),
                     self._get_reconfigure_subentry(),
                     title=str(self._name),
-                    data=self._answers,
+                    data=entity_refs.stored(self.hass, self._answers),
                 )
-            return self.async_create_entry(title=str(self._name), data=self._answers)
+            return self.async_create_entry(
+                title=str(self._name), data=entity_refs.stored(self.hass, self._answers)
+            )
         return self.async_show_form(
             step_id="review",
             data_schema=vol.Schema({}),
@@ -248,4 +250,6 @@ class CircuitSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         if self._name is None:
             self._name = subentry.title
-        return await self._ask("reconfigure", user_input, dict(subentry.data))
+        return await self._ask(
+            "reconfigure", user_input, entity_refs.live(self.hass, subentry.data)
+        )

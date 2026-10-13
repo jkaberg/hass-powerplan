@@ -18,6 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from . import entity_refs
 from .const import (
     BRAND_ICON_URL,
     DOMAIN,
@@ -32,7 +33,7 @@ from .entity import async_prepare_site_device
 from .flow.load import answered_entities, binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
-from .storage import ENTRY_MINOR_PRICE, migrate_tariff
+from .storage import ENTRY_MINOR_ENTITY_REFS, ENTRY_MINOR_PRICE, migrate_tariff
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -85,6 +86,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
     add-on becomes the state stage - dropped where the country module says the
     same, kept (and raised as `tariff_review`) where it differs. Nothing is
     fetched: the files it reads ship with the release.
+
+    Minor version 3: every entity id the site and its subentries store becomes
+    its entity-registry id, which a rename leaves alone (#13, D-0726). An entity
+    the registry does not know stays an entity id.
     """
     if entry.version > 1:
         return False
@@ -98,6 +103,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
             entry.title,
             f"; kept for review: {', '.join(review)}" if review else "",
         )
+    if entry.minor_version < ENTRY_MINOR_ENTITY_REFS:
+        for subentry in entry.subentries.values():
+            hass.config_entries.async_update_subentry(
+                entry, subentry, data=entity_refs.stored(hass, subentry.data)
+            )
+        hass.config_entries.async_update_entry(
+            entry,
+            data=entity_refs.stored(hass, entry.data),
+            minor_version=ENTRY_MINOR_ENTITY_REFS,
+        )
+        _LOGGER.info("%s: entity ids stored as registry ids", entry.title)
     return True
 
 
@@ -140,7 +156,7 @@ def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> se
     for subentry in entry.subentries.values():
         if subentry.subentry_type != SUBENTRY_LOAD:
             continue
-        data = subentry.data
+        data = entity_refs.live(hass, subentry.data)
         rows = list(data.get(LOAD_BINDINGS) or ())
         bound = {binding_from_data(row).role for row in rows}
         missing = [
@@ -172,7 +188,9 @@ def _bind_answered_roles(hass: HomeAssistant, entry: PowerplanConfigEntry) -> se
         hass.config_entries.async_update_subentry(
             entry,
             subentry,
-            data={**data, LOAD_BINDINGS: [*rows, *(binding_to_data(b) for b in missing)]},
+            data=entity_refs.stored(
+                hass, {**data, LOAD_BINDINGS: [*rows, *(binding_to_data(b) for b in missing)]}
+            ),
         )
     return pending
 

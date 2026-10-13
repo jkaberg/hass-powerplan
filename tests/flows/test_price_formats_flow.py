@@ -31,6 +31,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.powerplan import entity_refs
 from custom_components.powerplan.const import CONF_PRICES
 from custom_components.powerplan.providers.prices import formats
 from custom_components.powerplan.runtime import _price_source
@@ -280,7 +281,7 @@ async def test_every_row_goes_through_the_flow_to_a_parsed_curve(
     result = await _through_the_sensor(hass, key, case, entity_id)
     await hass.async_block_till_done()
 
-    (row,) = result["data"][CONF_PRICES]["sources"]
+    (row,) = entity_refs.live(hass, result["data"])[CONF_PRICES]["sources"]
     assert row["options"]["format"] == key
     stored = row["options"].get("format_options") or {}
     if "config_entry" in {field.key for field in formats.entry(key).schema}:

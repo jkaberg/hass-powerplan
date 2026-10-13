@@ -377,6 +377,8 @@ class SiteStore:
 
 #: The config entry's minor version from which `tariff.price` holds the copy (D13 §3).
 ENTRY_MINOR_PRICE: Final = 2
+#: Config entry minor version 3: every stored entity id is its registry id (#13, D-0726).
+ENTRY_MINOR_ENTITY_REFS: Final = 3
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy

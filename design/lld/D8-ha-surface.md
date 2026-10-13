@@ -70,6 +70,9 @@ class OnboardingPath(StrEnum): FULL = "full"; PRICE_ONLY = "price_only"; FUSE_ON
 
 # Config entry data (site) - structural, from the flow
 # Money is a decimal STRING at any depth: orjson refuses a Decimal (D-0123).
+# An entity is stored by its entity-registry id at any depth - the UUID a rename leaves
+# alone - and read back as its entity id through `entity_refs.live`; one the registry does
+# not know stays an entity id. `entity_id` below is that reference (minor version 3, D-0726).
 SiteData = {
   "path": OnboardingPath, "name": str,
   "timezone": str, "timezone_source": "hass" | "user", "currency": str,   # derived (D-0120)

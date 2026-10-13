@@ -18,6 +18,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import __version__ as ha_version
 from homeassistant.loader import async_get_integration
 
+from . import entity_refs
 from .const import DOMAIN
 from .providers import tariffs as tariff_sources
 from .storage import Section
@@ -106,7 +107,7 @@ async def async_get_config_entry_diagnostics(
                 "title": entry.title,
                 "entry_id": entry.entry_id,
                 "version": entry.version,
-                "data": dict(entry.data),
+                "data": entity_refs.live(hass, entry.data),
                 "options": dict(entry.options),
             },
             TO_REDACT,
@@ -117,7 +118,7 @@ async def async_get_config_entry_diagnostics(
                     "subentry_id": subentry.subentry_id,
                     "type": subentry.subentry_type,
                     "title": subentry.title,
-                    "data": dict(subentry.data),
+                    "data": entity_refs.live(hass, subentry.data),
                 },
                 TO_REDACT,
             )

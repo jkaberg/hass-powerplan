@@ -32,7 +32,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 
-from . import doclinks
+from . import doclinks, entity_refs
 from .const import (
     CONF_ACTIVE,
     CONF_CURRENCY,
@@ -121,7 +121,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the config flow for one site (D8 §5.1)."""
 
     VERSION = 1
-    MINOR_VERSION = 2
+    MINOR_VERSION = 3
     #: The flow's downloads, in memory, shared by its steps; released once the
     #: copy is taken or the flow ends (D13 §5.2 rules 2, 6).
     _http_cache: tariff_sources.Http | None = None
@@ -409,7 +409,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         del user_input
         self._reconfiguring = True
-        await self._restore_from_entry(self._get_reconfigure_entry().data)
+        await self._restore_from_entry(
+            entity_refs.live(self.hass, self._get_reconfigure_entry().data)
+        )
         return await self.async_step_name()
 
     # -------------------------------------------------------------------- user
@@ -1669,7 +1671,9 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             # exactly this - `entry.data` changed (`Runtime.
             # async_handle_subentry_update`, D7 §2) - and HA now warns that
             # having both is deprecated (2026.12.0).
-            self.hass.config_entries.async_update_entry(entry, title=self._name, data=data)
+            self.hass.config_entries.async_update_entry(
+                entry, title=self._name, data=entity_refs.stored(self.hass, data)
+            )
             return self.async_abort(reason="reconfigure_successful")
 
         unique_id = self._unique_id()
@@ -1684,7 +1688,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             self._timezone_source,
             not data[CONF_ACTIVE],
         )
-        return self.async_create_entry(title=self._name, data=data)
+        return self.async_create_entry(title=self._name, data=entity_refs.stored(self.hass, data))
 
     async def _tariff_line(self) -> str | None:
         """Return the review's grid tariff: the company and the target, in words (HUB-14)."""
