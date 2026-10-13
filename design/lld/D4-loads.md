@@ -853,7 +853,7 @@ These labels replace today's type vocabulary, where `appliance_cycle` is "Appara
 
 Common to every load: pick the HA device → suggested type + bindings (§5.9) → the type's questions → review. Common derived: `priority` (type default, room adjusted), `carrier` (electricity unless the profile says gas/district heat), `phases` (profile or question), `group` (type default: floor loops → `floor_heating`, radiators → `radiators`).
 
-**Measured at setup (D-0731).** Once the bindings are chosen and before the type's questions are asked, the flow reads the bound entities' recorder history in an executor job: the last 10 days of states and the long-term statistics beyond, through D10's shared recorder helper (D10 §5.6). It runs D10's own fits on it and hands the results to the questionnaire as `QCtx.measured: Mapping[FitKey, Measured(value, n, days, quality_ok)]`. A default the house can answer is the house's answer:
+**Measured at setup (D-0731).** Once the questions are answered and before the review, the flow reads the bound entities' recorder history in an executor job: the last 10 days of states and the long-term statistics beyond, through D10's shared recorder helper (D10 §5.6). It runs D10's own fits on it, the nameplate bounded by the rating the answers gave and the level read from the sensor they chose, and derives again with the gated results in `QCtx.measured: Mapping[str, Measured(value, n, days)]`. A default the house can answer is the house's answer, and an answer the household typed beats both:
 
 | default | measured from | used when | else |
 |---|---|---|---|

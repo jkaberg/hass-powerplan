@@ -24,6 +24,8 @@ PowerPlan shows which entity it will control and which it only reads. Check them
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the floor's temperature and power are already in Home Assistant's history, PowerPlan measures how fast the floor cools when it is off and how much it draws. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
+
 <!-- generated:begin questions:floor_heating · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|
@@ -37,6 +39,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Never above | The highest temperature when storing heat in cheap hours; blank uses the room's usual. |
 | Advanced › Screed depth | Advanced: millimeters of screed over the cable. |
 | Advanced › Heat loss | Advanced: watts lost per kelvin to the outside. |
+| Advanced › Coast time | Advanced: hours for the floor's heat to fall by two thirds when off. |
 | Advanced › Thermostat swing | Advanced: the thermostat's own hysteresis. |
 | Advanced › Minimum on | Advanced: seconds a switch stays on at least. |
 | Advanced › Minimum off | Advanced: seconds a switch stays off at least. |

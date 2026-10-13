@@ -24,6 +24,8 @@ PowerPlan shows which entity it will control and which it only reads. Check them
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**.
+
 <!-- generated:begin questions:heat_pump · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

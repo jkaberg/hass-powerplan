@@ -19,9 +19,11 @@ labels as its vocabulary, so the flow never shows an internal key (§5.4).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import replace
 from datetime import time
 from typing import TYPE_CHECKING, Any, Final
 
@@ -46,6 +48,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
     TextSelector,
 )
+from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan import doclinks, entity_refs
 from custom_components.powerplan.const import (
@@ -72,6 +75,7 @@ from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.core.loads.questionnaire import (
     AnswerError,
     Answers,
+    Measured,
     QCtx,
     Question,
     QuestionKind,
@@ -92,6 +96,7 @@ from custom_components.powerplan.flow.questionnaire import (
     time_selector,
 )
 from custom_components.powerplan.flow.text import Text, device_name, entity_name
+from custom_components.powerplan.providers.forecasts.recorder_fits import async_measure
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.providers.profiles.base import (
     DeviceView,
@@ -108,6 +113,9 @@ if TYPE_CHECKING:
     from custom_components.powerplan.core.loads.types.base import DeviceType
 
 _LOGGER = logging.getLogger(__name__)
+
+#: How long the flow waits for the recorder before it settles for the tables (D-0731).
+MEASURE_TIMEOUT_S: Final = 30.0
 
 __all__ = ["LoadSubentryFlow", "binding_from_data", "binding_to_data", "load_title"]
 
@@ -684,7 +692,13 @@ def _value(text: Text, type_key: str, key: str, value: Any) -> str:  # noqa: PLR
     return str(value)
 
 
-def explanation_text(text: Text, derived: Derived, answers: Answers, type_key: str) -> str:
+def explanation_text(
+    text: Text,
+    derived: Derived,
+    answers: Answers,
+    type_key: str,
+    measured: Mapping[str, Measured] | None = None,
+) -> str:
     """Render `explain()` as one paragraph in the user's language (INV-67; review NEW-3).
 
     The type by its name, then every value the derivation thought worth a
@@ -699,7 +713,32 @@ def explanation_text(text: Text, derived: Derived, answers: Answers, type_key: s
     ]
     sentence = f"{text.word('load_type', type_key)} – " + "; ".join(parts) + "."
     shadow = _shadow_sentence(text, type_key, derived.params)
-    return f"{sentence} {shadow}" if shadow else sentence
+    history = _measured_sentence(text, type_key, derived.params, measured or {})
+    return " ".join(part for part in (sentence, shadow, history) if part)
+
+
+def _measured_sentence(
+    text: Text, type_key: str, params: Mapping[str, Any], measured: Mapping[str, Measured]
+) -> str | None:
+    """Say which numbers came from the appliance's own history, and from how many days (D-0731).
+
+    Only a measured value the derivation kept is named: an answer the household
+    typed beats the measurement, and the sentence must not claim otherwise.
+    """
+    used = {
+        key: found
+        for key, found in measured.items()
+        if key in params and params[key] is not None and abs(float(params[key]) - found.value) < 1.0
+    }
+    if used:
+        values = "; ".join(
+            f"{param_label(text, key)} {_value(text, type_key, key, params[key])}" for key in used
+        )
+        days = max(found.days for found in used.values())
+        return text.word("load_text", "measured", days=f"{days:.0f}", values=values) or None
+    if "coast_tau_h" in params:
+        return text.word("load_text", "measured_none") or None
+    return None
 
 
 def _shadow_sentence(text: Text, type_key: str, params: Mapping[str, Any]) -> str | None:
@@ -1337,6 +1376,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         # nothing to keep it safe (`unsafe_switch`, INV-64) - and that refusal is
         # an answer's error too (review NEW-2).
         self._derived = device_type.derive(self._answers, self._ctx)
+        # What the house's recorder already knows beats the type's tables (D-0731):
+        # measured against the answers' own rating and sensor, then derived again.
+        self._ctx = replace(self._ctx, measured=await self._measure(self._derived.params))
+        if self._ctx.measured:
+            self._derived = device_type.derive(self._answers, self._ctx)
         # Only a role this answer actually names is replaced - an unanswered
         # `outdoor_entity` leaves the match step's own auto-detected
         # outdoor_temp binding standing (D4 §5.14).
@@ -1349,6 +1393,25 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         if self.source == "reconfigure":
             return await self.async_step_reconfigure_review()
         return await self.async_step_review()
+
+    async def _measure(self, params: Mapping[str, Any]) -> Mapping[str, Measured]:
+        """Return what the recorder says about the bound entities, or nothing (D-0731).
+
+        History is a better default, never a requirement: a slow or failing
+        recorder leaves the type's tables standing.
+        """
+        try:
+            async with asyncio.timeout(MEASURE_TIMEOUT_S):
+                return await async_measure(
+                    self.hass,
+                    type_key=str(self._type),
+                    bindings=self._bindings,
+                    params=params,
+                    now=dt_util.utcnow(),
+                )
+        except Exception:
+            _LOGGER.debug("no history measured for %s", self._type, exc_info=True)
+            return {}
 
     def _entity_settings(self) -> frozenset[str]:
         """Return what an entity owns for this appliance: empty while adding it."""
@@ -1518,7 +1581,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             ).extend(grid_binding_fields(self._site_price(), text, str(self._type))),
             description_placeholders={
                 "explanation": explanation_text(
-                    text, self._derived, self._answers, str(self._type)
+                    text,
+                    self._derived,
+                    self._answers,
+                    str(self._type),
+                    self._ctx.measured if self._ctx is not None else None,
                 ),
                 "strategy": text.word("strategy", self._derived.strategy) or self._derived.strategy,
             },
@@ -1695,7 +1762,13 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             step_id="reconfigure_review",
             data_schema=schema,
             description_placeholders={
-                "explanation": explanation_text(text, fresh, self._answers, type_key),
+                "explanation": explanation_text(
+                    text,
+                    fresh,
+                    self._answers,
+                    type_key,
+                    self._ctx.measured if self._ctx is not None else None,
+                ),
                 "diff": "\n".join(f"- {line}" for line in diff_lines) or text.word("text", "none"),
                 "manual": text.join(param_label(text, key) for key in previous_manual)
                 or text.word("text", "none"),

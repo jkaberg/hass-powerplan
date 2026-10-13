@@ -38,6 +38,8 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.json import load_json
 
 from .const import DOMAIN
+from .core.loads.stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3
+from .core.loads.types.floor_heating import COAST_TAU_DEFAULT_H
 from .core.tariffs import countries
 from .core.tariffs.household import (
     ALL_LEVIES,
@@ -379,6 +381,10 @@ class SiteStore:
 ENTRY_MINOR_PRICE: Final = 2
 #: Config entry minor version 3: every stored entity id is its registry id (#13, D-0726).
 ENTRY_MINOR_ENTITY_REFS: Final = 3
+#: Config entry minor version 4: every heating load carries its coast time constant (D-0730).
+ENTRY_MINOR_COAST_TAU: Final = 4
+#: The minor version a new entry is created at, and every migration ends on.
+ENTRY_MINOR: Final = ENTRY_MINOR_COAST_TAU
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
@@ -538,3 +544,38 @@ def migrate_tariff(data: Mapping[str, Any], today: date) -> tuple[dict[str, Any]
     }
     migrated["prices"] = {**prices, "modifiers": kept}
     return migrated, review
+
+
+# --------------------------------------------------------------------------- #
+# The coast time constant (D-0730) - config entry minor version 4
+# --------------------------------------------------------------------------- #
+
+
+def migrate_coast_tau(data: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a heating load's subentry data with `coast_tau_h`, or `None` to leave it (D-0730).
+
+    The default its type derives today, written in once, so nothing derives it
+    again behind the household's back (INV-66): a floor by its store kind, a heat
+    pump's room by its mass over its loss, a panel heater nothing until the
+    house shows one. The daily fit then replaces it where it passes its gate
+    (INV-63).
+    """
+    params = dict(data.get("params") or {})
+    if "coast_tau_h" in params:
+        return None
+    type_key = data.get("type")
+    if type_key == "floor_heating":
+        params["coast_tau_h"] = COAST_TAU_DEFAULT_H.get(str(params.get("store", "slab")), 60.0)
+    elif type_key == "heat_pump":
+        loss = params.get("heat_loss_w_per_k")
+        volume = params.get("volume_m3")
+        params["coast_tau_h"] = (
+            None
+            if not loss or not volume
+            else round(ROOM_MASS_KWH_PER_K_PER_M3 * float(volume) * 1000.0 / float(loss), 1)
+        )
+    elif type_key == "radiator":
+        params["coast_tau_h"] = None
+    else:
+        return None
+    return {**data, "params": params}

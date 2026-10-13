@@ -1615,8 +1615,8 @@ class Runtime:
 
     # ------------------------------------------------ the daily fits #
 
-    def _fit_spec(self, load: Load) -> tuple[FitSpec, str, FitKey] | None:
-        """Return what `load`'s history is read from and the parameter its fit sets, or `None`.
+    def _fit_spec(self, load: Load) -> tuple[FitSpec, tuple[tuple[str, FitKey], ...]] | None:
+        """Return what `load`'s history is read from and the parameters its fits set, or `None`.
 
         The store says which fit applies (D10 §5.6): a slab's or a room's loss
         coefficient, a tank's standby loss. The level is the role the type reads
@@ -1671,8 +1671,15 @@ class Runtime:
         if outdoor is None and self._weather_entity_id:
             outdoor = HistorySeries(self._weather_entity_id, "temperature")
         power = device.entity_of(Role.POWER)
-        fits = (key,) if key is FitKey.STANDBY_LOSS else (key, FitKey.HEATUP_RATE)
+        # A slab or a room also learns how fast it coasts (D-0730).
+        coasts = key is FitKey.LOSS_COEFF
+        fits = (
+            (key,)
+            if key is FitKey.STANDBY_LOSS
+            else (key, FitKey.HEATUP_RATE, *((FitKey.COAST_TAU,) if coasts else ()))
+        )
         configured = params.get(param)
+        tau = params.get("coast_tau_h")
         spec = FitSpec(
             load_id=load.load_id,
             type_key=load.config.type_key,
@@ -1686,17 +1693,18 @@ class Runtime:
             configured={
                 key: None if configured is None else float(configured),
                 FitKey.NAMEPLATE: load.config.nameplate_w,
+                FitKey.COAST_TAU: None if tau is None else float(tau),
             },
             power=power,
             level=series(level_role),
             indoor=series(Role.TEMP) if level_role is Role.TEMP_FLOOR else None,
             outdoor=outdoor,
         )
-        return spec, param, key
+        return spec, ((param, key), *((("coast_tau_h", FitKey.COAST_TAU),) if coasts else ()))
 
     def _ev_fit_spec(
         self, load: Load, store: EnergyStore, device: LoadDevice
-    ) -> tuple[FitSpec, str, FitKey] | None:
+    ) -> tuple[FitSpec, tuple[tuple[str, FitKey], ...]] | None:
         """Return an EV's charge-efficiency spec: its power, its SoC, its register (D-0502).
 
         Nothing to fit without both a power trace and the car's SoC.
@@ -1721,7 +1729,7 @@ class Runtime:
             capacity_kwh=store.capacity_kwh,
             energy=device.entity_of(Role.ENERGY),
         )
-        return spec, "charge_eff", FitKey.CHARGE_EFFICIENCY
+        return spec, (("charge_eff", FitKey.CHARGE_EFFICIENCY),)
 
     async def _refresh_fits(self, now: datetime) -> None:
         """Run D10's fits and fold each thermal load's holding draw, once a day (D-0500, D-0501).
@@ -1737,7 +1745,7 @@ class Runtime:
         start = now - timedelta(days=FIT_SPAN_DAYS)
         specs = [found for load in self.build.loads if (found := self._fit_spec(load)) is not None]
         histories = []
-        for spec, _param, _key in specs:
+        for spec, _applied in specs:
             try:
                 histories.append(await async_load_history(self.hass, spec, start, now))
             except Exception:
@@ -1754,7 +1762,7 @@ class Runtime:
             if history.type_key != "water_heater"
             and (profile := HourOfDayMean.from_power(history.power_rows, tz, now)) is not None
         }
-        self._apply_fits({spec.load_id: (param, key) for spec, param, key in specs})
+        self._apply_fits({spec.load_id: applied for spec, applied in specs})
         self.state = replace(
             self.state,
             forecasts={
@@ -1772,15 +1780,16 @@ class Runtime:
         )
         await self.run_plan("fits")
 
-    def _apply_fits(self, params: Mapping[str, tuple[str, FitKey]]) -> None:
-        """Put each load's effective fitted parameter on it; take ours back where none is (INV-63)."""
-        for load_id, (param, key) in params.items():
-            fit = self.fits.get(f"{load_id}.{key}")
+    def _apply_fits(self, params: Mapping[str, tuple[tuple[str, FitKey], ...]]) -> None:
+        """Put each load's effective fitted parameters on it; take ours back where none is (INV-63)."""
+        for load_id, applied in params.items():
             overrides = self.load_params.setdefault(load_id, {})
-            if fit is not None and fit.quality.ok and fit.effective is not None:
-                overrides[param] = fit.effective
-            else:
-                overrides.pop(param, None)
+            for param, key in applied:
+                fit = self.fits.get(f"{load_id}.{key}")
+                if fit is not None and fit.quality.ok and fit.effective is not None:
+                    overrides[param] = fit.effective
+                else:
+                    overrides.pop(param, None)
 
     def _restore_fits(self) -> None:
         """Take the last fits and holding draws back from the store (D10 §7), and apply them."""
@@ -1792,11 +1801,11 @@ class Runtime:
             load_id: HourOfDayMean(watts=tuple(watts), tz=tz)
             for load_id, watts in (section.get(HOLD_STATE_KEY) or {}).items()
         }
-        params: dict[str, tuple[str, FitKey]] = {}
+        params: dict[str, tuple[tuple[str, FitKey], ...]] = {}
         for load in self.build.loads:
             found = self._fit_spec(load)
             if found is not None:
-                params[found[0].load_id] = (found[1], found[2])
+                params[found[0].load_id] = found[1]
         self._apply_fits(params)
 
     @callback

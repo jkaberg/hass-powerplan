@@ -979,6 +979,7 @@ LOAD_SENSORS: tuple[LoadSensorRow, ...] = (
 _LEARNED: tuple[tuple[FitKey, str, tuple[type, ...]], ...] = (
     (FitKey.LOSS_COEFF, "W/K", (SlabStore, RoomStore)),
     (FitKey.HEATUP_RATE, "K/h", (SlabStore, RoomStore)),
+    (FitKey.COAST_TAU, "h", (SlabStore, RoomStore)),
     (FitKey.STANDBY_LOSS, "W", (TankStore,)),
     (FitKey.NAMEPLATE, "W", (SlabStore, RoomStore, TankStore)),
     (FitKey.CHARGE_EFFICIENCY, "", (EnergyStore,)),
@@ -1006,6 +1007,7 @@ def _learned_row(key: FitKey, unit: str, stores: tuple[type, ...]) -> LoadSensor
             "reason": found.quality.reason,
             "n": found.quality.n,
             "r2": None if found.quality.r2 is None else round(found.quality.r2, 3),
+            "spread": None if found.quality.spread is None else round(found.quality.spread, 3),
             "span_days": round(found.quality.span_days, 1),
             "bounds": list(found.bounds),
             "fitted_at": found.fitted_at.isoformat(),

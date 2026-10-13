@@ -50,7 +50,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 1
+DERIVATION_VERSION: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,7 +253,13 @@ class Radiator:
         defaults = ROOM_DEFAULTS[room]
         control = answers.choice("control")
         area_m2 = _or(answers.get("area_m2"), heater.area_m2)
-        nameplate_w = _or(answers.get("power_w"), heater.watts)
+        # What the house measured beats the type's table, and an answer beats both (D-0731).
+        measured_w = ctx.measured.get("nameplate_w")
+        nameplate_w = _or(
+            answers.get("power_w"),
+            round(measured_w.value) if measured_w is not None else heater.watts,
+        )
+        measured_tau = ctx.measured.get("coast_tau_h")
         comfort_c = _or(answers.get("comfort_c"), defaults.comfort_c)
         floor_c = _or(answers.get("min_c"), defaults.floor_c)
 
@@ -275,6 +281,8 @@ class Radiator:
             # A panel heater's room has no fitted loss coefficient until D10
             # fits one; the loss term is skipped rather than invented (§5.7).
             "heat_loss_w_per_k": None,
+            # Nor a coast time constant until the house shows one (D-0730).
+            "coast_tau_h": None if measured_tau is None else round(measured_tau.value, 1),
             "min_on_s": answers.number("min_on_s"),
             "min_off_s": answers.number("min_off_s"),
             "command_interval_s": answers.number("command_interval_s"),
@@ -363,11 +371,13 @@ class Radiator:
         """Return the room this heater is in (§5.7)."""
         params = cfg.params
         loss = params.get("heat_loss_w_per_k")
+        tau = params.get("coast_tau_h")
         return RoomStore.from_volume(
             volume_m3=float(params.get("volume_m3", 30.0)),
             max_c=float(params.get("max_c", 24.0)),
             min_c=float(params.get("floor_c", 17.0)),
             heat_loss_w_per_k=None if loss is None else float(loss),
+            coast_tau_h=None if tau is None else float(tau),
         )
 
     # -------------------------------------------------------------------- tick #

@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from ..stores.base import StoreModel
 
 __all__ = [
+    "COAST_TAU_DEFAULT_H",
     "COVERING_MAX_C",
     "DERIVATION_VERSION",
     "HEATING_TYPES",
@@ -57,7 +58,7 @@ __all__ = [
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
 #: it was derived with, and nothing recomputes behind the user's back (INV-66).
-DERIVATION_VERSION: Final = 1
+DERIVATION_VERSION: Final = 2
 
 #: How far ahead a loop looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -113,6 +114,13 @@ HEATING_TYPES: Mapping[str, HeatingType] = {
     "water_borne": HeatingType("hydronic", "heat_capacitor", None, 40.0),
     "dont_know": HeatingType("slab", "heat_capacitor", 80.0, 40.0),
 }
+
+#: Hours for a store's excess over outdoor to fall by 1/e, by store kind, where the
+#: house has not measured it (D4 §6.1, `design/DECISIONS.md` D-0730). A slab: the
+#: reference house's three loops that coasted in October 2026 measured 57, 59 and
+#: 117 h. A foil under the covering heats the room's air and little else: 10 h is
+#: an estimate no house has checked yet.
+COAST_TAU_DEFAULT_H: Mapping[str, float] = {"slab": 60.0, "hydronic": 60.0, "room": 10.0}
 
 #: The HA area name, lowercased, matched against the room options.
 _AREA_TOKENS: Mapping[str, str] = {
@@ -230,6 +238,16 @@ QUESTIONNAIRE = Questionnaire(
             help_key="floor_heating_loss",
         ),
         Question(
+            key="coast_tau_h",
+            kind=QuestionKind.NUMBER,
+            derived_default=True,
+            unit="h",
+            min=1.0,
+            max=1000.0,
+            advanced=True,
+            help_key="floor_heating_coast_tau",
+        ),
+        Question(
             key="swing_k",
             kind=QuestionKind.NUMBER,
             derived_default=True,
@@ -321,7 +339,23 @@ class FloorHeating:
         screed_mm = _or(answers.get("screed_depth_mm"), heating.screed_mm)
         swing_k = _or(answers.get("swing_k"), 1.0 if room == "bathroom" else 1.5)
         hydronic = heating.store == "hydronic"
-        nameplate_w = 0.0 if heating.w_per_m2 is None else heating.w_per_m2 * area_m2
+        # What the house measured beats the table (D-0731); a water-borne loop has
+        # no power of its own to measure.
+        measured_w = ctx.measured.get("nameplate_w")
+        nameplate_w = (
+            0.0
+            if heating.w_per_m2 is None
+            else round(measured_w.value)
+            if measured_w is not None
+            else heating.w_per_m2 * area_m2
+        )
+        measured_tau = ctx.measured.get("coast_tau_h")
+        coast_tau_h = _or(
+            answers.get("coast_tau_h"),
+            round(measured_tau.value, 1)
+            if measured_tau is not None
+            else COAST_TAU_DEFAULT_H[heating.store],
+        )
         kind = "mode" if "mode_select" in ctx.capabilities else "setpoint"
 
         params: dict[str, Any] = {
@@ -350,6 +384,7 @@ class FloorHeating:
                 4,
             ),
             "loss_coeff_w_per_k": answers.get("loss_coeff_w_per_k"),
+            "coast_tau_h": coast_tau_h,
             "swing_k": swing_k,
             "min_on_s": answers.number("min_on_s"),
             "min_off_s": answers.number("min_off_s"),
@@ -438,12 +473,14 @@ class FloorHeating:
         floor_c = float(params.get("floor_c", 19.0))
         area_m2 = float(params.get("area_m2", 10.0))
         loss = params.get("loss_coeff_w_per_k")
+        tau = params.get("coast_tau_h")
         if kind == "room":
             return RoomStore.from_volume(
                 volume_m3=area_m2 * 2.5,
                 max_c=max_c,
                 min_c=floor_c,
                 heat_loss_w_per_k=None if loss is None else float(loss),
+                coast_tau_h=None if tau is None else float(tau),
             )
         return SlabStore(
             area_m2=area_m2,
@@ -451,6 +488,7 @@ class FloorHeating:
             loss_coeff_w_per_k=None if loss is None else float(loss),
             max_c=max_c,
             min_c=floor_c,
+            coast_tau_h=None if tau is None else float(tau),
         )
 
     # -------------------------------------------------------------------- tick #

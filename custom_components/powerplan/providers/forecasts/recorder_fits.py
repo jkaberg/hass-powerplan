@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Final
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.recorder import history as recorder_history
 from homeassistant.helpers.recorder import get_instance
@@ -24,16 +25,25 @@ from custom_components.powerplan.core.forecasts.fit import (
     EvSession,
     FitKey,
     LoadHistory,
+    fit_all,
     sessions_from,
 )
-from custom_components.powerplan.providers.meters.recorder import async_register_rows
+from custom_components.powerplan.core.loads import Measured, Role
+from custom_components.powerplan.providers.meters.recorder import (
+    async_register_rows,
+    recorder_loaded,
+)
 
+from .base import detect_weather_entity
 from .recorder_baseline import async_load_power_w
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     from homeassistant.core import HomeAssistant
+
+    from custom_components.powerplan.providers.profiles.base import RoleBinding
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -138,3 +148,60 @@ async def async_load_history(
         outdoor_rows=await read(spec.outdoor),
         sessions=sessions,
     )
+
+
+#: The fits the load flow asks the house for (D4 §6, D-0731).
+SETUP_FITS: Final = (FitKey.COAST_TAU, FitKey.HEATUP_RATE, FitKey.NAMEPLATE)
+
+
+async def async_measure(
+    hass: HomeAssistant,
+    *,
+    type_key: str,
+    bindings: Sequence[RoleBinding],
+    params: Mapping[str, Any],
+    now: datetime,
+) -> dict[str, Measured]:
+    """Return what the bound entities' history says about the load, gated fits only (D-0731).
+
+    The load flow's call: the same `LoadHistory` and the same `fit_all` the
+    daily run uses (D10 §5.6), over the bindings just chosen. The level is the
+    floor probe where the sensor answer reads the floor, the outdoor series a
+    bound outdoor sensor or the site's weather entity. Nothing measured is an
+    empty answer, never an error: the type's tables stand.
+    """
+    if not recorder_loaded(hass):
+        return {}
+    bound = {binding.role: binding for binding in bindings}
+
+    def series(role: Role) -> HistorySeries | None:
+        binding = bound.get(role)
+        return None if binding is None else HistorySeries(binding.entity_id, binding.attribute)
+
+    floor = Role.TEMP_FLOOR in bound and str(params.get("sensor", "floor")) != "air"
+    outdoor = series(Role.OUTDOOR_TEMP)
+    if outdoor is None and (weather := detect_weather_entity(hass)) is not None:
+        outdoor = HistorySeries(weather, "temperature")
+    power = bound[Role.POWER].entity_id if Role.POWER in bound else None
+    nameplate = float(params.get("nameplate_w") or 0.0)
+    spec = FitSpec(
+        load_id="setup",
+        type_key=type_key,
+        fits=SETUP_FITS if power is not None else SETUP_FITS[:2],
+        nameplate_w=nameplate,
+        capacity_kwh_per_k=None,
+        area_m2=None,
+        configured={FitKey.NAMEPLATE: nameplate or None},
+        power=power,
+        level=series(Role.TEMP_FLOOR if floor else Role.TEMP),
+        indoor=series(Role.TEMP) if floor else None,
+        outdoor=outdoor,
+    )
+    if spec.level is None and power is None:
+        return {}
+    history = await async_load_history(hass, spec, now - timedelta(days=FIT_SPAN_DAYS), now)
+    return {
+        str(fit.key): Measured(value=fit.value, n=fit.quality.n, days=fit.quality.span_days)
+        for fit in fit_all([history], now).values()
+        if fit.quality.ok
+    }

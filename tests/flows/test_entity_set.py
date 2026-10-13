@@ -103,6 +103,7 @@ COMMON = {
 LEARNED_THERMAL = {
     "learned_loss_coeff_w_per_k": (DIAGNOSTIC, False),
     "learned_heatup_k_per_h": (DIAGNOSTIC, False),
+    "learned_coast_tau_h": (DIAGNOSTIC, False),
 }
 LEARNED_NAMEPLATE = {"learned_nameplate_w": (DIAGNOSTIC, False)}
 EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {

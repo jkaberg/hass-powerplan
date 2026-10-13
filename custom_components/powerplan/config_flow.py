@@ -98,7 +98,7 @@ from .providers.prices.nordpool_action import NordpoolActionSource
 from .providers.tariffs import directory
 from .providers.tariffs import ladder as tariff_ladder
 from .runtime import step_index
-from .storage import NO_PEAK_COPY, migrate_tariff
+from .storage import ENTRY_MINOR, NO_PEAK_COPY, migrate_tariff
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Mapping
@@ -121,7 +121,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the config flow for one site (D8 §5.1)."""
 
     VERSION = 1
-    MINOR_VERSION = 3
+    MINOR_VERSION = ENTRY_MINOR
     #: The flow's downloads, in memory, shared by its steps; released once the
     #: copy is taken or the flow ends (D13 §5.2 rules 2, 6).
     _http_cache: tariff_sources.Http | None = None

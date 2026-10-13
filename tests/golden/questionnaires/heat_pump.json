@@ -79,7 +79,8 @@
       "substitutable": true,
       "u_envelope_w_per_m2k": 0.7,
       "vacation_c": 18.0,
-      "volume_m3": 150.0
+      "volume_m3": 150.0,
+      "coast_tau_h": 107.1
     },
     "strategy": "heat_capacitor",
     "strategy_params": {
@@ -109,6 +110,6 @@
       "cop_at_minus_seven": 2.44,
       "preheat": false
     },
-    "derivation_version": 1
+    "derivation_version": 2
   }
 }

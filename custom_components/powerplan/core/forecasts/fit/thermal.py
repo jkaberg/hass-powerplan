@@ -15,12 +15,19 @@ the house's loss comes out of the screed, and for a well-insulated slab that sha
 lands under D10 §5.6's per-m² floor and is therefore **not applied** (INV-63;
 `design/DECISIONS.md` D-0216 has the arithmetic).
 
+**Coast time constant.** The same coasts read the other way round: how many
+hours the store's own excess over outdoor takes to fall by `1/e`, `τ = (T̄ −
+T̄_out) / fall`, one value per episode and the median over them. It never turns
+the fall into watts, so the two-node mismatch above never enters, and it is
+gated on its spread rather than on R² - R² against outdoor needs the weather to
+move, which a mild fortnight doesn't (`design/DECISIONS.md` D-0730).
+
 **Heat-up.** With the load on and the level rising, the median slope in K/h. The
 median and not a mean: one episode that ran into the covering's maximum, or into a
 defrost, is an outlier and not a slower heater.
 """
 
-from statistics import median
+from statistics import fmean, median
 from typing import TYPE_CHECKING
 
 from .base import Episode, Fit, FitKey, Gate, LoadHistory, episodes, resolve, span_days
@@ -33,7 +40,10 @@ __all__ = [
     "COAST_GATE",
     "HEATUP_BOUNDS_K_PER_H",
     "HEATUP_GATE",
+    "TAU_BOUNDS_H",
+    "TAU_GATE",
     "coast_rate",
+    "coast_tau",
     "heatup_rate",
 ]
 
@@ -44,6 +54,11 @@ MIN_COAST_HOURS = 2.0
 #: D10 §5.6: [0.5, 50] W/K per m² of the store's area. A load with no area is
 #: bounded per unit - the same numbers with area 1 (D-0215).
 COAST_BOUNDS_W_PER_K_M2 = (0.5, 50.0)
+
+#: D10 §5.6 (D-0730): 10 coasts over a week, the middle half within 1.0 × the
+#: median - the reference house's loops measured 0.48–0.81 in October 2026.
+TAU_GATE = Gate(min_n=10, min_span_days=7.0, max_spread=1.0)
+TAU_BOUNDS_H = (5.0, 1000.0)
 
 #: D10 §5.6: 5 episodes and [0.1, 10] K/h. Half an hour is the shortest run a
 #: slope means anything over (D-0215).
@@ -90,6 +105,37 @@ def coast_rate(history: LoadHistory, now: datetime) -> Fit | None:
     )
 
 
+def coast_tau(history: LoadHistory, now: datetime) -> Fit | None:
+    """Fit the store's coast time constant against outdoor, hours (D-0730).
+
+    The drive is the level itself against outdoor, not the indoor series: `τ`
+    describes how the store's own temperature falls, which is what a coast is
+    planned on (D5 §5.7).
+    """
+    coasts = [
+        (episode, drive)
+        for episode in episodes(history, on=False, min_hours=MIN_COAST_HOURS)
+        if (drive := _own_drive(episode)) is not None and episode.slope_k_per_h < 0.0
+    ]
+    if not coasts:
+        return None
+    taus = sorted(drive / -episode.slope_k_per_h for episode, drive in coasts)
+    value = median(taus)
+    spread = (_quantile(taus, 0.75) - _quantile(taus, 0.25)) / value
+    return resolve(
+        FitKey.COAST_TAU,
+        history.load_id,
+        value=value,
+        unit="h",
+        bounds=TAU_BOUNDS_H,
+        quality=TAU_GATE.check(
+            n=len(taus), span_days=span_days([episode for episode, _ in coasts]), spread=spread
+        ),
+        configured=history.configured_value(FitKey.COAST_TAU),
+        fitted_at=now,
+    )
+
+
 def heatup_rate(history: LoadHistory, now: datetime) -> Fit | None:
     """Fit how fast the load raises its level, K/h, or `None` with no episodes."""
     rising = [
@@ -123,6 +169,22 @@ def _coasts(history: LoadHistory) -> list[tuple[Episode, float]]:
         if drive is not None and drive > 0.0 and episode.slope_k_per_h < 0.0:
             out.append((episode, drive))
     return out
+
+
+def _own_drive(episode: Episode) -> float | None:
+    """Return the level's mean excess over outdoor in an episode, or `None` without one."""
+    if not episode.outdoor:
+        return None
+    drive = fmean(v for _at, v in episode.levels) - fmean(v for _at, v in episode.outdoor)
+    return drive if drive > 0.0 else None
+
+
+def _quantile(values: list[float], q: float) -> float:
+    """Return the `q` quantile of sorted `values`, linearly interpolated."""
+    position = q * (len(values) - 1)
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
 
 
 def _through_origin(points: list[tuple[float, float, float]]) -> float:

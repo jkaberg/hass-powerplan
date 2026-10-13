@@ -83,6 +83,7 @@ Where your grid company bills no capacity step, **Target this hour** and **Capac
 | `sensor.<appliance>_granted_power` | Granted power | W | Diagnostic, off by default | all |
 | `sensor.<appliance>_health` | Health | – | Diagnostic | all |
 | `sensor.<appliance>_learned_charging_efficiency` | Learned charging efficiency | – | Diagnostic, off by default | Car charger |
+| `sensor.<appliance>_learned_coast_time` | Learned coast time | h | Diagnostic, off by default | Floor heating, Heat pump, Panel heater |
 | `sensor.<appliance>_learned_heat_loss` | Learned heat loss | W/K | Diagnostic, off by default | Floor heating, Heat pump, Panel heater |
 | `sensor.<appliance>_learned_heat_up_rate` | Learned heat-up rate | K/h | Diagnostic, off by default | Floor heating, Heat pump, Panel heater |
 | `sensor.<appliance>_learned_rated_power` | Learned rated power | W | Diagnostic, off by default | Floor heating, Panel heater, Water heater |

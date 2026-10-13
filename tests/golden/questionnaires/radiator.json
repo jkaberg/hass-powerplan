@@ -50,7 +50,8 @@
       "store": "room",
       "substitutable": true,
       "vacation_c": 18.0,
-      "volume_m3": 30.0
+      "volume_m3": 30.0,
+      "coast_tau_h": null
     },
     "strategy": "best_save",
     "strategy_params": {
@@ -71,6 +72,6 @@
       "threshold_pct": 10.0,
       "max_off_min": 120.0
     },
-    "derivation_version": 1
+    "derivation_version": 2
   }
 }

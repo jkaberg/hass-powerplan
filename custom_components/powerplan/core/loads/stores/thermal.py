@@ -90,6 +90,9 @@ class SlabStore:
     rho: float = RHO_SCREED
     cp: float = CP_SCREED
     direction: StoreDirection = "heat"
+    #: Hours for the slab's excess over outdoor to fall by 1/e: measured, fitted or
+    #: the heating type's default (D4 §4.3, `design/DECISIONS.md` D-0730).
+    coast_tau_h: float | None = None
 
     def capacity_kwh_per_unit(self) -> float:
         """KWh per kelvin: area × depth × ρ × cp / 3600 (D4 §4.3)."""
@@ -136,6 +139,8 @@ class RoomStore:
     max_c: float
     min_c: float
     direction: StoreDirection = "heat"
+    #: As `SlabStore.coast_tau_h`, for the room and its mass (D-0730).
+    coast_tau_h: float | None = None
 
     @classmethod
     def from_volume(
@@ -146,6 +151,7 @@ class RoomStore:
         min_c: float,
         heat_loss_w_per_k: float | None = None,
         direction: StoreDirection = "heat",
+        coast_tau_h: float | None = None,
     ) -> RoomStore:
         """Build one with the default mass of light-weight construction (§5.7)."""
         return cls(
@@ -155,6 +161,7 @@ class RoomStore:
             max_c=max_c,
             min_c=min_c,
             direction=direction,
+            coast_tau_h=coast_tau_h,
         )
 
     def capacity_kwh_per_unit(self) -> float:

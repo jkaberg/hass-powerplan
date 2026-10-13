@@ -322,7 +322,13 @@ class SiteConfig:
 _TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_presence")
 #: The parameters a load's store is built from that D10 fits (D10 §5.6): an
 #: override of one rebuilds the load, so the store and D11's shadow read it (D-0500).
-_STORE_KEYS: Final = ("loss_coeff_w_per_k", "heat_loss_w_per_k", "standby_loss_w", "charge_eff")
+_STORE_KEYS: Final = (
+    "loss_coeff_w_per_k",
+    "heat_loss_w_per_k",
+    "standby_loss_w",
+    "charge_eff",
+    "coast_tau_h",
+)
 
 #: D6 §2's evaluation order: outermost physical limit first, preferences last.
 _SCOPE_ORDER: Final = ("site", "switched", "circuit", "phase", "group", "zone", "load")

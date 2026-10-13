@@ -66,6 +66,7 @@ class FitKey(StrEnum):
     CHARGE_EFFICIENCY = "charge_efficiency"
     NAMEPLATE = "nameplate_w"
     STANDBY_LOSS = "standby_loss_w"
+    COAST_TAU = "coast_tau_h"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,8 @@ class FitQuality:
     span_days: float
     ok: bool
     reason: str
+    #: The interquartile range over the median, where the fit is gated on it (D-0730).
+    spread: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,9 +112,18 @@ class Gate:
     min_n: int
     min_r2: float | None = None
     min_span_days: float | None = None
+    #: The widest interquartile range, as a fraction of the median, a fit may have (D-0730).
+    max_spread: float | None = None
     unit: str = "episodes"
 
-    def check(self, *, n: int, r2: float | None = None, span_days: float = 0.0) -> FitQuality:
+    def check(
+        self,
+        *,
+        n: int,
+        r2: float | None = None,
+        span_days: float = 0.0,
+        spread: float | None = None,
+    ) -> FitQuality:
         """Return the quality of a fit with `n` observations over `span_days`."""
         failures: list[str] = []
         if n < self.min_n:
@@ -123,12 +135,16 @@ class Gate:
                 failures.append(f"R² {r2:.2f} under {self.min_r2:.2f}")
         if self.min_span_days is not None and span_days < self.min_span_days:
             failures.append(f"span {span_days:.1f} d under {self.min_span_days:.0f} d")
+        if self.max_spread is not None and (spread is None or spread > self.max_spread):
+            shown = "unknown" if spread is None else f"{spread:.2f}"
+            failures.append(f"spread {shown} over {self.max_spread:.2f} of the median")
         return FitQuality(
             r2=r2,
             n=n,
             span_days=span_days,
             ok=not failures,
             reason="; ".join(failures) if failures else "ok",
+            spread=spread,
         )
 
 

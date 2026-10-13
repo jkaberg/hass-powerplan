@@ -128,3 +128,30 @@ async def test_19_a_failed_gate_leaves_the_configured_value(
     assert isinstance(load.store, SlabStore)
     assert load.store.loss_coeff_w_per_k is None
     await runtime.stop("unload")
+
+
+@pytest.mark.inv("INV-63")
+async def test_21_a_gated_coast_time_reaches_the_loops_store(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D10 §9 21: the daily run applies `coast_tau_h` as it does the loss (D-0730)."""
+    from tests.core.forecasts.test_21_coast_tau import OUTDOOR_C as MILD  # noqa: PLC0415
+    from tests.core.forecasts.test_21_coast_tau import _history  # noqa: PLC0415
+
+    calls: list[str] = []
+    _patch(monkeypatch, _history((60.0,) * len(MILD)), calls)
+    floor = FakeFloor(hass, setpoint_c=19.0)
+    floor.register()
+    runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
+    await hass.async_block_till_done()
+
+    fit = runtime.fits[f"{LOAD_ID}.{FitKey.COAST_TAU}"]
+    assert fit.quality.ok, fit.quality.reason
+    assert runtime.load_params[LOAD_ID]["coast_tau_h"] == fit.effective
+    assert runtime.engine is not None
+    [load] = runtime.engine.loads
+    assert isinstance(load.store, SlabStore)
+    assert load.store.coast_tau_h == pytest.approx(fit.effective)
+    await runtime.stop("unload")

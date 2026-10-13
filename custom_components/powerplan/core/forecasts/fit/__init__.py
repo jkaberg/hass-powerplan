@@ -32,7 +32,7 @@ from .base import (
 from .ev import charge_efficiency, sessions_from
 from .nameplate import nameplate_w
 from .tank import standby_loss_w
-from .thermal import coast_rate, heatup_rate
+from .thermal import coast_rate, coast_tau, heatup_rate
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -48,6 +48,7 @@ __all__ = [
     "LoadHistory",
     "charge_efficiency",
     "coast_rate",
+    "coast_tau",
     "episodes",
     "fit_all",
     "heatup_rate",
@@ -62,6 +63,7 @@ __all__ = [
 #: One row per fitted parameter (D10 §5.6).
 FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.LOSS_COEFF: coast_rate,
+    FitKey.COAST_TAU: coast_tau,
     FitKey.HEATUP_RATE: heatup_rate,
     FitKey.CHARGE_EFFICIENCY: charge_efficiency,
     FitKey.NAMEPLATE: nameplate_w,

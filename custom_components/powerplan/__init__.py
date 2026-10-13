@@ -33,7 +33,13 @@ from .entity import async_prepare_site_device
 from .flow.load import answered_entities, binding_from_data, binding_to_data, extra_bindings
 from .runtime import Runtime, build_site
 from .services import async_setup_services
-from .storage import ENTRY_MINOR_ENTITY_REFS, ENTRY_MINOR_PRICE, migrate_tariff
+from .storage import (
+    ENTRY_MINOR_COAST_TAU,
+    ENTRY_MINOR_ENTITY_REFS,
+    ENTRY_MINOR_PRICE,
+    migrate_coast_tau,
+    migrate_tariff,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,6 +96,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
     Minor version 3: every entity id the site and its subentries store becomes
     its entity-registry id, which a rename leaves alone (#13, D-0726). An entity
     the registry does not know stays an entity id.
+
+    Minor version 4: every heating load gets the coast time constant its type
+    derives today, written in once (D-0730, INV-66).
     """
     if entry.version > 1:
         return False
@@ -114,6 +123,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
             minor_version=ENTRY_MINOR_ENTITY_REFS,
         )
         _LOGGER.info("%s: entity ids stored as registry ids", entry.title)
+    if entry.minor_version < ENTRY_MINOR_COAST_TAU:
+        for subentry in entry.subentries.values():
+            migrated = migrate_coast_tau(subentry.data)
+            if migrated is not None:
+                hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
+        hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_COAST_TAU)
+        _LOGGER.info("%s: heating loads carry their coast time constant", entry.title)
     return True
 
 

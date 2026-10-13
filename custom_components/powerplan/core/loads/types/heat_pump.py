@@ -41,7 +41,7 @@ from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import BAND_MAX_K, Setpoint, SetpointCfg
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.cop import DEFAULT_COP_CURVES, CopCurve
-from ..stores.thermal import RoomStore
+from ..stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3, RoomStore
 from .base import register
 
 if TYPE_CHECKING:
@@ -62,7 +62,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 1
+DERIVATION_VERSION: Final = 2
 
 #: `LoadState.learned` keys this type owns: the previous outlet and power sample
 #: the defrost detector compares against (`design/DECISIONS.md` D-0200).
@@ -339,6 +339,9 @@ class HeatPump:
             "building": building,
             "u_envelope_w_per_m2k": u_value,
             "heat_loss_w_per_k": round(u_value * area_m2, 2),
+            "coast_tau_h": _coast_tau_h(
+                ctx, volume_m3=area_m2 * ROOM_HEIGHT_M, loss=u_value * area_m2
+            ),
             "rated_kw": rated_kw,
             "nameplate_w": rated_kw * 1000.0,
             "cop_curve": {f"{float(point)}": float(cop) for point, cop in sorted(curve.items())},
@@ -452,6 +455,7 @@ class HeatPump:
         """Return the room the pump heats (§5.7)."""
         params = cfg.params
         loss = params.get("heat_loss_w_per_k")
+        tau = params.get("coast_tau_h")
         top, bottom = float(params.get("max_c", 22.0)), float(params.get("floor_c", 17.0))
         cooling = params.get("direction") == "cool"
         # A cooling room banks downwards to the band's end and never warms past
@@ -462,6 +466,7 @@ class HeatPump:
             min_c=top if cooling else bottom,
             heat_loss_w_per_k=None if loss is None else float(loss),
             direction="cool" if cooling else "heat",
+            coast_tau_h=None if tau is None else float(tau),
         )
 
     # -------------------------------------------------------------------- tick #
@@ -722,3 +727,11 @@ def _reason(
 
 
 TYPE = register(HeatPump())
+
+
+def _coast_tau_h(ctx: QCtx, *, volume_m3: float, loss: float) -> float:
+    """Return the room's coast time constant: measured, else its mass over its loss (D-0730)."""
+    measured = ctx.measured.get("coast_tau_h")
+    if measured is not None:
+        return round(measured.value, 1)
+    return round(ROOM_MASS_KWH_PER_K_PER_M3 * volume_m3 * 1000.0 / loss, 1)

@@ -1034,6 +1034,9 @@
       "learned_heatup_k_per_h": {
         "name": "Lært oppvarmingshastighet"
       },
+      "learned_coast_tau_h": {
+        "name": "Lært avkjølingstid"
+      },
       "learned_standby_loss_w": {
         "name": "Lært stillstandstap"
       },
@@ -1759,6 +1762,8 @@
     "load_text": {
       "options": {
         "unsure": "Vi er usikre – sjekk at dette er riktig apparat.",
+        "measured": "Målt fra de siste {days} dagene av historikken til dette apparatet: {values}.",
+        "measured_none": "Det fantes ingen historikk å måle ennå, så dette er typiske verdier for denne typen apparat.",
         "its_target": "måltemperaturen",
         "shadow_generic_switch": "Uten PowerPlan ville dette apparatet gått jevnt fordelt gjennom døgnet; besparelsen er det planen sparer mot det.",
         "shadow_generic_switch_none": "Besparelsen vises ikke: PowerPlan kan bare sette dette apparatet på pause og slå det på igjen, ikke si hva det ellers ville kostet.",
@@ -2696,6 +2701,7 @@
                 "legionella_interval_days": "Legionellaintervall",
                 "legionella_temp_c": "Legionellatemperatur",
                 "loss_coeff_w_per_k": "Varmetap",
+                "coast_tau_h": "Avkjølingstid",
                 "max_c": "Aldri over",
                 "max_soc": "Maks lading",
                 "min_a": "Minste strøm",
@@ -2736,6 +2742,7 @@
                 "legionella_interval_days": "Avansert: dager mellom sykluser.",
                 "legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
                 "loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "coast_tau_h": "Avansert: timer før gulvvarmen har falt to tredjedeler når den er av.",
                 "max_c": "Høyeste temperatur når varme lagres i billige timer; tomt bruker rommets vanlige.",
                 "max_soc": "Avansert: ladenivået batteriet lades til maks.",
                 "min_a": "Avansert: den laveste strømmen bilen lader på før den stopper.",
@@ -2836,6 +2843,7 @@
                 "param_legionella_temp_c": "Legionellatemperatur",
                 "param_litres": "Tankstørrelse",
                 "param_loss_coeff_w_per_k": "Varmetap",
+                "param_coast_tau_h": "Avkjølingstid",
                 "param_max_a": "Ladermaks",
                 "param_max_c": "Aldri over",
                 "param_max_charge_kw": "Maks lading",
@@ -2921,6 +2929,7 @@
                 "param_legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
                 "param_litres": "Tankens volum, i liter.",
                 "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "param_coast_tau_h": "Avansert: timer før varmen over utetemperaturen har falt med omtrent to tredjedeler når varmen er av.",
                 "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
                 "param_max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
                 "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",
@@ -3028,6 +3037,7 @@
                 "param_legionella_temp_c": "Legionellatemperatur",
                 "param_litres": "Tankstørrelse",
                 "param_loss_coeff_w_per_k": "Varmetap",
+                "param_coast_tau_h": "Avkjølingstid",
                 "param_max_a": "Ladermaks",
                 "param_max_c": "Aldri over",
                 "param_max_charge_kw": "Maks lading",
@@ -3113,6 +3123,7 @@
                 "param_legionella_temp_c": "Avansert: temperaturen syklusen varmer til.",
                 "param_litres": "Tankens volum, i liter.",
                 "param_loss_coeff_w_per_k": "Avansert: watt tapt per kelvin til utsiden.",
+                "param_coast_tau_h": "Avansert: timer før varmen over utetemperaturen har falt med omtrent to tredjedeler når varmen er av.",
                 "param_max_a": "Den høyeste strømmen laderen kan levere, i ampere.",
                 "param_max_c": "Høyeste temperatur når varme lagres i billige timer. Tomt bruker rommets vanlige.",
                 "param_max_charge_kw": "Batteriets maksimale ladeeffekt, i kW.",

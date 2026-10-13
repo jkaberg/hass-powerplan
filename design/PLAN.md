@@ -708,7 +708,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | FB.5 | `plan_adopted` on a visible change | done |
 | FB.6 | Two false signals | done |
 | FB.7 | The levelled step | done |
-| HM.1 | Measured at setup | todo |
+| HM.1 | Measured at setup | done |
 | HM.2 | Heat moved by the store | todo |
 | HM.3 | One strategy for heating | todo |
 | 6.3 | Release v1.0 | todo |

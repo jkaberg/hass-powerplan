@@ -23,7 +23,7 @@ from custom_components.powerplan.const import (
     DOMAIN,
     SUBENTRY_CIRCUIT,
 )
-from custom_components.powerplan.storage import ENTRY_MINOR_ENTITY_REFS
+from custom_components.powerplan.storage import ENTRY_MINOR
 from tests.runtime.conftest import GRID_POWER, IMPORT_REGISTER, SITE_ENTRY_ID, FakeMeter, site_data
 
 if TYPE_CHECKING:
@@ -104,7 +104,7 @@ async def test_13b_an_old_entry_is_migrated_to_registry_ids(
 
     entry = await _start(hass, site_data(hass))
 
-    assert entry.minor_version == ENTRY_MINOR_ENTITY_REFS
+    assert entry.minor_version == ENTRY_MINOR
     roles = entry.data["meter"]["roles"]
     assert roles["grid_power"] == grid.id
     assert roles["import_register"] == IMPORT_REGISTER

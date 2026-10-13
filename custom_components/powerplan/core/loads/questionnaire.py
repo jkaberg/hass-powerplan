@@ -32,6 +32,7 @@ __all__ = [
     "Bounds",
     "Derived",
     "Explanation",
+    "Measured",
     "Option",
     "QCtx",
     "Question",
@@ -77,6 +78,19 @@ class QuestionKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Measured:
+    """A default the house answered from its recorder history (D4 §6, D-0731).
+
+    Only a fit that passed its gate is handed over: `value` is what D10 would
+    apply, `n` and `days` are what the review names as its source.
+    """
+
+    value: float
+    n: int
+    days: float
+
+
+@dataclass(frozen=True, slots=True)
 class QCtx:
     """What the flow already knows before anybody answers (HLD §7.9 point 2).
 
@@ -91,6 +105,9 @@ class QCtx:
     phases: int | None = None
     capabilities: frozenset[str] = frozenset()
     readable: Mapping[str, float] = field(default_factory=dict)
+    #: D10's fits over the bound entities' history, by fit key (`coast_tau_h`,
+    #: `nameplate_w`, `heatup_k_per_h`), gated ones only (D-0731).
+    measured: Mapping[str, Measured] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

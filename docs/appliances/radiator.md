@@ -24,6 +24,8 @@ PowerPlan shows which entity it will control and which it only reads. Check them
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the room's temperature and the heater's power are already in Home Assistant's history, PowerPlan measures how much the heater draws and how fast the room cools when it is off. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
+
 <!-- generated:begin questions:radiator · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

@@ -1034,6 +1034,9 @@
       "learned_heatup_k_per_h": {
         "name": "Learned heat-up rate"
       },
+      "learned_coast_tau_h": {
+        "name": "Learned coast time"
+      },
       "learned_standby_loss_w": {
         "name": "Learned standby loss"
       },
@@ -1759,6 +1762,8 @@
     "load_text": {
       "options": {
         "unsure": "We are not sure – check that this is the right appliance.",
+        "measured": "Measured from the last {days} days of this appliance's history: {values}.",
+        "measured_none": "There was no history to measure yet, so these are typical values for this kind of appliance.",
         "its_target": "its target",
         "shadow_generic_switch": "Without PowerPlan this appliance would run spread evenly through the day; savings are what the plan saves against that.",
         "shadow_generic_switch_none": "Its savings are not shown: PowerPlan can only pause and restore this appliance, not say what running it would otherwise have cost.",
@@ -2696,6 +2701,7 @@
                 "legionella_interval_days": "Legionella interval",
                 "legionella_temp_c": "Legionella temperature",
                 "loss_coeff_w_per_k": "Heat loss",
+                "coast_tau_h": "Coast time",
                 "max_c": "Never above",
                 "max_soc": "Maximum charge",
                 "min_a": "Minimum current",
@@ -2736,6 +2742,7 @@
                 "legionella_interval_days": "Advanced: days between cycles.",
                 "legionella_temp_c": "Advanced: the temperature the cycle heats to.",
                 "loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
+                "coast_tau_h": "Advanced: hours for the floor's heat to fall by two thirds when off.",
                 "max_c": "The highest temperature when storing heat in cheap hours; blank uses the room's usual.",
                 "max_soc": "Advanced: the state of charge the battery is charged to at most.",
                 "min_a": "Advanced: the lowest current the car keeps charging at before it stops.",
@@ -2820,6 +2827,7 @@
                 "param_legionella_temp_c": "Legionella temperature",
                 "param_litres": "Tank size",
                 "param_loss_coeff_w_per_k": "Heat loss",
+                "param_coast_tau_h": "Coast time",
                 "param_max_a": "Charger maximum",
                 "param_max_c": "Never above",
                 "param_max_charge_kw": "Maximum charge",
@@ -2905,6 +2913,7 @@
                 "param_legionella_temp_c": "Advanced: the temperature the cycle heats to.",
                 "param_litres": "The tank's volume, in liters.",
                 "param_loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
+                "param_coast_tau_h": "Advanced: hours for the warmth above the outdoor temperature to fall by about two thirds when the heating is off.",
                 "param_max_a": "The most current the charger can deliver, in amps.",
                 "param_max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
                 "param_max_charge_kw": "The battery's maximum charging power, in kW.",
@@ -3012,6 +3021,7 @@
                 "param_legionella_temp_c": "Legionella temperature",
                 "param_litres": "Tank size",
                 "param_loss_coeff_w_per_k": "Heat loss",
+                "param_coast_tau_h": "Coast time",
                 "param_max_a": "Charger maximum",
                 "param_max_c": "Never above",
                 "param_max_charge_kw": "Maximum charge",
@@ -3097,6 +3107,7 @@
                 "param_legionella_temp_c": "Advanced: the temperature the cycle heats to.",
                 "param_litres": "The tank's volume, in liters.",
                 "param_loss_coeff_w_per_k": "Advanced: watts lost per kelvin to the outside.",
+                "param_coast_tau_h": "Advanced: hours for the warmth above the outdoor temperature to fall by about two thirds when the heating is off.",
                 "param_max_a": "The most current the charger can deliver, in amps.",
                 "param_max_c": "The highest temperature when storing heat in cheap hours. Blank uses the room's usual.",
                 "param_max_charge_kw": "The battery's maximum charging power, in kW.",
