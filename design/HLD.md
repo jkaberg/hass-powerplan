@@ -374,7 +374,7 @@ Load            = DeviceType logic + ControlKind + DeviceProfile + WriteGate + S
 | `water_heater` | SETPOINT | `TankStore` | `deadline_fill` | mode, deadline, deadline temp, comfort min, **legionella interval and temperature** |
 | `floor_heating` | MODE or SETPOINT | `SlabStore` | `heat_capacitor` / `always` | mode, target profile (comfort °C by schedule × presence), comfort min, max °C |
 | `heat_pump` | SETPOINT band (v1.x: SG_READY) | `RoomStore` + COP curve | `heat_capacitor` | mode, target profile, preheat |
-| `radiator` | SWITCH or SETPOINT | `RoomStore` | `best_save` | mode, target profile |
+| `radiator` | SWITCH or SETPOINT | `RoomStore` | `heat_capacitor` (pause only on a plug) | mode, target profile |
 | `battery` | BATTERY (four commands: self-use · hold · charge W · discharge W); MODULATE (W, signed) through `generic_number` | `EnergyStore` | `arbitrage` / `peak_shave` | mode, SoC floor/ceiling |
 | `generic_switch` | SWITCH | none | `cheapest_hours` | mode |
 | `appliance_cycle` | SWITCH or a start command | none - a **cycle**: duration + energy profile, run once, non-interruptible | `run_once` | mode, ready-by, run now |
@@ -454,8 +454,8 @@ class PlanSlot: start; end; envelope_w: float | None      # None = no plan (cont
 |---|---|---|
 | `deadline_fill` | effektstyring planner | cheapest slots covering `required_kwh` before the deadline; `force` → time order, deadline ignored. Greedy is exact for one load. |
 | `cheapest_hours` | powersaver Lowest Price | N cheapest slots in a window; optional consecutive; optional max price |
-| `best_save` | powersaver Best Save | off in slots where saving vs. the next on-slot exceeds a threshold, bounded by max-off / min-on |
-| `heat_capacitor` | powersaver + effektstyring preheat/coast | setpoint +Δ in cheap slots, −Δ in expensive; Δ bounded by the store model; heat pumps gated on outdoor temperature |
+| `best_save` | powersaver Best Save | off in slots where saving vs. the next on-slot exceeds a threshold, bounded by max-off / min-on; a load without a store only (D-0728) |
+| `heat_capacitor` | powersaver Heat Capacitor + effektstyring preheat/coast | a stretch to stay off in (dear by price, full by capacity) becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest, filled before it; dear slots no stretch covers are paused if waiting saves a minimum; the store's coast measured at setup and refined daily; heat pumps' fills gated on outdoor temperature (D-0727, D-0732) |
 | `arbitrage`, `peak_shave` | new | battery: charge cheap / discharge expensive with a round-trip-efficiency floor; discharge when the window projects over the ceiling |
 | `schedule` | powersaver Fixed Schedule | fixed windows |
 | `always` | - | no price steering |

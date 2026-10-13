@@ -219,9 +219,11 @@ class StoreModel(Protocol):
 
 @dataclass(frozen=True)
 class SlabStore:   area_m2: float; screed_mm: float; rho: float = 2200; cp: float = 0.9; loss_coeff_w_per_k: float | None; max_c: float
+                   coast_tau_h: float | None          # the coast time constant against outdoor (D-0730)
                    # kWh/K = area × depth × ρ × cp / 3600   (57.5 m² × 50 mm → 1.58 kWh/K)
 @dataclass(frozen=True)
 class RoomStore:   volume_m3: float; heat_loss_w_per_k: float | None; thermal_mass_kwh_per_k: float; max_c: float; min_c: float
+                   coast_tau_h: float | None          # as SlabStore's; else thermal_mass / heat_loss
 @dataclass(frozen=True)
 class TankStore:   litres: float; eta: float = 0.98; standby_loss_w: float; max_c: float; min_c: float; sensorless: SensorlessModel | None
                    # kWh = litres × 4.186 × ΔK / 3600 / eta   (300 L, 45→75 °C, η 0.98 → 10.7 kWh)
@@ -411,8 +413,8 @@ On if granted ≥ nameplate and not shed, off if shed; `min_on_s`/`min_off_s` dw
 
 ### 5.7 Store models
 
-- `SlabStore.required_kwh(T_now, T_target, deadline)` = `kwh_per_k × (T_target − T_now)+ + loss(T_indoor − T_outdoor, hours to deadline)` when `loss_coeff` is known (D10 fits it); without it the loss term is skipped (conservative). Cooling flips the sign. `coast_hours` from the fitted rate or `None`.
-- `RoomStore`: `thermal_mass_kwh_per_k` default `0.03 × volume_m3` - the *effective building mass* of lightweight (timber) construction, ≈ 7.5 kWh/K for 250 m³; the air alone would be 0.08 kWh/K, heavy masonry 2–3× the default - from the HLD's store table; `heat_loss_w_per_k` from building age (§6.4) until fitted.
+- `SlabStore.required_kwh(T_now, T_target, deadline)` = `kwh_per_k × (T_target − T_now)+ + loss(T_indoor − T_outdoor, hours to deadline)` when `loss_coeff` is known (D10 fits it); without it the loss term is skipped (conservative). Cooling flips the sign. `coast_hours = τ·ln((T − T_out)/(floor − T_out))` from `coast_tau_h` (D-0730), else from the fitted loss, else `None`. Without a fitted `loss_coeff`, `C·1000/τ` W/K stands in for it in the loss term. That is the slab's own fall turned into watts, which is what the slab loses, unlike the house's W/K that D-0216 refuses.
+- `RoomStore`: `thermal_mass_kwh_per_k` default `0.03 × volume_m3` - the *effective building mass* of lightweight (timber) construction, ≈ 7.5 kWh/K for 250 m³; the air alone would be 0.08 kWh/K, heavy masonry 2–3× the default - from the HLD's store table; `heat_loss_w_per_k` from building age (§6.4) until fitted; `coast_tau_h` defaults to `thermal_mass_kwh_per_k × 1000 / heat_loss_w_per_k` until measured or fitted (D-0730).
 - `TankStore.required_kwh` = `litres × 4.186 × ΔK / 3600 / eta` + standby loss × hours; `SensorlessModel` (a tank with a plug and no sensor): temperature estimated from energy in (measured) − standby loss − the draw-off profile (household size × 45 L/person/day at 55 °C, weighted to morning and evening), re-anchored to `charge_setpoint` whenever the thermostat is seen to stop drawing; low confidence; legionella handled by holding the plug on for `legionella_hours` at the thermostat's own max.
 - `EnergyStore.required_kwh` = `(target_soc − soc) × capacity × usable / charge_eff`; an unknown SoC ⇒ `None` (plan by time or a "kWh to add" knob - an EV without `target_soc` is exactly this case and isn't pretended).
 
@@ -851,6 +853,17 @@ These labels replace today's type vocabulary, where `appliance_cycle` is "Appara
 
 Common to every load: pick the HA device → suggested type + bindings (§5.9) → the type's questions → review. Common derived: `priority` (type default, room adjusted), `carrier` (electricity unless the profile says gas/district heat), `phases` (profile or question), `group` (type default: floor loops → `floor_heating`, radiators → `radiators`).
 
+**Measured at setup (D-0731).** Once the bindings are chosen and before the type's questions are asked, the flow reads the bound entities' recorder history in an executor job: the last 10 days of states and the long-term statistics beyond, through D10's shared recorder helper (D10 §5.6). It runs D10's own fits on it and hands the results to the questionnaire as `QCtx.measured: Mapping[FitKey, Measured(value, n, days, quality_ok)]`. A default the house can answer is the house's answer:
+
+| default | measured from | used when | else |
+|---|---|---|---|
+| `nameplate_w` | p95 of the `POWER` role while drawing (D10 §5.6) | n ≥ 100 samples | the type's W/m² × area, or its table |
+| `coast_tau_h` | off episodes ≥ 2 h, falling level against outdoor (D10 §5.6, D-0730) | the fit's gate passes | the type's default (§6.1, §5.7) |
+| heat-up K/h | on episodes, rising level | n ≥ 5 | `C` and `nameplate_w` |
+| holding draw by hour | `hold.HourOfDayMean` over the history (D10 §5.6 wiring) | 7 days | the loss model |
+
+What was measured is materialised like any derived value (INV-66), shown on the review with its source, and editable under **Advanced**: "Measured from your last 10 days: falls 0.28 °C an hour when off, draws up to 609 W." A sensor with no history (a new device, a purged recorder, a summer install) shows the type's default and says so. The daily fits (D10 §5.6) then refine through `Learned`, as they do today. The materialised value is the `configured` they fall back to when their gate fails (INV-63).
+
 **Priority as three fixed numbers (D8 §5.16, D-0411).** Every type's `priority` default above is a *number*, and the number is one of three literals a household-facing `select` (Lav · Normal · Høy) can hold: **15**, **30**, **45**. Every default in this section lands on one by construction: `ev` 10 → Lav; `generic_switch` 15–18 (pool pump, sauna, hot tub, other) → Lav, 25 (ventilation) → Normal; `appliance_cycle` 20 → Lav; `floor_heating`/`radiator` 30, bathroom 32 → Normal; `battery` 30 → Normal; `water_heater` 40 → Høy; `heat_pump` 50 → Høy. A load's `derive()` returns one of the three literals directly; migration of an existing free-numbered load rounds to the nearest at the midpoints 22.5 and 37.5. INV-1's precedence ("preference - priority order among loads that are all satisfiable") is unaffected by fewer distinct values: D5 §5's `sorted(loads, key=priority, reverse=True)` already breaks ties by `load_id`, so loads sharing a level are ordered exactly as two loads sharing a number would be.
 
 ### 6.1 `floor_heating`
@@ -859,11 +872,11 @@ Common to every load: pick the HA device → suggested type + bindings (§5.9) �
 |---|---|---|---|
 | Room | bathroom · living · kitchen · hall · bedroom · other (HA area) | comfort 24/22/22/21/19 °C; floor 21/19/19/19/17; priority 30 (bathroom 32); `substitutable = room ≠ bathroom` | effektstyring config (measured comfort in the reference house); bathrooms warm by intent |
 | Floor covering | tile/stone · wood/parquet · laminate · vinyl · carpet | `max_c` 30 / **27** / 27 / 28 / 28; comfort range hint | EN 1264 surface limit 29 °C occupied zones; wood/laminate manufacturers commonly 27 °C |
-| Heating type | cable in screed · foil/mat under covering · water-borne · don't know (= cable) | store `SlabStore(screed 40 mm)` / `RoomStore(thin)` / hydronic (setpoint only, `nameplate_w = 0`, links to a heat source - §5.15, v1.x); strategy `heat_capacitor` / `best_save` / `heat_capacitor`; W/m² 80 / 120 / - | typical electric cable 60–100 W/m², mats 100–150 W/m² (manufacturer ranges) |
+| Heating type | cable in screed · foil/mat under covering · water-borne · don't know (= cable) | store `SlabStore(screed 40 mm)` / `RoomStore(thin)` / hydronic (setpoint only, `nameplate_w = 0`, links to a heat source - §5.15, v1.x); strategy `heat_capacitor` for all three (the foil was `best_save` until D-0728); `bank_k` 1.0 on a SETPOINT thermostat, 0 on a MODE one, whose comfort option is its own setpoint; W/m² 80 / 120 / - | typical electric cable 60–100 W/m², mats 100–150 W/m² (manufacturer ranges) |
 | Area | m² | nameplate = W/m² × area until measured (p95 of power when heating); kWh/K | slab physics (ρ 2200, cp 0.9) |
 | Sensor | floor · air · both (read from `sensor_mode` where the device exposes it) | what comfort refers to; floor mode ⇒ `TEMP_FLOOR` role | Heatit F/A/A2F modes |
 | Comfort / min / max °C | sliders pre-filled from the above | target profile constant, floor, ceiling | - |
-| *Advanced* | screed depth, loss coefficient, swing K (1.0 bathroom / 1.5 others), min on/off (900 s, the mode's reversal dwell too, §5.5), command interval (600 s), eco setpoint (= comfort − 2), floor min limit | store, kind, provisions | effektstyring |
+| *Advanced* | screed depth, loss coefficient, coast time constant `coast_tau_h` (cable in screed and water-borne 60 h, measured on the reference house's three loops that coasted in October, D-0730; foil 10 h, an estimate no house has checked yet; measured at setup wins, D-0731), swing K (1.0 bathroom / 1.5 others), min on/off (900 s, the mode's reversal dwell too, §5.5), command interval (600 s), eco setpoint (= comfort − 2), floor min limit | store, kind, provisions | effektstyring |
 
 Review: "A heavy slab under wood in a bathroom. powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted by the heat pump."
 
@@ -914,11 +927,11 @@ and the only one a plan may stop outright. The golden answers are
 | Building | before 1980 · 1980–2000 · 2000–2010 · after 2010 | heat loss 1.6 / 1.0 / 0.7 / 0.5 W/m²K → `heat_loss_w_per_k` | typical envelope values by period |
 | Rated power | kW (device or 3) - **asked, always**; powerplan computes forward from it | forecast ceiling, expected draw = demand / COP capped at rated | nameplate |
 | Comfort | °C (21) | target profile | - |
-| *Advanced* | band ±1 K (max 2, rejected not clipped), min setpoint interval 900 s, dwell 1800 s, preheat off, preheat max outdoor 5 °C, never-switch entities, outdoor/outlet sensors | kind, INV-29 | effektstyring |
+| *Advanced* | band ±1 K (max 2, rejected not clipped), min setpoint interval 900 s, dwell 1800 s, preheat off, preheat max outdoor 5 °C, never-switch entities, outdoor/outlet sensors | kind, INV-29; `heat_capacitor`'s `bank_k` = `coast_k` = band (D-0728) | effektstyring |
 
 ### 6.5 `radiator`
 
-Type (oil-filled · panel · convector · towel rail) → nameplate default 1000/800/1200/500 W (measured wins) and `RoomStore` mass hint; room type → comfort default; control (plug → SWITCH, thermostat entity → SETPOINT); group `radiators`; strategy `best_save` (threshold 10 %, max off 2 h, min on 30 min).
+Type (oil-filled · panel · convector · towel rail) → nameplate default 1000/800/1200/500 W (measured wins) and `RoomStore` mass hint; room type → comfort default; control (plug → SWITCH, thermostat entity → SETPOINT); group `radiators`; strategy `heat_capacitor` (`min_saving` 0.10, `bank_k` 0 on a plug, whose own dial regulates, else `BANK_ABOVE_COMFORT_K` 2.0 per D-0206; until D-0728 it was `best_save` with a `threshold_pct` nothing read, D-0729).
 
 ### 6.6 `battery` (type built with the D4 types; strategies in phase 5)
 
@@ -1029,6 +1042,8 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 49. A role binds when its entity is ready (D-0693): a SoC sensor with no unit at setup is unbound with one WARNING; when it reports `%` the role binds without a reload and the next tick plans with the SoC; a role still unbound after 10 min raises `re-bind <role>`.
 50. Retried until it answers (D-0711, D-0710): a charger whose writes failed 40 times in a row is `unhealthy` and still gets the write once its command interval is up - retries are paced by row 6, never capped; a heat pump `not_following` for two hours gets its setpoint re-issued at every interval. A water heater derived from fresh answers carries `prefer_late: true`; one stored without it keeps its parameters.
 51. Bound roles are skipped (D-0715): a subentry that binds `soc` to a sensor with no unit yet logs no WARNING at setup and keeps its binding; a subentry that lacks the role still logs one and gets the listener (§9 49).
+52. A lever that can't bank derives `bank_k` 0 (D-0728, D-0729): a MODE floor, a foil floor on MODE and a plug radiator derive `heat_capacitor` with `bank_k` 0; a SETPOINT floor 1.0, a thermostat radiator 2.0, a heat pump its band; the radiator writes `min_saving` 0.10 and no `threshold_pct`; no thermal type offers `best_save`.
+53. Measured at setup (D-0731): a floor whose power and temperature have 10 days of history with 39 coasts gets `coast_tau_h` and `nameplate_w` from them, materialised and shown with their source on the review; with no history it gets the type's default and the review says so; an override under **Advanced** wins and survives re-derivation; the flow's reads run in an executor job and never in the event loop.
 ---
 
 ## 10. Deliberately deferred
@@ -1048,6 +1063,10 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Wait for the daily fits instead of measuring in the flow.** *For:* D10 already fits every one of these values from 60 days, in the planning loop, with a quality gate; measuring in the flow duplicates the reads and makes setup slower. *Against:* for the first day, and until a gate passes, the load plans on a table value the house could have corrected at once. The bathroom's 0.28 K/h and the hall's 0.29 K/h were in the recorder before PowerPlan was installed. The flow reuses the same helper and fits, so nothing is written twice. **Decision:** measure at setup, refine daily (D-0731).
+
+**Ask the household for the fall rate.** *For:* powersaver does (`Time −1C`), and a household can time it with a thermometer. *Against:* nobody times it, and the recorder has done so for 10 days already. **Decision:** measured, with the field under **Advanced** for the household that knows better.
 
 **Count read-back deviations as failures.** *For:* reuses a path that already notifies and already has a threshold. *Against:* `unhealthy` takes the load out of allocation (§8), so a heat pump that drops one Bluetooth write in ten stops being steered - the reason INV-22 says a deviation isn't a failure. **Decision:** a separate `not_following` state that keeps the load in allocation (D-0689).
 

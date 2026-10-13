@@ -225,6 +225,18 @@ User pages: none change - `docs/tariffs.md` already says Australia's plans are t
 
 User pages: FB.1 `docs/entities.md`; FB.2 `docs/appliances/water_heater.md`, `docs/strategies.md`; FB.3 `docs/troubleshooting.md`, `docs/setup.md`; FB.4 none; FB.5 and FB.6 `docs/events.md`; FB.7 `docs/entities.md`, `docs/savings.md`, `docs/capacity-tariffs.md`.
 
+### 3.0p Heat moved by the store
+
+[D5 §5.5, §5.7, §6, §11](lld/D5-strategies.md), [D4 §4.3, §5.7, §6](lld/D4-loads.md), [D10 §5.6](lld/D10-forecasts.md), HLD §6.4–6.5: the load flow measures what the recorder already knows about an appliance. `heat_capacitor` then plans from the store. It works out how warm the store must be to stay off through a dear or a full stretch and fills that before it, inside the lowest and highest temperatures, and pauses where waiting pays. It becomes the one strategy for every heating appliance, with `best_save` left for appliances without a temperature (dec. 50).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **HM.1 Measured at setup** | `coast_tau_h` on `SlabStore`/`RoomStore` with D4's defaults; D10's `coast_tau_h` fit and its spread gate; `fit_all` called by the load flow, `QCtx.measured`, the derivations preferring it, the review naming its source | D4 §4.3, §5.7, §6, §6.1; D10 §5.6; D-0730, D-0731 | D4 §9 53; D10 §9 21; the fits on the reference house's recorder land within 10 % of D-0730's figures | - |
+| **HM.2 Heat moved by the store** | `heat_capacitor`'s stretches (price and capacity) as coast-sized deadlines, the top-up inside a stretch, the pause pairs, the per-move reason; schema `bank_k`, `coast_k`, `min_saving`, `min_saving_absolute` in, `delta_k`, `quantiles`, `bank_scale_with_cold` out; the benchmark baseline updated | D5 §5.7, §6; D-0727, D-0732 | D5 §9 8, 32, 34, 36, with 3, 22 and 26 still green; scenarios phase0 and phase3, plus a cold-evening scenario at the 5–10 kW step in which the floors coast 17:00–20:00 and every hour stays under it; smoke `--compare` with the heating loads' savings on the spot year at or above the baseline's | HM.1 |
+| **HM.3 One strategy for heating** | `best_save.supports = {generic_switch}`; `bank_k` and `min_saving` derived per type; config entry minor version 4 (`ENTRY_MINOR_HEAT_PAIRS`) in `async_migrate_entry`; the label **Move heat to cheaper hours** | D5 §5.5, §6; D4 §6.1, §6.4, §6.5; D-0728, D-0729 | D5 §9 6, 33, 35; D4 §9 52; the e2e day | HM.2 |
+
+User pages: HM.1 `docs/appliances/floor_heating.md`, `docs/appliances/radiator.md`, `docs/appliances/heat_pump.md` and `docs/setup.md` (what the flow measures, and that a new sensor gets the defaults). HM.2 `docs/strategies.md` (what the strategy does and its numbers) and `docs/capacity-tariffs.md` (heating stays off through a full hour when it can). HM.3 `docs/strategies.md`, with the generated table and a "Since v0.x" note that a heating appliance's **Save where it hurts least** became **Move heat to cheaper hours**, which pauses only, and that an automation selecting `best_save` for it must select `heat_capacitor`; also `docs/appliances/radiator.md`, `docs/appliances/floor_heating.md` and `docs/appliances/README.md` (the default per type).
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -398,6 +410,8 @@ phase 4 after 0.11 and its domain WPs; phase 5 after 1.1, 3.4, 4.1; the release 
 
 **3.0o's order:** FB.1–FB.3 first - they make the deviations sensor and the notifications true - then FB.4–FB.7 in any order. FB.2 moves the reference benchmark's digests on purpose.
 
+**3.0p's order:** HM.1, HM.2, HM.3. HM.1 changes no plan: the fit and the defaults reach the stores, and only HM.2 plans on `τ`. HM.2 moves the reference benchmark's digests on purpose and updates the baseline. If the heating loads' savings on the spot year fall below the old baseline's, or the cold-evening scenario breaks its step, HM.2 stops there and goes back to the owner with the table. HM.3 never runs without HM.2: a pause-only load on v1's quantiles would pause on any spread (§8).
+
 ---
 
 ## 5. Working method
@@ -496,6 +510,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 47. **This hour tells the day, History tells what PowerPlan held back** (D-0698 … D-0700). The hour gauge draws the last 12 hours under its arc; an hour whose control level reached 1 carries the PowerPlan mark wherever hours are drawn; History's summary compares the period with the same time of the one before. *Rejected:* a second hour card - Now already has one metric per pane; a comparison in green and red - it's a comparison, not a verdict.
 48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. The canary runs each copy it fetches through the flow's own path - answered, stored, read back and priced (D-0706). *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
 49. **The house's first fortnight** (D-0709 … D-0717, [the second field audit](reviews/field-audit-2026-10.md)). A deadline is judged only while the load asks for it; a tank's block ends at its deadline; a device that stops answering is retried until it answers and is a repair after 30 min, with the notification sent once beside it and held by quiet hours; the live warning waits while our own cut settles, and the seam cap stays deferred - three versions each moved energy into the next window and one pushed a scenario over its ceiling; `plan_adopted` announces a change the household can see; D11 bills a levelled book and the advice names the step below when the steered appliances could have reached it. The house keeps its 5–10 kW target through the winter: a target is each site's own select, nothing is built for it (owner, 4 Oct 2026). *Rejected:* switching the noisy notification category off (a real failure would go unseen), a seam cap (it moves energy into the next window), and an `auto` that aims below the reached step (an upper bound is not a promise).
+50. **`heat_capacitor` plans from the store, and is the one heating strategy** (D-0727 … D-0732). The load flow runs D10's fits on the recorder history of the entities just bound: peak draw, the coast time constant `τ`, heat-up and holding draw. They become defaults the household sees and may override, the type's tables where there is no history, refined daily as before. A stretch to stay off in, dear by price or full by capacity, becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest (INV-55, INV-56), filled before it by §5.2's greedy, and any shortfall heated inside it, spread evenly. Dear slots no stretch covers get pause pairs that must clear `min_saving`. D4 derives `bank_k` 0 where the lever can't raise the store above comfort. `best_save` stays only for appliances without a temperature. A config entry migration moves every heating load on `best_save` to `heat_capacitor` with `bank_k` 0 and materialises `bank_k` on those already there, so no load starts banking that didn't before. D-0724's gate and D-0254's flat-day rule stay. *Rejected:* keeping the quantile rule (it banks with nothing dear in reach and can't say why); fixed-size banks (too much on a mild day, too little on a cold one); leaving capacity to D6's live shedding (a 2 K eco step at the worst moment); waiting for the daily fits (a day or more on table values the recorder could have corrected); a new key for the merged strategy (it migrates every heating load and breaks every automation).
 
 ---
 
@@ -520,6 +535,10 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 **Ship first, then do the research items.** *For:* a released beta finds real problems faster. *Against:* a beta that mis-bills its own market's capacity steps teaches its first users not to trust the one number it exists to defend. **Decision:** verified Norwegian tariffs, every price source and the Nordic chargers before v0.x; the rest before v1.0.
 
 **Defer device attachment to v1.x.** *For:* v1.0 is already large and the current design works. *Against:* the old device-linking pattern is past its cutoff on current HA, and every appliance added meanwhile would migrate twice. **Decision:** now, before U.3 (dec. 35).
+
+**Merge the strategies first, then rewrite the algorithm.** *For:* the merge is the user-visible half, and it would ship sooner on v1's quantile code with `bank_k`. *Against:* pause-only v1 coasts the dearest quarter whatever the spread, so a radiator moved off `best_save` would be told to pause on a 2 % spread it was never paused for, and the migration's promise that no load starts banking would be the only promise it kept. **Decision:** measure first (HM.1), plan on it second (HM.2), measured against the baseline, then the merge (HM.3).
+
+**Plan on the stretches before the setup measurement exists.** *For:* HM.2 is where the saving is, and D4's defaults alone would let it start. *Against:* on the reference house the defaults are wrong by 9–24 % in peak draw (D-0731), and `τ` differs 2× between two bathrooms (D-0730). A stretch sized on a default is a floor that arrives cold or overpaid. **Decision:** HM.1 first; it changes no plan and is cheap.
 
 **Write the user pages last, in one block.** *For:* surfaces still move, and pages written early get rewritten. *Against:* pages written at the end describe reasons nobody remembers, and until then nothing keeps them current. **Decision:** the docs foundation (tests, tools, generated reference) early; pages for moving surfaces once they settle.
 
@@ -689,6 +708,9 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | FB.5 | `plan_adopted` on a visible change | done |
 | FB.6 | Two false signals | done |
 | FB.7 | The levelled step | done |
+| HM.1 | Measured at setup | todo |
+| HM.2 | Heat moved by the store | todo |
+| HM.3 | One strategy for heating | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

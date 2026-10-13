@@ -187,12 +187,17 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 | fit | data | method | bounds | quality gate |
 |---|---|---|---|---|
 | slab/room `loss_coeff_w_per_k` (coast) | episodes ≥ 2 h with the load off, indoor & outdoor temps | dT/dt vs (T_in − T_out), weighted LS through origin | [0.5, 50] W/K per m² × area | n ≥ 5 episodes, R² ≥ 0.5, span ≥ 7 days |
+| slab/room `coast_tau_h` (D-0730) | the same off episodes, level and outdoor | per episode `(T̄ − T̄_out) / fall rate`; the median | [5, 1 000] h | n ≥ 10, span ≥ 7 days, interquartile range ≤ 0.8 × median |
 | heat-up rate K/h at nameplate | episodes with the load on, temp rising | median slope | [0.1, 10] | n ≥ 5 |
 | EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy | Σ(ΔSoC × capacity) / Σ energy | [0.75, 0.98] | n ≥ 3 |
 | `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured | n ≥ 100 samples |
 | tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity | [20, 200] | n ≥ 3 |
 
 **Per-m² bounds and the two-node floor.** A coast fit turns the *store's* fall into watts. On a real floor the screed is one mass and the room another, so only the screed's share of the house's loss comes out of the screed, `C_screed / (C_screed + C_room)` ≈ 27 % at 50 mm (D4 §5.7's 0.0275 kWh/K·m² against the room's 0.075). A slab in a 2000s envelope (0.7 W/m²K) therefore fits ≈ 0.19 W/K·m², under the 0.5 floor above, and the fit is **not applied**. The load keeps `configured`, which is `None` for a slab, and the loss term is skipped (D4 §5.7). That's INV-63 doing its job, not a bug. The bounds stay until a house says otherwise (D-0216). Leaky envelopes and heavy screeds land inside and are applied.
+
+**The coast time constant has its own gate (D-0730).** `loss_coeff` is gated on R² ≥ 0.5 against `T_in − T_out`, which needs the outdoor temperature to move. In a mild fortnight it doesn't: on the reference house, 3–13 Oct 2026 (outdoor 1–14 °C), R² was ≤ 0 on every loop, though the fall rate per loop was steady. `coast_tau_h` is gated on its spread instead: its interquartile range was 0.50–0.75 × the median on the three loops that coasted (Bad 1. etasje 59 h, 46–78, n = 39; Bad 2. etasje 117 h, 90–149, n = 22; Inngang 57 h, 39–82, n = 35). It turns the slab's own fall into a number, so the two-node mismatch that sinks `loss_coeff` (D-0216) never enters. When a cold spell moves the outdoor temperature, the same episodes show whether `τ` holds; a `τ` that drifts with the cold widens the range and fails the gate.
+
+**The same fits at setup (D-0731).** `fit_all` is also called by the load flow, once, over the bindings just chosen (D4 §6, "Measured at setup"), through the same `LoadHistory` builder in an executor job. The recorder usually holds 10 days of states, enough for a bathroom loop's 22–39 coasts. Its results are defaults the household sees and may change, never `Learned` state.
 
 **Wiring.** The runtime runs `fit_all` once a day in the planning loop (§5.7's 03:xx slot, D7 §5.2) over a `LoadHistory` per load, built by `recorder_baseline`'s shared recorder helper (60 days, the roles each fit names). The `Fit`s are stored in the `forecasts` section and `effective` goes to D4's `Learned` state and D11's shadows on the next plan.
 
@@ -276,6 +281,7 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 18. `energy_solar` degrades: a missing or changed `async_get_energy_platforms` gives no series and raises `pv_forecast_unavailable`, the tick and the plan run as before.
 19. Fits through the runtime (`tests/runtime/test_fits_wired.py`): a simulated 60-day history reaches `fit_all` once a day in the planning loop, a gated fit changes the load's `effective` on the next plan, and a failed gate leaves `configured` (INV-63). §9 11 still holds.
 20. The seed's placement (D-0687): HA-shaped statistics rows - hourly beyond 10 days, 5-minute within, a register reporting every 10 s - with a 3 kW load starting at 22:00 local put its energy in bin 22, not 21; a house with no production gets no negative bin; `lag_h` is 0, logged and stored; a store at `seed_version` 2 is re-seeded once.
+21. `coast_tau_h` (D-0730, D-0731): synthetic coasts at `τ` 60 h over outdoor 1–14 °C recover it within 10 % and pass the gate though R² against outdoor is ≤ 0; a spread of 1.0 × the median fails it and `effective` stays the configured value; the flow's call returns the same `Fit`s as the daily run on the same history.
 
 ---
 
@@ -289,6 +295,8 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 ---
 
 ## 11. Alternatives considered (steelmanned)
+
+**Gate `coast_tau_h` on R², like `loss_coeff`.** *For:* one gate for every fit, and R² is what says the physics explains the data. *Against:* it needs the outdoor temperature to move. On the house's mild fortnight it was ≤ 0 on loops whose fall rate was steady to ±30 %, and planning needs the rate, not the explanation. **Decision:** a spread gate for `τ` (D-0730); the cold season tests the physics, since a `τ` that varies with the cold fails the spread gate.
 
 **No baseline, σ over the last 15 minutes only (the pyscript).** *For:* simple, proven on the reference house, no dependency on history. *Against:* the reserve can't know the oven comes on at 17:00 every weekday, peak warnings are impossible, and the planner's headroom ignores the evening. **Decision:** the baseline is an *input with confidence*, σ stays the floor.
 
