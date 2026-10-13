@@ -57,6 +57,7 @@ from .context import (
 from .deadline_fill import DeadlineFill, FlatPolicy, plan_one
 from .deadlines import DeadlineNeed, first, needs
 from .heat_capacitor import HeatCapacitor
+from .hot_water import HotWater
 from .plan import COVER_EPS_KWH, build_plan, inputs_digest
 from .run_once import RunOnce
 from .schedule import Schedule
@@ -81,6 +82,7 @@ __all__ = [
     "Forecasts",
     "Headroom",
     "HeatCapacitor",
+    "HotWater",
     "LoadView",
     "PeakShave",
     "Plan",

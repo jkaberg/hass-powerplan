@@ -103,7 +103,8 @@
     "strategy": "deadline_fill",
     "strategy_params": {
       "min_block_min": 30.0,
-      "prefer_late": true
+      "prefer_late": true,
+      "reserve_kwh": 4.4
     }
   },
   "type": "water_heater"

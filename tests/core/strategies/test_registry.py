@@ -63,6 +63,7 @@ def test_the_registered_roster_is_what_the_flow_offers() -> None:
         "cheapest_hours",
         "deadline_fill",
         "heat_capacitor",
+        "hot_water",
         "peak_shave",
         "run_once",
         "schedule",

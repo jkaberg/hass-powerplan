@@ -30,7 +30,13 @@ from .const import (
 )
 from .dashboard import async_remove_dashboard, async_setup_dashboard
 from .entity import async_ensure_site_subentry, async_prepare_site_device
-from .flow.load import answered_entities, binding_from_data, binding_to_data, extra_bindings
+from .flow.load import (
+    answered_entities,
+    binding_from_data,
+    binding_to_data,
+    extra_bindings,
+    sibling_probes,
+)
 from .runtime import Runtime, build_site
 from .services import async_setup_services
 from .storage import (
@@ -38,12 +44,15 @@ from .storage import (
     ENTRY_MINOR_ENTITY_REFS,
     ENTRY_MINOR_FOIL,
     ENTRY_MINOR_HEAT_PAIRS,
+    ENTRY_MINOR_HOT_WATER,
     ENTRY_MINOR_PRICE,
     ENTRY_MINOR_SITE_SUBENTRY,
     migrate_coast_tau,
     migrate_foil_floor,
     migrate_heat_strategy,
+    migrate_hot_water,
     migrate_tariff,
+    with_probes,
 )
 
 if TYPE_CHECKING:
@@ -116,6 +125,11 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
     Minor version 7: a foil floor still on the mat table's rating gets the foil's,
     and one whose coast time constant no foil can hold gets the default back
     (D-0740).
+
+    Minor version 8: a tank's top and bottom probes are found on its probe's own
+    device; a standby answer still at the old 60 W default is cleared so the next
+    setup measures it; `hot_water`'s reserve is written in. Every tank keeps its
+    strategy (D-0741, D-0743).
     """
     if entry.version > 1:
         return False
@@ -156,7 +170,10 @@ _BEFORE_SITE: Final = (
     (ENTRY_MINOR_COAST_TAU, migrate_coast_tau, "heating loads carry their coast time constant"),
     (ENTRY_MINOR_HEAT_PAIRS, migrate_heat_strategy, "heating plans completed"),
 )
-_AFTER_SITE: Final = ((ENTRY_MINOR_FOIL, migrate_foil_floor, "foil floors measured as foils"),)
+_AFTER_SITE: Final = (
+    (ENTRY_MINOR_FOIL, migrate_foil_floor, "foil floors measured as foils"),
+    (ENTRY_MINOR_HOT_WATER, migrate_hot_water, "water heaters ready to be measured"),
+)
 
 
 def _run_subentry_migrations(
@@ -167,24 +184,42 @@ def _run_subentry_migrations(
     """Run each step the entry has not had yet, in order."""
     for minor, migrate, done in steps:
         if entry.minor_version < minor:
+            if minor == ENTRY_MINOR_HOT_WATER:
+                # A tank's other probes, where its probe's device names them (D-0741):
+                # the one step that needs the registry, so it runs here and not offline.
+                _migrate_subentries(hass, entry, _tank_probes(hass), None, "tank probes found")
             _migrate_subentries(hass, entry, migrate, minor, done)
+
+
+def _tank_probes(hass: HomeAssistant) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:
+    """Return the rewrite that adds a tank's probes from its own device (D-0741)."""
+
+    def rewrite(data: Mapping[str, Any]) -> dict[str, Any] | None:
+        if data.get("type") != "water_heater":
+            return None
+        found = sibling_probes(hass, "water_heater", data.get("answers") or {})
+        migrated = with_probes(data, found)
+        return None if migrated is None else entity_refs.stored(hass, migrated)
+
+    return rewrite
 
 
 def _migrate_subentries(
     hass: HomeAssistant,
     entry: PowerplanConfigEntry,
     migrate: Callable[[Mapping[str, Any]], dict[str, Any] | None],
-    minor: int,
+    minor: int | None,
     done: str,
 ) -> None:
-    """Rewrite each subentry `migrate` changes, then move the entry to `minor`."""
+    """Rewrite each subentry `migrate` changes, then move the entry to `minor` where given."""
     changed = []
     for subentry in entry.subentries.values():
         migrated = migrate(subentry.data)
         if migrated is not None:
             hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
             changed.append(subentry.title)
-    hass.config_entries.async_update_entry(entry, minor_version=minor)
+    if minor is not None:
+        hass.config_entries.async_update_entry(entry, minor_version=minor)
     _LOGGER.info("%s: %s%s", entry.title, done, f": {', '.join(changed)}" if changed else "")
 
 

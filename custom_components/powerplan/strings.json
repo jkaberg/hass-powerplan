@@ -1106,6 +1106,7 @@
         "name": "Strategy",
         "state": {
           "deadline_fill": "Cheapest hours before the deadline",
+          "hot_water": "Heat water ahead of use",
           "cheapest_hours": "Cheapest hours",
           "heat_capacitor": "Move heat to cheaper hours",
           "best_save": "Save where it hurts least",
@@ -1671,6 +1672,7 @@
         "cheapest_hours": "Cheapest hours",
         "deadline_fill": "Cheapest hours before the deadline",
         "heat_capacitor": "Move heat to cheaper hours",
+        "hot_water": "Heat water ahead of use",
         "observe": "Trial mode",
         "opportunistic": "Only when cheap",
         "peak_shave": "Shave the peaks",

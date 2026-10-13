@@ -14,6 +14,7 @@ Each appliance follows a plan: the way PowerPlan chooses its hours. The setup pi
 | Cheapest hours | Car charger, Something else on a switch, Heat pump, Panel heater, Water heater | Something else on a switch | `cheapest_hours` |
 | Cheapest hours before the deadline | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | Car charger, Water heater | `deadline_fill` |
 | Move heat to cheaper hours | Floor heating, Heat pump, Panel heater, Water heater | Floor heating, Heat pump, Panel heater | `heat_capacitor` |
+| Heat water ahead of use | Water heater | – | `hot_water` |
 | Shave the peaks | Home battery | Home battery | `peak_shave` |
 | One run before ready-by | Dishwasher, washer or dryer | Dishwasher, washer or dryer | `run_once` |
 | Follow a schedule | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater | – | `schedule` |
@@ -101,6 +102,21 @@ Floor heating, heat pumps and panel heaters on **Save where it hurts least** or 
 
 A plan that stays off because your home is full is always followed: what it saves is in the capacity step, which the 4 % does not count. Capacity control does not change: PowerPlan still turns heating down to keep the hour under your capacity step, and it still protects the lowest temperature.
 
+<a name="hot_water"></a>
+## Heat water ahead of use
+
+Keeps enough hot water in the tank for the showers and taps ahead, heated in the cheapest hours that still reach them. PowerPlan expects most hot water to be used in the morning and the evening, and measures how much your household uses in a day from the tank's history. At every hour of the next day or two, the tank must hold at least the reserve, two showers by default, after the hot water expected by then. A light day is carried by the night's heating; on a heavy one the tank is topped up in the cheapest hours before the evening, not at the lowest temperature in the middle of it.
+
+The tank is heated no hotter than the coming use needs. Heat bought many hours early counts as a little dearer, for the heat it loses while it waits. Hours when your home has no room under its capacity step are left out, and so are the expensive hours of a tariff with peak windows, unless there is no other way. A legionella cycle that has started, and **Run now**, are planned as before. Before a ready-by time, the next three hours' hot water is in the tank.
+
+Keeping a reserve costs more than **Cheapest hours before the deadline**, which lets the tank run down to its lowest temperature before the night: in PowerPlan's test house it cost the tank 10 to 35 % more in a week. Choose this plan on the appliance if your hot water runs low in the evening; it is available since v0.0.11.
+
+| | |
+|---|---|
+| Good for | a water heater whose hot water runs low in the evening |
+| Needs | a temperature sensor on the tank, best with a top and a bottom probe |
+| Key | `hot_water` |
+
 <a name="peak_shave"></a>
 ## Shave the peaks
 
@@ -145,7 +161,7 @@ Runs the appliance on the solar power your home would otherwise send to the grid
 | Needs | a production sensor and a solar forecast on Home Assistant's energy dashboard |
 | Key | `surplus` |
 
-With solar panels, every plan counts the forecast surplus as cheap power: it costs what you would have been paid for it, or nothing above your export limit. A water heater on **Cheapest hours before the deadline** then heats at noon when the sun is cheaper than the night.
+With solar panels, every plan counts the forecast surplus as cheap power: it costs what you would have been paid for it, or nothing above your export limit. A water heater then heats at noon when the sun is cheaper than the night.
 
 To change an appliance's plan, open its device and choose another under **Strategy**. The plans an appliance offers are in the table above.
 

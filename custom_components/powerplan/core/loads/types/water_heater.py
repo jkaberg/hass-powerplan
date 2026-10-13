@@ -58,6 +58,7 @@ from ..questionnaire import (
 )
 from ..stores.thermal import (
     DRAW_L_PER_PERSON_DAY,
+    SHOWER_KWH,
     DrawOffProfile,
     SensorlessEstimate,
     SensorlessModel,
@@ -94,6 +95,10 @@ DERIVATION_VERSION: Final = 2
 #: a 20 °C room. The reference tank measured ≈ 150 W at 74 °C (October 2026), so a
 #: measurement replaces it at setup and daily (D-0741).
 STANDBY_DEFAULT_W: Final = 60.0
+
+#: How many showers `hot_water` keeps in the tank at every slot (D-0743): the
+#: second shower of an evening is the one a tank on its floor fails.
+RESERVE_SHOWERS: Final = 2
 
 #: The probes a tank's level is the mean of, top to bottom (D-0741).
 PROBES: Final = (Role.TEMP_TOP, Role.TEMP, Role.TEMP_BOTTOM)
@@ -425,7 +430,15 @@ class WaterHeater:
 
     key: ClassVar[str] = "water_heater"
     kinds: ClassVar[tuple[str, ...]] = ("setpoint", "switch")
-    strategies: ClassVar[tuple[str, ...]] = ("deadline_fill", "heat_capacitor", "surplus", "always")
+    strategies: ClassVar[tuple[str, ...]] = (
+        "deadline_fill",
+        "hot_water",
+        "heat_capacitor",
+        "surplus",
+        "always",
+    )
+    # `hot_water` is offered, not the default: on the reference benchmark it cost
+    # the tank 10–35 % more than `deadline_fill` (D-0743).
     default_strategy: ClassVar[str] = "deadline_fill"
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
@@ -538,9 +551,12 @@ class WaterHeater:
             strategy=self.default_strategy,
             # A block that ends at the deadline is at its target when it is
             # wanted, not six hours cooler (D-0710).
+            # `deadline_fill`'s two, and the reserve `hot_water` keeps for a
+            # household that picks it: two showers or half the shift (D-0743).
             strategy_params={
                 "min_block_min": max(MIN_BLOCK_MIN, params["min_on_s"] / 60.0),
                 "prefer_late": True,
+                "reserve_kwh": reserve_kwh(params["shiftable_kwh"]),
             },
             # Above the floor loops' 30 and below the heat pumps' 50: a tank
             # coasts for hours where a room coasts for minutes, and a cold shower
@@ -645,6 +661,8 @@ class WaterHeater:
             max_c=max_c,
             min_c=comfort_min_c,
             sensorless=sensorless,
+            draw=draw_off_of(params),
+            ready_c=float(params.get("ready_temp_c", max_c)),
         )
 
     # -------------------------------------------------------------------- tick #
@@ -861,9 +879,7 @@ class WaterHeater:
         )
         return remember(state, ctx.now, **{TANK_C: estimate.temp_c})
 
-    def _legionella_latch(
-        self, load: Load, state: LoadState, ctx: LoadCtx
-    ) -> LoadState:
+    def _legionella_latch(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState:
         """Start, hold and complete the cycle, or credit the tank's own (§5.12, INV-54, D-0742)."""
         params = load.config.params
         if not bool(params.get("legionella", True)):
@@ -1020,6 +1036,11 @@ class WaterHeater:
         zone = ctx.zone if ctx.zone is not None else ctx.now.tzinfo
         assert zone is not None  # every datetime in the core is tz-aware
         return zone
+
+
+def reserve_kwh(shiftable_kwh: float) -> float:
+    """Return the heat `hot_water` keeps: two showers, or half the tank's shift (D-0743)."""
+    return round(min(RESERVE_SHOWERS * SHOWER_KWH, shiftable_kwh / 2.0), 1)
 
 
 def draw_off_of(params: Mapping[str, Any]) -> DrawOffProfile:

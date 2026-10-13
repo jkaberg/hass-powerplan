@@ -15,7 +15,7 @@ The kinds of appliance PowerPlan steers, the plan each follows by default, and t
 | Something else on a switch | Cheapest hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule, Solar surplus | `generic_switch` |
 | Heat pump | Move heat to cheaper hours | Always on, Save where it hurts least, Cheapest hours, Cheapest hours before the deadline, Follow a schedule | `heat_pump` |
 | Panel heater | Move heat to cheaper hours | Always on, Save where it hurts least, Cheapest hours, Cheapest hours before the deadline, Follow a schedule | `radiator` |
-| Water heater | Cheapest hours before the deadline | Always on, Save where it hurts least, Cheapest hours, Move heat to cheaper hours, Follow a schedule, Solar surplus | `water_heater` |
+| Water heater | Cheapest hours before the deadline | Always on, Save where it hurts least, Cheapest hours, Move heat to cheaper hours, Heat water ahead of use, Follow a schedule, Solar surplus | `water_heater` |
 <!-- generated:end types -->
 
 <a name="ev"></a>

@@ -48,6 +48,7 @@ from .core.loads.types.floor_heating import (
 from .core.loads.types.floor_heating import (
     HEATING_TYPES as FLOOR_HEATING_TYPES,
 )
+from .core.loads.types.water_heater import reserve_kwh
 from .core.tariffs import countries
 from .core.tariffs.household import (
     ALL_LEVIES,
@@ -397,8 +398,10 @@ ENTRY_MINOR_HEAT_PAIRS: Final = 5
 ENTRY_MINOR_SITE_SUBENTRY: Final = 6
 #: Config entry minor version 7: a foil floor's table rating and coast corrected (D-0740).
 ENTRY_MINOR_FOIL: Final = 7
+#: Config entry minor version 8: a tank's probes bound and its standby measured (D-0741).
+ENTRY_MINOR_HOT_WATER: Final = 8
 #: The minor version a new entry is created at, and every migration ends on.
-ENTRY_MINOR: Final = ENTRY_MINOR_FOIL
+ENTRY_MINOR: Final = ENTRY_MINOR_HOT_WATER
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
@@ -674,3 +677,48 @@ def migrate_foil_floor(data: Mapping[str, Any]) -> dict[str, Any] | None:
     if params == before:
         return None
     return {**data, "params": params}
+
+
+# --------------------------------------------------------------------------- #
+# A tank planned for its draws (D-0741, D-0743) - config entry minor version 8
+# --------------------------------------------------------------------------- #
+
+#: D4 §6.3's standby default before D-0741 made it a derived default.
+OLD_STANDBY_DEFAULT_W: Final = 60.0
+
+
+def migrate_hot_water(data: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a tank's subentry ready to be measured, or `None` to leave it (D-0741, D-0743).
+
+    A standby answer still at the old 60 W default is cleared, so the next
+    **Change setup** measures it; one the household typed stays. The reserve
+    `hot_water` would keep is written in beside `deadline_fill`'s parameters, so
+    choosing that plan on the appliance keeps what the tank's size gives. Every
+    tank keeps its strategy.
+    """
+    if data.get("type") != "water_heater":
+        return None
+    answers = dict(data.get("answers") or {})
+    params = dict(data.get("params") or {})
+    strategy_params = dict(data.get("strategy_params") or {})
+    manual = set(data.get("manual_overrides") or ())
+    before = (dict(strategy_params), dict(answers))
+    strategy_params.setdefault(
+        "reserve_kwh", reserve_kwh(float(params.get("shiftable_kwh") or 0.0))
+    )
+    if answers.get("standby_loss_w") == OLD_STANDBY_DEFAULT_W and "standby_loss_w" not in manual:
+        answers["standby_loss_w"] = None
+    if (strategy_params, answers) == before:
+        return None
+    return {**data, "strategy_params": strategy_params, "answers": answers}
+
+
+def with_probes(data: Mapping[str, Any], probes: Mapping[str, str]) -> dict[str, Any] | None:
+    """Return a tank's subentry with the probe answers `probes` found, or `None` (D-0741)."""
+    if not probes:
+        return None
+    return {
+        **data,
+        "answers": {**(data.get("answers") or {}), **probes},
+        "params": {**(data.get("params") or {}), **probes},
+    }

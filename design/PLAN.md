@@ -237,6 +237,19 @@ User pages: FB.1 `docs/entities.md`; FB.2 `docs/appliances/water_heater.md`, `do
 
 User pages: HM.1 `docs/appliances/floor_heating.md`, `docs/appliances/radiator.md`, `docs/appliances/heat_pump.md` and `docs/setup.md` (what the flow measures, and that a new sensor gets the defaults). HM.2 `docs/strategies.md` (what the strategy does and its numbers) and `docs/capacity-tariffs.md` (heating stays off through a full hour when it can). HM.3 `docs/strategies.md`, with the generated table, the new label and a "Since v0.x" note that a new panel heater or foil floor starts on **Move heat to cheaper hours** while one already on **Save where it hurts least** keeps it; also `docs/appliances/radiator.md`, `docs/appliances/floor_heating.md` and `docs/appliances/README.md` (the default per type).
 
+### 3.0q Hot water for the day ahead
+
+[D5 §5.13, §6, §11](lld/D5-strategies.md), [D4 §5.12, §6.1, §6.3](lld/D4-loads.md), [D10 §5.6](lld/D10-forecasts.md), HLD §6: the floors' setup measurement made true for a foil and extended to the tank, a tank that pasteurises itself credited, and a tank planned for the draws ahead instead of one deadline - measured on the reference house, where the tank ran to its floor in the evening's peak on two days in eight and still had a legionella cycle booked after a week at 75 °C every night (dec. 51).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **WH.1 A foil measured as a foil** | `LoadHistory.bounds` and `bounds_for(params)`: a W/m² table rating bounded per m², a foil's `coast_tau_h` at [2, 48] h; a foil under a floating floor at 60 W/m²; config entry minor version 6 (`ENTRY_MINOR_FOIL`) | D4 §6.1; D10 §5.6; D-0740 | D10 §9 22; D4 §9 54 | - |
+| **WH.2 A tank measured at setup** | `TANK_SETUP_FITS`; the `draw_kwh_day` fit and its daily refinement; the standby fit's lower quartile; the tank's probe answers bound (`TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`) and suggested from the probe's device; the level the probes' mean | D4 §6.3; D10 §5.6; D-0741 | D10 §9 23; D4 §9 55 | - |
+| **WH.3 A tank that pasteurises itself** | the legionella hold counted whenever the coldest probe holds the band | D4 §5.12; D-0742 | D4 §9 56; D4 §9 11 still green | WH.2 |
+| **WH.4 Hot water for the day ahead** | `hot_water` registered and offered to the water heater, `deadline_fill` still its default (the gate failed, D-0743); `TankStore.draw` and `charge_level()`; `reserve_kwh` derived; config entry minor version 8 (`ENTRY_MINOR_HOT_WATER`) binding a tank's probes, clearing the old standby default and writing the reserve in; the label **Heat water ahead of use** | D5 §5.13, §6; D4 §5.12, §6.3; HLD §6; D-0743 | D5 §9 37, 38; smoke `--compare` within tolerance with `deadline_fill` the default; `hot_water`'s own cost on the tank measured against `deadline_fill`'s and recorded (D5 §5.13) | WH.2, WH.3 |
+
+User pages: WH.1 `docs/appliances/floor_heating.md` (the foil's W/m², the "Since" note); WH.2 `docs/appliances/water_heater.md` (what the flow measures, the probes) and its generated table; WH.3 `docs/appliances/water_heater.md`, `docs/events.md` (a natural pasteurisation is `completed`); WH.4 `docs/strategies.md` (the plan and what it costs, the generated table), `docs/appliances/water_heater.md` (when to choose it), `docs/limitations.md`.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -412,6 +425,8 @@ phase 4 after 0.11 and its domain WPs; phase 5 after 1.1, 3.4, 4.1; the release 
 
 **3.0p's order:** HM.1, HM.2, HM.3. HM.1 changes no plan: the fit and the defaults reach the stores, and only HM.2 plans on `τ`. HM.2 moves the reference benchmark's digests on purpose and updates the baseline. If the heating loads' savings on the spot year fall below the old baseline's, or the cold-evening scenario breaks its step, HM.2 stops there and goes back to the owner with the table. HM.3 never runs without HM.2: a pause-only load on v1's quantiles would pause on any spread (§8).
 
+**3.0q's order:** WH.1 and WH.2 in either order, WH.3 on WH.2's probes, WH.4 last. WH.4's gate: `hot_water` becomes the default only if the tank's cost on the smoke tier is at or under `deadline_fill`'s with no comfort violation added. It was 10–35 % over (D-0743), so it ships offered and the owner decides what comes next.
+
 ---
 
 ## 5. Working method
@@ -511,6 +526,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 48. **A tariff source follows its publisher's own index, and the canary tells a dropped connection from a broken source** (D-0701 … D-0705). Australia's hosts come from the register's `productBaseUri`, Switzerland's live municipalities from LINDAS; a table's convention (Denmark's hour 0) is read as its publisher means it; a finding the maintainer has read is acknowledged until a figure changes. The canary runs each copy it fetches through the flow's own path - answered, stored, read back and priced (D-0706). *Rejected:* hand-kept tables of slugs and mergers - each went stale within a day or a January.
 49. **The house's first fortnight** (D-0709 … D-0717, [the second field audit](reviews/field-audit-2026-10.md)). A deadline is judged only while the load asks for it; a tank's block ends at its deadline; a device that stops answering is retried until it answers and is a repair after 30 min, with the notification sent once beside it and held by quiet hours; the live warning waits while our own cut settles, and the seam cap stays deferred - three versions each moved energy into the next window and one pushed a scenario over its ceiling; `plan_adopted` announces a change the household can see; D11 bills a levelled book and the advice names the step below when the steered appliances could have reached it. The house keeps its 5–10 kW target through the winter: a target is each site's own select, nothing is built for it (owner, 4 Oct 2026). *Rejected:* switching the noisy notification category off (a real failure would go unseen), a seam cap (it moves energy into the next window), and an `auto` that aims below the reached step (an upper bound is not a promise).
 50. **`heat_capacitor` plans from the store, and is the one heating strategy** (D-0727 … D-0732). The load flow runs D10's fits on the recorder history of the entities just bound: peak draw, the coast time constant `τ`, heat-up and holding draw. They become defaults the household sees and may override, the type's tables where there is no history, refined daily as before. A stretch to stay off in, dear by price or full by capacity, becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest (INV-55, INV-56), filled before it by §5.2's greedy, and any shortfall heated inside it, spread evenly. Dear slots no stretch covers get pause pairs that must clear `min_saving`. D4 derives `bank_k` 0 where the lever can't raise the store above comfort. `best_save` stays offered for heating beside it, and no load is moved off it (owner, 13 Oct 2026, D-0738). A config entry migration materialises `bank_k` on the loads already on `heat_capacitor`, so no load starts banking that didn't before. D-0724's gate and D-0254's flat-day rule stay. *Rejected:* keeping the quantile rule (it banks with nothing dear in reach and can't say why); fixed-size banks (too much on a mild day, too little on a cold one); leaving capacity to D6's live shedding (a 2 K eco step at the worst moment); waiting for the daily fits (a day or more on table values the recorder could have corrected); a new key for the merged strategy (it migrates every heating load and breaks every automation).
+51. **A tank is measured, credited and planned for its draws** (D-0740 … D-0743). The load flow's measurement is bounded by what the parameters say - per m² for a floor's table rating, [2, 48] h for a foil's coast - and runs on a tank too: element, standby, the household's day. A tank's probes above and below are bound and its level is their mean. Any hour the coldest water holds the legionella band counts toward INV-54. `hot_water` keeps a reserve plus the next hour's draws in the tank at every slot and buys each shortfall in the cheapest block before it, ranked by price and the heat it loses waiting; it failed the money gate on the benchmark (10–35 % dearer on the tank), so it is offered and `deadline_fill` stays the default. *Rejected:* a second ready-by (fills at the day rate every day), a refill-within-N-hours rule (buys by the clock), an optimiser (no sentence per move), learning each household's draw times (weeks before it works), a thermal dose for legionella (claims a precision the guidance doesn't).
 
 ---
 
@@ -539,6 +555,8 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 **Merge the strategies first, then rewrite the algorithm.** *For:* the merge is the user-visible half, and it would ship sooner on v1's quantile code with `bank_k`. *Against:* pause-only v1 coasts the dearest quarter whatever the spread, so a radiator moved off `best_save` would be told to pause on a 2 % spread it was never paused for, and the migration's promise that no load starts banking would be the only promise it kept. **Decision:** measure first (HM.1), plan on it second (HM.2), measured against the baseline, then the merge (HM.3).
 
 **Plan on the stretches before the setup measurement exists.** *For:* HM.2 is where the saving is, and D4's defaults alone would let it start. *Against:* on the reference house the defaults are wrong by 9–24 % in peak draw (D-0731), and `τ` differs 2× between two bathrooms (D-0730). A stretch sized on a default is a floor that arrives cold or overpaid. **Decision:** HM.1 first; it changes no plan and is cheap.
+
+**Ship `hot_water` before the tank is measured.** *For:* the planner is where the money is, and D4's table would let it start a WP sooner. *Against:* the table's 60 W is 2.5 × under the reference tank's measured standby and its persons × 45 L says nothing of a household's day, so the reserve and every top-up would be sized on numbers the recorder already contradicts; and without the probes a centre probe reads 64 °C over a bottom third at 28 °C. **Decision:** WH.2 before WH.4.
 
 **Write the user pages last, in one block.** *For:* surfaces still move, and pages written early get rewritten. *Against:* pages written at the end describe reasons nobody remembers, and until then nothing keeps them current. **Decision:** the docs foundation (tests, tools, generated reference) early; pages for moving surfaces once they settle.
 
@@ -711,6 +729,10 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | HM.1 | Measured at setup | done |
 | HM.2 | Heat moved by the store | done |
 | HM.3 | One strategy for heating | done |
+| WH.1 | A foil measured as a foil | done |
+| WH.2 | A tank measured at setup | done |
+| WH.3 | A tank that pasteurises itself | done |
+| WH.4 | Hot water for the day ahead | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

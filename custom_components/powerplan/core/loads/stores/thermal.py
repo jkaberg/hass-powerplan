@@ -33,6 +33,7 @@ __all__ = [
     "DRAW_L_PER_PERSON_DAY",
     "DRAW_TEMP_C",
     "RHO_SCREED",
+    "SHOWER_KWH",
     "WATER_KJ_PER_LK",
     "DrawOffProfile",
     "RoomStore",
@@ -64,6 +65,10 @@ DRAW_TEMP_C: Final = 55.0
 #: Incoming mains water. 8 °C is the Nordic year-round mean of a buried supply;
 #: it is what the energy in a litre of stored hot water is measured against.
 COLD_WATER_C: Final = 8.0
+
+#: One shower in the tank's heat, kWh: 40 L at `DRAW_TEMP_C` from mains (the tank
+#: simulator's `SHOWER_L`), the unit a tank's reserve is counted in (D-0743).
+SHOWER_KWH: Final = 40.0 * WATER_KJ_PER_LK * (DRAW_TEMP_C - COLD_WATER_C) / 3600.0
 
 
 def _deficit(level_now: float, target: float, direction: StoreDirection) -> float:
@@ -259,6 +264,11 @@ class TankStore:
     eta: float = 0.98
     direction: StoreDirection = "heat"
     sensorless: SensorlessModel | None = None
+    #: What the household draws, and when (D-0743): what `hot_water` plans against.
+    draw: DrawOffProfile | None = None
+    #: Where a charge stops - the ready temperature the thermostat is set to while
+    #: the plan charges (D4 §5.4's tank row); `max_c` when nothing says lower.
+    ready_c: float | None = None
 
     def capacity_kwh_per_unit(self) -> float:
         """KWh per kelvin of the whole tank, after the element's losses."""
@@ -287,6 +297,10 @@ class TankStore:
     def max_level(self) -> float:
         """Return the thermostat's maximum (INV-56)."""
         return self.max_c
+
+    def charge_level(self) -> float:
+        """Return where a planned charge stops: the ready temperature, never above the maximum."""
+        return self.max_c if self.ready_c is None else min(self.ready_c, self.max_c)
 
     def min_level(self) -> float:
         """Return the comfort minimum - 45 °C by default, and never a legionella nursery."""
