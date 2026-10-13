@@ -31,7 +31,7 @@ from .base import (
 )
 from .ev import charge_efficiency, sessions_from
 from .nameplate import nameplate_w, table_bounds
-from .tank import standby_loss_w
+from .tank import daily_draw_kwh, standby_loss_w
 from .thermal import FOIL_TAU_BOUNDS_H, coast_rate, coast_tau, heatup_rate
 
 if TYPE_CHECKING:
@@ -50,6 +50,7 @@ __all__ = [
     "charge_efficiency",
     "coast_rate",
     "coast_tau",
+    "daily_draw_kwh",
     "episodes",
     "fit_all",
     "heatup_rate",
@@ -69,6 +70,7 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.CHARGE_EFFICIENCY: charge_efficiency,
     FitKey.NAMEPLATE: nameplate_w,
     FitKey.STANDBY_LOSS: standby_loss_w,
+    FitKey.DAILY_DRAW: daily_draw_kwh,
 }
 
 

@@ -67,6 +67,7 @@ class FitKey(StrEnum):
     NAMEPLATE = "nameplate_w"
     STANDBY_LOSS = "standby_loss_w"
     COAST_TAU = "coast_tau_h"
+    DAILY_DRAW = "draw_kwh_day"
 
 
 @dataclass(frozen=True, slots=True)

@@ -190,8 +190,9 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 | slab/room `coast_tau_h` (D-0730) | the same off episodes, level and outdoor | per episode `(T̄ − T̄_out) / fall rate`; the median | [5, 1 000] h; a foil [2, 48] h (D-0740) | n ≥ 10, span ≥ 7 days, interquartile range ≤ 1.0 × median |
 | heat-up rate K/h at nameplate | episodes with the load on, temp rising | median slope | [0.1, 10] | n ≥ 5 |
 | EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy | Σ(ΔSoC × capacity) / Σ energy | [0.75, 0.98] | n ≥ 3 |
-| `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured; a rating from a W/m² table [10, 250] W/m² × area (D-0740) | n ≥ 100 samples |
-| tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity | [20, 200] | n ≥ 3 |
+| `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured; a rating from a W/m² table [10, 250] W/m² × area (D-0741) | n ≥ 100 samples |
+| tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity, the lower quartile over episodes (D-0741) | [20, 200] | n ≥ 3 |
+| tank `draw_kwh_day` (D-0741) | element power and level, whole 24 h windows | `E_in·η − P_standby·24 h − C·η·(T_end − T_start)`, the median | [0.3, 60] kWh | n ≥ 5 days, span ≥ 5 days |
 
 **Per-m² bounds and the two-node floor.** A coast fit turns the *store's* fall into watts. On a real floor the screed is one mass and the room another, so only the screed's share of the house's loss comes out of the screed, `C_screed / (C_screed + C_room)` ≈ 27 % at 50 mm (D4 §5.7's 0.0275 kWh/K·m² against the room's 0.075). A slab in a 2000s envelope (0.7 W/m²K) therefore fits ≈ 0.19 W/K·m², under the 0.5 floor above, and the fit is **not applied**. The load keeps `configured`, which is `None` for a slab, and the loss term is skipped (D4 §5.7). That's INV-63 doing its job, not a bug. The bounds stay until a house says otherwise (D-0216). Leaky envelopes and heavy screeds land inside and are applied.
 
@@ -285,6 +286,7 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 20. The seed's placement (D-0687): HA-shaped statistics rows - hourly beyond 10 days, 5-minute within, a register reporting every 10 s - with a 3 kW load starting at 22:00 local put its energy in bin 22, not 21; a house with no production gets no negative bin; `lag_h` is 0, logged and stored; a store at `seed_version` 2 is re-seeded once.
 21. `coast_tau_h` (D-0730, D-0731): synthetic coasts at `τ` 60 h over outdoor 1–14 °C recover it within 10 % and pass the gate though R² against outdoor is ≤ 0; a spread of 1.7 × the median fails it and `effective` stays the configured value; the flow's call returns the same `Fit`s as the daily run on the same history.
 22. A table is not a rating (D-0740): 16 m² of foil whose table says 1 920 W and whose power reads 620 W fits 620 W inside [160, 4 000] W and applies it; a tank's 3 kW element keeps ×[0.5, 1.5]; a foil's `τ` of 383 h is refused inside [2, 48] h and the configured 10 h stands, while a slab keeps [5, 1 000] h. `tests/core/forecasts/test_09_nameplate_p95.py`, `test_21_coast_tau.py`.
+23. A tank's day (D-0741): `tests/sim/tank.py` serving four people's showers and taps through its own 75 °C thermostat for eight days fits `draw_kwh_day` within 10 % of the heat the simulator served, and applies it; three days are information only; no power trace, no fit. The standby fit on the same history reads the simulator's 60 W from its lower quartile, where the duration-weighted mean read 100 W. `tests/core/forecasts/test_23_tank_daily_draw.py`.
 
 ---
 

@@ -911,12 +911,15 @@ and the only one a plan may stop outright. The golden answers are
 | Question | Options (default) | Drives | Source |
 |---|---|---|---|
 | Tank size | 100 / 120 / 150 / 200 / 300 / 400 L | `TankStore.litres` | nameplate |
-| Element | 1.5 / 2 / 3 / 4.5 / 6 / 9 kW (measured if power role) | nameplate | nameplate |
-| People | 1 … 6+ (2) | daily draw-off estimate 45 L/person/day at 55 °C; deadlines | DHW norms |
+| Element | 1.5 / 2 / 3 / 4.5 / 6 / 9 kW (measured if power role: the p95 at setup, D-0741) | nameplate | nameplate |
+| People | 1 … 6+ (2) | daily draw-off estimate 45 L/person/day at 55 °C until the recorder measures the day's draw (`draw_kwh_day`, D-0741); deadlines | DHW norms |
 | Control | thermostat I can set (climate/water_heater entity) · a plug/relay | SETPOINT vs SWITCH; SWITCH refused without a mechanical thermostat or a temperature sensor | INV-64 |
+| Temperature sensor; *Advanced* top and bottom probes | entities (none) | bound as `TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`; the level is the mean of those that read; top and bottom suggested from the probe's own device by name (top/upper/topp/øvre, bottom/lower/bunn/nedre) | D-0741 |
 | Ready by | time (06:30), optional second (17:00) | deadlines | - |
 | Anti-legionella | heater has its own program · let powerplan do it weekly (default) · don't know (= powerplan) | INV-54 cycle 65 °C / 60 min / 7 days | storage ≥ 60 °C weekly is the common public-health recommendation |
-| *Advanced* | comfort min 45, ready temp 75, max 80, min on/off 600 s, standby loss 60 W, legionella temp/hold/interval | store, kind | effektstyring |
+| *Advanced* | comfort min 45, ready temp 75, max 80, min on/off 600 s, standby loss (measured, else 60 W), hot water a day (measured, else people × 45 L at 55 °C), legionella temp/hold/interval | store, kind | effektstyring; measured at setup (D-0741) |
+
+**Measured at setup (D-0741).** As the floors (D-0731): the element's p95 while on, the standby loss (D10's tank fit, its lower quartile) and the household's day (`draw_kwh_day`: element energy less standby less the water's gain, per 24 h, the median), from the bound entities' history, each shown on the review with its source. An answer beats a measurement, a measurement beats the table. The daily fit refines `standby_loss_w` and `draw_kwh_day` through `Learned` (INV-63). The tank's size is not measured: with one probe, energy over a kelvin at that probe is the thermocline's position, not the volume.
 
 ### 6.4 `heat_pump`
 
@@ -1045,6 +1048,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 52. A lever that can't bank derives `bank_k` 0 (D-0728, D-0729): a MODE floor, a foil floor on MODE and a plug radiator derive `heat_capacitor` with `bank_k` 0; a SETPOINT floor 1.0, a thermostat radiator 2.0, a heat pump its band; the radiator writes `min_saving` 0.10 and no `threshold_pct`; every thermal type offers `best_save`, none as its default (D-0738).
 53. Measured at setup (D-0731): a floor whose power and temperature have 10 days of history with 39 coasts gets `coast_tau_h` and `nameplate_w` from them, materialised and shown with their source on the review; with no history it gets the type's default and the review says so; an override under **Advanced** wins and survives re-derivation; the flow's reads run in an executor job and never in the event loop.
 54. A foil measured as a foil (D-0740): 16 m² of foil under laminate derives 960 W (60 W/m²), under tile 1 920 W; config entry minor version 7 gives a foil still on the mat table's rating the foil's, puts a `coast_tau_h` outside [2, 48] h back to 10 h, and leaves a measured rating, a mat under tile, a typed `coast_tau_h`, a slab and every other type alone. `tests/surface/test_foil_migration.py`.
+55. A tank measured at setup (D-0741): measured 2 904 W, 148 W and 6.24 kWh/day derive `nameplate_w` 2 904, `standby_loss_w` 148, `draw_kwh_day` 6.2; a typed standby of 80 W stands; nothing measured keeps 3 000 W, 60 W and no daily figure; the profile then spends 6.2 kWh a day; a tank reading 69 / 64 / 28 °C top to bottom has level 53.7 °C, 64 °C with the centre probe alone; the probe answers bind as `TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`, and top and lower are suggested from the centre probe's device by name. `tests/core/loads/test_55_tank_measured.py`, `tests/flows/test_tank_probes.py`.
 ---
 
 ## 10. Deliberately deferred

@@ -1,18 +1,11 @@
 {
-  "type": "water_heater",
   "about": "D4 §6.3: the reference house's 300 L cylinder on a 3 kW element, four people, steered by its own water_heater entity, powerplan running the weekly legionella cycle. 45 → 75 °C is the 10.7 kWh of D4 §9 13.",
-  "ctx": {
-    "area": "Vaskerom",
-    "capabilities": [
-      "setpoint",
-      "water_heater"
-    ]
-  },
   "answers": {
     "arrival_sources": [],
     "comfort_min_c": 45.0,
     "command_interval_s": 120.0,
     "control": "thermostat",
+    "draw_kwh_day": null,
     "element_kw": "3",
     "follow_presence": true,
     "force_max_h": 6.0,
@@ -31,9 +24,35 @@
     "ready_temp_c": 75.0,
     "schedule_entity": null,
     "standby_loss_w": 60.0,
-    "temp_entity": null
+    "temp_bottom_entity": null,
+    "temp_entity": null,
+    "temp_top_entity": null
+  },
+  "ctx": {
+    "area": "Vaskerom",
+    "capabilities": [
+      "setpoint",
+      "water_heater"
+    ]
   },
   "derived": {
+    "derivation_version": 2,
+    "explanation_key": "water_heater_review",
+    "explanation_params": {
+      "comfort_min_c": 45.0,
+      "element_kw": 3.0,
+      "kind": "setpoint",
+      "legionella": true,
+      "legionella_interval_days": 7.0,
+      "legionella_temp_c": 65.0,
+      "litres": 300.0,
+      "persons": 4,
+      "ready_by": "06:30",
+      "ready_temp_c": 75.0,
+      "sensorless": false,
+      "shiftable_kwh": 10.68
+    },
+    "group": null,
     "params": {
       "anchor_c": 75.0,
       "arrival_sources": [],
@@ -41,6 +60,7 @@
       "comfort_min_c": 45.0,
       "command_interval_s": 120.0,
       "control": "thermostat",
+      "draw_kwh_day": null,
       "draw_l_per_person_day": 45.0,
       "element_kw": 3.0,
       "floor_c": 45.0,
@@ -74,31 +94,17 @@
       "standby_loss_w": 60.0,
       "store": "tank",
       "substitutable": false,
+      "temp_bottom_entity": null,
       "temp_entity": null,
+      "temp_top_entity": null,
       "vacation_c": 45.0
     },
+    "priority": 40,
     "strategy": "deadline_fill",
     "strategy_params": {
       "min_block_min": 30.0,
       "prefer_late": true
-    },
-    "priority": 40,
-    "group": null,
-    "explanation_key": "water_heater_review",
-    "explanation_params": {
-      "litres": 300.0,
-      "element_kw": 3.0,
-      "persons": 4,
-      "kind": "setpoint",
-      "comfort_min_c": 45.0,
-      "ready_temp_c": 75.0,
-      "ready_by": "06:30",
-      "legionella": true,
-      "legionella_temp_c": 65.0,
-      "legionella_interval_days": 7.0,
-      "sensorless": false,
-      "shiftable_kwh": 10.68
-    },
-    "derivation_version": 1
-  }
+    }
+  },
+  "type": "water_heater"
 }

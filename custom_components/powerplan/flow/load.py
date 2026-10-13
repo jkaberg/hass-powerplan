@@ -202,6 +202,26 @@ _EXTRA_ROLE_ANSWERS: dict[str, tuple[tuple[str, Role], ...]] = {
     "heat_pump": (("outdoor_entity", Role.OUTDOOR_TEMP), ("outlet_entity", Role.OUTLET_TEMP)),
     "ev": (("soc_entity", Role.SOC),),
     "battery": (("soc_entity", Role.SOC),),
+    # A tank's own probe answer was never bound, so a relay tank with a sensor read
+    # nothing (D-0741); the probes above and below make its level the tank's mean.
+    "water_heater": (
+        ("temp_entity", Role.TEMP),
+        ("temp_top_entity", Role.TEMP_TOP),
+        ("temp_bottom_entity", Role.TEMP_BOTTOM),
+    ),
+}
+
+#: Answers a type's probe answer suggests from the same device, by name (D-0741):
+#: the answer it starts from, and per answer to fill the words its entity's name
+#: carries. A tank sold with three probes names them; one with one has no siblings.
+_SIBLING_PROBES: dict[str, tuple[str, dict[str, tuple[str, ...]]]] = {
+    "water_heater": (
+        "temp_entity",
+        {
+            "temp_top_entity": ("top", "upper", "topp", "øvre"),
+            "temp_bottom_entity": ("bottom", "lower", "bunn", "nedre"),
+        },
+    ),
 }
 
 
@@ -266,6 +286,45 @@ def extra_bindings(
         if binding is not None:
             out.append(binding)
     return tuple(out)
+
+
+def sibling_probes(
+    hass: HomeAssistant, type_key: str, answers: Mapping[str, Any]
+) -> dict[str, str]:
+    """Return the probe answers a type's probe suggests from its own device (D-0741).
+
+    Only an unanswered question is filled, only with a temperature sensor on the
+    same device as the answered probe, and only where its name says which one it
+    is: a guess the household can see on the review and change, never a binding
+    to a sensor nobody named.
+    """
+    spec = _SIBLING_PROBES.get(type_key)
+    if spec is None:
+        return {}
+    anchor_key, wanted = spec
+    registry = er.async_get(hass)
+    anchor = answers.get(anchor_key)
+    anchor_id = None if not anchor else er.async_resolve_entity_id(registry, str(anchor))
+    entry = None if anchor_id is None else registry.async_get(anchor_id)
+    if entry is None or entry.device_id is None:
+        return {}
+    siblings = [
+        sibling
+        for sibling in er.async_entries_for_device(registry, entry.device_id)
+        if sibling.entity_id != anchor_id
+        and sibling.domain == "sensor"
+        and (sibling.device_class or sibling.original_device_class) == "temperature"
+    ]
+    found: dict[str, str] = {}
+    for key, words in wanted.items():
+        if answers.get(key):
+            continue
+        for sibling in siblings:
+            name = f"{sibling.entity_id} {sibling.name or sibling.original_name or ''}".lower()
+            if any(word in name for word in words):
+                found[key] = sibling.entity_id
+                break
+    return found
 
 
 def binding_from_data(row: Mapping[str, Any]) -> RoleBinding:
@@ -1371,25 +1430,28 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         """Validate and derive; on success go on to the review, else return `None`."""
         device_type = self._device_type
         assert self._ctx is not None
+        # A tank's other probes, where its own device names them (D-0741).
+        raw = {**raw, **sibling_probes(self.hass, str(self._type), raw)}
         self._answers = device_type.questionnaire.validate(raw, self._ctx)
         # `derive()` refuses what no question alone can - a tank on a relay with
         # nothing to keep it safe (`unsafe_switch`, INV-64) - and that refusal is
         # an answer's error too (review NEW-2).
         self._derived = device_type.derive(self._answers, self._ctx)
-        # What the house's recorder already knows beats the type's tables (D-0731):
-        # measured against the answers' own rating and sensor, then derived again.
-        self._ctx = replace(self._ctx, measured=await self._measure(self._derived.params))
-        if self._ctx.measured:
-            self._derived = device_type.derive(self._answers, self._ctx)
         # Only a role this answer actually names is replaced - an unanswered
         # `outdoor_entity` leaves the match step's own auto-detected
-        # outdoor_temp binding standing (D4 §5.14).
+        # outdoor_temp binding standing (D4 §5.14). Bound before the measurement,
+        # so a tank is measured on the probe the household named (D-0741).
         extra = self._extra_bindings(str(self._type), self._derived.params)
         answered_roles = {binding.role for binding in extra}
         self._bindings = (
             *(b for b in self._bindings if b.role not in answered_roles),
             *extra,
         )
+        # What the house's recorder already knows beats the type's tables (D-0731):
+        # measured against the answers' own rating and sensor, then derived again.
+        self._ctx = replace(self._ctx, measured=await self._measure(self._derived.params))
+        if self._ctx.measured:
+            self._derived = device_type.derive(self._answers, self._ctx)
         if self.source == "reconfigure":
             return await self.async_step_reconfigure_review()
         return await self.async_step_review()

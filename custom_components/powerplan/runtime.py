@@ -1681,13 +1681,15 @@ class Runtime:
         power = device.entity_of(Role.POWER)
         # A slab or a room also learns how fast it coasts (D-0730).
         coasts = key is FitKey.LOSS_COEFF
+        # A tank also learns how much its household draws (D-0741).
         fits = (
-            (key,)
+            (key, FitKey.DAILY_DRAW)
             if key is FitKey.STANDBY_LOSS
             else (key, FitKey.HEATUP_RATE, *((FitKey.COAST_TAU,) if coasts else ()))
         )
         configured = params.get(param)
         tau = params.get("coast_tau_h")
+        draw = params.get("draw_kwh_day")
         spec = FitSpec(
             load_id=load.load_id,
             type_key=load.config.type_key,
@@ -1702,6 +1704,7 @@ class Runtime:
                 key: None if configured is None else float(configured),
                 FitKey.NAMEPLATE: load.config.nameplate_w,
                 FitKey.COAST_TAU: None if tau is None else float(tau),
+                FitKey.DAILY_DRAW: None if draw is None else float(draw),
             },
             power=power,
             level=series(level_role),
@@ -1709,7 +1712,14 @@ class Runtime:
             outdoor=outdoor,
             bounds=bounds_for(params),
         )
-        return spec, ((param, key), *((("coast_tau_h", FitKey.COAST_TAU),) if coasts else ()))
+        learned: tuple[tuple[str, FitKey], ...] = (
+            (("coast_tau_h", FitKey.COAST_TAU),)
+            if coasts
+            else (("draw_kwh_day", FitKey.DAILY_DRAW),)
+            if key is FitKey.STANDBY_LOSS
+            else ()
+        )
+        return spec, ((param, key), *learned)
 
     def _ev_fit_spec(
         self, load: Load, store: EnergyStore, device: LoadDevice

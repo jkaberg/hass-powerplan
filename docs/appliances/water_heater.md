@@ -24,6 +24,10 @@ PowerPlan shows which entity it will control and which it only reads. Check them
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the tank's power and temperature are already in Home Assistant's history, PowerPlan measures the element's power, how much heat the tank loses standing, and how much hot water the household uses in a day. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
+
+If the tank has more than one temperature sensor, pick the middle one as **Temperature sensor** and the others under **Advanced** as **Top probe** and **Bottom probe**. Where they sit on the same device and their names say top or bottom, PowerPlan fills them in for you. With all three, PowerPlan sees how much hot water is left after a shower, not only the temperature in the middle.
+
 <!-- generated:begin questions:water_heater · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|
@@ -33,6 +37,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Control | Whether PowerPlan controls a plug or a thermostat. |
 | Mechanical thermostat | The tank has its own thermostat that PowerPlan cannot set. |
 | Temperature sensor | A sensor on the tank, if there is one. |
+| Advanced › Top probe | Advanced: a second sensor, near the top of the tank. |
+| Advanced › Bottom probe | Advanced: a third sensor, near the bottom of the tank. |
 | Ready by | When the hot water or the cycle must be ready. |
 | Second ready-by | A second time of day the water must be ready, if any. |
 | Legionella cycle | Who runs the weekly anti-legionella cycle. |
@@ -40,6 +46,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Advanced › Ready temperature | Advanced: the temperature the tank is heated to by the ready-by time. |
 | Never above | The highest temperature when storing heat in cheap hours; blank uses the room's usual. |
 | Advanced › Standby loss | Advanced: watts the tank loses standing. |
+| Advanced › Hot water a day | Advanced: the heat the household draws from the tank in a day, in kWh. |
 | Advanced › Legionella temperature | Advanced: the temperature the cycle heats to. |
 | Advanced › Legionella hold | Advanced: minutes the temperature is held. |
 | Advanced › Legionella interval | Advanced: days between cycles. |

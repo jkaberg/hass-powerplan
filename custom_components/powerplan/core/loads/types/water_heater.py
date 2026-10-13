@@ -88,7 +88,15 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 1
+DERIVATION_VERSION: Final = 2
+
+#: D4 §6.3's standby loss where the house has not measured one: 300 L at 75 °C in
+#: a 20 °C room. The reference tank measured ≈ 150 W at 74 °C (October 2026), so a
+#: measurement replaces it at setup and daily (D-0741).
+STANDBY_DEFAULT_W: Final = 60.0
+
+#: The probes a tank's level is the mean of, top to bottom (D-0741).
+PROBES: Final = (Role.TEMP_TOP, Role.TEMP, Role.TEMP_BOTTOM)
 
 #: `LoadState.learned` keys this type owns (`design/DECISIONS.md` D-0200): the
 #: sensorless estimate, and how long the water has been in the pasteurisation
@@ -197,6 +205,20 @@ QUESTIONNAIRE = Questionnaire(
             help_key="water_heater_temp_entity",
         ),
         Question(
+            key="temp_top_entity",
+            kind=QuestionKind.ENTITY,
+            default=None,
+            advanced=True,
+            help_key="water_heater_temp_top_entity",
+        ),
+        Question(
+            key="temp_bottom_entity",
+            kind=QuestionKind.ENTITY,
+            default=None,
+            advanced=True,
+            help_key="water_heater_temp_bottom_entity",
+        ),
+        Question(
             key="ready_by",
             kind=QuestionKind.TIME,
             default="06:30",
@@ -252,12 +274,22 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="standby_loss_w",
             kind=QuestionKind.NUMBER,
-            default=60.0,
+            derived_default=True,
             unit="W",
             min=0.0,
             max=500.0,
             advanced=True,
             help_key="water_heater_standby",
+        ),
+        Question(
+            key="draw_kwh_day",
+            kind=QuestionKind.NUMBER,
+            derived_default=True,
+            unit="kWh",
+            min=0.3,
+            max=60.0,
+            advanced=True,
+            help_key="water_heater_draw",
         ),
         Question(
             key="legionella_temp_c",
@@ -412,6 +444,25 @@ class WaterHeater:
         max_c = answers.number("max_c")
         legionella_temp_c = answers.number("legionella_temp_c")
         legionella = answers.choice("legionella") != "built_in"
+        # What the house measured beats the type's tables, and an answer beats both (D-0741).
+        measured = ctx.measured
+        found_w = measured.get("nameplate_w")
+        found_standby = measured.get("standby_loss_w")
+        found_draw = measured.get("draw_kwh_day")
+        standby_w = _or(
+            answers.get("standby_loss_w"),
+            round(found_standby.value) if found_standby is not None else STANDBY_DEFAULT_W,
+        )
+        # Without an answer or a measurement the profile's persons × 45 L stands,
+        # and nothing is written that a later measurement would have to beat.
+        answered_draw = answers.get("draw_kwh_day")
+        draw_kwh_day = (
+            float(answered_draw)
+            if answered_draw is not None
+            else round(found_draw.value, 1)
+            if found_draw is not None
+            else None
+        )
 
         kind = "setpoint" if control == "thermostat" else "switch"
         has_sensor = control == "thermostat" or temp_entity is not None
@@ -432,11 +483,13 @@ class WaterHeater:
             "store": "tank",
             "litres": litres,
             "element_kw": element_kw,
-            "nameplate_w": element_kw * 1000.0,
+            "nameplate_w": round(found_w.value) if found_w is not None else element_kw * 1000.0,
             "persons": persons,
             "control": control,
             "mechanical_thermostat": mechanical,
             "temp_entity": temp_entity,
+            "temp_top_entity": answers.get("temp_top_entity"),
+            "temp_bottom_entity": answers.get("temp_bottom_entity"),
             "has_temp_sensor": has_sensor,
             "sensorless": not has_sensor,
             "comfort_c": comfort_min_c,
@@ -462,8 +515,9 @@ class WaterHeater:
             "legionella_interval_days": answers.number("legionella_interval_days"),
             "legionella_lead_h": LEGIONELLA_LEAD_H,
             "legionella_urgent_h": LEGIONELLA_URGENT_H,
-            "standby_loss_w": answers.number("standby_loss_w"),
+            "standby_loss_w": standby_w,
             "draw_l_per_person_day": DRAW_L_PER_PERSON_DAY,
+            "draw_kwh_day": draw_kwh_day,
             "min_on_s": answers.number("min_on_s"),
             "min_off_s": answers.number("min_off_s"),
             "command_interval_s": answers.number("command_interval_s"),
@@ -599,10 +653,13 @@ class WaterHeater:
         """Return the water temperature - measured, or estimated (§5.7).
 
         Never both: a tank with a thermometer has no estimate to fall back on,
-        and a tank without one has no reading to prefer.
+        and a tank without one has no reading to prefer. With probes above and
+        below, the mean of those that read: water replaced from the bottom leaves
+        the middle hot for hours, and the mean is the heat the tank still holds
+        (D-0741).
         """
         if not load.config.params.get("sensorless"):
-            return ctx.reads.value(Role.TEMP)
+            return _mean_of(_probes(ctx))
         remembered = recall(state, TANK_C)
         return None if remembered is None else remembered.value
 
@@ -956,10 +1013,33 @@ def draw_off_of(params: Mapping[str, Any]) -> DrawOffProfile:
     One reading for the two that need it: the sensorless model's integrator here,
     and D11's tank shadow, which reheats what the same household draws.
     """
-    return DrawOffProfile(
-        persons=int(params.get("persons", 2)),
-        litres_per_person_day=float(params.get("draw_l_per_person_day", DRAW_L_PER_PERSON_DAY)),
-    )
+    persons = int(params.get("persons", 2))
+    per_person = float(params.get("draw_l_per_person_day", DRAW_L_PER_PERSON_DAY))
+    measured = params.get("draw_kwh_day")
+    if measured is not None and persons > 0:
+        # The day's heat as litres at the profile's temperature (D-0741).
+        per_person = (
+            float(measured)
+            / persons
+            / DrawOffProfile(persons=1).kwh_per_day
+            * (DRAW_L_PER_PERSON_DAY)
+        )
+    return DrawOffProfile(persons=persons, litres_per_person_day=per_person)
+
+
+def _probes(ctx: LoadCtx) -> tuple[float, ...]:
+    """Return what the tank's bound probes read, top to bottom (D-0741)."""
+    return tuple(value for role in PROBES if (value := ctx.reads.value(role)) is not None)
+
+
+def _mean_of(values: tuple[float, ...]) -> float | None:
+    """Return the mean, or `None` with nothing to average."""
+    return sum(values) / len(values) if values else None
+
+
+def _or(value: Any, fallback: float) -> float:
+    """Return the answered number, or the derived default when it was left blank."""
+    return fallback if value is None else float(value)
 
 
 def _hhmm(value: Any) -> str | None:

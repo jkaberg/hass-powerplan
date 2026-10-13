@@ -30,6 +30,7 @@ from custom_components.powerplan.core.forecasts.fit import (
     sessions_from,
 )
 from custom_components.powerplan.core.loads import Measured, Role
+from custom_components.powerplan.core.loads.stores import TankStore
 from custom_components.powerplan.providers.meters.recorder import (
     async_register_rows,
     recorder_loaded,
@@ -157,6 +158,10 @@ async def async_load_history(
 #: The fits the load flow asks the house for (D4 §6, D-0731).
 SETUP_FITS: Final = (FitKey.COAST_TAU, FitKey.HEATUP_RATE, FitKey.NAMEPLATE)
 
+#: …and what it asks a tank instead: a tank has no coast against outdoor, it has a
+#: standby loss and a household that draws from it (D-0741).
+TANK_SETUP_FITS: Final = (FitKey.STANDBY_LOSS, FitKey.DAILY_DRAW, FitKey.NAMEPLATE)
+
 
 async def async_measure(
     hass: HomeAssistant,
@@ -188,14 +193,19 @@ async def async_measure(
         outdoor = HistorySeries(weather, "temperature")
     power = bound[Role.POWER].entity_id if Role.POWER in bound else None
     nameplate = float(params.get("nameplate_w") or 0.0)
+    tank = params.get("store") == "tank"
+    fits = TANK_SETUP_FITS if tank else SETUP_FITS
     spec = FitSpec(
         load_id="setup",
         type_key=type_key,
-        fits=SETUP_FITS if power is not None else SETUP_FITS[:2],
+        fits=fits if power is not None else tuple(k for k in fits if k is not FitKey.NAMEPLATE),
         nameplate_w=nameplate,
-        capacity_kwh_per_k=None,
+        capacity_kwh_per_k=_tank_capacity(params) if tank else None,
         area_m2=None,
-        configured={FitKey.NAMEPLATE: nameplate or None},
+        configured={
+            FitKey.NAMEPLATE: nameplate or None,
+            FitKey.STANDBY_LOSS: params.get("standby_loss_w"),
+        },
         power=power,
         level=series(Role.TEMP_FLOOR if floor else Role.TEMP),
         indoor=series(Role.TEMP) if floor else None,
@@ -210,3 +220,13 @@ async def async_measure(
         for fit in fit_all([history], now).values()
         if fit.quality.ok
     }
+
+
+def _tank_capacity(params: Mapping[str, Any]) -> float | None:
+    """Return a tank's kWh per kelvin at the element, from its litres (D4 §4.3)."""
+    litres = params.get("litres")
+    if not litres:
+        return None
+    return TankStore(
+        litres=float(litres), standby_loss_w=0.0, max_c=100.0, min_c=0.0
+    ).capacity_kwh_per_unit()

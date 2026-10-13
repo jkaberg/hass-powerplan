@@ -58,6 +58,10 @@ class Role(StrEnum):
     ENERGY = "energy"
     TEMP = "temp"
     TEMP_FLOOR = "temp_floor"
+    #: A tank's probes above and below the one at `TEMP` (D4 §5.12, D-0741): with
+    #: them the tank's level is its mean temperature, the heat it holds.
+    TEMP_TOP = "temp_top"
+    TEMP_BOTTOM = "temp_bottom"
     SETPOINT = "setpoint"
     MODE_SELECT = "mode_select"
     ECO_SETPOINT = "eco_setpoint"
