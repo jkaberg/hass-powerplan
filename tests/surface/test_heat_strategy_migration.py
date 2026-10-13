@@ -73,5 +73,6 @@ def test_35_what_is_complete_and_what_is_not_heating_is_left_alone() -> None:
 
 
 def test_35_minor_5_comes_before_where_a_new_entry_starts() -> None:
-    """A new entry needs no migration."""
-    assert ENTRY_MINOR > ENTRY_MINOR_HEAT_PAIRS == 5
+    """A new entry needs no migration; minor 5 is one of the steps an old one takes."""
+    assert ENTRY_MINOR_HEAT_PAIRS == 5
+    assert ENTRY_MINOR >= ENTRY_MINOR_HEAT_PAIRS

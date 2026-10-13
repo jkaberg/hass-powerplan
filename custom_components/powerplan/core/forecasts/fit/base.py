@@ -186,6 +186,10 @@ class LoadHistory:
     indoor_rows: tuple[tuple[datetime, float], ...] = ()
     outdoor_rows: tuple[tuple[datetime, float], ...] = ()
     sessions: tuple[EvSession, ...] = ()
+    #: Where the load's own parameters bound a fit better than the fit's defaults
+    #: (`design/DECISIONS.md` D-0740): a rating that came from a W/m² table, a foil's
+    #: room. `bounds_for()` builds it from the subentry.
+    bounds: Mapping[FitKey, tuple[float, float]] = field(default_factory=dict)
 
     def configured_value(self, key: FitKey) -> float | None:
         """Return the configured value for `key`, or `None` when there is none."""

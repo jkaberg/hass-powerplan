@@ -25,6 +25,7 @@ from custom_components.powerplan.core.forecasts.fit import (
     EvSession,
     FitKey,
     LoadHistory,
+    bounds_for,
     fit_all,
     sessions_from,
 )
@@ -77,6 +78,8 @@ class FitSpec:
     #: An EV's battery, and its charger's cumulative energy register where one is bound (D-0502).
     capacity_kwh: float | None = None
     energy: str | None = None
+    #: The bounds the load's own parameters put on its fits (`bounds_for`, D-0740).
+    bounds: Mapping[FitKey, tuple[float, float]] = field(default_factory=dict)
 
 
 async def async_series(
@@ -147,6 +150,7 @@ async def async_load_history(
         indoor_rows=await read(spec.indoor),
         outdoor_rows=await read(spec.outdoor),
         sessions=sessions,
+        bounds=dict(spec.bounds),
     )
 
 
@@ -196,6 +200,7 @@ async def async_measure(
         level=series(Role.TEMP_FLOOR if floor else Role.TEMP),
         indoor=series(Role.TEMP) if floor else None,
         outdoor=outdoor,
+        bounds=bounds_for(params),
     )
     if spec.level is None and power is None:
         return {}

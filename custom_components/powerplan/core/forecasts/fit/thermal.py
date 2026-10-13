@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 __all__ = [
     "COAST_BOUNDS_W_PER_K_M2",
     "COAST_GATE",
+    "FOIL_TAU_BOUNDS_H",
     "HEATUP_BOUNDS_K_PER_H",
     "HEATUP_GATE",
     "TAU_BOUNDS_H",
@@ -59,6 +60,10 @@ COAST_BOUNDS_W_PER_K_M2 = (0.5, 50.0)
 #: median - the reference house's loops measured 0.48–0.81 in October 2026.
 TAU_GATE = Gate(min_n=10, min_span_days=7.0, max_spread=1.0)
 TAU_BOUNDS_H = (5.0, 1000.0)
+#: A foil or mat under the covering heats the room's air and little else: the
+#: floor probe of one left off follows the room, which the house's other heaters
+#: hold, and that is not the foil coasting (D-0740). TV-stua's 383 h was that.
+FOIL_TAU_BOUNDS_H = (2.0, 48.0)
 
 #: D10 §5.6: 5 episodes and [0.1, 10] K/h. Half an hour is the shortest run a
 #: slope means anything over (D-0215).
@@ -127,7 +132,7 @@ def coast_tau(history: LoadHistory, now: datetime) -> Fit | None:
         history.load_id,
         value=value,
         unit="h",
-        bounds=TAU_BOUNDS_H,
+        bounds=history.bounds.get(FitKey.COAST_TAU, TAU_BOUNDS_H),
         quality=TAU_GATE.check(
             n=len(taus), span_days=span_days([episode for episode, _ in coasts]), spread=spread
         ),

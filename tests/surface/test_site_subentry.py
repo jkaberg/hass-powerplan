@@ -88,7 +88,7 @@ async def test_51_an_entry_before_minor_6_moves_its_home_device_and_keeps_the_id
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
-    assert entry.minor_version == ENTRY_MINOR == ENTRY_MINOR_SITE_SUBENTRY
+    assert entry.minor_version == ENTRY_MINOR > ENTRY_MINOR_SITE_SUBENTRY == 6
     site_id = site_subentry_id(entry)
     assert site_id is not None
     assert _home_device(hass, entry).id == device.id

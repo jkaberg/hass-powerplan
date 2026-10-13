@@ -26,6 +26,11 @@ Answer what you know. Every other setting is worked out from these answers and s
 
 Where the floor's temperature and power are already in Home Assistant's history, PowerPlan measures how fast the floor cools when it is off and how much it draws. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
 
+Without history, a heating foil under wood, laminate, vinyl or carpet is taken to draw 60 W per square meter, and a mat under tiles 120. A foil warms the room more than the floor, so PowerPlan never takes it to stay warm for more than two days.
+
+> [!NOTE]
+> Since v0.0.11, a foil floor's measured power is used even when it is far from the typical figure, and a foil floor set up before then at the mat figure, 120 W per square meter, is moved to 60 when you update.
+
 <!-- generated:begin questions:floor_heating · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

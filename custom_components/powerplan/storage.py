@@ -38,8 +38,16 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.json import load_json
 
 from .const import DOMAIN
+from .core.forecasts.fit.thermal import FOIL_TAU_BOUNDS_H
 from .core.loads.stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3
-from .core.loads.types.floor_heating import COAST_TAU_DEFAULT_H
+from .core.loads.types.floor_heating import (
+    COAST_TAU_DEFAULT_H,
+    FLOATING_COVERINGS,
+    FOIL_UNDER_FLOATING_W_PER_M2,
+)
+from .core.loads.types.floor_heating import (
+    HEATING_TYPES as FLOOR_HEATING_TYPES,
+)
 from .core.tariffs import countries
 from .core.tariffs.household import (
     ALL_LEVIES,
@@ -387,8 +395,10 @@ ENTRY_MINOR_COAST_TAU: Final = 4
 ENTRY_MINOR_HEAT_PAIRS: Final = 5
 #: Config entry minor version 6: the site device and entities sit under the `site` subentry (D-0739).
 ENTRY_MINOR_SITE_SUBENTRY: Final = 6
+#: Config entry minor version 7: a foil floor's table rating and coast corrected (D-0740).
+ENTRY_MINOR_FOIL: Final = 7
 #: The minor version a new entry is created at, and every migration ends on.
-ENTRY_MINOR: Final = ENTRY_MINOR_SITE_SUBENTRY
+ENTRY_MINOR: Final = ENTRY_MINOR_FOIL
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
@@ -623,3 +633,44 @@ def migrate_heat_strategy(data: Mapping[str, Any]) -> dict[str, Any] | None:
     if (strategy, strategy_params) == before:
         return None
     return {**data, "strategy": strategy, "strategy_params": strategy_params}
+
+
+# --------------------------------------------------------------------------- #
+# A foil floor measured as a foil (D-0740) - config entry minor version 7
+# --------------------------------------------------------------------------- #
+
+
+def migrate_foil_floor(data: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a foil floor's subentry corrected, or `None` to leave it (D-0740).
+
+    Two values the flow materialised that were never the house's (INV-66 keeps
+    them until something says otherwise, and this is that): a rating that is still
+    the mat table's W/m² × area under a floating floor becomes the foil's, and a
+    coast time constant outside what a foil can hold - the room's, fitted while the
+    house's other heaters held it - goes back to the default. A value the household
+    typed is theirs and stays.
+    """
+    if data.get("type") != "floor_heating":
+        return None
+    params = dict(data.get("params") or {})
+    if params.get("heating_type") != "foil_or_mat":
+        return None
+    manual = set(data.get("manual_overrides") or ())
+    area = float(params.get("area_m2") or 0.0)
+    table_w = FLOOR_HEATING_TYPES["foil_or_mat"].w_per_m2
+    before = dict(params)
+    if (
+        params.get("covering") in FLOATING_COVERINGS
+        and table_w is not None
+        and area > 0.0
+        and abs(float(params.get("nameplate_w") or 0.0) - table_w * area) < 1.0
+    ):
+        params["w_per_m2"] = FOIL_UNDER_FLOATING_W_PER_M2
+        params["nameplate_w"] = FOIL_UNDER_FLOATING_W_PER_M2 * area
+    tau = params.get("coast_tau_h")
+    low, high = FOIL_TAU_BOUNDS_H
+    if "coast_tau_h" not in manual and tau is not None and not low <= float(tau) <= high:
+        params["coast_tau_h"] = COAST_TAU_DEFAULT_H["room"]
+    if params == before:
+        return None
+    return {**data, "params": params}

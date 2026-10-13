@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.http.server import StaticPathConfig
 from homeassistant.core import Event, EventStateChangedData, callback
@@ -36,16 +36,18 @@ from .services import async_setup_services
 from .storage import (
     ENTRY_MINOR_COAST_TAU,
     ENTRY_MINOR_ENTITY_REFS,
+    ENTRY_MINOR_FOIL,
     ENTRY_MINOR_HEAT_PAIRS,
     ENTRY_MINOR_PRICE,
     ENTRY_MINOR_SITE_SUBENTRY,
     migrate_coast_tau,
+    migrate_foil_floor,
     migrate_heat_strategy,
     migrate_tariff,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
@@ -110,6 +112,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
     Minor version 6: the home device and the site's entities move under the
     `site` subentry, so the integration page has no "devices that don't belong
     to a sub-entry" group (D-0739). Unique ids, entity ids and history stay.
+
+    Minor version 7: a foil floor still on the mat table's rating gets the foil's,
+    and one whose coast time constant no foil can hold gets the default back
+    (D-0740).
     """
     if entry.version > 1:
         return False
@@ -134,31 +140,52 @@ async def async_migrate_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) 
             minor_version=ENTRY_MINOR_ENTITY_REFS,
         )
         _LOGGER.info("%s: entity ids stored as registry ids", entry.title)
-    if entry.minor_version < ENTRY_MINOR_COAST_TAU:
-        for subentry in entry.subentries.values():
-            migrated = migrate_coast_tau(subentry.data)
-            if migrated is not None:
-                hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
-        hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_COAST_TAU)
-        _LOGGER.info("%s: heating loads carry their coast time constant", entry.title)
-    if entry.minor_version < ENTRY_MINOR_HEAT_PAIRS:
-        moved = []
-        for subentry in entry.subentries.values():
-            migrated = migrate_heat_strategy(subentry.data)
-            if migrated is not None:
-                hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
-                moved.append(subentry.title)
-        hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_HEAT_PAIRS)
-        _LOGGER.info(
-            "%s: heating plans completed%s",
-            entry.title,
-            f": {', '.join(moved)}" if moved else "",
-        )
+    _run_subentry_migrations(hass, entry, _BEFORE_SITE)
     if entry.minor_version < ENTRY_MINOR_SITE_SUBENTRY:
         await async_ensure_site_subentry(hass, entry)
         hass.config_entries.async_update_entry(entry, minor_version=ENTRY_MINOR_SITE_SUBENTRY)
         _LOGGER.info("%s: the home device moved under its own subentry", entry.title)
+    _run_subentry_migrations(hass, entry, _AFTER_SITE)
     return True
+
+
+#: The migrations that rewrite subentries one at a time: the minor version, the
+#: rewrite (`None` leaves a subentry alone) and what the log says was done. Minor
+#: 6, the site's own subentry, sits between the two and is not one of them.
+_BEFORE_SITE: Final = (
+    (ENTRY_MINOR_COAST_TAU, migrate_coast_tau, "heating loads carry their coast time constant"),
+    (ENTRY_MINOR_HEAT_PAIRS, migrate_heat_strategy, "heating plans completed"),
+)
+_AFTER_SITE: Final = ((ENTRY_MINOR_FOIL, migrate_foil_floor, "foil floors measured as foils"),)
+
+
+def _run_subentry_migrations(
+    hass: HomeAssistant,
+    entry: PowerplanConfigEntry,
+    steps: tuple[tuple[int, Callable[[Mapping[str, Any]], dict[str, Any] | None], str], ...],
+) -> None:
+    """Run each step the entry has not had yet, in order."""
+    for minor, migrate, done in steps:
+        if entry.minor_version < minor:
+            _migrate_subentries(hass, entry, migrate, minor, done)
+
+
+def _migrate_subentries(
+    hass: HomeAssistant,
+    entry: PowerplanConfigEntry,
+    migrate: Callable[[Mapping[str, Any]], dict[str, Any] | None],
+    minor: int,
+    done: str,
+) -> None:
+    """Rewrite each subentry `migrate` changes, then move the entry to `minor`."""
+    changed = []
+    for subentry in entry.subentries.values():
+        migrated = migrate(subentry.data)
+        if migrated is not None:
+            hass.config_entries.async_update_subentry(entry, subentry, data=migrated)
+            changed.append(subentry.title)
+    hass.config_entries.async_update_entry(entry, minor_version=minor)
+    _LOGGER.info("%s: %s%s", entry.title, done, f": {', '.join(changed)}" if changed else "")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PowerplanConfigEntry) -> bool:

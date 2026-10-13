@@ -14,22 +14,41 @@ cycle; a battery's power is signed and its rating is the inverter's, not a
 measurement. Both keep what was configured. The alternative - deciding from the
 data whether the load looks modulating - is the kind of inference that ends with a
 confident wrong number in the parameter everything else is sized from (INV-63).
+
+**A table is not a rating.** ×[0.5, 1.5] guards a rating somebody read off a
+nameplate. A floor's rating is W/m² × area from D4 §6.1's table, and a foil under
+laminate drawing 39 W/m² against the table's 120 is the table being wrong, not the
+meter: such a load is bounded per square metre instead (`table_bounds`, D-0740).
 """
 
 from math import ceil
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import Fit, FitKey, Gate, LoadHistory, resolve
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
 
-__all__ = ["BOUNDS_FACTOR", "EXCLUDED_TYPES", "NAMEPLATE_GATE", "P95", "nameplate_w"]
+__all__ = [
+    "BOUNDS_FACTOR",
+    "EXCLUDED_TYPES",
+    "NAMEPLATE_GATE",
+    "P95",
+    "W_PER_M2_BOUNDS",
+    "nameplate_w",
+    "table_bounds",
+]
 
 #: D10 §5.6: 100 samples while on, and ×[0.5, 1.5] of the configured rating.
 NAMEPLATE_GATE = Gate(min_n=100, unit="samples")
 BOUNDS_FACTOR = (0.5, 1.5)
 P95 = 0.95
+
+#: What an electric floor can draw per square metre of the area the household
+#: answered, W/m² (D-0740): the reference house's foils drew 39–57 W/m² and its
+#: cables in screed 40–100; a mat under tile is sold at up to 200.
+W_PER_M2_BOUNDS = (10.0, 250.0)
 
 #: The device types whose measured power is not a nameplate (D10 §5.6, D-0215).
 EXCLUDED_TYPES = frozenset({"heat_pump", "battery"})
@@ -57,7 +76,9 @@ def nameplate_w(history: LoadHistory, now: datetime) -> Fit | None:
         history.load_id,
         value=on[min(len(on) - 1, ceil(P95 * len(on)) - 1)],
         unit="W",
-        bounds=(BOUNDS_FACTOR[0] * configured, BOUNDS_FACTOR[1] * configured),
+        bounds=history.bounds.get(
+            FitKey.NAMEPLATE, (BOUNDS_FACTOR[0] * configured, BOUNDS_FACTOR[1] * configured)
+        ),
         quality=NAMEPLATE_GATE.check(n=len(on), span_days=_span_days(history)),
         configured=configured,
         fitted_at=now,
@@ -70,3 +91,11 @@ def _span_days(history: LoadHistory) -> float:
         return 0.0
     instants = [at for at, _watts in history.power_rows]
     return (max(instants) - min(instants)).total_seconds() / SECONDS_PER_DAY
+
+
+def table_bounds(params: Mapping[str, Any]) -> tuple[float, float] | None:
+    """Return the per-m² bounds of a rating that came from a W/m² table, else `None` (D-0740)."""
+    area = params.get("area_m2")
+    if params.get("w_per_m2") is None or not area or float(area) <= 0.0:
+        return None
+    return (W_PER_M2_BOUNDS[0] * float(area), W_PER_M2_BOUNDS[1] * float(area))

@@ -118,7 +118,7 @@ from .core.engine import (
     SitePath,
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
-from .core.forecasts.fit import Fit, FitKey, fit_all
+from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all
 from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts.quantiles import HourOfWeekQuantile
@@ -1707,6 +1707,7 @@ class Runtime:
             level=series(level_role),
             indoor=series(Role.TEMP) if level_role is Role.TEMP_FLOOR else None,
             outdoor=outdoor,
+            bounds=bounds_for(params),
         )
         return spec, ((param, key), *((("coast_tau_h", FitKey.COAST_TAU),) if coasts else ()))
 

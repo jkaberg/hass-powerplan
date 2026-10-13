@@ -17,7 +17,7 @@ and by its setpoint otherwise. Which of the two is decided by what the profile
 detected, which arrives in `QCtx.capabilities`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
@@ -58,7 +58,7 @@ __all__ = [
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
 #: it was derived with, and nothing recomputes behind the user's back (INV-66).
-DERIVATION_VERSION: Final = 3
+DERIVATION_VERSION: Final = 4
 
 #: How far ahead a loop looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -114,6 +114,15 @@ HEATING_TYPES: Mapping[str, HeatingType] = {
     "water_borne": HeatingType("hydronic", "heat_capacitor", None, 40.0),
     "dont_know": HeatingType("slab", "heat_capacitor", 80.0, 40.0),
 }
+
+#: A foil under a floating floor is sold at 60 W/m² (Onninen's foil for parquet
+#: and laminate); the table's 120 is a mat under tile. The reference house's three
+#: foils under laminate drew 39, 47 and 57 W/m² of the answered area (October 2026,
+#: `design/DECISIONS.md` D-0740).
+FOIL_UNDER_FLOATING_W_PER_M2: Final = 60.0
+
+#: The coverings a foil lies under rather than a mat in an adhesive bed.
+FLOATING_COVERINGS: Final = frozenset({"wood", "laminate", "vinyl", "carpet"})
 
 #: Hours for a store's excess over outdoor to fall by 1/e, by store kind, where the
 #: house has not measured it (D4 §6.1, `design/DECISIONS.md` D-0730). A slab: the
@@ -313,6 +322,14 @@ QUESTIONNAIRE = Questionnaire(
 )
 
 
+def _heating_type(key: str, covering: str) -> HeatingType:
+    """Return what the construction implies, a foil under a floating floor at its own W/m²."""
+    heating = HEATING_TYPES[key]
+    if key == "foil_or_mat" and covering in FLOATING_COVERINGS:
+        return replace(heating, w_per_m2=FOIL_UNDER_FLOATING_W_PER_M2)
+    return heating
+
+
 @dataclass(frozen=True, slots=True)
 class FloorHeating:
     """An electric or water-borne floor loop (D4 §6.1)."""
@@ -330,7 +347,7 @@ class FloorHeating:
         room = answers.choice("room")
         defaults = ROOM_DEFAULTS[room]
         covering = answers.choice("covering")
-        heating = HEATING_TYPES[answers.choice("heating_type")]
+        heating = _heating_type(answers.choice("heating_type"), covering)
         area_m2 = answers.number("area_m2")
 
         comfort_c = _or(answers.get("comfort_c"), defaults.comfort_c)

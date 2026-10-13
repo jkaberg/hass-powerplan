@@ -14,7 +14,13 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from custom_components.powerplan.core.forecasts import FitKey, LoadHistory, fit_all, nameplate_w
+from custom_components.powerplan.core.forecasts import (
+    FitKey,
+    LoadHistory,
+    bounds_for,
+    fit_all,
+    nameplate_w,
+)
 from tests.core.forecasts.conftest import local
 from tests.sim.base import Env
 from tests.sim.heatpump import HeatPumpSim
@@ -98,3 +104,35 @@ def test_09d_a_load_that_never_ran_produces_no_fit() -> None:
     history = _history("floor_heating", tuple((START, 0.0) for _ in range(200)))
 
     assert nameplate_w(history, START) is None
+
+
+def test_22_a_table_rating_is_bounded_per_square_metre() -> None:
+    """D10 §9 22 (D-0740): TV-stua's foil, 16 m², drew 620 W against the table's 1 920 W.
+
+    ×[0.5, 1.5] of a W/m² × area guess threw the measurement away and kept the
+    guess; a rating that came from the table is bounded by what a floor can draw
+    per square metre instead.
+    """
+    params = {"w_per_m2": 120.0, "area_m2": 16.0, "heating_type": "foil_or_mat"}
+    rows = tuple((START + timedelta(minutes=i), 620.0) for i in range(200))
+    history = LoadHistory(
+        load_id="tv_stua",
+        type_key="floor_heating",
+        fits=(FitKey.NAMEPLATE,),
+        nameplate_w=1920.0,
+        configured={FitKey.NAMEPLATE: 1920.0},
+        power_rows=rows,
+        bounds=bounds_for(params),
+    )
+
+    fit = nameplate_w(history, START + timedelta(hours=4))
+
+    assert fit is not None
+    assert fit.quality.ok, fit.quality.reason
+    assert fit.bounds == (160.0, 4000.0)
+    assert fit.effective == 620.0
+
+
+def test_22b_an_answered_rating_keeps_its_band() -> None:
+    """A tank's element is a nameplate somebody read: ×[0.5, 1.5] still guards it."""
+    assert bounds_for({"element_kw": 3.0, "nameplate_w": 3000.0}) == {}

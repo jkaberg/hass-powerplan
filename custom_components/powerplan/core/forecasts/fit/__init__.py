@@ -14,7 +14,7 @@ All of this runs in the planning loop, at most once a day per load, never in the
 tick (INV-46, INV-63).
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .base import (
     Episode,
@@ -30,9 +30,9 @@ from .base import (
     span_days,
 )
 from .ev import charge_efficiency, sessions_from
-from .nameplate import nameplate_w
+from .nameplate import nameplate_w, table_bounds
 from .tank import standby_loss_w
-from .thermal import coast_rate, coast_tau, heatup_rate
+from .thermal import FOIL_TAU_BOUNDS_H, coast_rate, coast_tau, heatup_rate
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -46,6 +46,7 @@ __all__ = [
     "FitQuality",
     "Gate",
     "LoadHistory",
+    "bounds_for",
     "charge_efficiency",
     "coast_rate",
     "coast_tau",
@@ -69,6 +70,20 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.NAMEPLATE: nameplate_w,
     FitKey.STANDBY_LOSS: standby_loss_w,
 }
+
+
+def bounds_for(params: Mapping[str, Any]) -> dict[FitKey, tuple[float, float]]:
+    """Return the bounds a load's own parameters put on its fits (D-0740).
+
+    The setup measurement and the daily fit read one answer: a floor's table
+    rating is bounded per square metre, a foil's coast by what a foil can hold.
+    """
+    out: dict[FitKey, tuple[float, float]] = {}
+    if (per_m2 := table_bounds(params)) is not None:
+        out[FitKey.NAMEPLATE] = per_m2
+    if params.get("heating_type") == "foil_or_mat":
+        out[FitKey.COAST_TAU] = FOIL_TAU_BOUNDS_H
+    return out
 
 
 def fit_all(loads: Sequence[LoadHistory], now: datetime) -> Mapping[str, Fit]:

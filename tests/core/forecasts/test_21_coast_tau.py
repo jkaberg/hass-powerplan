@@ -11,7 +11,13 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta
 
-from custom_components.powerplan.core.forecasts import FitKey, LoadHistory, coast_tau, fit_all
+from custom_components.powerplan.core.forecasts import (
+    FitKey,
+    LoadHistory,
+    bounds_for,
+    coast_tau,
+    fit_all,
+)
 from tests.core.forecasts.conftest import local
 
 START = local(2026, 10, 3, 2, 0)
@@ -90,3 +96,26 @@ def test_21_fit_all_runs_it_from_the_table() -> None:
     """The registry row: what the flow and the daily run both call (D-0731)."""
     fits = fit_all([_history((60.0,) * len(OUTDOOR_C))], START + timedelta(days=13))
     assert fits["bad.coast_tau_h"].quality.ok
+
+
+def test_22_a_foils_coast_is_bounded_by_what_a_foil_holds() -> None:
+    """D10 §9 22 (D-0740): a foil's floor probe follows a room the heat pumps hold.
+
+    TV-stua, left off for days, "coasted" at `τ` 383 h. A foil under laminate holds
+    hours of heat, so a foil's `τ` is bounded to 2–48 h and that fit is refused.
+    """
+    slow = _history((383.0,) * len(OUTDOOR_C))
+    foil = LoadHistory(
+        **{
+            **{name: getattr(slow, name) for name in slow.__dataclass_fields__},
+            "bounds": bounds_for({"heating_type": "foil_or_mat", "store": "room"}),
+            "configured": {FitKey.COAST_TAU: 10.0},
+        }
+    )
+    fit = coast_tau(foil, START + timedelta(days=13))
+    assert fit is not None
+    assert fit.bounds == (2.0, 48.0)
+    assert not fit.quality.ok
+    assert fit.effective == 10.0
+    # The slab's own bounds are unchanged.
+    assert bounds_for({"heating_type": "cable_in_screed", "store": "slab"}) == {}
