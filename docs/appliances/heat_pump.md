@@ -28,13 +28,13 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 |---|---|---|---|
 | Temperature | Required | The temperature the device measures. | PowerPlan cannot plan the heat. |
 | Power | Recommended | What the appliance draws right now, in watts. | The rated power stays your answer and is not measured. |
-| Outdoor temperature | Recommended | The temperature outside. | The weather forecast's temperature is used. |
+| Outdoor temperature | Recommended | The temperature outside. | Your home's outdoor temperature is used. |
 | Outlet temperature | Optional | The temperature of the air or water the heat pump delivers. | Nothing changes in the plan. |
 | Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
 | Setpoint | Required | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
 <!-- generated:end data_points:heat_pump -->
 
-The **Outdoor temperature** data point is also the home's outdoor temperature: in a [room](../circuits-groups-rooms.md#room) with a heat pump and a floor, PowerPlan compares them at today's temperature. Without one it uses the weather entity's forecast for the current hour.
+The **Outdoor temperature** data point is the heat pump's own sensor, if its device has one. Without one, it uses your [home's outdoor temperature](../setup.md#outdoor). In a [room](../circuits-groups-rooms.md#room) with a heat pump and a floor, PowerPlan compares them at today's temperature.
 
 <a name="questions"></a>
 ## About {name}

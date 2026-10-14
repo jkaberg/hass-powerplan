@@ -59,6 +59,7 @@ from .const import (
     CONF_ELECTRICAL,
     CONF_METER,
     CONF_NOTIFICATIONS,
+    CONF_OUTDOOR,
     CONF_PATH,
     CONF_POSTCODE,
     CONF_PRESENCE,
@@ -198,7 +199,7 @@ from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
 from .events import event_name
 from .flow import data_points
-from .flow.load import binding_from_data
+from .flow.load import binding_from_data, home_outdoor, reads_outdoor
 from .flow.text import Text
 from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
@@ -823,7 +824,7 @@ def build_loads(
             load = load_from_subentry(
                 subentry.subentry_id, subentry.title, data, electrical, grid=grid
             )
-            device = device_from_subentry(hass, data)
+            device = device_from_subentry(hass, data, home_outdoor_of(hass, entry))
         except KeyError, ValueError:
             _LOGGER.exception(
                 "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
@@ -1018,10 +1019,24 @@ def load_from_subentry(
     return load if quirks is None else replace(load, gate=quirks.raised(load.gate))
 
 
-def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDevice:
-    """Return the bound device a load subentry describes, read live from Home Assistant."""
+def home_outdoor_of(hass: HomeAssistant, entry: ConfigEntry) -> str | None:
+    """Return the home's outdoor temperature entity, as an entity id (D-0761)."""
+    found = entity_refs.live(hass, entry.data.get(CONF_OUTDOOR))
+    return str(found) if found else None
+
+
+def device_from_subentry(
+    hass: HomeAssistant, data: Mapping[str, Any], outdoor: str | None = None
+) -> LoadDevice:
+    """Return the bound device a load subentry describes, read live from Home Assistant.
+
+    `outdoor` is the home's outdoor temperature, which a load that reads one and
+    binds none inherits (D-0761).
+    """
     profile = profiles.get(str(data[LOAD_PROFILE]))
     bindings = tuple(binding_from_data(row) for row in data.get(LOAD_BINDINGS) or ())
+    if (inherited := home_outdoor(hass, data, outdoor)) is not None:
+        bindings = (*bindings, inherited)
     # Entities picked by hand are on no device (D8 §5.2).
     device_id = str(data[LOAD_DEVICE_ID]) if data.get(LOAD_DEVICE_ID) else None
     # A profile driven through a device action addresses the load's own device (D4 §5.10);
@@ -2224,10 +2239,23 @@ class Runtime:
         """
         self._needs_review_pending = False
         text = await Text.load(self.hass)
+        # Appliances that read the outdoor temperature and have none, while the home has none (D-0761).
+        without_outdoor: list[str] = []
+        home = home_outdoor_of(self.hass, self.entry)
         for subentry in list(self.entry.subentries.values()):
             if subentry.subentry_type != SUBENTRY_LOAD:
                 continue
-            roles = self._unmet_needs(entity_refs.live(self.hass, subentry.data))
+            data = entity_refs.live(self.hass, subentry.data)
+            if (
+                home is None
+                and reads_outdoor(data)
+                and not any(
+                    str(row.get("role")) == Role.OUTDOOR_TEMP
+                    for row in data.get(LOAD_BINDINGS) or ()
+                )
+            ):
+                without_outdoor.append(subentry.title)
+            roles = self._unmet_needs(data)
             async_report(
                 self.hass,
                 self.entry.entry_id,
@@ -2239,6 +2267,14 @@ class Runtime:
                 },
                 entry_title=self.site_name,
             )
+        async_report(
+            self.hass,
+            self.entry.entry_id,
+            "outdoor_missing",
+            active=bool(without_outdoor),
+            placeholders={"loads": text.join(f"«{title}»" for title in without_outdoor)},
+            entry_title=self.site_name,
+        )
 
     def _unmet_needs(self, data: Mapping[str, Any]) -> tuple[Role, ...]:
         """Return the recommended data points the load's device has and the load does not."""
@@ -2536,7 +2572,7 @@ class Runtime:
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
             )
-            device = device_from_subentry(self.hass, data)
+            device = device_from_subentry(self.hass, data, home_outdoor_of(self.hass, self.entry))
         except KeyError, ValueError:
             _LOGGER.exception(
                 "load %s (%s) cannot be built and is skipped", subentry.title, subentry.subentry_id
@@ -2640,7 +2676,7 @@ class Runtime:
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
             )
-            device = device_from_subentry(self.hass, data)
+            device = device_from_subentry(self.hass, data, home_outdoor_of(self.hass, self.entry))
         except KeyError, ValueError:
             _LOGGER.exception(
                 "load %s (%s) cannot be rebuilt and keeps its previous configuration",

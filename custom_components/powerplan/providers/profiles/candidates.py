@@ -9,12 +9,14 @@ Three answers, one per question the flow asks of a device (D-0747, D-0748):
   helper, a plausible reading before an implausible one. A rank orders the
   household's choice; it never makes it;
 - **nearby** - one suggestion when the device has no candidate: a helper fed
-  from the device, else the one sensor of the role's class in its area.
+  from the device, else the one sensor of the role's class in its area;
+- **outdoor** - the home's outdoor temperature, which no device's area holds.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from typing import TYPE_CHECKING, Final
 
@@ -26,6 +28,7 @@ from homeassistant.helpers.recorder import get_instance
 
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.loads import Role
+from custom_components.powerplan.providers.forecasts.base import detect_weather_entity
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -42,6 +45,7 @@ __all__ = [
     "dead_of",
     "in_pool",
     "nearby",
+    "outdoor",
     "plausible",
     "rank",
 ]
@@ -159,6 +163,66 @@ def nearby(hass: HomeAssistant, device_id: str, role: Role) -> str | None:
         if (entry.area_id or _device_area(devices, entry.device_id)) == area
     ]
     return local[0] if len(local) == 1 else None
+
+
+#: Words in a sensor's id, name or area that say it reads the air outside.
+_OUTDOOR_WORDS: Final = frozenset(
+    {
+        "outdoor",
+        "outdoors",
+        "outside",
+        "exterior",
+        "garden",
+        "ute",
+        "utendors",
+        "utendørs",
+        "utetemp",
+        "utetemperatur",
+        "uteføler",
+        "hage",
+    }
+)
+
+
+def outdoor(hass: HomeAssistant, in_use: Iterable[str] = ()) -> str | None:
+    """Return the home's outdoor temperature entity to suggest, or `None` (D-0761).
+
+    In order: the one outdoor sensor the home's appliances already read, the one
+    temperature sensor whose id, name or area says outdoors, then the weather
+    entity. Two of a kind fall through to the next: a coin toss is not a
+    suggestion, and the weather entity is never far off.
+    """
+    used = sorted(set(in_use))
+    if len(used) == 1:
+        return used[0]
+    entities = er.async_get(hass)
+    areas = ar.async_get(hass)
+    devices = dr.async_get(hass)
+    named: list[str] = []
+    for entry in entities.entities.values():
+        if (
+            entry.domain != "sensor"
+            or entry.platform == DOMAIN
+            or entry.disabled_by is not None
+            or entry.entity_category is not None
+            or (entry.device_class or entry.original_device_class) != "temperature"
+        ):
+            continue
+        area_id = entry.area_id or _device_area(devices, entry.device_id)
+        area = None if area_id is None else areas.async_get_area(area_id)
+        words = " ".join(
+            (
+                entry.entity_id,
+                entry.name or "",
+                entry.original_name or "",
+                area.name if area else "",
+            )
+        ).lower()
+        if _OUTDOOR_WORDS & set(re.split(r"[^a-zæøå0-9]+", words)):
+            named.append(entry.entity_id)
+    if len(named) == 1:
+        return named[0]
+    return detect_weather_entity(hass)
 
 
 def _area_of(hass: HomeAssistant, device_id: str) -> str | None:

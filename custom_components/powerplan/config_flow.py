@@ -40,6 +40,7 @@ from .const import (
     CONF_METER,
     CONF_NAME,
     CONF_NOTIFICATIONS,
+    CONF_OUTDOOR,
     CONF_PATH,
     CONF_POSTCODE,
     CONF_PRESENCE,
@@ -95,6 +96,7 @@ from .flow.zone import ZoneSubentryFlow
 from .providers import tariffs as tariff_sources
 from .providers.prices.formats import registry as formats
 from .providers.prices.nordpool_action import NordpoolActionSource
+from .providers.profiles import candidates
 from .providers.tariffs import directory
 from .providers.tariffs import ladder as tariff_ladder
 from .runtime import step_index
@@ -187,6 +189,8 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._bills: dict[str, Any] = {}
         self._limits: dict[str, Any] = {}
         self._presence: dict[str, Any] = {}
+        #: The home's outdoor temperature entity (D-0761).
+        self._outdoor: str | None = None
         #: What the electrical step suggested for the per-phase limit (HUB-19).
         self._phase_suggestion: float | None = None
         self._notifications: dict[str, Any] = {}
@@ -346,6 +350,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         self._restore_price(data)
 
         self._presence = dict(data.get(CONF_PRESENCE) or {})
+        self._outdoor = data.get(CONF_OUTDOOR)
         self._notifications = dict(data.get(CONF_NOTIFICATIONS) or {})
         stored_quiet = data.get(CONF_QUIET_HOURS)
         self._quiet = (
@@ -1480,7 +1485,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         if mode == "auto":
             return await self.async_step_presence_persons()
-        return await self.async_step_notifications()
+        return await self.async_step_outdoor()
 
     async def async_step_presence_persons(
         self, user_input: dict[str, Any] | None = None
@@ -1491,6 +1496,21 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
                 "presence_persons", steps.persons_schema(self.hass, values=self._presence)
             )
         self._presence["persons"] = list(user_input.get("persons") or [])
+        return await self.async_step_outdoor()
+
+    async def async_step_outdoor(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for the home's outdoor temperature, found in the house; every appliance reads it (D-0761)."""
+        if user_input is None:
+            in_use = (
+                steps.outdoor_in_use(self.hass, self._get_reconfigure_entry())
+                if self._reconfiguring
+                else ()
+            )
+            current = self._outdoor or candidates.outdoor(self.hass, in_use)
+            return self._form("outdoor", steps.outdoor_schema(current))
+        self._outdoor = str(user_input[CONF_OUTDOOR])
         return await self.async_step_notifications()
 
     async def async_step_notifications(
@@ -1556,6 +1576,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_PRICES: prices,
             CONF_TARIFF: tariff,
             CONF_PRESENCE: self._presence,
+            CONF_OUTDOOR: self._outdoor,
             CONF_NOTIFICATIONS: self._notifications,
             CONF_QUIET_HOURS: self._quiet,
             CONF_ACTIVE: False,

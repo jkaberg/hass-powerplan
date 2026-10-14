@@ -55,7 +55,10 @@ from homeassistant.helpers.selector import (
 from homeassistant.util import dt as dt_util
 from homeassistant.util import slugify
 
+from custom_components.powerplan import entity_refs
 from custom_components.powerplan.const import (
+    CONF_OUTDOOR,
+    LOAD_BINDINGS,
     METER_ROLES,
     NOTIFICATION_DEFAULTS,
     PROMINENT_CATEGORIES,
@@ -70,6 +73,7 @@ from custom_components.powerplan.const import (
     ROLE_PHASE_L3,
     ROLE_PRODUCTION_POWER,
     SECTION_ADVANCED,
+    SUBENTRY_LOAD,
     TRANSPORTS,
 )
 from custom_components.powerplan.core.metering.profile import (
@@ -127,6 +131,7 @@ from .text import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from custom_components.powerplan.core.tariffs.model import TariffSpec, TariffVersion
@@ -1841,3 +1846,31 @@ def overrides_schema(values: Mapping[str, Any], currency: str) -> vol.Schema:
             ),
         }
     )
+
+
+# --------------------------------------------------------------------------- #
+# The home's outdoor temperature (D-0761)
+# --------------------------------------------------------------------------- #
+
+#: What the home's outdoor temperature may be read from.
+_OUTDOOR_FILTER: Final = [
+    {"domain": "sensor", "device_class": "temperature"},
+    {"domain": "weather"},
+]
+
+
+def outdoor_in_use(hass: HomeAssistant, entry: ConfigEntry) -> tuple[str, ...]:
+    """Return the outdoor sensors the home's appliances already read, as entity ids."""
+    return tuple(
+        str(row["entity_id"])
+        for subentry in entry.subentries.values()
+        if subentry.subentry_type == SUBENTRY_LOAD
+        for row in entity_refs.live(hass, subentry.data).get(LOAD_BINDINGS) or ()
+        if row.get("role") == "outdoor_temp" and row.get("entity_id")
+    )
+
+
+def outdoor_schema(current: str | None) -> vol.Schema:
+    """One picker: a temperature sensor outside, or a weather entity, pre-filled."""
+    marker = vol.Required(CONF_OUTDOOR, default=current) if current else vol.Required(CONF_OUTDOOR)
+    return vol.Schema({marker: EntitySelector(EntitySelectorConfig(filter=_OUTDOOR_FILTER))})

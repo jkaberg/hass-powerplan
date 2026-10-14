@@ -511,6 +511,16 @@
           "persons": "Alle som, når de er borte, gjør at huset er borte."
         }
       },
+      "outdoor": {
+        "title": "Hvor varmt er det ute?",
+        "description": "Varmepumper og gulvvarme bruker utetemperaturen til å planlegge oppvarmingen. Alle apparater som trenger den, bruker denne, med mindre enheten har sin egen. PowerPlan foreslår den den fant. [Slik fungerer det]({docs})",
+        "data": {
+          "outdoor": "Utetemperatur"
+        },
+        "data_description": {
+          "outdoor": "En temperaturføler ute, eller en værentitet."
+        }
+      },
       "notifications": {
         "title": "Hva skal PowerPlan si fra om?",
         "description": "Tre ting varsles alltid; alt annet er en entitet du kan legge på et dashbord. Et varsel i Home Assistant virker alltid, også før du har satt opp en varslingstjeneste. [Slik fungerer det]({docs})",
@@ -1345,6 +1355,24 @@
     "needs_review": {
       "title": "Et apparat har datapunkter å bekrefte",
       "description": "«{load}» kan nå bruke {points}, som enheten har, men som PowerPlan ikke leser ennå. Åpne PowerPlan, finn «{load}» og velg Endre oppsett for å bekrefte dem, eller la dem stå tomme der for å beholde alt som det er."
+    },
+    "outdoor_missing": {
+      "title": "Velg utetemperatur",
+      "description": "{site}: {loads} bruker utetemperaturen, men hjemmet ditt har ingen valgt. Velg Send og velg føleren, eller bekreft den PowerPlan fant. Alle apparater bruker den.",
+      "fix_flow": {
+        "step": {
+          "outdoor": {
+            "title": "Hvor varmt er det ute?",
+            "description": "Alle apparater som trenger utetemperaturen, bruker denne, med mindre enheten har sin egen.",
+            "data": {
+              "outdoor": "Utetemperatur"
+            },
+            "data_description": {
+              "outdoor": "En temperaturføler ute, eller en værentitet."
+            }
+          }
+        }
+      }
     }
   },
   "selector": {
@@ -1808,6 +1836,7 @@
         "need_disabled": "{role}: {entity} er deaktivert i Home Assistant.",
         "need_none_asked": "Ingenting å spørre om.",
         "need_found_plain": "**{role}**: {entity}",
+        "need_inherited": "**{role}**: {entity}, fra hjemmet ditt",
         "need_found_title": "**Funnet på enheten**",
         "need_asked_title": "**Spørsmål**",
         "measured_missed": "{values} kunne ikke måles fra apparatets historikk ennå, så svarene dine brukes."
@@ -2341,7 +2370,7 @@
         "ev_status": "PowerPlan ser ikke når bilen er koblet til.",
         "floor_heating_energy": "Energien telles fra effekten i stedet.",
         "floor_heating_floor_min_limit": "Laveste temperatur holdes bare mens PowerPlan kjører.",
-        "floor_heating_outdoor_temp": "Temperaturen fra værvarselet brukes.",
+        "floor_heating_outdoor_temp": "Hjemmets utetemperatur brukes.",
         "floor_heating_power": "PowerPlan bruker et typisk tall per kvadratmeter og kan ikke måle det.",
         "floor_heating_setpoint": "PowerPlan kan ikke styre det.",
         "floor_heating_temp": "PowerPlan kan ikke planlegge varmen.",
@@ -2351,7 +2380,7 @@
         "generic_switch_switch": "PowerPlan kan ikke styre det.",
         "heat_capacitor_temp": "Planen kan bare pause i dyre timer, ikke varme på forhånd.",
         "heat_pump_energy": "Energien telles fra effekten i stedet.",
-        "heat_pump_outdoor_temp": "Temperaturen fra værvarselet brukes.",
+        "heat_pump_outdoor_temp": "Hjemmets utetemperatur brukes.",
         "heat_pump_outlet_temp": "Ingenting endres i planen.",
         "heat_pump_power": "Merkeeffekten blir svaret ditt og måles ikke.",
         "heat_pump_temp": "PowerPlan kan ikke planlegge varmen.",

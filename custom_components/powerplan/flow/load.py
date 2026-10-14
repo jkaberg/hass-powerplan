@@ -53,6 +53,7 @@ from homeassistant.util import dt as dt_util
 from custom_components.powerplan import doclinks, entity_refs
 from custom_components.powerplan.const import (
     CONF_METER,
+    CONF_OUTDOOR,
     CONF_TARIFF,
     DOMAIN,
     ENTITY_SETTINGS,
@@ -74,7 +75,7 @@ from custom_components.powerplan.const import (
     priority_level,
 )
 from custom_components.powerplan.core.loads import Role
-from custom_components.powerplan.core.loads.needs import Tier
+from custom_components.powerplan.core.loads.needs import Need, Tier
 from custom_components.powerplan.core.loads.questionnaire import (
     AnswerError,
     Answers,
@@ -337,6 +338,46 @@ def extra_bindings(
         if binding is not None:
             out.append(binding)
     return tuple(out)
+
+
+#: The attribute a temperature is read from on an entity whose state is a word.
+_TEMPERATURE_ATTRIBUTE: Final = {"weather": "temperature", "climate": "current_temperature"}
+
+
+def temperature_binding(hass: HomeAssistant, role: Role, entity_id: str) -> RoleBinding | None:
+    """Bind a temperature role read-only: a sensor's state, or a weather or climate attribute.
+
+    A `weather.*` or `climate.*` state is a word and declares no unit, so the
+    temperature is its attribute, as the climate profile binds one (D-0761).
+    """
+    domain = entity_id.split(".", 1)[0]
+    if domain in _TEMPERATURE_ATTRIBUTE:
+        return RoleBinding(role=role, entity_id=entity_id, attribute=_TEMPERATURE_ATTRIBUTE[domain])
+    view = DeviceView.from_states(hass, [entity_id]).get(entity_id)
+    return None if view is None else numeric_binding(view, role, profile="home")
+
+
+def reads_outdoor(data: Mapping[str, Any]) -> bool:
+    """Whether a load subentry's type, kind or plan reads the outdoor temperature."""
+    needs = data_points.needs_for(
+        str(data[LOAD_TYPE]), (data.get(LOAD_PARAMS) or {}).get("kind"), data.get(LOAD_STRATEGY)
+    )
+    return any(need.role is Role.OUTDOOR_TEMP for need in needs)
+
+
+def home_outdoor(
+    hass: HomeAssistant, data: Mapping[str, Any], outdoor: str | None
+) -> RoleBinding | None:
+    """Return the home's outdoor temperature for a load that reads one and binds none (D-0761).
+
+    Inherited, never stored: a household that changes the home's sensor changes
+    it for every appliance, and one whose device has its own keeps that.
+    """
+    if not outdoor or not reads_outdoor(data):
+        return None
+    if any(str(row.get("role")) == Role.OUTDOOR_TEMP for row in data.get(LOAD_BINDINGS) or ()):
+        return None
+    return temperature_binding(hass, Role.OUTDOOR_TEMP, outdoor)
 
 
 def sibling_probes(
@@ -1210,6 +1251,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         if view is None:
             return None
         same = previous is not None and previous.entity_id.split(".")[0] == view.domain
+        if role not in _WRITTEN and view.domain in _TEMPERATURE_ATTRIBUTE and not same:
+            return temperature_binding(self.hass, role, entity_id)
         return numeric_binding(
             view,
             role,
@@ -1385,14 +1428,9 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     def _resolve(self) -> tuple[data_points.Row, ...]:
         """Put the type's, kind's and strategy's needs on the ladder (D8 §5.2)."""
         match = self._match()
-        stored = self._stored or {}
-        needs = data_points.needs_for(
-            str(self._type),
-            (stored.get(LOAD_PARAMS) or {}).get("kind") or match.suggested_kind,
-            stored.get(LOAD_STRATEGY),
-        )
+        needs = self._needs()
         device_id = self._device_id
-        return data_points.resolve(
+        rows = data_points.resolve(
             needs,
             match,
             self._view or DeviceView(name=""),
@@ -1400,6 +1438,44 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 None if device_id is None else candidates.nearby(self.hass, device_id, role)
             ),
             stored={b.role: b for b in self._bindings} if self._stored is not None else None,
+        )
+        # The home's outdoor temperature is inherited, not asked: only the device's own is shown (D-0761).
+        if self._home_outdoor() is None:
+            return rows
+        return tuple(
+            row
+            for row in rows
+            if row.role is not Role.OUTDOOR_TEMP or row.outcome is data_points.Outcome.FOUND
+        )
+
+    def _needs(self) -> tuple[Need, ...]:
+        """Return what this appliance reads: its type, its kind and its plan (D4 §4.7)."""
+        stored = self._stored or {}
+        return data_points.needs_for(
+            str(self._type),
+            (stored.get(LOAD_PARAMS) or {}).get("kind") or self._match().suggested_kind,
+            stored.get(LOAD_STRATEGY),
+        )
+
+    def _home_outdoor(self) -> str | None:
+        """Return the home's outdoor temperature entity, as an entity id (D-0761)."""
+        found = entity_refs.live(self.hass, self._get_entry().data.get(CONF_OUTDOOR))
+        return str(found) if found else None
+
+    def _inherited_line(self, text: Text) -> str | None:
+        """Say that the appliance reads the home's outdoor temperature, where it does."""
+        outdoor = self._home_outdoor()
+        if outdoor is None or self._type is None:
+            return None
+        if any(row.role is Role.OUTDOOR_TEMP for row in self._rows):
+            return None
+        if not any(need.role is Role.OUTDOOR_TEMP for need in self._needs()):
+            return None
+        return "- " + text.word(
+            "load_text",
+            "need_inherited",
+            role=data_points.role_label(text, Role.OUTDOOR_TEMP),
+            entity=entity_name(self.hass, outdoor),
         )
 
     def _stored_sources(self) -> dict[Role, data_points.Source]:
@@ -1467,6 +1543,10 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 return await self._to_questions()
         placeholders.update(self._match_sentence(text, self._match()))
         placeholders.update(data_points.description(self.hass, text, self._rows, self._view))
+        if (inherited := self._inherited_line(text)) is not None:
+            placeholders["found"] = "\n".join(
+                [placeholders["found"] or text.word("load_text", "need_found_title"), inherited]
+            )
         return self.async_show_form(
             step_id="data_points",
             data_schema=data_points.schema(

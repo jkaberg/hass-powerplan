@@ -511,6 +511,16 @@
           "persons": "Everyone whose being away makes the house away."
         }
       },
+      "outdoor": {
+        "title": "What is the temperature outside?",
+        "description": "Heat pumps and heated floors use the outdoor temperature to plan heating. Every appliance that needs it uses this one, unless its own device has one. PowerPlan suggests the one it found. [How this works]({docs})",
+        "data": {
+          "outdoor": "Outdoor temperature"
+        },
+        "data_description": {
+          "outdoor": "A temperature sensor outside, or a weather entity."
+        }
+      },
       "notifications": {
         "title": "What should PowerPlan tell you?",
         "description": "Three things are worth an interruption; everything else is an entity you can put on a dashboard. A persistent notification always works, even before you have set up a notifier. [How this works]({docs})",
@@ -1345,6 +1355,24 @@
     "needs_review": {
       "title": "An appliance has data points to confirm",
       "description": "«{load}» can now use {points}, which its device has but PowerPlan does not read yet. Open PowerPlan, find «{load}» and choose Change setup to confirm them, or leave them empty there to keep things as they are."
+    },
+    "outdoor_missing": {
+      "title": "Set the outdoor temperature",
+      "description": "{site}: {loads} use the outdoor temperature, but your home has none set. Select Submit and pick the sensor, or confirm the one PowerPlan found. Every appliance uses it.",
+      "fix_flow": {
+        "step": {
+          "outdoor": {
+            "title": "What is the temperature outside?",
+            "description": "Every appliance that needs the outdoor temperature uses this one, unless its own device has one.",
+            "data": {
+              "outdoor": "Outdoor temperature"
+            },
+            "data_description": {
+              "outdoor": "A temperature sensor outside, or a weather entity."
+            }
+          }
+        }
+      }
     }
   },
   "selector": {
@@ -1808,6 +1836,7 @@
         "need_disabled": "{role}: {entity} is disabled in Home Assistant.",
         "need_none_asked": "Nothing to ask.",
         "need_found_plain": "**{role}**: {entity}",
+        "need_inherited": "**{role}**: {entity}, from your home",
         "need_found_title": "**Found on the device**",
         "need_asked_title": "**Asked**",
         "measured_missed": "{values} could not be measured from this appliance's history yet, so your answers are used."
@@ -2341,7 +2370,7 @@
         "ev_status": "PowerPlan cannot tell when the car is plugged in.",
         "floor_heating_energy": "Energy is counted from the power instead.",
         "floor_heating_floor_min_limit": "The lowest temperature holds only while PowerPlan runs.",
-        "floor_heating_outdoor_temp": "The weather forecast's temperature is used.",
+        "floor_heating_outdoor_temp": "Your home's outdoor temperature is used.",
         "floor_heating_power": "PowerPlan uses a typical figure per square meter and cannot measure it.",
         "floor_heating_setpoint": "PowerPlan cannot control it.",
         "floor_heating_temp": "PowerPlan cannot plan the heat.",
@@ -2351,7 +2380,7 @@
         "generic_switch_switch": "PowerPlan cannot control it.",
         "heat_capacitor_temp": "The plan can only pause in expensive hours, not heat ahead.",
         "heat_pump_energy": "Energy is counted from the power instead.",
-        "heat_pump_outdoor_temp": "The weather forecast's temperature is used.",
+        "heat_pump_outdoor_temp": "Your home's outdoor temperature is used.",
         "heat_pump_outlet_temp": "Nothing changes in the plan.",
         "heat_pump_power": "The rated power stays your answer and is not measured.",
         "heat_pump_temp": "PowerPlan cannot plan the heat.",

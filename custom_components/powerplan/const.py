@@ -36,6 +36,8 @@ CONF_TARIFF: Final = "tariff"
 CONF_PRESENCE: Final = "presence"
 CONF_NOTIFICATIONS: Final = "notifications"
 CONF_QUIET_HOURS: Final = "quiet_hours"
+#: The home's outdoor temperature: a sensor, or a `weather.*` entity's attribute (D-0761).
+CONF_OUTDOOR: Final = "outdoor"
 CONF_ACTIVE: Final = "active"
 
 #: Where the brand icon is served: an appliance entity on a hardware device shows

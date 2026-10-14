@@ -19,8 +19,11 @@ import voluptuous as vol
 from homeassistant.components.repairs import ConfirmRepairFlow, RepairsFlow
 from homeassistant.helpers import issue_registry as ir
 
-from .const import DOMAIN
+from . import entity_refs
+from .const import CONF_OUTDOOR, DOMAIN
 from .doclinks import doc_url
+from .flow.steps import outdoor_in_use, outdoor_schema
+from .providers.profiles import candidates
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -88,6 +91,9 @@ CATALOGUE: dict[str, Issue] = {
     # appliance's data points step confirms it, which a repair cannot open, so the
     # description says where; binding or declining it clears it (D8 §5.9, D-0753).
     "needs_review": Issue(ir.IssueSeverity.WARNING),
+    # Appliances read the outdoor temperature and the home has none: the fix
+    # flow asks for it, pre-filled with what the house has (D-0761).
+    "outdoor_missing": Issue(ir.IssueSeverity.WARNING, fixable=True),
     # Home Assistant's energy platform API no longer fits: no PV forecast, no
     # surplus planned; cleared by the next fetch that answers (D10 §5.5).
     "pv_forecast_unavailable": Issue(ir.IssueSeverity.WARNING, persistent=False),
@@ -368,6 +374,37 @@ class ConfirmTariffReviewFlow(RepairsFlow):
         return self.async_show_form(step_id="confirm", data_schema=_CONFIRM)
 
 
+class SetOutdoorFlow(RepairsFlow):
+    """`outdoor_missing`: pick the home's outdoor temperature; every appliance inherits it (D-0761)."""
+
+    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+        """Remember which site to set it on."""
+        self._hass = hass
+        self._entry_id = entry_id
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Ask for the entity."""
+        return await self.async_step_outdoor()
+
+    async def async_step_outdoor(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Save the pick on the site; its reload binds it and clears the issue."""
+        entry = self._hass.config_entries.async_get_entry(self._entry_id)
+        if user_input is not None:
+            if entry is not None:
+                self._hass.config_entries.async_update_entry(
+                    entry,
+                    data={
+                        **entry.data,
+                        CONF_OUTDOOR: entity_refs.stored(self._hass, user_input[CONF_OUTDOOR]),
+                    },
+                )
+            return self.async_create_entry(data={})
+        in_use = () if entry is None else outdoor_in_use(self._hass, entry)
+        return self.async_show_form(
+            step_id="outdoor", data_schema=outdoor_schema(candidates.outdoor(self._hass, in_use))
+        )
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
@@ -378,4 +415,6 @@ async def async_create_fix_flow(
         return AcknowledgeSafeModeFlow(hass, entry_id)
     if key == "tariff_review":
         return ConfirmTariffReviewFlow(hass, entry_id)
+    if key == "outdoor_missing":
+        return SetOutdoorFlow(hass, entry_id)
     return ConfirmRepairFlow()

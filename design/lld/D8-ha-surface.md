@@ -370,6 +370,7 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 | `role_missing` | error | yes (re-bind) | a required role's entity gone |
 | `provision_refused` | warning | no | provisioning fails repeatedly |
 | `needs_review_<load>` | warning | no - a repair cannot open a subentry's flow, so the description says where: the appliance's **Change setup**, which opens at the data points step (D-0759) | a recommended data point is unbound, not declined, and now found or tied on the device (D4 §8, D-0753) |
+| `outdoor_missing` | warning | yes - one picker, pre-filled from `candidates.outdoor`, saved on the site (D-0761) | an appliance reads `outdoor_temp`, binds none, and the site has no `outdoor` |
 | `legionella_at_risk` | warning | no | cycle cannot complete |
 | `engine_failing` | error | yes (acknowledge) | safe mode |
 | `store_reset` | warning | no | corrupt store recovered |
@@ -582,7 +583,7 @@ Follow-ups, each with "Hopp over" where skippable: solar or other production →
 
 | part | in code | decision |
 |---|---|---|
-| the order | path → name → (time zone) → meter → `meter_confirm` → (`meter_roles`) → fuse → contract → (Nord Pool) → grid company → `tariff_preset` yes/no → target and strictness → (bills, limits) → export → add-ons → heat sources → presence → notifications → review. Fuse only skips the contract to the tariff; price only skips the meter and the grid company | HUB-1, HUB-3 |
+| the order | path → name → (time zone) → meter → `meter_confirm` → (`meter_roles`) → fuse → contract → (Nord Pool) → grid company → `tariff_preset` yes/no → target and strictness → (bills, limits) → export → add-ons → heat sources → presence → outdoor temperature → notifications → review. Fuse only skips the contract to the tariff; price only skips the meter and the grid company | HUB-1, HUB-3 |
 | detection | the meter `DeviceSelector` lists only devices with a power sensor; `meter_confirm` shows each found role with its current value, read through `providers/meters/ha_sensors.value_now` (INV-3); "Endre" or nothing found opens the role form, with L1–L3 in a "Per fase" section. The country is asked only when HA has none, in the fuse step and never again; the phases sit under Avansert; the currency is never asked; a detected Nord Pool area skips its step on a first setup | HUB-2, HUB-22, CTL-9, §10-1; D-0432 |
 | the fuse | in Norway the voltage as a radio 230 V · 400 V · Vet ikke (stored `assumed: ["system"]`, re-shown on reconfigure) | D3 §6 |
 | the contract | Nord Pool spot · Norgespris (NO) · spot from a sensor · fixed; Nord Pool labelled "via Nord Pool-integrasjonen" | HUB-20; D-0431 |
