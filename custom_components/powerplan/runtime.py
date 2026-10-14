@@ -73,10 +73,12 @@ from .const import (
     GROUP_MEMBERS,
     GROUP_STARVE_SECONDS,
     LOAD_BINDINGS,
+    LOAD_DECLINED,
     LOAD_DEVICE_ID,
     LOAD_MANUAL_OVERRIDES,
     LOAD_PARAMS,
     LOAD_PROFILE,
+    LOAD_STRATEGY,
     LOAD_TITLE_USER_SET,
     LOAD_TYPE,
     ROLE_EXPORT_REGISTER,
@@ -195,7 +197,9 @@ from .core.tariffs.target import RISK_FLAT, RISK_FREE_RIDE, RISK_FULL
 from .entity import fallback_identifier, load_device_info, site_device_info
 from .events import build as build_event
 from .events import event_name
+from .flow import data_points
 from .flow.load import binding_from_data
+from .flow.text import Text
 from .logbook import logbook_entity_id
 from .notifications import NotificationPolicy, QuietHours
 from .price_refresh import PriceRefresher
@@ -237,6 +241,7 @@ from .providers.prices import (
 )
 from .providers.profiles import registry as profiles
 from .providers.profiles.base import (
+    NEEDS_REVIEW_S,
     PROVISION_RETRY_S,
     PROVISION_REVERIFY_S,
     DeviceView,
@@ -1372,6 +1377,8 @@ class Runtime:
         #: When each landed provision last read back, by (load, entity): the
         #: daily re-verify's clock (D4 §2). In memory, since a start re-verifies all.
         self._provision_checked: dict[tuple[str, str], datetime] = {}
+        #: A needs review is queued and not yet run (D-0753).
+        self._needs_review_pending = False
         #: The power and load-entity subscriptions are their own, replaced
         #: (not appended to `_unsubs`) whenever a circuit or a load subentry
         #: changes (D7 §2); still released once on unload, from here.
@@ -1518,6 +1525,7 @@ class Runtime:
         self._log_step("restore")
         await self.provision_all()
         self._log_step("provision")
+        await self.review_needs()
         await self.run_tick("startup")
         self._log_step("first_tick")
         if self.entry.state in (ConfigEntryState.SETUP_IN_PROGRESS, ConfigEntryState.LOADED):
@@ -2199,6 +2207,65 @@ class Runtime:
         del now
         await self.provision_all()
 
+    # ------------------------------------------------------------- needs review #
+
+    async def review_needs(self) -> None:
+        """Raise `needs_review_<load>` where a device now has a data point its load lacks.
+
+        At startup, on a registry change on a bound device, and once a day
+        (D-0753, D4 §8). It binds nothing: the repair names the data points, and
+        the household confirms them in the appliance's data points step.
+        """
+        self._needs_review_pending = False
+        text = await Text.load(self.hass)
+        for subentry in list(self.entry.subentries.values()):
+            if subentry.subentry_type != SUBENTRY_LOAD:
+                continue
+            roles = self._unmet_needs(entity_refs.live(self.hass, subentry.data))
+            async_report(
+                self.hass,
+                self.entry.entry_id,
+                f"needs_review_{subentry.subentry_id}",
+                active=bool(roles),
+                placeholders={
+                    "load": subentry.title,
+                    "points": text.join(data_points.role_label(text, role) for role in roles),
+                },
+                entry_title=self.site_name,
+            )
+
+    def _unmet_needs(self, data: Mapping[str, Any]) -> tuple[Role, ...]:
+        """Return the recommended data points the load's device has and the load does not."""
+        device_id = data.get(LOAD_DEVICE_ID)
+        if not device_id or dr.async_get(self.hass).async_get(str(device_id)) is None:
+            return ()
+        view = DeviceView.from_hass(self.hass, str(device_id))
+        match = next((m for m in profiles.match(view) if m.profile == data.get(LOAD_PROFILE)), None)
+        if match is None:
+            return ()
+        needs = data_points.needs_for(
+            str(data[LOAD_TYPE]),
+            (data.get(LOAD_PARAMS) or {}).get("kind"),
+            data.get(LOAD_STRATEGY),
+        )
+        bound = {binding_from_data(row).role for row in data.get(LOAD_BINDINGS) or ()}
+        return data_points.unmet(needs, bound, data.get(LOAD_DECLINED) or (), match)
+
+    async def _on_needs_review_timer(self, now: datetime) -> None:
+        """Check every load's needs again, once a day (D-0753)."""
+        del now
+        await self.review_needs()
+
+    @callback
+    def _schedule_needs_review(self) -> None:
+        """Review the needs soon, once however many registry events arrive together."""
+        if self._needs_review_pending:
+            return
+        self._needs_review_pending = True
+        self.entry.async_create_background_task(
+            self.hass, self.review_needs(), f"{DOMAIN} needs review"
+        )
+
     # ------------------------------------------------------- subentry hot paths (D7 §2) #
 
     def setup_load_platform(
@@ -2271,6 +2338,17 @@ class Runtime:
                 entry_title=self.site_name,
             )
 
+    def _on_bound_device(self, entity_id: str) -> bool:
+        """Whether an entity sits on a device one of the site's loads is bound to."""
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is None or entry.device_id is None or entry.platform == DOMAIN:
+            return False
+        return any(
+            subentry.data.get(LOAD_DEVICE_ID) == entry.device_id
+            for subentry in self.entry.subentries.values()
+            if subentry.subentry_type == SUBENTRY_LOAD
+        )
+
     def _bound_to_device(self, load_id: str) -> bool:
         """Whether the load was set up on a hardware device, not on entities alone."""
         subentry = self.entry.subentries.get(load_id)
@@ -2311,6 +2389,7 @@ class Runtime:
         if data["action"] == "remove":
             self.settle_devices()
             return
+        self._schedule_needs_review()
         if data["action"] != "update" or not {"name", "name_by_user"} & set(data["changes"]):
             return
         device = dr.async_get(self.hass).async_get(data["device_id"])
@@ -2329,6 +2408,9 @@ class Runtime:
         entity id. A reload resolves them again (INV-26, INV-48 on the way).
         """
         data = event.data
+        if data["action"] in ("create", "update") and self._on_bound_device(data["entity_id"]):
+            # An entity added or enabled on an appliance's device can meet a need (D-0753).
+            self._schedule_needs_review()
         if data["action"] != "update" or "old_entity_id" not in data:
             return
         entity = er.async_get(self.hass).async_get(data["entity_id"])
@@ -3892,6 +3974,11 @@ class Runtime:
         self._track(
             async_track_time_interval(
                 hass, self._on_provision_timer, timedelta(seconds=PROVISION_RETRY_S)
+            )
+        )
+        self._track(
+            async_track_time_interval(
+                hass, self._on_needs_review_timer, timedelta(seconds=NEEDS_REVIEW_S)
             )
         )
         boundaries = (

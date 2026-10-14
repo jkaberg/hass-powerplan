@@ -183,6 +183,8 @@ _TOKENS: Final = re.compile(r"[a-z0-9]+")
 #: noticed is what a step that latches on failure costs.
 PROVISION_RETRY_S: Final = 900.0
 PROVISION_REVERIFY_S: Final = 86_400.0
+#: How often every load's needs are checked against its device again (D-0753).
+NEEDS_REVIEW_S: Final = 86_400.0
 
 
 # --------------------------------------------------------------------------- #

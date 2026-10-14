@@ -30,6 +30,7 @@ What each repair PowerPlan raises means and what to do about it, and the common 
 | An appliance is not following its commands | no | `device_not_following` |
 | Electricity prices are not up to date | no | `prices_stale` |
 | An appliance's device is gone | no | `device_missing` |
+| An appliance has data points to confirm | no | `needs_review` |
 | A PV forecast cannot be read | no | `pv_forecast_unavailable` |
 <!-- generated:end repairs -->
 
@@ -153,6 +154,13 @@ The device accepts PowerPlan's commands but has not applied them for 30 minutes,
 The device an appliance was set up with is gone from Home Assistant. PowerPlan does not control the appliance until you pick a new one.
 
 **What to do:** Open PowerPlan, find the appliance and choose **Change setup**, then pick the device that replaced it.
+
+<a name="needs_review"></a>
+### An appliance has data points to confirm
+
+The appliance's device now has a data point PowerPlan can use and does not read yet, such as a thermostat's floor limit that was disabled when the appliance was added, or a sensor a new plan reads. PowerPlan does not start reading or writing it on its own.
+
+**What to do:** Open PowerPlan, find the appliance and choose **Change setup**. The [data points](appliances/README.md#data-points) step shows what was found; keep it to use it, or leave it empty to keep things as they are. Either way the issue goes away and is not raised again for that data point.
 
 <a name="provision_refused"></a>
 ### A device refuses its provisioning

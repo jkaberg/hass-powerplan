@@ -369,7 +369,7 @@ Schemas use `cv.entity_id`/`cv.string`/`vol.Range`; target selection via `config
 | `bound_helper_missing` | warning | yes (re-bind) | schedule/person/calendar gone |
 | `role_missing` | error | yes (re-bind) | a required role's entity gone |
 | `provision_refused` | warning | no | provisioning fails repeatedly |
-| `needs_review_<load>` | info | yes (the load's reconfigure, at the data points step) | a recommended data point is unbound, not declined, and now found or tied on the device (D4 §8, D-0753) |
+| `needs_review_<load>` | warning | no - a repair cannot open a subentry's flow, so the description says where: the appliance's **Change setup**, which opens at the data points step (D-0759) | a recommended data point is unbound, not declined, and now found or tied on the device (D4 §8, D-0753) |
 | `legionella_at_risk` | warning | no | cycle cannot complete |
 | `engine_failing` | error | yes (acknowledge) | safe mode |
 | `store_reset` | warning | no | corrupt store recovered |

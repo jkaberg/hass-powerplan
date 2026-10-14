@@ -43,7 +43,7 @@ from custom_components.powerplan.providers.profiles.base import RoleBinding
 from custom_components.powerplan.providers.profiles.candidates import ROLE_CLASS, in_pool
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
 
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.selector import EntityWithDeviceFilterSelectorConfig
@@ -63,6 +63,7 @@ __all__ = [
     "resolve",
     "role_label",
     "schema",
+    "unmet",
 ]
 
 #: The tie option that opens `data_points_other`.
@@ -171,6 +172,29 @@ def resolve(
         else:
             rows.append(Row(role, tier, key, Outcome.MISSING, disabled=disabled))
     return tuple(rows)
+
+
+def unmet(
+    needs: Sequence[Need],
+    bound: Collection[Role],
+    declined: Collection[str],
+    match: MatchResult,
+) -> tuple[Role, ...]:
+    """Return the recommended needs a load lacks that its device has now (D-0753).
+
+    Unbound, not declined, and found or tied on the device: an entity enabled,
+    a device that gained one, a plan that reads one the old did not. Nothing is
+    bound here; the household confirms it in the data points step.
+    """
+    have = {binding.role for binding in match.bindings} | set(match.ties)
+    return tuple(
+        each.role
+        for each in needs
+        if each.tier is Tier.RECOMMENDED
+        and each.role not in bound
+        and each.role.value not in declined
+        and each.role in have
+    )
 
 
 def _disabled(view: DeviceView, role: Role) -> tuple[str, ...]:
