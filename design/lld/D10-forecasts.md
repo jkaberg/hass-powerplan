@@ -192,7 +192,7 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 | EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy | Σ(ΔSoC × capacity) / Σ energy | [0.75, 0.98] | n ≥ 3 |
 | `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured; a rating from a W/m² table [10, 250] W/m² × area (D-0741) | n ≥ 100 samples |
 | tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity, the lower quartile over episodes (D-0741) | [20, 200] | n ≥ 3 |
-| tank `draw_kwh_day` (D-0741) | element power and level, whole 24 h windows | `E_in·η − P_standby·24 h − C·η·(T_end − T_start)`, the median of the last 21 days (D-0755) | [0.3, 60] kWh | n ≥ 5 days, span ≥ 5 days |
+| tank `draw_kwh_day` (D-0741) | element power and level, whole 24 h windows | `E_in·η − P_standby·24 h − C·η·(T_end − T_start)`, the median of the last 21 days, days under 0.3 kWh left out while five remain (D-0755) | [0.3, 60] kWh | n ≥ 5 days, span ≥ 5 days |
 | switch `hours_per_day` (D-0752) | the switch's state history | on-time per local day, the median | [0.25, 24] h | n ≥ 7 days, span ≥ 7 days |
 | cycle `energy_kwh`, `duration_min` (D-0752) | power | runs: power ≥ 10 % of its p95, gaps under 10 min merged, runs ≥ 10 min; the medians | ±50 % of the appliance's default (D4 §2) | n ≥ 3 runs, interquartile range ≤ 0.5 × median |
 | EV `phases` (D-0752) | `CURRENT_L1`…`L3` while charging (L1 ≥ 6 A) | a phase carries current when it reads ≥ 50 % of L1 in ≥ 90 % of the charging samples | 1 or 3 | n ≥ 3 sessions; two phases, or a phase between, is not applied |

@@ -53,3 +53,24 @@ def test_29_the_draw_is_the_median_of_the_last_21_days() -> None:
     assert abs(fit.value - 5.75) < 0.01
     assert fit.quality.n <= DRAW_WINDOW_DAYS
     assert fit.quality.ok
+
+
+def test_29_a_holiday_does_not_count_as_a_household_that_draws_nothing() -> None:
+    """Ten days away inside the window: the median is of the days at home.
+
+    Back from the reference house's July holiday, the 21-day median read
+    0.3–1.9 kWh against 5.6–5.8 drawn; without the days away, 3.9–4.0.
+    """
+    history = _tank(14, 5.0, 10, 0.0)
+    fit = daily_draw_kwh(history, START + timedelta(days=24))
+    assert fit is not None
+    assert abs(fit.value - 5.0) < 0.01
+    assert fit.quality.n == 11
+
+
+def test_29_a_household_that_draws_little_keeps_its_own_figure() -> None:
+    """Every day under the threshold: no day is dropped, so the small draw stands."""
+    history = _tank(21, 0.2, 0, 0.0)
+    fit = daily_draw_kwh(history, START + timedelta(days=21))
+    assert fit is not None
+    assert abs(fit.value - 0.2) < 0.01

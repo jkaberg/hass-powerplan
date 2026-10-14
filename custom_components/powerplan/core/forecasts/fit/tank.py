@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 __all__ = [
+    "AWAY_KWH",
     "DRAW_BOUNDS_KWH",
     "DRAW_GATE",
     "DRAW_WINDOW_DAYS",
@@ -107,6 +108,9 @@ def standby_loss_w(history: LoadHistory, now: datetime) -> Fit | None:
 #: days the 21-day median missed the next fortnight's by 8.5 %, 30 days by 11.8 %
 #: and 60 days by 31 %, which still held a three-week holiday a month after it.
 DRAW_WINDOW_DAYS: Final = 21
+#: Below this a day's draw is no use at all: the lower bound of `DRAW_BOUNDS_KWH`.
+#: The reference tank's holiday read -0.2 to 0.3 kWh a day, every day home 0.95 or more.
+AWAY_KWH: Final = DRAW_BOUNDS_KWH[0]
 
 
 def daily_draw_kwh(history: LoadHistory, now: datetime) -> Fit | None:
@@ -141,6 +145,12 @@ def daily_draw_kwh(history: LoadHistory, now: datetime) -> Fit | None:
         start = end
     if not draws:
         return None
+    # A day under the smallest draw a household has is a day nobody was home
+    # (D-0755): left out while enough days remain, or a holiday drags the
+    # median towards nothing and the first week back runs the tank short.
+    home = [(draw, at) for draw, at in zip(draws, starts, strict=True) if draw >= AWAY_KWH]
+    if len(home) >= DRAW_GATE.min_n:
+        draws, starts = [draw for draw, _ in home], [at for _, at in home]
     span = (starts[-1] + _DAY - starts[0]).total_seconds() / 86400.0
     return resolve(
         FitKey.DAILY_DRAW,
