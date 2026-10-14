@@ -123,7 +123,7 @@ def group_schema(
                     sort=True,
                 )
             ),
-            vol.Optional(SECTION_ADVANCED, default={}): advanced_section(
+            vol.Optional(SECTION_ADVANCED): advanced_section(
                 {
                     vol.Optional(
                         GROUP_FROM_STAGE,

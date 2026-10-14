@@ -254,9 +254,9 @@ def schema(
             asked[_marker(row, key, values.get(key))] = picker
     fields = dict(asked)
     if found:
-        fields[vol.Optional(SECTION_FOUND, default={})] = advanced_section(found)
+        fields[vol.Optional(SECTION_FOUND)] = advanced_section(found)
     if advanced:
-        fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(advanced)
+        fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(advanced)
     return vol.Schema(fields)
 
 

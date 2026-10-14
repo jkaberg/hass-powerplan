@@ -729,7 +729,7 @@ def render(
             key = marker(field.key, shown)
         (hidden if field.advanced else fields)[key] = selector
     if hidden:
-        fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
+        fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(hidden)
     return vol.Schema(fields)
 
 

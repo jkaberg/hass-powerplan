@@ -107,7 +107,7 @@ def circuit_schema(
                 CIRCUIT_SUB_METER,
                 description={"suggested_value": given.get(CIRCUIT_SUB_METER)},
             ): EntitySelector(EntitySelectorConfig(domain="sensor", device_class="power")),
-            vol.Optional(SECTION_ADVANCED, default={}): advanced_section(
+            vol.Optional(SECTION_ADVANCED): advanced_section(
                 {
                     # "Annet forbruk på kursen" in kW; stored in W (LOAD-8, CTL-15).
                     vol.Optional(

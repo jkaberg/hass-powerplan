@@ -227,7 +227,9 @@ async def test_a_comfort_outside_its_own_limits_reaches_the_load_flows_field(
     defaults = result["data_schema"]({})
     # `max_c` stays at its default (80 °C); asking for 85 °C exceeds it.
     result = await _load_answer(
-        hass, result, **{**defaults, "advanced": {**defaults["advanced"], "ready_temp_c": 85.0}}
+        hass,
+        result,
+        **{**defaults, "advanced": {**defaults.get("advanced", {}), "ready_temp_c": 85.0}},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "questions"
@@ -257,7 +259,9 @@ async def test_a_cop_curve_that_falls_reaches_the_load_flows_field(
     defaults = result["data_schema"]({})
     falling = [{"outdoor_c": -10.0, "cop": 3.8}, {"outdoor_c": 7.0, "cop": 2.1}]
     result = await _load_answer(
-        hass, result, **{**defaults, "advanced": {**defaults["advanced"], "cop_curve": falling}}
+        hass,
+        result,
+        **{**defaults, "advanced": {**defaults.get("advanced", {}), "cop_curve": falling}},
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "questions"

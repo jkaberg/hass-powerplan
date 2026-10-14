@@ -135,7 +135,7 @@ def zone_schema(
                     sort=True,
                 )
             ),
-            vol.Optional(SECTION_ADVANCED, default={}): advanced_section(
+            vol.Optional(SECTION_ADVANCED): advanced_section(
                 {
                     vol.Optional(
                         ZONE_MIN_COP,

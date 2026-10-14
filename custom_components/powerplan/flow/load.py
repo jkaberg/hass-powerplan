@@ -647,7 +647,7 @@ def question_schema(
             marker = _marker(question.key, default)
         target[marker] = _selector(question, type_key, default, text)
     if hidden:
-        fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
+        fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(hidden)
     return vol.Schema(fields)
 
 
@@ -944,7 +944,7 @@ def _review_schema(
             shown, selector = _param_control(key, value)
             hidden[vol.Optional(f"param_{key}", default=shown)] = selector
     if hidden:
-        fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
+        fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(hidden)
     return vol.Schema(fields)
 
 

@@ -96,7 +96,7 @@ async def test_the_group_flow_reviews_the_sentence_and_builds_the_constraint(  #
             "name": "Floor loops",
             GROUP_MEMBERS: [ev_id, sauna_id],
             "advanced": {
-                **defaults["advanced"],
+                **defaults.get("advanced", {}),
                 GROUP_FROM_STAGE: 2,
                 GROUP_CEILING_FRACTION: 90,
                 GROUP_STARVE_SECONDS: {"hours": 0, "minutes": 15, "seconds": 0},

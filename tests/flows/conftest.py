@@ -181,24 +181,28 @@ def shown(result: Mapping[str, Any]) -> dict[str, Any]:
     """Return what the form shows filled in: defaults and suggested values, sections too.
 
     The frontend submits a suggested value as typed; `data_schema({})` alone
-    drops it, which is not what the household sends.
+    drops it, which is not what the household sends. The order is the
+    frontend's own (`computeInitialHaFormData`): a suggested value, else a
+    default, else a section's fields - so a section given a default of its own
+    shows that default, and every value inside it is lost.
     """
 
     def walk(schema: Any) -> dict[str, Any]:
         out: dict[str, Any] = {}
         for key, value in schema.schema.items():
             name = str(key)
-            inner = getattr(value, "schema", None)
-            if inner is not None and hasattr(inner, "schema"):
-                out[name] = walk(inner)
-                continue
             factory = getattr(key, "default", vol.UNDEFINED)
             default = factory() if callable(factory) else None
             suggested = (getattr(key, "description", None) or {}).get("suggested_value")
-            if default is not None:
-                out[name] = default
-            elif suggested is not None:
+            inner = getattr(value, "schema", None)
+            if suggested is not None:
                 out[name] = suggested
+            elif default is not None:
+                out[name] = default
+            elif inner is not None and hasattr(inner, "schema"):
+                fields = walk(inner)
+                if fields:
+                    out[name] = fields
         return out
 
     return walk(result["data_schema"])

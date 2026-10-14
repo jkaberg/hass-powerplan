@@ -73,7 +73,7 @@ async def _add_heat_pump(
         result,
         **{
             **defaults,
-            "advanced": {**defaults["advanced"], **advanced},
+            "advanced": {**defaults.get("advanced", {}), **advanced},
         },
     )
     assert result["step_id"] == "review", result

@@ -303,7 +303,7 @@ def electrical_schema(
         if limit is not None and float(limit) != suggested_limit
         else vol.Optional("per_phase_limit_a", description={"suggested_value": suggested_limit})
     )
-    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+    fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(
         {
             vol.Optional("phases", default=phases): SelectSelector(
                 SelectSelectorConfig(
@@ -551,7 +551,7 @@ def meter_roles_schema(prefilled: Mapping[str, str]) -> vol.Schema:
         (phases if role in _PHASE_ROLES else fields)[marker] = EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class=device_class)
         )
-    fields[vol.Optional(SECTION_PER_PHASE, default={})] = section(
+    fields[vol.Optional(SECTION_PER_PHASE)] = section(
         vol.Schema(phases), {"collapsed": not any(prefilled.get(r) for r in _PHASE_ROLES)}
     )
     return vol.Schema(fields)
@@ -1294,7 +1294,7 @@ def tariff_target_schema(
         fields[vol.Optional("target_kw", default=values.get("target_kw") or 5.0)] = NumberSelector(
             NumberSelectorConfig(mode=NumberSelectorMode.BOX, step="any", unit_of_measurement="kW")
         )
-    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+    fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(
         {
             vol.Optional(
                 "eps_kwh", default=values.get("eps_kwh", EPS_DEFAULT_KWH_PER_HOUR)
@@ -1513,7 +1513,7 @@ def presence_schema(hass: HomeAssistant, *, values: Mapping[str, Any] | None = N
             )
         ),
     }
-    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+    fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(
         {vol.Optional("away_delay_min", default=delay): duration_selector()}
     )
     return vol.Schema(fields)
@@ -1626,7 +1626,7 @@ def notifications_schema(
     fields[vol.Optional("quiet_start", default=start)] = time_selector(start)
     fields[vol.Optional("quiet_end", default=end)] = time_selector(end)
     # The rarely-changed categories last, after the questions that apply to all (HUB-16).
-    fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(
+    fields[vol.Optional(SECTION_ADVANCED)] = advanced_section(
         dict(
             _transport_field(category, _default(category))
             for category in NOTIFICATION_DEFAULTS

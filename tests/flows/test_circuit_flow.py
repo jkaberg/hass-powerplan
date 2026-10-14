@@ -25,7 +25,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.flow.circuit import CIRCUIT_UNMETERED_KW
-from tests.flows.conftest import past_match
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _add_charger, _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -54,7 +54,7 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     assert result["description_placeholders"]["warning"] == (
         "We are not sure – check that this is the right appliance."
     )
-    suggested = result["data_schema"]({})
+    suggested = shown(result)
     result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     defaults = result["data_schema"]({})

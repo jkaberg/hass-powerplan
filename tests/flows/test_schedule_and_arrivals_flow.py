@@ -49,13 +49,12 @@ async def test_an_answered_schedule_and_arrival_calendars_reach_params(
     result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
-    defaults = result["data_schema"]({})
-    # `schedule_entity`'s own default is `None`, so voluptuous omits the key
-    # entirely rather than filling it in (`_marker`'s `vol.Optional(key)` with
-    # no `default=`) - the same as every other unanswered singular `ENTITY`
-    # question (`outdoor_entity`, `outlet_entity`, `temp_entity`). Only a
-    # tuple-defaulted multi-entity question like `arrival_sources` survives
-    # the round trip as its own key.
+    defaults = shown(result)
+    # `schedule_entity`'s own default is `None`, so the form shows it empty
+    # (`_marker`'s `vol.Optional(key)` with no `default=`) - the same as every
+    # other unanswered singular `ENTITY` question (`outdoor_entity`,
+    # `outlet_entity`, `temp_entity`). Only a tuple-defaulted multi-entity
+    # question like `arrival_sources` is filled in, as an empty list.
     assert "schedule_entity" not in defaults["advanced"]
     assert defaults["advanced"]["arrival_sources"] == []
     answers = {
