@@ -513,7 +513,7 @@
       },
       "outdoor": {
         "title": "Hvor varmt er det ute?",
-        "description": "Varmepumper og gulvvarme bruker utetemperaturen til å planlegge oppvarmingen. Alle apparater som trenger den, bruker denne, med mindre enheten har sin egen. PowerPlan foreslår den den fant. [Slik fungerer det]({docs})",
+        "description": "Varmepumper og gulvvarme planlegger etter den, og alle apparater bruker denne med mindre enheten har sin egen. La den stå tom om du ikke har noen. [Slik fungerer det]({docs})",
         "data": {
           "outdoor": "Utetemperatur"
         },
@@ -1358,12 +1358,11 @@
     },
     "outdoor_missing": {
       "title": "Velg utetemperatur",
-      "description": "{site}: {loads} bruker utetemperaturen, men hjemmet ditt har ingen valgt. Velg Send og velg føleren, eller bekreft den PowerPlan fant. Alle apparater bruker den.",
       "fix_flow": {
         "step": {
           "outdoor": {
             "title": "Hvor varmt er det ute?",
-            "description": "Alle apparater som trenger utetemperaturen, bruker denne, med mindre enheten har sin egen.",
+            "description": "{site}: {loads} bruker utetemperaturen, men hjemmet ditt har ingen valgt. Alle apparater som trenger den, bruker denne, med mindre enheten har sin egen.",
             "data": {
               "outdoor": "Utetemperatur"
             },
@@ -3922,7 +3921,11 @@
       }
     },
     "site": {
-      "entry_type": "Hele hjemmet"
+      "entry_type": "Hele hjemmet",
+      "initiate_flow": {
+        "user": "Legg til hjem"
+      },
+      "step": {}
     }
   },
   "options": {

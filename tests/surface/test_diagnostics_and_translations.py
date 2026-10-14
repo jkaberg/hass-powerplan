@@ -122,7 +122,13 @@ def test_12_every_translation_key_the_code_uses_exists_in_both_languages() -> No
             assert "description" in strings["services"][name]
         for issue_id in repairs.CATALOGUE:
             assert issue_id in strings["issues"], (language, issue_id)
-            assert {"title", "description"} <= set(strings["issues"][issue_id])
+            issue = strings["issues"][issue_id]
+            assert "title" in issue, (language, issue_id)
+            # hassfest: a repair with a fix flow of its own says it on the flow's step
+            # and not at the top as well (D-0765).
+            steps = issue.get("fix_flow", {}).get("step", {})
+            assert "description" in issue or all("description" in step for step in steps.values())
+            assert ("description" in issue) != bool(steps), (language, issue_id)
         source = "\n".join(path.read_text(encoding="utf-8") for path in INTEGRATION.glob("*.py"))
         for key in re.findall(r'translation_key="([a-z_]+)"', source):
             assert (

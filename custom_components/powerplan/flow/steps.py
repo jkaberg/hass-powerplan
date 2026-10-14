@@ -556,8 +556,10 @@ def meter_roles_schema(prefilled: Mapping[str, str]) -> vol.Schema:
         (phases if role in _PHASE_ROLES else fields)[marker] = EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class=device_class)
         )
+    # `Any`: HA 2026.10 types a section's schema as probatio's, the floor as voluptuous'.
+    per_phase: Any = vol.Schema(phases)
     fields[vol.Optional(SECTION_PER_PHASE)] = section(
-        vol.Schema(phases), {"collapsed": not any(prefilled.get(r) for r in _PHASE_ROLES)}
+        per_phase, {"collapsed": not any(prefilled.get(r) for r in _PHASE_ROLES)}
     )
     return vol.Schema(fields)
 
@@ -1853,7 +1855,8 @@ def overrides_schema(values: Mapping[str, Any], currency: str) -> vol.Schema:
 # --------------------------------------------------------------------------- #
 
 #: What the home's outdoor temperature may be read from.
-_OUTDOOR_FILTER: Final = [
+#: `Any`: HA types `filter` as its own TypedDict, and a plain list of dicts is what it reads.
+_OUTDOOR_FILTER: Final[Any] = [
     {"domain": "sensor", "device_class": "temperature"},
     {"domain": "weather"},
 ]
@@ -1870,7 +1873,16 @@ def outdoor_in_use(hass: HomeAssistant, entry: ConfigEntry) -> tuple[str, ...]:
     )
 
 
-def outdoor_schema(current: str | None) -> vol.Schema:
-    """One picker: a temperature sensor outside, or a weather entity, pre-filled."""
-    marker = vol.Required(CONF_OUTDOOR, default=current) if current else vol.Required(CONF_OUTDOOR)
+def outdoor_schema(current: str | None, *, required: bool = False) -> vol.Schema:
+    """One picker: a temperature sensor outside, or a weather entity, pre-filled.
+
+    Optional in the household setup when the house has none to offer: a home with
+    no outdoor sensor and no weather entity can still be set up, and
+    `outdoor_missing` asks once an appliance reads one (D-0765). The repair,
+    which exists to set it, passes `required`.
+    """
+    if current:
+        marker: vol.Marker = vol.Required(CONF_OUTDOOR, default=current)
+    else:
+        marker = vol.Required(CONF_OUTDOOR) if required else vol.Optional(CONF_OUTDOOR)
     return vol.Schema({marker: EntitySelector(EntitySelectorConfig(filter=_OUTDOOR_FILTER))})

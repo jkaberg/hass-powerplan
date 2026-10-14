@@ -25,6 +25,7 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.entity import unique_id
 from custom_components.powerplan.load_entities import PARAM_NUMBERS
+from tests.flows.conftest import shown
 from tests.flows.test_entity_set import _house
 from tests.flows.test_load_flow import _answer
 
@@ -61,7 +62,8 @@ async def _reconfigure(hass: HomeAssistant, site: MockConfigEntry, load_id: str)
     asked: list[set[str]] = []
     while result["type"] is FlowResultType.FORM:
         asked.append(_keys(result["data_schema"]))
-        result = await _answer(hass, result, **result["data_schema"]({}))
+        # What the frontend submits: the data points' defaults sit inside sections.
+        result = await _answer(hass, result, **shown(result))
     await hass.async_block_till_done()
     assert result["reason"] == "reconfigure_successful", result
     return asked
@@ -159,7 +161,7 @@ async def test_the_add_flow_asks_strategy_only_where_there_is_a_choice(
     )
     sauna = await _answer(hass, sauna, type="generic_switch")
     sauna = await _answer(hass, sauna, device=charger.loads["sauna"].device_id)
-    sauna = await _answer(hass, sauna, **sauna["data_schema"]({}))
+    sauna = await _answer(hass, sauna, **shown(sauna))
     sauna = await _answer(hass, sauna, **{**sauna["data_schema"]({}), "power_w": 6.0})
     assert sauna["step_id"] == "review", sauna
     assert "strategy" not in _keys(sauna["data_schema"])

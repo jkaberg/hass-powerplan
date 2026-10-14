@@ -466,9 +466,7 @@ def _selectors(schema: Any) -> list[SelectSelector[Any]]:
 
 
 def _strip(text: str, names: set[str]) -> str:
-    """Remove what is data by construction: the household's names, strategy names, URLs,
-    inline code.
-    """
+    """Remove what is data by construction: names, strategy names, URLs, inline code."""
     text = CODE.sub(" ", URL.sub(" ", text))
     strategies = {STRINGS["en"][path] for path in STRATEGY_NAMES}
     for name in sorted(names | strategies, key=len, reverse=True):

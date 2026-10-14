@@ -187,7 +187,7 @@ async def _followups(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, A
 
 
 async def _tail(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
-    """Answer presence and notifications; stop on the review.
+    """Answer presence, the outdoor temperature and notifications; stop on the review.
 
     The hard-limit step is gone (its answer was read by nothing, D8 §5.15 S2,
     review NEW-1): the grense is D3's fuse and per-phase limit.
@@ -197,6 +197,10 @@ async def _tail(hass: HomeAssistant, result: dict[str, Any]) -> dict[str, Any]:
 
     assert result["step_id"] == "presence_persons"
     result = await _answer(hass, result, persons=["person.joel", "person.kari"])
+
+    # Nothing outdoors in the test house: the picker is optional then (D-0765).
+    assert result["step_id"] == "outdoor"
+    result = await _answer(hass, result)
 
     assert result["step_id"] == "notifications"
     result = await _answer(hass, result, **NOTIFICATIONS)

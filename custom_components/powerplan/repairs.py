@@ -400,8 +400,14 @@ class SetOutdoorFlow(RepairsFlow):
                 )
             return self.async_create_entry(data={})
         in_use = () if entry is None else outdoor_in_use(self._hass, entry)
+        # A fixable issue's text lives on its step (hassfest), so the step shows its names.
+        issue = ir.async_get(self._hass).async_get_issue(DOMAIN, self.issue_id)
+        # `Any`: HA 2026.10 types a flow's schema as probatio's, the floor as voluptuous'.
+        schema: Any = outdoor_schema(candidates.outdoor(self._hass, in_use), required=True)
         return self.async_show_form(
-            step_id="outdoor", data_schema=outdoor_schema(candidates.outdoor(self._hass, in_use))
+            step_id="outdoor",
+            data_schema=schema,
+            description_placeholders=dict(issue.translation_placeholders or {}) if issue else {},
         )
 
 

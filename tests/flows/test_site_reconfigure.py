@@ -94,6 +94,8 @@ async def _to_review(
     result = await _answer(hass, result, carriers=[])
     result = await _answer(hass, result, mode="auto")
     result = await _answer(hass, result, persons=["person.joel", "person.kari"])
+    assert result["step_id"] == "outdoor", result
+    result = await _answer(hass, result)
     result = await _answer(hass, result, **NOTIFICATIONS)
     assert result["step_id"] == "review", result
     return result

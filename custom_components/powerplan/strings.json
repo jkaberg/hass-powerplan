@@ -513,7 +513,7 @@
       },
       "outdoor": {
         "title": "What is the temperature outside?",
-        "description": "Heat pumps and heated floors use the outdoor temperature to plan heating. Every appliance that needs it uses this one, unless its own device has one. PowerPlan suggests the one it found. [How this works]({docs})",
+        "description": "Heat pumps and heated floors plan by it, and every appliance uses this one unless its device has its own. Leave it empty if you have none. [How this works]({docs})",
         "data": {
           "outdoor": "Outdoor temperature"
         },
@@ -1358,12 +1358,11 @@
     },
     "outdoor_missing": {
       "title": "Set the outdoor temperature",
-      "description": "{site}: {loads} use the outdoor temperature, but your home has none set. Select Submit and pick the sensor, or confirm the one PowerPlan found. Every appliance uses it.",
       "fix_flow": {
         "step": {
           "outdoor": {
             "title": "What is the temperature outside?",
-            "description": "Every appliance that needs the outdoor temperature uses this one, unless its own device has one.",
+            "description": "{site}: {loads} use the outdoor temperature, but your home has none set. Every appliance that needs it uses this one, unless its own device has one.",
             "data": {
               "outdoor": "Outdoor temperature"
             },
@@ -3922,7 +3921,11 @@
       }
     },
     "site": {
-      "entry_type": "Whole home"
+      "entry_type": "Whole home",
+      "initiate_flow": {
+        "user": "Add home"
+      },
+      "step": {}
     }
   },
   "options": {

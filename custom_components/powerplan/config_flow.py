@@ -1510,7 +1510,7 @@ class PowerplanConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             current = self._outdoor or candidates.outdoor(self.hass, in_use)
             return self._form("outdoor", steps.outdoor_schema(current))
-        self._outdoor = str(user_input[CONF_OUTDOOR])
+        self._outdoor = str(user_input[CONF_OUTDOOR]) if user_input.get(CONF_OUTDOOR) else None
         return await self.async_step_notifications()
 
     async def async_step_notifications(

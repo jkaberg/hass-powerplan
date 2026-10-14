@@ -546,7 +546,7 @@ Pick everyone whose being away makes the home away. The home counts as away when
 <a name="outdoor"></a>
 ### What is the temperature outside?
 
-Heat pumps and heated floors use the outdoor temperature to plan heating. PowerPlan suggests a sensor: one your appliances already read, else the one temperature sensor whose name or area says outdoors, else your weather entity. Every appliance that needs the outdoor temperature uses this one, unless its own device has one.
+Heat pumps and heated floors use the outdoor temperature to plan heating. PowerPlan suggests a sensor: one your appliances already read, else the one temperature sensor whose name or area says outdoors, else your weather entity. Every appliance that needs the outdoor temperature uses this one, unless its own device has one. If PowerPlan finds none, you can leave it empty and add it later from the repair it raises.
 
 > [!NOTE]
 > Since v0.0.12, the outdoor temperature is a setting of the home. A home set up before asks for it with a repair.
