@@ -1,0 +1,1190 @@
+{
+  "captured_at": "2026-10-14T08:03:44+00:00",
+  "device": "Billader",
+  "device_id": "efbd1d2eec298f6a3799a3cde2f236e3",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "OCPP"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "binary_sensor.ehcqpvgq_ocpp",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "OCPP",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "ocpp_enabled"
+    },
+    {
+      "attributes": {
+        "device_class": "identify",
+        "friendly_name": "Billader Identify"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "button.garasje_billader_identify",
+      "last_changed": "2026-10-14T07:16:59.728154+00:00",
+      "last_updated": "2026-10-14T07:16:59.728154+00:00",
+      "original_name": "Identify",
+      "platform": "easee_ble",
+      "state": "unknown",
+      "translation_key": "identify"
+    },
+    {
+      "attributes": {
+        "device_class": "restart",
+        "friendly_name": "Billader Reboot"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "button.garasje_billader_reboot",
+      "last_changed": "2026-10-14T07:16:59.727902+00:00",
+      "last_updated": "2026-10-14T07:16:59.727902+00:00",
+      "original_name": "Reboot",
+      "platform": "easee_ble",
+      "state": "unknown",
+      "translation_key": "reboot"
+    },
+    {
+      "attributes": {
+        "brightness": 191,
+        "color_mode": "brightness",
+        "friendly_name": "Billader LED",
+        "supported_color_modes": [
+          "brightness"
+        ],
+        "supported_features": 0
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "light.garasje_billader_led",
+      "last_changed": "2026-10-14T07:16:59.728614+00:00",
+      "last_updated": "2026-10-14T07:16:59.728614+00:00",
+      "original_name": "LED",
+      "platform": "easee_ble",
+      "state": "on",
+      "translation_key": "led"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Fallback circuit current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.ehcqpvgq_fallback_circuit_current",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Fallback circuit current",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "fallback_circuit_current"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Dynamic charger current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.garasje_billader_dynamic_charger_current",
+      "last_changed": "2026-10-14T07:17:03.394606+00:00",
+      "last_updated": "2026-10-14T07:17:03.394606+00:00",
+      "original_name": "Dynamic charger current",
+      "platform": "easee_ble",
+      "state": "0.0",
+      "translation_key": "dynamic_charger_current"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Dynamic circuit current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.garasje_billader_dynamic_circuit_current",
+      "last_changed": "2026-10-14T07:16:59.729620+00:00",
+      "last_updated": "2026-10-14T07:16:59.729620+00:00",
+      "original_name": "Dynamic circuit current",
+      "platform": "easee_ble",
+      "state": "unknown",
+      "translation_key": "dynamic_circuit_current"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Kj\u00f8r n\u00e5 i maks",
+        "max": 24.0,
+        "min": 0.5,
+        "mode": "slider",
+        "step": 0.5,
+        "unit_of_measurement": "h"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.garasje_billader_kjor_na_i_maks",
+      "last_changed": "2026-10-14T07:17:02.928061+00:00",
+      "last_updated": "2026-10-14T07:17:02.928061+00:00",
+      "original_name": "Kj\u00f8r n\u00e5 i maks",
+      "platform": "powerplan",
+      "state": "6.0",
+      "translation_key": "run_now_max"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Lad alltid til minst",
+        "max": 90.0,
+        "min": 0.0,
+        "mode": "slider",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.garasje_billader_lad_alltid_til_minst",
+      "last_changed": "2026-10-14T07:17:02.927858+00:00",
+      "last_updated": "2026-10-14T07:17:02.927858+00:00",
+      "original_name": "Lad alltid til minst",
+      "platform": "powerplan",
+      "state": "20.0",
+      "translation_key": "charge_min"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Lad til",
+        "max": 100.0,
+        "min": 10.0,
+        "mode": "slider",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "number.garasje_billader_lad_til",
+      "last_changed": "2026-10-14T07:17:02.927674+00:00",
+      "last_updated": "2026-10-14T07:17:02.927674+00:00",
+      "original_name": "Lad til",
+      "platform": "powerplan",
+      "state": "100.0",
+      "translation_key": "charge_target"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Max charger current",
+        "max": 40,
+        "min": 0,
+        "mode": "slider",
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.garasje_billader_max_charger_current",
+      "last_changed": "2026-10-14T07:16:59.729160+00:00",
+      "last_updated": "2026-10-14T07:16:59.729160+00:00",
+      "original_name": "Max charger current",
+      "platform": "easee_ble",
+      "state": "32.0",
+      "translation_key": "max_charger_current"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Bluetooth mode",
+        "options": [
+          "button_press",
+          "always_on"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.garasje_billader_bluetooth_mode",
+      "last_changed": "2026-10-14T07:16:59.730344+00:00",
+      "last_updated": "2026-10-14T07:16:59.730344+00:00",
+      "original_name": "Bluetooth mode",
+      "platform": "easee_ble",
+      "state": "always_on",
+      "translation_key": "bt_enable_mode"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Phase mode",
+        "options": [
+          "1_phase",
+          "auto",
+          "3_phase"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.garasje_billader_phase_mode",
+      "last_changed": "2026-10-14T07:16:59.730112+00:00",
+      "last_updated": "2026-10-14T07:16:59.730112+00:00",
+      "original_name": "Phase mode",
+      "platform": "easee_ble",
+      "state": "1_phase",
+      "translation_key": "phase_mode"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Prioritet",
+        "options": [
+          "low",
+          "normal",
+          "high"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.garasje_billader_prioritet",
+      "last_changed": "2026-10-14T07:17:02.931020+00:00",
+      "last_updated": "2026-10-14T07:17:02.931020+00:00",
+      "original_name": "Prioritet",
+      "platform": "powerplan",
+      "state": "low",
+      "translation_key": "priority"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Strategi",
+        "options": [
+          "deadline_fill",
+          "cheapest_hours"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.garasje_billader_strategi",
+      "last_changed": "2026-10-14T07:17:02.930848+00:00",
+      "last_updated": "2026-10-14T07:17:02.930848+00:00",
+      "original_name": "Strategi",
+      "platform": "powerplan",
+      "state": "deadline_fill",
+      "translation_key": "strategy"
+    },
+    {
+      "attributes": {
+        "effective": "auto",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Styring",
+        "options": [
+          "auto",
+          "force",
+          "off",
+          "observe",
+          "delegated"
+        ],
+        "run_now_max_h": 6.0,
+        "run_now_since": null
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "select.garasje_billader_styring",
+      "last_changed": "2026-10-14T07:17:02.930604+00:00",
+      "last_updated": "2026-10-14T07:17:02.930604+00:00",
+      "original_name": "Styring",
+      "platform": "powerplan",
+      "state": "auto",
+      "translation_key": "control"
+    },
+    {
+      "attributes": {
+        "device_class": "signal_strength",
+        "friendly_name": "Billader Bluetooth signal",
+        "state_class": "measurement",
+        "unit_of_measurement": "dBm"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_bluetooth_signal",
+      "last_changed": "2026-10-14T08:03:36.602465+00:00",
+      "last_updated": "2026-10-14T08:03:36.602465+00:00",
+      "original_name": "Bluetooth signal",
+      "platform": "easee_ble",
+      "state": "-40",
+      "translation_key": "local_rssi"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Current N",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_current_n",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Current N",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "current_n"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Energy last hour",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_energy_last_hour",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Energy last hour",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "energy_per_hour"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Equalizer limit L1",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_equalizer_limit_l1",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Equalizer limit L1",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "equalizer_limit_l1"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Equalizer limit L2",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_equalizer_limit_l2",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Equalizer limit L2",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "equalizer_limit_l2"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Equalizer limit L3",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_equalizer_limit_l3",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Equalizer limit L3",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "equalizer_limit_l3"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Firmware"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_firmware",
+      "last_changed": "2026-10-14T07:16:59.732373+00:00",
+      "last_updated": "2026-10-14T07:16:59.732373+00:00",
+      "original_name": "Firmware",
+      "platform": "easee_ble",
+      "state": "344",
+      "translation_key": "charger_firmware"
+    },
+    {
+      "attributes": {
+        "friendly_name": "IP address"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_ip_address",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "IP address",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "ip_address"
+    },
+    {
+      "attributes": {
+        "device_class": "enum",
+        "friendly_name": "LED mode",
+        "options": [
+          "off",
+          "startup1_application_started",
+          "startup2_checking_power_board_firmware",
+          "startup3_checking_lwn_firmware",
+          "startup4_checking_wi_fi_firmware",
+          "startup5_firmware_upgrade_done",
+          "startup6",
+          "startup7_setup_half_way_completed",
+          "startup8_setup_fully_completed",
+          "ota1",
+          "ota2_upgrading_power_board_firmware",
+          "ota3_upgrading_lwn_firmware",
+          "ota4_upgrading_wi_fi_firmware",
+          "ota5",
+          "ota6",
+          "ota7",
+          "error",
+          "error_forever",
+          "idle_master",
+          "idle_secondary_connected",
+          "idle_secondary_searching",
+          "smart_mode_not_charging",
+          "smart_mode_charging",
+          "normal_mode_not_charging",
+          "normal_mode_charging",
+          "awaiting_authorization",
+          "verify_auth_with_backend",
+          "empty_backplate",
+          "ok",
+          "pairing_with_rfid",
+          "shutdown5",
+          "shutdown4",
+          "shutdown3",
+          "shutdown2",
+          "shutdown1",
+          "shutdown0",
+          "self_test1",
+          "self_test2",
+          "self_test3",
+          "self_test4",
+          "self_test_pending_rfid_and_touch",
+          "self_test_pending_rfid",
+          "self_test_pending_touch",
+          "self_test_success",
+          "self_test_failed",
+          "jingle_bells",
+          "bluetooth_connected",
+          "invalid_loadbalancing_config"
+        ]
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_led_mode",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "LED mode",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "led_mode"
+    },
+    {
+      "attributes": {
+        "device_class": "duration",
+        "friendly_name": "Lifetime hours",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "h"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_lifetime_hours",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Lifetime hours",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "lifetime_hours"
+    },
+    {
+      "attributes": {
+        "friendly_name": "MAC address"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_mac_address",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "MAC address",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "mac_address"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L1-L2",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l1_l2",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L1-L2",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l1l2"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L1-L3",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l1_l3",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L1-L3",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l1l3"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L1-N",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l1_n",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L1-N",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l1n"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L2-L3",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l2_l3",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L2-L3",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l2l3"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L2-N",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l2_n",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L2-N",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l2n"
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Voltage L3-N",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "integration",
+      "entity_category": null,
+      "entity_id": "sensor.ehcqpvgq_voltage_l3_n",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Voltage L3-N",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "voltage_l3n"
+    },
+    {
+      "attributes": {
+        "friendly_name": "WiFi network"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.ehcqpvgq_wifi_network",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "WiFi network",
+      "platform": "easee_ble",
+      "state": "unavailable",
+      "translation_key": "wifi_ssid"
+    },
+    {
+      "attributes": {
+        "calibration_error": null,
+        "counterfactual_cost": "126.64 NOK",
+        "counterfactual_kwh": 160.98,
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Besparelse denne m\u00e5neden",
+        "kwh_shifted": 93.663,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "model_confidence": "uncalibrated",
+        "pending": false,
+        "previous_month": "1.29 NOK",
+        "price_paid": 0.7526,
+        "price_reference": 0.7867,
+        "savings_confidence": "ok",
+        "settled_cost": "121.15 NOK",
+        "shadow": "energy",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_besparelse_denne_maneden",
+      "last_changed": "2026-10-14T07:17:02.944998+00:00",
+      "last_updated": "2026-10-14T07:17:02.944998+00:00",
+      "original_name": "Besparelse denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "5.49",
+      "translation_key": "savings_month"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Cable rating",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_cable_rating",
+      "last_changed": "2026-10-14T07:16:59.732904+00:00",
+      "last_updated": "2026-10-14T07:16:59.732904+00:00",
+      "original_name": "Cable rating",
+      "platform": "easee_ble",
+      "state": "32",
+      "translation_key": "cable_rating"
+    },
+    {
+      "attributes": {
+        "code": 50,
+        "description": "Secondary unit not requesting current, or no car connected",
+        "device_class": "enum",
+        "friendly_name": "Billader Charging blocked by",
+        "known": true,
+        "options": [
+          "ok",
+          "max_circuit_limit_too_low",
+          "max_dynamic_circuit_limit_too_low",
+          "max_dynamic_offline_limit_too_low",
+          "circuit_fuse_too_low",
+          "waiting_in_queue",
+          "waiting_in_fully_charged_queue",
+          "illegal_grid_type",
+          "no_current_request_received",
+          "not_connected_to_master",
+          "equalizer_current_too_low",
+          "phase_not_connected",
+          "limited_by_circuit_fuse",
+          "limited_by_circuit_max_limit",
+          "limited_by_circuit_dynamic_limit",
+          "limited_by_equalizer",
+          "limited_by_load_balancing",
+          "limited_by_offline_settings",
+          "secondary_unit_not_requesting_current",
+          "max_charger_limit_too_low",
+          "max_dynamic_charger_limit_too_low",
+          "charger_disabled",
+          "waiting_for_schedule_or_authorization",
+          "pending_authorization",
+          "charger_in_error_state",
+          "erratic_ev",
+          "limited_by_cable_rating",
+          "limited_by_schedule",
+          "limited_by_charger_max_limit",
+          "limited_by_charger_dynamic_limit",
+          "ev_not_charging",
+          "limited_by_local_adjustment",
+          "limited_by_ev",
+          "undefined"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_charging_blocked_by",
+      "last_changed": "2026-10-14T07:16:59.735568+00:00",
+      "last_updated": "2026-10-14T07:16:59.735568+00:00",
+      "original_name": "Charging blocked by",
+      "platform": "easee_ble",
+      "state": "secondary_unit_not_requesting_current",
+      "translation_key": "reason_for_no_current"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Circuit max current",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_circuit_max_current",
+      "last_changed": "2026-10-14T07:16:59.732642+00:00",
+      "last_updated": "2026-10-14T07:16:59.732642+00:00",
+      "original_name": "Circuit max current",
+      "platform": "easee_ble",
+      "state": "32",
+      "translation_key": "circuit_max_current"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L1",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_current_l1",
+      "last_changed": "2026-10-14T08:00:19.710649+00:00",
+      "last_updated": "2026-10-14T08:00:19.710649+00:00",
+      "original_name": "Current L1",
+      "platform": "easee_ble",
+      "state": "0.00800000037997961",
+      "translation_key": "current_l1"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L2",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_current_l2",
+      "last_changed": "2026-10-14T08:03:26.683376+00:00",
+      "last_updated": "2026-10-14T08:03:26.683376+00:00",
+      "original_name": "Current L2",
+      "platform": "easee_ble",
+      "state": "0.00800000037997961",
+      "translation_key": "current_l2"
+    },
+    {
+      "attributes": {
+        "device_class": "current",
+        "friendly_name": "Billader Current L3",
+        "state_class": "measurement",
+        "unit_of_measurement": "A"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_current_l3",
+      "last_changed": "2026-10-14T08:00:45.704011+00:00",
+      "last_updated": "2026-10-14T08:00:45.704011+00:00",
+      "original_name": "Current L3",
+      "platform": "easee_ble",
+      "state": "0.00800000037997961",
+      "translation_key": "current_l3"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Energi denne m\u00e5neden",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_energi_denne_maneden",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Energi denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "energy_month"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Energi totalt",
+        "source": "register",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_energi_totalt",
+      "last_changed": "2026-10-14T07:17:02.944477+00:00",
+      "last_updated": "2026-10-14T07:17:02.944477+00:00",
+      "original_name": "Energi totalt",
+      "platform": "powerplan",
+      "state": "198.216158624421",
+      "translation_key": "energy"
+    },
+    {
+      "attributes": {
+        "deviating_since": null,
+        "device_class": "enum",
+        "entity_picture": "**REDACTED**",
+        "failures": 0,
+        "friendly_name": "Billader Helse",
+        "last_error": null,
+        "options": [
+          "ok",
+          "transient",
+          "not_following",
+          "unhealthy"
+        ],
+        "stale_roles": [],
+        "transient_since": null
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_helse",
+      "last_changed": "2026-10-14T07:17:02.944176+00:00",
+      "last_updated": "2026-10-14T07:17:02.944176+00:00",
+      "original_name": "Helse",
+      "platform": "powerplan",
+      "state": "ok",
+      "translation_key": "health"
+    },
+    {
+      "attributes": {
+        "avg_price": 0.7526,
+        "confidence": "estimated",
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Kostnad denne m\u00e5neden",
+        "kwh": 160.98,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "previous_month": "16.15 NOK",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_kostnad_denne_maneden",
+      "last_changed": "2026-10-14T07:17:02.944759+00:00",
+      "last_updated": "2026-10-14T07:17:02.944759+00:00",
+      "original_name": "Kostnad denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "121.15",
+      "translation_key": "cost_month"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt ladeeffektivitet",
+        "state_class": "measurement"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_laert_ladeeffektivitet",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt ladeeffektivitet",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_charge_efficiency"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Billader Lifetime energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_lifetime_energy",
+      "last_changed": "2026-10-14T07:16:59.730870+00:00",
+      "last_updated": "2026-10-14T07:16:59.730870+00:00",
+      "original_name": "Lifetime energy",
+      "platform": "easee_ble",
+      "state": "14110.6875874999",
+      "translation_key": "lifetime_energy"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Planlagt energi",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_planlagt_energi",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Planlagt energi",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "planned_energy"
+    },
+    {
+      "attributes": {
+        "blocked_by": null,
+        "blunt": false,
+        "confidence": "known",
+        "cost": "2.13 NOK",
+        "coverage": 1.0,
+        "covered": true,
+        "deadline": "2026-10-15T04:00:00+00:00",
+        "deadline_time": "06:00",
+        "device_class": "enum",
+        "display_status": "no_car",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Planstatus",
+        "granted_power": 0,
+        "next_run": "22:00",
+        "next_start": "2026-10-14T20:00:00+00:00",
+        "options": [
+          "device_unavailable",
+          "manual_override",
+          "run_now",
+          "not_controlled",
+          "observing",
+          "no_car",
+          "charging",
+          "done",
+          "paused_peak",
+          "idle",
+          "running_plan",
+          "waiting"
+        ],
+        "plan_mode": "price",
+        "planned_kwh": 2.88,
+        "reason": "already at False",
+        "reason_key": "already_at",
+        "reason_params": {
+          "value": false
+        },
+        "required_kwh": 2.8800000000000003,
+        "session": "no_car",
+        "session_done": false,
+        "session_done_reason": null,
+        "shed_reason": null,
+        "shed_since": null,
+        "strategy": "deadline_fill",
+        "urgency": "none",
+        "wants": false,
+        "why_difference": "0.11200",
+        "why_party": "grid",
+        "why_until": "22:00"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_planstatus",
+      "last_changed": "2026-10-14T07:17:02.943836+00:00",
+      "last_updated": "2026-10-14T07:17:03.336918+00:00",
+      "original_name": "Planstatus",
+      "platform": "powerplan",
+      "state": "no_car",
+      "translation_key": "plan_status"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Billader Power",
+        "state_class": "measurement",
+        "unit_of_measurement": "kW"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_power",
+      "last_changed": "2026-10-14T07:16:59.731417+00:00",
+      "last_updated": "2026-10-14T07:16:59.731417+00:00",
+      "original_name": "Power",
+      "platform": "easee_ble",
+      "state": "0",
+      "translation_key": "total_power"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Reservert effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_reservert_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Reservert effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "reserved_power"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Billader Session energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_session_energy",
+      "last_changed": "2026-10-14T07:16:59.731141+00:00",
+      "last_updated": "2026-10-14T07:16:59.731141+00:00",
+      "original_name": "Session energy",
+      "platform": "easee_ble",
+      "state": "0",
+      "translation_key": "session_energy"
+    },
+    {
+      "attributes": {
+        "device_class": "enum",
+        "friendly_name": "Billader Status",
+        "options": [
+          "offline",
+          "disconnected",
+          "awaiting_start",
+          "charging",
+          "completed",
+          "error",
+          "ready_to_charge",
+          "awaiting_authorization",
+          "de_authorizing"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.garasje_billader_status",
+      "last_changed": "2026-10-14T07:16:59.735282+00:00",
+      "last_updated": "2026-10-14T07:16:59.735282+00:00",
+      "original_name": "Status",
+      "platform": "easee_ble",
+      "state": "disconnected",
+      "translation_key": "charger_op_mode"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Tildelt effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.garasje_billader_tildelt_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Tildelt effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "granted_power"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Cable locked"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "switch.garasje_billader_cable_locked",
+      "last_changed": "2026-10-14T07:16:59.736589+00:00",
+      "last_updated": "2026-10-14T07:16:59.736589+00:00",
+      "original_name": "Cable locked",
+      "platform": "easee_ble",
+      "state": "off",
+      "translation_key": "cable_locked"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Charger enabled"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "switch.garasje_billader_charger_enabled",
+      "last_changed": "2026-10-14T07:17:02.176780+00:00",
+      "last_updated": "2026-10-14T07:17:02.176780+00:00",
+      "original_name": "Charger enabled",
+      "platform": "easee_ble",
+      "state": "off",
+      "translation_key": "charger_enabled"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Idle current"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "switch.garasje_billader_idle_current",
+      "last_changed": "2026-10-14T07:16:59.736798+00:00",
+      "last_updated": "2026-10-14T07:16:59.736798+00:00",
+      "original_name": "Idle current",
+      "platform": "easee_ble",
+      "state": "on",
+      "translation_key": "idle_current"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Billader Require authorisation"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "switch.garasje_billader_require_authorisation",
+      "last_changed": "2026-10-14T07:16:59.737011+00:00",
+      "last_updated": "2026-10-14T07:16:59.737011+00:00",
+      "original_name": "Require authorisation",
+      "platform": "easee_ble",
+      "state": "off",
+      "translation_key": "authorization_required"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Billader Ferdig til kl."
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "time.garasje_billader_ferdig_til_kl",
+      "last_changed": "2026-10-14T07:17:02.961366+00:00",
+      "last_updated": "2026-10-14T07:17:02.961366+00:00",
+      "original_name": "Ferdig til kl.",
+      "platform": "powerplan",
+      "state": "unknown",
+      "translation_key": "ready_by"
+    }
+  ],
+  "entity_count": 59,
+  "manufacturer": "Easee",
+  "model": null,
+  "name": "easee_ble_charger_registry",
+  "registry": true
+}

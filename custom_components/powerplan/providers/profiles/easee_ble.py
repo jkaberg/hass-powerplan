@@ -263,7 +263,7 @@ class EaseeBle:
                     )
                 )
         for role, domain, tokens, writable in _ROLES:
-            entity = view.find(domain, *tokens)
+            entity = view.find(domain, *tokens, role=role)
             if entity is None:
                 continue
             table = ROLE_UNITS.get(role)

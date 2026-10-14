@@ -414,7 +414,7 @@ Six questions, all with defaults, and the review step reads back: "A heavy slab 
 - **nearby** - a helper fed from the device, or one sensor in its area, is suggested;
 - **not found** - a picker, with the purpose and the fallback.
 
-The candidates exclude powerplan's own entities, disabled ones and diagnostic ones, and rank a helper below the device's own. A ranking never chooses alone; only an exact cross-check may. **Parameters follow the same rule:** measured from the bound entities' history where a D10 fit passes its gate, read from the device where an entity says, answered, or the type's typical value - in that order, the source shown on the review, and a question whose answer was measured not asked (D-0752). A need that becomes meetable later is a repair, not a silent re-bind (D-0753).
+The candidates exclude powerplan's own entities, disabled ones and diagnostic ones, and rank a helper below the device's own. A ranking never chooses alone. **Parameters follow the same rule:** measured from the bound entities' history where a D10 fit passes its gate, read from the device where an entity says, answered, or the type's typical value - in that order, the source shown on the review, and a question whose answer was measured not asked (D-0752). A need that becomes meetable later is a repair, not a silent re-bind (D-0753).
 
 Hydronic floor heating fed by a heat pump is designed (D4 §5.15) and deferred to v1.x.
 

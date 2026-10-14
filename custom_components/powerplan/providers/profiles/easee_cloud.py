@@ -264,7 +264,7 @@ class EaseeCloud:
                 )
             )
         for role, domain, tokens, device_class, writable in _ROLES:
-            entity = view.find(domain, *tokens, device_class=device_class)
+            entity = view.find(domain, *tokens, device_class=device_class, role=role)
             if entity is None:
                 continue
             binding = numeric_binding(

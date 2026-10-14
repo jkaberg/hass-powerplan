@@ -329,7 +329,7 @@ class BatteryVocabulary:
         if self.status is not None:
             extras += ((Role.BATTERY_COMMAND, self.status.find, False),)
         for role, find, numeric in extras:
-            entity = None if find is None else find.entity(view)
+            entity = None if find is None else find.entity(view, role=role)
             if entity is None or any(b.role is role for b in bindings):
                 continue
             binding = _binding(entity, role, self.key, numeric=numeric)
@@ -373,7 +373,7 @@ class BatteryVocabulary:
 def _family(bind: Bind, view: DeviceView) -> list[EntityView]:
     """Return the bind's entity, or every member of its numbered family in order."""
     if not bind.family:
-        found = bind.find.entity(view, bind.options)
+        found = bind.find.entity(view, bind.options, bind.role)
         return [] if found is None else [found]
     members: list[EntityView] = []
     for n in range(1, bind.family + 1):

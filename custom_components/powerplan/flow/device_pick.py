@@ -20,10 +20,12 @@ import re
 from typing import TYPE_CHECKING
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
+from homeassistant.const import EntityCategory
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.powerplan.const import (
+    DOMAIN,
     ROLE_EXPORT_REGISTER,
     ROLE_GRID_POWER,
     ROLE_IMPORT_REGISTER,
@@ -98,8 +100,17 @@ def _candidates(hass: HomeAssistant, device_id: str | None) -> list[RegistryEntr
         entries = er.async_entries_for_device(registry, device_id, include_disabled_entities=True)
     else:
         entries = list(registry.entities.values())
+    # D4 §5.9's pool (D-0747): never PowerPlan's own, a disabled or a diagnostic sensor.
     return sorted(
-        (entry for entry in entries if entry.domain == "sensor"), key=lambda entry: entry.entity_id
+        (
+            entry
+            for entry in entries
+            if entry.domain == "sensor"
+            and entry.platform != DOMAIN
+            and entry.disabled_by is None
+            and entry.entity_category is not EntityCategory.DIAGNOSTIC
+        ),
+        key=lambda entry: entry.entity_id,
     )
 
 

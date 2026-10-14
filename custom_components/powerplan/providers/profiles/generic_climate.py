@@ -136,6 +136,10 @@ QUIRKS: Final = Quirks(
     tolerance=0.0,
 )
 
+#: Words that make a "floor … limit" number the maximum, not the minimum (D-0749):
+#: the Z-TRM2fx has *Floor Maximum Temperature Limit* beside the minimum.
+_NOT_MINIMUM: Final = frozenset({"max", "maximum", "high", "hi"})
+
 #: The sensor placements that are evidence of a floor loop. A thermostat regulating
 #: on the *air* is a room thermostat whatever else it can do, so `air` is not in the
 #: set: D4 §5.9's rule is a floor sensor or a floor-minimum number, and a floor
@@ -218,13 +222,17 @@ class Capabilities:
 # --------------------------------------------------------------------------- #
 
 
-def _one(candidates: Sequence[EntityView], what: str, view: DeviceView) -> EntityView | None:
+def _one(
+    candidates: Sequence[EntityView], what: str, view: DeviceView, role: Role | None = None
+) -> EntityView | None:
     """Return the single candidate, or `None` - ambiguity binds nothing (D4 §5.9).
 
-    Two entities that both satisfy a role bind neither, logged, so the flow asks:
-    the Z-TRM has two air-temperature sensors and one of them reads 0.0 °C.
+    Two entities that both satisfy a role bind neither and are recorded as a tie
+    on `role`, so the flow asks (D-0747): the Z-TRM has two air-temperature
+    sensors and one of them reads 0.0 °C.
     """
     if len(candidates) > 1:
+        view.tie(role, candidates)
         _LOGGER.debug(
             "%s: %s entities could be the %s – binding none of them: %s",
             view.name,
@@ -245,12 +253,21 @@ def _is_eco_setpoint(entity: EntityView) -> bool:
 def _is_floor_minimum(entity: EntityView) -> bool:
     """Say whether this is the floor minimum (D4 §5.9: `*floor*min*`, `*floor*limit*`)."""
     tokens = entity.tokens()
-    return "floor" in tokens and bool(tokens & {"min", "minimum", "limit"})
+    return (
+        "floor" in tokens
+        and bool(tokens & {"min", "minimum", "limit"})
+        and not tokens & _NOT_MINIMUM
+    )
 
 
 def _is_hysteresis(entity: EntityView) -> bool:
-    """Say whether this is the deadband: a `number` named `*hysteresis*` (D4 §5.9)."""
-    return "hysteresis" in entity.tokens()
+    """Say whether this is the deadband: a `number` named `*hysteresis*` (D4 §5.9).
+
+    Not the *report* hysteresis, which is how far the reading moves before the
+    thermostat reports it (D-0749).
+    """
+    tokens = entity.tokens()
+    return "hysteresis" in tokens and "report" not in tokens
 
 
 def _mode_select(view: DeviceView) -> ModeOptions | None:
@@ -284,6 +301,10 @@ def _mode_select(view: DeviceView) -> ModeOptions | None:
             len(found),
             [mode.entity_id for mode in found],
         )
+        view.tie(
+            Role.MODE_SELECT,
+            [chosen for mode in found if (chosen := view.get(mode.entity_id)) is not None],
+        )
         return None
     return found[0] if found else None
 
@@ -310,7 +331,7 @@ def _placement_of(option: str) -> str | None:
 def _placement(view: DeviceView) -> str | None:
     """Return what the thermostat regulates on, when a `sensor_mode` says (§6.1)."""
     entity = _one(
-        [found for found in view.domain("select") if "sensor" in found.tokens()],
+        [found for found in view.domain("select") if {"sensor", "mode"} <= found.tokens()],
         "sensor placement select",
         view,
     )
@@ -345,7 +366,7 @@ class GenericClimate:
         type and the confidence are *reported*, and the flow and the questionnaire
         are what choose (INV-1).
         """
-        climate = _one(view.domain("climate"), "climate entity", view)
+        climate = _one(view.domain("climate"), "climate entity", view, Role.SETPOINT)
         if climate is None:
             return None
 
@@ -372,7 +393,7 @@ class GenericClimate:
             (Role.HYSTERESIS, _is_hysteresis, "a hysteresis"),
         ):
             entity = _one(
-                [found for found in view.domain("number") if predicate(found)], what, view
+                [found for found in view.domain("number") if predicate(found)], what, view, role
             )
             if entity is None:
                 continue
@@ -477,12 +498,21 @@ class GenericClimate:
             ],
             "floor temperature sensor",
             view,
+            Role.TEMP_FLOOR,
         )
         if floor is not None:
             binding = numeric_binding(floor, Role.TEMP_FLOOR, profile=self.key)
             if binding is not None:
                 bindings.append(binding)
-        elif placement in FLOOR_PLACEMENTS:
+        elif placement == "both":
+            # Regulating on the external sensor with the floor as a limit: the
+            # climate's reading is the air, and which sensor is the floor is the
+            # household's to say (D-0748).
+            view.tie(
+                Role.TEMP_FLOOR,
+                [found for found in view.domain("sensor") if found.device_class == "temperature"],
+            )
+        elif placement == "floor":
             _LOGGER.debug(
                 "%s: no floor sensor entity; %s regulates on the floor, so its "
                 "current_temperature is the slab",
@@ -498,7 +528,9 @@ class GenericClimate:
             )
 
         for tokens in (("outdoor",), ("outside",), ("ambient",)):
-            outdoor = view.find("sensor", *tokens, device_class="temperature")
+            outdoor = view.find(
+                "sensor", *tokens, device_class="temperature", role=Role.OUTDOOR_TEMP
+            )
             if outdoor is not None:
                 binding = numeric_binding(outdoor, Role.OUTDOOR_TEMP, profile=self.key)
                 if binding is not None:
@@ -506,14 +538,14 @@ class GenericClimate:
                 break
 
         for role, device_class in ((Role.POWER, "power"), (Role.ENERGY, "energy")):
-            entity = view.find("sensor", device_class=device_class)
+            entity = view.find("sensor", device_class=device_class, role=role)
             if entity is None:
                 continue
             binding = numeric_binding(entity, role, profile=self.key)
             if binding is not None:
                 bindings.append(binding)
 
-        relay = _one(view.domain("switch"), "switch", view)
+        relay = _one(view.domain("switch"), "switch", view, Role.SWITCH)
         if relay is not None:
             # Read-only, deliberately. A thermostat's relay is not powerplan's
             # switch: cutting it takes the device's own regulation away with it,

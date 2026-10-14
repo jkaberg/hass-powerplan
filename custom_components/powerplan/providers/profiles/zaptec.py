@@ -216,7 +216,7 @@ class Zaptec:
                 )
             )
         for role, domain, tokens, device_class in _CHARGER_ROLES:
-            entity = view.find(domain, *tokens, device_class=device_class)
+            entity = view.find(domain, *tokens, device_class=device_class, role=role)
             if entity is None:
                 continue
             binding = numeric_binding(entity, role, profile=self.key)

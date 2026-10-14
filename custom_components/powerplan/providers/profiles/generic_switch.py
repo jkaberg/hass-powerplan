@@ -157,7 +157,7 @@ class GenericSwitch:
             )
 
         for role, device_class in ((Role.POWER, "power"), (Role.ENERGY, "energy")):
-            found = view.find("sensor", device_class=device_class)
+            found = view.find("sensor", device_class=device_class, role=role)
             if found is None:
                 continue
             binding = numeric_binding(found, role, profile=self.key)

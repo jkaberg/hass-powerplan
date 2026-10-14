@@ -90,9 +90,12 @@ def _limits(view: DeviceView, table: UnitTable) -> list[EntityView]:
     ]
 
 
-def _one(candidates: Sequence[EntityView], what: str, view: DeviceView) -> EntityView | None:
-    """Return the single candidate, or `None` - ambiguity binds nothing (D4 §5.9)."""
+def _one(
+    candidates: Sequence[EntityView], what: str, view: DeviceView, role: Role | None = None
+) -> EntityView | None:
+    """Return the single candidate, or `None` - a tie on `role` for the flow (D-0747)."""
     if len(candidates) > 1:
+        view.tie(role, candidates)
         _LOGGER.debug(
             "%s: %s entities could be the %s – binding none of them: %s",
             view.name,
@@ -124,7 +127,7 @@ class GenericNumber:
         in_amps = bool(amps)
         role = Role.CURRENT_SET if in_amps else Role.BATTERY_POWER_SET
         suggested = "ev" if in_amps else "battery"
-        limit = _one(amps if in_amps else watts, f"{role} number", view)
+        limit = _one(amps if in_amps else watts, f"{role} number", view, role)
 
         reasons: list[str] = []
         bindings: list[RoleBinding] = []
@@ -137,7 +140,7 @@ class GenericNumber:
                     f"{limit.min_value}–{limit.max_value} ({limit.entity_id})"
                 )
 
-        enable = _one(view.domain("switch"), "enable switch", view)
+        enable = _one(view.domain("switch"), "enable switch", view, Role.ENABLE)
         if enable is not None:
             bindings.append(
                 RoleBinding(role=Role.ENABLE, entity_id=enable.entity_id, writable=True)
@@ -145,7 +148,7 @@ class GenericNumber:
             reasons.append(f"a switch to enable it ({enable.entity_id})")
 
         for sensor_role, device_class in ((Role.POWER, "power"), (Role.ENERGY, "energy")):
-            found = view.find("sensor", device_class=device_class)
+            found = view.find("sensor", device_class=device_class, role=sensor_role)
             if found is None:
                 continue
             sensor = numeric_binding(found, sensor_role, profile=self.key)

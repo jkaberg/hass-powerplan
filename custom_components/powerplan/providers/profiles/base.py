@@ -73,6 +73,8 @@ from custom_components.powerplan.core.metering import Quality, Reading
 from custom_components.powerplan.providers.meters.base import CURRENT_A, ENERGY_KWH, POWER_W
 from custom_components.powerplan.writegate import DeviceCall
 
+from .candidates import in_pool, rank
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -245,6 +247,9 @@ class EntityView:
     #: that renames its Easee to "EV Charger" puts `charger` on every entity
     #: of it (#11).
     own_name: str | None = None
+    #: Disabled in the entity registry: no state, never a candidate, but named by
+    #: the flow ("this device has an energy meter, disabled", D-0747).
+    disabled: bool = False
 
     @property
     def configuration(self) -> bool:
@@ -366,6 +371,27 @@ class DeviceView:
     steer. `get()` looks here after the device's own entities; nothing else does,
     so no other profile sees a parent's entities as its own (D4 §5.9).
     """
+    #: Sensors the recorder shows dead - unchanged for a day while a sibling
+    #: moved - which are no candidate for anything (D-0747). The flow fills it.
+    dead: frozenset[str] = frozenset()
+    #: The roles several candidates fit, ranked: what the flow asks (D-0747).
+    #: Written by `find`, `tie` and the profiles; read by `registry.match`.
+    ties: dict[Role, tuple[str, ...]] = field(default_factory=dict, compare=False, repr=False)
+
+    @property
+    def pool(self) -> tuple[EntityView, ...]:
+        """The entities a role may be matched from (`candidates.in_pool`)."""
+        return tuple(entity for entity in self.entities if in_pool(entity, self.dead))
+
+    @property
+    def disabled(self) -> tuple[EntityView, ...]:
+        """The device's disabled entities: not candidates, but worth naming."""
+        return tuple(entity for entity in self.entities if entity.disabled)
+
+    def tie(self, role: Role | None, entities: Sequence[EntityView]) -> None:
+        """Record that several entities fit `role`, ranked, for the flow to ask."""
+        if role is not None and len(entities) > 1:
+            self.ties[role] = tuple(entity.entity_id for entity in rank(entities))
 
     @property
     def platforms(self) -> frozenset[str]:
@@ -385,8 +411,8 @@ class DeviceView:
         return found
 
     def domain(self, domain: str) -> tuple[EntityView, ...]:
-        """Every entity of this device in `domain`."""
-        return tuple(entity for entity in self.entities if entity.domain == domain)
+        """Every candidate of this device in `domain` - the pool, not every entity."""
+        return tuple(entity for entity in self.pool if entity.domain == domain)
 
     def find(
         self,
@@ -395,6 +421,7 @@ class DeviceView:
         unit: str | None = None,
         device_class: str | None = None,
         options: Sequence[str] | None = None,
+        role: Role | None = None,
     ) -> EntityView | None:
         """Return the one entity in `domain` that matches every stated criterion.
 
@@ -418,6 +445,7 @@ class DeviceView:
                 list(tokens),
                 [entity.entity_id for entity in found],
             )
+            self.tie(role, found)
             return None
         return found[0] if found else None
 
@@ -444,6 +472,13 @@ class DeviceView:
                     platform=_optional_str(entity.get("platform")) or platform,
                     last_reported=_parse_datetime(entity.get("last_updated")),
                     entity_category=_optional_str(entity.get("entity_category")),
+                    own_name=" ".join(
+                        str(part)
+                        for part in (entity.get("translation_key"), entity.get("original_name"))
+                        if part
+                    )
+                    or None,
+                    disabled=bool(entity.get("disabled_by")),
                 )
                 for entity in document.get("entities", ())
             ),
@@ -554,6 +589,7 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
             platform=entry.platform,
             entity_category=category,
             own_name=own_name,
+            disabled=entry.disabled_by is not None,
         )
     return EntityView(
         entity_id=entry.entity_id,
@@ -563,6 +599,7 @@ def _entity_view(hass: HomeAssistant, entry: er.RegistryEntry) -> EntityView:
         last_reported=state.last_reported,
         entity_category=category,
         own_name=own_name,
+        disabled=entry.disabled_by is not None,
     )
 
 
@@ -674,6 +711,9 @@ class MatchResult:
     missing: tuple[Role, ...] = ()
     suggested_kind: str | None = None
     capabilities: frozenset[str] = frozenset()
+    #: Roles several entities fitted, ranked, that the profile left unbound: the
+    #: household's question, not a DEBUG line (D-0747, INV-76).
+    ties: Mapping[Role, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def claimed(self) -> bool:

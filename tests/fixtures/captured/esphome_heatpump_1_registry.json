@@ -1,0 +1,659 @@
+{
+  "captured_at": "2026-10-14T08:03:44+00:00",
+  "device": "Varmepumpe 1 etasje",
+  "device_id": "77cb223171a6678be434854962df90fa",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje Car Home"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "binary_sensor.inngang_varmepumpe_1_etasje_car_home",
+      "last_changed": "2026-10-14T07:16:51.760808+00:00",
+      "last_updated": "2026-10-14T07:16:51.760808+00:00",
+      "original_name": "Car Home",
+      "platform": "esphome",
+      "state": "off",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "restart",
+        "friendly_name": "Varmepumpe 1 etasje Restart",
+        "icon": "mdi:restart"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "button.varmepumpe_1_etasje_restart",
+      "last_changed": "2026-10-14T07:16:51.699534+00:00",
+      "last_updated": "2026-10-14T07:16:51.699534+00:00",
+      "original_name": "Restart",
+      "platform": "esphome",
+      "state": "unknown",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "current_temperature": 22.0,
+        "fan_mode": "Automatic",
+        "fan_modes": [
+          "Automatic",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ],
+        "friendly_name": "Varmepumpe 1 etasje AC 1 etasje",
+        "hvac_action": "heating",
+        "hvac_modes": [
+          "off",
+          "heat_cool",
+          "cool",
+          "heat",
+          "fan_only",
+          "dry"
+        ],
+        "max_temp": 30.0,
+        "min_temp": 16.0,
+        "preset_mode": "Normal",
+        "preset_modes": [
+          "Normal",
+          "Powerful",
+          "Quiet"
+        ],
+        "supported_features": 441,
+        "swing_mode": "off",
+        "swing_modes": [
+          "off",
+          "both",
+          "vertical",
+          "horizontal"
+        ],
+        "target_temp_step": 0.5,
+        "temperature": 20.0
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "climate.varmepumpe_1_etasje_ac_1_etasje",
+      "last_changed": "2026-10-14T07:16:51.762002+00:00",
+      "last_updated": "2026-10-14T07:46:49.247209+00:00",
+      "original_name": "AC 1 etasje",
+      "platform": "esphome",
+      "state": "heat",
+      "translation_key": "climate"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Aldri kaldere enn",
+        "max": 30.0,
+        "min": 5.0,
+        "mode": "slider",
+        "step": 0.5,
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.inngang_varmepumpe_1_etasje_aldri_kaldere_enn",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Aldri kaldere enn",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "temp_min"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Aldri varmere enn",
+        "max": 30.0,
+        "min": 5.0,
+        "mode": "slider",
+        "step": 0.5,
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.inngang_varmepumpe_1_etasje_aldri_varmere_enn",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Aldri varmere enn",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "temp_max"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Prioritet",
+        "options": [
+          "low",
+          "normal",
+          "high"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.inngang_varmepumpe_1_etasje_prioritet",
+      "last_changed": "2026-10-14T07:17:02.935743+00:00",
+      "last_updated": "2026-10-14T07:17:02.935743+00:00",
+      "original_name": "Prioritet",
+      "platform": "powerplan",
+      "state": "high",
+      "translation_key": "priority"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Strategi",
+        "options": [
+          "heat_capacitor",
+          "best_save"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.inngang_varmepumpe_1_etasje_strategi",
+      "last_changed": "2026-10-14T07:17:02.935597+00:00",
+      "last_updated": "2026-10-14T07:17:02.935597+00:00",
+      "original_name": "Strategi",
+      "platform": "powerplan",
+      "state": "heat_capacitor",
+      "translation_key": "strategy"
+    },
+    {
+      "attributes": {
+        "effective": "auto",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Styring",
+        "options": [
+          "auto",
+          "force",
+          "off",
+          "observe",
+          "delegated"
+        ],
+        "run_now_max_h": 6.0,
+        "run_now_since": null
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "select.inngang_varmepumpe_1_etasje_styring",
+      "last_changed": "2026-10-14T07:17:02.935432+00:00",
+      "last_updated": "2026-10-14T07:17:02.935432+00:00",
+      "original_name": "Styring",
+      "platform": "powerplan",
+      "state": "auto",
+      "translation_key": "control"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje Vertical Swing Mode",
+        "options": [
+          "swing",
+          "auto",
+          "up",
+          "up_center",
+          "center",
+          "down_center",
+          "down"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "select.varmepumpe_1_etasje_vertical_swing_mode",
+      "last_changed": "2026-10-14T07:16:51.762108+00:00",
+      "last_updated": "2026-10-14T07:16:51.762108+00:00",
+      "original_name": "Vertical Swing Mode",
+      "platform": "esphome",
+      "state": "down",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "calibration_error": null,
+        "counterfactual_cost": "49.50 NOK",
+        "counterfactual_kwh": 60.987,
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Besparelse denne m\u00e5neden",
+        "kwh_shifted": 10.48,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "model_confidence": "uncalibrated",
+        "pending": true,
+        "previous_month": "-0.17 NOK",
+        "price_paid": 0.8325,
+        "price_reference": 0.8117,
+        "savings_confidence": "ok",
+        "settled_cost": "50.77 NOK",
+        "shadow": "heat_pump",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_besparelse_denne_maneden",
+      "last_changed": "2026-10-14T07:17:02.957231+00:00",
+      "last_updated": "2026-10-14T07:17:02.957231+00:00",
+      "original_name": "Besparelse denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "-1.27",
+      "translation_key": "savings_month"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Energi denne m\u00e5neden",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_energi_denne_maneden",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Energi denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "energy_month"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Energi totalt",
+        "source": "power",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_energi_totalt",
+      "last_changed": "2026-10-14T08:00:26.321205+00:00",
+      "last_updated": "2026-10-14T08:00:26.321205+00:00",
+      "original_name": "Energi totalt",
+      "platform": "powerplan",
+      "state": "84.7770102379508",
+      "translation_key": "energy"
+    },
+    {
+      "attributes": {
+        "deviating_since": null,
+        "device_class": "enum",
+        "entity_picture": "**REDACTED**",
+        "failures": 0,
+        "friendly_name": "Varmepumpe 1 etasje Helse",
+        "last_error": null,
+        "options": [
+          "ok",
+          "transient",
+          "not_following",
+          "unhealthy"
+        ],
+        "stale_roles": [],
+        "transient_since": null
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_helse",
+      "last_changed": "2026-10-14T07:17:02.956340+00:00",
+      "last_updated": "2026-10-14T07:17:02.956340+00:00",
+      "original_name": "Helse",
+      "platform": "powerplan",
+      "state": "ok",
+      "translation_key": "health"
+    },
+    {
+      "attributes": {
+        "avg_price": 0.8321,
+        "confidence": "estimated",
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Kostnad denne m\u00e5neden",
+        "kwh": 62.023,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "previous_month": "13.56 NOK",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_kostnad_denne_maneden",
+      "last_changed": "2026-10-14T08:00:26.321253+00:00",
+      "last_updated": "2026-10-14T08:00:26.321253+00:00",
+      "original_name": "Kostnad denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "51.61",
+      "translation_key": "cost_month"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt avkj\u00f8lingstid",
+        "state_class": "measurement",
+        "unit_of_measurement": "h"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_laert_avkjolingstid",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt avkj\u00f8lingstid",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_coast_tau_h"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt oppvarmingshastighet",
+        "state_class": "measurement",
+        "unit_of_measurement": "K/h"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_laert_oppvarmingshastighet",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt oppvarmingshastighet",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_heatup_k_per_h"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt varmetap",
+        "state_class": "measurement",
+        "unit_of_measurement": "W/K"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_laert_varmetap",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt varmetap",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_loss_coeff_w_per_k"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Planlagt energi",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_planlagt_energi",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Planlagt energi",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "planned_energy"
+    },
+    {
+      "attributes": {
+        "blunt": false,
+        "comfort_state": "at_target",
+        "confidence": "known",
+        "cost": "5.41 NOK",
+        "coverage": 1.0,
+        "covered": true,
+        "current": 22.0,
+        "deadline": null,
+        "deadline_time": "",
+        "deficit": -2.0,
+        "device_class": "enum",
+        "display_status": "idle",
+        "entity_picture": "**REDACTED**",
+        "floor": 18.0,
+        "friendly_name": "Varmepumpe 1 etasje Planstatus",
+        "granted_power": 0,
+        "next_run": "22:00",
+        "next_start": "2026-10-14T20:00:00+00:00",
+        "options": [
+          "device_unavailable",
+          "manual_override",
+          "run_now",
+          "not_controlled",
+          "observing",
+          "no_car",
+          "charging",
+          "done",
+          "paused_peak",
+          "idle",
+          "running_plan",
+          "waiting"
+        ],
+        "plan_mode": "price",
+        "planned_kwh": 2.504,
+        "reason": "planned from 22:00 \u00b7 2.5 kWh",
+        "reason_key": "planned",
+        "reason_params": {
+          "kwh": 2.5,
+          "time": "22:00"
+        },
+        "shed_reason": null,
+        "shed_since": null,
+        "strategy": "heat_capacitor",
+        "target": 20.0,
+        "why_difference": "0.11200",
+        "why_party": "grid",
+        "why_until": "22:00"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_planstatus",
+      "last_changed": "2026-10-14T07:17:02.956033+00:00",
+      "last_updated": "2026-10-14T08:00:26.321128+00:00",
+      "original_name": "Planstatus",
+      "platform": "powerplan",
+      "state": "idle",
+      "translation_key": "plan_status"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Reservert effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_reservert_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Reservert effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "reserved_power"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Tildelt effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.inngang_varmepumpe_1_etasje_tildelt_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Tildelt effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "granted_power"
+    },
+    {
+      "attributes": {
+        "device_class": "duration",
+        "friendly_name": "Varmepumpe 1 etasje Uptime",
+        "icon": "mdi:timer-outline",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "d"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.uptime",
+      "last_changed": "2026-10-14T08:02:52.127294+00:00",
+      "last_updated": "2026-10-14T08:02:52.127294+00:00",
+      "original_name": "Uptime",
+      "platform": "esphome",
+      "state": "28.8202806712963",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Varmepumpe 1 etasje Akkumulert kwh",
+        "source": "sensor.varmepumpe_1_etasje_power_consumption",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.varmepumpe_1_etasje_energy",
+      "last_changed": "2026-10-14T08:03:25.536372+00:00",
+      "last_updated": "2026-10-14T08:03:25.536372+00:00",
+      "original_name": "Varmepumpe 1 etasje akkumulert kwh",
+      "platform": "integration",
+      "state": "135.7918035593068055442081786",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Varmepumpe 1 etasje Internal Temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.varmepumpe_1_etasje_internal_temperature",
+      "last_changed": "2026-10-14T08:01:48.792980+00:00",
+      "last_updated": "2026-10-14T08:01:48.792980+00:00",
+      "original_name": "Internal Temperature",
+      "platform": "esphome",
+      "state": "62.222225189209",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje IP Address"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.varmepumpe_1_etasje_ip_address",
+      "last_changed": "2026-10-14T07:16:51.761820+00:00",
+      "last_updated": "2026-10-14T07:16:51.761820+00:00",
+      "original_name": "IP Address",
+      "platform": "esphome",
+      "state": "**ADDRESS**",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Varmepumpe 1 etasje Outside Temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.varmepumpe_1_etasje_outside_temperature",
+      "last_changed": "2026-10-14T08:00:05.803170+00:00",
+      "last_updated": "2026-10-14T08:00:05.803170+00:00",
+      "original_name": "Outside Temperature",
+      "platform": "esphome",
+      "state": "10.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Varmepumpe 1 etasje Power Consumption",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.varmepumpe_1_etasje_power_consumption",
+      "last_changed": "2026-10-14T07:58:25.528799+00:00",
+      "last_updated": "2026-10-14T07:58:25.528799+00:00",
+      "original_name": "Power Consumption",
+      "platform": "esphome",
+      "state": "23.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Varmepumpe 1 etasje Total Energy",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.varmepumpe_1_etasje_total_energy",
+      "last_changed": "2026-10-14T07:58:25.528593+00:00",
+      "last_updated": "2026-10-14T07:58:25.528593+00:00",
+      "original_name": "Total Energy",
+      "platform": "esphome",
+      "state": "117.825042724609",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "signal_strength",
+        "friendly_name": "Varmepumpe 1 etasje Wifi Signal Strength",
+        "state_class": "measurement",
+        "unit_of_measurement": "dBm"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.wifi_signal_strength",
+      "last_changed": "2026-10-14T08:02:50.903521+00:00",
+      "last_updated": "2026-10-14T08:02:50.903521+00:00",
+      "original_name": "Wifi Signal Strength",
+      "platform": "esphome",
+      "state": "-61.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Varmepumpe 1 etasje Spar n\u00e5r ingen er hjemme"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "switch.inngang_varmepumpe_1_etasje_spar_nar_ingen_er_hjemme",
+      "last_changed": "2026-10-14T07:17:02.960714+00:00",
+      "last_updated": "2026-10-14T07:17:02.960714+00:00",
+      "original_name": "Spar n\u00e5r ingen er hjemme",
+      "platform": "powerplan",
+      "state": "on",
+      "translation_key": "follow_presence"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Varmepumpe 1 etasje NanoeX Switch"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "switch.varmepumpe_1_etasje_nanoex_switch",
+      "last_changed": "2026-10-14T07:16:51.761729+00:00",
+      "last_updated": "2026-10-14T07:16:51.761729+00:00",
+      "original_name": "NanoeX Switch",
+      "platform": "esphome",
+      "state": "on",
+      "translation_key": null
+    }
+  ],
+  "entity_count": 31,
+  "manufacturer": "Espressif",
+  "model": "esp32",
+  "name": "esphome_heatpump_1_registry",
+  "registry": true
+}

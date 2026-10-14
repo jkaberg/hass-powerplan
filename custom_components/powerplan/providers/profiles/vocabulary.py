@@ -70,8 +70,10 @@ class Find:
     device_class: str | None = None
     exclude: tuple[str, ...] = ()
 
-    def entity(self, view: DeviceView, options: Sequence[str] | None = None) -> EntityView | None:
-        """Return the one entity on `view` this finds, or `None` for none or several."""
+    def entity(
+        self, view: DeviceView, options: Sequence[str] | None = None, role: Role | None = None
+    ) -> EntityView | None:
+        """Return the one entity on `view` this finds, or `None` - several are a tie on `role`."""
         found = [
             entity
             for entity in view.domain(self.domain)
@@ -85,6 +87,7 @@ class Find:
                 _LOGGER.debug(
                     "%s: %d entities match %s – binding none", view.name, len(found), self.tokens
                 )
+                view.tie(role, found)
             return None
         return found[0]
 
@@ -219,12 +222,14 @@ class VocabularyCharger:
 
     def _status_entity(self, view: DeviceView) -> EntityView | None:
         """Return the charger's status entity, if it has one."""
-        return self.status.entity(view, self.statuses.options if self.status_has_options else None)
+        return self.status.entity(
+            view, self.statuses.options if self.status_has_options else None, Role.STATUS
+        )
 
     def _bind_view(self, view: DeviceView) -> tuple[RoleBinding, ...]:
         """Bind the limit, the stop and start, the status and the reads."""
         bindings: list[RoleBinding] = []
-        limit = self.current.entity(view)
+        limit = self.current.entity(view, role=Role.CURRENT_SET)
         if limit is not None:
             binding = numeric_binding(
                 limit, Role.CURRENT_SET, profile=self.key, writable=True, required=True
@@ -232,7 +237,7 @@ class VocabularyCharger:
             if binding is not None:
                 bindings.append(binding)
         if self.enable is not None:
-            switch = self.enable.find.entity(view)
+            switch = self.enable.find.entity(view, role=Role.ENABLE)
             if switch is not None:
                 bindings.append(
                     RoleBinding(
@@ -254,7 +259,7 @@ class VocabularyCharger:
                 )
             )
         for role, find in self.reads:
-            entity = find.entity(view)
+            entity = find.entity(view, role=role)
             if entity is None:
                 continue
             binding = numeric_binding(entity, role, profile=self.key)

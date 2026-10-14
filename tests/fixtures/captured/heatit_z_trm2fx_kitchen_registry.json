@@ -1,0 +1,1180 @@
+{
+  "captured_at": "2026-10-14T08:03:44+00:00",
+  "device": "Gulvvarme kj\u00f8kken",
+  "device_id": "a53b845423f9937911236e387a45d67d",
+  "entities": [
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Ping"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "button.kjokken_gulvvarme_ping",
+      "last_changed": "2026-10-14T07:16:51.101214+00:00",
+      "last_updated": "2026-10-14T07:16:51.101214+00:00",
+      "original_name": "Ping",
+      "platform": "zwave_js",
+      "state": "unknown",
+      "translation_key": "ping"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Reset accumulated values"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "button.kjokken_gulvvarme_reset_accumulated_values",
+      "last_changed": "2026-10-14T07:16:51.115586+00:00",
+      "last_updated": "2026-10-14T07:16:51.115586+00:00",
+      "original_name": "Reset accumulated values",
+      "platform": "zwave_js",
+      "state": "unknown",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "current_temperature": 23,
+        "friendly_name": "Gulvvarme kj\u00f8kken",
+        "hvac_modes": [
+          "off",
+          "heat",
+          "cool"
+        ],
+        "max_temp": 35,
+        "min_temp": 5,
+        "preset_mode": "none",
+        "preset_modes": [
+          "none",
+          "Energy heat"
+        ],
+        "supported_features": 401,
+        "temperature": 23.5
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "climate.kjokken_gulvvarme",
+      "last_changed": "2026-10-14T07:16:51.111933+00:00",
+      "last_updated": "2026-10-14T07:36:17.722444+00:00",
+      "original_name": "",
+      "platform": "zwave_js",
+      "state": "heat",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Air (A2) Maximum Temperature Limit",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_air_a2_maximum_temperature_limit_ahi",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Air (A2) Maximum Temperature Limit",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Air (A2) Minimum Temperature Limit",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_air_a2_minimum_temperature_limit_alo",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Air (A2) Minimum Temperature Limit",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Button Brightness - Active State",
+        "max": 100.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_button_brightness_active_state",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Button Brightness - Active State",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Button Brightness - Dimmed State",
+        "max": 100.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_button_brightness_dimmed_state",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Button Brightness - Dimmed State",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Cooling Setpoint",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_cooling_setpoint_cool",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Cooling Setpoint",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Display Brightness - Active State",
+        "max": 100.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_display_brightness_active_state",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Display Brightness - Active State",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Display Brightness - Dimmed State",
+        "max": 100.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "%"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_display_brightness_dimmed_state",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Display Brightness - Dimmed State",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Energy Saving Mode Setpoint",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_energy_saving_mode_setpoint_eco",
+      "last_changed": "2026-10-14T07:16:51.105593+00:00",
+      "last_updated": "2026-10-14T07:16:51.105593+00:00",
+      "original_name": "Energy Saving Mode Setpoint",
+      "platform": "zwave_js",
+      "state": "200.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "External Sensor Calibration",
+        "max": 40.0,
+        "min": -40.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_external_sensor_calibration",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "External Sensor Calibration",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Floor Maximum Temperature Limit",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_floor_maximum_temperature_fhi",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Floor Maximum Temperature Limit",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Floor Minimum Temperature Limit",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_floor_minimum_temperature_limit_flo",
+      "last_changed": "2026-10-14T07:16:51.104074+00:00",
+      "last_updated": "2026-10-14T07:16:51.104074+00:00",
+      "original_name": "Floor Minimum Temperature Limit",
+      "platform": "zwave_js",
+      "state": "190.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Floor Sensor Calibration",
+        "max": 40.0,
+        "min": -40.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_floor_sensor_calibration",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Floor Sensor Calibration",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Heating Mode Setpoint",
+        "max": 400.0,
+        "min": 50.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_heating_mode_setpoint_co",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Heating Mode Setpoint",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Aldri kaldere enn",
+        "max": 30.0,
+        "min": 5.0,
+        "mode": "slider",
+        "step": 0.5,
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_kjokken_aldri_kaldere_enn",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Aldri kaldere enn",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "temp_min"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Aldri varmere enn",
+        "max": 40.0,
+        "min": 10.0,
+        "mode": "slider",
+        "step": 0.5,
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_kjokken_aldri_varmere_enn",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Aldri varmere enn",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "temp_max"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Meter Report Delta Value",
+        "max": 127.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "kWh/10"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_meter_report_delta_value",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Meter Report Delta Value",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Meter Report Interval",
+        "max": 32767.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "seconds"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_meter_report_interval",
+      "last_changed": "2026-10-14T07:16:51.108913+00:00",
+      "last_updated": "2026-10-14T07:16:51.108913+00:00",
+      "original_name": "Meter Report Interval",
+      "platform": "zwave_js",
+      "state": "60.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Temperature Control Hysteresis",
+        "max": 30.0,
+        "min": 3.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_temperature_control_hysteresis_diff_i",
+      "last_changed": "2026-10-14T07:16:51.103474+00:00",
+      "last_updated": "2026-10-14T07:16:51.103474+00:00",
+      "original_name": "Temperature Control Hysteresis",
+      "platform": "zwave_js",
+      "state": "15.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Temperature Report Hysteresis",
+        "max": 100.0,
+        "min": 1.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "0.1 \u00b0C"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_temperature_report_hysteresis",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Temperature Report Hysteresis",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Temperature Report Interval",
+        "max": 32767.0,
+        "min": 0.0,
+        "mode": "auto",
+        "step": 1.0,
+        "unit_of_measurement": "seconds"
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "number.kjokken_gulvvarme_temperature_report_interval",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Temperature Report Interval",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Floor Sensor Type",
+        "options": [
+          "10K-NTC",
+          "12K-NTC",
+          "15K-NTC",
+          "22K-NTC",
+          "33K-NTC",
+          "47K-NTC"
+        ]
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_floor_sensor_type",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Floor Sensor Type",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Prioritet",
+        "options": [
+          "low",
+          "normal",
+          "high"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_kjokken_prioritet",
+      "last_changed": "2026-10-14T07:17:02.934126+00:00",
+      "last_updated": "2026-10-14T07:17:02.934126+00:00",
+      "original_name": "Prioritet",
+      "platform": "powerplan",
+      "state": "normal",
+      "translation_key": "priority"
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Strategi",
+        "options": [
+          "heat_capacitor",
+          "best_save"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_kjokken_strategi",
+      "last_changed": "2026-10-14T07:18:32.878248+00:00",
+      "last_updated": "2026-10-14T07:18:32.878248+00:00",
+      "original_name": "Strategi",
+      "platform": "powerplan",
+      "state": "heat_capacitor",
+      "translation_key": "strategy"
+    },
+    {
+      "attributes": {
+        "effective": "auto",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Styring",
+        "options": [
+          "auto",
+          "force",
+          "off",
+          "observe",
+          "delegated"
+        ],
+        "run_now_max_h": 6.0,
+        "run_now_since": null
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "select.kjokken_gulvvarme_kjokken_styring",
+      "last_changed": "2026-10-14T07:17:02.933555+00:00",
+      "last_updated": "2026-10-14T07:17:02.933555+00:00",
+      "original_name": "Styring",
+      "platform": "powerplan",
+      "state": "auto",
+      "translation_key": "control"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Operation Mode",
+        "options": [
+          "Off",
+          "Heating mode",
+          "Cooling mode (Not implemented)",
+          "Energy saving heating mode"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_operation_mode",
+      "last_changed": "2026-10-14T07:16:51.102373+00:00",
+      "last_updated": "2026-10-14T07:16:51.102373+00:00",
+      "original_name": "Operation Mode",
+      "platform": "zwave_js",
+      "state": "Heating mode",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Sensor Mode",
+        "options": [
+          "F-Mode, floor sensor mode",
+          "A2-mode, external room sensor mode",
+          "A2F-mode, external sensor with floor limitation"
+        ]
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_sensor_mode",
+      "last_changed": "2026-10-14T07:16:51.102753+00:00",
+      "last_updated": "2026-10-14T07:16:51.102753+00:00",
+      "original_name": "Sensor Mode",
+      "platform": "zwave_js",
+      "state": "F-Mode, floor sensor mode",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Temperature Display",
+        "options": [
+          "Display setpoint temperature",
+          "Display measured temperature"
+        ]
+      },
+      "disabled_by": "integration",
+      "entity_category": "config",
+      "entity_id": "select.kjokken_gulvvarme_temperature_display",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Temperature Display",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Gulvvarme kj\u00f8kken Air temperature",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_air_temperature",
+      "last_changed": "2026-10-14T07:56:17.791086+00:00",
+      "last_updated": "2026-10-14T07:56:17.791086+00:00",
+      "original_name": "Air temperature",
+      "platform": "zwave_js",
+      "state": "0.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "temperature",
+        "friendly_name": "Gulvvarme kj\u00f8kken Air temperature (3)",
+        "state_class": "measurement",
+        "unit_of_measurement": "\u00b0C"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_air_temperature_3",
+      "last_changed": "2026-10-14T07:56:17.824488+00:00",
+      "last_updated": "2026-10-14T07:56:17.824488+00:00",
+      "original_name": "Air temperature (3)",
+      "platform": "zwave_js",
+      "state": "23.0",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "friendly_name": "Commands dropped (RX)",
+        "state_class": "total"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_commands_dropped_rx",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Commands dropped (RX)",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "commands_dropped"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Commands dropped (TX)",
+        "state_class": "total"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_commands_dropped_tx",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Commands dropped (TX)",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "commands_dropped"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Electric Consumption [kWh]",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "user",
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_electric_consumption_kwh",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Electric Consumption [kWh]",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "voltage",
+        "friendly_name": "Electric Consumption [V]",
+        "state_class": "measurement",
+        "unit_of_measurement": "V"
+      },
+      "disabled_by": "user",
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_electric_consumption_v",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Electric Consumption [V]",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Gulvvarme kj\u00f8kken Electric Consumption [W]",
+        "meter_type": 1,
+        "meter_type_name": "ELECTRIC",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_electric_consumption_w",
+      "last_changed": "2026-10-14T08:03:17.805321+00:00",
+      "last_updated": "2026-10-14T08:03:17.805321+00:00",
+      "original_name": "Electric Consumption [W]",
+      "platform": "zwave_js",
+      "state": "0.02",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Gulvvarme kj\u00f8kken Akkumulert kwh",
+        "source": "sensor.kjokken_gulvvarme_electric_consumption_w",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_energy",
+      "last_changed": "2026-10-14T08:03:17.805384+00:00",
+      "last_updated": "2026-10-14T08:03:17.805384+00:00",
+      "original_name": "Gulvvarme kj\u00f8kken akkumulert kwh",
+      "platform": "integration",
+      "state": "36.68279066261928190586444262",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "calibration_error": null,
+        "counterfactual_cost": "0.48 NOK",
+        "counterfactual_kwh": 0.6,
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Besparelse denne m\u00e5neden",
+        "kwh_shifted": 0.499,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "model_confidence": "uncalibrated",
+        "pending": true,
+        "previous_month": "0.00 NOK",
+        "price_paid": 0.834,
+        "price_reference": 0.7978,
+        "savings_confidence": "ok",
+        "settled_cost": "0.50 NOK",
+        "shadow": "room",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_besparelse_denne_maneden",
+      "last_changed": "2026-10-14T07:17:02.952777+00:00",
+      "last_updated": "2026-10-14T07:17:02.952777+00:00",
+      "original_name": "Besparelse denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "-0.02",
+      "translation_key": "savings_month"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Energi denne m\u00e5neden",
+        "state_class": "total",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_energi_denne_maneden",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Energi denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "energy_month"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Energi totalt",
+        "source": "power",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_energi_totalt",
+      "last_changed": "2026-10-14T08:00:26.320376+00:00",
+      "last_updated": "2026-10-14T08:00:26.320376+00:00",
+      "original_name": "Energi totalt",
+      "platform": "powerplan",
+      "state": "1.38724523472956",
+      "translation_key": "energy"
+    },
+    {
+      "attributes": {
+        "deviating_since": null,
+        "device_class": "enum",
+        "entity_picture": "**REDACTED**",
+        "failures": 0,
+        "friendly_name": "Gulvvarme kj\u00f8kken Helse",
+        "last_error": null,
+        "options": [
+          "ok",
+          "transient",
+          "not_following",
+          "unhealthy"
+        ],
+        "stale_roles": [],
+        "transient_since": null
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_helse",
+      "last_changed": "2026-10-14T07:17:02.952014+00:00",
+      "last_updated": "2026-10-14T07:17:02.952014+00:00",
+      "original_name": "Helse",
+      "platform": "powerplan",
+      "state": "ok",
+      "translation_key": "health"
+    },
+    {
+      "attributes": {
+        "avg_price": 0.8068,
+        "confidence": "estimated",
+        "device_class": "monetary",
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Kostnad denne m\u00e5neden",
+        "kwh": 0.88,
+        "last_reset": "2026-09-30T22:00:00+00:00",
+        "previous_month": "0.00 NOK",
+        "since_install": "2026-09-25T09:00:00+00:00",
+        "state_class": "total",
+        "unit_of_measurement": "NOK"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_kostnad_denne_maneden",
+      "last_changed": "2026-10-14T07:17:02.952554+00:00",
+      "last_updated": "2026-10-14T07:17:02.952554+00:00",
+      "original_name": "Kostnad denne m\u00e5neden",
+      "platform": "powerplan",
+      "state": "0.71",
+      "translation_key": "cost_month"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt avkj\u00f8lingstid",
+        "state_class": "measurement",
+        "unit_of_measurement": "h"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_laert_avkjolingstid",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt avkj\u00f8lingstid",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_coast_tau_h"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt merkeeffekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_laert_merkeeffekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt merkeeffekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_nameplate_w"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt oppvarmingshastighet",
+        "state_class": "measurement",
+        "unit_of_measurement": "K/h"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_laert_oppvarmingshastighet",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt oppvarmingshastighet",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_heatup_k_per_h"
+    },
+    {
+      "attributes": {
+        "friendly_name": "L\u00e6rt varmetap",
+        "state_class": "measurement",
+        "unit_of_measurement": "W/K"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_laert_varmetap",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "L\u00e6rt varmetap",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "learned_loss_coeff_w_per_k"
+    },
+    {
+      "attributes": {
+        "device_class": "energy",
+        "friendly_name": "Planlagt energi",
+        "unit_of_measurement": "kWh"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_planlagt_energi",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Planlagt energi",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "planned_energy"
+    },
+    {
+      "attributes": {
+        "blunt": false,
+        "comfort_state": "below_target",
+        "confidence": "known",
+        "cost": "0.13 NOK",
+        "coverage": 1.0,
+        "covered": true,
+        "current": 23.0,
+        "deadline": null,
+        "deadline_time": "",
+        "deficit": 0.5,
+        "device_class": "enum",
+        "display_status": "running_plan",
+        "entity_picture": "**REDACTED**",
+        "floor": 20.0,
+        "friendly_name": "Gulvvarme kj\u00f8kken Planstatus",
+        "granted_power": 600,
+        "next_run": "",
+        "next_start": null,
+        "options": [
+          "device_unavailable",
+          "manual_override",
+          "run_now",
+          "not_controlled",
+          "observing",
+          "no_car",
+          "charging",
+          "done",
+          "paused_peak",
+          "idle",
+          "running_plan",
+          "waiting"
+        ],
+        "plan_mode": "none",
+        "planned_kwh": 0.0,
+        "reason": "already at Heating mode",
+        "reason_key": "already_at",
+        "reason_params": {
+          "value": "Heating mode"
+        },
+        "shed_reason": null,
+        "shed_since": null,
+        "strategy": "best_save",
+        "target": 23.5
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_planstatus",
+      "last_changed": "2026-10-14T08:00:26.320306+00:00",
+      "last_updated": "2026-10-14T08:01:57.076224+00:00",
+      "original_name": "Planstatus",
+      "platform": "powerplan",
+      "state": "running_plan",
+      "translation_key": "plan_status"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Reservert effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_reservert_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Reservert effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "reserved_power"
+    },
+    {
+      "attributes": {
+        "device_class": "power",
+        "friendly_name": "Tildelt effekt",
+        "state_class": "measurement",
+        "unit_of_measurement": "W"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_kjokken_tildelt_effekt",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Tildelt effekt",
+      "platform": "powerplan",
+      "state": "unavailable",
+      "translation_key": "granted_power"
+    },
+    {
+      "attributes": {
+        "device_class": "timestamp",
+        "friendly_name": "Last seen"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_last_seen",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Last seen",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "last_seen"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken Node status"
+      },
+      "disabled_by": null,
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_node_status",
+      "last_changed": "2026-10-14T07:16:51.101006+00:00",
+      "last_updated": "2026-10-14T07:16:51.101006+00:00",
+      "original_name": "Node status",
+      "platform": "zwave_js",
+      "state": "alive",
+      "translation_key": "node_status"
+    },
+    {
+      "attributes": {
+        "device_class": "duration",
+        "friendly_name": "Round trip time",
+        "state_class": "measurement",
+        "unit_of_measurement": "ms"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_round_trip_time",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Round trip time",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "rtt"
+    },
+    {
+      "attributes": {
+        "device_class": "signal_strength",
+        "friendly_name": "Signalstyrke",
+        "state_class": "measurement",
+        "unit_of_measurement": "dBm"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_signal_strength",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Signalstyrke",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "signal_strength"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Successful commands (RX)",
+        "state_class": "total"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_successful_commands_rx",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Successful commands (RX)",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "successful_commands"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Successful commands (TX)",
+        "state_class": "total"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_successful_commands_tx",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Successful commands (TX)",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "successful_commands"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Timed out responses",
+        "state_class": "total"
+      },
+      "disabled_by": "integration",
+      "entity_category": "diagnostic",
+      "entity_id": "sensor.kjokken_gulvvarme_timed_out_responses",
+      "last_changed": null,
+      "last_updated": null,
+      "original_name": "Timed out responses",
+      "platform": "zwave_js",
+      "state": "unavailable",
+      "translation_key": "timeout_response"
+    },
+    {
+      "attributes": {
+        "friendly_name": "Gulvvarme kj\u00f8kken"
+      },
+      "disabled_by": null,
+      "entity_category": null,
+      "entity_id": "switch.kjokken_gulvvarme",
+      "last_changed": "2026-10-14T07:16:51.113862+00:00",
+      "last_updated": "2026-10-14T07:16:51.113862+00:00",
+      "original_name": "",
+      "platform": "zwave_js",
+      "state": "off",
+      "translation_key": null
+    },
+    {
+      "attributes": {
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Spar n\u00e5r ingen er hjemme"
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "switch.kjokken_gulvvarme_kjokken_spar_nar_ingen_er_hjemme",
+      "last_changed": "2026-10-14T07:17:02.960119+00:00",
+      "last_updated": "2026-10-14T07:17:02.960119+00:00",
+      "original_name": "Spar n\u00e5r ingen er hjemme",
+      "platform": "powerplan",
+      "state": "on",
+      "translation_key": "follow_presence"
+    },
+    {
+      "attributes": {
+        "auto_update": false,
+        "device_class": "firmware",
+        "display_precision": 0,
+        "entity_picture": "**REDACTED**",
+        "friendly_name": "Gulvvarme kj\u00f8kken Firmware",
+        "in_progress": false,
+        "installed_version": "3.6",
+        "latest_version": "3.6",
+        "release_summary": null,
+        "release_url": null,
+        "skipped_version": null,
+        "supported_features": 21,
+        "title": null,
+        "update_percentage": null
+      },
+      "disabled_by": null,
+      "entity_category": "config",
+      "entity_id": "update.kjokken_gulvvarme_firmware",
+      "last_changed": "2026-10-14T07:16:51.115863+00:00",
+      "last_updated": "2026-10-14T07:16:51.115863+00:00",
+      "original_name": "Firmware",
+      "platform": "zwave_js",
+      "state": "off",
+      "translation_key": null
+    }
+  ],
+  "entity_count": 61,
+  "manufacturer": "Heatit",
+  "model": "Z-TRM2fx",
+  "name": "heatit_z_trm2fx_kitchen_registry",
+  "registry": true
+}

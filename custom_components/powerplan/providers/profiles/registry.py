@@ -15,6 +15,7 @@ that reordered itself between runs would be a test nobody could read.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,8 +48,22 @@ def entries() -> Mapping[str, DeviceProfile]:
 
 
 def match(view: DeviceView) -> tuple[MatchResult, ...]:
-    """Return every profile that claims `view`, most confident first (D4 §5.9)."""
-    claimed = [result for profile in _REGISTRY.values() if (result := profile.match(view)).claimed]
+    """Return every profile that claims `view`, most confident first (D4 §5.9).
+
+    Each result carries the roles several entities fitted and the profile left
+    unbound - its own ties, since the view's log is cleared before each profile
+    (D-0747).
+    """
+    claimed: list[MatchResult] = []
+    for profile in _REGISTRY.values():
+        view.ties.clear()
+        result = profile.match(view)
+        if not result.claimed:
+            continue
+        bound = {binding.role for binding in result.bindings}
+        ties = {role: ids for role, ids in view.ties.items() if role not in bound}
+        claimed.append(replace(result, ties=ties) if ties else result)
+    view.ties.clear()
     return tuple(sorted(claimed, key=lambda result: (-result.confidence, result.profile)))
 
 
