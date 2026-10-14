@@ -19,6 +19,22 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:water_heater · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| Temperature | Recommended | The temperature the device measures. | PowerPlan estimates the water temperature from the power. |
+| Power | Recommended | What the appliance draws right now, in watts. | The element, heat loss and daily use stay typical figures. |
+| Top temperature | Optional | The temperature at the top of the tank. | The tank's heat is read from one sensor. |
+| Bottom temperature | Optional | The temperature at the bottom of the tank. | The tank's heat is read from one sensor. |
+| On/off switch | Optional when PowerPlan sets its temperature; Required when PowerPlan turns it on and off | The switch that turns the appliance on and off. | PowerPlan cannot control it. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+| Setpoint | Required when PowerPlan sets its temperature | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
+<!-- generated:end data_points:water_heater -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -36,9 +52,6 @@ If the tank has more than one temperature sensor, pick the middle one as **Tempe
 | People | How many people use the hot water. |
 | Control | Whether PowerPlan controls a plug or a thermostat. |
 | Mechanical thermostat | The tank has its own thermostat that PowerPlan cannot set. |
-| Temperature sensor | A sensor on the tank, if there is one. |
-| Advanced › Top probe | Advanced: a second sensor, near the top of the tank. |
-| Advanced › Bottom probe | Advanced: a third sensor, near the bottom of the tank. |
 | Ready by | When the hot water or the cycle must be ready. |
 | Second ready-by | A second time of day the water must be ready, if any. |
 | Legionella cycle | Who runs the weekly anti-legionella cycle. |

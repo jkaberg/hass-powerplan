@@ -34,7 +34,7 @@ class KindEntry:
     """One registered control kind and the configuration it takes (D4 §4.2)."""
 
     key: str
-    kind: Callable[..., ControlKind]
+    kind: type[ControlKind]
     config: Callable[..., Any]
 
 

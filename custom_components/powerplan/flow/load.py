@@ -1,7 +1,7 @@
 """The load subentry flow (D8 §5.2, §5.4; D4 §4.6).
 
-    device → match → questions → review → subentry
-    reconfigure → questions (pre-filled) → review with the re-derive diff
+    device → match (several profiles only) → data_points → questions → review → subentry
+    reconfigure → data_points (pre-filled) → questions (pre-filled) → review with the diff
 
 Nothing is decided here: the profile registry says what the device is and
 binds its roles (D4 §5.9), the device type's questionnaire asks in plain
@@ -57,6 +57,7 @@ from custom_components.powerplan.const import (
     DOMAIN,
     ENTITY_SETTINGS,
     LOAD_BINDINGS,
+    LOAD_DECLINED,
     LOAD_DEVICE_ID,
     LOAD_MANUAL_OVERRIDES,
     LOAD_PARAMS,
@@ -72,6 +73,7 @@ from custom_components.powerplan.const import (
     priority_level,
 )
 from custom_components.powerplan.core.loads import Role
+from custom_components.powerplan.core.loads.needs import Tier
 from custom_components.powerplan.core.loads.questionnaire import (
     AnswerError,
     Answers,
@@ -85,6 +87,7 @@ from custom_components.powerplan.core.loads.questionnaire import (
 )
 from custom_components.powerplan.core.loads.types import base as device_types
 from custom_components.powerplan.core.tariffs import household
+from custom_components.powerplan.flow import data_points
 from custom_components.powerplan.flow.questionnaire import (
     advanced_section,
     as_duration,
@@ -97,6 +100,7 @@ from custom_components.powerplan.flow.questionnaire import (
 )
 from custom_components.powerplan.flow.text import Text, device_name, entity_name
 from custom_components.powerplan.providers.forecasts.recorder_fits import async_measure
+from custom_components.powerplan.providers.profiles import candidates
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.providers.profiles.base import (
     DeviceView,
@@ -190,9 +194,25 @@ _ROLE_FILTERS: dict[Role, list[EntityWithDeviceFilterSelectorConfig]] = {
     Role.SG_A: [{"domain": "switch"}],
     Role.SG_B: [{"domain": "switch"}],
 }
-#: Measurements every load can use whichever device they are on - a Z-Wave meter
-#: on its own device measuring a heat pump: always offered, optional.
-_ALWAYS_OFFERED: tuple[Role, ...] = (Role.POWER, Role.ENERGY)
+#: The roles powerplan writes: an entity the household picks for one is bound
+#: writable, read off its own unit, step and range (D-0753).
+_WRITTEN: frozenset[Role] = frozenset(
+    {
+        Role.SETPOINT,
+        Role.ECO_SETPOINT,
+        Role.FLOOR_MIN,
+        Role.HYSTERESIS,
+        Role.MODE_SELECT,
+        Role.SWITCH,
+        Role.ENABLE,
+        Role.CURRENT_SET,
+        Role.START,
+        Role.BATTERY_POWER_SET,
+        Role.BATTERY_MODE,
+        Role.SG_A,
+        Role.SG_B,
+    }
+)
 #: A type's own questionnaire can ask for an optional entity the match step
 #: never sees - the heat pump's outdoor/outlet sensors (D4 §5.14), the car's SoC
 #: on the car's own device rather than the charger's (D4 §5.11), read off
@@ -210,6 +230,25 @@ _EXTRA_ROLE_ANSWERS: dict[str, tuple[tuple[str, Role], ...]] = {
         ("temp_bottom_entity", Role.TEMP_BOTTOM),
     ),
 }
+
+#: The entity answers the data points step gives instead of the questions step
+#: (D-0746): never rendered, filled from the bindings so `derive()` reads them
+#: as before. `power_entity` was never bound; its role is the type's `POWER` need.
+_POWER_ANSWER: tuple[str, Role] = ("power_entity", Role.POWER)
+
+
+def data_point_answers(type_key: str) -> tuple[tuple[str, Role], ...]:
+    """Return the entity answers of `type_key` the data points step owns, by role."""
+    keys = {question.key for question in device_types.get(type_key).questionnaire.questions}
+    pairs = (*_EXTRA_ROLE_ANSWERS.get(type_key, ()), _POWER_ANSWER)
+    return tuple((key, role) for key, role in pairs if key in keys)
+
+
+def answers_from_bindings(type_key: str, bindings: Sequence[RoleBinding]) -> dict[str, str]:
+    """Return the entity answers the bindings give, for `derive()` (D-0746)."""
+    bound = {binding.role: binding.entity_id for binding in bindings}
+    return {key: bound[role] for key, role in data_point_answers(type_key) if role in bound}
+
 
 #: Answers a type's probe answer suggests from the same device, by name (D-0741):
 #: the answer it starts from, and per answer to fill the words its entity's name
@@ -230,9 +269,13 @@ _SIBLING_PROBES: dict[str, tuple[str, dict[str, tuple[str, ...]]]] = {
 # --------------------------------------------------------------------------- #
 
 
-def binding_to_data(binding: RoleBinding) -> dict[str, Any]:
-    """Return one binding as the subentry stores it (D8 §4, everything the entity said)."""
-    return {
+def binding_to_data(binding: RoleBinding, source: str | None = None) -> dict[str, Any]:
+    """Return one binding as the subentry stores it (D8 §4, everything the entity said).
+
+    `source` is where it came from (D-0753); a binding stored before has none,
+    and reads as `migrated`.
+    """
+    row = {
         "role": binding.role.value,
         "entity_id": binding.entity_id,
         "unit": binding.unit,
@@ -246,6 +289,9 @@ def binding_to_data(binding: RoleBinding) -> dict[str, Any]:
         "attribute": binding.attribute,
         "also": list(binding.also),
     }
+    if source is not None:
+        row["source"] = source
+    return row
 
 
 def answered_entities(type_key: str, params: Mapping[str, Any]) -> dict[Role, str]:
@@ -562,14 +608,11 @@ def question_schema(
     followups: bool = False,
     skip: frozenset[str] = frozenset(),
     text: Text | None = None,
-    meters: Mapping[Role, str | None] | None = None,
 ) -> vol.Schema:
     """Render the questionnaire as one form; advanced questions in a collapsed section (INV-65).
 
-    `skip` leaves out what an entity owns once the appliance exists (D8 §5.16).
-    `meters` - a reconfigure's power and energy bindings - adds their pickers
-    under Avansert: the match step that offers them on an add is not revisited
-    while the device exists (D-0486).
+    `skip` leaves out what an entity owns once the appliance exists (D8 §5.16)
+    and the entity answers the data points step gives (D-0746).
 
     A question that follows a yes/no answer (`asked_if`) is on the follow-up
     step, not here (`followups=True` renders that step; D8 §5.15 rule 5); a value
@@ -598,9 +641,6 @@ def question_schema(
         else:
             marker = _marker(question.key, default)
         target[marker] = _selector(question, type_key, default, text)
-    for role, entity_id in (meters or {}).items():
-        picker = EntitySelector(EntitySelectorConfig(filter=_ROLE_FILTERS.get(role, [{}])))
-        hidden[_marker(f"{_ROLE_PREFIX}{role.value}", entity_id)] = picker
     if hidden:
         fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
     return vol.Schema(fields)
@@ -1092,6 +1132,12 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._suggested: dict[str, Any] = {}
         #: The questions step's answers while a follow-up is asked.
         self._raw: dict[str, Any] = {}
+        #: The data points step's needs on the ladder, where each binding came
+        #: from, what was declined and what "Another entity" asks (D-0746, D-0753).
+        self._rows: tuple[data_points.Row, ...] = ()
+        self._sources: dict[Role, data_points.Source] = {}
+        self._declined: tuple[Role, ...] = ()
+        self._others: tuple[Role, ...] = ()
 
     # ----------------------------------------------------------------- helpers
 
@@ -1130,105 +1176,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         chosen = str(values.get("profile") or self._matches[0].profile)
         return next((m for m in self._matches if m.profile == chosen), self._matches[0])
 
-    @staticmethod
-    def _roles(match: MatchResult) -> tuple[list[Role], list[Role]]:
-        """Return the required roles and the optional ones, the measurements always among them."""
-        bound = {binding.role: binding for binding in match.bindings}
-        required = [
-            role
-            for role in [*bound, *match.missing]
-            if role in match.missing or bound[role].required
-        ]
-        optional = [role for role in bound if role not in required]
-        optional += [role for role in _ALWAYS_OFFERED if role not in bound and role not in required]
-        return list(dict.fromkeys(required)), optional
-
-    def _match_schema(self, values: Mapping[str, Any] | None = None) -> vol.Schema:
-        """Type, profile and the roles, each an entity picker filtered to fit (§5.2).
-
-        The required roles in the form, the optional ones under Avansert (review
-        LOAD-6) - the power and energy meters always among them, so a meter on
-        another device can be bound. The profile is asked only when
-        more than one claims the device (CTL-14).
-        """
-        given = _flat(values or {})
-        match = self._chosen(given)
-        profile = profiles.get(match.profile)
-        type_options = [key for key in device_types.keys() if key in profile.types] or list(  # noqa: SIM118 - `keys()` is the registry's function
-            device_types.keys()
-        )
-        default_type = str(given.get("type") or match.suggested_type or type_options[0])
-        fields: dict[Any, Any] = {}
-        # The type is asked first (LOAD-3); a re-bound device keeps the appliance's
-        # (D8 §5.16). Only a flow that has none yet asks it here.
-        if self._type is None:
-            fields[vol.Required("type", default=default_type)] = SelectSelector(
-                SelectSelectorConfig(
-                    options=type_options,
-                    mode=SelectSelectorMode.DROPDOWN,
-                    translation_key="load_type",
-                    sort=False,
-                )
-            )
-        if len(self._matches) > 1:
-            fields[vol.Required("profile", default=match.profile)] = SelectSelector(
-                SelectSelectorConfig(
-                    options=[m.profile for m in self._matches],
-                    mode=SelectSelectorMode.DROPDOWN,
-                    translation_key="load_profile",
-                    sort=False,
-                )
-            )
-        bound = {binding.role: binding for binding in match.bindings}
-        required, optional = self._roles(match)
-        hidden: dict[Any, Any] = {}
-        for role in [*required, *optional]:
-            binding = bound.get(role)
-            key = f"{_ROLE_PREFIX}{role.value}"
-            default = given.get(key, binding.entity_id if binding is not None else None)
-            if role in required:
-                marker: Any = vol.Required(key, default=default) if default else vol.Required(key)
-            else:
-                marker = _marker(key, default)
-            picker = EntitySelector(EntitySelectorConfig(filter=_ROLE_FILTERS.get(role, [{}])))
-            (fields if role in required else hidden)[marker] = picker
-        if hidden:
-            fields[vol.Optional(SECTION_ADVANCED, default={})] = advanced_section(hidden)
-        return vol.Schema(fields)
-
-    def _bindings_from_match(
-        self, user_input: Mapping[str, Any]
-    ) -> tuple[tuple[RoleBinding, ...], tuple[Role, ...]]:
-        """Return the bindings as the profile made them, with the household's entity changes."""
-        answers = _flat(user_input)
-        match = self._chosen(answers)
-        by_role = {binding.role: binding for binding in match.bindings}
-        out: list[RoleBinding] = []
-        missing: list[Role] = []
-        wanted = set(by_role) | set(match.missing) | set(_ALWAYS_OFFERED)
-        for role in wanted:
-            entity_id = answers.get(f"{_ROLE_PREFIX}{role.value}")
-            binding = by_role.get(role)
-            if not entity_id:
-                if role in match.missing or (binding is not None and binding.required):
-                    missing.append(role)
-                continue
-            if binding is not None and binding.entity_id == entity_id:
-                out.append(binding)
-                continue
-            rebuilt = self._rebind(role, str(entity_id), binding, match.profile)
-            if rebuilt is None:
-                missing.append(role)
-            else:
-                out.append(rebuilt)
-        return tuple(out), tuple(missing)
-
     def _rebind(
-        self, role: Role, entity_id: str, previous: RoleBinding | None, profile: str
+        self, role: Role, entity_id: str, previous: RoleBinding | None
     ) -> RoleBinding | None:
-        """Bind `role` to an entity the household chose instead, reading its own numbers."""
-        registry = er.async_get(self.hass)
-        entry = registry.async_get(entity_id)
+        """Bind `role` to an entity the household chose, reading its own numbers.
+
+        A role powerplan writes is bound writable; an attribute the previous
+        binding read is kept only on an entity of the same domain.
+        """
         view = (
             self._view.get(entity_id)
             if self._view is not None and self._view.get(entity_id) is not None
@@ -1236,19 +1191,25 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         )
         if view is None:
             return None
-        del entry
+        same = previous is not None and previous.entity_id.split(".")[0] == view.domain
         return numeric_binding(
             view,
             role,
-            profile=profile,
-            writable=previous.writable if previous is not None else False,
+            profile=self._profile or "",
+            writable=role in _WRITTEN or (previous is not None and previous.writable),
             required=previous.required if previous is not None else False,
-            attribute=previous.attribute if previous is not None else None,
+            attribute=previous.attribute if same and previous is not None else None,
         )
 
     def _extra_bindings(self, type_key: str, params: Mapping[str, Any]) -> tuple[RoleBinding, ...]:
-        """Bind a type's own optional off-device sensor answers (D4 §5.14), read-only."""
-        return extra_bindings(self.hass, type_key, params, profile=self._profile or "")
+        """Bind a probe answer the data points step left unbound (D-0741), read-only."""
+        return extra_bindings(
+            self.hass,
+            type_key,
+            params,
+            profile=self._profile or "",
+            skip={binding.role for binding in self._bindings},
+        )
 
     # -------------------------------------------------------------------- user
 
@@ -1300,11 +1261,15 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             last_step=False,
         )
 
-    def _pick(self, device_id: str, *, but: str | None = None) -> str | None:
-        """Match the picked device for the chosen type; return an error key, or `None`."""
+    async def _pick(self, device_id: str, *, but: str | None = None) -> str | None:
+        """Match the picked device for the chosen type; return an error key, or `None`.
+
+        A sensor the recorder shows dead is out of the pool first (D-0747).
+        """
         if device_id in added_devices(self._get_entry(), but=but):
             return "already_configured"
         view = DeviceView.from_hass(self.hass, device_id)
+        view = replace(view, dead=await candidates.async_dead(self.hass, view, dt_util.utcnow()))
         matches = tuple(
             match
             for match in profiles.match(view)
@@ -1359,7 +1324,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             if user_input["device"] == NO_DEVICE:
                 return await self.async_step_entities()
-            error = self._pick(str(user_input["device"]))
+            error = await self._pick(str(user_input["device"]))
             if error is None:
                 return await self.async_step_match()
             errors["device"] = error
@@ -1368,31 +1333,161 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     async def async_step_match(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Show what the device is: the suggested type, the profile, the roles (D4 §5.9)."""
-        errors: dict[str, str] = {}
+        """Ask how PowerPlan talks to the device, only when several profiles claim it (CTL-14)."""
+        if user_input is not None or len(self._matches) == 1:
+            self._profile = self._chosen(user_input or {}).profile
+            self._rows = ()
+            return await self.async_step_data_points()
         text = await Text.load(self.hass)
-        placeholders: dict[str, str] = {"roles": text.word("text", "none")}
-        best = self._matches[0]
-        if user_input is not None:
-            bindings, missing = self._bindings_from_match(user_input)
-            if missing:
-                errors["base"] = "role_missing"
-                placeholders["roles"] = text.join(
-                    text.string(
-                        f"config_subentries.{SUBENTRY_LOAD}.step.match.data.{_ROLE_PREFIX}{role.value}"
-                    )
-                    or role.value.replace("_", " ")
-                    for role in missing
-                )
-            else:
-                self._profile = self._chosen(_flat(user_input)).profile
-                self._type = str(user_input.get("type", self._type))
-                self._bindings = bindings
-                return await self.async_step_questions()
-        placeholders.update(self._match_sentence(text, best))
         return self.async_show_form(
             step_id="match",
-            data_schema=self._match_schema(user_input),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("profile", default=self._matches[0].profile): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[m.profile for m in self._matches],
+                            mode=SelectSelectorMode.DROPDOWN,
+                            translation_key="load_profile",
+                            sort=False,
+                        )
+                    )
+                }
+            ),
+            description_placeholders=self._match_sentence(text, self._matches[0]),
+            last_step=False,
+        )
+
+    # ------------------------------------------------------------- data points
+
+    def _match(self) -> MatchResult:
+        """Return the chosen profile's match; an empty one where none claims the device now."""
+        found = next((m for m in self._matches if m.profile == self._profile), None)
+        return found or MatchResult(profile=self._profile or "", confidence=0.0)
+
+    def _resolve(self) -> tuple[data_points.Row, ...]:
+        """Put the type's, kind's and strategy's needs on the ladder (D8 §5.2)."""
+        match = self._match()
+        stored = self._stored or {}
+        needs = data_points.needs_for(
+            str(self._type),
+            (stored.get(LOAD_PARAMS) or {}).get("kind") or match.suggested_kind,
+            stored.get(LOAD_STRATEGY),
+        )
+        device_id = self._device_id
+        return data_points.resolve(
+            needs,
+            match,
+            self._view or DeviceView(name=""),
+            near=lambda role: (
+                None if device_id is None else candidates.nearby(self.hass, device_id, role)
+            ),
+            stored={b.role: b for b in self._bindings} if self._stored is not None else None,
+        )
+
+    def _stored_sources(self) -> dict[Role, data_points.Source]:
+        """Return where each stored binding came from; one stored before says `migrated`."""
+        if self._stored is None:
+            return {}
+        out: dict[Role, data_points.Source] = {}
+        for row in self._stored.get(LOAD_BINDINGS) or ():
+            try:
+                out[Role(str(row["role"]))] = data_points.Source(
+                    str(row.get("source") or data_points.Source.MIGRATED)
+                )
+            except ValueError:
+                continue
+        return out
+
+    def _bind_chosen(
+        self, chosen: Mapping[Role, tuple[str, data_points.Source]]
+    ) -> tuple[tuple[RoleBinding, ...], tuple[Role, ...]]:
+        """Return the bindings the answers make, and the roles whose entity could not be read."""
+        rows = {row.role: row for row in self._rows}
+        out: list[RoleBinding] = []
+        failed: list[Role] = []
+        for role, (entity_id, source) in chosen.items():
+            row = rows.get(role)
+            previous = row.binding if row is not None else None
+            if previous is not None and previous.entity_id == entity_id:
+                binding: RoleBinding | None = previous
+            else:
+                binding = self._rebind(role, entity_id, previous)
+            if binding is None:
+                failed.append(role)
+                continue
+            if row is not None and row.tier is Tier.REQUIRED and not binding.required:
+                binding = replace(binding, required=True)
+            out.append(binding)
+            self._sources[role] = source
+        return tuple(out), tuple(failed)
+
+    def _role_names(self, text: Text, roles: Sequence[Role]) -> str:
+        return text.join(data_points.role_label(text, role) for role in roles)
+
+    async def async_step_data_points(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Show what was found, ask what was not (D8 §5.2, INV-76)."""
+        text = await Text.load(self.hass)
+        if not self._rows:
+            self._rows = self._resolve()
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"roles": text.word("text", "none")}
+        if user_input is not None:
+            given = data_points.answer(self._rows, user_input, self._stored_sources())
+            bindings, failed = self._bind_chosen(given.chosen)
+            missing = (*given.missing, *failed)
+            if missing:
+                errors["base"] = "role_missing"
+                placeholders["roles"] = self._role_names(text, missing)
+            else:
+                self._bindings = bindings
+                self._declined = given.declined
+                self._others = given.other
+                if self._others:
+                    return await self.async_step_data_points_other()
+                return await self.async_step_questions()
+        placeholders.update(self._match_sentence(text, self._match()))
+        placeholders.update(data_points.description(self.hass, text, self._rows, self._view))
+        return self.async_show_form(
+            step_id="data_points",
+            data_schema=data_points.schema(
+                self._rows,
+                _ROLE_FILTERS,
+                lambda entity_id: data_points.option_label(self.hass, text, self._view, entity_id),
+                text.word("load_text", "need_other"),
+                data_points.flat(user_input) if user_input is not None else None,
+            ),
+            errors=errors or None,
+            description_placeholders=placeholders,
+            last_step=False,
+        )
+
+    async def async_step_data_points_other(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """One picker over the whole house per need answered "Another entity" (D8 §5.2)."""
+        text = await Text.load(self.hass)
+        errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {"roles": self._role_names(text, self._others)}
+        if user_input is not None:
+            chosen = {
+                role: (str(user_input[data_points.field_key(role)]), data_points.Source.PICKED)
+                for role in self._others
+                if user_input.get(data_points.field_key(role))
+            }
+            bindings, failed = self._bind_chosen(chosen)
+            missing = (*(role for role in self._others if role not in chosen), *failed)
+            if missing:
+                errors["base"] = "role_missing"
+                placeholders["roles"] = self._role_names(text, missing)
+            else:
+                self._bindings = (*self._bindings, *bindings)
+                self._others = ()
+                return await self.async_step_questions()
+        return self.async_show_form(
+            step_id="data_points_other",
+            data_schema=data_points.other_schema(self._others, _ROLE_FILTERS),
             errors=errors or None,
             description_placeholders=placeholders,
             last_step=False,
@@ -1437,16 +1532,12 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         # nothing to keep it safe (`unsafe_switch`, INV-64) - and that refusal is
         # an answer's error too (review NEW-2).
         self._derived = device_type.derive(self._answers, self._ctx)
-        # Only a role this answer actually names is replaced - an unanswered
-        # `outdoor_entity` leaves the match step's own auto-detected
-        # outdoor_temp binding standing (D4 §5.14). Bound before the measurement,
-        # so a tank is measured on the probe the household named (D-0741).
+        # Only a probe the data points step left unbound is added - a sibling its
+        # own device names (D-0741). Bound before the measurement, so a tank is
+        # measured on the probes it has.
         extra = self._extra_bindings(str(self._type), self._derived.params)
-        answered_roles = {binding.role for binding in extra}
-        self._bindings = (
-            *(b for b in self._bindings if b.role not in answered_roles),
-            *extra,
-        )
+        self._sources.update(dict.fromkeys((b.role for b in extra), data_points.Source.NEARBY))
+        self._bindings = (*self._bindings, *extra)
         # What the house's recorder already knows beats the type's tables (D-0731):
         # measured against the answers' own rating and sensor, then derived again.
         self._ctx = replace(self._ctx, measured=await self._measure(self._derived.params))
@@ -1498,12 +1589,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         errors: dict[str, str] = {}
         values: dict[str, Any] = self._stored_answers()
         # A setting an entity owns is not asked again: its answer stands (D8 §5.16).
-        skip = self._entity_settings()
+        owned = self._entity_settings()
+        # An entity answer is the data points step's: filled from the bindings (D-0746).
+        entities = answers_from_bindings(str(self._type), self._bindings)
+        skip = owned | {key for key, _role in data_point_answers(str(self._type))}
         if user_input is not None:
-            if self.source == "reconfigure":
-                self._bindings = self._meters_from_form(user_input)
             raw = {
-                **{key: value for key, value in values.items() if key in skip},
+                **{key: value for key, value in values.items() if key in owned},
+                **entities,
                 **answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx),
             }
             # A follow-up keeps what it had until it is asked again.
@@ -1536,37 +1629,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 suggested=self._suggested,
                 skip=skip,
                 text=await Text.load(self.hass),
-                meters=self._meters() if self.source == "reconfigure" else None,
             ),
             errors=errors or None,
             description_placeholders=await self._about(),
             last_step=False,
         )
-
-    def _meters(self) -> dict[Role, str | None]:
-        """Return the power and energy meters bound now, `None` for an unbound one."""
-        bound = {binding.role: binding.entity_id for binding in self._bindings}
-        return {role: bound.get(role) for role in _ALWAYS_OFFERED}
-
-    def _meters_from_form(self, user_input: Mapping[str, Any]) -> tuple[RoleBinding, ...]:
-        """Return the bindings with the reconfigure's meter answers applied (D-0486).
-
-        A new entity is bound read-only off its own unit; a cleared picker
-        unbinds the meter; one the entity cannot be read as stays as it was.
-        """
-        answers = _flat(user_input)
-        by_role = {binding.role: binding for binding in self._bindings}
-        for role in _ALWAYS_OFFERED:
-            entity_id = answers.get(f"{_ROLE_PREFIX}{role.value}")
-            previous = by_role.get(role)
-            if not entity_id:
-                if previous is not None and not previous.required:
-                    by_role.pop(role)
-            elif previous is None or previous.entity_id != entity_id:
-                rebuilt = self._rebind(role, str(entity_id), previous, self._profile or "")
-                if rebuilt is not None:
-                    by_role[role] = rebuilt
-        return tuple(by_role.values())
 
     async def _about(self) -> dict[str, str]:
         """Return the questions' title data: "Om {name}" - the device's name - and the type (LOAD-5)."""
@@ -1677,7 +1744,11 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         data[LOAD_PRIORITY] = int(stored.get(LOAD_PRIORITY, self._priority(user_input)))
         data[LOAD_PROFILE] = self._profile
         data[LOAD_DEVICE_ID] = self._device_id
-        data[LOAD_BINDINGS] = [binding_to_data(binding) for binding in self._bindings]
+        data[LOAD_BINDINGS] = [
+            binding_to_data(binding, self._sources.get(binding.role, data_points.Source.FOUND))
+            for binding in self._bindings
+        ]
+        data[LOAD_DECLINED] = [role.value for role in self._declined]
         data[LOAD_MANUAL_OVERRIDES] = list(manual)
         data["zone"] = None
         data["circuit"] = None
@@ -1699,7 +1770,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Ask the same questions, pre-filled from the subentry (D8 §5.2)."""
+        """Open on the data points, then the same questions, pre-filled (D8 §5.2, D-0753)."""
         subentry = self._get_reconfigure_subentry()
         self._stored = entity_refs.live(self.hass, subentry.data)
         self._type = str(self._stored[LOAD_TYPE])
@@ -1714,14 +1785,19 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 self.hass, [binding.entity_id for binding in self._bindings]
             )
             self._matches = profiles.match(self._view)
-            return await self.async_step_questions(user_input)
+            self._sources = self._stored_sources()
+            return await self.async_step_data_points(user_input)
         if not self._device_id or dr.async_get(self.hass).async_get(self._device_id) is None:
             # The hardware is gone (`device_missing`): pick its replacement,
             # bind its roles, then the same questions (D8 §5.16).
             return await self.async_step_reconfigure_device()
-        self._view = DeviceView.from_hass(self.hass, self._device_id)
+        view = DeviceView.from_hass(self.hass, self._device_id)
+        self._view = replace(
+            view, dead=await candidates.async_dead(self.hass, view, dt_util.utcnow())
+        )
         self._matches = profiles.match(self._view)
-        return await self.async_step_questions(user_input)
+        self._sources = self._stored_sources()
+        return await self.async_step_data_points(user_input)
 
     async def async_step_reconfigure_device(
         self, user_input: dict[str, Any] | None = None
@@ -1732,7 +1808,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         if user_input is not None:
             if user_input["device"] == NO_DEVICE:
                 return await self.async_step_entities()
-            error = self._pick(str(user_input["device"]), but=but)
+            error = await self._pick(str(user_input["device"]), but=but)
             if error is None:
                 return await self.async_step_match()
             errors["device"] = error

@@ -9,6 +9,7 @@ The words PowerPlan's screens and these pages use, one word for each idea. The l
 |---|---|---|
 | <a name="home"></a>Home | Everything behind one electricity meter. PowerPlan plans each home on its own. | `site` |
 | <a name="appliance"></a>Appliance | One thing PowerPlan may steer: a car charger, a water heater, a floor, a heat pump. | `load` |
+| <a name="data_point"></a>Data point | An entity PowerPlan reads or controls for an appliance, such as its temperature, its power meter or its setpoint. | `role` |
 | <a name="circuit"></a>Circuit | Appliances behind one fuse in the fuse box, such as the garage's. PowerPlan keeps them under that fuse. | `circuit` |
 | <a name="group"></a>Group | Appliances that share power and take turns, such as the floors of one bathroom. | `group` |
 | <a name="room"></a>Room | A room with more than one heat source, such as a heat pump and a floor. PowerPlan heats it with the cheaper one. | `zone` |

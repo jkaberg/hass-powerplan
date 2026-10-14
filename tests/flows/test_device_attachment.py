@@ -26,6 +26,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.flow.load import device_entries
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _add_charger, _answer
 
 if TYPE_CHECKING:
@@ -142,9 +143,10 @@ async def test_27_a_removed_device_detaches_and_a_new_one_rebinds(
     )
     assert result["step_id"] == "reconfigure_device", result
     result = await _answer(hass, result, device=new_device_id)
-    assert result["step_id"] == "match", result
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
     assert "type" not in result["data_schema"].schema, "a re-bound device keeps the type"
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, **shown(result))
     while result["type"] is FlowResultType.FORM:
         result = await _answer(hass, result, **result["data_schema"]({}))
     await hass.async_block_till_done()

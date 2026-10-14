@@ -20,6 +20,7 @@ from homeassistant.helpers import issue_registry as ir
 from custom_components.powerplan.const import DOMAIN, LOAD_DEVICE_ID, LOAD_PROFILE, SUBENTRY_LOAD
 from custom_components.powerplan.flow.load import NO_DEVICE
 from custom_components.powerplan.providers.profiles import battery_vocabulary as vocab
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer
 from tests.providers.profiles.conftest import dump_view, load_dump
 
@@ -68,14 +69,15 @@ async def test_43_sungrow_s_package_becomes_a_battery_on_its_fallback_device(
     result = await _to_entities(hass, site)
     result = await _answer(hass, result, entities=ids)
 
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     expected = vocab.SUNGROW.match(dump_view(SUNGROW))
-    shown = dict(suggested)
+    fields = dict(suggested)
     for section in [value for value in suggested.values() if isinstance(value, dict)]:
-        shown.update(section)
+        fields.update(section)
     for binding in expected.bindings:
-        assert shown[f"role_{binding.role.value}"] == binding.entity_id
+        assert fields[f"role_{binding.role.value}"] == binding.entity_id
     result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     result = await _answer(hass, result, **result["data_schema"]({}))

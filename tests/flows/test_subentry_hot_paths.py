@@ -27,6 +27,7 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.core.model import Mode
+from tests.flows.conftest import shown
 from tests.flows.test_circuit_flow import _start_circuit
 from tests.flows.test_heat_pump_flow import _add_heat_pump
 from tests.flows.test_load_flow import _add_charger, _answer
@@ -62,7 +63,7 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     )
     result = await _answer(hass, result, type="generic_switch")
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await _answer(hass, result, **shown(result))
     # The question is shown in kW now (CTL-15); 6 kW is the sauna's 6000 W.
     result = await _answer(hass, result, **{**result["data_schema"]({}), "power_w": 6.0})
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Sauna"})
@@ -285,12 +286,13 @@ async def test_reconfiguring_a_load_keeps_its_entities_mode_knobs_and_state(
     second_sensor = "sensor.dataskap_strommaler_temperature"
     with caplog.at_level(logging.WARNING):
         result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
-        defaults = result["data_schema"]({})
+        points = shown(result)
         result = await _answer(
             hass,
             result,
-            **{**defaults, "advanced": {**defaults["advanced"], "outlet_entity": second_sensor}},
+            **{**points, "found": {**points["found"], "role_outlet_temp": second_sensor}},
         )
+        result = await _answer(hass, result, **result["data_schema"]({}))
         result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Heat pump"})
         await hass.async_block_till_done()
     assert result["reason"] == "reconfigure_successful"

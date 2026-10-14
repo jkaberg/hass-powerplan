@@ -30,6 +30,7 @@ from custom_components.powerplan.const import (
     ZONE_SWITCH_CONFIRM_S,
     ZONE_SWITCH_HYSTERESIS,
 )
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_heat_pump_flow import _add_heat_pump
 from tests.flows.test_load_flow import _answer
 from tests.runtime.conftest import FakeMeter
@@ -69,8 +70,9 @@ async def _add_radiator(
     )
     result = await _answer(hass, result, type="radiator")
     result = await _answer(hass, result, device=device_id)
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     result = await _answer(hass, result, **suggested)
     assert result["step_id"] == "questions", result
     result = await _answer(hass, result, **result["data_schema"]({}))

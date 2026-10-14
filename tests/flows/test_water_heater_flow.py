@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.const import DOMAIN, SUBENTRY_LOAD
 from custom_components.powerplan.entity import unique_id
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -44,8 +45,9 @@ async def _add_tank(
     result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=device_id)
 
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     # Only `generic_climate` claims a thermostat-shaped device, so the profile
     # field is not asked at all (review CTL-14).
     assert "profile" not in suggested
@@ -106,7 +108,8 @@ async def test_a_load_never_asked_for_a_legionella_cycle_has_no_sensor(
     device_id = charger.loads["ev"].device_id
     result = await _answer(hass, result, type="ev")
     result = await _answer(hass, result, device=device_id)
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await past_match(hass, result)
+    result = await _answer(hass, result, **shown(result))
     result = await _answer(hass, result, **result["data_schema"]({}))
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Charger"})
     await hass.async_block_till_done()
@@ -137,10 +140,14 @@ async def test_a_relay_tank_with_nothing_to_keep_it_safe_is_refused_on_its_field
     )
     result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=charger.loads["tank"].device_id)
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    assert result["step_id"] == "data_points", result
+    # No probe: the tank's temperature is left out of its data points.
+    points = shown(result)
+    points.pop("role_temp", None)
+    points.get("found", {}).pop("role_temp", None)
+    result = await _answer(hass, result, **points)
     assert result["step_id"] == "questions", result
     answers = {**result["data_schema"]({}), "control": "relay", "mechanical_thermostat": False}
-    answers.pop("temp_entity", None)
     result = await _answer(hass, result, **answers)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "questions"

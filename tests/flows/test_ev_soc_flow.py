@@ -9,7 +9,7 @@ never reaches `Role.SOC`, `required_kwh` is `None` and `deadline_fill` answers
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 from homeassistant.config_entries import SOURCE_USER
@@ -17,6 +17,7 @@ from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.powerplan.const import LOAD_BINDINGS, SUBENTRY_LOAD
 from custom_components.powerplan.core.loads.kinds.base import Role
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -31,15 +32,8 @@ if TYPE_CHECKING:
 CAR_SOC_SENSOR = "sensor.car_battery_level"
 
 
-def _with_answer(defaults: dict[str, Any], key: str, value: Any) -> dict[str, Any]:
-    """Answer `key` wherever the questionnaire put it - top level or under Avansert."""
-    if key in defaults.get("advanced", {}):
-        return {**defaults, "advanced": {**defaults["advanced"], key: value}}
-    return {**defaults, key: value}
-
-
 async def _add_car(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse) -> None:
-    """Add the charger through the flow, answering `soc_entity` with the car's sensor."""
+    """Add the charger through the flow, picking the car's sensor as its charge level."""
     result = dict(
         await hass.config_entries.subentries.async_init(
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
@@ -49,12 +43,12 @@ async def _add_car(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHous
     assert device_id is not None
     result = await _answer(hass, result, type="ev")
     result = await _answer(hass, result, device=device_id)
-    assert result["step_id"] == "match", result
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    # The car's charge level is not on the charger: a recommended data point, asked.
+    result = await _answer(hass, result, **{**shown(result), "role_soc": CAR_SOC_SENSOR})
     assert result["step_id"] == "questions", result
-    result = await _answer(
-        hass, result, **_with_answer(result["data_schema"]({}), "soc_entity", CAR_SOC_SENSOR)
-    )
+    result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "review", result
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Car"})
     await hass.async_block_till_done()

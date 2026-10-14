@@ -26,6 +26,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.powerplan.const import DOMAIN, SUBENTRY_LOAD
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer as _load_answer
 from tests.flows.test_site_flow import (
     ELECTRICAL_NO,
@@ -217,8 +218,9 @@ async def test_a_comfort_outside_its_own_limits_reaches_the_load_flows_field(
     result = await _load_answer(hass, result, type="water_heater")
     assert device_id is not None
     result = await _load_answer(hass, result, device=device_id)
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     result = await _load_answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
@@ -246,8 +248,9 @@ async def test_a_cop_curve_that_falls_reaches_the_load_flows_field(
     result = await _load_answer(hass, result, type="heat_pump")
     assert device_id is not None
     result = await _load_answer(hass, result, device=device_id)
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     result = await _load_answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result

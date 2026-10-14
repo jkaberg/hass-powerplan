@@ -19,6 +19,21 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:heat_pump · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| Temperature | Required | The temperature the device measures. | PowerPlan cannot plan the heat. |
+| Power | Recommended | What the appliance draws right now, in watts. | The rated power stays your answer and is not measured. |
+| Outdoor temperature | Recommended | The temperature outside. | The weather forecast's temperature is used. |
+| Outlet temperature | Optional | The temperature of the air or water the heat pump delivers. | Nothing changes in the plan. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+| Setpoint | Required | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
+<!-- generated:end data_points:heat_pump -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -41,8 +56,6 @@ Where the room's temperature is already in Home Assistant's history, PowerPlan m
 | Plan for cooling | Plan for summer: cool the room to the comfort temperature instead of heating it. |
 | Advanced › Preheat | Advanced: bank heat before an expensive hour. |
 | Advanced › Never switch when | Advanced: entities that, when on, stop PowerPlan changing this device. |
-| Advanced › Outdoor sensor | Advanced: an outdoor temperature sensor. |
-| Advanced › Outlet sensor | Advanced: the heat pump's outlet temperature sensor. |
 | Advanced › Follow presence | Advanced: lower the target when nobody is home. |
 | Advanced › Weekly schedule | Advanced: a schedule helper – on is comfort, off is the vacation level. |
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |

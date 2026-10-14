@@ -43,6 +43,8 @@ from custom_components.powerplan.core.strategies import base as strategies  # no
 from custom_components.powerplan.core.tariffs import countries  # noqa: E402
 from custom_components.powerplan.dashboard.layout import CUSTOM_CARDS, VIEWS  # noqa: E402
 from custom_components.powerplan.events import ENVELOPE, SCHEMAS, event_name  # noqa: E402
+from custom_components.powerplan.flow.data_points import needs_for  # noqa: E402
+from custom_components.powerplan.flow.load import data_point_answers  # noqa: E402
 from custom_components.powerplan.providers.prices.formats import registry as formats  # noqa: E402
 from custom_components.powerplan.providers.profiles import registry as profiles  # noqa: E402
 from custom_components.powerplan.providers.tariffs import base as tariff_sources  # noqa: E402
@@ -164,8 +166,12 @@ def render_questions(arg: str | None) -> str:
     advanced = step.get("sections", {}).get("advanced", {})
     section = advanced.get("name", "")
     rows: list[tuple[str, str]] = []
+    # An entity answer is a data point, on its own table (D-0746).
+    points = {key for key, _role in data_point_answers(arg)}
     for question in device_types.get(arg).questionnaire.questions:
         key = question.key
+        if key in points:
+            continue
         if key in step.get("data", {}):
             label, what = step["data"][key], step.get("data_description", {}).get(key, "")
         elif key in advanced.get("data", {}):
@@ -177,6 +183,48 @@ def render_questions(arg: str | None) -> str:
             continue
         rows.append((label, what))
     return _table(("Question", "What it asks"), rows)
+
+
+_NEED_TIERS = {"required": "Required", "recommended": "Recommended", "optional": "Optional"}
+
+
+def render_data_points(arg: str | None) -> str:
+    """Render one appliance type's data points: what each is for and what happens without it.
+
+    The type's needs with its default plan, over every way it can be
+    controlled (`needs_of`, D4 §4.7); a need only one control has says which.
+    """
+    assert arg is not None
+    device_type = device_types.get(arg)
+    labels = _flow("load")["step"]["data_points"]["data"]
+    by_kind = {kind: needs_for(arg, kind) for kind in device_type.kinds}
+    order: dict[str, Any] = {}
+    for needs in by_kind.values():
+        for need in needs:
+            order.setdefault(need.role.value, need)
+    rows = []
+    for role, need in order.items():
+        tiers = {
+            kind: next((n.tier.value for n in needs if n.role.value == role), None)
+            for kind, needs in by_kind.items()
+        }
+        if len(set(tiers.values())) == 1:
+            needed = _NEED_TIERS[need.tier.value]
+        else:
+            needed = "; ".join(
+                f"{_NEED_TIERS[tier]} when PowerPlan {_KINDS.get(kind, kind)}"
+                for kind, tier in tiers.items()
+                if tier is not None
+            )
+        rows.append(
+            (
+                labels.get(f"role_{role}", role),
+                needed,
+                _label("need_purpose", need.key),
+                _label("need_without", need.key),
+            )
+        )
+    return _table(("Data point", "Needed", "What it is for", "Without it"), rows)
 
 
 def render_types(_arg: str | None) -> str:
@@ -452,6 +500,7 @@ RENDERERS: dict[str, Callable[[str | None], str]] = {
     "requirements": render_requirements,
     "fields": render_fields,
     "questions": render_questions,
+    "data_points": render_data_points,
     "types": render_types,
     "strategies": render_strategies,
     "profiles": render_profiles,

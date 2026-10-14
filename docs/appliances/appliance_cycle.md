@@ -19,6 +19,20 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:appliance_cycle · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| On/off switch | Optional | The switch that turns the appliance on and off. | The start button is used instead. |
+| Start the program | Optional | The button that starts a program. | The switch is used instead. |
+| Program state | Recommended | What the appliance says it is doing. | A run counts as done after its usual length. |
+| Power | Recommended | What the appliance draws right now, in watts. | A run uses typical figures until one has been seen. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+<!-- generated:end data_points:appliance_cycle -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -30,7 +44,6 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Appliance | What kind of appliance this is. |
 | Ready by | When the hot water or the cycle must be ready. |
 | Start control | How the appliance is started. |
-| Power sensor | A sensor measuring this appliance's power, if there is one. |
 | Advanced › Energy per cycle | Advanced: kWh one program uses. |
 | Advanced › Duration | Advanced: minutes one program runs. |
 | Power | The appliance's power draw, in watts. |

@@ -66,6 +66,7 @@ from custom_components.powerplan.select import PRESENCE_OPTIONS, RISK_OPTIONS
 from custom_components.powerplan.sensor import ADVICE_STATES
 from tests.builders.presets import fixture_preset
 from tests.core.tariffs.conftest import load_any, market_golden, preset_names, shipped_spec
+from tests.flows.conftest import shown
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -104,6 +105,9 @@ SAME_IN_BOTH = frozenset(
         "Norgespris",  # the state's fixed-price scheme, a name (D1 §6)
         "Strømstøtte",  # the state's subsidy, a name (D13 §4)
         "{name} {amount}",  # a levy's own name and amount, data in both (D13 §6 step 3)
+        "{name} - {value}",  # a tied data point: the entity's name and reading (D8 §5.2)
+        "**{role}**: {entity}, {value}",  # a found data point, data in both (D8 §5.2)
+        "**{role}**: {entity}",  # a found data point without a number (D8 §5.2)
         # Nord Pool areas whose region is spelled alike in both (CTL-9)
         "SE1 – Luleå",
         "SE2 – Sundsvall",
@@ -561,7 +565,9 @@ async def _walk(
         if result["type"] is FlowResultType.MENU:
             user_input = answers[step_id]
         else:
-            user_input = {**result["data_schema"](answers.get(step_id, {}))}
+            # The frontend submits a found data point's suggested value as shown.
+            shows = shown(result) if step_id == "data_points" else {}
+            user_input = {**result["data_schema"]({**shows, **answers.get(step_id, {})})}
         result = dict(await configure(result["flow_id"], user_input))
     pytest.fail(f"the flow never finished: {seen}")
 

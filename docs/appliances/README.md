@@ -77,7 +77,22 @@ If the appliance's entities are on no device, as with a YAML package, choose **N
 <a name="match"></a>
 ### Is this the right device?
 
-PowerPlan says what the device looks like and which entity it will control. Check each entity's role; if one is wrong, pick the right one.
+Shown only when PowerPlan knows more than one way of talking to the device, as with a car charger it can reach over Bluetooth or the cloud. Choose one; the best fit is already selected.
+
+<a name="data-points"></a>
+### What does PowerPlan read and control?
+
+Each kind of appliance needs some *data points*: the entities PowerPlan reads, such as a temperature or a power meter, and the ones it controls, such as a setpoint or a switch. What it needs depends on the kind, how the device is controlled and the plan. PowerPlan looks for each one on the device you picked.
+
+- **Found**: listed with its current reading. They are under **Found**, already filled in; open it only to change one.
+- **Asked**: when the device has several entities that could be it, you choose one; each choice shows its current reading, and the most likely one is selected. When the device has none, PowerPlan may suggest a sensor fed from the device or the only one in the same room. Each question says what the data point is for and what PowerPlan does without it.
+- **Required**: PowerPlan cannot control the appliance without it, so the step does not continue until it has one.
+- **Leave it empty**: a data point that is not required can be left empty. PowerPlan then uses the fallback the question names, and does not ask again. Change it later by reconfiguring the appliance.
+- **Disabled**: an entity on the device that could be a data point, but is disabled in Home Assistant, is named so you can enable it.
+
+PowerPlan never picks between two candidates on its own, and never replaces a data point you chose. A sensor that has not changed for a day while another of its kind on the device has is left out, as it measures nothing.
+
+Choose **Another entity** to pick one from anywhere in your home. **Which entity instead?** then asks for it.
 
 <a name="questions"></a>
 ### About {name}

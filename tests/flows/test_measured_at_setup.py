@@ -15,6 +15,7 @@ import pytest
 
 from custom_components.powerplan.const import LOAD_PARAMS, SUBENTRY_LOAD
 from custom_components.powerplan.core.loads import Measured
+from tests.flows.conftest import shown
 from tests.flows.test_load_flow import _answer
 
 if TYPE_CHECKING:
@@ -47,7 +48,7 @@ async def _review(
         )
         result = await _answer(hass, result, type="floor_heating")
         result = await _answer(hass, result, device=charger.loads["loop_bath_1"].device_id)
-        result = await _answer(hass, result, **result["data_schema"]({}))
+        result = await _answer(hass, result, **shown(result))
         assert result["step_id"] == "questions", result
         result = await _answer(hass, result, **{**result["data_schema"]({}), **answers})
     assert result["step_id"] == "review", result

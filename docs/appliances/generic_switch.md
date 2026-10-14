@@ -19,6 +19,18 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:generic_switch · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| On/off switch | Required | The switch that turns the appliance on and off. | PowerPlan cannot control it. |
+| Power | Recommended | What the appliance draws right now, in watts. | Its power and hours stay your answers and are not measured. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+<!-- generated:end data_points:generic_switch -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -29,7 +41,6 @@ Answer what you know. Every other setting is worked out from these answers and s
 |---|---|
 | Appliance | What kind of appliance this is. |
 | Power | The appliance's power draw, in watts. |
-| Power sensor | A sensor measuring this appliance's power, if there is one. |
 | Hours per day | How many hours a day it should run, in the cheapest hours. |
 | Advanced › Minimum on | Advanced: seconds a switch stays on at least. |
 | Advanced › Minimum off | Advanced: seconds a switch stays off at least. |

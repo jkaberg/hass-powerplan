@@ -56,6 +56,8 @@ LOAD_TYPE: Final = "type"
 LOAD_PROFILE: Final = "profile"
 LOAD_DEVICE_ID: Final = "device_id"
 LOAD_BINDINGS: Final = "bindings"
+#: Recommended data points the household left empty, by role (D-0753).
+LOAD_DECLINED: Final = "declined"
 LOAD_PARAMS: Final = "params"
 LOAD_DERIVATION_VERSION: Final = "derivation_version"
 LOAD_STRATEGY: Final = "strategy"

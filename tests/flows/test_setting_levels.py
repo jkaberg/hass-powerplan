@@ -86,7 +86,7 @@ async def test_29_no_setting_is_both_an_entity_and_a_gear_question(
     for type_key, load_id in loads.items():
         steps = await _reconfigure(hass, site, load_id)
         if type_key == "ev":
-            assert "capacity_kwh" in steps[0], "level 3 is still asked"
+            assert "capacity_kwh" in steps[1], "level 3 is still asked, after the data points"
         for fields in steps:
             assert not fields & ENTITY_SETTINGS[type_key], (
                 type_key,

@@ -26,6 +26,7 @@ from custom_components.powerplan.const import (
 )
 from custom_components.powerplan.core.model import Mode
 from custom_components.powerplan.load_entities import PLAN_STATES, plan_state
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_heat_pump_flow import _add_heat_pump
 from tests.flows.test_load_flow import _add_charger, _answer
 from tests.flows.test_subentry_hot_paths import _add_sauna
@@ -60,8 +61,9 @@ async def _add_floor(
     )
     result = await _answer(hass, result, type="floor_heating")
     result = await _answer(hass, result, device=charger.loads["loop_bath_1"].device_id)
-    assert result["step_id"] == "match", result
-    result = await _answer(hass, result, **result["data_schema"]({}))
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    result = await _answer(hass, result, **shown(result))
     assert result["step_id"] == "questions", result
     return await _answer(hass, result, **result["data_schema"]({}))
 

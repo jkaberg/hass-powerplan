@@ -22,6 +22,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.powerplan import entity_refs
 from custom_components.powerplan.const import LOAD_BINDINGS, SUBENTRY_LOAD
 from custom_components.powerplan.core.loads.kinds.base import Role
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -40,7 +41,7 @@ STAND_IN_OUTLET_SENSOR = "sensor.heat_pump_internal_temperature"
 async def _add_heat_pump(
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse, **advanced: Any
 ) -> dict[str, Any]:
-    """Device → match (outdoor auto-detected) → questions (outlet answered) → review."""
+    """Device → data points (outdoor found, outlet picked) → questions → review."""
     result = dict(
         await hass.config_entries.subentries.async_init(
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
@@ -51,12 +52,18 @@ async def _add_heat_pump(
     result = await _answer(hass, result, type="heat_pump")
     result = await _answer(hass, result, device=device_id)
 
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
-    # An optional role sits under Avansert now (review LOAD-6).
-    assert suggested["advanced"]["role_outdoor_temp"] == "sensor.heat_pump_outside_temperature", (
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
+    # A found data point sits in the collapsed Found section (D8 §5.2).
+    assert suggested["found"]["role_outdoor_temp"] == "sensor.heat_pump_outside_temperature", (
         "generic_climate's own detection, not this WP's fix"
     )
+    # The outlet sensor is not on the device: an optional data point, under Advanced.
+    suggested["advanced"] = {
+        **suggested.get("advanced", {}),
+        "role_outlet_temp": STAND_IN_OUTLET_SENSOR,
+    }
     result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
@@ -66,11 +73,7 @@ async def _add_heat_pump(
         result,
         **{
             **defaults,
-            "advanced": {
-                **defaults["advanced"],
-                "outlet_entity": STAND_IN_OUTLET_SENSOR,
-                **advanced,
-            },
+            "advanced": {**defaults["advanced"], **advanced},
         },
     )
     assert result["step_id"] == "review", result
@@ -114,18 +117,18 @@ async def test_reconfigure_replaces_the_outlet_binding_never_duplicates_it(
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
 
     result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
-    assert result["step_id"] == "questions", result
-    defaults = result["data_schema"]({})
-    assert defaults["advanced"]["outlet_entity"] == STAND_IN_OUTLET_SENSOR
+    # Reconfigure opens on the data points, the stored ones found (D-0753).
+    assert result["step_id"] == "data_points", result
+    defaults = shown(result)
+    assert defaults["found"]["role_outlet_temp"] == STAND_IN_OUTLET_SENSOR
     second_sensor = "sensor.dataskap_strommaler_temperature"
     result = await _answer(
         hass,
         result,
-        **{
-            **defaults,
-            "advanced": {**defaults["advanced"], "outlet_entity": second_sensor},
-        },
+        **{**defaults, "found": {**defaults["found"], "role_outlet_temp": second_sensor}},
     )
+    assert result["step_id"] == "questions", result
+    result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "reconfigure_review", result
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Heat pump"})
     await hass.async_block_till_done()
@@ -149,11 +152,11 @@ PLUG_METER = "sensor.heat_pump_plug_power"
 async def test_reconfigure_binds_a_power_meter_on_another_device(
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
 ) -> None:
-    """An existing appliance's power meter is offered under Avansert on reconfigure (D-0486).
+    """An existing appliance's power meter is asked on reconfigure (D-0486, D-0753).
 
-    The match step offers it on an add, but a reconfigure goes straight to the
-    questions while the device exists: the house's 2nd-floor heat pump had a
-    meter and nowhere to bind it, so D6 reserved its whole 7.5 kW rating.
+    The house's 2nd-floor heat pump had a meter and nowhere to bind it, so D6
+    reserved its whole 7.5 kW rating. A reconfigure opens on the data points,
+    where a found one is one click away.
     """
     hass.states.async_set(
         PLUG_METER,
@@ -166,13 +169,13 @@ async def test_reconfigure_binds_a_power_meter_on_another_device(
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
 
     result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
-    assert result["step_id"] == "questions", result
-    defaults = result["data_schema"]({})
+    assert result["step_id"] == "data_points", result
+    points = shown(result)
     result = await _answer(
-        hass,
-        result,
-        **{**defaults, "advanced": {**defaults["advanced"], "role_power": PLUG_METER}},
+        hass, result, **{**points, "found": {**points["found"], "role_power": PLUG_METER}}
     )
+    assert result["step_id"] == "questions", result
+    result = await _answer(hass, result, **result["data_schema"]({}))
     assert result["step_id"] == "reconfigure_review", result
     result = await _answer(hass, result, **{**result["data_schema"]({}), "name": "Heat pump"})
     await hass.async_block_till_done()
@@ -184,7 +187,7 @@ async def test_reconfigure_binds_a_power_meter_on_another_device(
     ]
     assert [row["entity_id"] for row in power_rows] == [PLUG_METER]
     result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
-    assert result["data_schema"]({})["advanced"]["role_power"] == PLUG_METER
+    assert shown(result)["found"]["role_power"] == PLUG_METER
 
     runtime: Runtime = site.runtime_data
     FakeMeter(hass)

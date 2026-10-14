@@ -22,7 +22,7 @@ from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.flow.device_pick import prefill_roles
 from custom_components.powerplan.providers.profiles import DeviceView, registry
 from custom_components.powerplan.providers.profiles.base import EntityView, MatchResult
-from custom_components.powerplan.providers.profiles.candidates import in_pool
+from custom_components.powerplan.providers.profiles.candidates import dead_of, in_pool
 from tests.providers.profiles.conftest import load_dump
 
 if TYPE_CHECKING:
@@ -193,3 +193,20 @@ def install(hass: HomeAssistant, document: dict[str, Any]) -> dr.DeviceEntry:
         if not captured.get("disabled_by"):
             hass.states.async_set(captured["entity_id"], captured["state"], captured["attributes"])
     return device
+
+
+def test_a_sensor_that_stood_still_while_its_sibling_moved_is_dead() -> None:
+    """The recorder's day: 0.0 °C all day beside a moving air sensor is no candidate."""
+    classes = {
+        "sensor.air": "temperature",
+        "sensor.air_3": "temperature",
+        "sensor.power": "power",
+    }
+    history = {
+        "sensor.air": [0.0, 0.0, 0.0],
+        "sensor.air_3": [22.9, 23.1, 22.8],
+        # A load off all day reads one power, and no other power sensor moved.
+        "sensor.power": [0.0, 0.0],
+    }
+    assert dead_of(history, classes) == frozenset({"sensor.air"})
+    assert dead_of({"sensor.air": [0.0]}, classes) == frozenset(), "alone, it says nothing"

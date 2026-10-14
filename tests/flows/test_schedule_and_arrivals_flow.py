@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.powerplan.const import DOMAIN, LOAD_PARAMS, SUBENTRY_LOAD
 from custom_components.powerplan.entity import unique_id
 from custom_components.powerplan.load_entities import PARAM_NUMBERS
+from tests.flows.conftest import past_match, shown
 from tests.flows.test_load_flow import _answer
 from tests.flows.test_water_heater_flow import _add_tank
 
@@ -42,8 +43,9 @@ async def test_an_answered_schedule_and_arrival_calendars_reach_params(
     result = await _answer(hass, result, type="water_heater")
     result = await _answer(hass, result, device=device_id)
 
-    assert result["step_id"] == "match", result
-    suggested = result["data_schema"]({})
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
+    suggested = shown(result)
     result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result

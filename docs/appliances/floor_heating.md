@@ -19,6 +19,25 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:floor_heating · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| Setpoint | Required | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
+| Temperature | Required | The temperature the device measures. | PowerPlan cannot plan the heat. |
+| Floor temperature | Recommended | The floor's own temperature, which the plan heats the floor by. | The plan uses the room temperature instead. |
+| Lowest floor temperature | Recommended | The thermostat's lowest floor temperature, which it keeps by itself. | The lowest temperature holds only while PowerPlan runs. |
+| Power | Recommended | What the appliance draws right now, in watts. | PowerPlan uses a typical figure per square meter and cannot measure it. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+| Outdoor temperature | Optional | The temperature outside. | The weather forecast's temperature is used. |
+| Mode select | Required when PowerPlan sets its mode | The thermostat's mode: heating or energy saving. | PowerPlan cannot switch it to energy saving. |
+| Eco setpoint | Recommended when PowerPlan sets its mode | The temperature the thermostat holds in energy-saving mode. | The thermostat keeps its own energy-saving temperature. |
+| Hysteresis | Optional when PowerPlan sets its mode | How far the temperature may swing before the thermostat switches. | The thermostat keeps its own setting. |
+<!-- generated:end data_points:floor_heating -->
+
 <a name="questions"></a>
 ## About {name}
 

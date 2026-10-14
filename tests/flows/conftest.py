@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -163,3 +164,41 @@ def norway_source() -> Iterator[type]:
     yield NorwayFixture
     base.unregister(NorwayFixture.key)
     base.unregister(FlandersFixture.key)
+
+
+async def past_match(hass: HomeAssistant, result: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep the best profile where several claim the device; the data points step follows."""
+    if result.get("step_id") != "match":
+        return dict(result)
+    return dict(
+        await hass.config_entries.subentries.async_configure(
+            result["flow_id"], dict(result["data_schema"]({}))
+        )
+    )
+
+
+def shown(result: Mapping[str, Any]) -> dict[str, Any]:
+    """Return what the form shows filled in: defaults and suggested values, sections too.
+
+    The frontend submits a suggested value as typed; `data_schema({})` alone
+    drops it, which is not what the household sends.
+    """
+
+    def walk(schema: Any) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for key, value in schema.schema.items():
+            name = str(key)
+            inner = getattr(value, "schema", None)
+            if inner is not None and hasattr(inner, "schema"):
+                out[name] = walk(inner)
+                continue
+            factory = getattr(key, "default", vol.UNDEFINED)
+            default = factory() if callable(factory) else None
+            suggested = (getattr(key, "description", None) or {}).get("suggested_value")
+            if default is not None:
+                out[name] = default
+            elif suggested is not None:
+                out[name] = suggested
+        return out
+
+    return walk(result["data_schema"])

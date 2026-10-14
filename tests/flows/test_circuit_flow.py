@@ -25,6 +25,7 @@ from custom_components.powerplan.const import (
     SUBENTRY_LOAD,
 )
 from custom_components.powerplan.flow.circuit import CIRCUIT_UNMETERED_KW
+from tests.flows.conftest import past_match
 from tests.flows.test_load_flow import _add_charger, _answer
 from tests.runtime.conftest import FakeMeter
 
@@ -47,7 +48,8 @@ async def _add_sauna(hass: HomeAssistant, site: MockConfigEntry, charger: FakeHo
     )
     result = await _answer(hass, result, type="generic_switch")
     result = await _answer(hass, result, device=charger.loads["sauna"].device_id)
-    assert result["step_id"] == "match", result
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
     # LOAD-2: a plug is `generic_switch` at 0.4 - below 0.6 the step warns in words.
     assert result["description_placeholders"]["warning"] == (
         "We are not sure – check that this is the right appliance."

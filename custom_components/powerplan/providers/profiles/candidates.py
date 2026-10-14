@@ -14,23 +14,42 @@ Three answers, one per question the flow asks of a device (D-0747, D-0748):
 
 from __future__ import annotations
 
+import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING, Final
 
+from homeassistant.components.recorder import history as recorder_history
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.recorder import get_instance
 
 from custom_components.powerplan.const import DOMAIN
 from custom_components.powerplan.core.loads import Role
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
+    from datetime import datetime
 
     from homeassistant.core import HomeAssistant
 
-    from .base import EntityView
+    from .base import DeviceView, EntityView
 
-__all__ = ["HELPER_PLATFORMS", "ROLE_CLASS", "in_pool", "nearby", "plausible", "rank"]
+__all__ = [
+    "HELPER_PLATFORMS",
+    "ROLE_CLASS",
+    "async_dead",
+    "dead_of",
+    "in_pool",
+    "nearby",
+    "plausible",
+    "rank",
+]
+
+_LOGGER = logging.getLogger(__name__)
+
+#: How far back a sensor must have stood still while a sibling moved (D-0747).
+DEAD_WINDOW: Final = timedelta(days=1)
 
 #: Integrations that build an entity out of other entities. Ranked after the
 #: device's own; a household built one for a reason the registry doesn't carry.
@@ -151,3 +170,64 @@ def _area_of(hass: HomeAssistant, device_id: str) -> str | None:
 def _device_area(devices: dr.DeviceRegistry, device_id: str | None) -> str | None:
     device = None if device_id is None else devices.async_get(device_id)
     return None if device is None else device.area_id
+
+
+def dead_of(
+    history: Mapping[str, Sequence[float]], classes: Mapping[str, str | None]
+) -> frozenset[str]:
+    """Return the sensors that stood still while a sibling of their class moved (D-0747).
+
+    `history` is each sensor's numeric readings over `DEAD_WINDOW`. One reading
+    the whole day says nothing on its own - a floor that was never switched on
+    reads one power the whole day - but beside a sensor of the same class that
+    moved, it is an input with nothing connected.
+    """
+    moved = {
+        classes.get(entity_id) for entity_id, values in history.items() if len(set(values)) > 1
+    }
+    return frozenset(
+        entity_id
+        for entity_id, values in history.items()
+        if values and len(set(values)) == 1 and classes.get(entity_id) in moved
+    )
+
+
+async def async_dead(hass: HomeAssistant, view: DeviceView, now: datetime) -> frozenset[str]:
+    """Return the view's dead sensors from the recorder, or none when it cannot say."""
+    sensors = {
+        entity.entity_id: entity.device_class
+        for entity in view.pool
+        if entity.domain == "sensor" and entity.device_class in _MEASURES
+    }
+    if len(sensors) < 2:  # noqa: PLR2004 - a sibling needs two
+        return frozenset()
+    try:
+        raw = await get_instance(hass).async_add_executor_job(
+            _history, hass, now - DEAD_WINDOW, now, list(sensors)
+        )
+    except Exception:  # no recorder, or a failing one, is no history
+        _LOGGER.debug("no history to find dead sensors on %s", view.name, exc_info=True)
+        return frozenset()
+    history: dict[str, list[float]] = {}
+    for entity_id, states in raw.items():
+        for state in states:
+            try:
+                history.setdefault(entity_id, []).append(float(state.state))
+            except TypeError, ValueError:
+                continue
+    return dead_of(history, sensors)
+
+
+def _history(
+    hass: HomeAssistant, start: datetime, end: datetime, entity_ids: list[str]
+) -> dict[str, list]:  # type: ignore[type-arg]
+    """Run one history query inside the recorder's executor."""
+    return recorder_history.get_significant_states(
+        hass,
+        start,
+        end,
+        entity_ids,
+        significant_changes_only=False,
+        minimal_response=False,
+        no_attributes=True,
+    )

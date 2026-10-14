@@ -33,7 +33,13 @@ _ANCHORS: dict[tuple[str, str], str] = {
     (SUBENTRY_ZONE, "reconfigure"): "room",
     (SUBENTRY_LOAD, "reconfigure_device"): "device",
     (SUBENTRY_LOAD, "entities"): "device",
+    (SUBENTRY_LOAD, "data_points"): "data-points",
+    (SUBENTRY_LOAD, "data_points_other"): "data-points",
 }
+#: The steps every type shares link the type index, not the type's page (D8 §5.2).
+_INDEX_STEPS: frozenset[tuple[str, str]] = frozenset(
+    {(SUBENTRY_LOAD, "data_points"), (SUBENTRY_LOAD, "data_points_other")}
+)
 
 
 def doc_url(page: str, anchor: str | None = None) -> str:
@@ -72,4 +78,5 @@ def step_placeholders(flow: str, step_id: str, type_key: str | None = None) -> d
     if step_id in REVIEW_STEPS:
         return {}
     anchor = _ANCHORS.get((flow, step_id), step_id)
-    return {"docs": doc_url(step_page(flow, type_key), anchor)}
+    page = APPLIANCES if (flow, step_id) in _INDEX_STEPS else step_page(flow, type_key)
+    return {"docs": doc_url(page, anchor)}

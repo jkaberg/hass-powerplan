@@ -34,6 +34,7 @@ from custom_components.powerplan.const import (
 from custom_components.powerplan.core.loads.types.ev import DERIVATION_VERSION
 from custom_components.powerplan.entity import unique_id
 from custom_components.powerplan.flow.load import device_entries
+from tests.flows.conftest import past_match, shown
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -73,7 +74,7 @@ async def _answer(hass: HomeAssistant, result: dict[str, Any], **user_input: Any
 async def _add_charger(
     hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
 ) -> dict[str, Any]:
-    """Device → match → questions → review, answering the defaults."""
+    """Device → match → data points → questions → review, answering the defaults."""
     result = dict(
         await hass.config_entries.subentries.async_init(
             (site.entry_id, SUBENTRY_LOAD), context={"source": SOURCE_USER}
@@ -87,7 +88,11 @@ async def _add_charger(
     assert result["step_id"] == "device", result
     result = await _answer(hass, result, device=device_id)
 
+    # Two profiles claim an Easee: the profile is the one question of the match step.
     assert result["step_id"] == "match", result
+    assert result["data_schema"]({})["profile"] == "easee_ble"
+    result = await past_match(hass, result)
+    assert result["step_id"] == "data_points", result
     # LOAD-2: the match in words - the type by its name, the control by the
     # household's own name for it; no profile key, entity id or confidence.
     words = result["description_placeholders"]
@@ -95,12 +100,12 @@ async def _add_charger(
     assert words["control"] == "ev dynamic charger current", "the entity's own name, not its id"
     assert words["warning"] == "", "a confident match carries no warning"
     assert "profile" not in words
-    suggested = result["data_schema"]({})
+    suggested = shown(result)
     assert "type" not in suggested, "the type was asked first (LOAD-3)"
-    assert suggested["profile"] == "easee_ble"
-    assert suggested["role_current_number"] == "number.ev_dynamic_charger_current"
-    assert suggested["role_enable_switch"] == "switch.ev_charger_enabled"
-    assert suggested["role_status"] == "sensor.ev_status"
+    found = suggested["found"]
+    assert found["role_current_number"] == "number.ev_dynamic_charger_current"
+    assert found["role_enable_switch"] == "switch.ev_charger_enabled"
+    assert found["role_status"] == "sensor.ev_status"
     result = await _answer(hass, result, **suggested)
 
     assert result["step_id"] == "questions", result
@@ -216,6 +221,8 @@ async def test_03_reconfigure_re_derives_shows_the_diff_and_keeps_manual_edits(
     assert site.supported_subentry_types[SUBENTRY_LOAD]["supports_reconfigure"] is True
 
     result = dict(await site.start_subentry_reconfigure_flow(hass, sub.subentry_id))
+    assert result["step_id"] == "data_points", "reconfigure opens on the data points (D-0753)"
+    result = await _answer(hass, result, **shown(result))
     assert result["step_id"] == "questions"
     prefilled = result["data_schema"]({})
     assert prefilled["capacity_kwh"] == 60.0, "pre-filled from the stored answers"

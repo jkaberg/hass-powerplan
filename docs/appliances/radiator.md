@@ -19,6 +19,20 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:radiator · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| On/off switch | Required when PowerPlan turns it on and off | The switch that turns the appliance on and off. | PowerPlan cannot control it. |
+| Temperature | Recommended | The temperature the device measures. | PowerPlan can only pause it in expensive hours, not heat ahead. |
+| Power | Recommended | What the appliance draws right now, in watts. | The rated power stays your answer and is not measured. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+| Setpoint | Required when PowerPlan sets its temperature | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
+<!-- generated:end data_points:radiator -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -33,7 +47,6 @@ Where the room's temperature and the heater's power are already in Home Assistan
 | Room | Which room this heats, which sets the comfort and floor temperatures below. |
 | Control | Whether PowerPlan controls a plug or a thermostat. |
 | Power | The appliance's power draw, in watts. |
-| Power sensor | A sensor measuring this appliance's power, if there is one. |
 | Area | The heated area, in square meters. |
 | Comfort temperature | The temperature you want when home; blank uses the room's usual. |
 | Never below | The floor PowerPlan never goes under, whatever the price; blank uses the room's usual. |

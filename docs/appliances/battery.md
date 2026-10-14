@@ -21,6 +21,19 @@ A battery steered through a YAML package, such as Sungrow's Modbus package, is o
 
 PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
 
+## Data points
+
+What PowerPlan reads and controls on this appliance, and what it does without each one. The [data points step](README.md#data-points) finds them on the device and asks for the rest.
+
+<!-- generated:begin data_points:battery · tools/docs.py writes this block; change the needs or strings.json, not this table -->
+| Data point | Needed | What it is for | Without it |
+|---|---|---|---|
+| Battery power (setting) | Required when PowerPlan sets the power or current | The power PowerPlan asks the battery to charge or discharge at. | PowerPlan cannot control the battery. |
+| State of charge | Required | The battery's charge level, in percent. | PowerPlan cannot plan the battery. |
+| Power | Recommended | What the appliance draws right now, in watts. | The battery's own reading of a command is not checked. |
+| Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
+<!-- generated:end data_points:battery -->
+
 <a name="questions"></a>
 ## About {name}
 
@@ -35,8 +48,6 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Reserve | The share kept back for an outage. |
 | Charge from the grid | Whether the battery may charge from the grid in cheap hours. |
 | Chemistry | The cell chemistry. |
-| State of charge sensor | The car's own charge level sensor, if any; without it, the plan is by time. |
-| Power sensor | A sensor measuring this appliance's power, if there is one. |
 | Advanced › Maximum charge | Advanced: the state of charge the battery is charged to at most. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:battery -->

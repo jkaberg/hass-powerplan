@@ -25,7 +25,8 @@ PowerPlan adds a device for your home, with the price, the hour's usage and your
 
 1. Open **Settings** > **Devices & services** > **PowerPlan**, and select **Add appliance** on your home.
 2. Pick the device that controls the appliance, such as the car charger or the floor thermostat. PowerPlan recognizes what it is and fills in what it can.
-3. Answer the questions about the appliance, such as when the car must be ready or the room's comfort temperature.
+3. Check the [data points](appliances/README.md#data-points) PowerPlan found on the device, and pick any it asks for.
+4. Answer the questions about the appliance, such as when the car must be ready or the room's comfort temperature.
 
 Add the appliances that use the most power first: the car charger, the water heater, the floors, the heat pump. If some sit behind their own fuse or should take turns, add a circuit or a group afterwards, as [Circuits, groups and rooms](circuits-groups-rooms.md) explains.
 

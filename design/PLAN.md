@@ -772,7 +772,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DP.1 | Provisioning runs | done |
 | DP.2 | Needs declared | done |
 | DP.3 | The pool, ties and the floor sensor | done |
-| DP.4 | The data points step | todo |
+| DP.4 | The data points step | done |
 | DP.5 | Needs review | todo |
 | DP.6 | Measured, not asked | todo |
 | SF.1 | A season without data keeps the last good fit | todo |
