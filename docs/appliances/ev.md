@@ -47,6 +47,8 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the charger's phase currents are already in Home Assistant's history, PowerPlan counts the phases the car charged on, and does not ask. Every session in the history must agree; when they do not, the question is asked and the review says so.
+
 <!-- generated:begin questions:ev · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

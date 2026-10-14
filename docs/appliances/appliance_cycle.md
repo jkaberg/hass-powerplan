@@ -38,6 +38,8 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the appliance's power is already in Home Assistant's history, PowerPlan finds its runs and measures a program's energy and length, and does not ask them. It needs three runs that look alike. The review says what was measured, and names anything it could not measure yet, which is then asked.
+
 <!-- generated:begin questions:appliance_cycle · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

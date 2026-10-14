@@ -41,6 +41,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 
 Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**.
 
+Where the heat pump's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a heat pump PowerPlan has already controlled, since then the history is PowerPlan's own.
+
 <!-- generated:begin questions:heat_pump · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

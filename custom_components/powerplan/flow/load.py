@@ -61,6 +61,7 @@ from custom_components.powerplan.const import (
     LOAD_DEVICE_ID,
     LOAD_MANUAL_OVERRIDES,
     LOAD_PARAMS,
+    LOAD_PARAMS_SOURCE,
     LOAD_PRIORITY,
     LOAD_PROFILE,
     LOAD_STRATEGY,
@@ -99,7 +100,11 @@ from custom_components.powerplan.flow.questionnaire import (
     time_selector,
 )
 from custom_components.powerplan.flow.text import Text, device_name, entity_name
-from custom_components.powerplan.providers.forecasts.recorder_fits import async_measure
+from custom_components.powerplan.providers.forecasts.recorder_fits import (
+    Answered,
+    async_measure,
+    async_measure_answers,
+)
 from custom_components.powerplan.providers.profiles import candidates
 from custom_components.powerplan.providers.profiles import registry as profiles
 from custom_components.powerplan.providers.profiles.base import (
@@ -797,6 +802,8 @@ def explanation_text(
     answers: Answers,
     type_key: str,
     measured: Mapping[str, Measured] | None = None,
+    *,
+    missed: Sequence[str] = (),
 ) -> str:
     """Render `explain()` as one paragraph in the user's language (INV-67; review NEW-3).
 
@@ -813,7 +820,16 @@ def explanation_text(
     sentence = f"{text.word('load_type', type_key)} – " + "; ".join(parts) + "."
     shadow = _shadow_sentence(text, type_key, derived.params)
     history = _measured_sentence(text, type_key, derived.params, measured or {})
-    return " ".join(part for part in (sentence, shadow, history) if part)
+    unmeasured = (
+        text.word(
+            "load_text",
+            "measured_missed",
+            values=text.join(param_label(text, key) for key in missed),
+        )
+        if missed
+        else None
+    )
+    return " ".join(part for part in (sentence, shadow, history, unmeasured) if part)
 
 
 def _measured_sentence(
@@ -1138,6 +1154,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         self._sources: dict[Role, data_points.Source] = {}
         self._declined: tuple[Role, ...] = ()
         self._others: tuple[Role, ...] = ()
+        #: The questions the recorder answered before they were asked (D-0752).
+        self._answered_by: Answered = Answered()
 
     # ----------------------------------------------------------------- helpers
 
@@ -1446,7 +1464,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                 self._others = given.other
                 if self._others:
                     return await self.async_step_data_points_other()
-                return await self.async_step_questions()
+                return await self._to_questions()
         placeholders.update(self._match_sentence(text, self._match()))
         placeholders.update(data_points.description(self.hass, text, self._rows, self._view))
         return self.async_show_form(
@@ -1462,6 +1480,81 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             description_placeholders=placeholders,
             last_step=False,
         )
+
+    async def _to_questions(self) -> SubentryFlowResult:
+        """Measure what the bound entities can answer, then ask the rest (D-0752)."""
+        self._answered_by = await self._measure_answers()
+        return await self.async_step_questions()
+
+    async def _measure_answers(self) -> Answered:
+        """Return the questions the recorder answers, or none when it cannot say in time."""
+        questions = self._device_type.questionnaire.questions
+        ctx = self._ctx or self._qctx()
+        written = False
+        if self.source == "reconfigure":
+            runtime = getattr(self._get_entry(), "runtime_data", None)
+            load_id = self._get_reconfigure_subentry().subentry_id
+            written = runtime is not None and runtime.has_written(load_id)
+        try:
+            async with asyncio.timeout(MEASURE_TIMEOUT_S):
+                return await async_measure_answers(
+                    self.hass,
+                    type_key=str(self._type),
+                    bindings=self._bindings,
+                    defaults={q.key: q.default_for(ctx) for q in questions},
+                    ranges={q.key: (q.min, q.max) for q in questions},
+                    written=written,
+                    now=dt_util.utcnow(),
+                )
+        except Exception:
+            _LOGGER.debug("nothing measured before the questions", exc_info=True)
+            return Answered()
+
+    def _measured_answers(self) -> dict[str, Any]:
+        """Return the measured answers as the questionnaire takes them: a choice as its option."""
+        kinds = {q.key: q.kind for q in self._device_type.questionnaire.questions}
+        # A reconfigure keeps what the household answered before; a measurement fills a gap.
+        stored = self._stored_answers() if self.source == "reconfigure" else {}
+        return {
+            key: str(round(found.value)) if kinds.get(key) is QuestionKind.CHOICE else found.value
+            for key, found in self._answered_by.measured.items()
+            if stored.get(key) is None
+        }
+
+    def _missed(self) -> tuple[str, ...]:
+        """Return the questions whose fit missed its gate and were asked instead (D-0752)."""
+        return tuple(key for key in self._answered_by.missed if key not in self._measured_answers())
+
+    def _review_measured(self) -> dict[str, Measured]:
+        """Return every measured value by parameter key: the fits' and the answered questions'."""
+        out = dict(self._ctx.measured) if self._ctx is not None else {}
+        used = self._measured_answers()
+        for key, found in self._answered_by.measured.items():
+            if key not in used:
+                continue
+            param, factor = _DERIVED_PARAM.get(key, (key, 1.0))
+            out[param] = replace(found, value=found.value / factor)
+        return out
+
+    def _params_source(self, params: Mapping[str, Any]) -> dict[str, str]:
+        """Say where each parameter came from: measured, answered, or the type's table (D-0752)."""
+        measured = self._review_measured()
+        asked = set(self._raw) - set(self._measured_answers())
+        questions = {q.key for q in self._device_type.questionnaire.questions}
+        params_of = {_DERIVED_PARAM.get(key, (key, 1.0))[0]: key for key in questions}
+        out: dict[str, str] = {}
+        for key, value in params.items():
+            if (
+                key in measured
+                and value is not None
+                and abs(float(value) - measured[key].value) < 1.0
+            ):
+                out[key] = "measured"
+            elif params_of.get(key) in asked or key in asked:
+                out[key] = "answered"
+            else:
+                out[key] = "typical"
+        return out
 
     async def async_step_data_points_other(
         self, user_input: dict[str, Any] | None = None
@@ -1484,7 +1577,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             else:
                 self._bindings = (*self._bindings, *bindings)
                 self._others = ()
-                return await self.async_step_questions()
+                return await self._to_questions()
         return self.async_show_form(
             step_id="data_points_other",
             data_schema=data_points.other_schema(self._others, _ROLE_FILTERS),
@@ -1593,10 +1686,14 @@ class LoadSubentryFlow(ConfigSubentryFlow):
         # An entity answer is the data points step's: filled from the bindings (D-0746).
         entities = answers_from_bindings(str(self._type), self._bindings)
         skip = owned | {key for key, _role in data_point_answers(str(self._type))}
+        # A question the recorder answered is not asked: the review shows it (D-0752).
+        measured = self._measured_answers()
+        skip |= set(measured)
         if user_input is not None:
             raw = {
                 **{key: value for key, value in values.items() if key in owned},
                 **entities,
+                **measured,
                 **answers_from_form(questionnaire, user_input, self._suggested, ctx=self._ctx),
             }
             # A follow-up keeps what it had until it is asked again.
@@ -1714,7 +1811,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                     self._derived,
                     self._answers,
                     str(self._type),
-                    self._ctx.measured if self._ctx is not None else None,
+                    self._review_measured(),
+                    missed=self._missed(),
                 ),
                 "strategy": text.word("strategy", self._derived.strategy) or self._derived.strategy,
             },
@@ -1749,6 +1847,7 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             for binding in self._bindings
         ]
         data[LOAD_DECLINED] = [role.value for role in self._declined]
+        data[LOAD_PARAMS_SOURCE] = self._params_source(params)
         data[LOAD_MANUAL_OVERRIDES] = list(manual)
         data["zone"] = None
         data["circuit"] = None
@@ -1905,7 +2004,8 @@ class LoadSubentryFlow(ConfigSubentryFlow):
                     fresh,
                     self._answers,
                     type_key,
-                    self._ctx.measured if self._ctx is not None else None,
+                    self._review_measured(),
+                    missed=self._missed(),
                 ),
                 "diff": "\n".join(f"- {line}" for line in diff_lines) or text.word("text", "none"),
                 "manual": text.join(param_label(text, key) for key in previous_manual)

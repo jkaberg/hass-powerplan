@@ -26,7 +26,7 @@ is a switch on the type key, which is what the registries exist to avoid.
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import datetime, tzinfo
 from enum import StrEnum
 from itertools import pairwise
 from statistics import fmean
@@ -68,6 +68,12 @@ class FitKey(StrEnum):
     STANDBY_LOSS = "standby_loss_w"
     COAST_TAU = "coast_tau_h"
     DAILY_DRAW = "draw_kwh_day"
+    #: Fits that answer a question at setup (D-0752).
+    HOURS_PER_DAY = "hours_per_day"
+    CYCLE_ENERGY = "energy_kwh"
+    CYCLE_DURATION = "duration_min"
+    PHASES = "phases"
+    COMFORT = "comfort_c"
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +197,14 @@ class LoadHistory:
     #: (`design/DECISIONS.md` D-0740): a rating that came from a W/m² table, a foil's
     #: room. `bounds_for()` builds it from the subentry.
     bounds: Mapping[FitKey, tuple[float, float]] = field(default_factory=dict)
+    #: The site's zone, for fits counted per local day (D-0752).
+    zone: tzinfo | None = None
+    #: An EV's `CURRENT_L1`…`L3`, in that order (D-0752).
+    current_rows: tuple[tuple[tuple[datetime, float], ...], ...] = ()
+    #: A thermostat's setpoint, its `temperature` attribute (D-0752).
+    setpoint_rows: tuple[tuple[datetime, float], ...] = ()
+    #: Whether powerplan has written to the device: its setpoint history is then ours (INV-27).
+    written: bool = False
 
     def configured_value(self, key: FitKey) -> float | None:
         """Return the configured value for `key`, or `None` when there is none."""

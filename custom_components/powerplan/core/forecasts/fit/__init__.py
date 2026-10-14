@@ -29,8 +29,12 @@ from .base import (
     slope_k_per_h,
     span_days,
 )
+from .cycle import cycle_duration_min, cycle_energy_kwh, runs
 from .ev import charge_efficiency, sessions_from
 from .nameplate import nameplate_w, table_bounds
+from .phases import phases
+from .setpoint import held_setpoint
+from .switch import hours_per_day
 from .tank import daily_draw_kwh, standby_loss_w
 from .thermal import FOIL_TAU_BOUNDS_H, coast_rate, coast_tau, heatup_rate
 
@@ -50,12 +54,18 @@ __all__ = [
     "charge_efficiency",
     "coast_rate",
     "coast_tau",
+    "cycle_duration_min",
+    "cycle_energy_kwh",
     "daily_draw_kwh",
     "episodes",
     "fit_all",
     "heatup_rate",
+    "held_setpoint",
+    "hours_per_day",
     "nameplate_w",
+    "phases",
     "resolve",
+    "runs",
     "sessions_from",
     "slope_k_per_h",
     "span_days",
@@ -71,6 +81,11 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.NAMEPLATE: nameplate_w,
     FitKey.STANDBY_LOSS: standby_loss_w,
     FitKey.DAILY_DRAW: daily_draw_kwh,
+    FitKey.HOURS_PER_DAY: hours_per_day,
+    FitKey.CYCLE_ENERGY: cycle_energy_kwh,
+    FitKey.CYCLE_DURATION: cycle_duration_min,
+    FitKey.PHASES: phases,
+    FitKey.COMFORT: held_setpoint,
 }
 
 

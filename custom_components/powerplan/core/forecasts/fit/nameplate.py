@@ -61,28 +61,51 @@ SECONDS_PER_DAY = 86400.0
 
 
 def nameplate_w(history: LoadHistory, now: datetime) -> Fit | None:
-    """Fit the load's nameplate in W, or `None` when there is nothing to fit."""
+    """Fit the load's nameplate in W, or `None` when there is nothing to fit.
+
+    "On" is the switch's own state where the history has it (D-0752: a switch
+    measured before anybody answered its rating), else power above a tenth of
+    the configured rating. Without a rating the bounds must come with the
+    history, from the question the fit answers.
+    """
     configured = history.configured_value(FitKey.NAMEPLATE)
     if configured is None:
         configured = history.nameplate_w
-    if history.type_key in EXCLUDED_TYPES or configured <= 0.0:
+    if history.type_key in EXCLUDED_TYPES:
         return None
-
-    on = sorted(watts for _at, watts in history.power_rows if watts > ON_FRACTION * configured)
-    if not on:
+    if history.on_rows:
+        on = sorted(
+            watts for at, watts in history.power_rows if watts > 0.0 and _on_at(history.on_rows, at)
+        )
+    elif configured > 0.0:
+        on = sorted(watts for _at, watts in history.power_rows if watts > ON_FRACTION * configured)
+    else:
+        return None
+    bounds = history.bounds.get(FitKey.NAMEPLATE)
+    if bounds is None and configured > 0.0:
+        bounds = (BOUNDS_FACTOR[0] * configured, BOUNDS_FACTOR[1] * configured)
+    if not on or bounds is None:
         return None
     return resolve(
         FitKey.NAMEPLATE,
         history.load_id,
         value=on[min(len(on) - 1, ceil(P95 * len(on)) - 1)],
         unit="W",
-        bounds=history.bounds.get(
-            FitKey.NAMEPLATE, (BOUNDS_FACTOR[0] * configured, BOUNDS_FACTOR[1] * configured)
-        ),
+        bounds=bounds,
         quality=NAMEPLATE_GATE.check(n=len(on), span_days=_span_days(history)),
-        configured=configured,
+        configured=configured or None,
         fitted_at=now,
     )
+
+
+def _on_at(rows: tuple[tuple[datetime, bool], ...], at: datetime) -> bool:
+    """Return the switch's state at `at`: its last row at or before it."""
+    state = False
+    for when, on in rows:
+        if when > at:
+            break
+        state = on
+    return state
 
 
 def _span_days(history: LoadHistory) -> float:

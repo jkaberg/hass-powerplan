@@ -2041,6 +2041,11 @@ class Runtime:
 
         return self.state.loads.get(load_id) or _LoadState()
 
+    def has_written(self, load_id: str) -> bool:
+        """Whether powerplan has written to a load's device: a record, or a write context (INV-27)."""
+        state = self.state.loads.get(load_id)
+        return state is not None and (bool(state.prior) or state.gate.last_context_id is not None)
+
     def _load_ctx(self, load_id: str, now: datetime) -> LoadCtx:
         device = self.build.devices[load_id]
         return LoadCtx(

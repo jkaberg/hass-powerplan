@@ -50,6 +50,8 @@ Without history, a heating foil under wood, laminate, vinyl or carpet is taken t
 > [!NOTE]
 > Since v0.0.11, a foil floor's measured power is used even when it is far from the typical figure, and a foil floor set up before then at the mat figure, 120 W per square meter, is moved to 60 when you update.
 
+Where the thermostat's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a thermostat PowerPlan has already controlled, since then the history is PowerPlan's own.
+
 <!-- generated:begin questions:floor_heating · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

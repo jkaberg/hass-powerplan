@@ -36,6 +36,8 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
+Where the switch and its power are already in Home Assistant's history, PowerPlan measures the appliance's power and how many hours a day it runs, and does not ask them. It needs a week of history for the hours. The review says what was measured and from how many days, and names anything it could not measure yet, which is then asked.
+
 <!-- generated:begin questions:generic_switch · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|

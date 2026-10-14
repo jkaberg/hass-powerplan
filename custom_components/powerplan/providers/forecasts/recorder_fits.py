@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from homeassistant.components.recorder import history as recorder_history
 from homeassistant.helpers.recorder import get_instance
+from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.core.forecasts.fit import (
     EvSession,
@@ -37,7 +38,7 @@ from custom_components.powerplan.providers.meters.recorder import (
 )
 
 from .base import detect_weather_entity
-from .recorder_baseline import async_load_power_w
+from .recorder_baseline import async_load_on_off, async_load_power_w
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -220,6 +221,141 @@ async def async_measure(
         for fit in fit_all([history], now).values()
         if fit.quality.ok
     }
+
+
+#: The questions a fit answers before they are asked, by type (D4 §4.7, D-0752).
+ANSWERED: Final[Mapping[str, Mapping[str, FitKey]]] = {
+    "generic_switch": {"power_w": FitKey.NAMEPLATE, "hours_per_day": FitKey.HOURS_PER_DAY},
+    "appliance_cycle": {"energy_kwh": FitKey.CYCLE_ENERGY, "duration_min": FitKey.CYCLE_DURATION},
+    "ev": {"phases": FitKey.PHASES},
+    "floor_heating": {"comfort_c": FitKey.COMFORT},
+    "radiator": {"comfort_c": FitKey.COMFORT},
+    "heat_pump": {"comfort_c": FitKey.COMFORT},
+}
+#: The roles each fit reads; a fit whose roles are not bound is not tried.
+_READS: Final[Mapping[FitKey, tuple[Role, ...]]] = {
+    FitKey.NAMEPLATE: (Role.POWER, Role.SWITCH),
+    FitKey.HOURS_PER_DAY: (Role.SWITCH,),
+    FitKey.CYCLE_ENERGY: (Role.POWER,),
+    FitKey.CYCLE_DURATION: (Role.POWER,),
+    FitKey.PHASES: (Role.CURRENT_L1, Role.CURRENT_L2, Role.CURRENT_L3),
+    FitKey.COMFORT: (Role.SETPOINT,),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Answered:
+    """What the recorder answered before the questions, and what it could not (D-0752)."""
+
+    #: Question key → the measured value, for the fits that passed their gate.
+    measured: Mapping[str, Measured] = field(default_factory=dict)
+    #: Question key → why its fit missed its gate (the fit's own words).
+    missed: Mapping[str, str] = field(default_factory=dict)
+
+
+async def async_measure_answers(
+    hass: HomeAssistant,
+    *,
+    type_key: str,
+    bindings: Sequence[RoleBinding],
+    defaults: Mapping[str, Any],
+    ranges: Mapping[str, tuple[float | None, float | None]],
+    written: bool,
+    now: datetime,
+) -> Answered:
+    """Fit the questions a type's bound entities can answer, before they are asked (D-0752).
+
+    `defaults` are the questions' own defaults, which bound a cycle's fit to
+    ±50 % of the appliance's program (D4 §2); `ranges` are the questions' own
+    limits, so a measured answer is one the question would take. `written`:
+    powerplan has written to the device, so its setpoint history is ours.
+    """
+    wanted = ANSWERED.get(type_key, {})
+    bound = {binding.role: binding for binding in bindings}
+    fits = tuple(
+        key for key in dict.fromkeys(wanted.values()) if all(role in bound for role in _READS[key])
+    )
+    if not fits or not recorder_loaded(hass):
+        return Answered()
+    start = now - timedelta(days=FIT_SPAN_DAYS)
+
+    async def numeric(role: Role) -> tuple[tuple[datetime, float], ...]:
+        binding = bound[role]
+        return await async_series(
+            hass, HistorySeries(binding.entity_id, binding.attribute), start, now
+        )
+
+    power = (
+        await async_load_power_w(hass, bound[Role.POWER].entity_id, start, now)
+        if Role.POWER in bound
+        else ()
+    )
+    switch = (
+        await async_load_on_off(hass, bound[Role.SWITCH].entity_id, start, now)
+        if Role.SWITCH in bound and type_key == "generic_switch"
+        else ()
+    )
+    currents = (
+        tuple([await numeric(role) for role in _READS[FitKey.PHASES]])
+        if FitKey.PHASES in fits
+        else ()
+    )
+    setpoint = await numeric(Role.SETPOINT) if FitKey.COMFORT in fits else ()
+    by_fit = {fit: question for question, fit in wanted.items()}
+    history = LoadHistory(
+        load_id="setup",
+        type_key=type_key,
+        fits=fits,
+        configured={
+            fit: float(defaults[question])
+            for question, fit in wanted.items()
+            if fit in (FitKey.CYCLE_ENERGY, FitKey.CYCLE_DURATION) and defaults.get(question)
+        },
+        power_rows=tuple(power),
+        on_rows=switch,
+        zone=dt_util.get_default_time_zone(),
+        current_rows=currents,
+        setpoint_rows=setpoint,
+        written=written,
+        bounds={
+            fit: _range(ranges.get(by_fit[fit]), fit)
+            for fit in fits
+            if ranges.get(by_fit[fit]) is not None
+            and fit not in (FitKey.CYCLE_ENERGY, FitKey.CYCLE_DURATION)
+        },
+    )
+    measured: dict[str, Measured] = {}
+    missed: dict[str, str] = {}
+    for fit in fit_all([history], now).values():
+        question = by_fit[fit.key]
+        if fit.quality.ok:
+            measured[question] = Measured(
+                value=fit.value, n=fit.quality.n, days=fit.quality.span_days
+            )
+        else:
+            missed[question] = fit.quality.reason
+    return Answered(measured=measured, missed=missed)
+
+
+#: A fit's own bounds, where its question has no limit on that side (D10 §5.6).
+_OWN_BOUNDS: Final[Mapping[FitKey, tuple[float, float]]] = {
+    FitKey.NAMEPLATE: (1.0, 100_000.0),
+    FitKey.HOURS_PER_DAY: (0.25, 24.0),
+    FitKey.PHASES: (1.0, 3.0),
+    FitKey.COMFORT: (5.0, 30.0),
+}
+
+
+def _range(limits: tuple[float | None, float | None] | None, fit: FitKey) -> tuple[float, float]:
+    """Return the narrower of the fit's own bounds and its question's limits."""
+    low, high = _OWN_BOUNDS[fit]
+    if limits is None:
+        return low, high
+    q_low, q_high = limits
+    return (
+        low if q_low is None else max(low, q_low),
+        high if q_high is None else min(high, q_high),
+    )
 
 
 def _tank_capacity(params: Mapping[str, Any]) -> float | None:

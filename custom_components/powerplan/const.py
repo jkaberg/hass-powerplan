@@ -59,6 +59,8 @@ LOAD_BINDINGS: Final = "bindings"
 #: Recommended data points the household left empty, by role (D-0753).
 LOAD_DECLINED: Final = "declined"
 LOAD_PARAMS: Final = "params"
+#: Where each parameter came from: measured, answered or typical (D-0752).
+LOAD_PARAMS_SOURCE: Final = "params_source"
 LOAD_DERIVATION_VERSION: Final = "derivation_version"
 LOAD_STRATEGY: Final = "strategy"
 LOAD_PRIORITY: Final = "priority"

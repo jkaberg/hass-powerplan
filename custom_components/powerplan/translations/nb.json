@@ -1809,7 +1809,8 @@
         "need_none_asked": "Ingenting å spørre om.",
         "need_found_plain": "**{role}**: {entity}",
         "need_found_title": "**Funnet på enheten**",
-        "need_asked_title": "**Spørsmål**"
+        "need_asked_title": "**Spørsmål**",
+        "measured_missed": "{values} kunne ikke måles fra apparatets historikk ennå, så svarene dine brukes."
       }
     },
     "modifier_cumulative_tier_basis": {

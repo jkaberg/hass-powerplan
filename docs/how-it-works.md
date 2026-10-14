@@ -47,6 +47,7 @@ The plan says what would be cheapest. The moment makes sure the home stays safe 
 | Tomorrow's prices | when the market publishes them, usually early afternoon |
 | Your grid tariff | once a month, and with **Refresh the grid tariff** |
 | Normal usage and each appliance's model | learned from the history every night |
+| An appliance's power, hours, program, phases and comfort | measured from its history when you add it, and asked only when the history is too short or uneven |
 
 If the meter stops reporting, PowerPlan waits instead of guessing, and a repair says so. If prices are missing, it plans on estimated prices and says so on the price entities.
 

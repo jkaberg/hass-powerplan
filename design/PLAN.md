@@ -774,7 +774,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DP.3 | The pool, ties and the floor sensor | done |
 | DP.4 | The data points step | done |
 | DP.5 | Needs review | done |
-| DP.6 | Measured, not asked | todo |
+| DP.6 | Measured, not asked | done |
 | SF.1 | A season without data keeps the last good fit | todo |
 | SF.2 | The tank's window, measured | todo |
 | 6.3 | Release v1.0 | todo |
