@@ -233,11 +233,24 @@ export class PowerplanPriceCard extends HTMLElement {
     // where higher - and the cheap bands go, since the grid tariff's own step already shows the cheap hours.
     const gap = fixed != null && pts.some((p) => p.uten != null);
     if (gap) {
+      // One path per contiguous same-sign run: per-slot translucent rects leave seams where they meet.
+      let run: { cls: string; top: string[]; bot: string[]; e: number } | null = null;
+      const flush = () => {
+        if (run) g.push(`<path class="${run.cls}" d="M${run.top.join(" L")} L${run.bot.reverse().join(" L")} Z"/>`);
+        run = null;
+      };
       for (const p of pts) {
-        if (p.uten == null || Math.abs(p.uten - p.din) < 1e-4) continue;
+        if (p.uten == null || Math.abs(p.uten - p.din) < 1e-4) { flush(); continue; }
+        const cls = p.uten > p.din ? "gap" : "gap over";
         const [a, b] = p.uten > p.din ? [p.uten, p.din] : [p.din, p.uten];
-        g.push(`<rect class="${p.uten > p.din ? "gap" : "gap over"}" x="${sx(p.s).toFixed(1)}" y="${sy(a).toFixed(1)}" width="${(sx(p.e) - sx(p.s) + 0.4).toFixed(1)}" height="${(sy(b) - sy(a)).toFixed(1)}"/>`);
+        if (run && (run.cls !== cls || run.e !== p.s)) flush();
+        run ??= { cls, top: [], bot: [], e: p.s };
+        const xs = sx(p.s).toFixed(1), xe = sx(p.e).toFixed(1), ya = sy(a).toFixed(1), yb = sy(b).toFixed(1);
+        run.top.push(`${xs},${ya}`, `${xe},${ya}`);
+        run.bot.push(`${xs},${yb}`, `${xe},${yb}`);
+        run.e = p.e;
       }
+      flush();
     }
     // cheap bands (lowest quarter of the window's range, future + past)
     if (pts.length && !gap) {
