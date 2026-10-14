@@ -127,7 +127,7 @@ from .core.engine import (
     SitePath,
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
-from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all, keep
+from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all, in_force, keep
 from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts.quantiles import HourOfWeekQuantile
@@ -1391,7 +1391,8 @@ class Runtime:
         self._unsubs: list[CALLBACK_TYPE] = []
         #: When each landed provision last read back, by (load, entity): the
         #: daily re-verify's clock (D4 §2). In memory, since a start re-verifies all.
-        self._provision_checked: dict[tuple[str, str], datetime] = {}
+        #: When each landed provision was last read back, and the value it held then.
+        self._provision_checked: dict[tuple[str, str], tuple[datetime, float | str]] = {}
         #: A needs review is queued and not yet run (D-0753).
         self._needs_review_pending = False
         #: The power and load-entity subscriptions are their own, replaced
@@ -1841,7 +1842,7 @@ class Runtime:
             if history.type_key != "water_heater"
             and (profile := HourOfDayMean.from_power(history.power_rows, tz, now)) is not None
         }
-        self._apply_fits({spec.load_id: applied for spec, applied in specs})
+        self._apply_fits(specs)
         self.state = replace(
             self.state,
             forecasts={
@@ -1859,14 +1860,19 @@ class Runtime:
         )
         await self.run_plan("fits")
 
-    def _apply_fits(self, params: Mapping[str, tuple[tuple[str, FitKey], ...]]) -> None:
-        """Put each load's effective fitted parameters on it; take ours back where none is (INV-63)."""
-        for load_id, applied in params.items():
-            overrides = self.load_params.setdefault(load_id, {})
+    def _apply_fits(self, specs: Sequence[tuple[FitSpec, tuple[tuple[str, FitKey], ...]]]) -> None:
+        """Put each load's effective fitted parameters on it; take ours back where none is (INV-63).
+
+        A value is applied only inside the bounds the load's parameters put on it
+        today (D-0762): a fit restored from the store was gated on the day it was made.
+        """
+        for spec, applied in specs:
+            overrides = self.load_params.setdefault(spec.load_id, {})
             for param, key in applied:
-                fit = self.fits.get(f"{load_id}.{key}")
-                if fit is not None and fit.applied and fit.effective is not None:
-                    overrides[param] = fit.effective
+                fit = self.fits.get(f"{spec.load_id}.{key}")
+                value = None if fit is None else in_force(fit, spec.bounds)
+                if value is not None:
+                    overrides[param] = value
                 else:
                     overrides.pop(param, None)
 
@@ -1880,12 +1886,9 @@ class Runtime:
             load_id: HourOfDayMean(watts=tuple(watts), tz=tz)
             for load_id, watts in (section.get(HOLD_STATE_KEY) or {}).items()
         }
-        params: dict[str, tuple[tuple[str, FitKey], ...]] = {}
-        for load in self.build.loads:
-            found = self._fit_spec(load)
-            if found is not None:
-                params[found[0].load_id] = found[1]
-        self._apply_fits(params)
+        self._apply_fits(
+            [found for load in self.build.loads if (found := self._fit_spec(load)) is not None]
+        )
 
     @callback
     def _on_fits(self, now: datetime) -> None:
@@ -2173,7 +2176,13 @@ class Runtime:
                 await self._provision(load, now)
 
     async def _provision(self, load: Load, now: datetime) -> None:
-        """Provision one load from its stored bindings; latch what reads back (D-0751)."""
+        """Provision one load from its stored bindings; latch what reads back (D-0751).
+
+        The values are the load's parameters as they stand, a knob's over the
+        subentry's: the eco setpoint follows a comfort target moved live (D-0763).
+        A landed provision whose value has moved since it was read back is
+        checked again now, not after `PROVISION_REVERIFY_S`.
+        """
         device = self.build.devices.get(load.load_id)
         if not isinstance(device, LiveDevice):
             return
@@ -2183,7 +2192,9 @@ class Runtime:
             if device.device_id
             else DeviceView.from_states(self.hass, device.entity_ids)
         )
-        wanted = profiles.get(bound.profile).provisions(view, load.config, bound.bindings)
+        live = self.load_params.get(load.load_id)
+        cfg = replace(load.config, params={**load.config.params, **live}) if live else load.config
+        wanted = profiles.get(bound.profile).provisions(view, cfg, bound.bindings)
         if not wanted:
             return
         state = self._load_state(load.load_id)
@@ -2195,7 +2206,8 @@ class Runtime:
             if (
                 landed.get(key)
                 and checked is not None
-                and (now - checked).total_seconds() < PROVISION_REVERIFY_S
+                and checked[1] == provision.value
+                and (now - checked[0]).total_seconds() < PROVISION_REVERIFY_S
             ):
                 continue
             call = device.call_for_provision(provision)
@@ -2206,7 +2218,7 @@ class Runtime:
             if holds is None:
                 continue
             if holds:
-                self._provision_checked[(load.load_id, key)] = now
+                self._provision_checked[(load.load_id, key)] = (now, provision.value)
                 continue
             error = await self.gate.async_provision(
                 load.config.name, call, load.gate.transport, provision.reason

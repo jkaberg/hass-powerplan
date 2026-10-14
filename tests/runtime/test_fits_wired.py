@@ -155,3 +155,39 @@ async def test_21_a_gated_coast_time_reaches_the_loops_store(
     assert isinstance(load.store, SlabStore)
     assert load.store.coast_tau_h == pytest.approx(fit.effective)
     await runtime.stop("unload")
+
+
+@pytest.mark.inv("INV-63")
+async def test_21_a_stored_coast_time_out_of_todays_bounds_is_not_applied(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+) -> None:
+    """D-0762: a fit restored from the store meets the bounds the load's parameters set now.
+
+    TV-stua's 382.7 h passed at 03:17 under (5, 1000); D-0740 bounded a foil at
+    (2, 48) and HA restarted. The restore applied it, and the floor paused ten hours.
+    """
+    from custom_components.powerplan.core.forecasts.fit.thermal import (  # noqa: PLC0415
+        FOIL_TAU_BOUNDS_H,
+    )
+    from tests.core.forecasts.test_28_kept_fit import OCTOBER, _fit  # noqa: PLC0415
+
+    floor = FakeFloor(hass, setpoint_c=19.0)
+    floor.register()
+    runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
+    await hass.async_block_till_done()
+    assert runtime.engine is not None
+    [load] = runtime.engine.loads
+    found = runtime._fit_spec(load)
+    assert found is not None
+    spec, applied = found
+    runtime.fits = {
+        f"{LOAD_ID}.{FitKey.COAST_TAU}": replace(_fit(382.7, OCTOBER, ok=True), load_id=LOAD_ID)
+    }
+
+    runtime._apply_fits([(spec, applied)])
+    assert runtime.load_params[LOAD_ID]["coast_tau_h"] == 382.7, "a slab may coast that long"
+
+    runtime._apply_fits([(replace(spec, bounds={FitKey.COAST_TAU: FOIL_TAU_BOUNDS_H}), applied)])
+    assert "coast_tau_h" not in runtime.load_params[LOAD_ID], "a foil may not: its own value runs"
+    await runtime.stop("unload")

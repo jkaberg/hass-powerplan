@@ -135,7 +135,9 @@ class Ztrm:
         del call
 
 
-async def start_site(hass: HomeAssistant, device: LiveDevice, *, active: bool = True) -> Runtime:
+async def start_site(
+    hass: HomeAssistant, device: LiveDevice, *, active: bool = True, strategy: str = "always"
+) -> Runtime:
     """Build the site by hand with the bathroom loop on `device`, and start it."""
     config = MockConfigEntry(
         domain=DOMAIN,
@@ -146,7 +148,7 @@ async def start_site(hass: HomeAssistant, device: LiveDevice, *, active: bool = 
     config.add_to_hass(hass)
     build = build_site(hass, config)
     build.loads = (
-        floor_load(strategy="always", params={**FLOOR_PARAMS, "floor_min_limit_c": FLOOR_MIN_C}),
+        floor_load(strategy=strategy, params={**FLOOR_PARAMS, "floor_min_limit_c": FLOOR_MIN_C}),
     )
     build.devices = {LOAD_ID: device}
     runtime = Runtime(hass, config, build)
@@ -171,6 +173,26 @@ async def test_startup_writes_the_hardware_floor_and_the_eco_setpoint_and_latche
     await advance(hass, freezer, PROVISION_RETRY_S)
     assert runtime._load_state(LOAD_ID).provisioned == {FLOOR_MIN: True, ECO: True}
     assert len(ztrm.written) == 2, "a value the device holds is never sent again (INV-21)"
+    await runtime.stop("unload")
+
+
+@pytest.mark.inv("INV-55")
+async def test_on_heat_capacitor_the_eco_setpoint_follows_a_comfort_moved_live(
+    hass: HomeAssistant, meter: FakeMeter, freezer: FrozenDateTimeFactory
+) -> None:
+    """D-0763: eco is comfort 24 − coast_k 1 = 23.0 °C; a knob to 25 rewrites it at the next run.
+
+    A landed eco is otherwise left a day: the new value is checked at once.
+    """
+    ztrm = Ztrm(hass)
+    runtime = await start_site(hass, ztrm.install(), strategy="heat_capacitor")
+    assert (ECO, 230.0) in ztrm.written
+    await advance(hass, freezer, PROVISION_RETRY_S)
+    assert runtime._load_state(LOAD_ID).provisioned[ECO]
+
+    runtime.load_params.setdefault(LOAD_ID, {})["comfort_c"] = 25.0
+    await advance(hass, freezer, PROVISION_RETRY_S)
+    assert ztrm.written[-1] == (ECO, 240.0)
     await runtime.stop("unload")
 
 

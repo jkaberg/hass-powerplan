@@ -116,9 +116,14 @@ def planned(
     forecasts: Weather | None = None,
     presence: PresenceMode | None = None,
     headroom: dict[datetime, float] | None = None,
+    worth_share: tuple[float, float] | None = (0.04, 0.06),
     **params: Any,
 ) -> Plan:
-    """Return the loop's `heat_capacitor` plan, with a free headroom by default."""
+    """Return the loop's `heat_capacitor` plan, with a free headroom by default.
+
+    `worth_share=None` takes D-0724's gate on the whole plan away, for a test of
+    one mechanism inside it.
+    """
     curve = source if source is not None else volatile_curve()
     load = view if view is not None else capacitor_view()
     load = _with_params(load, params)
@@ -126,6 +131,7 @@ def planned(
         tariff=tariff,
         forecasts=forecasts if forecasts is not None else Weather(outdoor=-5.0),
         presence=presence,
+        worth_share=worth_share,
     )
     room = flat_headroom(curve, 10_000.0)
     if headroom is not None:
@@ -456,7 +462,7 @@ def test_08_a_store_with_no_coast_model_plans_its_step_ups_only() -> None:
 
 def test_32_a_pause_is_recovered_later_and_cheaper_by_min_saving() -> None:
     """§9 32: every pause has a recovery after it, `min_saving` cheaper, within the coast."""
-    plan = planned(bank_k=0.0)
+    plan = planned(bank_k=0.0, worth_share=None)
     stops = paused(plan)
     backs = [slot for slot in plan.slots if slot.reason == "back from a pause"]
 
@@ -477,8 +483,11 @@ def test_32_a_saving_under_min_saving_is_not_a_pause() -> None:
 
 @pytest.mark.inv("INV-55")
 def test_33_a_pause_lasts_as_long_as_the_store_does() -> None:
-    """§9 33: a run of pauses ends where the store reaches `lo`, not at a clock (D-0728)."""
-    plan = planned(bank_k=0.0, coast_k=0.2)
+    """§9 33: a run of pauses ends where the store reaches `lo`, not at a clock (D-0728).
+
+    `coast_k` 1 K: at 0.2 K every run is under 25 minutes, too small to keep (D-0764).
+    """
+    plan = planned(bank_k=0.0, worth_share=None)
     runs: list[float] = []
     hours = 0.0
     for slot in plan.slots:
@@ -487,7 +496,7 @@ def test_33_a_pause_lasts_as_long_as_the_store_does() -> None:
         elif hours:
             runs.append(hours)
             hours = 0.0
-    lasts = 60.0 * math.log((COMFORT_C + 5.0) / (COMFORT_C - 0.2 + 5.0))
+    lasts = 60.0 * math.log((COMFORT_C + 5.0) / (COMFORT_C - 1.0 + 5.0))
 
     assert runs
     assert max(runs) <= lasts + 1e-9

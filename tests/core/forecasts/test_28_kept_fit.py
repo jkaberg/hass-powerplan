@@ -4,7 +4,8 @@ A floor's `coast_tau_h` passed at 61 h in March. In June the floor barely runs,
 three coasts miss the gate, and the plan still uses 61 h, kept since March, not
 the setup value. A pass at 58 h in October replaces it. A kept value 401 days
 old gives way to the setup value, and a value out of today's bounds is never
-used.
+used - not even one restored from the store, which was gated on the day it was
+made (D-0762).
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from custom_components.powerplan.core.forecasts.fit import Fit, FitKey, FitQuality, keep
+from custom_components.powerplan.core.forecasts.fit import Fit, FitKey, FitQuality, in_force, keep
+from custom_components.powerplan.core.forecasts.fit.thermal import FOIL_TAU_BOUNDS_H
 
 KEY = "loop_bath.coast_tau_h"
 MARCH = datetime(2026, 3, 15, 3, 17, tzinfo=UTC)
@@ -93,3 +95,20 @@ def test_28_a_fit_stored_before_kept_existed_counts_as_kept() -> None:
     stored = {KEY: replace(_fit(61.0, MARCH, ok=True), kept=None, kept_at=None)}
     june = keep(stored, {KEY: _fit(140.0, JUNE, ok=False)}, JUNE)[KEY]
     assert (june.effective, june.kept_at) == (61.0, MARCH)
+
+
+@pytest.mark.inv("INV-63")
+def test_28_a_stored_fit_out_of_todays_bounds_is_not_in_force() -> None:
+    """TV-stua, 14 Oct 2026: 382.7 h passed at 03:17 under (5, 1000) and was restored after D-0740."""
+    stored = _fit(382.7, OCTOBER, ok=True)
+    assert stored.applied, "the fit passed on the day it was made"
+    assert in_force(stored, {FitKey.COAST_TAU: FOIL_TAU_BOUNDS_H}) is None
+    assert in_force(stored, {}) == 382.7, "a slab's bounds are still (5, 1000)"
+
+
+def test_28_a_fit_that_missed_its_gate_is_not_in_force() -> None:
+    """A miss with nothing kept leaves the load on its own value."""
+    assert in_force(_fit(140.0, JUNE, ok=False), {}) is None
+    kept = keep({}, {KEY: _fit(61.0, MARCH, ok=True)}, MARCH)
+    june = keep(kept, {KEY: _fit(140.0, JUNE, ok=False)}, JUNE)[KEY]
+    assert in_force(june, {}) == 61.0

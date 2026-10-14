@@ -43,7 +43,7 @@ from ..loads.stores.base import StoreCtx, StoreModel
 from ..loads.stores.thermal import coast_hours_tau, level_needed
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
-from .base import free_plan, peak_windows, register
+from .base import free_plan, params_of, peak_windows, register
 from .deadline_fill import plan_one
 from .deadlines import needs
 from .holding import holding_kwh
@@ -53,10 +53,11 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from ..loads import TargetProfile
+    from ..loads.base import LoadConfig
     from ..model import Demand, DesiredState, Plan
     from .context import PlanContext
 
-__all__ = ["HeatCapacitor"]
+__all__ = ["HeatCapacitor", "pause_floor_c"]
 
 #: Below this many kelvin a delta is not worth asking a thermostat for.
 _EPS_K: Final = 1e-6
@@ -64,6 +65,9 @@ _EPS_K: Final = 1e-6
 _EPS: Final = Decimal("0.0000001")
 #: Below this many kWh an energy is float noise, not a draw.
 _EPS_KWH: Final = 1e-9
+#: A run of pauses must save what `min_saving` on this many hours of the element
+#: at full power would (D-0764).
+_PAUSE_MIN_H: Final = 1.0
 
 
 class _Kind(StrEnum):
@@ -398,6 +402,25 @@ class HeatCapacitor:
         return plan
 
 
+def pause_floor_c(cfg: LoadConfig) -> float | None:
+    """Return the level a pause may let a heated store fall to at comfort, or `None` (D-0763).
+
+    `max(comfort − coast_k, floor)`: INV-55's band at the configured comfort. A
+    `mode` thermostat's shed option holds its eco setpoint, and a pause is that
+    option for as long as the coast was sized to last. Provisioned at this level,
+    a pause sized on a `τ` that was wrong stops at the band's floor - the
+    thermostat keeps INV-55, not the model. Read from the comfort and `coast_k`
+    the load has now, never a copy taken at setup, so a comfort the household
+    raised moves it too.
+    """
+    if cfg.strategy != HeatCapacitor.key or cfg.params.get("comfort_c") is None:
+        return None
+    coast_k = max(0.0, float(params_of(HeatCapacitor.key, cfg.strategy_params)["coast_k"]))
+    level = float(cfg.params["comfort_c"]) - coast_k
+    floor = cfg.params.get("floor_c")
+    return level if floor is None else max(float(floor), level)
+
+
 def _nothing_to_say(
     demand: Demand, ctx: PlanContext, store: StoreModel | None, window: Sequence[Slot]
 ) -> tuple[PlanMode, str] | None:
@@ -725,7 +748,9 @@ def _plan_pauses(
     store would reach `lo` (D-0728). Best gain per kWh first. What a pause skips is
     recovered in the cheapest slots that clear `min_saving`, each up to its spare
     (`min(max_w, headroom) − hold`); a pause whose energy does not fit is not taken.
+    A run of pauses that saves less than `_pause_min_saving` is given back (D-0764).
     """
+    taken: dict[int, list[tuple[int, float]]] = {}
     candidates: list[tuple[Decimal, int, tuple[int, ...]]] = []
     for index, slot in enumerate(work):
         if slot.kind is not _Kind.HOLD or slot.hold_kwh <= 0.0 or slot.outdoor is None:
@@ -759,11 +784,80 @@ def _plan_pauses(
         slot.level = slot.lo
         slot.envelope_w = 0.0
         slot.reason = "paused"
+        taken[index] = shares
         for later, kwh in shares:
             back = work[later]
             back.kind = _Kind.RECOVER
             back.kwh += kwh
             back.reason = "back from a pause"
+    _drop_small_pauses(work, taken, policy, demand)
+
+
+def _drop_small_pauses(
+    work: list[_Work],
+    taken: Mapping[int, Sequence[tuple[int, float]]],
+    policy: _Policy,
+    demand: Demand,
+) -> None:
+    """Give back each run of pauses that saves less than `_pause_min_saving` (D-0764).
+
+    `min_saving` is a margin per kWh, and a floor that holds on 14 W clears it on
+    any pause: TV-stua and a bathroom, 14 Oct 2026, stood in eco for 8 and 10
+    hours to save 1.5 øre each. A run is the household's comfort given up at once,
+    so it is judged whole: what it skips at its own prices less what its recovery
+    pays, against what moving one hour of the element at full power by
+    `min_saving` would save.
+    """
+    start = 0
+    while start < len(work):
+        if start not in taken:
+            start += 1
+            continue
+        end = start
+        while end + 1 in taken:
+            end += 1
+        run = range(start, end + 1)
+        skipped = sum(
+            (Decimal(str(work[i].hold_kwh)) * work[i].slot.total for i in run), Decimal(0)
+        )
+        paid = sum(
+            (Decimal(str(kwh)) * work[later].slot.total for i in run for later, kwh in taken[i]),
+            Decimal(0),
+        )
+        if skipped - paid < _pause_min_saving(work[start : end + 1], policy, demand):
+            for i in run:
+                _give_back(work, i, taken[i])
+        start = end + 1
+
+
+def _pause_min_saving(run: Sequence[_Work], policy: _Policy, demand: Demand) -> Decimal:
+    """Return what a run of pauses must save: `min_saving` on one hour at full power (D-0764).
+
+    Priced at the run's mean, so it is in the household's currency without
+    asking for an amount, and it scales with the element: a 400 W bathroom floor
+    must move about half what an 800 W one must.
+    """
+    hours = sum(slot.hours for slot in run)
+    mean = sum((slot.slot.total * Decimal(str(slot.hours)) for slot in run), Decimal(0)) / Decimal(
+        str(hours)
+    )
+    return policy.threshold(mean) * Decimal(str(demand.max_w / 1000.0 * _PAUSE_MIN_H))
+
+
+def _give_back(work: list[_Work], index: int, shares: Sequence[tuple[int, float]]) -> None:
+    """Undo one pause: the slot holds again, its recovery is taken out of the slots after."""
+    slot = work[index]
+    slot.kind = _Kind.HOLD
+    slot.level = None
+    slot.envelope_w = None
+    slot.reason = ""
+    for later, kwh in shares:
+        back = work[later]
+        back.kwh = max(0.0, back.kwh - kwh)
+        if back.kwh <= _EPS_KWH:
+            back.kind = _Kind.HOLD
+            back.kwh = 0.0
+            back.reason = ""
 
 
 def _recovery(

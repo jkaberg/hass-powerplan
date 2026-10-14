@@ -41,6 +41,7 @@ __all__ = [
     "Gate",
     "LoadHistory",
     "episodes",
+    "in_force",
     "keep",
     "resolve",
     "slope_k_per_h",
@@ -414,6 +415,23 @@ def keep(previous: Mapping[str, Fit], fresh: Mapping[str, Fit], now: datetime) -
         elif new is not None:
             out[key] = replace(new, kept=None, kept_at=None, effective=new.configured)
     return out
+
+
+def in_force(fit: Fit, bounds: Mapping[FitKey, tuple[float, float]]) -> float | None:
+    """Return the measured value a load runs on, or `None` for its own (D-0762, INV-63).
+
+    A fit is gated when it is made, against that day's bounds. A stored one
+    outlives them: a restart restores it, and a bound tightened since - a foil's
+    `τ`, D-0740 - would let a value today's code refuses run until the next daily
+    fit. So it is checked again where it is applied, against the bounds the
+    load's parameters put on it now as well as its own.
+    """
+    if not fit.applied or fit.effective is None:
+        return None
+    low, high = bounds.get(fit.key, fit.bounds)
+    if not (low <= fit.effective <= high and fit.bounds[0] <= fit.effective <= fit.bounds[1]):
+        return None
+    return fit.effective
 
 
 def _last_pass(fit: Fit) -> tuple[float | None, datetime | None]:

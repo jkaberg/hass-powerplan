@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from custom_components.powerplan.core.loads import Role
 from custom_components.powerplan.core.loads.gate import Transport
 from custom_components.powerplan.core.loads.kinds.mode import match_option
+from custom_components.powerplan.core.strategies.heat_capacitor import pause_floor_c
 
 from .base import (
     Bindings,
@@ -152,8 +153,9 @@ FLOOR_MIN_REASON: Final = (
     "whatever powerplan asks, so a shed needs nobody to come back (INV-64)"
 )
 ECO_SETPOINT_REASON: Final = (
-    "the shed target, preloaded once: the hot path is then one select_option and zero "
-    "setpoint writes (D4 §5.5)"
+    "the shed target, preloaded: the hot path is then one select_option and zero "
+    "setpoint writes (D4 §5.5); on heat_capacitor, the lowest a pause may let the "
+    "floor fall, so the thermostat holds it whatever the plan assumed (INV-55)"
 )
 HYSTERESIS_REASON: Final = (
     "the deadband this room tolerates – a wider one is a larger store and fewer "
@@ -634,6 +636,11 @@ class GenericClimate:
         so a floor minimum the household picked is the one written (D-0751) -
         and from a fresh detection only when there are none. A plain `climate`
         entity has none of these three siblings and therefore no provisions at all.
+
+        On `heat_capacitor` the eco setpoint is the pause's floor, `max(comfort −
+        coast_k, floor)` (D-0763): the materialised `eco_setpoint_c`, comfort − 2,
+        sat a kelvin under INV-55's band, so only the coast model kept a pause above
+        it.
         """
         if cfg is None:
             return ()
@@ -646,7 +653,7 @@ class GenericClimate:
         floor = params.get("floor_min_limit_c", params.get("floor_c"))
         wanted: tuple[tuple[Role, Any, str], ...] = (
             (Role.FLOOR_MIN, floor, FLOOR_MIN_REASON),
-            (Role.ECO_SETPOINT, params.get("eco_setpoint_c"), ECO_SETPOINT_REASON),
+            (Role.ECO_SETPOINT, _eco_setpoint_c(cfg), ECO_SETPOINT_REASON),
             (Role.HYSTERESIS, params.get("swing_k"), HYSTERESIS_REASON),
         )
         provisions: list[Provision] = []
@@ -699,6 +706,15 @@ def _strings(value: object) -> tuple[str, ...]:
     if not isinstance(value, list | tuple):
         return ()
     return tuple(str(item) for item in value)
+
+
+def _eco_setpoint_c(cfg: LoadConfig) -> float | None:
+    """Return the eco setpoint to preload: the pause's floor on `heat_capacitor`, else the materialised one."""
+    floor = pause_floor_c(cfg)
+    if floor is not None:
+        return floor
+    value = cfg.params.get("eco_setpoint_c")
+    return None if value is None else float(value)
 
 
 #: The registered instance. One module, one profile, no conditionals anywhere else.

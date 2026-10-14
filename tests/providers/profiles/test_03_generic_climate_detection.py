@@ -50,6 +50,7 @@ from custom_components.powerplan.providers.profiles.generic_climate import (
 )
 from custom_components.powerplan.writegate import Actuation
 from tests.core.loads.conftest import (
+    FLOOR_PARAMS,
     REFERENCE_PROFILE,
     floor_config,
     grant,
@@ -528,6 +529,27 @@ def test_03q_the_provisions_are_the_floor_the_eco_target_and_the_deadband(
     assert [provision.value for provision in provisions] == [21.0, 22.0, 1.0]
     assert not any(provision.scaled for provision in provisions)
     assert "INV-64" in provisions[0].reason
+
+
+@pytest.mark.inv("INV-55")
+def test_03q_on_heat_capacitor_the_eco_target_is_the_pauses_floor(heatit: DeviceView) -> None:
+    """D-0763: eco is `max(comfort − coast_k, floor)`, so a pause stops at INV-55's band.
+
+    TV-stua, 14 Oct 2026: comfort raised to 23.5, eco still the setup's 20.5; a
+    pause sized on a wrong `τ` let the floor fall toward 20.5 for ten hours.
+    """
+
+    def eco(**changes: object) -> float:
+        params = {**FLOOR_PARAMS, **changes.pop("params", {})}  # type: ignore[dict-item]
+        cfg = floor_config(**{"strategy": "heat_capacitor", **changes, "params": params})
+        [value] = [p.value for p in PROFILE.provisions(heatit, cfg) if p.role is Role.ECO_SETPOINT]
+        return value
+
+    assert eco() == 23.0, "comfort 24 − the schema's coast_k of 1 K"
+    assert eco(params={"comfort_c": 25.0}) == 24.0, "a raised comfort moves it; 22 is the setup's"
+    assert eco(strategy_params={"coast_k": 2.5}) == 21.5
+    assert eco(strategy_params={"coast_k": 5.0}) == 21.0, "never under the floor"
+    assert eco(strategy="always") == 22.0, "another strategy keeps the materialised eco"
 
 
 def test_03r_a_load_with_no_configuration_yet_is_provisioned_with_nothing(

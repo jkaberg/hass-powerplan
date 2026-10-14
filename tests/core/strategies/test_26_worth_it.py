@@ -11,6 +11,7 @@ the device holds its own comfort, and the allocator still sheds it for the ceili
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -81,9 +82,31 @@ def test_26_best_save_under_norgespris_is_left_alone() -> None:
     assert _planned(_floor("best_save", "setpoint"), HOUSE).mode is PlanMode.NONE
 
 
-def test_26_a_setpoint_store_that_really_banks_the_night_keeps_its_plan() -> None:
-    """A setpoint device can hold a raised target: its night bank is real energy at 16 % less."""
-    assert _planned(_floor("heat_capacitor", "setpoint"), HOUSE).mode is PlanMode.PRICE
+def test_26_a_setpoint_floor_under_norgespris_has_no_pause_worth_its_comfort() -> None:
+    """Its one act was a 3.5 h pause before 22:00, worth a few øre: given back (D-0764).
+
+    This test said the plan banked the night. It never did - no slot banked, and
+    the 0.9 % it earned was that pause. On 14 Oct 2026 the same pauses stood the
+    house's floors in eco for 8 and 10 hours to save 1.5 øre each.
+    """
+    plan = _planned(_floor("heat_capacitor", "setpoint"), HOUSE, worth_share=None)
+
+    assert not [slot for slot in plan.slots if slot.reason == "paused"]
+    assert not [slot for slot in plan.slots if slot.reason == "back from a pause"]
+    assert plan.reason == "nothing worth moving"
+
+
+def test_26_what_a_pause_must_save_scales_with_the_element() -> None:
+    """The bar is `min_saving` on an hour at full power: a 250 W loop keeps the pause a 960 W one gives back."""
+    small = floor_view(
+        strategy="heat_capacitor",
+        kind="setpoint",
+        demand=demand(required_kwh=3.0, deadline=None, min_w=0.0, max_w=250.0, reason="24 °C"),
+    )
+    plan = _planned(small, HOUSE, worth_share=None)
+
+    assert [slot for slot in plan.slots if slot.reason == "paused"]
+    assert [slot for slot in plan.slots if slot.reason == "back from a pause"]
 
 
 def test_26_spot_prices_pay_for_the_same_plans() -> None:
@@ -118,10 +141,15 @@ def _raw_plan(view: LoadView, **ctx: object) -> tuple[Plan, object]:
 
 
 def test_26_leaving_hands_off_needs_more_than_entering_it() -> None:
-    """0.9 % clears a 0.8 % entry but not a 1.2 % way back: no flip-flop at the line."""
+    """0.8 % clears a 0.6 % entry but not a 1.0 % way back: no flip-flop at the line.
+
+    `min_saving` 1 % keeps the evening pause the 10 % default gives back (D-0764),
+    so the plan has something to judge.
+    """
     view = _floor("heat_capacitor", "mode")
+    view = replace(view, params={**view.params, "min_saving": 0.01})
     plan, pctx = _raw_plan(view)
-    band = (0.008, 0.012)
+    band = (0.006, 0.010)
 
     assert _worth_it(plan, view, pctx, None, band).mode is PlanMode.PRICE
     gated = _worth_it(plan, view, pctx, None, (0.04, 0.06))

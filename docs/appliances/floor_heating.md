@@ -92,6 +92,8 @@ Put several floors in a group so they take turns when an hour is tight, as [Circ
 
 The highest floor temperature depends on the covering: wood and laminate allow less than tiles. PowerPlan sets the thermostat's own floor limit, so the floor is safe even if PowerPlan stops.
 
+On **Heat capacitor**, the energy-saving setpoint is your comfort temperature minus 1 °C, and never under the lowest temperature you allow. A pause switches the thermostat to energy saving, so the thermostat itself keeps the floor there. When you change the comfort temperature, the energy-saving setpoint follows within 15 minutes.
+
 > [!NOTE]
 > Since v0.0.11, PowerPlan writes the thermostat's lowest floor temperature and its energy-saving setpoint while it controls the floor: at start and when the floor is added, then it checks them once a day. A setting that does not take is tried again every 15 minutes, and a [repair](../troubleshooting.md#provision_refused) says so if the thermostat keeps refusing. In trial mode nothing is written. Before v0.0.11, both stayed at the thermostat's own values.
 
