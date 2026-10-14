@@ -39,6 +39,8 @@ WORD_BANKS = frozenset(
         "dashboard",
         "load_text",
         "logbook",
+        "need_purpose",
+        "need_without",
         "review",
         "tariff_measurement",
         "tariff_method",

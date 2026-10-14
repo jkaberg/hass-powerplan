@@ -36,6 +36,7 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.battery import ALL_COMMANDS, BatteryCfg, BatteryCommand, BatteryKind
 from ..kinds.modulate import Modulate, ModulateCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.energy import EnergyStore
 from .base import register
@@ -218,6 +219,20 @@ class Battery:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        # A battery row's levers are the profile's own `REQUIRED`; a signed
+        # number steers it through `modulate` (§4.2).
+        control = (
+            (need(self.key, Role.BATTERY_POWER_SET, Tier.REQUIRED),) if kind == "modulate" else ()
+        )
+        return (
+            *control,
+            need(self.key, Role.SOC, Tier.REQUIRED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, every number sourced (D4 §6.6)."""

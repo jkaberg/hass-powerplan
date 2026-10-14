@@ -50,6 +50,7 @@ from .plan import build_plan, confidence_of, inputs_digest
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan, PriceCurve
     from .context import Headroom, PlanContext
 
@@ -206,6 +207,7 @@ class RunOnce:
 
     key: ClassVar[str] = "run_once"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset({"appliance_cycle"})
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="ready_by", kind=FieldKind.TIME, default="07:00", required=True),
         Field(key="allow_late_start", kind=FieldKind.BOOL, default=True),

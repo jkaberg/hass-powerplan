@@ -39,6 +39,7 @@ from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config, recall, remember
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import BAND_MAX_K, Setpoint, SetpointCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.cop import DEFAULT_COP_CURVES, CopCurve
 from ..stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3, RoomStore
@@ -313,6 +314,18 @@ class HeatPump:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        del kind  # `setpoint` adds its own.
+        return (
+            need(self.key, Role.TEMP, Tier.REQUIRED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            # Without it the forecast's hour (D10 §5.7).
+            need(self.key, Role.OUTDOOR_TEMP, Tier.RECOMMENDED),
+            need(self.key, Role.OUTLET_TEMP, Tier.OPTIONAL),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, with every number sourced (D4 §6.4)."""

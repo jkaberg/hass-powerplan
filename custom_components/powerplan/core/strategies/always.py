@@ -21,6 +21,7 @@ from .base import free_plan, register
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from ..pricing import Schema
     from .context import PlanContext
@@ -34,6 +35,7 @@ class Always:
 
     key: ClassVar[str] = "always"
     supports: ClassVar[frozenset[str] | Literal["all"]] = "all"
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = ()
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:

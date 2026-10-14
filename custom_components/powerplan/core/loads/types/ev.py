@@ -36,6 +36,7 @@ from ...model import Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, SessionDone, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.modulate import EV_MIN_A, Modulate, ModulateCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.energy import EnergyStore
 from .base import register
@@ -253,6 +254,28 @@ class Ev:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        del kind  # `modulate`'s role is the charger's amps, declared here.
+        return (
+            need(self.key, Role.CURRENT_SET, Tier.REQUIRED),
+            need(self.key, Role.STATUS, Tier.REQUIRED),
+            # A charger whose limit pauses it has none; the profile requires it where it does.
+            need(self.key, Role.ENABLE, Tier.OPTIONAL),
+            # Without it the plan charges by `kwh_to_add` (D4 §8).
+            need(self.key, Role.SOC, Tier.RECOMMENDED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.SESSION_ENERGY, Tier.OPTIONAL),
+            need(self.key, Role.CURRENT_L1, Tier.OPTIONAL),
+            need(self.key, Role.CURRENT_L2, Tier.OPTIONAL),
+            need(self.key, Role.CURRENT_L3, Tier.OPTIONAL),
+            need(self.key, Role.CIRCUIT_MAX, Tier.OPTIONAL),
+            need(self.key, Role.CABLE_RATING, Tier.OPTIONAL),
+            need(self.key, Role.CURRENT_MAX, Tier.OPTIONAL),
+            need(self.key, Role.BLOCKED_BY, Tier.OPTIONAL),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters (D4 §6.2)."""

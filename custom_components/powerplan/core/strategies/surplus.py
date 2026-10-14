@@ -35,6 +35,7 @@ from .plan import inputs_digest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from .context import PlanContext
 
@@ -53,6 +54,7 @@ class Surplus:
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"ev", "water_heater", "generic_switch"}
     )
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="grid_top_up", kind=FieldKind.BOOL, default=True),
         Field(

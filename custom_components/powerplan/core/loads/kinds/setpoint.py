@@ -22,6 +22,7 @@ own state machine and carries on regulating if powerplan dies (INV-64).
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from ..needs import Need, Tier, need
 from .base import (
     Action,
     ActionReason,
@@ -95,6 +96,7 @@ class Setpoint:
 
     cfg: SetpointCfg
     key: ClassVar[str] = "setpoint"
+    needs: ClassVar[tuple[Need, ...]] = (need("setpoint", Role.SETPOINT, Tier.REQUIRED),)
 
     def quantise(self, w: float, ctx: KindCtx) -> Quantised:
         """Return the setpoint this tick, bounded by construction (§5.4)."""

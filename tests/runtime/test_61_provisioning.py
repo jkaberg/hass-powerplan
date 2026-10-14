@@ -54,7 +54,6 @@ ECO = "number.bath_floor_energy_saving_mode_setpoint"
 OTHER_MIN = "number.bath_floor_air_minimum_temperature_limit"
 DECI_C = {"unit_of_measurement": "0.1 °C", "min": 50, "max": 400, "step": 1}
 FLOOR_MIN_C = 21.0
-ECO_C = 22.0
 ISSUE = f"{SITE_ENTRY_ID}_provision_refused_{LOAD_ID}"
 
 

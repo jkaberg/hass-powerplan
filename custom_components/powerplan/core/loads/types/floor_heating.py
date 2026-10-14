@@ -26,6 +26,7 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.mode import ModeCfg, ModeKind
 from ..kinds.setpoint import Setpoint, SetpointCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import (
     Answers,
     Bounds,
@@ -341,6 +342,22 @@ class FloorHeating:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        del kind  # `mode` and `setpoint` add their own (D4 §4.7).
+        return (
+            need(self.key, Role.SETPOINT, Tier.REQUIRED),
+            need(self.key, Role.TEMP, Tier.REQUIRED),
+            # Without it the plan reads the room (`level()`'s fallback).
+            need(self.key, Role.TEMP_FLOOR, Tier.RECOMMENDED),
+            # Without it the comfort floor holds only while powerplan runs (INV-64).
+            need(self.key, Role.FLOOR_MIN, Tier.RECOMMENDED),
+            # Without it the W/m² table stands, unmeasured (D10 §5.6).
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+            need(self.key, Role.OUTDOOR_TEMP, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, with every number sourced (D4 §6.1)."""

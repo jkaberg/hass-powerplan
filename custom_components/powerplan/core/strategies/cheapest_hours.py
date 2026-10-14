@@ -41,6 +41,7 @@ from .plan import build_plan, confidence_of, inputs_digest
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from .context import PlanContext
 
@@ -210,6 +211,7 @@ class CheapestHours:
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"ev", "water_heater", "generic_switch", "radiator", "heat_pump"}
     )
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="hours_per_day", kind=FieldKind.NUMBER, default=4.0, unit="h", required=True),
         Field(key="consecutive", kind=FieldKind.BOOL, default=False),

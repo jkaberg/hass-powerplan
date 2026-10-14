@@ -39,6 +39,7 @@ from .holding import comfort_target, holding_kwh
 from .plan import STAY_OFF_FOR_CAPACITY, build_plan, with_hold_of
 
 if TYPE_CHECKING:
+    from ..loads.needs import Need
     from ..model import Demand, Plan, PlanSlot, Slot
 
 __all__ = [
@@ -78,6 +79,8 @@ class Strategy(Protocol):
     key: ClassVar[str]
     schema: ClassVar[Schema]
     supports: ClassVar[frozenset[str] | Literal["all"]]
+    #: The data points it reads beyond its type's (D4 §4.7, D-0746).
+    needs: ClassVar[tuple[Need, ...]]
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:
         """Return the envelope this load should run inside over the horizon."""

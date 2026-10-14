@@ -257,7 +257,7 @@ HLD §6.4, INV-76; [D4 §4.7, §5.9, §6, §8](lld/D4-loads.md), [D8 §5.2, §5.
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
 | **DP.1 Provisioning runs** | `provisions(view, cfg, bindings)` on every profile; the runtime's provisioning at startup step 6 and on a subentry add, retried every 900 s and re-verified every 86 400 s, latched in `LoadState.provisioned`, `provision_refused` on refusal | D4 §2, §4.5, §5.9; D7 §5.5; D-0751 | D4 §9 61; D7 §9 7; the e2e day; house check: within 15 min of the restart the six Z-TRMs' eco setpoints read their configured 20.5 / 21.5 / 22.5 °C | - |
-| **DP.2 Needs declared** | `core/loads/needs.py` (`Tier`, `Need`, `needs_of`); `needs(kind)` on the eight types; `needs` on the five kinds and on `heat_capacitor`, `hot_water`, `deadline_fill`; `needs.<key>` purpose and fallback texts in `en` and `nb` | D4 §4.7; D5 §4; HLD INV-76; D-0746 | D4 §9 57; `mypy core` | - |
+| **DP.2 Needs declared** | `core/loads/needs.py` (`Tier`, `Need`, `need`, `needs_of`); `needs(kind)` on the eight types; `needs` on the five kinds and every strategy (`heat_capacitor`'s and `hot_water`'s non-empty); the purpose and fallback texts in `selector.need_purpose` and `selector.need_without`, `en` and `nb` | D4 §4.7; D5 §4; HLD INV-76; D-0746 | D4 §9 57; `mypy core` | - |
 | **DP.3 The pool, ties and the floor cross-check** | `providers/profiles/candidates.py`; `DeviceView.pool` and `disabled`; `MatchResult.ties`, recorded by `_one`, `DeviceView.find` and `Find.entity`; `generic_climate`'s exclusions; the nearby search; the meter pre-fill on the pool; `capture_fixture.py` with the registries, and the Z-TRM2fx, the ESPHome heat pump and the Easee recaptured | D4 §5.9; D3 §6; D9 §9 7; D-0747 … D-0750 | D4 §9 58–60; D9 §9 7; the goldens in `tests/golden/profiles/` re-recorded with their diff in the PR | DP.2 |
 | **DP.4 The data points step** | `flow/data_points.py` (`data_points`, `data_points_other`); the match step without its role table; the entity questions out of the questionnaires (`_EXTRA_ROLE_ANSWERS` and `_SIBLING_PROBES` read only for subentries stored before); bindings with `source`; `declined`; reconfigure opening on the step | D8 §5.2; D4 §6; D-0746, D-0748, D-0753 | D8 §9 52–55; the e2e day; house check: adding a floor on a spare Z-TRM asks nothing and binds ten roles | DP.2, DP.3 |
 | **DP.5 Needs review** | `needs_review_<load>`, evaluated at startup, on a device registry update and daily; its fix flow, the load's reconfigure | D4 §8; D8 §5.9; D-0753 | D4 §9 63; D8 §9 55; house check: the six floors and heat pump 1 each raise it once, and confirming binds the floor minimum, which DP.1 then writes | DP.1, DP.4 |
@@ -756,7 +756,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | WH.3 | A tank that pasteurises itself | done |
 | WH.4 | Hot water for the day ahead | done |
 | DP.1 | Provisioning runs | done |
-| DP.2 | Needs declared | todo |
+| DP.2 | Needs declared | done |
 | DP.3 | The pool, ties and the floor cross-check | todo |
 | DP.4 | The data points step | todo |
 | DP.5 | Needs review | todo |

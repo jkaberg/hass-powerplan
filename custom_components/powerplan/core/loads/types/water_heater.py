@@ -45,6 +45,7 @@ from ..base import (
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import Setpoint, SetpointCfg
 from ..kinds.switch import Switch, SwitchCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import (
     AnswerError,
     Answers,
@@ -451,6 +452,20 @@ class WaterHeater:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        control = (need(self.key, Role.SWITCH, Tier.REQUIRED),) if kind == "switch" else ()
+        return (
+            *control,
+            # Without it the sensorless estimate (D-0741).
+            need(self.key, Role.TEMP, Tier.RECOMMENDED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.TEMP_TOP, Tier.OPTIONAL),
+            need(self.key, Role.TEMP_BOTTOM, Tier.OPTIONAL),
+            need(self.key, Role.SWITCH, Tier.OPTIONAL),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, with every number sourced (D4 §6.3)."""

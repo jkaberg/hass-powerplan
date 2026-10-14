@@ -45,6 +45,7 @@ from .plan import build_plan, confidence_of, inputs_digest
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from .context import PlanContext
 
@@ -171,6 +172,7 @@ class BestSave:
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "heat_pump", "radiator", "water_heater", "generic_switch"}
     )
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="min_saving", kind=FieldKind.NUMBER, default=0.10),
         Field(key="max_off_min", kind=FieldKind.NUMBER, default=120, unit="min"),

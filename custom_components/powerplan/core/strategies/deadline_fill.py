@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan, PriceCurve
     from .context import Headroom, PlanContext
 
@@ -680,6 +681,7 @@ class DeadlineFill:
 
     key: ClassVar[str] = "deadline_fill"
     supports: ClassVar[frozenset[str] | Literal["all"]] = "all"
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="min_block_min", kind=FieldKind.NUMBER, default=0, unit="min", advanced=True),
         Field(

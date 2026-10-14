@@ -156,7 +156,7 @@ class Strategy(Protocol):
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan
 ```
 
-*(D-0746)* `needs` names the data points a strategy reads beyond its type's: `heat_capacitor` `TEMP`, `hot_water` `TEMP_TOP` and `TEMP_BOTTOM`, `deadline_fill` on an `ev` `SOC`, each `recommended` (D4 §4.7). The load flow asks for them, and choosing a strategy later whose needs are unmet raises `needs_review` (D8 §5.9).
+*(D-0746)* `needs` names the data points a strategy reads beyond its type's: `heat_capacitor` `TEMP`, `hot_water` `TEMP_TOP` and `TEMP_BOTTOM`, each `recommended` (D4 §4.7); the rest declare none. The load flow asks for them, and choosing a strategy later whose needs are unmet raises `needs_review` (D8 §5.9).
 
 ---
 

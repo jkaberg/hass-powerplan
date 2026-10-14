@@ -46,6 +46,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
 from ..loads import PresenceMode
+from ..loads.kinds.base import Role
+from ..loads.needs import Need, Tier, need
 from ..loads.stores.thermal import TankStore
 from ..model import PlanMode, PlanSlot, Urgency
 from ..pricing import Field, FieldKind, Schema
@@ -107,6 +109,12 @@ class HotWater:
 
     key: ClassVar[str] = "hot_water"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset({"water_heater"})
+    needs: ClassVar[tuple[Need, ...]] = (
+        # One probe is not the tank: a centre probe reads 64 °C over a bottom third
+        # at 28 °C (D-0741).
+        need("hot_water", Role.TEMP_TOP, Tier.RECOMMENDED),
+        need("hot_water", Role.TEMP_BOTTOM, Tier.RECOMMENDED),
+    )
     schema: ClassVar[Schema] = (
         Field(key="reserve_kwh", kind=FieldKind.NUMBER, default=4.4, unit="kWh"),
         Field(key="min_block_min", kind=FieldKind.NUMBER, default=30, unit="min", advanced=True),

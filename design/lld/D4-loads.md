@@ -337,13 +337,14 @@ class DeviceType(TypeLogic, Protocol):
 class Tier(StrEnum):  REQUIRED = "required"; RECOMMENDED = "recommended"; OPTIONAL = "optional"
 
 @dataclass(frozen=True, slots=True)
-class Need:  role: Role; tier: Tier; key: str            # key → needs.<key>.purpose / .without (translations)
+class Need:  role: Role; tier: Tier; key: str            # key → selector.need_purpose / need_without .options.<key>
 
 class DeviceType(...):  def needs(self, kind: str) -> tuple[Need, ...]       # §4.6's protocol gains this
 class ControlKind(...): needs: ClassVar[tuple[Need, ...]]
 class Strategy(...):    needs: ClassVar[tuple[Need, ...]] = ()               # D5 §4
 
-def needs_of(type_: DeviceType, kind: str, strategy: Strategy) -> tuple[Need, ...]   # the union; per role the highest tier wins
+def need(owner: str, role: Role, tier: Tier) -> Need                         # key = f"{owner}_{role}"
+def needs_of(*groups: Iterable[Need]) -> tuple[Need, ...]                    # type, kind, strategy: per role the highest tier wins
 ```
 
 `core/loads/needs.py` holds `Tier`, `Need` and `needs_of`. It is pure (INV-2): a need names a role, never an entity. Finding an entity is the profile's job (§5.9), and asking is the flow's (D8 §5.2).
@@ -354,7 +355,7 @@ def needs_of(type_: DeviceType, kind: str, strategy: Strategy) -> tuple[Need, ..
 | `recommended` | the load runs on a stated fallback | asks when detection could not settle it; leaving it empty declines it (`declined`, D-0753) |
 | `optional` | nothing the household would notice | under **Advanced**, pre-filled when found |
 
-**Each type's needs.** The roles each type's code reads (`reads.value(Role.X)`, 14 Oct 2026), plus the ones the setup measurement reads (D10 §5.6). The text after each fallback is `needs.<key>.without`.
+**Each type's needs.** The roles each type's code reads (`reads.value(Role.X)`, 14 Oct 2026), plus the ones the setup measurement reads (D10 §5.6). The text after each fallback is `selector.need_without.options.<key>`.
 
 | type | required | recommended (the fallback) | optional |
 |---|---|---|---|
@@ -362,14 +363,14 @@ def needs_of(type_: DeviceType, kind: str, strategy: Strategy) -> tuple[Need, ..
 | `water_heater` | - | `TEMP` (the sensorless estimate, D-0741); `POWER` (the element, standby and daily draw stay the table's) | `TEMP_TOP`, `TEMP_BOTTOM`; `ENERGY` |
 | `heat_pump` | `TEMP` | `POWER` (the rating stays the answer); `OUTDOOR_TEMP` (the forecast's hour, D10 §5.7) | `OUTLET_TEMP`; `ENERGY` |
 | `radiator` | - | `TEMP` (pause only: `bank_k` 0, D-0728); `POWER` (the rating stays the answer) | `ENERGY` |
-| `ev` | `STATUS` | `SOC` (plans by `kwh_to_add`, §8); `POWER` | `SESSION_ENERGY`, `CURRENT_L1`…`L3` (phases stay the answer), `CIRCUIT_MAX`, `CABLE_RATING`, `CURRENT_MAX`, `BLOCKED_BY`, `ENERGY` |
+| `ev` | `CURRENT_SET`, `STATUS` | `SOC` (plans by `kwh_to_add`, §8); `POWER` | `SESSION_ENERGY`, `CURRENT_L1`…`L3` (phases stay the answer), `CIRCUIT_MAX`, `CABLE_RATING`, `CURRENT_MAX`, `BLOCKED_BY`, `ENERGY` |
 | `battery` | `SOC` | `POWER` (the row's witness where it names none) | `ENERGY` |
 | `generic_switch` | - | `POWER` (the rating and hours stay the answers) | `ENERGY` |
 | `appliance_cycle` | - | `POWER` (the cycle stays the type's default until a run is seen); `PROGRAM_STATE` (finished by timeout, §8) | `ENERGY` |
 
-**Each kind's needs.** `MODE`: `MODE_SELECT` required; `ECO_SETPOINT` recommended (the device's own eco setpoint stands, unprovisioned); `HYSTERESIS` optional. `SETPOINT`: `SETPOINT` required. `SWITCH`: `SWITCH` or `START` required. `MODULATE`: `CURRENT_SET` required, and `ENABLE` required unless the match says `limit_pauses` (§5.9). `BATTERY`: the row's levers, required as the row declares them (§5.9).
+**Each kind's needs.** A kind declares only the roles it always writes. `MODE`: `MODE_SELECT` required; `ECO_SETPOINT` recommended (the device's own eco setpoint stands, unprovisioned); `HYSTERESIS` optional. `SETPOINT`: `SETPOINT` required. `SWITCH`, `MODULATE` and `BATTERY` declare none, because the type chooses their role, so the type's `needs(kind)` declares it. `SWITCH` is the type's `SWITCH` (a cycle's relay or start button is the profile's `REQUIRED`). `MODULATE` is `CURRENT_SET` on an `ev` (with `ENABLE` optional, the profile requiring it where the charger has one) and `BATTERY_POWER_SET` on a `battery`. `BATTERY` is the row's levers, which the profile requires (§5.9).
 
-**Each strategy's needs.** `heat_capacitor`: `TEMP` recommended (pause pairs only). `hot_water`: `TEMP_TOP` and `TEMP_BOTTOM` recommended (the level is one probe, and a centre probe reads 64 °C over a bottom third at 28 °C, D-0741). `deadline_fill` on an `ev`: `SOC` recommended. No other strategy reads a role. A strategy changed later, from its select, whose needs are unmet raises `needs_review` (D-0753).
+**Each strategy's needs.** `heat_capacitor`: `TEMP` recommended (pause pairs only). `hot_water`: `TEMP_TOP` and `TEMP_BOTTOM` recommended (the level is one probe, and a centre probe reads 64 °C over a bottom third at 28 °C, D-0741). No other strategy reads a role: `deadline_fill` runs the tank as well as the car, so the car's `SOC` is the `ev` type's need. A strategy changed later, from its select, whose needs are unmet raises `needs_review` (D-0753).
 
 **What a data point lets powerplan measure *(D-0752)*.** A parameter comes from the first source that holds: **measured** (a D10 §5.6 fit over the bound entities' history passes its gate), **from the device** (an entity says it), **answered**, **typical** (the type's table). A question whose parameter was measured or read from the device is not asked. The review shows it with its source, editable under **Advanced**, and a fit that missed its gate is named with why. Nothing is estimated outside a fit.
 
@@ -1174,7 +1175,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 54. A foil measured as a foil (D-0740): 16 m² of foil under laminate derives 960 W (60 W/m²), under tile 1 920 W; config entry minor version 7 gives a foil still on the mat table's rating the foil's, puts a `coast_tau_h` outside [2, 48] h back to 10 h, and leaves a measured rating, a mat under tile, a typed `coast_tau_h`, a slab and every other type alone. `tests/surface/test_foil_migration.py`.
 55. A tank measured at setup (D-0741): measured 2 904 W, 148 W and 6.24 kWh/day derive `nameplate_w` 2 904, `standby_loss_w` 148, `draw_kwh_day` 6.2; a typed standby of 80 W stands; nothing measured keeps 3 000 W, 60 W and no daily figure; the profile then spends 6.2 kWh a day; a tank reading 69 / 64 / 28 °C top to bottom has level 53.7 °C, 64 °C with the centre probe alone; the probe answers bind as `TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`, and top and lower are suggested from the centre probe's device by name. `tests/core/loads/test_55_tank_measured.py`, `tests/flows/test_tank_probes.py`.
 56. A tank that pasteurises itself (D-0742): ten nights at 75 °C top to bottom each move `last_completed` and the cycle never opens; 75 °C at the top over 40 °C at the bottom credits nothing and the cycle opens in its lead window; a tank with one probe is credited on it. INV-54's week under a plan that never charges still completes before its interval. `tests/core/loads/test_56_natural_pasteurisation.py`, `test_11_legionella.py`.
-57. Needs are declared (D-0746, INV-76): every `Role` a type's or kind's module reads through `reads.value` or writes through a `Command` appears in `needs_of` for that type and kind (an AST scan of `core/loads/types/` and `kinds/`, so a new read without a need fails); a floor on `MODE` needs `MODE_SELECT` required and `ECO_SETPOINT` recommended, one on `SETPOINT` neither; `hot_water` raises `TEMP_TOP` to recommended on a tank where `deadline_fill` leaves it optional; every need's `key` has `purpose` and `without` in `en` and `nb`. `tests/core/loads/test_57_needs.py`.
+57. Needs are declared (D-0746, INV-76): every `Role` a type's or kind's module reads through `reads.value` or writes through a `Command` appears in `needs_of` for that type and kind (an AST scan of `core/loads/types/` and `kinds/`, so a new read without a need fails); a floor on `MODE` needs `MODE_SELECT` required and `ECO_SETPOINT` recommended, one on `SETPOINT` neither; `hot_water` raises `TEMP_TOP` to recommended on a tank where `deadline_fill` leaves it optional; every need's `key` has its texts in `selector.need_purpose` and `selector.need_without` in `en` and `nb`, and those vocabularies carry no other key. `tests/core/loads/test_57_needs.py`.
 58. The pool (D-0747): the recaptured Z-TRM2fx (41 Z-Wave entities, 26 disabled, the Riemann helper, the load's own entities) binds `FLOOR_MIN` to *Floor Minimum Temperature Limit*, `HYSTERESIS` to *Temperature Control Hysteresis*, the placement from *Sensor Mode*, and `ENERGY` to the helper, with the disabled kWh meter in `view.disabled`; a `powerplan` power sensor on the device is never a `POWER` candidate; a diagnostic temperature is never a `TEMP` candidate. The ESPHome heat pump's *Total Energy* and the household's `integration` helper are a tie, the native one ranked first. `tests/providers/profiles/test_58_pool.py`.
 59. Ties are data, not a DEBUG line (D-0748): a device with two plausible `POWER` sensors returns `bindings` without `POWER` and `ties[POWER]` with both, ranked; a 0.0 °C candidate ranks below a 22.9 °C one but is still offered; no ranking binds alone. In floor placement the sensor tracking `current_temperature` within 0.1 K over three reports binds `TEMP_FLOOR`; two sensors both tracking it remain a tie. `tests/providers/profiles/test_59_ties.py`.
 60. Nearby (D-0748): a device with a power sensor and no energy sensor, and an `integration` helper on no device whose `source` is that power sensor, suggests the helper for `ENERGY`; a device with no power sensor and one power sensor in its area gets that one suggested, two in the area are not; a suggestion is never bound without the household. `tests/providers/profiles/test_60_nearby.py`.

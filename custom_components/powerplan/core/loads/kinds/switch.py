@@ -14,6 +14,7 @@ cannot know what is inside the vessel.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from ..needs import Need
 from .base import (
     Action,
     ActionReason,
@@ -54,6 +55,8 @@ class Switch:
 
     cfg: SwitchCfg
     key: ClassVar[str] = "switch"
+    #: The type chooses this kind's role, so the type declares it (D4 §4.7).
+    needs: ClassVar[tuple[Need, ...]] = ()
 
     def quantise(self, w: float, ctx: KindCtx) -> Quantised:
         """On when the grant covers the nameplate and nothing sheds it (§5.6)."""

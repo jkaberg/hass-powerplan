@@ -19,10 +19,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Literal, Protocol
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
 from ...metering import ElectricalProfile, Reading
 from ...model import Desired, Grant, Mode, PlanAnswer
+
+if TYPE_CHECKING:
+    from ..needs import Need
 
 __all__ = [
     "Action",
@@ -433,6 +436,8 @@ class ControlKind(Protocol):
     """How one kind of hardware is steered (D4 §4.2)."""
 
     key: ClassVar[str]
+    #: The roles this kind always writes (D4 §4.7); empty where the type chooses the role.
+    needs: ClassVar[tuple[Need, ...]]
 
     def quantise(self, w: float, ctx: KindCtx) -> Quantised:
         """Turn a grant in watts into a device value and its effective watts."""

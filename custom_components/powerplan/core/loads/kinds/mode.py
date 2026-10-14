@@ -18,6 +18,7 @@ that *starts with* "heat".
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+from ..needs import Need, Tier, need
 from .base import (
     Action,
     ActionReason,
@@ -88,6 +89,12 @@ class ModeKind:
 
     cfg: ModeCfg
     key: ClassVar[str] = "mode"
+    needs: ClassVar[tuple[Need, ...]] = (
+        need("mode", Role.MODE_SELECT, Tier.REQUIRED),
+        # Without it the device's own eco setpoint stands, unprovisioned (D4 §5.5).
+        need("mode", Role.ECO_SETPOINT, Tier.RECOMMENDED),
+        need("mode", Role.HYSTERESIS, Tier.OPTIONAL),
+    )
 
     def _option(self, want: str, ctx: KindCtx) -> str | None:
         return match_option(want, ctx.reads.options(self.cfg.role), fuzzy=self.cfg.match == "fuzzy")

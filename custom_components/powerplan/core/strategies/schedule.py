@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from ..loads import TargetProfile
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from .context import PlanContext
 
@@ -138,6 +139,7 @@ class Schedule:
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "radiator", "water_heater", "generic_switch", "heat_pump"}
     )
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = (
         Field(key="windows", kind=FieldKind.LIST, default=(), required=True),
     )

@@ -36,6 +36,9 @@ from statistics import fmean
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
 from ..loads import PresenceMode
+from ..loads.kinds.base import Role
+from ..loads.needs import Need, Tier
+from ..loads.needs import need as declare_need
 from ..loads.stores.base import StoreCtx, StoreModel
 from ..loads.stores.thermal import coast_hours_tau, level_needed
 from ..model import Desired, PlanMode, PlanSlot, Slot
@@ -316,6 +319,10 @@ class HeatCapacitor:
     key: ClassVar[str] = "heat_capacitor"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset(
         {"floor_heating", "heat_pump", "radiator", "water_heater"}
+    )
+    needs: ClassVar[tuple[Need, ...]] = (
+        # Without a temperature there is no store to fill: pause pairs only (D-0729).
+        declare_need("heat_capacitor", Role.TEMP, Tier.RECOMMENDED),
     )
     schema: ClassVar[Schema] = (
         Field(key="min_saving", kind=FieldKind.NUMBER, default=0.10),

@@ -19,6 +19,7 @@ from ..base import Load, LoadConfig, TypeLogic
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from ..needs import Need
     from ..questionnaire import Answers, Derived, QCtx, Questionnaire
     from ..stores.base import StoreModel
 
@@ -40,6 +41,10 @@ class DeviceType(TypeLogic, Protocol):
 
     def build(self, cfg: LoadConfig, store: StoreModel | None = None) -> Load:
         """Build the runtime `Load`: kind, store, gate configuration."""
+        ...
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads when steered by `kind` (D4 §4.7)."""
         ...
 
 

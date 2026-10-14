@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from math import copysign, floor
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+from ..needs import Need
 from .base import Action, ActionReason, Command, Hold, KindCtx, Quantised, Reads, Role, Value, Write
 
 if TYPE_CHECKING:
@@ -68,6 +69,8 @@ class Modulate:
 
     cfg: ModulateCfg
     key: ClassVar[str] = "modulate"
+    #: The type chooses this kind's role, so the type declares it (D4 §4.7).
+    needs: ClassVar[tuple[Need, ...]] = ()
 
     # ----------------------------------------------------------------- units #
 

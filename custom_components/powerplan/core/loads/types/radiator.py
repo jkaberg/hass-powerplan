@@ -23,6 +23,7 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import Setpoint, SetpointCfg
 from ..kinds.switch import Switch, SwitchCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import (
     Answers,
     Bounds,
@@ -245,6 +246,17 @@ class Radiator:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        control = (need(self.key, Role.SWITCH, Tier.REQUIRED),) if kind == "switch" else ()
+        return (
+            *control,
+            # Without it a plug radiator pauses only: `bank_k` 0 (D-0729).
+            need(self.key, Role.TEMP, Tier.RECOMMENDED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, with every number sourced (D4 §6.5)."""

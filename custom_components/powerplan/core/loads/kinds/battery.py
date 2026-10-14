@@ -25,6 +25,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar, Final
 
 from ...model import PlanAnswer
+from ..needs import Need
 from .base import (
     Action,
     ActionReason,
@@ -124,6 +125,8 @@ class BatteryKind:
 
     cfg: BatteryCfg
     key: ClassVar[str] = "battery"
+    #: The type chooses this kind's role, so the type declares it (D4 §4.7).
+    needs: ClassVar[tuple[Need, ...]] = ()
 
     def quantise(self, w: float, ctx: KindCtx) -> Quantised:
         """Pick the command for a grant of `w` W and say what the battery then draws."""

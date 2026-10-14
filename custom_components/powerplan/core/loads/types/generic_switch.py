@@ -24,6 +24,7 @@ from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..gate import same
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.switch import Switch, SwitchCfg
+from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from .base import register
 
@@ -196,6 +197,15 @@ class GenericSwitch:
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
+
+    def needs(self, kind: str) -> tuple[Need, ...]:
+        """Return the data points this type reads under `kind` (D4 §4.7)."""
+        del kind  # `switch` leaves its role to the type.
+        return (
+            need(self.key, Role.SWITCH, Tier.REQUIRED),
+            need(self.key, Role.POWER, Tier.RECOMMENDED),
+            need(self.key, Role.ENERGY, Tier.OPTIONAL),
+        )
 
     def derive(self, answers: Answers, ctx: QCtx) -> Derived:
         """Answers → parameters, with every number sourced (D4 §6.7)."""

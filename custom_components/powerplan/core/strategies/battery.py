@@ -67,6 +67,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    from ..loads.needs import Need
     from ..model import Demand, Plan
     from .context import PlanContext
 
@@ -543,6 +544,7 @@ class Arbitrage:
 
     key: ClassVar[str] = "arbitrage"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset({"battery"})
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = _SCHEMA
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:
@@ -556,6 +558,7 @@ class PeakShave:
 
     key: ClassVar[str] = "peak_shave"
     supports: ClassVar[frozenset[str] | Literal["all"]] = frozenset({"battery"})
+    needs: ClassVar[tuple[Need, ...]] = ()
     schema: ClassVar[Schema] = _SCHEMA
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:
