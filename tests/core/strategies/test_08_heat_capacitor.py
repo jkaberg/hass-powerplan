@@ -766,3 +766,82 @@ def test_08_a_committed_fill_is_carried_into_the_next_plan() -> None:
         if slot.start in fills:
             assert after[slot.start].envelope_w == pytest.approx(slot.envelope_w), slot.start
             assert after[slot.start].kwh == pytest.approx(slot.kwh), slot.start
+
+
+# --------------------------------------------------------------------------- #
+# §9 39: no slot plans more than it can draw
+# --------------------------------------------------------------------------- #
+
+
+def _cheap_half_tight(w: float) -> dict[datetime, float]:
+    """Return `w` of headroom in the cheaper half of the volatile day's slots."""
+    slots = sorted(volatile_curve().slots, key=lambda slot: (slot.total, slot.start))
+    return {slot.start: w for slot in slots[: len(slots) // 2]}
+
+
+def _pump() -> LoadView:
+    """Return a heat pump whose room cannot coast a 16 h window from its highest level."""
+    room = RoomStore.from_volume(volume_m3=100.0, max_c=26.0, min_c=18.0, coast_tau_h=20.0)
+    return capacitor_view(store=room, level_now=21.0)
+
+
+@pytest.mark.parametrize(
+    ("view", "headroom", "params"),
+    [
+        (None, None, {"bank_k": 0.0}),
+        (None, None, {"bank_k": 0.0, "coast_k": 3.0}),
+        (None, _cheap_half_tight(1_200.0), {"bank_k": 0.0, "coast_k": 3.0}),
+        (None, _cheap_half_tight(400.0), {"bank_k": 0.0, "coast_k": 3.0}),
+        (None, _cheap_half_tight(0.0), {}),
+        ("pump", None, {"preheat_max_outdoor_c": 5.0, "tariff": "peak"}),
+        ("pump", _cheap_half_tight(500.0), {"preheat_max_outdoor_c": 5.0, "tariff": "peak"}),
+    ],
+    ids=[
+        "pauses",
+        "deep-pauses",
+        "pauses-1200W",
+        "pauses-400W",
+        "no-room-when-cheap",
+        "pump-window",
+        "pump-window-500W",
+    ],
+)
+def test_39_no_slot_plans_more_than_max_w_or_its_headroom(
+    view: str | None, headroom: dict[datetime, float] | None, params: dict[str, Any]
+) -> None:
+    """§9 39: every slot's energy fits `min(max_w, headroom)`: a pause's recovery, a top-up, a fill.
+
+    The reference house, 15 Oct 2026: two heat pumps' pauses all came back in the
+    one cheapest quarter hour, 4.7 kWh in 15 min on a heat pump, and the plan
+    crossed the 10 kWh/h capacity step (D-0756).
+    """
+    room = flat_headroom(volatile_curve(), 10_000.0).by_slot | (headroom or {})
+    tariff = evaluator(no_tariff(eligible=PEAK)) if params.pop("tariff", None) else None
+    plan = planned(
+        view=_pump() if view == "pump" else None, headroom=headroom, tariff=tariff, **params
+    )
+
+    for slot in plan.slots:
+        cap_kwh = min(FLOOR_W, room[slot.start]) * slot.hours / 1000.0
+        assert slot.kwh <= cap_kwh + 1e-9, (slot.start, slot.reason)
+        assert slot.planned_draw_w <= min(FLOOR_W, room[slot.start]) + 1e-6, (
+            slot.start,
+            slot.reason,
+        )
+
+
+def test_39_a_pause_spreads_its_recovery_over_the_cheap_slots_with_room() -> None:
+    """§9 39: less room spreads the same recovery over more slots; none at all, no pause."""
+    free = planned(bank_k=0.0, coast_k=3.0)
+    tight = planned(bank_k=0.0, coast_k=3.0, headroom=_cheap_half_tight(400.0))
+    shut = planned(bank_k=0.0, coast_k=3.0, headroom=_cheap_half_tight(0.0))
+
+    def backs(plan: Plan) -> list[PlanSlot]:
+        return [slot for slot in plan.slots if slot.reason == "back from a pause"]
+
+    assert len(paused(tight)) == len(paused(free))
+    assert len(backs(tight)) > len(backs(free))
+    assert sum(slot.kwh for slot in backs(tight)) == pytest.approx(
+        sum(slot.kwh for slot in backs(free))
+    )
+    assert not paused(shut), "a pause with nowhere to come back is not taken"

@@ -60,7 +60,10 @@ Keeps the appliance at comfort and pauses it in an expensive hour when a cheaper
 <a name="cheapest_hours"></a>
 ## Cheapest hours
 
-Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished.
+Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours.
+
+> [!NOTE]
+> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target.
 
 | | |
 |---|---|
@@ -84,7 +87,7 @@ Charges or heats in the cheapest hours before the time you set, and stops when t
 
 Keeps the appliance off through expensive hours, and through hours when your home has no room under its capacity step. Before such a run of hours, it warms the floor, the room or the tank just enough to stay above the lowest temperature you allow until the run ends. How much is worked out from how fast the appliance cools, which PowerPlan measures from its history.
 
-When the highest temperature you allow is not enough to last the whole run, the appliance heats a little inside it, spread evenly, so no hour gets the whole top-up. A single expensive hour with no run around it is paused if a cheaper hour soon after can make up for it. Every move must save at least 10 % on the hours it skips. An appliance that only switches between comfort and an energy-saving mode, or a panel heater on a plug, cannot store heat above comfort, so it only pauses; see [When a plan is not worth it](#worth_it).
+When the highest temperature you allow is not enough to last the whole run, the appliance heats a little inside it, spread evenly, so no hour gets the whole top-up. A single expensive hour with no run around it is paused if cheaper hours soon after can make up for it. The make-up is spread over those hours, never above the appliance's power or your target, and a pause with no room to make up for it is not planned. Every move must save at least 10 % on the hours it skips. An appliance that only switches between comfort and an energy-saving mode, or a panel heater on a plug, cannot store heat above comfort, so it only pauses; see [When a plan is not worth it](#worth_it).
 
 > [!NOTE]
 > Since v0.0.11, this plan sizes its warm-up from how fast the appliance cools, and stays off through full hours of the capacity step. Before that it warmed by a fixed degree in the cheapest quarter of the day, and it was called **Bank heat in cheap hours**.

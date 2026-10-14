@@ -62,6 +62,8 @@ __all__ = ["HeatCapacitor"]
 _EPS_K: Final = 1e-6
 #: A saving has to be a saving: below this many minor units it is float noise.
 _EPS: Final = Decimal("0.0000001")
+#: Below this many kWh an energy is float noise, not a draw.
+_EPS_KWH: Final = 1e-9
 
 
 class _Kind(StrEnum):
@@ -362,7 +364,7 @@ class HeatCapacitor:
                     work, stretch, demand=demand, ctx=ctx, store=store, policy=policy, tau=tau
                 )
             if not _flat(ctx, window):
-                _plan_pauses(work, policy, tau=tau)
+                _plan_pauses(work, policy, tau=tau, demand=demand, ctx=ctx)
         rows = _rows(work, demand, ctx, policy)
         plan = build_plan(
             load_id=ctx.load.load_id,
@@ -615,7 +617,10 @@ def _plan_stretch(
 
     `T0 = T_out + (lo − T_out)·e^(d/τ)`, capped at `hi` (INV-56). What `hi`
     cannot carry is held at `lo` inside the stretch, spread evenly - the hour's
-    maximum is what a capacity tariff bills (INV-55).
+    maximum is what a capacity tariff bills (INV-55) - and never above what a slot
+    can draw, `min(max_w, headroom)`. A price stretch the house has no room to hold
+    `lo` in is not taken; a capacity stretch plans what fits, and a floor the rest
+    leaves short is D6's to serve (INV-1's exception).
     """
     run = work[stretch.first : stretch.last + 1]
     outdoors = [slot.outdoor for slot in run if slot.outdoor is not None]
@@ -644,7 +649,10 @@ def _plan_stretch(
             reason=_stretch_reason(to, run),
             taken=frozenset(slot.slot.start for slot in work if slot.kind is not _Kind.HOLD),
         )
-    if not stretch.capacity and not _pays(run, work, fill, topup_kwh, policy):
+    shares = _spread(run, topup_kwh, [_cap_kwh(slot, demand, ctx) for slot in run])
+    if not stretch.capacity and (
+        sum(shares) + _EPS_KWH < topup_kwh or not _pays(run, work, fill, shares, policy)
+    ):
         return
     for slot in work:
         found = fill.get(slot.slot.start)
@@ -656,12 +664,11 @@ def _plan_stretch(
             if slot.kind is _Kind.HOLD:
                 slot.kind = _Kind.RAISED
                 slot.level = to
-    for slot in run:
-        share = topup_kwh * slot.hours / hours if hours > 0.0 else 0.0
+    for slot, share in zip(run, shares, strict=True):
         slot.kind = _Kind.COAST
         slot.level = slot.lo
         slot.kwh = share
-        slot.envelope_w = min(demand.max_w, share / slot.hours * 1000.0) if share else 0.0
+        slot.envelope_w = share / slot.hours * 1000.0 if share else 0.0
         slot.reason = STAY_OFF_FOR_CAPACITY if stretch.capacity else "stay off while dear"
 
 
@@ -669,7 +676,7 @@ def _pays(
     run: Sequence[_Work],
     work: Sequence[_Work],
     fill: Mapping[datetime, _Fill],
-    topup_kwh: float,
+    shares: Sequence[float],
     policy: _Policy,
 ) -> bool:
     """Return whether a price stretch saves `min_saving` on the holding it skips (§5.7)."""
@@ -681,9 +688,8 @@ def _pays(
     banked = sum(
         (Decimal(str(found.kwh)) * prices[start] for start, found in fill.items()), Decimal(0)
     )
-    hours = sum(slot.hours for slot in run)
     topped = sum(
-        (Decimal(str(topup_kwh * slot.hours / hours)) * slot.slot.total for slot in run),
+        (Decimal(str(share)) * slot.slot.total for slot, share in zip(run, shares, strict=True)),
         Decimal(0),
     )
     saving = skipped - banked - topped
@@ -691,46 +697,102 @@ def _pays(
     return saving > _EPS and saving >= needed
 
 
-def _plan_pauses(work: list[_Work], policy: _Policy, *, tau: float) -> None:
-    """Pause the dear slots no stretch covers, recovered in a cheaper slot after (§5.7 step 4).
+def _spread(run: Sequence[_Work], kwh: float, caps: Sequence[float]) -> list[float]:
+    """Return `kwh` spread over `run` by time, no slot above its cap; what none can take is left."""
+    shares = [0.0] * len(run)
+    left = kwh
+    open_ = [index for index, cap in enumerate(caps) if cap > _EPS_KWH]
+    while left > _EPS_KWH and open_:
+        rate = left / sum(run[index].hours for index in open_)
+        full = [index for index in open_ if shares[index] + rate * run[index].hours >= caps[index]]
+        if not full:
+            for index in open_:
+                shares[index] += rate * run[index].hours
+            break
+        for index in full:
+            left -= caps[index] - shares[index]
+            shares[index] = caps[index]
+        open_ = [index for index in open_ if index not in full]
+    return shares
+
+
+def _plan_pauses(
+    work: list[_Work], policy: _Policy, *, tau: float, demand: Demand, ctx: PlanContext
+) -> None:
+    """Pause the dear slots no stretch covers, recovered in cheaper slots after (§5.7 step 4).
 
     A pause's length comes from the store: consecutive paused slots stop where the
-    store would reach `lo` (D-0728). Best gain per kWh first.
+    store would reach `lo` (D-0728). Best gain per kWh first. What a pause skips is
+    recovered in the cheapest slots that clear `min_saving`, each up to its spare
+    (`min(max_w, headroom) − hold`); a pause whose energy does not fit is not taken.
     """
-    candidates: list[tuple[Decimal, int, int]] = []
+    candidates: list[tuple[Decimal, int, tuple[int, ...]]] = []
     for index, slot in enumerate(work):
         if slot.kind is not _Kind.HOLD or slot.hold_kwh <= 0.0 or slot.outdoor is None:
             continue
         reach = coast_hours_tau(tau, slot.start, slot.lo, slot.outdoor)
-        best: tuple[Decimal, int] | None = None
+        backs: list[int] = []
         hours = 0.0
         for later in range(index + 1, len(work)):
             hours += work[later].hours
             if hours > reach:
                 break
-            if work[later].kind is _Kind.HOLD and (
-                best is None or work[later].slot.total < best[0]
+            gain = slot.slot.total - work[later].slot.total
+            if (
+                work[later].kind is _Kind.HOLD
+                and gain > _EPS
+                and gain >= policy.threshold(slot.slot.total)
             ):
-                best = (work[later].slot.total, later)
-        if best is None:
+                backs.append(later)
+        if not backs:
             continue
-        gain = slot.slot.total - best[0]
-        if gain > _EPS and gain >= policy.threshold(slot.slot.total):
-            candidates.append((gain, index, best[1]))
-    for _gain, index, recover in sorted(candidates, key=lambda row: (-row[0], row[1])):
+        backs.sort(key=lambda later: (work[later].slot.total, later))
+        candidates.append((slot.slot.total - work[backs[0]].slot.total, index, tuple(backs)))
+    for _gain, index, cheapest in sorted(candidates, key=lambda row: (-row[0], row[1])):
         slot = work[index]
-        back = work[recover]
-        if slot.kind is not _Kind.HOLD or back.kind not in {_Kind.HOLD, _Kind.RECOVER}:
+        if slot.kind is not _Kind.HOLD:
             continue
-        if not _pause_fits(work, index, tau=tau):
+        shares = _recovery(work, cheapest, slot.hold_kwh, demand=demand, ctx=ctx)
+        if shares is None or not _pause_fits(work, index, tau=tau):
             continue
         slot.kind = _Kind.COAST
         slot.level = slot.lo
         slot.envelope_w = 0.0
         slot.reason = "paused"
-        back.kind = _Kind.RECOVER
-        back.kwh += slot.hold_kwh
-        back.reason = "back from a pause"
+        for later, kwh in shares:
+            back = work[later]
+            back.kind = _Kind.RECOVER
+            back.kwh += kwh
+            back.reason = "back from a pause"
+
+
+def _recovery(
+    work: Sequence[_Work], backs: Sequence[int], kwh: float, *, demand: Demand, ctx: PlanContext
+) -> list[tuple[int, float]] | None:
+    """Return where a pause's `kwh` comes back, cheapest first, or `None` if it does not fit."""
+    shares: list[tuple[int, float]] = []
+    left = kwh
+    for later in backs:
+        if left <= _EPS_KWH:
+            break
+        back = work[later]
+        if back.kind not in {_Kind.HOLD, _Kind.RECOVER}:
+            continue
+        take = min(left, _spare(back, demand, ctx))
+        if take > _EPS_KWH:
+            shares.append((later, take))
+            left -= take
+    return shares if left <= _EPS_KWH else None
+
+
+def _cap_kwh(slot: _Work, demand: Demand, ctx: PlanContext) -> float:
+    """Return the most the slot may draw: `min(max_w, headroom)` for its length (§5.2)."""
+    return min(demand.max_w, ctx.headroom.w_at(slot.slot.start)) * slot.hours / 1000.0
+
+
+def _spare(slot: _Work, demand: Demand, ctx: PlanContext) -> float:
+    """Return what the slot can take on top of its holding and what is planned in it (§5.7)."""
+    return max(0.0, _cap_kwh(slot, demand, ctx) - slot.hold_kwh - slot.kwh)
 
 
 def _pause_fits(work: Sequence[_Work], index: int, *, tau: float) -> bool:

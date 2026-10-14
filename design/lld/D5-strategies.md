@@ -201,7 +201,7 @@ Greedy over *blocks* (D-0199): every contiguous run of usable slots reaching `mi
 
 ### 5.4 `cheapest_hours`
 
-Parameters: `hours_per_day` (or `slots`), `window` (`TimeFilter`, default the whole local day), `consecutive: bool`, `max_price: Decimal | None`. Non-consecutive: the N cheapest slots in the window (stable tie-break). Consecutive: the cheapest run of N by prefix sums. Slots above `max_price` are excluded even if that leaves fewer than N - the load then runs less, the user asked for a price cap. Envelope = `max_w` in chosen slots, 0 elsewhere.
+Parameters: `hours_per_day` (or `slots`), `window` (`TimeFilter`, default the whole local day), `consecutive: bool`, `max_price: Decimal | None`. Non-consecutive: the N cheapest slots in the window (stable tie-break). Consecutive: the cheapest run of N by prefix sums. Slots above `max_price` are excluded even if that leaves fewer than N - the load then runs less, the user asked for a price cap. So is a slot whose headroom is below `max_w`: the load runs at its maximum or not at all, and the ceiling outranks the plan (INV-1, INV-31, D-0756). Envelope = `max_w` in chosen slots, 0 elsewhere.
 
 ### 5.5 `best_save` (powersaver's algorithm)
 
@@ -250,7 +250,10 @@ T0 = min(hi, level_needed(lo, d))                         # never above hi (INV-
 if T0 < level_needed(lo, d):                              # it can't coast the whole stretch from hi
     top-up = C·(lo − T_out)/τ · (d − coast_h(hi, lo))       # holding lo for the part hi doesn't last
              heated inside it, spread evenly over its slots (capacity: the hour's maximum is what's billed) or in its
-             cheapest slots (price), the planned level never below lo on the way (INV-55)
+             cheapest slots (price), the planned level never below lo on the way (INV-55);
+             no slot above min(max_w, headroom)·h, the overflow spread over the slots below their cap (D-0756).
+             A price stretch whose top-up does not fit is not taken; a capacity stretch plans what fits, and a
+             floor the rest leaves short is D6's to serve (INV-1's exception)
 deadline_fill(required = store.required_kwh(level predicted at a, T0), deadline = a)   # §5.2's exact greedy, before a
 ```
 Then the slots:
@@ -260,14 +263,15 @@ Then the slots:
      filled from what step 1 left; a stretch whose fill doesn't fit before it shrinks from its end until it does
 3 heat pumps: a stretch's fill only if outdoor ≤ preheat_max_outdoor and room < target (INV-29); the stretch itself is still
      a pause, sized from the level the room has
-4 pauses: in what is left, a pause pair - a dear slot s, recovered in a later cheap r within coast_h(target, lo) -
-     kept if p_s − p_r ≥ min_saving × p_s, energy min(C·(target − lo), hold_s, spare_r), best gain first (D-0727)
+4 pauses: in what is left, a pause pair - a dear slot s, recovered in later cheap slots r within coast_h(target, lo),
+     each with p_s − p_r ≥ min_saving × p_s - best gain first (D-0727). hold_s comes back in those r cheapest first,
+     each up to spare_r; a pause whose hold_s does not fit in them is not taken (D-0756)
 5 the level trajectory → slots: a fill slot is BANK (envelope its planned draw, kwh its energy, D-0629); a stretch or pause
      slot is COAST, envelope 0 or the top-up; every other slot is HOLD, envelope None
    desired_state: SETPOINT - the planned level's offset from target, rate-limited by max_rate_k_per_h from the delta in
                   force (D-0258); MODE - comfort on BANK, shed on COAST, None on HOLD; SWITCH - None (the envelope is the lever)
 ```
-`spare_x = (min(max_w, headroom) − hold_w)·h` at `x`, and `hold_s` is the slot's holding draw (`hold_kwh`). As in D-0724, a pause or a stretch is credited with its timing only, not with the lower loss while the store sits below target. Prices are `PlanContext.effective`.
+`spare_x = (min(max_w, headroom) − hold_w)·h − kwh_x` at `x`, what the slot can still take after its holding draw and what earlier pauses already recover in it, and `hold_s` is the slot's holding draw (`hold_kwh`). As in D-0724, a pause or a stretch is credited with its timing only, not with the lower loss while the store sits below target. Prices are `PlanContext.effective`.
 
 A flat day has no price stretch and no pause above `min_saving`, so every slot is HOLD unless the capacity asks. D-0254's `is_flat` rule stays as the guard against float noise (§9 3). With `bank_k = 0`, `hi = target`: a stretch is coasted from target and topped up inside where `target` won't last. That is `best_save` with the store, not the clock, setting how long a pause lasts (D-0728). Cooling flips the signs (`store.direction`): a bank is a pre-cool and `hi`/`lo` swap. A store with no level (`level_now = None`) has nothing to say, as before (§8).
 
@@ -463,6 +467,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 36. A capacity stretch (D-0732): a floor below a 9 kW tank and a 5 kW baseline under a 10 kW ceiling sees headroom under its holding draw 17:00–20:00. It plans a fill before 17:00 and coasts through, though the energy price is flat. With `respect_tariff_windows = False` and no headroom shortfall the same plan is all HOLD. A weighted peak window is a capacity stretch the same way.
 37. `hot_water` (D-0743): the reference tank at 13:07 on a Norgespris day with a 0.14 NOK night rate, four people, 53.7 °C, buys at once and keeps every slot at or above 4.4 kWh and the next hour's draws, never above the 75 °C charge level; spot at 1.20 NOK 16–21 moves the evening's heat before 16:00; full at 06:07 for two people buys nothing until 22:00; one person at 57.4 °C at 21:07 is not charged to 75 °C; 2 kW of headroom 13–17 offers no slot there to a 3 kW element; on a flat day what the afternoon needs is bought as late as reaches it; a legionella demand is placed as `deadline_fill` places it; a comfort violation is `URGENT` with no slots. `tests/core/strategies/test_37_hot_water.py`.
 38. The migration (D-0741, D-0743): config entry minor version 8 keeps every tank's strategy, writes `hot_water`'s reserve in beside it, clears a standby answer at the old 60 W default unless typed, and binds the top and lower probes found on the centre probe's device; a legionella temperature still at the old 65 °C becomes 70 °C with its drive recomputed, a typed one stays, and a new tank is given 70 °C (D-0744). `tests/surface/test_hot_water_migration.py`.
+39. No slot plans more than it can draw (D-0756): in every `heat_capacitor` plan - pauses, deep pauses, a cheap half of the day with 1 200, 400 or 0 W of headroom, and a heat pump whose room cannot coast a 16 h window from `hi` - every slot's `kwh` is at most `min(max_w, headroom)·h` and its planned draw at most `min(max_w, headroom)`. With 400 W the same pauses come back over more slots for the same energy; with none, no pause is planned. `cheapest_hours` skips an hour whose headroom is below `max_w` and takes the next cheapest. `tests/core/strategies/test_08_heat_capacitor.py`, `test_05_cheapest_hours.py`.
 
 ## 10. Deliberately deferred
 

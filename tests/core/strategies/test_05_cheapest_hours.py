@@ -14,6 +14,7 @@ would then have to cut (INV-30).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import time, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -32,6 +33,7 @@ from tests.core.strategies.conftest import (
     curves_of,
     demand,
     ev_view,
+    flat_headroom,
     floor_view,
     site_ctx,
     volatile_curve,
@@ -134,6 +136,28 @@ def test_05_max_price_excludes_a_slot_even_when_that_leaves_fewer_hours() -> Non
     assert slots_on(plan) == 12
     assert plan.covered, "fewer hours is the answer asked for, not a shortfall"
     assert "0.18" in plan.reason
+
+
+def test_39_a_slot_without_room_for_max_w_is_not_a_cheapest_hour() -> None:
+    """§9 39: the ceiling outranks the plan - an hour it cannot run at `max_w` is skipped (INV-1)."""
+    source = volatile_curve()
+    room = flat_headroom(source, 10_000.0)
+    noon = {
+        slot.start: EV_W - 1.0
+        for slot in source.slots
+        if slot.start.astimezone(OSLO).date() == NEXT_DAY and slot.start.astimezone(OSLO).hour == 13
+    }
+    view = ev_view(strategy="cheapest_hours", params={"hours_per_day": 4})
+    plan = plan_all(
+        [view],
+        curves_of(source),
+        site_ctx(),
+        NOW,
+        headroom=replace(room, by_slot={**room.by_slot, **noon}),
+    ).plans["ev"]
+
+    assert hours_on(plan) == [0, 1, 2, 3]
+    assert all(slot.planned_draw_w <= room.w_at(slot.start) for slot in plan.slots)
 
 
 def test_05_a_cap_under_every_price_plans_nothing_at_all() -> None:

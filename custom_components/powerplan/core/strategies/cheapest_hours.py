@@ -15,7 +15,9 @@ Three consequences the code makes explicit:
 * **`max_price` may leave fewer than N.** The user set a cap; the hours above it
   are not worth having, so the load runs less and the plan is still covered. A
   plan that quietly ignored the cap to reach N would answer a question nobody
-  asked.
+  asked. A slot whose headroom cannot carry `max_w` is left out the same way: the
+  load runs at its maximum or not at all, and the ceiling outranks the plan
+  (INV-1, INV-31).
 * **Consecutive is a different problem.** The cheapest *run* of N is not the N
   cheapest slots, so it is found over contiguous runs - for a device that dislikes
   being started and stopped, one run at a slightly worse mean price is the better
@@ -75,18 +77,22 @@ class _Row:
         return self.price * Decimal(str(self.hours))
 
 
-def _rows(ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | None) -> list[_Row]:
+def _rows(
+    ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | None, max_w: float
+) -> list[_Row]:
     """Return the slots of the horizon a chosen hour may come from (§5.4).
 
     Filtered by the `window` - evaluated in **local** time against the site's
     holiday calendar, because "the night rate" and "weekdays" are local
-    statements (HLD §7.1) - and by the price cap.
+    statements (HLD §7.1) - by the price cap, and by the headroom for `max_w`.
     """
     out: list[_Row] = []
     for index, slot in enumerate(ctx.effective.slots_between(ctx.now, ctx.horizon_end())):
         if window is not None and not window.matches(slot.start, ctx.tz, ctx.holidays):
             continue
         if max_price is not None and slot.total > max_price:
+            continue
+        if ctx.headroom.w_at(slot.start) < max_w:
             continue
         out.append(_Row(index=index, slot=slot, day=slot.start.astimezone(ctx.tz).date()))
     return out
@@ -236,7 +242,9 @@ class CheapestHours:
 
         pick = _cheapest_run if consecutive else _cheapest
         chosen: set[int] = set()
-        for day_rows in _by_day(_rows(ctx, window=window, max_price=cap)).values():
+        for day_rows in _by_day(
+            _rows(ctx, window=window, max_price=cap, max_w=demand.max_w)
+        ).values():
             chosen |= pick(day_rows, hours)
 
         whole = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
