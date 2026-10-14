@@ -40,7 +40,7 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
-Where the tank's power and temperature are already in Home Assistant's history, PowerPlan measures the element's power, how much heat the tank loses standing, and how much hot water the household uses in a day. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
+Where the tank's power and temperature are already in Home Assistant's history, PowerPlan measures the element's power, how much heat the tank loses standing, and how much hot water the household uses in a day, over the last three weeks so a holiday or a new season soon stops counting. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
 
 If the tank has more than one temperature sensor, pick the middle one as **Temperature sensor** and the others under **Advanced** as **Top probe** and **Bottom probe**. Where they sit on the same device and their names say top or bottom, PowerPlan fills them in for you. With all three, PowerPlan sees how much hot water is left after a shower, not only the temperature in the middle.
 

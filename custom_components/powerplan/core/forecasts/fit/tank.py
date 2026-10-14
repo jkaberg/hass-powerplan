@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DRAW_BOUNDS_KWH",
     "DRAW_GATE",
+    "DRAW_WINDOW_DAYS",
     "MAX_FALL_K_PER_H",
     "MIN_IDLE_HOURS",
     "STANDBY_BOUNDS_W",
@@ -102,6 +103,12 @@ def standby_loss_w(history: LoadHistory, now: datetime) -> Fit | None:
     )
 
 
+#: The days a daily draw is the median of (D-0755): on the reference tank's 121
+#: days the 21-day median missed the next fortnight's by 8.5 %, 30 days by 11.8 %
+#: and 60 days by 31 %, which still held a three-week holiday a month after it.
+DRAW_WINDOW_DAYS: Final = 21
+
+
 def daily_draw_kwh(history: LoadHistory, now: datetime) -> Fit | None:
     """Fit the heat the household draws from the tank in a day, kWh in the water (D-0741).
 
@@ -122,7 +129,7 @@ def daily_draw_kwh(history: LoadHistory, now: datetime) -> Fit | None:
     levels = sorted(history.level_rows, key=lambda row: row[0])
     draws: list[float] = []
     starts: list[datetime] = []
-    start = levels[0][0]
+    start = max(levels[0][0], now - timedelta(days=DRAW_WINDOW_DAYS))
     while start + _DAY <= levels[-1][0]:
         end = start + _DAY
         first, last = _level_near(levels, start), _level_near(levels, end)

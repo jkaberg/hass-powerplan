@@ -776,7 +776,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DP.5 | Needs review | done |
 | DP.6 | Measured, not asked | done |
 | SF.1 | A season without data keeps the last good fit | done |
-| SF.2 | The tank's window, measured | todo |
+| SF.2 | The tank's window, measured | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
