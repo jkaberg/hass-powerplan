@@ -36,7 +36,7 @@
     ]
   },
   "derived": {
-    "derivation_version": 2,
+    "derivation_version": 3,
     "explanation_key": "water_heater_review",
     "explanation_params": {
       "comfort_min_c": 45.0,

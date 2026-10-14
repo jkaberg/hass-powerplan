@@ -76,6 +76,7 @@ __all__ = [
     "DERIVATION_VERSION",
     "ELEMENT_KW",
     "LEGIONELLA_BAND_K",
+    "LEGIONELLA_DEFAULT_C",
     "LEGIONELLA_DRIVE_MARGIN_K",
     "LEGIONELLA_HOLD_S",
     "LEGIONELLA_LEAD_H",
@@ -89,7 +90,12 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 2
+DERIVATION_VERSION: Final = 3
+
+#: The legionella temperature a new tank is given (D-0744): what the Norwegian
+#: guidance names - FHI's "minst 70 °C", Helsedirektoratet's "minst 70 °C, også
+#: under varmeelementet". A tank set up before at 65 °C is moved by minor 8.
+LEGIONELLA_DEFAULT_C: Final = 70.0
 
 #: D4 §6.3's standby loss where the house has not measured one: 300 L at 75 °C in
 #: a 20 °C room. The reference tank measured ≈ 150 W at 74 °C (October 2026), so a
@@ -299,7 +305,9 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="legionella_temp_c",
             kind=QuestionKind.NUMBER,
-            default=65.0,
+            # FHI and Helsedirektoratet: at least 70 °C, below the element too
+            # (owner, 14 Oct 2026, D-0744). Typed lower, it is the household's.
+            default=LEGIONELLA_DEFAULT_C,
             unit="°C",
             min=60.0,
             max=85.0,
@@ -703,7 +711,7 @@ class WaterHeater:
         """Return where the anti-legionella cycle stands (§5.12, INV-54)."""
         params = load.config.params
         enabled = bool(params.get("legionella", True))
-        temp_c = float(params.get("legionella_temp_c", 65.0))
+        temp_c = float(params.get("legionella_temp_c", LEGIONELLA_DEFAULT_C))
         drive_c = float(params.get("legionella_drive_c", temp_c + LEGIONELLA_DRIVE_MARGIN_K))
         hold_required_s = float(params.get("legionella_hold_min", 60.0)) * 60.0
         if not enabled:

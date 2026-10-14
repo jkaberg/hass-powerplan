@@ -48,7 +48,11 @@ from .core.loads.types.floor_heating import (
 from .core.loads.types.floor_heating import (
     HEATING_TYPES as FLOOR_HEATING_TYPES,
 )
-from .core.loads.types.water_heater import reserve_kwh
+from .core.loads.types.water_heater import (
+    LEGIONELLA_DEFAULT_C,
+    LEGIONELLA_DRIVE_MARGIN_K,
+    reserve_kwh,
+)
 from .core.tariffs import countries
 from .core.tariffs.household import (
     ALL_LEVIES,
@@ -685,6 +689,8 @@ def migrate_foil_floor(data: Mapping[str, Any]) -> dict[str, Any] | None:
 
 #: D4 §6.3's standby default before D-0741 made it a derived default.
 OLD_STANDBY_DEFAULT_W: Final = 60.0
+#: …and the legionella default before D-0744 raised it to the guidance's 70 °C.
+OLD_LEGIONELLA_DEFAULT_C: Final = 65.0
 
 
 def migrate_hot_water(data: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -694,7 +700,8 @@ def migrate_hot_water(data: Mapping[str, Any]) -> dict[str, Any] | None:
     **Change setup** measures it; one the household typed stays. The reserve
     `hot_water` would keep is written in beside `deadline_fill`'s parameters, so
     choosing that plan on the appliance keeps what the tank's size gives. Every
-    tank keeps its strategy.
+    tank keeps its strategy. A legionella temperature still at the old 65 °C
+    default becomes the guidance's 70 °C, its drive with it; one typed stays.
     """
     if data.get("type") != "water_heater":
         return None
@@ -708,9 +715,24 @@ def migrate_hot_water(data: Mapping[str, Any]) -> dict[str, Any] | None:
     )
     if answers.get("standby_loss_w") == OLD_STANDBY_DEFAULT_W and "standby_loss_w" not in manual:
         answers["standby_loss_w"] = None
-    if (strategy_params, answers) == before:
+    params_before = dict(params)
+    if (
+        float(params.get("legionella_temp_c") or 0.0) == OLD_LEGIONELLA_DEFAULT_C
+        and "legionella_temp_c" not in manual
+    ):
+        # The guidance's 70 °C, and the drive above it the cycle needs (D-0203, D-0744).
+        answers["legionella_temp_c"] = LEGIONELLA_DEFAULT_C
+        params["legionella_temp_c"] = LEGIONELLA_DEFAULT_C
+        params["legionella_drive_c"] = min(
+            float(params.get("max_c", 80.0)),
+            max(
+                float(params.get("ready_temp_c", 75.0)),
+                LEGIONELLA_DEFAULT_C + LEGIONELLA_DRIVE_MARGIN_K,
+            ),
+        )
+    if (strategy_params, answers) == before and params == params_before:
         return None
-    return {**data, "strategy_params": strategy_params, "answers": answers}
+    return {**data, "strategy_params": strategy_params, "answers": answers, "params": params}
 
 
 def with_probes(data: Mapping[str, Any], probes: Mapping[str, str]) -> dict[str, Any] | None:

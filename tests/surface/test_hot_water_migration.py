@@ -110,3 +110,39 @@ async def test_38c_the_entry_migrates_and_finds_the_probes(hass: HomeAssistant) 
     assert sub.data["answers"]["temp_top_entity"] == probes["top"].id
     assert sub.data["answers"]["temp_bottom_entity"] == probes["lower"].id
     assert sub.data["params"]["temp_top_entity"] == probes["top"].id
+
+
+@pytest.mark.inv("INV-54")
+def test_38d_the_old_65_c_default_becomes_the_guidance_s_70() -> None:
+    """65 °C untyped → 70 °C, the cycle driven at 75; a typed 65 °C stays (D-0744)."""
+    old = _tank(
+        answers={"standby_loss_w": 60.0, "legionella_temp_c": 65.0},
+        params={
+            "shiftable_kwh": 10.68,
+            "legionella_temp_c": 65.0,
+            "legionella_drive_c": 75.0,
+            "ready_temp_c": 75.0,
+            "max_c": 80.0,
+        },
+    )
+    migrated = migrate_hot_water(old)
+    assert migrated is not None
+    assert migrated["answers"]["legionella_temp_c"] == 70.0
+    assert migrated["params"]["legionella_temp_c"] == 70.0
+    assert migrated["params"]["legionella_drive_c"] == 75.0
+    typed = migrate_hot_water({**old, "manual_overrides": ["legionella_temp_c"]})
+    assert typed is not None
+    assert typed["params"]["legionella_temp_c"] == 65.0
+
+
+def test_38e_a_new_tank_is_given_70_c() -> None:
+    """The questionnaire's default is the guidance's 70 °C, and it is still a setting."""
+    from custom_components.powerplan.core.loads.questionnaire import QCtx  # noqa: PLC0415
+    from custom_components.powerplan.core.loads.types import base as device_types  # noqa: PLC0415
+
+    tank = device_types.get("water_heater")
+    derived = tank.derive(tank.questionnaire.validate({}, QCtx()), QCtx())
+    assert derived.params["legionella_temp_c"] == 70.0
+    assert derived.params["legionella_drive_c"] == 75.0
+    lower = tank.derive(tank.questionnaire.validate({"legionella_temp_c": 62.0}, QCtx()), QCtx())
+    assert lower.params["legionella_temp_c"] == 62.0

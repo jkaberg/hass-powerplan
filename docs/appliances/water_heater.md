@@ -75,7 +75,7 @@ If the hot water runs low in the evening, choose **Heat water ahead of use** on 
 
 ## Everyday use
 
-Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour. Each time the coldest water in the tank stays at the legionella temperature for the hold time anyway, after a hot charge, that counts, and the next cycle moves on. A tank with a **Bottom probe** is judged by it, because the bottom is the coldest water.
+Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour. Each time the coldest water in the tank stays at the legionella temperature for the hold time anyway, after a hot charge, that counts, and the next cycle moves on. A tank with a **Bottom probe** is judged by it, because the bottom is the coldest water. The legionella temperature is 70 °C unless you change it under **Advanced**, as the Norwegian health authorities recommend; a tank set up before v0.0.11 at 65 °C is moved to 70 °C when you update, unless you set 65 yourself.
 
 ## Limits
 
