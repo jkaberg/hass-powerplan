@@ -265,6 +265,17 @@ HLD §6.4, INV-76; [D4 §4.7, §5.9, §6, §8](lld/D4-loads.md), [D8 §5.2, §5.
 
 User pages: DP.1 `docs/appliances/floor_heating.md` (a "Since v0.x" note: the floor minimum and eco setpoint are written to the thermostat) and `docs/troubleshooting.md` (`provision_refused`). DP.2 none, since it adds no surface. DP.4 `docs/appliances/README.md` (a **Data points** section, anchor `data-points`: found, asked and declined), each `docs/appliances/<type>.md` (its data points, a generated table from `needs_of` via `tools/docs.py`), `docs/setup.md` and `docs/glossary.md` (*data point*). DP.5 `docs/troubleshooting.md` (`needs_review`). DP.6 the appliance pages (what is measured and from what) and `docs/how-it-works.md`.
 
+### 3.0s Fits through the seasons
+
+[D10 §5.6, §10](lld/D10-forecasts.md), [D8 §5.5](lld/D8-ha-surface.md). A fit that misses its gate falls back to the value at setup. In summer the floors barely run, so every value learned since setup is dropped, and in autumn the loops plan on the setup value until ten new coasts pass. The tank's daily draw trails the colder inlet water of winter by weeks (dec. 53).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **SF.1 A season without data keeps the last good fit** | `Fit.kept`, `kept_at`; `FIT_KEEP_DAYS` 400; the fallback order value · kept · configured; both persisted in the `forecasts` section; the fit sensor's `kept` and `kept_at` | D10 §5.6; D8 §5.5; D-0754 | D10 §9 28; on the reference house's recorder, a replay from May to October keeps each floor's March `τ` through the summer | - |
+| **SF.2 The tank's window, measured** | the replay of the tank's recorder at 21, 30 and 60 days; `draw_kwh_day`'s window set to the one it chooses, D-0755 updated with the numbers | D10 §5.6; D-0755 | D10 §9 29 | - |
+
+User pages: SF.1 `docs/entities.md` (the learned sensor's `kept` attributes) and `docs/how-it-works.md` (a learned value survives a summer). SF.2 `docs/appliances/water_heater.md` if the window changes.
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -444,6 +455,8 @@ phase 4 after 0.11 and its domain WPs; phase 5 after 1.1, 3.4, 4.1; the release 
 
 **3.0r's order:** DP.1 first and on its own: it closes a live gap (INV-64's hardware floor) and touches no flow. Then DP.2, DP.3, DP.4, with DP.5 after DP.1 and DP.4, and DP.6 last. None of them moves a simulation's digest. The scenario runner never runs the runtime's provisioning, and the slab simulator already assumes the hardware floor is provisioned (`tests/sim/slab.py`). DP.6 adds fits that no simulation reads (test-selection's D10 row). Run the e2e day for DP.1, DP.4 and DP.5.
 
+**3.0s's order:** after 3.0r, either order. Neither moves a simulation's digest: the runner and the benchmark never reach D10 (test-selection's D10 row).
+
 ---
 
 ## 5. Working method
@@ -545,6 +558,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 50. **`heat_capacitor` plans from the store, and is the one heating strategy** (D-0727 … D-0732). The load flow runs D10's fits on the recorder history of the entities just bound: peak draw, the coast time constant `τ`, heat-up and holding draw. They become defaults the household sees and may override, the type's tables where there is no history, refined daily as before. A stretch to stay off in, dear by price or full by capacity, becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest (INV-55, INV-56), filled before it by §5.2's greedy, and any shortfall heated inside it, spread evenly. Dear slots no stretch covers get pause pairs that must clear `min_saving`. D4 derives `bank_k` 0 where the lever can't raise the store above comfort. `best_save` stays offered for heating beside it, and no load is moved off it (owner, 13 Oct 2026, D-0738). A config entry migration materialises `bank_k` on the loads already on `heat_capacitor`, so no load starts banking that didn't before. D-0724's gate and D-0254's flat-day rule stay. *Rejected:* keeping the quantile rule (it banks with nothing dear in reach and can't say why); fixed-size banks (too much on a mild day, too little on a cold one); leaving capacity to D6's live shedding (a 2 K eco step at the worst moment); waiting for the daily fits (a day or more on table values the recorder could have corrected); a new key for the merged strategy (it migrates every heating load and breaks every automation).
 51. **A tank is measured, credited and planned for its draws** (D-0740 … D-0743). The load flow's measurement is bounded by what the parameters say - per m² for a floor's table rating, [2, 48] h for a foil's coast - and runs on a tank too: element, standby, the household's day. A tank's probes above and below are bound and its level is their mean. Any hour the coldest water holds the legionella band counts toward INV-54. `hot_water` keeps a reserve plus the next hour's draws in the tank at every slot and buys each shortfall in the cheapest block before it, ranked by price and the heat it loses waiting; it failed the money gate on the benchmark (10–35 % dearer on the tank), so it is offered and `deadline_fill` stays the default. *Rejected:* a second ready-by (fills at the day rate every day), a refill-within-N-hours rule (buys by the clock), an optimiser (no sentence per move), learning each household's draw times (weeks before it works), a thermal dose for legionella (claims a precision the guidance doesn't).
 52. **An appliance says what it needs, and the flow finds it, shows it or asks** (D-0746 … D-0753, INV-76). Each type, control kind and strategy declares its data points, tiered as required, recommended or optional, each with what it is for and what the load does without it. The flow resolves each one: *found* when one candidate survives the pool (never powerplan's own, a disabled or a diagnostic entity), a *tie* the household picks by live value, a *nearby* suggestion, or *not found* with the fallback said. A ranking orders the choice and never makes it; only an exact cross-check binds alone. Parameters are measured from the bound history through D10's gates, read from the device, answered, or typical, in that order, and never estimated outside a gate. Provisioning runs from the stored bindings. Loads stored before are surfaced by a repair, not re-bound behind the household's back. *Rejected:* binding a tie's top-ranked candidate (silent when wrong, and the household asked for no guessing), asking for every data point (ten pickers to confirm on a thermostat), a weighted score (no prior art and no explanation), per-model endpoint tables (private formats, the long tail unknown, and a generic cross-check settles the house's case).
+53. **A learned value outlives a season without data** (D-0754, D-0755). A fit that misses its gate keeps the last value that passed for 400 days before it falls back to the setup value, since `τ`, the loss coefficient and the COP are already relative to the outdoor temperature and turned into today's rate at plan time. The tank's daily-draw window is chosen on the house's own recorder. Fitting `τ` per outdoor band waits for a house with a full winter in every band. *Rejected:* a longer fit window (it lags the season it should follow), calendar seasons (weather is not a calendar), expiring a kept value with the window (that is the summer it exists for).
 
 ---
 
@@ -761,6 +775,8 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DP.4 | The data points step | todo |
 | DP.5 | Needs review | todo |
 | DP.6 | Measured, not asked | todo |
+| SF.1 | A season without data keeps the last good fit | todo |
+| SF.2 | The tank's window, measured | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
