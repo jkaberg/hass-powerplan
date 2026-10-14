@@ -20,7 +20,7 @@ Most grid companies measure by the hour. Some, such as Belgium's, measure by the
 <a name="target"></a>
 ## The target
 
-The target is the capacity step you want to stay in. PowerPlan plans every hour to stay under it, and pauses what can wait when an hour heads over. Heating on **Move heat to cheaper hours** plans ahead for it: where the rest of your home will fill an hour, the floor or room is warmed before and stays off through it. See [Move heat to cheaper hours](strategies.md#heat_capacitor).
+The target is the capacity step you want to stay in. PowerPlan plans every hour to stay under it, and pauses what can wait when an hour heads over. Heating on **Heat capacitor** plans ahead for it: where the rest of your home will fill an hour, the floor or room is warmed before and stays off through it. See [Heat capacitor](strategies.md#heat_capacitor).
 
 - **Automatic** keeps you in the step you have already reached this month. Early in the month that is the lowest step; after a cold week it may be higher, and there is no point saving hours that no longer count.
 - A fixed step keeps you there, even if it means pausing more.

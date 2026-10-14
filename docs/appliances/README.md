@@ -8,14 +8,14 @@ The kinds of appliance PowerPlan steers, the plan each follows by default, and t
 <!-- generated:begin types · tools/docs.py writes this block; change the device type registry, not this table -->
 | Appliance | Default plan | Other plans | Key |
 |---|---|---|---|
-| Dishwasher, washer or dryer | One run before ready-by | Always on, Cheapest hours before the deadline | `appliance_cycle` |
-| Home battery | Shave the peaks | Always on, Buy low, sell high, Cheapest hours before the deadline | `battery` |
-| Car charger | Cheapest hours before the deadline | Always on, Cheapest hours, Solar surplus | `ev` |
-| Floor heating | Move heat to cheaper hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule | `floor_heating` |
-| Something else on a switch | Cheapest hours | Always on, Save where it hurts least, Cheapest hours before the deadline, Follow a schedule, Solar surplus | `generic_switch` |
-| Heat pump | Move heat to cheaper hours | Always on, Save where it hurts least, Cheapest hours, Cheapest hours before the deadline, Follow a schedule | `heat_pump` |
-| Panel heater | Move heat to cheaper hours | Always on, Save where it hurts least, Cheapest hours, Cheapest hours before the deadline, Follow a schedule | `radiator` |
-| Water heater | Cheapest hours before the deadline | Always on, Save where it hurts least, Cheapest hours, Move heat to cheaper hours, Heat water ahead of use, Follow a schedule, Solar surplus | `water_heater` |
+| Dishwasher, washer or dryer | Run once | Always, Deadline fill | `appliance_cycle` |
+| Home battery | Peak shave | Always, Arbitrage, Deadline fill | `battery` |
+| Car charger | Deadline fill | Always, Cheapest hours, Surplus | `ev` |
+| Floor heating | Heat capacitor | Always, Best save, Deadline fill, Schedule | `floor_heating` |
+| Something else on a switch | Cheapest hours | Always, Best save, Deadline fill, Schedule, Surplus | `generic_switch` |
+| Heat pump | Heat capacitor | Always, Best save, Cheapest hours, Deadline fill, Schedule | `heat_pump` |
+| Panel heater | Heat capacitor | Always, Best save, Cheapest hours, Deadline fill, Schedule | `radiator` |
+| Water heater | Deadline fill | Always, Best save, Cheapest hours, Heat capacitor, Hot water, Schedule, Surplus | `water_heater` |
 <!-- generated:end types -->
 
 <a name="ev"></a>

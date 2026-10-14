@@ -1105,15 +1105,15 @@
       "strategy": {
         "name": "Strategy",
         "state": {
-          "deadline_fill": "Cheapest hours before the deadline",
-          "hot_water": "Heat water ahead of use",
+          "deadline_fill": "Deadline fill",
+          "hot_water": "Hot water",
           "cheapest_hours": "Cheapest hours",
-          "heat_capacitor": "Move heat to cheaper hours",
-          "best_save": "Save where it hurts least",
-          "peak_shave": "Shave the peaks",
-          "arbitrage": "Buy low, sell high",
-          "run_once": "One run before ready-by",
-          "surplus": "Solar surplus"
+          "heat_capacitor": "Heat capacitor",
+          "best_save": "Best save",
+          "peak_shave": "Peak shave",
+          "arbitrage": "Arbitrage",
+          "run_once": "Run once",
+          "surplus": "Surplus"
         }
       },
       "priority": {
@@ -1666,19 +1666,19 @@
     },
     "strategy": {
       "options": {
-        "always": "Always on",
-        "arbitrage": "Buy low, sell high",
-        "best_save": "Save where it hurts least",
+        "always": "Always",
+        "arbitrage": "Arbitrage",
+        "best_save": "Best save",
         "cheapest_hours": "Cheapest hours",
-        "deadline_fill": "Cheapest hours before the deadline",
-        "heat_capacitor": "Move heat to cheaper hours",
-        "hot_water": "Heat water ahead of use",
+        "deadline_fill": "Deadline fill",
+        "heat_capacitor": "Heat capacitor",
+        "hot_water": "Hot water",
         "observe": "Trial mode",
-        "opportunistic": "Only when cheap",
-        "peak_shave": "Shave the peaks",
-        "run_once": "One run before ready-by",
-        "schedule": "Follow a schedule",
-        "surplus": "Solar surplus"
+        "opportunistic": "Opportunistic",
+        "peak_shave": "Peak shave",
+        "run_once": "Run once",
+        "schedule": "Schedule",
+        "surplus": "Surplus"
       }
     },
     "text": {

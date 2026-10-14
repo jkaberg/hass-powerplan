@@ -1105,15 +1105,15 @@
       "strategy": {
         "name": "Strategi",
         "state": {
-          "deadline_fill": "Billigste timer før fristen",
-          "hot_water": "Varm vannet før det brukes",
-          "cheapest_hours": "Billigste timer",
-          "heat_capacitor": "Flytt varme til billigere timer",
-          "best_save": "Spar der det svir minst",
-          "peak_shave": "Kapp toppene",
-          "arbitrage": "Kjøp billig, selg dyrt",
-          "run_once": "Én kjøring før klartid",
-          "surplus": "Soloverskudd"
+          "deadline_fill": "Deadline fill",
+          "hot_water": "Hot water",
+          "cheapest_hours": "Cheapest hours",
+          "heat_capacitor": "Heat capacitor",
+          "best_save": "Best save",
+          "peak_shave": "Peak shave",
+          "arbitrage": "Arbitrage",
+          "run_once": "Run once",
+          "surplus": "Surplus"
         }
       },
       "priority": {
@@ -1666,19 +1666,19 @@
     },
     "strategy": {
       "options": {
-        "always": "Alltid på",
-        "arbitrage": "Kjøp billig, selg dyrt",
-        "best_save": "Spar der det svir minst",
-        "cheapest_hours": "Billigste timer",
-        "deadline_fill": "Billigste timer før fristen",
-        "heat_capacitor": "Flytt varme til billigere timer",
-        "hot_water": "Varm vannet før det brukes",
+        "always": "Always",
+        "arbitrage": "Arbitrage",
+        "best_save": "Best save",
+        "cheapest_hours": "Cheapest hours",
+        "deadline_fill": "Deadline fill",
+        "heat_capacitor": "Heat capacitor",
+        "hot_water": "Hot water",
         "observe": "Prøvemodus",
-        "opportunistic": "Bare når det er billig",
-        "peak_shave": "Kapp toppene",
-        "run_once": "Én kjøring før klartid",
-        "schedule": "Følg en tidsplan",
-        "surplus": "Soloverskudd"
+        "opportunistic": "Opportunistic",
+        "peak_shave": "Peak shave",
+        "run_once": "Run once",
+        "schedule": "Schedule",
+        "surplus": "Surplus"
       }
     },
     "text": {

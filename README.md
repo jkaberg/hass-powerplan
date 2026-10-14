@@ -36,17 +36,17 @@ Each appliance follows a plan, the way PowerPlan chooses its hours. Every kind o
 <!-- generated:begin readme_plans · tools/docs.py writes this block; change the strategy registry, not this table -->
 | Plan | Default for | Also offered for |
 |---|---|---|
-| Always on | – | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
-| Buy low, sell high | – | Home battery |
-| Save where it hurts least | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
+| Always | – | Dishwasher, washer or dryer, Home battery, Car charger, Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
+| Arbitrage | – | Home battery |
+| Best save | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
 | Cheapest hours | Something else on a switch | Car charger, Heat pump, Panel heater, Water heater |
-| Cheapest hours before the deadline | Car charger, Water heater | Dishwasher, washer or dryer, Home battery, Floor heating, Something else on a switch, Heat pump, Panel heater |
-| Move heat to cheaper hours | Floor heating, Heat pump, Panel heater | Water heater |
-| Heat water ahead of use | – | Water heater |
-| Shave the peaks | Home battery | – |
-| One run before ready-by | Dishwasher, washer or dryer | – |
-| Follow a schedule | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
-| Solar surplus | – | Car charger, Something else on a switch, Water heater |
+| Deadline fill | Car charger, Water heater | Dishwasher, washer or dryer, Home battery, Floor heating, Something else on a switch, Heat pump, Panel heater |
+| Heat capacitor | Floor heating, Heat pump, Panel heater | Water heater |
+| Hot water | – | Water heater |
+| Peak shave | Home battery | – |
+| Run once | Dishwasher, washer or dryer | – |
+| Schedule | – | Floor heating, Something else on a switch, Heat pump, Panel heater, Water heater |
+| Surplus | – | Car charger, Something else on a switch, Water heater |
 <!-- generated:end readme_plans -->
 
 ## Devices

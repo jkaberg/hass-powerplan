@@ -60,7 +60,7 @@ Five patterns recur. P1: a start path kept apart from the reference (all eight).
 | 1 | **`docs/` is the household's folder** | Only the user pages live under `docs/`. The design documents (`HLD.md`, `PLAN.md`, `DECISIONS.md`, `lld/`, `reviews/`, `benchmarks/`) are in `design/` at the repo root, so whoever opens the documentation's address sees only pages meant for them |
 | 2 | **Four kinds of page** | *Start* (tutorial), *Guides* (how-to), *Reference* (catalogues), *Understand* (explanation), after [Diátaxis](https://diataxis.fr/). A page is one kind, and the index groups pages by kind |
 | 3 | **English, in the household's words** | American English, as HA's style guide asks (§5.1), with the glossary's words (UX review §3). **English only**: no `nb` pages and no `nb` labels on the pages. A household on the `nb` UI reaches the right section through the flow's, the repair's or the card's deep link |
-| 4 | **Stable anchors, friendly headings** | Every section code links to starts with `<a name="<key>"></a>`, then a heading equal to the key's **en label** ("Cheapest hours before the deadline", not `deadline_fill`). The key itself is in the section's facts table, for automators |
+| 4 | **Stable anchors, friendly headings** | Every section code links to starts with `<a name="<key>"></a>`, then a heading equal to the key's **en label** ("Deadline fill", not `deadline_fill`). The key itself is in the section's facts table, for automators |
 | 5 | **Page paths in household words** | `appliances/<type>.md`, not `loads/<type>.md`; `circuits-groups-rooms.md`, not `groups-circuits-zones.md`. D8 §5.15 rule 7 applies to a URL a household reads too |
 | 6 | **Links point at `main`** | `manifest.documentation` → `…/blob/main/docs/README.md`, the rendered index, not `tree/main/docs`, the file listing (PLAN §7 dec. 23) |
 | 7 | **Every flow step links to its own section** | Every step description except the review steps ends with one `{docs}` link to that step's section. A test allow-list, with a reason per entry, exempts a step that needs no explanation (`name`). A field only links to a concept, and carries atmost one link |
@@ -138,7 +138,7 @@ Every page has the same frame:
 
 ~~~markdown
 <a name="deadline_fill"></a>
-## Cheapest hours before the deadline
+## Deadline fill
 
 Charges or heats in the cheapest hours before the time you set, and stops when the appliance is full.
 

@@ -222,6 +222,14 @@ def _leaves(node: Any, prefix: str = "") -> dict[str, str]:
 
 DOCUMENTS = {language: _document(language) for language in LANGUAGES}
 STRINGS = {language: _leaves(document) for language, document in DOCUMENTS.items()}
+#: A strategy's label is its name, the same in both (D-0745); `observe` is the
+#: glossary's trial mode and is translated.
+STRATEGY_NAMES = frozenset(
+    path
+    for path in STRINGS["en"]
+    if path.startswith(("entity.select.strategy.state.", "selector.strategy.options."))
+    and not path.endswith(".observe")
+)
 
 
 def text_for(language: str) -> Text:
@@ -250,6 +258,7 @@ def test_18a_every_nb_string_differs_from_en_outside_the_allow_list() -> None:
         if norwegian.get(path) == value
         and value not in SAME_IN_BOTH
         and path not in BRANDS
+        and path not in STRATEGY_NAMES
         and not NUMBER.match(value)
     )
     assert not copied, f"nb repeats en: {copied}"
@@ -453,9 +462,12 @@ def _selectors(schema: Any) -> list[SelectSelector[Any]]:
 
 
 def _strip(text: str, names: set[str]) -> str:
-    """Remove what is data by construction: the household's names, URLs, inline code."""
+    """Remove what is data by construction: the household's names, strategy names, URLs,
+    inline code.
+    """
     text = CODE.sub(" ", URL.sub(" ", text))
-    for name in sorted(names, key=len, reverse=True):
+    strategies = {STRINGS["en"][path] for path in STRATEGY_NAMES}
+    for name in sorted(names | strategies, key=len, reverse=True):
         if name:
             text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text)
     return text

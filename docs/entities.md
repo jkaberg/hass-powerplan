@@ -261,7 +261,7 @@ Key: `control`.
 <a name="strategy"></a>
 ### Strategy
 
-The plan the appliance follows, from the plans its kind offers. For example, **Cheapest hours before the deadline** for a car charger. Key: `strategy`.
+The plan the appliance follows, from the plans its kind offers. For example, **Deadline fill** for a car charger. Key: `strategy`.
 
 <a name="priority"></a>
 ### Priority
