@@ -41,7 +41,7 @@
 
 **Role vocabulary.** §4.5. **Auto-binding heuristics.** §5.9.
 
-**Provisioning.** A profile declares `Provision` steps (entity, value, scaled). Each is idempotent, retried every 15 min until it lands, latched per step, and re-verified daily and on startup - the old controller's Heatit ×10 scaling produced 111 refused writes and nobody noticed. Scaling is never hard-coded per product: `generic_climate` reads `unit_of_measurement`, `step`, `min` and `max` off the `number` entity itself and derives the multiplier (a unit of `0.1 °C` with range 50–400 means 18.5 °C is written as 185).
+**Provisioning.** A profile declares `Provision` steps (entity, value, scaled), resolved against the subentry's stored bindings (D-0751). Each is idempotent, retried every 15 min until it lands, latched per step, and re-verified daily and on startup - the old controller's Heatit ×10 scaling produced 111 refused writes and nobody noticed. Scaling is never hard-coded per product: `generic_climate` reads `unit_of_measurement`, `step`, `min` and `max` off the `number` entity itself and derives the multiplier (a unit of `0.1 °C` with range 50–400 means 18.5 °C is written as 185).
 
 **Why generic for heating.** A heat pump is described by *rated power, COP curve, band, dwell* and a climate entity, a floor loop by *area, covering, heating type* and a climate entity plus whatever optional entities the thermostat exposes (an operation-mode `select`, an eco-setpoint `number`, a floor-minimum `number`). powerplan computes forward from those numbers. It doesn't need to know the brand, it needs to know what the entities can do, which `generic_climate` detects (§5.9). The captured Heatit Z-TRM device is a **test fixture** for that detection, not a profile.
 
@@ -81,11 +81,13 @@ custom_components/powerplan/core/loads/
 │   ├── base.py        DeviceType protocol, registry
 │   ├── ev.py  water_heater.py  floor_heating.py  heat_pump.py  radiator.py  battery.py  generic_switch.py  appliance_cycle.py
 ├── questionnaire.py   Question, Questionnaire, Answers, Derived, derive()/explain() protocol, materialise()
+├── needs.py           Tier, Need, needs_of(type, kind, strategy) - the data points a load reads (§4.7, D-0746)
 ├── gate.py            the WriteGate DECISION (pure): the §5.10 matrix, Decision, GateState, TransportBudget accounting (PLAN §7 dec. 5)
 └── registry.py        device types, control kinds
 
 custom_components/powerplan/providers/profiles/
 ├── base.py            DeviceProfile protocol, Role, RoleBinding, MatchResult, Provision, Quirks, entity introspection
+├── candidates.py      the pool (own, disabled, diagnostic out; helpers marked), tie ranking, the floor cross-check, the nearby search (§5.9, D-0747, D-0748)
 ├── generic_climate.py   climate entity + optional detected capabilities: mode select, eco setpoint, floor min limit, hysteresis, floor/air temp - all scaling from entity attributes
 ├── generic_switch.py generic_number.py
 ├── easee_ble.py         EV: integration profile (transport quirks, status vocabulary, read-back)
@@ -299,7 +301,8 @@ class DeviceProfile(Protocol):
 | `Quirks` | `+ min_interval_s, tolerance, statuses, forgets_limit_on_link_loss`, and `gate_config(kind)` | the profile owns a *row of the §5.10 table*, not one number of it, and the three numbers are floors the kind's own may only raise (D-0154, D-0155) |
 | `read(role, states)` | `BoundDevice.reads(view, now) → Reads` | the tick takes `Reads`, not one `Reading` at a time, and a role that can't answer is `available = False` rather than a pretend value (D-0156) |
 | `write(role, value)` | `BoundDevice.call_for(write) → DeviceCall \| None` | `WriteTarget` (D-0142, D-0148) |
-| `provisions(cfg)` | `provisions(view)` | a provision names an entity, so it's resolved against the device and not the subentry (D-0153) |
+| `provisions(cfg)` | `provisions(view)`, then `provisions(bindings, cfg)` | a provision names an entity, so it's resolved against the device and not the subentry (D-0153); against the stored bindings, so a picked role is the one provisioned (D-0751) |
+| - | `MatchResult.ties`, `DeviceView.pool`, `DeviceView.disabled` | a role several entities fit is the household's question, and the pool excludes what can't be a candidate (§5.9, D-0747, D-0748) |
 | - | `BoundDevice` | `match()` is a property of the profile and `call_for()` of a *bound* device: the flow stores the bindings, and the executor holds the pair (D-0157) |
 
 ### 4.6 Questionnaire framework
@@ -327,6 +330,63 @@ class DeviceType(TypeLogic, Protocol):
 `materialise(answers, derived)` writes both into the subentry data with `derivation_version` (INV-66), and `re-derive` recomputes on request and shows a diff.
 
 `derived_default` marks the sliders §6 pre-fills "from the above": their default is a function of the other answers, so `derive()` supplies it and the review step shows the number (INV-65, INV-67). `Answers` is validated at the boundary: an unknown key, an option not offered or a number out of range raises `AnswerError(key, code)`, which D8 turns into a message on the form. `explain()` returns a translation key and its parameters, never a sentence - `core/` has no language (HLD §7.6).
+
+### 4.7 Needs - the data points a load reads *(D-0746, INV-76)*
+
+```python
+class Tier(StrEnum):  REQUIRED = "required"; RECOMMENDED = "recommended"; OPTIONAL = "optional"
+
+@dataclass(frozen=True, slots=True)
+class Need:  role: Role; tier: Tier; key: str            # key → needs.<key>.purpose / .without (translations)
+
+class DeviceType(...):  def needs(self, kind: str) -> tuple[Need, ...]       # §4.6's protocol gains this
+class ControlKind(...): needs: ClassVar[tuple[Need, ...]]
+class Strategy(...):    needs: ClassVar[tuple[Need, ...]] = ()               # D5 §4
+
+def needs_of(type_: DeviceType, kind: str, strategy: Strategy) -> tuple[Need, ...]   # the union; per role the highest tier wins
+```
+
+`core/loads/needs.py` holds `Tier`, `Need` and `needs_of`. It is pure (INV-2): a need names a role, never an entity. Finding an entity is the profile's job (§5.9), and asking is the flow's (D8 §5.2).
+
+| tier | without it | the flow |
+|---|---|---|
+| `required` | the load cannot run | cannot continue until it is bound |
+| `recommended` | the load runs on a stated fallback | asks when detection could not settle it; leaving it empty declines it (`declined`, D-0753) |
+| `optional` | nothing the household would notice | under **Advanced**, pre-filled when found |
+
+**Each type's needs.** The roles each type's code reads (`reads.value(Role.X)`, 14 Oct 2026), plus the ones the setup measurement reads (D10 §5.6). The text after each fallback is `needs.<key>.without`.
+
+| type | required | recommended (the fallback) | optional |
+|---|---|---|---|
+| `floor_heating` | `SETPOINT`, `TEMP` (both come with the climate entity, on either kind) | `TEMP_FLOOR` (plans on `TEMP`); `FLOOR_MIN` (the comfort floor holds only while powerplan runs, INV-64); `POWER` (the W/m² table, not measured) | `ENERGY`; `OUTDOOR_TEMP` (the forecast's) |
+| `water_heater` | - | `TEMP` (the sensorless estimate, D-0741); `POWER` (the element, standby and daily draw stay the table's) | `TEMP_TOP`, `TEMP_BOTTOM`; `ENERGY` |
+| `heat_pump` | `TEMP` | `POWER` (the rating stays the answer); `OUTDOOR_TEMP` (the forecast's hour, D10 §5.7) | `OUTLET_TEMP`; `ENERGY` |
+| `radiator` | - | `TEMP` (pause only: `bank_k` 0, D-0728); `POWER` (the rating stays the answer) | `ENERGY` |
+| `ev` | `STATUS` | `SOC` (plans by `kwh_to_add`, §8); `POWER` | `SESSION_ENERGY`, `CURRENT_L1`…`L3` (phases stay the answer), `CIRCUIT_MAX`, `CABLE_RATING`, `CURRENT_MAX`, `BLOCKED_BY`, `ENERGY` |
+| `battery` | `SOC` | `POWER` (the row's witness where it names none) | `ENERGY` |
+| `generic_switch` | - | `POWER` (the rating and hours stay the answers) | `ENERGY` |
+| `appliance_cycle` | - | `POWER` (the cycle stays the type's default until a run is seen); `PROGRAM_STATE` (finished by timeout, §8) | `ENERGY` |
+
+**Each kind's needs.** `MODE`: `MODE_SELECT` required; `ECO_SETPOINT` recommended (the device's own eco setpoint stands, unprovisioned); `HYSTERESIS` optional. `SETPOINT`: `SETPOINT` required. `SWITCH`: `SWITCH` or `START` required. `MODULATE`: `CURRENT_SET` required, and `ENABLE` required unless the match says `limit_pauses` (§5.9). `BATTERY`: the row's levers, required as the row declares them (§5.9).
+
+**Each strategy's needs.** `heat_capacitor`: `TEMP` recommended (pause pairs only). `hot_water`: `TEMP_TOP` and `TEMP_BOTTOM` recommended (the level is one probe, and a centre probe reads 64 °C over a bottom third at 28 °C, D-0741). `deadline_fill` on an `ev`: `SOC` recommended. No other strategy reads a role. A strategy changed later, from its select, whose needs are unmet raises `needs_review` (D-0753).
+
+**What a data point lets powerplan measure *(D-0752)*.** A parameter comes from the first source that holds: **measured** (a D10 §5.6 fit over the bound entities' history passes its gate), **from the device** (an entity says it), **answered**, **typical** (the type's table). A question whose parameter was measured or read from the device is not asked. The review shows it with its source, editable under **Advanced**, and a fit that missed its gate is named with why. Nothing is estimated outside a fit.
+
+| parameter | types | from | fit or reading | |
+|---|---|---|---|---|
+| `nameplate_w` / `power_w` / `rated_kw` | every type with `POWER` | `POWER` | p95 while on (D10 §5.6) | built for stores (HM.1, WH.2); **new** for `generic_switch`, `appliance_cycle`, `battery` |
+| `coast_tau_h`, heat-up K/h | `floor_heating`, `radiator`, `heat_pump` | `TEMP`/`TEMP_FLOOR`, `POWER`, `OUTDOOR_TEMP` | D10 §5.6 | built (HM.1) |
+| `standby_loss_w`, `draw_kwh_day` | `water_heater` | `TEMP*`, `POWER` | D10 §5.6 | built (WH.2) |
+| `hours_per_day` | `generic_switch` | `SWITCH` | on-time per local day, the median | **new** |
+| `energy_kwh`, `duration_min` | `appliance_cycle` | `POWER` | runs cut from the power history, the medians | **new** (until now the first completed run, §2) |
+| `phases` | `ev` | `CURRENT_L1`…`L3` | the phases carrying current while charging | **new** |
+| `charge_eff` | `ev` | `SOC`, `POWER` or `SESSION_ENERGY` | D10 §5.6, at setup too | built daily (D-0500) |
+| `comfort_c` | `floor_heating`, `heat_pump`, `radiator` | `SETPOINT` | the setpoint the household held longest; never on a device powerplan has a write record for (INV-27) | **new** |
+| `sensor` (placement), `cooling` | `floor_heating`, `heat_pump` | the `sensor_mode` select, `hvac_modes` | from the device | built (§5.9) |
+| `max_a`, `max_charge_kw`, `max_discharge_kw` | `ev`, `battery` | the control number's `max`; `CIRCUIT_MAX`, `CABLE_RATING` | from the device, the lowest | partly built (`QCtx.readable`) |
+
+Never measured: a tank's litres (D-0741), a floor's area, covering and heating type, a battery's or a car's capacity, the room. Each needs another number to be assumed, so they stay questions.
 
 ---
 
@@ -448,7 +508,7 @@ for each profile: MatchResult = profile.match(DeviceView(entities with domain, d
 suggested_type from the best match; roles pre-bound; the user confirms or fixes; required roles missing → the flow says which and why
 role heuristics: device_class (power/energy/temperature/current/battery), unit (W, kW, °C, A, %), name tokens (eco, floor, hysteresis, mode, l1/l2/l3, soc, status, blocked)
 ```
-The Heatit Z-TRM loops in the reference house are the fixture for the capability detection (all six optional roles present, ×10-scaled numbers, the four-option select). No product knowledge is encoded.
+The Heatit Z-TRM loops in the reference house are the fixture for the capability detection (all six optional roles present, ×10-scaled numbers, the four-option select). No product knowledge is encoded. *(D-0750: that held only in the fixture. The capture read `/api/states`, which omits disabled entities, so it held 15 entities where the flow saw 41 and a helper, and four of the six roles tied live. The fixture is recaptured with the registry.)*
 
 **Matching without a platform.** A captured dump carries no platform at
 all: `tools/capture_fixture.py` reads `GET /api/states`, which does not say which
@@ -483,6 +543,62 @@ the device's name, so a charger renamed "EV Charger" would otherwise put
 carries the roles, the confidence is unchanged, and the flow says which one it
 could not find and why (INV-53). For `easee_ble` the required three are
 `CURRENT_SET`, `ENABLE` and `STATUS`.
+
+**What "so the flow asks" needed *(D-0746 … D-0749, INV-76)*.** The flow did not
+ask: it showed pickers for what a profile bound, what it listed as `missing`, and
+power and energy. A tie on an optional role was a DEBUG line. Six floors and a
+heat pump lost roles that way (D-0746). Four parts close the gap.
+
+1. **The pool** (`providers/profiles/candidates.py`, D-0747). Every role is matched
+   from `DeviceView.pool`, never from `entities`:
+
+   | entity | in the pool | why |
+   |---|---|---|
+   | `platform == powerplan` | no | the load's own sensors live on the appliance's device (D8 §5.16); *Tildelt effekt* is a power sensor |
+   | `disabled_by` set | no; kept in `view.disabled` and named by the flow | it has no state, so a binding to it is stale from the start (INV-53); 26 of the Z-TRM2fx's 41 entities |
+   | `entity_category: diagnostic` | not for `POWER`, `ENERGY`, the temperatures, `CURRENT_*`, `SOC` | signal strength and round-trip time are not measurements of the load; `config` stays, because the Z-TRM's limits are config entities |
+   | a helper platform (`integration`, `utility_meter`, `template`, `statistics`, `derivative`, `filter`, `min_max`, `group`) | yes, marked `helper` | HA's `integration` helper attaches to its source's device, and the household built it for a reason |
+
+   `from_hass` still reads disabled entities. INV-53's "it has one and it is not
+   answering" needs them, and the tick's view is unchanged.
+
+2. **Three outcomes per role.** `MatchResult` gains `ties: Mapping[Role,
+   tuple[str, ...]]`, the candidates of a role left unbound because several fit,
+   ranked. `_one`, `DeviceView.find` and `Find.entity` record a tie instead of only
+   logging it. A role is then *bound* (one candidate), *tied* or *absent*. The
+   ranking is: the device's own entity before a helper; a plausible live value
+   before an implausible one (an indoor temperature of exactly 0.0 °C, 0 W while
+   the relay is on); then the entity id. **A ranking orders the household's
+   choice; it never makes it.**
+
+3. **One cross-check promotes a tie** (D-0748). In floor placement (`sensor_mode`
+   floor or both), a `temperature` sensor whose last three reports equal the
+   climate entity's `current_temperature` within 0.1 K is `TEMP_FLOOR`. On the
+   Z-TRM2fx that is *Air temperature (3)*, endpoint 3, 22.9 °C, against endpoint
+   2's unconnected 0.0 °C. A check that is not exact on generic evidence is not
+   added: per-model endpoint tables were weighed and rejected (§11).
+
+4. **`generic_climate`'s exclusions** (D-0749). `FLOOR_MIN`: *floor* and one of
+   *min*, *minimum*, *limit*, and none of *max*, *maximum*, *high*, *hi*.
+   `HYSTERESIS`: *hysteresis*, and not *report*. The placement select: *sensor*
+   and *mode*.
+
+The flow turns *bound*, *tied* and *absent* into D8 §5.2's ladder, over the needs
+of §4.7 rather than over what the profile happened to find. A need no profile
+role covers is searched for **nearby**: a helper whose `source` attribute names an
+entity of the device (the Riemann `integration` and `utility_meter` helpers carry
+one), else the one entity of the role's class in the device's area. The meter
+pre-fill (D3 §6) uses the same pool.
+
+**Provisioning runs from the stored bindings *(D-0751)*.** `provisions(view, cfg)`
+becomes `provisions(bindings, cfg)`: the subentry's bindings resolve each entity,
+so a role the household picked is the one provisioned (INV-76). The runtime runs
+each provision at startup step 6 (D7 §5.5), on a subentry add, every
+`PROVISION_RETRY_S` until it lands and every `PROVISION_REVERIFY_S` after. Each
+one goes through the gate as a `release=True` write, with success latched per
+step in `LoadState.provisioned` and a refusal raising `provision_refused` (§8).
+Before this nothing ran them: the six Z-TRMs held their factory floor minimum,
+19–21 °C against 20–23 °C configured (14 Oct 2026).
 
 **What the generic profiles needed.** Three ship: `generic_climate`,
 `generic_switch`, `generic_number`. What the sketch above left open:
@@ -823,6 +939,8 @@ A `delegated` §14a device whose DSO dims it keeps `ExternalLimit` (§6.4 of the
 
 ## 6. Configuration schema - questionnaires and derivations
 
+*(D-0746, D-0752.)* **Entity questions become needs, and measured answers are not asked.** The questionnaire entity answers below - `power_entity`, `soc_entity`, `outdoor_entity`, `outlet_entity`, a tank's `temp_entity`, `temp_top_entity` and `temp_bottom_entity` - are asked once, on D8 §5.2's data points step, as the needs of §4.7. They are no longer questions here, and `_EXTRA_ROLE_ANSWERS` and `_SIBLING_PROBES` become the nearby search (§5.9). The stored answer keys stay readable for subentries made before. A question whose parameter §4.7's table measures or reads from the device is skipped when that source held. Its value is materialised with `source` (`measured` · `device` · `answered` · `typical`) beside it in the subentry's `params_source`, and the review names it. Calendar and schedule pickers (`calendar_entity`, `schedule_entity`, `arrival_sources`) stay questions: they are choices, not data points.
+
 *(D8 §5.15.)* The flow opens with **"Hva vil du styre?"** and offers every one of the eight types; the review listed five (D8 §5.15 S9):
 
 | choice (nb) | type |
@@ -977,6 +1095,9 @@ Ready-by (07:00), start control (detected: `start_program` service / switch / bu
 | Write refused (`ServiceValidationError`) | failure with the message; retry as `urgent` next tick | WARNING |
 | Write times out | transient inside `transient_grace_s`, failure past it, on the executor's own clock (D-0143); no settle window left behind | INFO, then WARNING |
 | Role with nothing bound | the command is not sent at all; failure naming the role | WARNING, repair "re-bind <role>" |
+| A recommended need unbound, not declined, now found or tied on the device (an entity enabled, a device gained one, a strategy changed) *(D-0753)* | the load runs on the need's fallback; nothing is bound behind the household's back | repair `needs_review_<load>` naming the data points; its fix flow is the load's reconfigure at the data points step |
+| A tie the flow could not settle (several candidates, none picked) | the role stays unbound; never the top-ranked one | the flow's question (D8 §5.2), never a DEBUG line alone |
+| A provision not landed after its retries | retried every 900 s, no cap; latched only when it reads back (D-0751) | repair `provision_refused` with the entity and the value |
 | Write accepted, not applied (BLE, a device that drops commands) | read-back deviation, re-issued when the gate next allows, with no limit; three in a row on one role → `not_following`, still allocated (INV-22, D-0689) | INFO; `sensor.<load>_health` = `not_following` with `deviations`; repair `device_unhealthy` after 30 min unbroken, with its notification (D-0711) |
 | Option names changed by firmware | `MODE` match fails → unhealthy with the options seen | repair |
 | Scaled number range changed | provision refused → repair | repair |
@@ -1051,6 +1172,13 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 54. A foil measured as a foil (D-0740): 16 m² of foil under laminate derives 960 W (60 W/m²), under tile 1 920 W; config entry minor version 7 gives a foil still on the mat table's rating the foil's, puts a `coast_tau_h` outside [2, 48] h back to 10 h, and leaves a measured rating, a mat under tile, a typed `coast_tau_h`, a slab and every other type alone. `tests/surface/test_foil_migration.py`.
 55. A tank measured at setup (D-0741): measured 2 904 W, 148 W and 6.24 kWh/day derive `nameplate_w` 2 904, `standby_loss_w` 148, `draw_kwh_day` 6.2; a typed standby of 80 W stands; nothing measured keeps 3 000 W, 60 W and no daily figure; the profile then spends 6.2 kWh a day; a tank reading 69 / 64 / 28 °C top to bottom has level 53.7 °C, 64 °C with the centre probe alone; the probe answers bind as `TEMP`, `TEMP_TOP`, `TEMP_BOTTOM`, and top and lower are suggested from the centre probe's device by name. `tests/core/loads/test_55_tank_measured.py`, `tests/flows/test_tank_probes.py`.
 56. A tank that pasteurises itself (D-0742): ten nights at 75 °C top to bottom each move `last_completed` and the cycle never opens; 75 °C at the top over 40 °C at the bottom credits nothing and the cycle opens in its lead window; a tank with one probe is credited on it. INV-54's week under a plan that never charges still completes before its interval. `tests/core/loads/test_56_natural_pasteurisation.py`, `test_11_legionella.py`.
+57. Needs are declared (D-0746, INV-76): every `Role` a type's or kind's module reads through `reads.value` or writes through a `Command` appears in `needs_of` for that type and kind (an AST scan of `core/loads/types/` and `kinds/`, so a new read without a need fails); a floor on `MODE` needs `MODE_SELECT` required and `ECO_SETPOINT` recommended, one on `SETPOINT` neither; `hot_water` raises `TEMP_TOP` to recommended on a tank where `deadline_fill` leaves it optional; every need's `key` has `purpose` and `without` in `en` and `nb`. `tests/core/loads/test_57_needs.py`.
+58. The pool (D-0747): the recaptured Z-TRM2fx (41 Z-Wave entities, 26 disabled, the Riemann helper, the load's own entities) binds `FLOOR_MIN` to *Floor Minimum Temperature Limit*, `HYSTERESIS` to *Temperature Control Hysteresis*, the placement from *Sensor Mode*, and `ENERGY` to the helper, with the disabled kWh meter in `view.disabled`; a `powerplan` power sensor on the device is never a `POWER` candidate; a diagnostic temperature is never a `TEMP` candidate. The ESPHome heat pump's *Total Energy* and the household's `integration` helper are a tie, the native one ranked first. `tests/providers/profiles/test_58_pool.py`.
+59. Ties are data, not a DEBUG line (D-0748): a device with two plausible `POWER` sensors returns `bindings` without `POWER` and `ties[POWER]` with both, ranked; a 0.0 °C candidate ranks below a 22.9 °C one but is still offered; no ranking binds alone. In floor placement the sensor tracking `current_temperature` within 0.1 K over three reports binds `TEMP_FLOOR`; two sensors both tracking it remain a tie. `tests/providers/profiles/test_59_ties.py`.
+60. Nearby (D-0748): a device with a power sensor and no energy sensor, and an `integration` helper on no device whose `source` is that power sensor, suggests the helper for `ENERGY`; a device with no power sensor and one power sensor in its area gets that one suggested, two in the area are not; a suggestion is never bound without the household. `tests/providers/profiles/test_60_nearby.py`.
+61. Provisioning runs (D-0751, INV-64): a floor with `floor_min_limit_c` 20.0 bound to a `0.1 °C` number reading 190 gets 200 written at startup step 6, through the gate with `blocking=True`, latched once it reads 200; refused, it is retried after 900 s with no cap and raises `provision_refused`; reading 190 again a day later, it is re-written; a binding the household picked is the one written, whatever a fresh detection finds; in `observe` nothing is written (INV-26). `tests/runtime/test_61_provisioning.py`.
+62. Measured, not asked (D-0752): a `generic_switch` with 14 days of power and switch history gets `power_w` (p95) and `hours_per_day` (the median) as derived defaults with `source: measured`, and the questionnaire skips both; with 3 days its `hours_per_day` fit misses its gate, the question is asked, and the review names why; an `appliance_cycle` with four runs in its power history gets `energy_kwh` and `duration_min` as their medians; an `ev` whose L2 and L3 carried current in every session derives three phases, one whose L2 carried it in one session of five derives none and asks; a thermostat that held 22.0 °C for 70 % of 14 days derives `comfort_c` 22.0, one with a powerplan write record derives nothing. `tests/flows/test_62_measured_not_asked.py`.
+63. `needs_review` (D-0753): a subentry stored before D-0753 (no `source`, no `declined`) on a Z-TRM whose `FLOOR_MIN` now binds raises `needs_review_<load>` once, naming the floor minimum; picking it in reconfigure clears the repair and the next provisioning run writes it; declining it clears the repair for good; a `picked` binding survives a device registry update that would detect another entity. `tests/runtime/test_63_needs_review.py`.
 ---
 
 ## 10. Deliberately deferred
@@ -1110,3 +1238,17 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 **Deye by rewriting its time-of-use programs, or not at all.** *For:* the programs are the household's own day plan, twelve registers change per command, and some Deye settings live in EEPROM. *Against:* `solarman` is the most-installed battery integration in HACS (10 076). evcc steers Deye exactly so, by the six programs' SoC and grid-charge flags. The day plan is recorded as the prior and restored on release (INV-26). INV-21 sends only the registers that change, and the row's 300 s interval bounds the wear. **Decision:** a floor row (§5.9).
 
 **Victron by its limits only (no grid setpoint).** *For:* `hub4_max_discharge_power` and `hub4_max_charge_power` give a hold and a cap without reading the meter, and a limit cannot oscillate. *Against:* a limit cannot make the battery charge from the grid. Victron documents the grid setpoint as ESS's external-control interface, and `grid_for(w)` uses readings D3 already has. **Decision:** the setpoint for charge, and the discharge limit for discharge and hold, with a 100 W tolerance so the setpoint does not chase noise. *(D-0675: a discharge by the setpoint at `grid_for(−W)` floored at 0 moves the battery the same way, but a limit reads back without the meter and is not rewritten as the house moves.)*
+
+**Bind the best-ranked candidate of a tie, so the household is never asked *(D-0748)*.** *For:* as automatic as it gets, and the ranking is right on every tie in the reference house: native before helper, the live 22.9 °C before the dead 0.0 °C. *Against:* "right on every tie we have seen" is one house, and a wrong binding is silent. A floor planned on an unconnected sensor reads 0 °C and heats flat out, and a wrong energy meter mis-bills every month. The household asked for no guessing. **Decision:** a ranking orders the choice and pre-fills it, and only an exact cross-check binds alone.
+
+**Ask for every data point, every time (Versatile Thermostat, evcc).** *For:* never wrong without the household seeing it, and no heuristics to keep. *Against:* a Z-TRM has ten roles and an Easee fourteen, and a household can't tell which number is the hysteresis. That turns HLD §7.9's "detect first, ask only to confirm" into a form. **Decision:** what was found is shown back with its live value and confirmed in one glance (D3 §6's meter step does the same); only ties, misses and required roles are asked.
+
+**A weighted score with a threshold.** *For:* graded evidence, one number per candidate, a single knob. *Against:* none of the eight projects surveyed scores candidates across signals. They ask through a filtered selector, take the first rule that matches, or look the model up and ask when several match (PowerCalc). A weight nobody can explain decides silently. **Decision:** hard pool rules, a ranking for the order shown, and exactness for anything that binds alone.
+
+**A per-model endpoint table for Z-Wave thermostats.** *For:* the endpoint in the zwave_js unique_id is the only thing that tells the Z-TRM2fx's floor sensor (`…-49-3-…`) from its external one (`…-49-2-…`), and zwave-js's own device configs document it per model. *Against:* the unique_id's format is private to zwave_js and has been migrated before. The table covers one maker's thermostats while the long tail stays unknown, and the generic cross-check against `current_temperature` already settles the Z-TRM in floor mode. In A2F mode it doesn't, and the household is asked, which is correct. **Decision:** no table. The decision above, generic profiles for everything thermal, stands.
+
+**Confirm a candidate from its history (the power follows the relay, the floor warms when the element is on).** *For:* the strongest evidence there is, and D10's history reader exists. *Against:* a new install has no history, and a correlation over a few days is a threshold to tune. No surveyed project does it. **Decision:** not for binding. History measures parameters through D10's gates (§4.7), where a failed gate has a defined fallback.
+
+**Leave helpers out of the pool.** *For:* a helper is not the device, and a Riemann sum drifts. *Against:* on the reference house the household disabled the Z-TRM's own kWh meter and built a helper. Excluding it leaves energy unbound on six floors. **Decision:** in the pool, marked, ranked after the device's own, and never chosen over it without the household.
+
+**Keep the needs in the profiles.** *For:* the profile already knows the device, and `REQUIRED` exists. *Against:* a profile knows a product, not what a strategy reads. `generic_climate` serves four types, and `hot_water` reads probes that `deadline_fill` does not. **Decision:** type, kind and strategy declare their needs (§4.7); the profile finds candidates.

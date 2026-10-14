@@ -393,7 +393,7 @@ Site flow, step **meter** (skipped on the *price only* path, INV-53 handles a si
 | Field | Selector | Default / derivation |
 |---|---|---|
 | Meter source | select: `HA sensors` (v1), `DSMR / P1` (v1.x), `Tibber Pulse` (v1.x) | `HA sensors` |
-| Grid power | entity, `device_class: power` | pre-filled: the only power sensor on a device that also has a `total_increasing` energy sensor, if unique |
+| Grid power | entity, `device_class: power` | pre-filled: the only power sensor on a device that also has a `total_increasing` energy sensor, if unique - among D4 §5.9's pool: never powerplan's own, a disabled or a diagnostic entity (D-0747) |
 | Import register | entity, `device_class: energy`, `state_class: total_increasing` | pre-filled from the same device |
 | Export register | entity, optional | same device if there is one |
 | Production power | entity, optional | a power sensor on a device from a known inverter integration, if any |

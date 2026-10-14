@@ -61,7 +61,7 @@ tests/
 tools/
 ├── backtest.py                    recorder/CSV/simulator → metrics
 ├── benchmark.py                   run a house × year at a tier; compare with the baseline; emit the PR table; update the baseline
-├── capture_fixture.py             dump a device's entities/attributes from a live HA into tests/fixtures/captured/
+├── capture_fixture.py             dump a device's entities/attributes from a live HA into tests/fixtures/captured/ - with the registry: disabled entities, platform, unique_id, category, helpers' source (D-0750)
 ├── price_replay.py                curve regimes through the planner (from effektstyring)
 ├── inv_report.py                  which INV has which tests (feeds the traceability test)
 ├── digests.py, durations.py       speed without change (§5.13), xdist ordering
@@ -471,7 +471,7 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 4. Golden files for the v1 rule templates.
 5. The Snapshot schema golden.
 6. Perf test skeletons with thresholds: `tests/perf/tick_budget.py`/`plan_budget.py`, a synthetic 20-load engine (not the reference house's twelve), gating tick P95 < 50 ms and plan P95 < 500 ms - measured well inside both (≈ 6.0 ms, ≈ 14.6 ms, D-0328).
-7. `capture_fixture.py` round-trip: capture → load as `DeviceView` → profile match reproduces the documented result.
+7. `capture_fixture.py` round-trip: capture → load as `DeviceView` → profile match reproduces the documented result. *(D-0750)* The capture carries the entity and device registries, so `from_dump` builds the same pool `from_hass` does (D4 §5.9): disabled entities, `platform`, `unique_id`, `entity_category`, `disabled_by`, `translation_key`, `original_name`, and a helper's `source`. The reference Z-TRM2fx built through both loaders has the same pool, ties and bindings.
 8. The reference benchmark: `nordic_detached` × `y2026_27` runs deterministically (two runs, same seed → byte-identical `BenchmarkResult`); the year has 365 days and exactly 8 760 hours (the autumn +1 and the spring −1 cancel), 92/96/100-slot days on the DST dates; every generator parameter has a `source` string; `smoke` ≤ 1 min, `month` ≤ 5 min and `full` ≤ 2 h on the CI runner; ≥ 500 ticks/s (2 000 reported as a target metric). **Not met:** `smoke` measures ≈ 151 ticks/s and ≈ 800 s wall - diffuse, architecturally load-bearing cost (`dataclasses.replace` across 40+ call sites, the simulator's per-value deterministic RNG, pervasive tz-aware datetime arithmetic, all three required elsewhere in this design) and not one fix (D-0328). Item 6's latency budgets are a different property and are met.
 9. Baseline machinery: a metric outside tolerance fails `--compare` with the offending row, `zero` tolerances are enforced, and a baseline update without a `design/benchmarks/CHANGELOG.md` line fails a lint check.
 10. `e2e` day: the integration set up through its real flows against `fake_house`; every entity in D8 §5.5 exists; writes arrive with `blocking=True` (the executor's test; the day itself runs in observe); the pure runner's same day agrees - closed windows one for one, `over_target` and the capacity fee equal, writes both zero; the phase 1 gate's projection p95 and warning leads as §5.10 defines them (`tests/e2e/test_e2e_day.py`).
