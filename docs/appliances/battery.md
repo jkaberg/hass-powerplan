@@ -19,7 +19,7 @@ A battery steered through a YAML package, such as Sungrow's Modbus package, is o
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 
@@ -42,7 +42,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 <!-- generated:begin questions:battery · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|
-| Battery capacity | The car's battery in kWh, from its spec sheet. |
+| Battery capacity | The battery's capacity in kWh, from its spec sheet. |
 | Maximum charge | The battery's maximum charging power, in kW. |
 | Maximum discharge | The battery's maximum discharging power, in kW. |
 | Reserve | The share kept back for an outage. |

@@ -3,7 +3,7 @@
 
 # Devices
 
-The chargers and devices PowerPlan knows how to steer, and the ones it cannot. When you add an appliance, PowerPlan recognizes the device and says which of these it uses.
+The chargers and devices PowerPlan knows how to steer, and the ones it cannot. When you add an appliance, PowerPlan recognizes the device and picks one of these; where more than one fits, it asks which.
 
 <!-- generated:begin profiles · tools/docs.py writes this block; change the profile registry, not this table -->
 | Profile | For | PowerPlan |

@@ -17,7 +17,7 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 
@@ -33,6 +33,8 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 | Energy | Optional | The appliance's energy meter, in kWh. | Energy is counted from the power instead. |
 | Setpoint | Required | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
 <!-- generated:end data_points:heat_pump -->
+
+The **Outdoor temperature** data point is also the home's outdoor temperature: in a [room](../circuits-groups-rooms.md#room) with a heat pump and a floor, PowerPlan compares them at today's temperature. Without one it uses the weather entity's forecast for the current hour.
 
 <a name="questions"></a>
 ## About {name}
@@ -63,8 +65,6 @@ Where the heat pump's setpoint is in Home Assistant's history, a temperature it 
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:heat_pump -->
-
-The **Outdoor sensor** is also the home's outdoor temperature: in a [room](../circuits-groups-rooms.md#room) with a heat pump and a floor, PowerPlan compares them at today's temperature. Without a sensor it uses the weather entity's forecast for the current hour.
 
 <a name="questions_followup"></a>
 ## How far should preheat go?

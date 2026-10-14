@@ -7,7 +7,7 @@ A car charger PowerPlan starts, stops and turns up or down, so the car is charge
 
 ## What it needs
 
-A charger Home Assistant can set the current of, such as Easee, Zaptec or one through OCPP; [Devices](../devices.md) lists them. A sensor for the car's charge level makes the plan exact; without one, PowerPlan plans by time.
+A charger Home Assistant can set the current of, such as Easee, Zaptec or one through OCPP; [Devices](../devices.md) lists them. A sensor for the car's charge level makes the plan exact; without one, PowerPlan charges the energy you ask for instead of to a level.
 
 <a name="device"></a>
 ## Which device is it?
@@ -17,7 +17,7 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 
@@ -52,7 +52,7 @@ Where the charger's phase currents are already in Home Assistant's history, Powe
 <!-- generated:begin questions:ev · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
 |---|---|
-| Battery capacity | The car's battery in kWh, from its spec sheet. |
+| Battery capacity | The battery's capacity in kWh, from its spec sheet. |
 | Charger maximum | The most current the charger can deliver, in amps. |
 | Phases | How many phases the charger uses. |
 | Charge to | The charge level every session aims for; most cars recommend 80 % daily. |

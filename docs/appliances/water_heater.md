@@ -17,7 +17,7 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 
@@ -35,14 +35,14 @@ What PowerPlan reads and controls on this appliance, and what it does without ea
 | Setpoint | Required when PowerPlan sets its temperature | The temperature the device is set to - what PowerPlan changes. | PowerPlan cannot control it. |
 <!-- generated:end data_points:water_heater -->
 
+If the tank has more than one temperature sensor, the middle one is **Temperature**, and the others are **Top temperature** and **Bottom temperature**, under **Advanced** on that step when they are not on the tank's device. Where they sit on the same device and their names say top or bottom, PowerPlan fills them in for you. With all three, PowerPlan sees how much hot water is left after a shower, not only the temperature in the middle.
+
 <a name="questions"></a>
 ## About {name}
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
-Where the tank's power and temperature are already in Home Assistant's history, PowerPlan measures the element's power, how much heat the tank loses standing, and how much hot water the household uses in a day, over the last three weeks. Days with no hot water used, such as a holiday, are left out, so the tank is not planned short when you come back. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
-
-If the tank has more than one temperature sensor, pick the middle one as **Temperature sensor** and the others under **Advanced** as **Top probe** and **Bottom probe**. Where they sit on the same device and their names say top or bottom, PowerPlan fills them in for you. With all three, PowerPlan sees how much hot water is left after a shower, not only the temperature in the middle.
+Where the tank's power and temperature are already in Home Assistant's history, PowerPlan measures the element's power and how much heat the tank loses standing, and how much hot water the household uses in a day, over the last three weeks. Days with no hot water used, such as a holiday, are left out, so the tank is not planned short when you come back. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
 
 <!-- generated:begin questions:water_heater · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->
 | Question | What it asks |
@@ -88,7 +88,7 @@ If the hot water runs low in the evening, choose **Hot water** on the appliance.
 
 ## Everyday use
 
-Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour. Each time the coldest water in the tank stays at the legionella temperature for the hold time anyway, after a hot charge, that counts, and the next cycle moves on. A tank with a **Bottom probe** is judged by it, because the bottom is the coldest water. The legionella temperature is 70 °C unless you change it under **Advanced**, as the Norwegian health authorities recommend; a tank set up before v0.0.11 at 65 °C is moved to 70 °C when you update, unless you set 65 yourself.
+Set when the water must be hot under **Ready by**. With **Legionella** on, PowerPlan heats the tank to a high temperature on the interval you choose, in a cheap hour. Each time the coldest water in the tank stays at the legionella temperature for the hold time anyway, after a hot charge, that counts, and the next cycle moves on. A tank with a **Bottom temperature** is judged by it, because the bottom is the coldest water. The legionella temperature is 70 °C unless you change it under **Advanced**, as the Norwegian health authorities recommend; a tank set up before v0.0.11 at 65 °C is moved to 70 °C when you update, unless you set 65 yourself.
 
 ## Limits
 

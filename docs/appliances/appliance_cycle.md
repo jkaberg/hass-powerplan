@@ -17,7 +17,7 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 

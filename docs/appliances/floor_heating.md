@@ -17,7 +17,7 @@ Pick the device that controls it. If you do not see it, check that Home Assistan
 <a name="match"></a>
 ## Is this the right device?
 
-PowerPlan shows which entity it will control and which it only reads. Check them before you go on.
+Shown only when PowerPlan knows more than one way of talking to the device. Choose one; the best fit is already selected. Which entity PowerPlan reads and controls is checked on the next step.
 
 ## Data points
 
@@ -93,6 +93,6 @@ Put several floors in a group so they take turns when an hour is tight, as [Circ
 The highest floor temperature depends on the covering: wood and laminate allow less than tiles. PowerPlan sets the thermostat's own floor limit, so the floor is safe even if PowerPlan stops.
 
 > [!NOTE]
-> Since v0.0.11, PowerPlan writes the thermostat's lowest floor temperature and its energy-saving setpoint when it starts, and checks them once a day. Before then, both stayed at the thermostat's own values.
+> Since v0.0.11, PowerPlan writes the thermostat's lowest floor temperature and its energy-saving setpoint while it controls the floor: at start and when the floor is added, then it checks them once a day. A setting that does not take is tried again every 15 minutes, and a [repair](../troubleshooting.md#provision_refused) says so if the thermostat keeps refusing. In trial mode nothing is written. Before v0.0.11, both stayed at the thermostat's own values.
 
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

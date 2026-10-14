@@ -117,7 +117,7 @@ Keeping a reserve costs more than **Deadline fill**, which lets the tank run dow
 | | |
 |---|---|
 | Good for | a water heater whose hot water runs low in the evening |
-| Needs | a temperature sensor on the tank, best with a top and a bottom probe |
+| Needs | a temperature sensor on the tank, best with **Top temperature** and **Bottom temperature** data points too |
 | Key | `hot_water` |
 
 <a name="peak_shave"></a>

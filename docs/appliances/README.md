@@ -86,6 +86,7 @@ Each kind of appliance needs some *data points*: the entities PowerPlan reads, s
 
 - **Found**: listed with its current reading. They are under **Found**, already filled in; open it only to change one.
 - **Asked**: when the device has several entities that could be it, you choose one; each choice shows its current reading, and the most likely one is selected. When the device has none, PowerPlan may suggest a sensor fed from the device or the only one in the same room. Each question says what the data point is for and what PowerPlan does without it.
+- **Optional**: a data point PowerPlan can do without and did not find waits under **Advanced**, empty.
 - **Required**: PowerPlan cannot control the appliance without it, so the step does not continue until it has one.
 - **Leave it empty**: a data point that is not required can be left empty. PowerPlan then uses the fallback the question names, and does not ask again. Change it later by reconfiguring the appliance.
 - **Disabled**: an entity on the device that could be a data point, but is disabled in Home Assistant, is named so you can enable it.
