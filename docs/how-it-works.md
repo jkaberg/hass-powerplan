@@ -49,6 +49,8 @@ The plan says what would be cheapest. The moment makes sure the home stays safe 
 | Normal usage and each appliance's model | learned from the history every night |
 | An appliance's power, hours, program, phases and comfort | measured from its history when you add it, and asked only when the history is too short or uneven |
 
+A learned value survives a season without data: when the history is too thin to measure it again, as for a floor in summer, PowerPlan keeps the last value it measured, for up to 400 days.
+
 If the meter stops reporting, PowerPlan waits instead of guessing, and a repair says so. If prices are missing, it plans on estimated prices and says so on the price entities.
 
 **See also:** [Capacity tariffs](capacity-tariffs.md) · [Savings](savings.md) · [Glossary](glossary.md)

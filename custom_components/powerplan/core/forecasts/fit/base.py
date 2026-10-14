@@ -26,12 +26,13 @@ is a switch on the type key, which is what the registries exist to avoid.
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, tzinfo
+from datetime import datetime, timedelta, tzinfo
 from enum import StrEnum
 from itertools import pairwise
 from statistics import fmean
 
 __all__ = [
+    "FIT_KEEP_DAYS",
     "Episode",
     "EvSession",
     "Fit",
@@ -40,6 +41,7 @@ __all__ = [
     "Gate",
     "LoadHistory",
     "episodes",
+    "keep",
     "resolve",
     "slope_k_per_h",
     "span_days",
@@ -56,6 +58,10 @@ ON_POWER_FRACTION = 0.1
 
 #: A slope needs two points, and so does an episode worth fitting.
 MIN_POINTS = 2
+
+#: How long the last fit that passed stands in for one that misses its gate
+#: (D-0754): one heating season carried over a summer to the next, a month spare.
+FIT_KEEP_DAYS = 400
 
 
 class FitKey(StrEnum):
@@ -106,6 +112,17 @@ class Fit:
     configured: float | None
     effective: float | None
     fitted_at: datetime
+    #: The last value that passed its gate, and when (D-0754): what a fit that
+    #: misses its gate falls back to while it is under `FIT_KEEP_DAYS` old.
+    kept: float | None = None
+    kept_at: datetime | None = None
+
+    @property
+    def applied(self) -> bool:
+        """Whether the load uses a measured value: this fit's, or the one kept."""
+        return self.effective is not None and (
+            self.quality.ok or (self.kept is not None and self.effective == self.kept)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,3 +384,42 @@ def resolve(
         effective=value if quality.ok else configured,
         fitted_at=fitted_at,
     )
+
+
+def keep(previous: Mapping[str, Fit], fresh: Mapping[str, Fit], now: datetime) -> dict[str, Fit]:
+    """Carry each fit's last passing value into today's (D-0754, INV-63).
+
+    A fit that passes is kept. One that misses its gate, or that could not be
+    computed at all today, is effective at the kept value while that is under
+    `FIT_KEEP_DAYS` old and inside today's bounds, and at `configured` after.
+    Only a value that passed is ever kept, so one out of bounds never is.
+    """
+    out: dict[str, Fit] = {}
+    for key in {*previous, *fresh}:
+        old, new = previous.get(key), fresh.get(key)
+        last, last_at = (None, None) if old is None else _last_pass(old)
+        if new is not None and new.quality.ok:
+            out[key] = replace(new, kept=new.value, kept_at=new.fitted_at)
+            continue
+        held = new or old
+        assert held is not None
+        live = (
+            last is not None
+            and last_at is not None
+            and now - last_at <= timedelta(days=FIT_KEEP_DAYS)
+            and held.bounds[0] <= last <= held.bounds[1]
+        )
+        if live:
+            out[key] = replace(held, kept=last, kept_at=last_at, effective=last)
+        elif new is not None:
+            out[key] = replace(new, kept=None, kept_at=None, effective=new.configured)
+    return out
+
+
+def _last_pass(fit: Fit) -> tuple[float | None, datetime | None]:
+    """Return the last value that passed: kept, or a fit stored before D-0754 that passed."""
+    if fit.kept is not None:
+        return fit.kept, fit.kept_at
+    if fit.quality.ok:
+        return fit.value, fit.fitted_at
+    return None, None

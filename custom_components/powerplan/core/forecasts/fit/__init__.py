@@ -17,6 +17,7 @@ tick (INV-46, INV-63).
 from typing import TYPE_CHECKING, Any
 
 from .base import (
+    FIT_KEEP_DAYS,
     Episode,
     EvSession,
     Fit,
@@ -25,6 +26,7 @@ from .base import (
     Gate,
     LoadHistory,
     episodes,
+    keep,
     resolve,
     slope_k_per_h,
     span_days,
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 __all__ = [
+    "FIT_KEEP_DAYS",
     "Episode",
     "EvSession",
     "Fit",
@@ -62,6 +65,7 @@ __all__ = [
     "heatup_rate",
     "held_setpoint",
     "hours_per_day",
+    "keep",
     "nameplate_w",
     "phases",
     "resolve",

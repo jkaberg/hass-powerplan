@@ -126,7 +126,7 @@ from .core.engine import (
     SitePath,
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
-from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all
+from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all, keep
 from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts.quantiles import HourOfWeekQuantile
@@ -1817,7 +1817,8 @@ class Runtime:
                 )
         if self._stopped:
             return
-        self.fits = dict(fit_all(histories, now))
+        # A fit that misses its gate today keeps the last that passed (D-0754).
+        self.fits = keep(self.fits, fit_all(histories, now), now)
         tz = self.build.cfg.tz
         self.hold_profiles = {
             history.load_id: profile
@@ -1849,7 +1850,7 @@ class Runtime:
             overrides = self.load_params.setdefault(load_id, {})
             for param, key in applied:
                 fit = self.fits.get(f"{load_id}.{key}")
-                if fit is not None and fit.quality.ok and fit.effective is not None:
+                if fit is not None and fit.applied and fit.effective is not None:
                     overrides[param] = fit.effective
                 else:
                     overrides.pop(param, None)

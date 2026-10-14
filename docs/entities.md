@@ -100,6 +100,8 @@ Where your grid company bills no capacity step, **Target this hour** and **Capac
 
 **Appliances** says which kinds of appliance get the entity; "all" means every kind. A home battery gets the entities that fit it when you add one.
 
+Each **Learned** sensor shows what PowerPlan last measured from the appliance's history, and its attributes say whether it is in use. `applied` is true when a measured value is in use, and `effective` is the value in use. `reason` says why the latest measurement was not used, such as too few coasts in summer. Then `kept` is the last measurement that passed, still in use, and `kept_at` is when it was measured. A kept value is used for up to 400 days, so a floor that barely runs in summer keeps last winter's figure. After that, the value from setup returns.
+
 ## The states that need words
 
 <a name="active"></a>

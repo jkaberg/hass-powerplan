@@ -1001,7 +1001,7 @@ def _learned_row(key: FitKey, unit: str, stores: tuple[type, ...]) -> LoadSensor
         if found is None:
             return {}
         return {
-            "applied": found.quality.ok,
+            "applied": found.applied,
             "effective": found.effective,
             "configured": found.configured,
             "reason": found.quality.reason,
@@ -1011,6 +1011,9 @@ def _learned_row(key: FitKey, unit: str, stores: tuple[type, ...]) -> LoadSensor
             "span_days": round(found.quality.span_days, 1),
             "bounds": list(found.bounds),
             "fitted_at": found.fitted_at.isoformat(),
+            # The last value that passed, in use while today's misses its gate (D-0754).
+            "kept": found.kept,
+            "kept_at": None if found.kept_at is None else found.kept_at.isoformat(),
         }
 
     return LoadSensorRow(
