@@ -2784,6 +2784,7 @@ class Runtime:
         for subentry_id in removed_ids:
             if old[subentry_id][0] == SUBENTRY_LOAD:
                 await self._remove_load(subentry_id)
+                async_clear(self.hass, self.entry.entry_id, f"needs_review_{subentry_id}")
         for subentry_id in updated_ids:
             subentry = entry.subentries[subentry_id]
             if subentry.subentry_type == SUBENTRY_LOAD:
@@ -2797,6 +2798,10 @@ class Runtime:
         # this runs whichever type changed.
         self._reload_relations()
         self._known_subentries = new
+        # A saved data points step binds or declines what `needs_review` named,
+        # and an appliance added or removed changes who needs the outdoor
+        # temperature: both repairs are settled now, not at the next day's check.
+        self._schedule_needs_review()
 
     def _set_load_state(self, load_id: str, state: LoadState) -> None:
         self.state = replace(self.state, loads={**self.state.loads, load_id: state})
