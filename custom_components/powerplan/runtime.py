@@ -27,7 +27,13 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
+    EVENT_HOMEASSISTANT_STOP,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    Platform,
+)
 from homeassistant.core import CoreState, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -230,19 +236,24 @@ from .providers.prices import (
     formats,
 )
 from .providers.profiles import registry as profiles
-from .providers.profiles.base import LiveDevice
+from .providers.profiles.base import (
+    PROVISION_RETRY_S,
+    PROVISION_REVERIFY_S,
+    DeviceView,
+    LiveDevice,
+)
 from .providers.schedules import fetch_windows
 from .providers.tariffs import ladder as tariff_ladder
 from .repairs import RepairsWatch, async_clear, async_report
 from .storage import Section, SiteStore, migrate_tariff
-from .writegate import Actuation, WriteGate
+from .writegate import Actuation, DeviceCall, WriteGate
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
     from datetime import tzinfo
 
     from homeassistant.config_entries import ConfigEntry, ConfigSubentry
-    from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
+    from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, State
     from homeassistant.helpers.entity import Entity
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
     from homeassistant.helpers.event import EventStateChangedData
@@ -1016,6 +1027,27 @@ def device_from_subentry(hass: HomeAssistant, data: Mapping[str, Any]) -> LoadDe
     return LiveDevice(hass, device_id, bound)
 
 
+def _holds(state: State | None, call: DeviceCall) -> bool | None:
+    """Whether the entity already holds what `call` would write; `None` when it can't say.
+
+    Read off the call itself, so the comparison is in the device's own units -
+    a `0.1 °C` number holding 200 holds 20.0 °C (D4 §2). An entity that is not
+    answering is `None`: nothing is sent, and the next run asks again (INV-23).
+    """
+    if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    if call.service in ("turn_on", "turn_off"):
+        return state.state == ("on" if call.service == "turn_on" else "off")
+    if "option" in call.data:
+        return state.state == str(call.data["option"])
+    if "value" in call.data:
+        try:
+            return math.isclose(float(state.state), float(call.data["value"]), abs_tol=1e-6)
+        except ValueError:
+            return False
+    return None
+
+
 def step_index(choice: str) -> int | None:
     """Return the step a target choice names, or `None` for `auto` and `kw`.
 
@@ -1337,6 +1369,9 @@ class Runtime:
         self._platforms_forwarded = False
         self._rng = Random(entry.entry_id)
         self._unsubs: list[CALLBACK_TYPE] = []
+        #: When each landed provision last read back, by (load, entity): the
+        #: daily re-verify's clock (D4 §2). In memory, since a start re-verifies all.
+        self._provision_checked: dict[tuple[str, str], datetime] = {}
         #: The power and load-entity subscriptions are their own, replaced
         #: (not appended to `_unsubs`) whenever a circuit or a load subentry
         #: changes (D7 §2); still released once on unload, from here.
@@ -1481,6 +1516,7 @@ class Runtime:
         self._log_step("release")
         await self.restore_all()
         self._log_step("restore")
+        await self.provision_all()
         self._log_step("provision")
         await self.run_tick("startup")
         self._log_step("first_tick")
@@ -2095,6 +2131,74 @@ class Runtime:
         self._adopt_outcomes(outcomes)
         return outcomes
 
+    async def provision_all(self) -> None:
+        """Put every load's provisions on its device, or check they still hold (D4 §2, D-0751).
+
+        Startup step 6 (D7 §5.5), and every `PROVISION_RETRY_S` after. Loads under
+        control only: a site or a load that is not steering writes nothing
+        (INV-26). A landed provision is read again once a `PROVISION_REVERIFY_S`.
+        """
+        now = dt_util.utcnow()
+        for load in self.build.loads:
+            if self._under_control(load.load_id):
+                await self._provision(load, now)
+
+    async def _provision(self, load: Load, now: datetime) -> None:
+        """Provision one load from its stored bindings; latch what reads back (D-0751)."""
+        device = self.build.devices.get(load.load_id)
+        if not isinstance(device, LiveDevice):
+            return
+        bound = device.bound
+        view = (
+            DeviceView.from_hass(self.hass, device.device_id, with_parent=False)
+            if device.device_id
+            else DeviceView.from_states(self.hass, device.entity_ids)
+        )
+        wanted = profiles.get(bound.profile).provisions(view, load.config, bound.bindings)
+        if not wanted:
+            return
+        state = self._load_state(load.load_id)
+        landed = dict(state.provisioned)
+        refused: list[str] = []
+        for provision in wanted:
+            key = provision.entity_id
+            checked = self._provision_checked.get((load.load_id, key))
+            if (
+                landed.get(key)
+                and checked is not None
+                and (now - checked).total_seconds() < PROVISION_REVERIFY_S
+            ):
+                continue
+            call = device.call_for_provision(provision)
+            if call is None:
+                continue
+            holds = _holds(self.hass.states.get(call.entity_id), call)
+            landed[key] = bool(holds)
+            if holds is None:
+                continue
+            if holds:
+                self._provision_checked[(load.load_id, key)] = now
+                continue
+            error = await self.gate.async_provision(
+                load.config.name, call, load.gate.transport, provision.reason
+            )
+            if error is not None:
+                refused.append(key)
+        if landed != dict(state.provisioned):
+            self._set_load_state(load.load_id, replace(state, provisioned=landed))
+        async_report(
+            self.hass,
+            self.entry.entry_id,
+            f"provision_refused_{load.load_id}",
+            active=bool(refused),
+            entry_title=self.entry.title,
+        )
+
+    async def _on_provision_timer(self, now: datetime) -> None:
+        """Retry what has not landed and re-verify what has (D4 §2)."""
+        del now
+        await self.provision_all()
+
     # ------------------------------------------------------- subentry hot paths (D7 §2) #
 
     def setup_load_platform(
@@ -2332,9 +2436,8 @@ class Runtime:
         """Build one load from its subentry and include it on the next tick (D7 §2).
 
         A subentry that cannot be built is logged and skipped - the site runs
-        without it, exactly as a full reload would leave it (INV-53). Provisions
-        are D4's cold-path retry loop, not yet wired for any load (WP2.6 adds no
-        provisioning that startup itself does not already skip).
+        without it, exactly as a full reload would leave it (INV-53). Its
+        provisions go out at once when it is under control (D-0751).
         """
         data = entity_refs.live(self.hass, subentry.data)
         try:
@@ -2362,6 +2465,8 @@ class Runtime:
         self._rebuild_engine()
         self._subscribe_loads()
         self._add_load_entities(load)
+        if self._under_control(load.load_id):
+            await self._provision(load, dt_util.utcnow())
         _LOGGER.info(
             "site %s: load %s (%s) added without a reload",
             self.site_name,
@@ -3783,6 +3888,11 @@ class Runtime:
                 )
         self._track(
             async_track_time_interval(hass, self._on_heartbeat, timedelta(seconds=HEARTBEAT_S))
+        )
+        self._track(
+            async_track_time_interval(
+                hass, self._on_provision_timer, timedelta(seconds=PROVISION_RETRY_S)
+            )
         )
         boundaries = (
             list(range(0, MINUTES_PER_HOUR, window_min)) if window_min < MINUTES_PER_HOUR else [0]

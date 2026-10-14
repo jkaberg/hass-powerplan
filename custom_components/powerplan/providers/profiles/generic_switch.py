@@ -35,6 +35,7 @@ from custom_components.powerplan.core.loads.gate import Transport
 from custom_components.powerplan.providers.meters.base import CURRENT_A, POWER_W
 
 from .base import (
+    Bindings,
     BoundDevice,
     DeviceView,
     EntityView,
@@ -185,7 +186,9 @@ class GenericSwitch:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return nothing: a relay has no configuration to insist on (D4 §2)."""
         return ()
 

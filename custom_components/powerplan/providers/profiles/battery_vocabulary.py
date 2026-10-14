@@ -45,6 +45,7 @@ from custom_components.powerplan.core.loads.types.battery import battery_capabil
 from custom_components.powerplan.writegate import DeviceCall
 
 from .base import (
+    Bindings,
     BoundDevice,
     DeviceView,
     EntityView,
@@ -346,9 +347,11 @@ class BatteryVocabulary:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return the settings the row keeps whatever the command (a remote-control switch)."""
-        del cfg
+        del cfg, bindings
         out: list[Provision] = []
         for setting in self.settings:
             entity = setting.find.entity(view)

@@ -28,6 +28,7 @@ from custom_components.powerplan.core.loads.gate import Transport
 from custom_components.powerplan.providers.meters.base import CURRENT_A, POWER_W
 
 from .base import (
+    Bindings,
     BoundDevice,
     DeviceView,
     EntityView,
@@ -176,7 +177,9 @@ class GenericNumber:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return nothing: what a generic number must hold is what the plan writes."""
         return ()
 

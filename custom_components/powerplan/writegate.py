@@ -72,6 +72,8 @@ if TYPE_CHECKING:
 
     from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 
+    from .core.loads.gate import Transport
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -250,6 +252,40 @@ class WriteGate:
             if outcome is not None:
                 outcomes.append(outcome)
         return tuple(outcomes)
+
+    async def async_provision(
+        self, name: str, call: DeviceCall, transport: Transport, reason: str
+    ) -> str | None:
+        """Send one provision through the site's budget; return why it failed, or `None`.
+
+        A provision is a setting the device must hold whatever the plan says - a
+        thermostat's hardware floor (INV-64), its eco setpoint - written on the
+        cold path (D4 §2, D-0751). It spends the transport's budget like any
+        write (INV-58) and goes out `blocking=True` (INV-24), so a refusal is
+        seen. Whether it landed is read back by the caller's next run, not here,
+        and one the budget can't carry now simply waits for that run.
+        """
+        now = dt_util.utcnow()
+        if self._budget.available(transport, now) < 1:
+            return None
+        self._budget = self._budget.consume(transport, now)
+        try:
+            await self._hass.services.async_call(
+                call.domain,
+                call.service,
+                dict(call.data),
+                blocking=True,
+                target=call.target,
+                context=Context(),
+            )
+        except TimeoutError:
+            _LOGGER.warning("%s: provisioning %s timed out", name, call.entity_id)
+            return "timed out"
+        except HomeAssistantError as err:
+            _LOGGER.warning("%s: provisioning %s refused: %s", name, call.entity_id, err)
+            return str(err) or type(err).__name__
+        _LOGGER.info("%s: provisioned %s → %s (%s)", name, call.entity_id, dict(call.data), reason)
+        return None
 
     @callback
     def cancel(self) -> None:

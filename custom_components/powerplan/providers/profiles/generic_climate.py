@@ -51,6 +51,7 @@ from custom_components.powerplan.core.loads.gate import Transport
 from custom_components.powerplan.core.loads.kinds.mode import match_option
 
 from .base import (
+    Bindings,
     BoundDevice,
     DeviceView,
     EntityView,
@@ -583,7 +584,9 @@ class GenericClimate:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return the settings this thermostat must hold, whatever the plan says.
 
         Three, all on the cold path, all in **degrees** - the entities are not
@@ -595,12 +598,18 @@ class GenericClimate:
         tolerates less swing than a hall.
 
         Values come from the materialised subentry (INV-66) and never from the
-        device (INV-27). A plain `climate` entity has none of these three siblings
-        and therefore no provisions at all.
+        device (INV-27). The entities come from `bindings` - the subentry's own,
+        so a floor minimum the household picked is the one written (D-0751) -
+        and from a fresh detection only when there are none. A plain `climate`
+        entity has none of these three siblings and therefore no provisions at all.
         """
-        caps = self.detect(view)
-        if caps is None or cfg is None:
+        if cfg is None:
             return ()
+        if bindings is None:
+            caps = self.detect(view)
+            if caps is None:
+                return ()
+            bindings = role_map(caps.bindings)
         params = cfg.params
         floor = params.get("floor_min_limit_c", params.get("floor_c"))
         wanted: tuple[tuple[Role, Any, str], ...] = (
@@ -610,7 +619,7 @@ class GenericClimate:
         )
         provisions: list[Provision] = []
         for role, value, reason in wanted:
-            binding = caps.binding(role)
+            binding = bindings.get(role)
             if binding is None or value is None:
                 continue
             provisions.append(

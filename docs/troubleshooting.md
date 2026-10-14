@@ -159,7 +159,7 @@ The device an appliance was set up with is gone from Home Assistant. PowerPlan d
 
 A device keeps refusing a setting PowerPlan needs, such as a thermostat's floor limit.
 
-**What to do:** Check that the device is online and accepts changes from Home Assistant.
+**What to do:** Check that the device is online and accepts changes from Home Assistant. PowerPlan tries again every 15 minutes, and the issue clears once the setting holds.
 
 <a name="legionella_at_risk"></a>
 ### Legionella cycle at risk

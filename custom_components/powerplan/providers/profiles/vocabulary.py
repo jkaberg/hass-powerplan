@@ -25,6 +25,7 @@ from custom_components.powerplan.core.loads.types.ev import LIMIT_PAUSES
 from custom_components.powerplan.writegate import DeviceCall
 
 from .base import (
+    Bindings,
     ChargerDevice,
     DeviceView,
     MatchResult,
@@ -276,9 +277,11 @@ class VocabularyCharger:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return nothing: none of these chargers needs a setting held for powerplan."""
-        del view, cfg
+        del view, cfg, bindings
         return ()
 
     # ----------------------------------------------------------------- quirks #

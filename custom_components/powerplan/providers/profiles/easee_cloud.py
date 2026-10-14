@@ -47,6 +47,7 @@ from custom_components.powerplan.core.loads.types.ev import LIMIT_PAUSES
 from custom_components.powerplan.writegate import DeviceCall
 
 from .base import (
+    Bindings,
     ChargerDevice,
     DeviceView,
     MatchResult,
@@ -286,9 +287,11 @@ class EaseeCloud:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return nothing: every setting that would hold is a flash write (D4 §5.9)."""
-        del view, cfg
+        del view, cfg, bindings
         return ()
 
     # ----------------------------------------------------------------- quirks #

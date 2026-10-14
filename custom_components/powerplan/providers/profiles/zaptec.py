@@ -44,6 +44,7 @@ from custom_components.powerplan.core.loads.gate import TRANSIENT_GRACE_S, Trans
 from custom_components.powerplan.core.loads.types.ev import LIMIT_PAUSES
 
 from .base import (
+    Bindings,
     ChargerDevice,
     DeviceView,
     MatchResult,
@@ -231,14 +232,16 @@ class Zaptec:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return nothing: a Zaptec charger needs no setting held for powerplan to steer it.
 
         Stand-alone mode and Zaptec Sense would each take the current out of
         powerplan's hands (README, "Requirements"), but both are set in the Zaptec
         portal and neither is an entity Home Assistant can write.
         """
-        del view, cfg
+        del view, cfg, bindings
         return ()
 
     # ----------------------------------------------------------------- quirks #

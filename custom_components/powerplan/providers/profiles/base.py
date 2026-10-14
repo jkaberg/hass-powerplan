@@ -88,6 +88,7 @@ __all__ = [
     "PROVISION_REVERIFY_S",
     "ROLE_UNITS",
     "TEMPERATURE_C",
+    "Bindings",
     "BoundDevice",
     "ChargerDevice",
     "DeviceProfile",
@@ -684,6 +685,10 @@ class MatchResult:
         return {binding.role: binding for binding in self.bindings}
 
 
+type Bindings = Mapping[Role, RoleBinding]
+"""A load's stored bindings by role: what `provisions()` resolves a role against (D-0751)."""
+
+
 def role_map(
     bindings: Sequence[RoleBinding] | Mapping[Role, RoleBinding],
 ) -> dict[Role, RoleBinding]:
@@ -1266,14 +1271,18 @@ class DeviceProfile(Protocol):
         """Return the `WriteTarget` for a load whose bindings the subentry holds."""
         ...
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return the settings this device must hold whatever the plan says (D4 §2).
 
         The view resolves the *entities* and the config supplies the *numbers*: a
         thermostat's hardware floor is the questionnaire's comfort floor (INV-64)
         and nothing on the device knows it (INV-27). A profile whose provisions are
         the same on every house - the Easee's Bluetooth mode - ignores `cfg`
-        (WP3.1 amends D4 §4.5's `provisions(view)` row).
+        (WP3.1 amends D4 §4.5's `provisions(view)` row). A provision on a *role*
+        resolves against `bindings`, the subentry's own, when the runtime passes
+        them: the entity the household picked is the one provisioned (D-0751).
         """
         ...
 

@@ -71,4 +71,7 @@ Put several floors in a group so they take turns when an hour is tight, as [Circ
 
 The highest floor temperature depends on the covering: wood and laminate allow less than tiles. PowerPlan sets the thermostat's own floor limit, so the floor is safe even if PowerPlan stops.
 
+> [!NOTE]
+> Since v0.0.11, PowerPlan writes the thermostat's lowest floor temperature and its energy-saving setpoint when it starts, and checks them once a day. Before then, both stayed at the thermostat's own values.
+
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

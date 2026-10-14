@@ -46,6 +46,7 @@ from custom_components.powerplan.core.loads.gate import TRANSIENT_GRACE_S, Trans
 
 from .base import (
     ROLE_UNITS,
+    Bindings,
     BoundDevice,
     DeviceView,
     MatchResult,
@@ -301,7 +302,9 @@ class EaseeBle:
 
     # -------------------------------------------------------------- provision #
 
-    def provisions(self, view: DeviceView, cfg: LoadConfig | None = None) -> tuple[Provision, ...]:
+    def provisions(
+        self, view: DeviceView, cfg: LoadConfig | None = None, bindings: Bindings | None = None
+    ) -> tuple[Provision, ...]:
         """Return what this charger must hold for the control path to exist at all.
 
         `cfg` is unused: a charger's one provision is the same on every house, and

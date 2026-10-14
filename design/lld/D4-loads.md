@@ -301,7 +301,7 @@ class DeviceProfile(Protocol):
 | `Quirks` | `+ min_interval_s, tolerance, statuses, forgets_limit_on_link_loss`, and `gate_config(kind)` | the profile owns a *row of the §5.10 table*, not one number of it, and the three numbers are floors the kind's own may only raise (D-0154, D-0155) |
 | `read(role, states)` | `BoundDevice.reads(view, now) → Reads` | the tick takes `Reads`, not one `Reading` at a time, and a role that can't answer is `available = False` rather than a pretend value (D-0156) |
 | `write(role, value)` | `BoundDevice.call_for(write) → DeviceCall \| None` | `WriteTarget` (D-0142, D-0148) |
-| `provisions(cfg)` | `provisions(view)`, then `provisions(bindings, cfg)` | a provision names an entity, so it's resolved against the device and not the subentry (D-0153); against the stored bindings, so a picked role is the one provisioned (D-0751) |
+| `provisions(cfg)` | `provisions(view)`, then `provisions(view, cfg, bindings)` | a provision names an entity, so it's resolved against the device and not the subentry (D-0153); against the stored bindings, so a picked role is the one provisioned (D-0751) |
 | - | `MatchResult.ties`, `DeviceView.pool`, `DeviceView.disabled` | a role several entities fit is the household's question, and the pool excludes what can't be a candidate (§5.9, D-0747, D-0748) |
 | - | `BoundDevice` | `match()` is a property of the profile and `call_for()` of a *bound* device: the flow stores the bindings, and the executor holds the pair (D-0157) |
 
@@ -591,8 +591,10 @@ one), else the one entity of the role's class in the device's area. The meter
 pre-fill (D3 §6) uses the same pool.
 
 **Provisioning runs from the stored bindings *(D-0751)*.** `provisions(view, cfg)`
-becomes `provisions(bindings, cfg)`: the subentry's bindings resolve each entity,
-so a role the household picked is the one provisioned (INV-76). The runtime runs
+gains `bindings`, the subentry's own: a provision on a role resolves against them,
+so a role the household picked is the one provisioned (INV-76), and the view is
+left for provisions on entities outside the roles (Easee's Bluetooth mode, a
+battery row's settings). The runtime runs
 each provision at startup step 6 (D7 §5.5), on a subentry add, every
 `PROVISION_RETRY_S` until it lands and every `PROVISION_REVERIFY_S` after. Each
 one goes through the gate as a `release=True` write, with success latched per
