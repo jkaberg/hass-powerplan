@@ -8,7 +8,8 @@ projection should say so.
 Two answers, in order:
 
 1. the store's own loss coefficient - D10's coast fit where it passed its gate
-   (INV-63), else the configured one - times the drive from the slot's target to
+   (INV-63), else the one calibrated from the measured holding draw (BO.8,
+   D-0856), else the configured one - times the drive from the slot's target to
    the forecast outdoor temperature;
 2. otherwise the load's measured holding draw for the slot's hour (`Forecasts
 .hold_w`, D10's `hold.py`): what it actually drew at that hour lately.

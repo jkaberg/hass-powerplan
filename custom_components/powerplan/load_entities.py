@@ -1055,6 +1055,8 @@ def _learned_row(key: FitKey, unit: str, stores: tuple[type, ...]) -> LoadSensor
             return {}
         return {
             "applied": found.applied,
+            # Set from the measured holding draw, not a coast fit (BO.8, D-0856).
+            "calibrated": found.calibrated,
             "effective": found.effective,
             "configured": found.configured,
             "reason": found.quality.reason,

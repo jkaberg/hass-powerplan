@@ -43,6 +43,7 @@ from .tank import daily_draw_kwh, standby_loss_w
 from .thermal import (
     FOIL_FLOOR_TAU_BOUNDS_H,
     ROOM_COAST_BOUNDS_W_PER_K_M2,
+    calibrate_loss,
     coast_rate,
     coast_tau,
     heatup_rate,
@@ -62,6 +63,7 @@ __all__ = [
     "Gate",
     "LoadHistory",
     "bounds_for",
+    "calibrate_loss",
     "charge_efficiency",
     "coast_rate",
     "coast_tau",

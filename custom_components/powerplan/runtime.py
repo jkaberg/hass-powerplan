@@ -130,7 +130,7 @@ from .core.engine import (
     SitePath,
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
-from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all, in_force, keep
+from .core.forecasts.fit import Fit, FitKey, bounds_for, calibrate_loss, fit_all, in_force, keep
 from .core.forecasts.fit.ev import BAND_FITS
 from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
@@ -1926,8 +1926,9 @@ class Runtime:
                 )
         if self._stopped:
             return
-        # A fit that misses its gate today keeps the last that passed (D-0754).
-        self.fits = keep(self.fits, fit_all(histories, now), now)
+        # A fit that misses its gate today keeps the last that passed (D-0754); a store
+        # with none is then calibrated from its measured holding draw (BO.8, D-0856).
+        self.fits = calibrate_loss(histories, keep(self.fits, fit_all(histories, now), now), now)
         tz = self.build.cfg.tz
         self.hold_profiles = {
             history.load_id: profile

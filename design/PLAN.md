@@ -326,6 +326,7 @@ What the BP series measured but did not settle, in order of what a household wou
 | **BO.5 A foil read on its floor probe** | the daily coast fit of a foil on a floor sensor reads the floor probe, so the [0.3, 6] h bound applies outside setup too | D10 §5.6; D-0795 | D10 §9 30 extended to the daily fit; the reference house's three foils named as passed or refused | - |
 | **BO.6 A battery's round trip, measured** | the recorder side of D10's round-trip fit, wired where a profile row exposes charged and discharged registers | D10 §5.6, D4 §6.6; D-0834 | D10 §9 32 through the runtime; a captured fixture of one inverter that exposes both | - |
 | **BO.7 A cold week in the house** | BP.3's house check: through a cold week every loop's plan followed or handed back with its reason, no loop under `lo` for more than 15 min, the planning time on the house's own loads | PLAN R15 | the house check's numbers in `design/reviews/` | winter |
+| **BO.8 A store's loss, calibrated from its meter** | a store whose coast fit has not passed, with at least 7 days of measured holding draw, gets `UA = draw / (level − outdoor)` and `τ = C / UA` as its effective values; a passed fit wins, then this, then the table | D10 §5.6; D4 §5.7; D5 §5.7; D-0856 | D10 §9 33; D4 §9 72; the live kitchen's before and after in the PR | - |
 
 **Owner decision, not a WP: the whole house at a tight limit (R16).** Planning one appliance at a time caught 81–89 % of a joint plan on the hardest catalogue day at 5–10 kW, and an on/off tank or the car was sometimes left short. A coordinated step needs INV-33 changed.
 
@@ -857,6 +858,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BO.5 | A foil read on its floor probe | todo |
 | BO.6 | A battery's round trip, measured | todo |
 | BO.7 | A cold week in the house | todo |
+| BO.8 | A store's loss, calibrated from its meter | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

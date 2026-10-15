@@ -27,12 +27,26 @@ median and not a mean: one episode that ran into the covering's maximum, or into
 defrost, is an outlier and not a slower heater.
 """
 
+from datetime import timedelta
+from itertools import pairwise
 from statistics import fmean, median
 from typing import TYPE_CHECKING
 
-from .base import Episode, Fit, FitKey, Gate, LoadHistory, episodes, resolve, span_days
+from .base import (
+    SECONDS_PER_DAY,
+    Episode,
+    Fit,
+    FitKey,
+    FitQuality,
+    Gate,
+    LoadHistory,
+    episodes,
+    resolve,
+    span_days,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
 __all__ = [
@@ -41,9 +55,12 @@ __all__ = [
     "FOIL_FLOOR_TAU_BOUNDS_H",
     "HEATUP_BOUNDS_K_PER_H",
     "HEATUP_GATE",
+    "MIN_CALIBRATED_LOSS_W_PER_K",
+    "MIN_CALIBRATION_DAYS",
     "ROOM_COAST_BOUNDS_W_PER_K_M2",
     "TAU_BOUNDS_H",
     "TAU_GATE",
+    "calibrate_loss",
     "coast_rate",
     "coast_tau",
     "heatup_rate",
@@ -77,6 +94,17 @@ FOIL_FLOOR_TAU_BOUNDS_H = (0.3, 6.0)
 HEATUP_GATE = Gate(min_n=5)
 MIN_HEATUP_HOURS = 0.5
 HEATUP_BOUNDS_K_PER_H = (0.1, 10.0)
+
+#: BO.8 (D-0856): a store whose coast fit has not passed is calibrated from its
+#: measured holding draw once the recorder has this many days of it, over the
+#: last `CALIBRATION_WINDOW`, and a drive of at least `MIN_CALIBRATION_DRIVE_K`.
+MIN_CALIBRATION_DAYS = 7.0
+CALIBRATION_WINDOW = timedelta(days=14)
+MIN_CALIBRATION_DRIVE_K = 1.0
+#: The lowest effective loss a calibration may set, W/K. Under D10 §5.6's
+#: outdoor-referenced floor on purpose: a room kept warm by other heat loses less to
+#: the floor than to outdoors, but never nothing (the τ clamp needs a finite UA).
+MIN_CALIBRATED_LOSS_W_PER_K = 0.1
 
 W_PER_KW = 1000.0
 
@@ -225,3 +253,95 @@ def _r2(points: list[tuple[float, float, float]], slope: float) -> float | None:
     if sst <= 0.0:
         return 1.0 if sse <= 0.0 else None
     return 1.0 - sse / sst
+
+
+def calibrate_loss(
+    histories: Sequence[LoadHistory], fits: Mapping[str, Fit], now: datetime
+) -> dict[str, Fit]:
+    """Return `fits` with a calibrated loss and τ for each store whose coast fit has not passed.
+
+    BO.8 (D-0856). Precedence, per D10 §5.6: a passed fit - today's or the last
+    kept (D-0754) - wins; then this; then the table default. The store's effective
+    loss is `UA = hold_w / (T_target − T_out)` over the last 14 days, `T_target`
+    the level the store was held at, and `τ = C / UA`, so the holding energy and the
+    route's dynamics read one measured number. The loss is clamped to
+    `[MIN_CALIBRATED_LOSS_W_PER_K, the physical upper bound]`, τ to the load's own
+    bounds. Calibrated entries never outlive the day's data (`keep` drops them).
+    """
+    out = dict(fits)
+    for history in histories:
+        if (
+            FitKey.LOSS_COEFF not in history.fits
+            or history.capacity_kwh_per_k is None
+            or any(
+                (found := fits.get(f"{history.load_id}.{key}")) is not None and found.applied
+                for key in (FitKey.LOSS_COEFF, FitKey.COAST_TAU)
+            )
+        ):
+            continue
+        measured = _holding_draw(history, now)
+        if measured is None:
+            continue
+        watts, days = measured
+        drive = _held_drive(history, now)
+        if drive is None:
+            continue
+        area = history.area_m2 if history.area_m2 is not None else 1.0
+        high = history.bounds.get(FitKey.LOSS_COEFF, (0.0, COAST_BOUNDS_W_PER_K_M2[1] * area))[1]
+        loss = min(max(watts / drive, MIN_CALIBRATED_LOSS_W_PER_K), high)
+        tau_low, tau_high = history.bounds.get(FitKey.COAST_TAU, TAU_BOUNDS_H)
+        tau = min(max(history.capacity_kwh_per_k * W_PER_KW / loss, tau_low), tau_high)
+        reason = (
+            f"measured: holds on {watts:.0f} W at a {drive:.1f} K drive over {days:.0f} days"
+            " - the room is kept warm by other heat"
+        )
+        quality = FitQuality(r2=None, n=int(days), span_days=days, ok=True, reason=reason)
+        for key, value, unit, bounds in (
+            (FitKey.LOSS_COEFF, loss, "W/K", (MIN_CALIBRATED_LOSS_W_PER_K, high)),
+            (FitKey.COAST_TAU, tau, "h", (tau_low, tau_high)),
+        ):
+            name = f"{history.load_id}.{key}"
+            out[name] = Fit(
+                key=key,
+                load_id=history.load_id,
+                value=value,
+                unit=unit,
+                bounds=bounds,
+                quality=quality,
+                configured=history.configured_value(key),
+                effective=value,
+                fitted_at=now,
+                calibrated=True,
+            )
+    return out
+
+
+def _holding_draw(history: LoadHistory, now: datetime) -> tuple[float, float] | None:
+    """Return the load's mean power and the days it covers over the window, or `None` under 7 d.
+
+    Time-weighted, each row holding until the next (the recorder's trace, as
+    `forecasts.hold` reads it): the same draw `Forecasts.hold_w` is the hour-of-day
+    profile of.
+    """
+    since = now - CALIBRATION_WINDOW
+    rows = sorted((at, w) for at, w in history.power_rows if at < now)
+    energy = seconds = 0.0
+    for (start, watts), (end, _next) in pairwise(rows):
+        span = (end - max(start, since)).total_seconds()
+        if span > 0.0:
+            energy += max(watts, 0.0) * span
+            seconds += span
+    if seconds / SECONDS_PER_DAY < MIN_CALIBRATION_DAYS:
+        return None
+    return energy / seconds, seconds / SECONDS_PER_DAY
+
+
+def _held_drive(history: LoadHistory, now: datetime) -> float | None:
+    """Return the mean level minus the mean outdoor over the window, or `None` under 1 K."""
+    since = now - CALIBRATION_WINDOW
+    level = [v for at, v in history.level_rows if since <= at <= now]
+    outdoor = [v for at, v in history.outdoor_rows if since <= at <= now]
+    if not level or not outdoor:
+        return None
+    drive = fmean(level) - fmean(outdoor)
+    return drive if drive >= MIN_CALIBRATION_DRIVE_K else None

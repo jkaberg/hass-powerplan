@@ -43,7 +43,13 @@ if TYPE_CHECKING:
 __all__ = ["meter"]
 
 
-def _patch(monkeypatch: pytest.MonkeyPatch, history: LoadHistory, calls: list[str]) -> None:
+def _patch(
+    monkeypatch: pytest.MonkeyPatch,
+    history: LoadHistory,
+    calls: list[str],
+    *,
+    power_days: int = 14,
+) -> None:
     """Hand the runtime `history` for the loop, with a 400 W holding draw at every hour."""
     monkeypatch.setattr(runtime_module, "recorder_loaded", lambda _hass: True)
     # The recorder "exists" for the fits only: the baseline and peak seeds find nothing.
@@ -59,7 +65,7 @@ def _patch(monkeypatch: pytest.MonkeyPatch, history: LoadHistory, calls: list[st
 
     async def read(_hass: Any, spec: FitSpec, start: Any, end: Any) -> LoadHistory:
         calls.append(spec.load_id)
-        power = tuple((end - timedelta(hours=h), 400.0) for h in range(14 * 24, -1, -1))
+        power = tuple((end - timedelta(hours=h), 400.0) for h in range(power_days * 24, -1, -1))
         return replace(history, load_id=spec.load_id, type_key=spec.type_key, power_rows=power)
 
     monkeypatch.setattr(runtime_module, "async_load_history", read)
@@ -112,9 +118,12 @@ async def test_19_a_failed_gate_leaves_the_configured_value(
     freezer: FrozenDateTimeFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Two coasts are not five: published, never applied; the engine's store keeps `None`."""
+    """Two coasts are not five: published, never applied; the engine's store keeps `None`.
+
+    With under a week of measured draw too (BO.8): a calibration needs seven days.
+    """
     calls: list[str] = []
-    _patch(monkeypatch, _room_history(OUTDOOR_C[:2]), calls)
+    _patch(monkeypatch, _room_history(OUTDOOR_C[:2]), calls, power_days=5)
     floor = FakeFloor(hass, setpoint_c=19.0)
     floor.register()
     runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
@@ -192,4 +201,41 @@ async def test_21_a_stored_coast_time_out_of_todays_bounds_is_not_applied(
         [(replace(spec, bounds={FitKey.COAST_TAU: FOIL_FLOOR_TAU_BOUNDS_H}), applied)]
     )
     assert "coast_tau_h" not in runtime.load_params[LOAD_ID], "a foil may not: its own value runs"
+    await runtime.stop("unload")
+
+
+@pytest.mark.inv("INV-63")
+async def test_33_a_missed_gate_with_a_week_of_draw_is_calibrated_from_it(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D10 §9 33 through the runtime (BO.8, D-0856): two coasts, a fortnight at 400 W.
+
+    The loss and τ the engine's store is rebuilt from are the calibrated ones,
+    and they come back from the store with the fits at a restart.
+    """
+    calls: list[str] = []
+    _patch(monkeypatch, _room_history(OUTDOOR_C[:2]), calls)
+    floor = FakeFloor(hass, setpoint_c=19.0)
+    floor.register()
+    runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
+    await hass.async_block_till_done()
+
+    loss = runtime.fits[f"{LOAD_ID}.{FitKey.LOSS_COEFF}"]
+    tau = runtime.fits[f"{LOAD_ID}.{FitKey.COAST_TAU}"]
+    assert loss.calibrated
+    assert tau.calibrated
+    assert runtime.load_params[LOAD_ID]["loss_coeff_w_per_k"] == loss.effective
+    assert runtime.load_params[LOAD_ID]["coast_tau_h"] == tau.effective
+    assert runtime.engine is not None
+    [load] = runtime.engine.loads
+    assert isinstance(load.store, SlabStore)
+    assert load.store.loss_coeff_w_per_k == pytest.approx(loss.effective)
+    assert load.store.coast_tau_h == pytest.approx(tau.effective)
+
+    runtime.load_params.clear()
+    runtime.fits = decode(dict[str, Fit], runtime.state.forecasts["fits"])
+    runtime._restore_fits()
+    assert runtime.load_params[LOAD_ID]["loss_coeff_w_per_k"] == loss.effective
     await runtime.stop("unload")

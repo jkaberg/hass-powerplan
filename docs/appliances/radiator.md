@@ -40,6 +40,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 
 Where the room's temperature and the heater's power are already in Home Assistant's history, PowerPlan measures how much the heater draws and how fast the room cools when it is off. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
 
+If the room's cooling measurement is too thin to use, and PowerPlan has at least 7 days of what the heater draws, it works out the heat loss from that draw instead, so a room kept warm by other heat is planned on what it really takes. The review says "measured: holds on 12 W". A cooling measurement that passes later replaces it.
+
 Where the thermostat's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a thermostat PowerPlan has already controlled, since then the history is PowerPlan's own.
 
 <!-- generated:begin questions:radiator · tools/docs.py writes this block; change the questionnaire or strings.json, not this table -->

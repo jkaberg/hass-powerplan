@@ -127,6 +127,9 @@ class Fit:
     #: misses its gate falls back to while it is under `FIT_KEEP_DAYS` old.
     kept: float | None = None
     kept_at: datetime | None = None
+    #: Set from the load's measured holding draw, not a coast fit (BO.8, D-0856):
+    #: it is never kept past the day's data and its bounds are its own.
+    calibrated: bool = False
 
     @property
     def applied(self) -> bool:
@@ -449,6 +452,8 @@ def in_force(fit: Fit, bounds: Mapping[FitKey, tuple[float, float]]) -> float | 
     """
     if not fit.applied or fit.effective is None:
         return None
+    if fit.calibrated:
+        return fit.effective if fit.bounds[0] <= fit.effective <= fit.bounds[1] else None
     low, high = bounds.get(fit.key, fit.bounds)
     if not (low <= fit.effective <= high and fit.bounds[0] <= fit.effective <= fit.bounds[1]):
         return None
@@ -457,6 +462,8 @@ def in_force(fit: Fit, bounds: Mapping[FitKey, tuple[float, float]]) -> float | 
 
 def _last_pass(fit: Fit) -> tuple[float | None, datetime | None]:
     """Return the last value that passed: kept, or a fit stored before D-0754 that passed."""
+    if fit.calibrated:
+        return None, None
     if fit.kept is not None:
         return fit.kept, fit.kept_at
     if fit.quality.ok:

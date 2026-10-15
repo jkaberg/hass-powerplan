@@ -45,6 +45,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 
 Where the floor's temperature and power are already in Home Assistant's history, PowerPlan measures how fast the floor cools when it is off and how much it draws. Those numbers replace the typical ones, and the review says how many days they came from. You can change them under **Advanced**.
 
+When the floor's cooling measurement is too thin to use, as for a floor in a room another heat source keeps warm, and PowerPlan has at least 7 days of what the floor draws, it works out the floor's heat loss from that draw instead: the draw divided by how much warmer the floor is than outdoors, and the cooling time from that loss. A floor that holds on 12 watts is planned as one that holds on 12 watts, not on the typical figure. The review says "measured: holds on 12 W", and a measurement that passes later replaces it.
+
 Without history, a heating foil under wood, laminate, vinyl or carpet is taken to draw 60 W per square meter, and a mat under tiles 120. A foil warms the room more than the floor. When the thermostat regulates on the floor sensor, PowerPlan accepts a measured cooling time between 20 minutes and 6 hours. When it regulates on the room's air, it accepts 5 hours to 500 hours, because the room's air follows the building. A number outside that range is shown on the review but not used.
 
 > [!NOTE]

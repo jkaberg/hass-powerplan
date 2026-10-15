@@ -43,6 +43,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 
 Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**. Until it is measured, the room is taken to hold 0.012 kWh of heat per degree for every cubic meter, the light timber building of a typical Nordic home, so a 250 cubic meter room starts at 3 kWh per degree.
 
+If the cooling measurement is too thin to use and PowerPlan has at least 7 days of what the heat pump draws, it works out the room's heat loss from that draw instead: the electricity drawn divided by how much warmer the room is than outdoors. The review says "measured: holds on 40 W". A cooling measurement that passes later replaces it.
+
 > [!NOTE]
 > Since v0.0.11, that starting figure is 0.012 where it was 0.03. A heat pump set up before it keeps the cooling time it was given, until the next measurement replaces it.
 
