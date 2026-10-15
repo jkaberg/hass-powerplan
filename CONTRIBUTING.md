@@ -71,7 +71,8 @@ Everything outside the simulations runs in under a minute, so just run all of it
 
 | The diff touches | Also run before a commit |
 |---|---|
-| `core/metering/`, `core/pricing/`, `core/strategies/`, `core/model.py`, `core/engine.py` | `mypy core`, scenarios phase0 |
+| `core/metering/`, `core/pricing/`, `core/model.py`, `core/engine.py` | `mypy core`, scenarios phase0 |
+| `core/strategies/` | `mypy core`, scenarios phase0, `uv run pytest -m optimality -q -n auto --dist=loadgroup` (about 2 min) |
 | `core/tariffs/` | `mypy core`, scenarios phase1 |
 | `core/loads/` | `mypy core`, the scenario file for the device type (EV → phase2, tank and heat pump → phase3) |
 | `core/allocation/` | `mypy core`, scenarios phase0 and phase2 |
@@ -79,7 +80,7 @@ Everything outside the simulations runs in under a minute, so just run all of it
 | `core/forecasts/` | `mypy core` (no simulation reaches D10) |
 | `tests/sim/`, `tests/builders/houses.py`, the scenario runner | `tests/sim` and the scenario file that uses the changed part |
 
-At the end of a WP that touches `core/`, also run every scenario file, `tools/benchmark.py --tier smoke --compare` and the month tier. After a change to `runtime.py`, `storage.py`, `writegate.py` or the flows, run the e2e day (`uv run pytest -m e2e -q`).
+At the end of a WP that touches `core/strategies/`, the optimality catalogue (`-m optimality`) runs too; its `tests/optimality/baseline.json` is a ratchet that moves up in the PR that earns it. At the end of a WP that touches `core/`, also run every scenario file, `tools/benchmark.py --tier smoke --compare` and the month tier. After a change to `runtime.py`, `storage.py`, `writegate.py` or the flows, run the e2e day (`uv run pytest -m e2e -q`).
 
 ### Coverage
 
@@ -131,7 +132,7 @@ Duplication between sibling registry modules is often by design. Only merge a cl
 ```
 uv sync                                                  # environment (Python 3.14)
 uv run pytest tests/core/metering/test_window_bounds.py -q   # one module's tests
-uv run pytest tests --ignore=tests/scenarios -m "not perf and not backtest and not bench and not e2e" -q -n auto --dist=loadgroup   # the fast suite
+uv run pytest tests --ignore=tests/scenarios --ignore=tests/optimality -m "not perf and not backtest and not bench and not e2e" -q -n auto --dist=loadgroup   # the fast suite
 uv run pytest -m "not perf and not backtest and not bench and not e2e" -q -n auto --dist=loadgroup   # the PR command
 uv run ruff format . && uv run ruff check --fix .
 uv run mypy custom_components/powerplan/core             # strict, must be clean

@@ -3479,3 +3479,16 @@ D-0776 prices each slot's band at `p / η(power)`. The plan keeps three simplifi
 - **Closing a gap** (no latch `yes`, or more than 4 pauses) raises the cheapest gap, by `rank × min_w` energy, to `min_w`, then gives back the dearest energy to the requirement: a slot inside a run only down to its floor, a run's end to nothing, so no gap reopens. A gap with a slot the car cannot run in (headroom under `min_w`) stays, since the ceiling outranks the plan (INV-1).
 
 The band fits are six `FitKey`s (`charge_efficiency_<1p|3p>_<6_9|10_15|16>`), published like the other fits; the load's parameter is `charge_eff_<phases>p_<band>`, applied only when the fit passed its gate. No storage or entry version changes: both new `LoadState` fields and parameters are optional. Affects D5 §5.2, D10 §5.6, §9 31.
+### D-0780 · What the catalogue runs, and what it calls hands-off
+
+D-0770 left the harness's own choices open; the code forced these (`tests/optimality/harness.py`, D9 §5.17):
+- **The site context is the shipped one**, with D-0724's worth-it gate on. The scratch benchmark's headline numbers had it off; its gate-on column is what this baseline reproduces.
+- **Hands-off** is the thermostat at the target for a thermal store, the idle battery for `arbitrage`, a battery that charges to full at once and covers a deficit when it comes for `peak_shave` (an idle one costs nothing and would make covering a deficit "dearer"), the first four hours of each day for `cheapest_hours`, charging at once for `deadline_fill` (a 17:00 plug-in), pressing the button at 12:00 for `run_once`, and a tank refilled to 75 °C every slot for `hot_water`.
+- **A plan that cannot cover its deadline hands the load to the allocator**, which draws the rest at full power (D5 §8): the block variant's last slot is otherwise left short.
+- **`run_once` is costed at the start the plan first asks for**: the machine runs its own programme from there, and the plan's later slots for a block under way are not energy it draws.
+- **`hot_water`'s optimum is the LP**, not the 30-minute MILP: the loop executes a slot's planned fraction of the element's energy, and the MILP is not a bound on that (shares reached 140 %).
+- **Stored energy at the end** is valued at the day's mean price: a kelvin of a thermal store at `C` kWh, a battery's kWh at the discharge efficiency, a tank's level in element kWh.
+- **"Saves under 1 %"** has a floor of 0.01 in the site's currency, for hands-off costs of zero (an idle battery).
+- **A band breach** is more than 0.1 K outside `[lo, hi]`.
+
+Affects D9 §5.17.
