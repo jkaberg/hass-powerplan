@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
-    from ..model import Slot
+    from ..model import PriceCurve, Slot
 
 __all__ = [
     "BACK_UP_WHILE_CHEAP",
@@ -57,6 +57,7 @@ __all__ = [
     "confidence_of",
     "desired_for",
     "inputs_digest",
+    "repriced",
 ]
 
 #: Most to least trustworthy (INV-5); the least trusted slot decides the plan.
@@ -163,6 +164,30 @@ def with_hold_of(kept: Plan, fresh: Plan) -> Plan:
         hold_kwh=held,
         cost_estimate=Money(cost, kept.cost_estimate.currency),
     )
+
+
+def repriced(kept: Plan, curve: PriceCurve, now: datetime) -> Plan:
+    """Return `kept` priced on `curve` from `now` on, its slots and energy untouched (D5 §5.9, D-0850).
+
+    The hysteresis decides *which* plan stands, not what the household reads as
+    its cost: a plan kept through the arrival of tomorrow's prices still shows the
+    price it was built on otherwise, and a car's 7.79 NOK was 15.89 at the
+    spot price. A slot the curve does not cover keeps its price.
+    """
+    slots = tuple(_repriced_slot(slot, curve, now) for slot in kept.slots)
+    if slots == kept.slots:
+        return kept
+    cost = sum((_dec(slot.kwh + slot.hold_kwh) * slot.price for slot in slots), Decimal(0))
+    return replace(kept, slots=slots, cost_estimate=Money(cost, kept.cost_estimate.currency))
+
+
+def _repriced_slot(slot: PlanSlot, curve: PriceCurve, now: datetime) -> PlanSlot:
+    if slot.end <= now:
+        return slot
+    priced = curve.price_at(slot.start)
+    if priced is None or priced.total == slot.price:
+        return slot
+    return replace(slot, price=priced.total)
 
 
 def build_plan(

@@ -42,6 +42,8 @@ from .plan import (
     LOWER_WHILE_DEAR,
     STAY_OFF_FOR_CAPACITY,
     build_plan,
+    inputs_digest,
+    repriced,
     with_hold_of,
 )
 
@@ -291,6 +293,8 @@ def plan_all(
         )
         plan = _worth_it(plan, view, pctx, before, ctx.worth_share)
         plan = _with_desired(_closed_outside(plan, view, ctx), view)
+        if ctx.setup:
+            plan = replace(plan, inputs_hash=inputs_digest(plan.inputs_hash, ctx.setup))
 
         held = None if before is None else with_hold_of(before, plan)
         unfit = held is not None and not _fits(
@@ -314,6 +318,8 @@ def plan_all(
         # churning: the reason, the strategy and the prices the household reads are today's, not
         # those of the cycle that first handed the load back (D-0841). It is not an adoption.
         handed_back = held is not None and held.mode is PlanMode.NONE and plan.mode is PlanMode.NONE
+        if held is not None and not (take or handed_back):
+            held = _kept_on_today(held, pctx, ctx, now)
         chosen = _with_surplus(plan if take or held is None or handed_back else held, own)
         kept[view.load_id] = chosen
         if take:
@@ -330,6 +336,23 @@ def plan_all(
         built_at=now,
         refit=frozenset(refit),
     )
+
+
+def _kept_on_today(held: Plan, pctx: PlanContext, ctx: SiteContext, now: datetime) -> Plan:
+    """Return the kept plan priced on today's curve when that moves its cost past the threshold.
+
+    INV-32 keeps the slots; the cost the household reads is today's (D-0850). A
+    move within the hysteresis threshold is price noise and leaves the plan the
+    object it was (D5 §9 3).
+    """
+    fresh = repriced(held, pctx.curve_in, now)
+    if fresh is held:
+        return held
+    window = (now, fresh.slots[-1].end if fresh.slots else now)
+    base = ctx.hysteresis.threshold(pctx.curve_in, now.astimezone(ctx.tz).date(), ctx.tz, window)
+    if abs(fresh.cost_estimate.amount - held.cost_estimate.amount) <= base:
+        return held
+    return fresh
 
 
 def peak_windows(

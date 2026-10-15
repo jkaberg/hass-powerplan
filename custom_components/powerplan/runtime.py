@@ -15,6 +15,8 @@ lifecycle releases first (INV-26, INV-48).
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import math
 from collections import deque
@@ -177,6 +179,7 @@ from .core.pricing.modifiers.base import SPOT, PriceModifier
 from .core.pricing.modifiers.fixed_price import FixedPrice
 from .core.pricing.modifiers.tou_schedule import TouSchedule
 from .core.state_codec import decode, encode
+from .core.strategies.adoption import REQUIREMENT_TOLERANCE, ReplanTrigger, replan_due
 from .core.strategies.context import Curves
 from .core.tariffs import (
     AUTO,
@@ -659,6 +662,17 @@ class SiteBuild:
     quiet_hours: QuietHours | None = None
 
 
+def _setup_digest(data: Mapping[str, Any]) -> str:
+    """Return a digest of the site's price and tariff set-up (D-0851).
+
+    A plan's hash leaves prices out, so a site that went from a fixed price to
+    spot kept every plan the old price set-up had made. The site's own data stands
+    for the set-up: a change to any of it is a different question for every load.
+    """
+    material = json.dumps(data, sort_keys=True, default=str)
+    return hashlib.blake2s(material.encode(), digest_size=8).hexdigest()
+
+
 def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
     """Build the site's domain objects from what the flow materialised (INV-66)."""
     data = entity_refs.live(hass, entry.data)
@@ -696,6 +710,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         path=SitePath(str(data.get(CONF_PATH, SitePath.FULL.value))),
         currency=currency or "NOK",
         window_min=window_min,
+        setup=_setup_digest(data),
     )
 
     meter_cfg = data.get(CONF_METER) or {}
@@ -1404,6 +1419,9 @@ class Runtime:
         #: one began is answered by it (D-0815).
         self._plan_asked = 0
         self._plan_began = 0
+        #: What each load asked for when the plan last heard of it (D-0852).
+        self._asked: dict[str, tuple[Any, ...]] = {}
+        self._demand_plan_at: datetime | None = None
         self.startup: list[str] = []
         self.state = EngineState()
         self.snapshot: Snapshot | None = None
@@ -3201,8 +3219,11 @@ class Runtime:
         self._persist(effects)
         self.coordinator.async_set_updated_data(snapshot)
         self.repairs.evaluate(now, snapshot)
-        if any(event.kind is EventKind.EV_CONNECTED for event in effects.ha_events):
+        if self._demand_moved(snapshot, now) or any(
+            event.kind is EventKind.EV_CONNECTED for event in effects.ha_events
+        ):
             # A demand change (D7 §5.2): the plan runs after this tick, off the lock.
+            self._demand_plan_at = now
             self.hass.async_create_task(self.run_plan("demand"))
         if self._production_missed(now, snapshot):
             # D5 §5.9 (Phase 7): the sun is not what was forecast; replan once.
@@ -3263,6 +3284,32 @@ class Runtime:
         trailing, self._pending_trigger = self._pending_trigger, None
         if trailing is not None and not self._stopped:
             await self.run_tick(trailing)
+
+    def _demand_moved(self, snapshot: Any, now: datetime) -> bool:
+        """Return whether any load now asks for something other than its plan heard (D5 §5.9, D-0852).
+
+        One rule for every type: a device attaching or detaching, a deadline or
+        ready-by moving, a mode or urgency changing, the requirement moving past
+        the tolerance. The fingerprint is the demand; the cause does not matter.
+        Rate-limited like any replan (D5 §8).
+        """
+        moved = False
+        for load_id, status in snapshot.loads.items():
+            demand = status.demand
+            required = demand.required_kwh
+            before = self._asked.get(load_id)
+            now_asked = (demand.wants, demand.deadline, demand.urgency, status.mode, required)
+            if before is not None and before[:4] == now_asked[:4]:
+                heard = before[4]
+                if (required is None) == (heard is None) and (
+                    required is None
+                    or abs(required - heard) <= REQUIREMENT_TOLERANCE * max(abs(heard), 1e-9)
+                ):
+                    continue
+            self._asked[load_id] = now_asked
+            if before is not None:
+                moved = True
+        return moved and replan_due(ReplanTrigger.DEMAND, self._demand_plan_at, now)
 
     async def _plan_off_the_loop(self, inputs: Inputs) -> tuple[EngineState, PlanReport, Effects]:
         """Run `Engine.plan` in an executor on the state as it is, and apply it only to that state.

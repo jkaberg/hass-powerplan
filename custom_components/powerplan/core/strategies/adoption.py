@@ -151,7 +151,25 @@ def should_adopt(  # noqa: PLR0911 - one return per §5.9 rule
     # Both plans on today's curve and only what they move: a plan priced on
     # yesterday's curve always looked cheaper than today's and was never
     # replaced (D-0506); holding follows the thermostat, not the plan (D-0503).
-    return moved_cost(old, curve, now) - moved_cost(new, curve, now) > threshold
+    return (
+        _on_new_energy(old, new, moved_cost(old, curve, now)) - moved_cost(new, curve, now)
+        > threshold
+    )
+
+
+def _on_new_energy(old: Plan, new: Plan, old_cost: Decimal) -> Decimal:
+    """Return `old_cost` scaled to the requirement `new` buys when that grew (D-0850).
+
+    The requirement may drift up to 10 % before it is a different question, and a
+    plan that buys 11.5 kWh looks cheaper than one that buys 12.5 kWh at a lower
+    price per kWh: a car whose SoC fell a point stayed on its evening plan on that
+    arithmetic, through the cheap night. The same energy on both sides. A plan
+    with no requirement (a store's route) is not scaled.
+    """
+    before, after = old.required_kwh, new.required_kwh
+    if before is None or after is None or before <= 0.0 or after <= before:
+        return old_cost
+    return old_cost * _dec(after / before)
 
 
 def moved_cost(plan: Plan, curve: PriceCurve, now: datetime) -> Decimal:

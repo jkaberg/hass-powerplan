@@ -3817,3 +3817,26 @@ The 15 Oct replay of the owner's live site reproduced the sensor exactly: eight 
 
 **Rejected:** adopting it (each cycle would mark the plans section dirty and fire `plan_adopted` for a plan that says nothing); forcing a replan on a price-source change (the EV's kept plan was right: 15.89 NOK on the spot curve against 16.20 for the plan the planner finds now).
 
+### D-0850 · A kept plan is priced on today's curve and judged on the same energy
+
+On 15 Oct 2026 tomorrow's prices arrived at 13:07 and the Billader (deadline_fill, no car) and the Varmtvannsbereder (hot_water) kept plans built before them: the car 19:30-00:00 (18.08 NOK, 11.52 kWh), the tank 22:30-23:45 (7.08 kWh, built on tomorrow's estimate of 1.60). The requirement had grown 8 %, under D5 §5.9's 10 %, so the question was "unchanged", and `should_adopt` compared 18.08 for 11.52 kWh with 18.30 for 12.48 kWh at a lower price per kWh (1.47 against 1.57): the old plan looked cheaper because it bought less. The tank was the same: 10.88 for 7.08 kWh against 11.21 for 7.35. `should_adopt` now scales the old plan's cost to the new plan's energy when the new one buys more. A plan kept through the hysteresis is re-priced on the current curve, slots and energy untouched, when that moves its cost by more than the threshold: the car showed 7.79 NOK where the spot cost was 15.89. A move under the threshold leaves the plan the same object, so D5 §9 3 holds. Affects D5 §5.9, §9 52.
+
+**Rejected:** tightening `REQUIREMENT_TOLERANCE` (every SoC step would re-decide a flat night); re-pricing on every cycle (noise would rewrite the plans section each quarter).
+
+### D-0851 · A site's price set-up is part of every plan's inputs hash
+
+The hash leaves prices out so a re-fetch is not a changed input (`inputs_digest`), and a restart keeps plans whose hash matches (D5 §7). A site that moved from a fixed price to spot kept every plan the old set-up had made. `SiteConfig.setup` is a blake2s digest of the entry's data (price sources and modifiers, tariff, currency, meter), and `plan_all` folds it into each plan's hash. Any site change is a changed question for every load. Affects D5 §5.9, §7.
+
+**Rejected:** not restoring plans when the set-up changed (the hash does it without a second path); hashing the prices (churn, INV-32).
+
+### D-0852 · Any event that touches a strategy's inputs replans, as one rule
+
+Before, only an EV's plug edge raised a `demand` replan, and every other change waited for the next quarter hour. After each tick the runtime fingerprints every load's demand (`wants`, deadline, urgency, mode, and the requirement past 10 %) and creates `run_plan("demand")` when one moved, at most once a minute. Audit against what the strategies read: prices (all paths call `run_plan("prices")`), knobs and selects (`_tick_and_plan`), presence, forecasts, the quarter hour, startup were already triggers; the gaps were a ready-by or departure moved by a calendar event, a tank's requirement crossing 10 %, and a non-EV device attaching, each waiting up to 15 minutes. No strategy skips a load whose demand says "nothing wanted" (`plan_all` plans every load not `off` or `delegated`, and a dropped load's plan is dropped). D-0841's rejection of "forcing a replan on a price-source change" stands: a site change reaches the plan through the hash (D-0851). Affects D5 §5.9; D7 §5.2.
+
+### D-0853 · An EV with no car keeps being planned; the one-run rule stays
+
+A car not plugged in is planned like any load (D-0709, D-0444 parks the charger, not the plan). On the live curve at 14:00 with `resumes` unknown the plan is 23:45-05:30 at 18.30 NOK for 12.48 kWh, the gaps at 6 A; with `resumes = yes` it is 22:45-05:45 at 18.10 NOK. The rule costs 0.20 NOK (1.1 %) and moves the start by an hour, on a night whose spread is 8 øre. Not a defect. The 19:30 start on the dashboard was the kept plan of D-0850. Affects D4 §5.11; D5 §5.2.
+
+### D-0854 · `hot_water` bought at 22:30 because tomorrow was an estimate
+
+At 13:00 local the horizon's tomorrow was the estimated tail, flat at 1.60 NOK, and tonight's known 22:30-23:45 at 1.45-1.49 ranked cheapest for the first shortfall (tank at 71.0 °C, 9.3 kWh above its floor, reserve 4.4 kWh plus the next hour's draws, short at about 08:15 on 16 Oct). The block took all it had room for, 7.08 kWh, because each later shortfall is also served by the cheapest block before it, and the same block is the cheapest for them. With real prices (13:07) the cheapest block is 04:30-05:45 at 1.43-1.45 and the plan buys there: `prefer_late` and the λ ranking behave as D5 §5.13 designs. The stale plan was kept by D-0850's arithmetic. The tank's numbers are unchanged (D-0779). Affects D5 §5.13.

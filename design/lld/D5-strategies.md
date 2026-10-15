@@ -339,6 +339,20 @@ replan triggers: new curve (prices received), quarter-hour tick, demand change (
 `h` is `HysteresisPolicy.threshold(curve, local_day, tz, window)` over the new plan's own window, so the doubling happens **once**: the policy already doubles when a slot in the window is `STALE`, and the caller's `stale` flag only doubles it when the data hasn't (D-0135). "Inputs changed" is the deadline, the mode, the requirement by more than 10 %, or the inputs digest - which covers the demand and the knobs and never the prices (D-0136). The triggers are a `ReplanTrigger` `StrEnum`, and replans are rate-limited to one per load per 60 s (§8) except `force`, `service` and `startup`, which a person is waiting for (D-0139).
 Flat curve (`is_flat(day)`): `flat_policy = fill` (earliest slots first) or `spread` (evenly across the window) per load. Under `fill` the plan is literally the time order, the Norgespris case. `spread` levels the requirement across every usable slot and does **not** raise a slot to `min_w`, so a load with a power floor uses `fill`, the default (D-0137).
 
+**One rule for the triggers (D-0852).** A load replans whenever an event touches an input its strategy reads, whatever the strategy, whether or not the device is attached. The inputs and what raises each:
+
+| Input | Event | Trigger |
+|---|---|---|
+| price curve | a fetch brings slots, an event announcement, a site price change | `curve`; a site change is also in the digest (§7) |
+| the device | plug-in or unplug, `wants`, urgency, deadline or ready-by, mode, the requirement past ±10 % | `demand`: the runtime compares each load's demand after every tick (D-0852) |
+| level (SoC, temperature) | crossing what the plan assumed | the requirement above, else the quarter-hour |
+| knobs | target, presence, schedule, setback, params, mode and strategy selects | `knob`, `presence` |
+| capacity ceiling, tariff | a site change | reload; the digest |
+| forecasts | production 30 % off for 15 min, a new weather or baseline fetch | `forecast` |
+| loads above in the walk | their plan changes, so this load's headroom does | the same cycle: the walk is in priority order |
+
+Every cycle rebuilds every planned load: `demand.wants` is never a reason to skip (`plan_all` consults no strategy about it). What the hysteresis keeps is the *plan*, not its price: a kept plan is **re-priced on today's curve** (slots and energy untouched) when that moves its cost by more than the threshold, so its published cost is today's (D-0850), and it is compared with the new plan **on the same energy**: when the new plan buys more, the old cost is scaled to that energy before the threshold applies. Float noise below the threshold leaves the kept plan the very same object (§9 3).
+
 ### 5.9a A thermal store's price plan must pay for itself (D-0724)
 
 ```
@@ -456,7 +470,7 @@ Validation: `bank_k` or `coast_k` above the store's swing refused, `hours_per_da
 
 ## 7. Persistence
 
-The adopted `Plan` per load (slots, inputs hash, built_at, mode), so a restart keeps commitments and stop horizons, and the `SitePlan` summary. Written on adoption. Plans are rebuilt on the first planning cycle after start, and an adopted plan whose inputs hash still matches is kept.
+The adopted `Plan` per load (slots, inputs hash, built_at, mode), so a restart keeps commitments and stop horizons, and the `SitePlan` summary. Written on adoption. Plans are rebuilt on the first planning cycle after start, and an adopted plan whose inputs hash still matches is kept. The hash leaves prices out but folds in `SiteConfig.setup`, a digest of the site's own configuration (price sources and modifiers, tariff, currency): a site that went from a fixed price to spot adopts a new plan for every load, and no plan built on the old set-up survives a reload (D-0851).
 
 ---
 
@@ -534,6 +548,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 49. Flat over the window (D-0771): today flat, the deadline at 07:00 tomorrow in a structured night, `deadline_fill` plans the night's cheapest slots, not time order from now.
 50. `run_once` by overlap (D-0771): a 100-minute cycle whose segments straddle quarter hours picks the start whose placed energy is cheapest; on 234 seeded cases it equals brute force.
 51. An EV that may not resume (D-0776): with `resumes = unknown` a 30 kWh session is one run with its gaps at `min_w`; with `yes` it has at most 4 pauses; a slot whose headroom allows only 6 A on one phase is chosen over a 3-phase 16 A slot only when it is at least the efficiency ratio cheaper.
+52. Replan on any input (D-0850..D-0852), for a deadline load, a thermal store and a battery: a price update re-prices the kept plan without moving its slots, a changed site set-up is adopted for every load, a moved deadline or mode is adopted, and a plan that buys more energy is compared with the old one on the same energy (`tests/core/strategies/test_52_replan_on_any_input.py`, `tests/runtime/test_replan_triggers.py`).
 52. `cheapest_hours` remembers the day (D-0810): replanned every 15 minutes for 48 h on flat, rising, volatile and one-spike days, a 1 kW pump asked for 4 h/day runs 16 quarter-hours on each day, spread or consecutive; a plan made at 23:00 after four hours run plans none of that day and four hours of the next.
 53. A cycle under way keeps its start (D-0811, INV-59): a 150-minute cycle replanned at every quarter hour from its start keeps `started_at`, its block's end and a planned energy that only falls.
 54. Setpoints in the device's steps (D-0818): every setpoint a `SETPOINT` route asks for is the target plus whole steps (0.5 K, 0.25 K and 0.1 K tested); a volatile day written in 0.5 K steps changes the setpoint about a third less often than in 0.05 K; a slab coasting through an evening window writes it at most 12 times at 0.05 K and 8 at 0.5 K (`test_54_setpoints_in_the_devices_steps.py`).

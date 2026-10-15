@@ -313,6 +313,10 @@ class SiteConfig:
     ladder: LadderCfg = field(default_factory=LadderCfg)
     engine: EngineCfg = field(default_factory=EngineCfg)
     hysteresis: HysteresisPolicy = field(default_factory=HysteresisPolicy)
+    #: A digest of the site's price and tariff set-up: sources, modifiers, tariff,
+    #: currency. Folded into every plan's inputs hash, so a plan built on another
+    #: set-up (fixed price before, spot now) is never kept across a reload (D-0851).
+    setup: str = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -2299,6 +2303,7 @@ class Engine:
             site_ctx = SiteContext(
                 tz=site.tz,
                 hysteresis=site.hysteresis,
+                setup=site.setup,
                 tariff=self._tariff,
                 target=inputs.knobs.target,
                 presence=inputs.knobs.presence,

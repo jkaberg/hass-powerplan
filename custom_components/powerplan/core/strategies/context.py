@@ -719,6 +719,8 @@ class SiteContext:
     #: plan must earn by its timing - to be adopted, and to come back once left to
     #: its thermostat. `None` judges nothing.
     worth_share: tuple[float, float] | None = (0.04, 0.06)
+    #: `SiteConfig.setup`: folded into every plan's inputs hash (D-0851).
+    setup: str = ""
 
 
 @dataclass(frozen=True, slots=True)
