@@ -13,7 +13,7 @@
 
 import {
   Hass, esc, numFmt01, timeFmt, localHour, startOfHour, rgbaHex, readable, readPlan, runsFor, loweredFor,
-  newUid, fmtTemplate, pick, keepFocus, toNum, Win,
+  newUid, fmtTemplate, pick, keepFocus, toNum, Win, cheapLimit,
 } from "./r3-util";
 import { StatusDebouncer, StatusView, rawStatus, STATUS_LABELS, Kind } from "./status";
 import { openApplianceDialog } from "./appliance-dialog";
@@ -180,19 +180,17 @@ export class PowerplanAppliancesCard extends HTMLElement {
       x.load.name.localeCompare(y.load.name));
   }
 
-  /** Cheap hours: lowest quarter of the price range inside the window. */
+  /** Cheap hours: the lowest quarter of the known prices inside the window (D-0840). */
   private cheapBands(a0: Date, a1: Date): [Date, Date][] {
     const id = this.config!.entities.price_forecast;
     const slots: any[] = (id && this.hassRef!.states[id]?.attributes?.slots) || [];
-    const win = slots.map((s) => ({ s: new Date(s.start), e: new Date(s.end), p: Number(s.total) }))
+    const win = slots.map((s) => ({ s: new Date(s.start), e: new Date(s.end), p: Number(s.total), est: s.confidence !== "known" }))
       .filter((x) => x.e > a0 && x.s < a1 && Number.isFinite(x.p));
-    if (!win.length) return [];
-    const lo = Math.min(...win.map((x) => x.p)), hi = Math.max(...win.map((x) => x.p));
-    if (hi - lo < 1e-6) return [];
-    const thr = lo + (hi - lo) * 0.25;
+    const thr = cheapLimit(win);
+    if (thr == null) return [];
     const out: [Date, Date][] = [];
     for (const x of win) {
-      if (x.p > thr) continue;
+      if (x.est || x.p > thr) continue;
       const last = out[out.length - 1];
       if (last && Math.abs(last[1].getTime() - x.s.getTime()) < 1000) last[1] = x.e;
       else out.push([x.s, x.e]);

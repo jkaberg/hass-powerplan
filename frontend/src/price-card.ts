@@ -18,7 +18,7 @@
 //   v0.8 (D12 §5.16 R2): the spot is price_forecast's slots[].spot and fixed_price, built into the same
 //   `Spot` the powerplan/spot_prices command answered in iteration 4 (`spotFromStates`).
 
-import { Hass, esc, lang, numFmt, timeFmt, localMidnight, fmtTemplate, newUid, pick, keepFocus, plannedByHour } from "./r3-util";
+import { Hass, esc, lang, numFmt, timeFmt, localMidnight, fmtTemplate, newUid, pick, keepFocus, plannedByHour, cheapLimit } from "./r3-util";
 import { TOKENS, SHARED, alertHtml } from "./tokens";
 import { MARK_CSS, markDot, markSwatch } from "./marks";
 
@@ -252,18 +252,17 @@ export class PowerplanPriceCard extends HTMLElement {
       }
       flush();
     }
-    // cheap bands (lowest quarter of the window's range, future + past)
+    // cheap bands (the lowest quarter of the window's known prices, future + past; D-0840)
     if (pts.length && !gap) {
-      const lo = Math.min(...pts.map((p) => p.din)), hi = Math.max(...pts.map((p) => p.din));
-      if (hi - lo > 1e-4) {
-        const thr = lo + (hi - lo) * 0.25;
+      const thr = cheapLimit(pts.map((p) => ({ p: p.din, est: p.est })));
+      if (thr != null) {
         let run: [number, number] | null = null;
         const flush = () => {
           if (run) g.push(`<rect class="band" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="${bottom - top}"/>`
             + `<rect class="cheapline" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="3" rx="1.5"/>`);
           run = null;
         };
-        for (const p of pts) { if (p.din <= thr) { run = run ? [run[0], p.e] : [p.s, p.e]; } else flush(); }
+        for (const p of pts) { if (!p.est && p.din <= thr) { run = run ? [run[0], p.e] : [p.s, p.e]; } else flush(); }
         flush();
       }
     }

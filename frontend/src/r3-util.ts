@@ -229,6 +229,20 @@ export function outlierCap(values: number[]): number | null {
   return first !== undefined && second !== undefined && second > 0 && first > 3 * second ? second * 1.25 : null;
 }
 
+/**
+ * The cheap-hours line (D12 §5.12 P5, D-0840): the price a slot must be at or under to count as cheap.
+ *
+ * The lowest quarter of the window's slots by price, estimates left out - not the lowest quarter of its
+ * min-to-max range, which one dip pulled to a single quarter hour (15 Oct 2026: a 1,30 slot among
+ * 1,45-1,87 left 06:45-07:00 the only cheap time of a 35 % spread day). `null` when there is nothing
+ * known to rank or the known prices do not differ.
+ */
+export function cheapLimit(rows: readonly { p: number; est: boolean }[]): number | null {
+  const known = rows.filter((x) => !x.est && Number.isFinite(x.p)).map((x) => x.p).sort((a, b) => a - b);
+  if (!known.length || known[known.length - 1]! - known[0]! < 1e-4) return null;
+  return known[Math.floor((known.length - 1) / 4)]!;
+}
+
 /** The words of `resultLines`, nb and en (D12 §5.19). */
 export const RESULT_LABELS: Record<string, Record<string, string>> = {
   nb: {

@@ -19,7 +19,7 @@
 
 import {
   Hass, esc, numFmt, numFmt01, timeFmt, readPlan, runsFor, loweredFor, holdKwh, moreInfo, navigate, fmtTemplate,
-  pick, toNum, localHour, startOfHour, tz, lang, newUid, HassEntity, savingsView,
+  pick, toNum, localHour, startOfHour, tz, lang, newUid, HassEntity, savingsView, cheapLimit,
 } from "./r3-util";
 import { rawStatus, STATUS_LABELS } from "./status";
 import { TOKENS, SHARED, hatchDef, iconButton } from "./tokens";
@@ -376,15 +376,15 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const runs = runsFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
     const low = loweredFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
     const pe = cfg.entities.price_forecast ? hass.states[cfg.entities.price_forecast] : undefined;
-    const ps = ((pe?.attributes?.slots ?? []) as any[]).map((s) => ({ s: Date.parse(s.start), e: Date.parse(s.end), p: Number(s.total) }))
+    const ps = ((pe?.attributes?.slots ?? []) as any[]).map((s) => ({ s: Date.parse(s.start), e: Date.parse(s.end), p: Number(s.total), est: s.confidence !== "known" }))
       .filter((x) => x.e > a0.getTime() && x.s < a1.getTime() && Number.isFinite(x.p));
     const lanes: string[] = [];
     const top = 12, lh = 20;
     lanes.push(`<rect x="1" y="${top}" width="${W - 2}" height="${lh}" rx="${lh / 2}" class="track"/>`);
     // cheap hours
-    if (ps.length) {
-      const lo = Math.min(...ps.map((x) => x.p)), hi = Math.max(...ps.map((x) => x.p));
-      if (hi - lo > 1e-4) for (const x of ps) if (x.p <= lo + (hi - lo) * 0.25) {
+    const thr = cheapLimit(ps);
+    if (thr != null) {
+      for (const x of ps) if (!x.est && x.p <= thr) {
         lanes.unshift(`<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="${lh + 16}" class="band"/>`
           + `<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="3" class="cheapline"/>`);
       }

@@ -15,7 +15,7 @@
 // Everything that depends on width is expressed in axis units (bar width 72 % of the slot,
 // caps via api.size), so a resize never needs a re-render and bars can't turn into needles.
 
-import type { PlanSlot } from "./r3-util";
+import { cheapLimit, type PlanSlot } from "./r3-util";
 
 export interface Bucket {
   start: number; end: number;
@@ -193,16 +193,17 @@ export function forecastOption(b: Bucket[], loads: LoadRef[], o: ForecastOpts): 
   };
 }
 
+function cheapRows(b: Bucket[]): { p: number; est: boolean }[] {
+  return b.flatMap((k) => (k.price == null ? [] : [{ p: k.price, est: k.estimated }]));
+}
+
 function cheapAreas(b: Bucket[], step: number): any[] {
-  const ps = b.map((k) => k.price).filter((p): p is number => p != null);
-  if (!ps.length) return [];
-  const lo = Math.min(...ps), hi = Math.max(...ps);
-  if (hi - lo < 1e-4) return [];
-  const thr = lo + (hi - lo) * 0.25;
+  const thr = cheapLimit(cheapRows(b));
+  if (thr == null) return [];
   const out: any[] = [];
   let s: number | null = null;
   b.forEach((k, i) => {
-    const on = k.price != null && k.price <= thr;
+    const on = k.price != null && !k.estimated && k.price <= thr;
     if (on && s === null) s = i;
     if ((!on || i === b.length - 1) && s !== null) {
       out.push([{ xAxis: s * step }, { xAxis: (on ? i + 1 : i) * step }]);
@@ -268,13 +269,10 @@ function stripes(colors: string[]): string {
 
 /** Share of MOVED energy (not holding) that lands in the cheapest quarter of the window. */
 export function cheapShare(b: Bucket[]): number | null {
-  const ps = b.map((k) => k.price).filter((p): p is number => p != null);
+  const thr = cheapLimit(cheapRows(b));
   const moved = b.reduce((t, k) => t + sum(k.moved), 0);
-  if (!ps.length || moved < 0.01) return null;
-  const lo = Math.min(...ps), hi = Math.max(...ps);
-  if (hi - lo < 1e-4) return null;
-  const thr = lo + (hi - lo) * 0.25;
-  const inCheap = b.reduce((t, k) => t + ((k.price ?? Infinity) <= thr ? sum(k.moved) : 0), 0);
+  if (thr == null || moved < 0.01) return null;
+  const inCheap = b.reduce((t, k) => t + (!k.estimated && (k.price ?? Infinity) <= thr ? sum(k.moved) : 0), 0);
   return Math.round((inCheap / moved) * 100);
 }
 
