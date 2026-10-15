@@ -96,7 +96,10 @@ def test_22d_best_save_holds_where_it_is_free_and_not_where_it_waits() -> None:
     postponed = [slot for slot in plan.slots if slot.envelope_w == 0.0]
     assert free
     assert postponed
-    assert all(slot.hold_kwh == pytest.approx(400.0 * slot.hours / 1000.0) for slot in free)
+    # A free slot moves nothing, so whatever the route draws in it is holding (D-0855): the
+    # measured draw, or more where the one-node model says the store loses more.
+    assert all(slot.hold_kwh >= 400.0 * slot.hours / 1000.0 - 1e-9 for slot in free)
+    assert all(slot.kwh == 0.0 for slot in free)
     assert all(slot.hold_kwh == 0.0 and slot.kwh == 0.0 for slot in postponed)
 
 

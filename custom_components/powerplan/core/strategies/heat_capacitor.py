@@ -152,6 +152,10 @@ class _Kind(StrEnum):
     HOLD = "hold"
 
 
+#: The slots whose energy above holding is a move: a fill, a bank, a recovery (D-0855).
+_MOVES: Final = frozenset({_Kind.FILL, _Kind.BANK, _Kind.RECOVER})
+
+
 @dataclass(frozen=True, slots=True)
 class _Bounds:
     """What the household and the physics allow the level to be (INV-55, INV-56)."""
@@ -1406,8 +1410,13 @@ def _rows(
         )
         if kind is _Kind.COAST:
             kwh, hold = energy, 0.0
-        else:
+        elif kind in _MOVES:
             kwh = energy - hold if energy > hold + _EPS_KWH else 0.0
+        else:
+            # A hold, a raised or a lowered slot moves nothing: whatever the route draws in it
+            # is the store's standing draw, so it is `hold_kwh` and `kwh` stays 0 (D-0855). The
+            # reservation, `kwh + hold_kwh`, is the same total (D-0629).
+            kwh, hold = 0.0, max(hold, energy)
         eco = model.lever == "mode" and not result.held[k]
         rows.append(
             _Row(

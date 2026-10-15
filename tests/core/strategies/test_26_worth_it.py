@@ -159,7 +159,7 @@ def _raw_plan(view: LoadView, **ctx: object) -> tuple[Plan, object]:
 
 
 def test_26_leaving_hands_off_needs_more_than_entering_it() -> None:
-    """1.8 % clears a 1.5 % entry but not a 2 % way back: no flip-flop at the line.
+    """2.1 % clears a 1.5 % entry but not a 2.5 % way back: no flip-flop at the line.
 
     `min_saving` 1 % keeps the evening coast the 10 % default gives back (D-0764),
     so the plan has something to judge; its buy-back is counted (D-0766).
@@ -167,10 +167,10 @@ def test_26_leaving_hands_off_needs_more_than_entering_it() -> None:
     view = _floor("heat_capacitor", "mode")
     view = replace(view, params={**view.params, "min_saving": 0.01, "coast_k": 1.0})
     plan, pctx = _raw_plan(view)
-    band = (0.015, 0.02)
+    band = (0.015, 0.025)
 
     assert _worth_it(plan, view, pctx, None, band).mode is PlanMode.PRICE
-    gated = _worth_it(plan, view, pctx, None, (0.02, 0.025))
+    gated = _worth_it(plan, view, pctx, None, (0.025, 0.03))
     assert gated.mode is PlanMode.NONE
     assert _worth_it(plan, view, pctx, gated, band).mode is PlanMode.NONE
 
