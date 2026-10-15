@@ -3,8 +3,8 @@
 The 10 kWh battery of `test_arbitrage` at 0.95 and 0.80 efficiency, with a site
 that is 2 kW over its ceiling from 17:00 to 19:00 on both days: 8 kWh the battery
 must discharge. The optimum is the MILP that must cover every deficit; hands-off is
-the battery nobody tuned, which charges to full at once and covers a deficit when
-it comes. A deficit left uncovered is a breach, the thing a peak reserve is for.
+the battery nobody tuned, which charges to full at once and covers a deficit when it comes. A deficit left uncovered is a breach, the thing a peak reserve
+is for.
 """
 
 from __future__ import annotations
@@ -27,15 +27,6 @@ from tests.optimality.oracle import battery_optimum
 
 pytestmark = pytest.mark.optimality
 
-#: Deficits the battery leaves uncovered where its charge could hold them (D-0768).
-UNCOVERED: frozenset[str] = frozenset(
-    f"peak_shave/{battery}/{day}"
-    for battery in ("eff80", "eff95")
-    for day in ("double_peak", "falling", "negative_night", "no3", "tou3", "volatile")
-)
-#: A battery that loses more than the plain one on the sawtooth, where a kWh's margin
-#: is below its round trip (D-0769).
-DEARER: frozenset[str] = frozenset({"peak_shave/eff80/sawtooth"})
 #: Below this a deficit is covered: float noise and a rounded watt.
 EPS_KWH = 1e-3
 
@@ -59,8 +50,4 @@ def test_peak_shave(battery: str, day: str) -> None:
         key,
         Outcome(run.cost, battery_hands_off(battery, prices, deficits), best[0] - best[1]),
         violation=breach,
-        known={
-            **({"violation": "BP.5"} if key in UNCOVERED else {}),
-            **({"dearer": "BP.5"} if key in DEARER else {}),
-        },
     )

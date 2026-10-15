@@ -71,6 +71,8 @@ class FitKey(StrEnum):
     LOSS_COEFF = "loss_coeff_w_per_k"
     HEATUP_RATE = "heatup_k_per_h"
     CHARGE_EFFICIENCY = "charge_efficiency"
+    #: A home battery's AC round trip, from its energy counters (D-0769).
+    ROUND_TRIP_EFF = "round_trip_eff"
     #: …and per phase count and current band (D-0776); the value after `charge_efficiency_`
     #: is `energy.band_key`'s, and the load's parameter is `charge_eff_<that>`.
     CHARGE_EFF_1P_6_9 = "charge_efficiency_1p_6_9"
@@ -237,6 +239,11 @@ class LoadHistory:
     setpoint_rows: tuple[tuple[datetime, float], ...] = ()
     #: Whether powerplan has written to the device: its setpoint history is then ours (INV-27).
     written: bool = False
+    #: A battery's cumulative energy counters, kWh: what it took in and what it gave out (D-0769).
+    charged_rows: tuple[tuple[datetime, float], ...] = ()
+    discharged_rows: tuple[tuple[datetime, float], ...] = ()
+    #: Whether those counters are on the AC side; the cells' own DC counters read high (D10 §5.6).
+    counters_ac: bool = False
 
     def configured_value(self, key: FitKey) -> float | None:
         """Return the configured value for `key`, or `None` when there is none."""

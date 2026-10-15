@@ -108,6 +108,8 @@ class QCtx:
     #: D10's fits over the bound entities' history, by fit key (`coast_tau_h`,
     #: `nameplate_w`, `heatup_k_per_h`), gated ones only (D-0731).
     measured: Mapping[str, Measured] = field(default_factory=dict)
+    #: The site's currency, for a default stated in euro (a battery's wear, D-0769).
+    currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

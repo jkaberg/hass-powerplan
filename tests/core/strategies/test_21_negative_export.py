@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 MIDDAY = {11: 3000.0, 12: 3000.0, 13: 3000.0}
-BATTERY = {"threshold": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
+BATTERY = {"wear_cost": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
 
 
 def _sunny(start: datetime) -> bool:
@@ -41,12 +41,15 @@ def _sunny(start: datetime) -> bool:
 
 
 def test_21_at_a_negative_export_price_the_surplus_is_charged_first() -> None:
-    """The battery's cheapest charge is the sun at −0.20; the tank heats there too."""
+    """The battery's cheapest charge is the sun at −0.20, and it is first in line for it."""
     source = flat_curve()
     curves = Curves(
         import_={Carrier.ELECTRICITY: source},
         export={Carrier.ELECTRICITY: export_of(source, "-0.20")},
     )
+    # No baseline is offered, so the plan assumes self-use spends the charge ahead of the sun, which
+    # is right at −0.20: the battery makes room and soaks all of it. The tank, below it, finds the
+    # sun mostly taken (D5 §5.1's walk).
     battery = battery_view(params={**BATTERY, "allow_grid_charge": True})
     tank = floor_view(
         load_id="tank",
@@ -69,7 +72,6 @@ def test_21_at_a_negative_export_price_the_surplus_is_charged_first() -> None:
     assert all(slot.price == Decimal("0.04") for slot in charged)
     heated = [slot for slot in site.plans["tank"].slots if slot.kwh > 0.0]
     assert heated
-    assert all(_sunny(slot.start) for slot in heated)
 
 
 def test_21_nothing_is_curtailed() -> None:

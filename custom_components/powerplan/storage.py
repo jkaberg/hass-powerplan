@@ -23,6 +23,7 @@ nothing, because stop flushes.
 from __future__ import annotations
 
 import logging
+import math
 import os
 from dataclasses import replace
 from decimal import Decimal
@@ -39,6 +40,7 @@ from homeassistant.util.json import load_json
 
 from .const import DOMAIN
 from .core.loads.stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3
+from .core.loads.types.battery import WEAR_EUR_PER_KWH, wear_cost_in
 from .core.loads.types.floor_heating import (
     COAST_TAU_DEFAULT_H,
     FLOATING_COVERINGS,
@@ -403,8 +405,10 @@ ENTRY_MINOR_SITE_SUBENTRY: Final = 6
 ENTRY_MINOR_FOIL: Final = 7
 #: Config entry minor version 8: a tank's probes bound and its standby measured (D-0741).
 ENTRY_MINOR_HOT_WATER: Final = 8
+#: Config entry minor version 9: a battery carries `wear_cost`, which replaces `threshold` (D-0769).
+ENTRY_MINOR_BATTERY_WEAR: Final = 9
 #: The minor version a new entry is created at, and every migration ends on.
-ENTRY_MINOR: Final = ENTRY_MINOR_HOT_WATER
+ENTRY_MINOR: Final = ENTRY_MINOR_BATTERY_WEAR
 
 #: A price-only site's grid party: no capacity component at all (D13 §10).
 #: TS.6 (D13 §10, §12.1): a company's file that left the repository, and where its copy
@@ -737,6 +741,34 @@ def migrate_hot_water(data: Mapping[str, Any]) -> dict[str, Any] | None:
     if (strategy_params, answers) == before and params == params_before:
         return None
     return {**data, "strategy_params": strategy_params, "answers": answers, "params": params}
+
+
+#: `threshold`'s default before D-0769: a battery still on it is on no choice of the household's.
+OLD_THRESHOLD_DEFAULT: Final = 0.05
+
+
+def migrate_battery_wear(
+    data: Mapping[str, Any], currency: str | None = None
+) -> dict[str, Any] | None:
+    """Return a battery's subentry with `wear_cost` in place of `threshold`, or `None` (D-0769).
+
+    A `threshold` still at the old default of 0.05 is replaced by the chemistry's wear cost in the
+    site's `currency`; one the household typed is kept, as `wear_cost`. A battery that has the new
+    key already is left alone.
+    """
+    if data.get("type") != "battery":
+        return None
+    strategy_params = dict(data.get("strategy_params") or {})
+    if "wear_cost" in strategy_params:
+        return None
+    typed = strategy_params.pop("threshold", None)
+    if typed is not None and not math.isclose(float(typed), OLD_THRESHOLD_DEFAULT):
+        wear = float(typed)
+    else:
+        params = data.get("params") or {}
+        chemistry = str(params.get("chemistry") or (data.get("answers") or {}).get("chemistry"))
+        wear = wear_cost_in(chemistry if chemistry in WEAR_EUR_PER_KWH else "lfp", currency)
+    return {**data, "strategy_params": {**strategy_params, "wear_cost": wear}}
 
 
 def with_probes(data: Mapping[str, Any], probes: Mapping[str, str]) -> dict[str, Any] | None:

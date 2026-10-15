@@ -3330,7 +3330,7 @@ The losses came from the searches, not their numbers. A started stretch was forg
 - the commands the row has (INV-30) as the actions;
 - stored energy left at the horizon valued at the mean future import price × discharge efficiency.
 
-`arbitrage` and `peak_shave` stay as keys. `peak_shave` is the same plan with the arbitrage terms switched off. Affects D5 §5.8, §6, §9 46–48, §11.
+`arbitrage` and `peak_shave` stay as keys. `peak_shave` is the same plan with the arbitrage terms switched off *(amended by D-0832: it is the same route with the duty; `arbitrage` has none; and by D-0837: the duty reads `Headroom.deficit_w`, the unclamped shortfall, since the clamped room never goes negative)*. Affects D5 §5.8, §6, §9 46–48, §11.
 
 **Rejected:** repairing the pairing (it would need SoC-cycle-aware pairing, a min-cost-flow by another name); an LP per battery (the same answer at 10 ms, but a solver dependency and a binary per slot at negative prices).
 
@@ -3728,3 +3728,69 @@ Two things BP.4 found and left.
 - **The first block of a plan.** A plan made inside a block keeps the setpoint in force until the block ends (D-0826), so a bank the new inputs ask for starts at the next hour, up to 45 minutes late. The runtime does not tell the planner when the last change was written, and a second change inside the hour is what the budget forbids; the cost is the lateness, not a wear.
 
 Affects D5 §5.7, D6 §5.3 (the reservation).
+
+### D-0830 · The wear cost is converted by a table of rates in the battery type, and written to every stored battery at minor 9
+
+D-0769 converts 0.04 / 0.10 EUR "at the country module's rate", and no country module has a rate. `core/loads/types/battery.py` now carries `WEAR_EUR_PER_KWH` and `PER_EUR`, the units of each currency one euro buys, rounded from the ECB reference rates for the thirteen currencies the country modules price in (NOK 11.5, SEK 11.0, DKK 7.46, GBP 0.87, USD 1.15 ...). `wear_cost_in(chemistry, currency)` rounds to the third decimal: LFP 0.46 NOK, NMC 1.15 NOK (D5 §9 48 said 0.45; with one rate the two cannot both round as written, and 11.5 gives NMC's exactly). It is read once at setup (`QCtx.currency`, the site's price currency, else Home Assistant's) and materialised (INV-66): a rate that moves later changes no battery. A currency not in the table keeps the euro figure; the household can set it under Advanced. `wear_cost` and `max_soc` are `derived_default` questions (blank takes the chemistry's: 0.04 / 0.10 EUR, 100 / 90 %), `DERIVATION_VERSION` 3, and `can_charge` joins the strategy parameters.
+
+Config entry minor 9 (`ENTRY_MINOR_BATTERY_WEAR`, next free: BP.4, BP.6, BP.7, BP.8 and `bp/integration` are all at 8) runs `migrate_battery_wear` on every battery subentry: a `threshold` still at 0.05 is dropped and replaced by the chemistry's wear cost in the site's currency; any other `threshold` is kept as `wear_cost`; a battery with no `threshold` gets the chemistry's. A battery keeps its `max_soc`: only a new NMC battery gets the 90 % ceiling. Affects D4 §6.6, §9 67.
+
+**Rejected:** a `rate` field on every `CountryModule` (thirteen modules touched for one number that is not a tax); the live rate (a battery whose wear cost changes with the krone breaks INV-66).
+
+### D-0831 · The battery's route as built
+
+`core/strategies/battery.py` is one `levels.solve` over the stored kWh between `reserve_soc` and `max_soc`, on a grid of 0.5 % of the usable capacity.
+- **Actions per slot:** self-use (`None`, the reference), a hold (not with `can_hold = False`), the explicit charge powers (not without `can_charge`, and up to the surplus alone without `allow_grid_charge`) and the explicit discharge powers (not without `can_discharge`), in the 100 W step of the inverter, thinned to at most 20 a side (300 W on 5 kW) plus the limit, the surplus left, in a duty slot the exact deficit and, for a row without self-use, the house's own load. A command asks for up to its watts; a battery full or at its reserve delivers less.
+- **Efficiency:** `η_c = η_d = √round_trip_eff` (0.80 until fitted, D-0834), not the store's 0.95s, which D6 and D11 go on using.
+- **The house:** a slot with surplus left is a house exporting it; one without is a house importing D10's baseline, and where none is offered (0, which D10 answers while the profile warms up) it imports more than the battery can deliver, and with no forecasts at all a discharge is priced the same but nothing is modelled to move. Self-use serves that load, so a discharge displaces `p_in` and, on a site with forecasts, a `None` slot **drains the battery** in the plan: the plan has to hold (`0`) whatever it means to keep for a dearer hour, as the inverter would otherwise spend it (D5 §9 28). With a baseline, what the battery delivers beyond it is exported at `p_out`, never above `p_in`, and only up to `export_limit_w`. A hold lets only the sun in. A row without the inverter's self-use (`self_use` false, a bare number) has nothing in a `None` slot: every charge and discharge is a command, and the house's own load is one.
+- **Cost of a slot:** import at `p_in` less export at `p_out`, plus `wear_cost` per kWh delivered, plus `GRID_RANK` per kWh of the duty (negative headroom, up to the inverter, `peak_shave` only) not covered **by a command**: self-use serves the house, and nothing guarantees it will serve a peak.
+- **The end:** a stored kWh is worth `max(0, mean future p_in - wear_cost) × η_d`. D-0768 said the mean times `η_d`, which makes a flat day a tie between self-use and a hold only before wear; a kWh kept is delivered later and wears then, so with the wear taken off a flat day is a tie and self-use wins it (D5 §9 29).
+- **What is published:** each command as the battery will deliver it from the level the route reaches (a charge into a full battery is a hold, or `None` without `HOLD`), and `None` for self-use, except the sun that self-use banks, which is published as the charge it is when a later command depends on it or when it earns more than the export it forgoes (a stored kWh worth more than `p_out`): the loads below then see that surplus taken (INV-33; D5 §9 19, 21, 29). A plan costs 35-40 ms on 192 slots.
+
+**Rejected:** the hold as the reference (a flat day would never self-use); publishing every self-use charge as a charge (D5 §9 29: a flat plan is all `None`); counting self-use as covering the duty (a peak is not left to the inverter's goodwill).
+
+### D-0832 · `peak_shave` keeps the ceiling, `arbitrage` does not, and neither flattens its prices
+
+D-0768 flattens the price terms of `peak_shave` to their mean. It was built that way first, in two forms, and removed:
+- **Flattening both ways** leaves nothing to charge for at the cheapest hour.
+- **Flattening only what a discharge displaces** (charge at the slot's price) leaked: the route sold at the mean and bought back at 0.45 through the cheap hours, a discharge and a charge in alternate slots (`double_peak/eff95`: ours 2.82 against hands-off 1.90, share -0.09; `rising` -0.09). Commanding a discharge only in the duty slots stopped the cycling, and the catalogue read 0.96-1.00 on its own optimum. It also left a default battery (`peak_shave` is the type's default) that **never discharges**: no price peak is worth keeping a charge for, and the duty is dormant in the field (D-0835). `pv_battery_self_consumption` (2 kWh discharged expected, 0.06 given), `pv_battery_peak_shave_winter` and the four `battery_holds_for_peak` runs, all passing on `bp/integration`, failed on that.
+
+So the two strategies are one route and differ in one term, as they did before D-0768: `peak_shave` has the duty (D5 §5.8: negative headroom is covered by commanded discharge, charged for before) and `arbitrage` does not. D5 §9 47's "trades nothing outside the duty" does not hold and is rewritten: `peak_shave` covers the duty, and trades as `arbitrage` does with what is left. The owner accepted this reasoning: flattening is a change to `_stage`'s `money` for the discharge side and to the end value, and is not made. D5 §5.8 and §9 47 say what the code does. Affects D5 §5.8, §9 47.
+
+### D-0833 · How the battery oracle changed
+
+The oracle priced no wear and valued the end at the mean: against a route that pays `wear_cost`, `arbitrage` was measured dearer than doing nothing on `eff80/sawtooth`. Now:
+- the MILP pays `model.wear` on every kWh delivered (0.45 NOK, an LFP battery on a NOK site) and values the energy kept at `max(0, mean - wear) × η_d` (D-0831); the harness bills ours and hands-off the same wear and the same end value;
+- the harness hands the strategy the battery's own `round_trip_eff` (η²) as a fit would, and plans on the day followed by its own mean (`curve_of(..., beyond=mean)`, D-0816), so the end value is the one the loop is billed, not that of a horizon shrinking to nothing (with the shrinking horizon `arbitrage` read 0.09 on `falling` and 0.0 on `two_level` for that reason alone).
+
+The BP.5 xfails (`UNCOVERED`, `DEARER`) are removed. Affects D9 §5.17.
+
+### D-0834 · D10's round-trip fit is built; the recorder side waits for two counter roles
+
+`core/forecasts/fit/battery.py` (`FitKey.ROUND_TRIP_EFF`, `round_trip_eff`): Σ discharged / Σ charged over the windows in which the state of charge moves 10 points and returns within 2, gated on five windows over seven days, bounded to [0.55, 0.97], not fitted unless the history says its counters are AC (`LoadHistory.counters_ac`). D10 §9 32 passes on it. Not built: reading the counters. A battery has one `ENERGY` role, and the fit needs a charged and a discharged register, which no profile row binds yet; the provider, `Runtime._apply_fits` and the load's `round_trip_eff` parameter follow the day a row exposes them. Until then the strategy's 0.80 stands for every battery.
+
+### D-0835 · A negative headroom never reaches a strategy in the running system *(resolved by D-0837)*
+
+`Headroom.build` and `Headroom.reserve` clamp each slot at 0 W (`max(0.0, ...)`), so the "negative headroom" `peak_shave` covers (D5 §5.8, as before D-0768) arrived only from a test or a replay that set it: in the running system a slot over the ceiling read 0, and the duty was dormant, as the old `_shave_reservation` was. D-0837 gives the battery the unclamped figure beside the clamped room.
+
+### D-0836 · The battery's ratchets re-recorded
+
+`tests/optimality/baseline.json`, the 48 non-null battery entries (closed loop, 13 days, `eff80` and `eff95`; the flat days assert "never dearer"). Before -> after, min / median / max: `arbitrage` `eff80` -24.70 / 0.42 / 0.98 -> 0.999 / 1.00 / 1.00 and `eff95` 0.0 / 0.55 / 1.0 -> 0.999 / 1.00 / 1.00; `peak_shave` `eff80` -1.46 / 0.66 / 1.19 -> 0.957 / 0.99 / 1.00 and `eff95` -0.0 / 0.58 / 0.90 -> 0.961 / 1.00 / 1.00 (the oracle of D-0833). Every 8 kWh deficit is covered on all 26 `peak_shave` runs and none is dearer than hands-off.
+
+### D-0837 · `Headroom` carries the shortfall below the ceiling, and only the battery reads it
+
+D-0835: `Headroom.build` and `reserve` floor each slot at 0, so `peak_shave`'s duty (a slot the ceiling is short in is covered by commanded discharge, charged for before) never fired in the field. The clamp is right for every load that draws: a full window offers it nothing, and a negative cap would be a second way to say "stand still" (INV-30). The battery is the one load that can *answer* a shortfall, so it needs the figure the clamp discards.
+
+- **The field.** `Headroom.short[slot]`, read through `deficit_w(slot)`, is the unclamped remainder: `max(0, baseline_w + Σ reserved − (target − ε) × fraction)`. `build` sets it from the baseline alone. `reserve` takes `w_at − deficit_w − watts` as the new unclamped room and splits it into the floored room and the deficit, so what the loads above the battery take in a slot already short adds to it. `closed` leaves it alone.
+- **Who reads it.** `battery._rows` takes `duty_w = min(max_discharge_w, deficit_w)` for `peak_shave`. `by_slot`, `w_at`, `tier`, `closed` and every other strategy are unchanged.
+- **Considered: unclamped `by_slot`.** One field fewer, but every strategy then reads a negative cap, and `min(max_w, headroom)` in `deadline_fill` and the others would each need a clamp: the change INV-31 argues against.
+- **Harness.** The catalogue and the unit tests that set `by_slot` negative now set `short` (`tests/optimality/harness.py`, `test_16`, `test_19`, `test_46`); their numbers are the same.
+- **End to end.** `battery_covers_the_evening`: the dark January day, a 5 kW target, a planner baseline of 7 kW from 17:00 to 19:00 (the runner's new `plan_baseline_w`; it wired none, D9 §5.14). The plan built at 16:45 discharges 2.25-2.7 kW in all eight deficit quarters, 4.8 kWh. Affects D5 §5.1, §5.8, §9 47, 57; D9 §5.3.
+
+### D-0838 · The saldering scenario's "before" share was the old coast dither's, not net metering's
+
+`test_nl_saldering_end_self_consumption_rises_from_1_january` passed on `main` (57c9336) and failed on `bp/integration`. Bisect over `57c9336..bp/integration` (`POWERPLAN_SIM_CACHE=off`, 5 steps): good `e3ed6b9`, `6217400`; bad `e114fb8`, `f4b31f6`, `03ec153` `feat(strategies): plan setpoints in the device's steps` (D-0818), the first bad commit. Shares: 88.8 % / 94.9 % before, 97.4 % / 96.2 % after the commit (9.3 and 9.5 kWh of production).
+
+The cause is in the 29 December afternoon, the only day of the first three that exports (0.76 kWh before the commit, 0.24 after). Per half hour on that day the heat pump drew 25 W at 10:30 and 11:00 and 252 W at 12:00 while the roof exported 190-410 W; since D-0818 it draws 350-730 W through 09:30-13:00 and the export falls to 5-120 W. The old route moved its setpoint a few hundredths of a kelvin a slot and so idled whenever the level was above the coast line; the lattice holds one setpoint for a run. Under net metering the sun is worth the import price, so neither pattern is dearer; the 88.8 % was never a consequence of net metering, only the dither's incidental timing. After 1 January nothing moved (94.9 -> 96.2 %, the 2 January export 114 -> 129 Wh-units; midday export 0.2 kW at most).
+
+The assertion `after > before` therefore compared two near-saturated shares on 0.2-0.8 kWh. It is replaced by what the scenario can show: both shares above 90 %; their order is not asserted. On the merged `bp5-battery` it reads 99.1 % before and 95.9 % after, the opposite order from `main`'s, on the same 0.1-0.8 kWh. The mechanism itself (the sun priced at the export price after the switch) is covered by `negative_price_soak` and the surplus-band unit tests of D5 §2. Affects D9 §5.3.

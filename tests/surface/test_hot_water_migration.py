@@ -104,7 +104,7 @@ async def test_38c_the_entry_migrates_and_finds_the_probes(hass: HomeAssistant) 
 
     assert await async_migrate_entry(hass, entry)
 
-    assert entry.minor_version == ENTRY_MINOR_HOT_WATER == ENTRY_MINOR
+    assert entry.minor_version == ENTRY_MINOR > ENTRY_MINOR_HOT_WATER
     (sub,) = entry.subentries.values()
     assert sub.data["strategy"] == "deadline_fill"
     assert sub.data["answers"]["temp_top_entity"] == probes["top"].id

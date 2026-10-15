@@ -293,6 +293,8 @@ class BatteryModel:
     eta_d: float
     reserve_pct: float
     max_pct: float
+    #: What a kWh delivered costs in wear, the route's own price (D-0769); 0 for none.
+    wear: float = 0.0
 
 
 def battery_optimum(
@@ -302,21 +304,24 @@ def battery_optimum(
     soc0: float,
     deficits_w: Sequence[float] | None = None,
 ) -> tuple[float, float] | None:
-    """Return `(grid cost, energy value kept)` of the best plan, or `None` if it cannot cover.
+    """Return `(grid cost plus wear, energy value kept)` of the best plan, or `None` if it cannot cover.
 
     The battery trades at the slot's price both ways, never charges and discharges
     in one slot (a binary per slot), and must discharge at least `deficits_w[k]`
-    net where a slot has one. The energy left in the store at the end is valued at
-    the horizon's mean price times `eta_d`, and the objective carries that value:
-    the second element is `(E_end - E_0)` times it, so a caller reports
+    net where a slot has one. Every kWh it delivers costs `model.wear`, as in the
+    route (D-0769). The energy left in the store at the end is
+    valued at the horizon's mean price less the wear its delivery will cost, times `eta_d`, and the objective carries that
+    value: the second element is `(E_end - E_0)` times it, so a caller reports
     `cost - kept` for ours and the optimum alike.
     """
     n = len(prices)
     h = 0.25
-    value = sum(prices) / n * model.eta_d
+    value = max(0.0, sum(prices) / n - model.wear) * model.eta_d
     prog = _Program()
     charge = [prog.col(0.0, model.max_w, prices[k] * h / 1000.0) for k in range(n)]
-    discharge = [prog.col(0.0, model.max_w, -prices[k] * h / 1000.0) for k in range(n)]
+    discharge = [
+        prog.col(0.0, model.max_w, (model.wear - prices[k]) * h / 1000.0) for k in range(n)
+    ]
     e_lo = model.reserve_pct * model.kwh_per_pct
     e_hi = model.max_pct * model.kwh_per_pct
     e0 = soc0 * model.kwh_per_pct
@@ -343,6 +348,7 @@ def battery_optimum(
         return None
     x = solved[1]
     cost = sum(prices[k] * (x[charge[k]] - x[discharge[k]]) for k in range(n)) * h / 1000.0
+    cost += model.wear * sum(x[d] for d in discharge) * h / 1000.0
     kept = (x[energy[-1]] - e0) * value
     return cost, kept
 

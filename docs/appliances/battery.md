@@ -48,7 +48,8 @@ Answer what you know. Every other setting is worked out from these answers and s
 | Reserve | The share kept back for an outage. |
 | Charge from the grid | Whether the battery may charge from the grid in cheap hours. |
 | Chemistry | The cell chemistry. |
-| Advanced › Maximum charge | Advanced: the state of charge the battery is charged to at most. |
+| Advanced › Highest charge | Advanced: the most the battery is charged to; blank uses the chemistry's. |
+| Advanced › Wear cost | Advanced: what each kWh delivered wears the battery, in your currency; blank uses the chemistry's. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:battery -->
 
@@ -64,6 +65,11 @@ By default the battery shaves your peaks on a capacity tariff. With a spot price
 ## Everyday use
 
 Set the reserve it always keeps for a power cut under **Reserve**.
+
+Under **Advanced** you can change two numbers that PowerPlan works out from the chemistry you chose. The **Wear cost** is what each kWh the battery delivers costs you in wear. It is about 0.04 EUR for LFP and 0.10 EUR for NMC, converted to your currency once, when you add the battery. The **Highest charge** is how full the battery is charged: 100 % for LFP and 90 % for NMC, whose cells age faster at a high charge. A number you type stays.
+
+> [!NOTE]
+> Since v0.0.14, the **Wear cost** replaces the old minimum gain per kWh. A battery you added before keeps a number you typed there, and gets the chemistry's number otherwise.
 
 ## Limits
 

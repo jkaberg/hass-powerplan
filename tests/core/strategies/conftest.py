@@ -514,3 +514,30 @@ def filled(plan: Plan, *, after: datetime | None = None) -> tuple[datetime, ...]
 def envelopes(plan: Plan) -> tuple[tuple[datetime, float | None], ...]:
     """Return every slot of the plan as `(start, envelope_w)` - the whole shape."""
     return tuple((slot.start, slot.envelope_w) for slot in plan.slots)
+
+
+def replay_levels(
+    plan: Plan, start: float, *, drain_w: float | None = 5000.0, max_soc: float = 100.0
+) -> list[float]:
+    """Return the SoC after each slot of a battery `plan`, the way the inverter runs it (D5 §5.8).
+
+    A command asks for up to its watts and the battery delivers what it can; `0` stands still; `None`
+    is self-use, which serves `drain_w` of house load (D10 offers no baseline in these fixtures, so
+    the plan assumes the house takes all the inverter gives) down to the 20 % reserve.
+    """
+    per_unit = 0.095
+    eta = 0.95
+    reserve = 20.0
+    soc = start
+    found: list[float] = []
+    for slot in plan.slots:
+        hours = (slot.end - slot.start).total_seconds() / 3600.0
+        watts = slot.envelope_w
+        if watts is None:
+            watts = -(drain_w or 0.0)
+        if watts > 0.0:
+            soc = min(max_soc, soc + watts * hours / 1000.0 * eta / per_unit)
+        elif watts < 0.0:
+            soc = max(reserve, soc - (-watts) * hours / 1000.0 / eta / per_unit)
+        found.append(soc)
+    return found

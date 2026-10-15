@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
     from custom_components.powerplan.core.model import Plan
 
-PARAMS = {"threshold": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
+PARAMS = {"wear_cost": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
 BASELINE_W = 2000.0
 
 

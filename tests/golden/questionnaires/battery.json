@@ -10,7 +10,8 @@
     "max_soc": 100.0,
     "power_entity": null,
     "reserve_pct": 20.0,
-    "soc_entity": null
+    "soc_entity": null,
+    "wear_cost": 0.04
   },
   "ctx": {
     "area": "Teknisk rom",
@@ -21,7 +22,7 @@
     "phases": 3
   },
   "derived": {
-    "derivation_version": 2,
+    "derivation_version": 3,
     "explanation_key": "battery_review",
     "explanation_params": {
       "allow_grid_charge": true,
@@ -61,17 +62,20 @@
       "store": "energy",
       "substitutable": false,
       "usable_fraction": 0.95,
-      "usable_kwh": 9.5
+      "usable_kwh": 9.5,
+      "wear_cost": 0.04
     },
     "priority": 30,
     "strategy": "peak_shave",
     "strategy_params": {
       "allow_grid_charge": true,
+      "can_charge": true,
       "can_discharge": true,
       "can_hold": true,
       "max_soc": 100.0,
       "reserve_soc": 20.0,
-      "self_use": false
+      "self_use": false,
+      "wear_cost": 0.04
     }
   },
   "type": "battery"

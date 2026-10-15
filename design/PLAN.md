@@ -830,7 +830,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BP.2 | Two exactness slips | done |
 | BP.3 | The level planner, and heat moved across price changes | done |
 | BP.4 | Heat pumps by the hour | done |
-| BP.5 | The battery's route | todo |
+| BP.5 | The battery's route | done |
 | BP.6 | Lowering comfort is opt-in | done |
 | BP.7 | A car that resumes | done |
 | BP.8 | Fit bounds from the evidence | done |

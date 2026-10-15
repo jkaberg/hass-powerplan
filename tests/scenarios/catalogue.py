@@ -792,6 +792,43 @@ def pv_battery_peak_shave_winter() -> Scenario:
     )
 
 
+#: The ceiling the planner defends in `battery_covers_the_evening` (kW), and the baseline
+#: D10 would hand it: 1 kW round the clock, 7 kW from 17:00 to 19:00 (D-0837).
+EVENING_TARGET_KW = 5.0
+EVENING_BASELINE_W = 7000.0
+EVENING_HOURS = (17, 19)
+
+
+def _evening_baseline(at: datetime) -> float:
+    """Return the planner's baseline: a cooking-and-heating evening on a 1 kW floor."""
+    local = at.astimezone(OSLO)
+    return EVENING_BASELINE_W if EVENING_HOURS[0] <= local.hour < EVENING_HOURS[1] else 1000.0
+
+
+def battery_covers_the_evening() -> Scenario:
+    """Return the dark January day whose forecast baseline puts 17:00-19:00 over the ceiling.
+
+    The planner is told a baseline (`plan_baseline_w`) that exceeds the 5 kW target's
+    ladder fraction in the evening, so `Headroom` carries a deficit there and the
+    `peak_shave` battery has to be planned to discharge in it (D-0837).
+    """
+    return Scenario(
+        name="battery_covers_the_evening",
+        house=lambda: house(
+            day=PV_WINTER_START.date(),
+            price_kind=SPOT_LIKE,
+            pv_kwp=PV_KWP,
+            battery={"allow_grid_charge": True},
+            battery_soc=60.0,
+            export="spot",
+        ),
+        start=PV_WINTER_START,
+        days=1.0,
+        target_kw=EVENING_TARGET_KW,
+        plan_baseline_w=_evening_baseline,
+    )
+
+
 def battery_holds_for_peak(*, row: str = "commanded", hold_as_self_use: bool = False) -> Scenario:
     """Return the dark January day with a battery its inverter self-uses (D9 §5.3).
 

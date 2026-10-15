@@ -62,6 +62,7 @@ from custom_components.powerplan.core.model import (
     Confidence,
     Direction,
     Mode,
+    Plan,
     PriceCurve,
     Slot,
 )
@@ -185,6 +186,10 @@ class Scenario:
     #: baseline hands the engine (`Inputs.forecast_baseline`). The reference house
     #: had one when D-0319's projection counted its plans; `None` runs without.
     baseline_w: float | None = None
+    #: The baseline the *planner* is told, per instant (D10's `baseline_w` question, which
+    #: `Headroom.build` subtracts from the ceiling). `None`: the runner wires no D10 baseline
+    #: and the planner sees none (D9 §5.14). Needs a house with `pv_forecast`.
+    plan_baseline_w: Callable[[datetime], float] | None = None
 
 
 @dataclass
@@ -783,7 +788,30 @@ _PV_HORIZON_H = 48
 _PV_SAMPLES = 4
 
 
-def _pv_forecast(house: House, now: datetime) -> PlannerForecasts | None:
+class _PlanBaseline:
+    """A baseline model that answers a scenario's own profile with full confidence."""
+
+    def __init__(self, watts: Callable[[datetime], float]) -> None:
+        self._watts = watts
+
+    def predict(self, t: datetime, t_out: float | None = None) -> tuple[float, float, float]:
+        del t_out
+        return self._watts(t), 0.0, 1.0
+
+    def kwh_between(
+        self, a: datetime, b: datetime, t_out: float | None = None
+    ) -> tuple[float, float]:
+        del t_out
+        return self._watts(a) * (b - a).total_seconds() / 3.6e6, 1.0
+
+    def residual_sigma(self, t: datetime) -> float | None:
+        del t
+        return None
+
+
+def _pv_forecast(
+    house: House, now: datetime, baseline: Callable[[datetime], float] | None = None
+) -> PlannerForecasts | None:
     """Return the house's own production as D10's forecast, hour by hour.
 
     What `energy_solar` would read from Forecast.Solar, drawn from the simulator
@@ -819,7 +847,11 @@ def _pv_forecast(house: House, now: datetime) -> PlannerForecasts | None:
         source="sim",
         issued_at=now,
     )
-    return Forecasts(at=now, production=series).for_planner()
+    return Forecasts(
+        at=now,
+        production=series,
+        baseline=None if baseline is None else _PlanBaseline(baseline),
+    ).for_planner()
 
 
 # --------------------------------------------------------------------------- #
@@ -836,7 +868,9 @@ def _presence(name: str) -> PresenceMode:
 
 
 def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
-    scenario: Scenario, observer: Callable[[datetime, Snapshot], None] | None = None
+    scenario: Scenario,
+    observer: Callable[[datetime, Snapshot], None] | None = None,
+    plan_observer: Callable[[datetime, Mapping[str, Plan]], None] | None = None,
 ) -> ScenarioResult:
     """Run `scenario` from its start for its days and measure it."""
     house = scenario.house()
@@ -983,7 +1017,7 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
                 if day not in outage_days
                 else _curves_without_today(house, now, outage_days)
             )
-            pv_forecast = _pv_forecast(house, now)
+            pv_forecast = _pv_forecast(house, now, scenario.plan_baseline_w)
         inputs = Inputs(
             now=now,
             site=cfg,
@@ -1015,6 +1049,8 @@ def run_scenario(  # noqa: PLR0912, PLR0915 - D9 §5.2's loop, in one place
             result.plans += 1
             result.plan_adoptions += len(report.adopted)
             new_plans = dict(state.plans.plans)
+            if plan_observer is not None:
+                plan_observer(now, new_plans)
             changed, broken, recut = _plan_changes(last_plans, new_plans, now, report.refit)
             for load_id in changed:
                 result.plan_changes += 1

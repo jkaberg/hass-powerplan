@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 from . import entity_refs
 from .const import (
     BRAND_ICON_URL,
+    CONF_TARIFF,
     DOMAIN,
     LOAD_BINDINGS,
     LOAD_PARAMS,
@@ -28,6 +29,7 @@ from .const import (
     LOAD_TYPE,
     SUBENTRY_LOAD,
 )
+from .core.tariffs import household
 from .dashboard import async_remove_dashboard, async_setup_dashboard
 from .entity import async_ensure_site_subentry, async_prepare_site_device
 from .flow.load import (
@@ -40,6 +42,7 @@ from .flow.load import (
 from .runtime import Runtime, build_site
 from .services import async_setup_services
 from .storage import (
+    ENTRY_MINOR_BATTERY_WEAR,
     ENTRY_MINOR_COAST_TAU,
     ENTRY_MINOR_ENTITY_REFS,
     ENTRY_MINOR_FOIL,
@@ -47,6 +50,7 @@ from .storage import (
     ENTRY_MINOR_HOT_WATER,
     ENTRY_MINOR_PRICE,
     ENTRY_MINOR_SITE_SUBENTRY,
+    migrate_battery_wear,
     migrate_coast_tau,
     migrate_foil_floor,
     migrate_heat_strategy,
@@ -173,6 +177,7 @@ _BEFORE_SITE: Final = (
 _AFTER_SITE: Final = (
     (ENTRY_MINOR_FOIL, migrate_foil_floor, "foil floors measured as foils"),
     (ENTRY_MINOR_HOT_WATER, migrate_hot_water, "water heaters ready to be measured"),
+    (ENTRY_MINOR_BATTERY_WEAR, migrate_battery_wear, "batteries carry their wear cost"),
 )
 
 
@@ -182,13 +187,38 @@ def _run_subentry_migrations(
     steps: tuple[tuple[int, Callable[[Mapping[str, Any]], dict[str, Any] | None], str], ...],
 ) -> None:
     """Run each step the entry has not had yet, in order."""
-    for minor, migrate, done in steps:
+    for minor, step, done in steps:
+        migrate = step
         if entry.minor_version < minor:
             if minor == ENTRY_MINOR_HOT_WATER:
                 # A tank's other probes, where its probe's device names them (D-0741):
                 # the one step that needs the registry, so it runs here and not offline.
                 _migrate_subentries(hass, entry, _tank_probes(hass), None, "tank probes found")
+            if minor == ENTRY_MINOR_BATTERY_WEAR:
+                # The wear cost is written in the site's currency (D-0769).
+                migrate = _battery_wear(_site_currency(hass, entry))
             _migrate_subentries(hass, entry, migrate, minor, done)
+
+
+def _site_currency(hass: HomeAssistant, entry: PowerplanConfigEntry) -> str:
+    """Return the site's currency: its stored price's, else Home Assistant's."""
+    raw = (entry.data.get(CONF_TARIFF) or {}).get("price")
+    try:
+        found = household.from_json(raw).grid.currency if raw else None
+    except KeyError, ValueError, TypeError:
+        found = None
+    return found or hass.config.currency
+
+
+def _battery_wear(
+    currency: str,
+) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:
+    """Return the rewrite that gives a battery its wear cost in `currency` (D-0769)."""
+
+    def rewrite(data: Mapping[str, Any]) -> dict[str, Any] | None:
+        return migrate_battery_wear(data, currency)
+
+    return rewrite
 
 
 def _tank_probes(hass: HomeAssistant) -> Callable[[Mapping[str, Any]], dict[str, Any] | None]:

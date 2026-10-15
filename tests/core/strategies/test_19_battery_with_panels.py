@@ -31,6 +31,7 @@ from tests.core.strategies.conftest import (
     export_of,
     flat_curve,
     flat_headroom,
+    replay_levels,
     site_ctx,
 )
 
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
 
 MIDDAY = {11: 3000.0, 12: 3000.0, 13: 3000.0}
 EVENING = {18: "2.00", 19: "2.00", 20: "2.00"}
-BATTERY = {"threshold": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
+BATTERY = {"wear_cost": Decimal("0.05"), "round_trip_eff": 0.95 * 0.95}
 
 
 def _curves(source: PriceCurve, export: str) -> Curves:
@@ -62,9 +63,10 @@ def _battery(
     headroom: Headroom | None = None,
     strategy: str = "arbitrage",
     loads: tuple[Any, ...] = (),
+    level_now: float = 50.0,
     **params: Any,
 ) -> dict[str, Plan]:
-    view = battery_view(strategy=strategy, params={**BATTERY, **params})
+    view = battery_view(strategy=strategy, level_now=level_now, params={**BATTERY, **params})
     site = plan_all(
         [view, *loads],
         _curves(source, export),
@@ -91,8 +93,15 @@ def test_19_the_sun_is_banked_for_an_evening_worth_more_than_its_export() -> Non
     charged = _charges(battery)
     assert charged
     assert all(_hour(start) in {(True, hour) for hour in MIDDAY} for start in charged)
-    assert any(
-        _hour(start) in {(True, hour) for hour in (18, 19, 20)} for start in _discharges(battery)
+    # No baseline is offered, so self-use would spend the sun before the evening: the plan holds it.
+    holds = [
+        _hour(slot.start)
+        for slot in battery.slots
+        if slot.envelope_w == 0.0 and _hour(slot.start)[0] and 14 <= _hour(slot.start)[1] < 18
+    ]
+    assert holds
+    assert not any(_hour(start)[1] < 18 for start in _discharges(battery) if _hour(start)[0]), (
+        "nothing is sold before the evening"
     )
     # The charge is surplus, not import: nothing of it is the room's.
     assert all(slot.grid_w == 0.0 for slot in battery.slots if slot.start in charged)
@@ -120,35 +129,39 @@ def test_19_peak_shave_still_holds_its_reserve_on_a_dark_day() -> None:
     source = flat_curve()
     short = next(slot.start for slot in source.slots if _hour(slot.start) == (True, 18))
     room = Headroom(
-        by_slot={
-            slot.start: (-2000.0 if slot.start == short else 10_000.0) for slot in source.slots
-        }
+        by_slot={slot.start: (0.0 if slot.start == short else 10_000.0) for slot in source.slots},
+        short={short: 2000.0},
     )
-    battery = _battery(source=source, sun={}, headroom=room, strategy="peak_shave")["battery"]
+    battery = _battery(source=source, sun={}, headroom=room, strategy="peak_shave", level_now=21.0)[
+        "battery"
+    ]
 
     shaved = next(slot for slot in battery.slots if slot.start == short)
     assert shaved.envelope_w == pytest.approx(-2000.0)
     assert any(start < short for start in _charges(battery))
 
 
+def _levels(plan: Plan, start: float) -> list[float]:
+    """Return the state of charge after each slot, the way the battery runs the plan."""
+    return replay_levels(plan, start)
+
+
 def test_19_above_surplus_priority_soc_the_sun_goes_to_the_loads_below() -> None:
-    """At 50 % with `surplus_priority_soc` 50 the battery leaves the sun to the car."""
+    """With `surplus_priority_soc` 50 the sun never lifts the battery past 50 %, and the car gets more.
+
+    The battery may still empty ahead of the sun and take it back up to 50 %: below its
+    priority it is first in line, as evcc's `prioritySoc` has it. Above, it takes none.
+    """
     source = at_hours(flat_curve(), EVENING)
     by_four = datetime.combine(TOMORROW, datetime.min.time(), OSLO) + timedelta(hours=16)
     car = ev_view(demand=demand(required_kwh=12.0, deadline=by_four, min_w=0.0, max_w=7360.0))
 
     def car_sun(**params: Any) -> float:
-        plans = _battery(
-            source=source,
-            loads=(car,),
-            allow_grid_charge=False,
-            **params,
-        )
+        plans = _battery(source=source, loads=(car,), allow_grid_charge=False, **params)
         return sum(slot.surplus_w * slot.hours / 1000.0 for slot in plans["ev"].slots)
 
-    greedy_battery = car_sun()
     polite = _battery(source=source, loads=(car,), allow_grid_charge=False, surplus_priority_soc=50)
 
-    assert _charges(polite["battery"]) == []
-    assert car_sun(surplus_priority_soc=50) == pytest.approx(9.0)
-    assert greedy_battery < 9.0
+    assert max(_levels(polite["battery"], 50.0)) <= 50.0 + 1e-6
+    assert car_sun(surplus_priority_soc=50) > car_sun()
+    assert car_sun() < 9.0

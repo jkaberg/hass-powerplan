@@ -35,7 +35,7 @@ Runs the appliance whenever it wants to, as if PowerPlan were not there. PowerPl
 <a name="arbitrage"></a>
 ## Arbitrage
 
-Charges the battery in the cheapest hours and discharges it in the dearest, when the difference pays for the losses. In between, the battery runs on its own; where that would spend the charge a dearer hour needs, PowerPlan holds it. It keeps the reserve you set.
+Plans the battery's charge for the next two days as one route: it charges where the price is lowest, discharges where it is highest, and sells what is left when the end of the horizon is worth more than keeping it. A trade has to pay for the losses and for the wear. Each kWh the battery delivers wears it by the **Wear cost**, about 0.04 EUR for an LFP battery and 0.10 EUR for an NMC battery, in your currency. Without a measurement, PowerPlan assumes 80 % of the energy comes back. In between, the battery runs on its own; where that would spend a charge a dearer hour needs, PowerPlan holds it. It keeps the reserve you set. On a flat day it trades nothing.
 
 | | |
 |---|---|
@@ -129,7 +129,7 @@ Keeping a reserve costs more than **Deadline fill**, which lets the tank run dow
 <a name="peak_shave"></a>
 ## Peak shave
 
-Discharges the battery when the home would otherwise go over your target, and recharges it when there is room. It holds the charge until the hours that need it. It keeps the reserve you set.
+Plans the same route as [Arbitrage](#arbitrage) and adds one rule: when the home would otherwise go over your target, the battery must cover it. It charges beforehand, in the cheapest hours it can, so the charge is there when the peak comes. It holds the charge until the hours that need it. It keeps the reserve you set.
 
 | | |
 |---|---|

@@ -136,6 +136,10 @@ class Headroom:
     #: it costs on top - D5 §5.1's power tier. Empty where no priced limit is in force.
     tier: Mapping[datetime, float] = field(default_factory=dict)
     surcharge: Mapping[datetime, Decimal] = field(default_factory=dict)
+    #: D-0837: the watts a slot is *over* its ceiling - the unclamped shortfall that `by_slot`
+    #: floors at 0 - after the baseline and what the loads above reserved. Only the battery
+    #: reads it (`deficit_w`); every other strategy sees the clamped room as before.
+    short: Mapping[datetime, float] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -164,6 +168,7 @@ class Headroom:
         room: dict[datetime, float] = {}
         tier: dict[datetime, float] = {}
         surcharge: dict[datetime, Decimal] = {}
+        short: dict[datetime, float] = {}
         for slot in slots:
             ceiling = math.inf if tariff is None else tariff.target_w_at(slot.start, target)
             baseline = 0.0 if forecasts is None else forecasts.baseline_w(slot.start)
@@ -176,11 +181,17 @@ class Headroom:
                 continue
             guarded = max(0.0, ceiling - eps_w) * fraction
             room[slot.start] = max(0.0, guarded - baseline)
-        return cls(by_slot=room, tier=tier, surcharge=surcharge)
+            if baseline > guarded:
+                short[slot.start] = baseline - guarded
+        return cls(by_slot=room, tier=tier, surcharge=surcharge, short=short)
 
     def w_at(self, start: datetime) -> float:
         """Return the watts available in the slot starting at `start`."""
         return self.by_slot.get(start, math.inf)
+
+    def deficit_w(self, start: datetime) -> float:
+        """Return the watts the slot is over its ceiling, 0 when it is not (D5 §5.1, D-0837)."""
+        return self.short.get(start, 0.0)
 
     def reserve(self, taken: Mapping[datetime, float]) -> Headroom:
         """Return the headroom left after `taken` watts are reserved per slot."""
@@ -188,11 +199,15 @@ class Headroom:
             return self
         room = dict(self.by_slot)
         tier = dict(self.tier)
+        short = dict(self.short)
         for start, watts in taken.items():
-            room[start] = max(0.0, self.w_at(start) - watts)
+            left = self.w_at(start) - self.deficit_w(start) - watts
+            room[start] = max(0.0, left)
+            if left < 0.0:
+                short[start] = -left
             if start in tier:
                 tier[start] = max(0.0, tier[start] - watts)
-        return replace(self, by_slot=room, tier=tier)
+        return replace(self, by_slot=room, tier=tier, short=short)
 
     def closed(self, starts: set[datetime]) -> Headroom:
         """Return this headroom with no watts in `starts` - a switched load's closed slots (G14)."""

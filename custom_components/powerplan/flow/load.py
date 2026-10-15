@@ -1228,7 +1228,13 @@ class LoadSubentryFlow(ConfigSubentryFlow):
             device_name=load_title(self.hass, self._device_id, self._device_id or ""),
             phases=int(electrical.get("phases", 1)) if electrical else None,
             capabilities=best.capabilities if best is not None else frozenset(),
+            currency=self._currency(),
         )
+
+    def _currency(self) -> str:
+        """Return the site's currency: its price's, else Home Assistant's (D-0769)."""
+        price = self._site_price()
+        return (price.grid.currency if price is not None else None) or self.hass.config.currency
 
     def _chosen(self, values: Mapping[str, Any]) -> MatchResult:
         """Return the match the household is looking at: its pick, else the best."""

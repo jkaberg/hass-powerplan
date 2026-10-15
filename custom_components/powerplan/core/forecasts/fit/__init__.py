@@ -32,6 +32,7 @@ from .base import (
     slope_k_per_h,
     span_days,
 )
+from .battery import round_trip_eff
 from .cycle import cycle_duration_min, cycle_energy_kwh, runs
 from .ev import BAND_FITS, charge_efficiency, sessions_from
 from .nameplate import nameplate_w, table_bounds
@@ -77,6 +78,7 @@ __all__ = [
     "nameplate_w",
     "phases",
     "resolve",
+    "round_trip_eff",
     "runs",
     "sessions_from",
     "slope_k_per_h",
@@ -91,6 +93,7 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.HEATUP_RATE: heatup_rate,
     FitKey.CHARGE_EFFICIENCY: charge_efficiency,
     **BAND_FITS,
+    FitKey.ROUND_TRIP_EFF: round_trip_eff,
     FitKey.NAMEPLATE: nameplate_w,
     FitKey.STANDBY_LOSS: standby_loss_w,
     FitKey.DAILY_DRAW: daily_draw_kwh,

@@ -251,10 +251,10 @@ def test_au_solar_soak_uses_the_surplus_before_the_grid(
 
 
 @pytest.mark.xdist_group(name="phase7_saldering")
-def test_nl_saldering_end_self_consumption_rises_from_1_january(
+def test_nl_saldering_end_self_consumption_stays_high_either_side(
     saldering: tuple[ScenarioResult, _Trail],
 ) -> None:
-    """Net metering gives no reason to shift; its end on 2027-01-01 does: the share used at home rises."""
+    """Net metering or not, nearly all of the roof is used at home (D-0838)."""
     result, trail = saldering
     assert result.engine_failures == 0
     zone = catalogue.SALDERING_START.tzinfo
@@ -267,7 +267,12 @@ def test_nl_saldering_end_self_consumption_rises_from_1_january(
 
     used_before, made_before = _self_consumption(trail, "nl_saldering_end", before)
     used_after, made_after = _self_consumption(trail, "nl_saldering_end", after)
-    # Measured 88.8 % across 29–31 December and 94.9 % across 1–3 January.
-    assert made_before > 0.0
-    assert made_after > 0.0
-    assert used_after / made_after > used_before / made_before
+    # Measured 97.4 % across 29-31 December and 96.2 % across 1-3 January at D-0818, 99.1 % and
+    # 95.9 % with the heat pump and the battery routes after it (D-0838). Before
+    # D-0818 it was 88.8 % and 94.9 %: the heat pump coasted in 0.05 K dither and idled through
+    # 10:30-11:00 and 12:00-12:30 of 29 December while the roof exported 0.4 kW; in the device's
+    # whole steps it runs through them. That was the only export of the first three days (0.24
+    # against 0.76 kWh of 9.3), so the "before" share has no room left to be lower; the
+    # assertion is that nothing is wasted at either end; their order is noise on 0.1-0.8 kWh.
+    assert used_before / made_before > 0.90
+    assert used_after / made_after > 0.90

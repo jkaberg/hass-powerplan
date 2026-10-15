@@ -65,8 +65,9 @@ INVERTER_POWER_CAPABILITY: Final = "battery_power:inverter"
 #: its own panels charge (D4 §5.9): grid charging is not asked.
 OUTPUT_ONLY_CAPABILITY: Final = "output_only"
 
-#: Bumped whenever a table below changes (INV-66). 2: the four commands.
-DERIVATION_VERSION: Final = 2
+#: Bumped whenever a table below changes (INV-66). 2: the four commands. 3: the wear cost and
+#: the charge ceiling by chemistry.
+DERIVATION_VERSION: Final = 3
 
 
 def battery_capabilities(
@@ -105,6 +106,44 @@ CHEMISTRIES: Mapping[str, Chemistry] = {
     "lfp": Chemistry(usable_fraction=0.95, charge_eff=0.95, discharge_eff=0.95),
     "nmc": Chemistry(usable_fraction=0.90, charge_eff=0.95, discharge_eff=0.95),
 }
+
+#: What a kWh discharged wears out of the battery, EUR (D-0769): a warranty priced per kWh
+#: cycled. HTW Berlin / aquu, Stromspeicher-Inspektion 2026: about 0.04 EUR for LFP (6 000
+#: cycles or more), 0.10-0.20 EUR for 2.4-3 MWh/kWh warranties, the NMC end of which this takes.
+WEAR_EUR_PER_KWH: Final[Mapping[str, float]] = {"lfp": 0.04, "nmc": 0.10}
+
+#: The charge ceiling by chemistry, % (D-0769): time at high charge ages both, and NMC's warranties
+#: are the shorter. A ceiling the household typed stays.
+MAX_SOC_BY_CHEMISTRY: Final[Mapping[str, float]] = {"lfp": 100.0, "nmc": 90.0}
+
+#: How many units of each currency one euro buys: ECB euro reference rates, rounded, for the
+#: currencies the country modules price in. The wear cost is converted once at setup (INV-66) and a
+#: rate that moves later never changes a battery; a currency not listed keeps the euro figure, which
+#: the household can set under Advanced (D-0830).
+PER_EUR: Final[Mapping[str, float]] = {
+    "EUR": 1.0,
+    "NOK": 11.5,
+    "SEK": 11.0,
+    "DKK": 7.46,
+    "ISK": 145.0,
+    "CHF": 0.93,
+    "GBP": 0.87,
+    "CZK": 24.5,
+    "HUF": 395.0,
+    "PLN": 4.25,
+    "RON": 5.1,
+    "USD": 1.15,
+    "AUD": 1.75,
+}
+
+
+def wear_cost_in(chemistry: str, currency: str | None) -> float:
+    """Return what a kWh discharged wears out of a `chemistry` battery, in `currency` (D-0769).
+
+    Rounded to the currency's third decimal: 0.46 NOK for LFP, 1.15 NOK for NMC.
+    """
+    return round(WEAR_EUR_PER_KWH[chemistry] * PER_EUR.get(currency or "EUR", 1.0), 3)
+
 
 #: The inverter setpoint step, in watts - a typical hybrid inverter's resolution.
 POWER_STEP_W: Final = 100.0
@@ -184,12 +223,21 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="max_soc",
             kind=QuestionKind.NUMBER,
-            default=100.0,
+            derived_default=True,
             unit="%",
             min=50.0,
             max=100.0,
             advanced=True,
             help_key="battery_max_soc",
+        ),
+        Question(
+            key="wear_cost",
+            kind=QuestionKind.NUMBER,
+            derived_default=True,
+            min=0.0,
+            max=100.0,
+            advanced=True,
+            help_key="battery_wear_cost",
         ),
         Question(
             key="force_max_h",
@@ -242,7 +290,8 @@ class Battery:
         max_charge_w = answers.number("max_charge_kw") * 1000.0
         max_discharge_w = answers.number("max_discharge_kw") * 1000.0
         reserve = answers.number("reserve_pct")
-        max_soc = answers.number("max_soc")
+        max_soc = _answered(answers, "max_soc", MAX_SOC_BY_CHEMISTRY[chemistry_key])
+        wear_cost = _answered(answers, "wear_cost", wear_cost_in(chemistry_key, ctx.currency))
         commands = _commands(ctx.capabilities)
         can_charge = not commands or BatteryCommand.CHARGE in commands
         grid_charge = answers.flag("allow_grid_charge") and can_charge
@@ -271,6 +320,7 @@ class Battery:
             "reserve_soc": reserve,
             "min_soc": reserve + _RESERVE_MARGIN_PCT,
             "max_soc": max_soc,
+            "wear_cost": wear_cost,
             "allow_grid_charge": grid_charge,
             "soc_entity": answers.get("soc_entity"),
             "power_entity": answers.get("power_entity"),
@@ -285,7 +335,9 @@ class Battery:
             strategy_params={
                 "reserve_soc": reserve,
                 "max_soc": max_soc,
+                "wear_cost": wear_cost,
                 "allow_grid_charge": grid_charge,
+                "can_charge": not commands or BatteryCommand.CHARGE in commands,
                 "can_hold": params["can_hold"],
                 "can_discharge": not commands or BatteryCommand.DISCHARGE in commands,
                 "self_use": params["self_use"],
@@ -484,6 +536,12 @@ class Battery:
             last_restore_at=state.last_target_restore_at,
             answer=None if grant is None else grant.answer,
         )
+
+
+def _answered(answers: Answers, key: str, derived: float) -> float:
+    """Return the household's answer to `key`, else the number derived from the chemistry."""
+    given = answers.get(key)
+    return derived if given is None else float(given)
 
 
 def _reason(comfort: ComfortState, *, grid_charge: bool, forced: bool) -> str:

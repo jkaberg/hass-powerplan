@@ -463,6 +463,8 @@ RESERVE_PCT: Final = 20.0
 MAX_PCT: Final = 100.0
 SOC0: Final = 50.0
 USABLE: Final = 0.95
+#: An LFP battery's wear on a NOK site, per kWh delivered: 0.04 EUR at 11.2 (D-0769, D4 §9 48).
+WEAR: Final = 0.45
 
 #: name -> (capacity kWh, max W, efficiency each way).
 BATTERIES: Final = {"eff95": (10.0, 5000.0, 0.95), "eff80": (10.0, 5000.0, 0.80)}
@@ -471,7 +473,7 @@ BATTERIES: Final = {"eff95": (10.0, 5000.0, 0.95), "eff80": (10.0, 5000.0, 0.80)
 def battery_model(name: str) -> BatteryModel:
     """Return the oracle's view of the battery `name`."""
     capacity, watts, eff = BATTERIES[name]
-    return BatteryModel(capacity * USABLE / 100.0, watts, eff, eff, RESERVE_PCT, MAX_PCT)
+    return BatteryModel(capacity * USABLE / 100.0, watts, eff, eff, RESERVE_PCT, MAX_PCT, WEAR)
 
 
 @dataclass(frozen=True, slots=True)
@@ -521,14 +523,18 @@ def battery_loop(
         min_soc=RESERVE_PCT + 1.0,
         max_soc=MAX_PCT,
     )
-    curve = curve_of(prices)
+    curve = curve_of(prices, beyond=sum(prices) / len(prices))
+    over = {
+        s.start: deficits_w[k]
+        for k, s in enumerate(curve.slots)
+        if deficits_w and k < N and deficits_w[k] > 0.0
+    }
     room = Headroom(
-        by_slot={
-            s.start: -deficits_w[k] if deficits_w and deficits_w[k] > 0.0 else 1e5
-            for k, s in enumerate(curve.slots)
-        }
+        by_slot={s.start: 0.0 if s.start in over else 1e5 for s in curve.slots}, short=over
     )
-    value = sum(prices) / len(prices) * eff
+    value = max(0.0, sum(prices) / len(prices) - WEAR) * eff
+    # What the household's fit has measured: the battery's own round trip (D10 §5.6).
+    knobs = {"wear_cost": WEAR, "round_trip_eff": eff * eff, **(params or {})}
     soc = SOC0
     cost = 0.0
     unmet = 0.0
@@ -540,7 +546,7 @@ def battery_loop(
             store=store,
             level_now=soc,
             nameplate_w=watts,
-            params=dict(params or {}),
+            params=dict(knobs),
         )
         planned = plan_all(
             [view],
@@ -554,7 +560,7 @@ def battery_loop(
         slot = previous.slot_at(now)
         envelope = 0.0 if slot is None or slot.envelope_w is None else slot.envelope_w
         soc, w = _apply(model, soc, envelope)
-        cost += prices[k] * w * H / 1000.0
+        cost += prices[k] * w * H / 1000.0 + WEAR * max(0.0, -w) * H / 1000.0
         if deficits_w:
             unmet += max(0.0, deficits_w[k] - max(0.0, -w)) * H / 1000.0
     return BatteryRun(cost - (soc - SOC0) * model.kwh_per_pct * value, unmet)
@@ -571,13 +577,13 @@ def battery_hands_off(
     model = battery_model(name)
     if deficits_w is None:
         return 0.0
-    value = sum(prices) / len(prices) * model.eta_d
+    value = max(0.0, sum(prices) / len(prices) - WEAR) * model.eta_d
     soc = SOC0
     cost = 0.0
     for k in range(N):
         want = -deficits_w[k] if deficits_w[k] > 0.0 else model.max_w
         soc, w = _apply(model, soc, want)
-        cost += prices[k] * w * H / 1000.0
+        cost += prices[k] * w * H / 1000.0 + WEAR * max(0.0, -w) * H / 1000.0
     return cost - (soc - SOC0) * model.kwh_per_pct * value
 
 
