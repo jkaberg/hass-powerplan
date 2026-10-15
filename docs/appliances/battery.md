@@ -69,7 +69,7 @@ Set the reserve it always keeps for a power cut under **Reserve**.
 Under **Advanced** you can change two numbers that PowerPlan works out from the chemistry you chose. The **Wear cost** is what each kWh the battery delivers costs you in wear. It is about 0.04 EUR for LFP and 0.10 EUR for NMC, converted to your currency once, when you add the battery. The **Highest charge** is how full the battery is charged: 100 % for LFP and 90 % for NMC, whose cells age faster at a high charge. A number you type stays.
 
 > [!NOTE]
-> Since v0.0.14, the **Wear cost** replaces the old minimum gain per kWh. A battery you added before keeps a number you typed there, and gets the chemistry's number otherwise.
+> Since v0.0.11, the **Wear cost** replaces the old minimum gain per kWh. A battery you added before keeps a number you typed there, and gets the chemistry's number otherwise.
 
 ## Limits
 
