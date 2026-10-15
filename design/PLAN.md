@@ -853,7 +853,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BP.8 | Fit bounds from the evidence | done |
 | BO.1 | A heat pump plans in heat, reserves in electricity | todo |
 | BO.2 | The margin follows the fit | todo |
-| BO.3 | The scenarios that fail on main | partial: soak and EV done; the twin checks wait on D-0860 |
+| BO.3 | The scenarios that fail on main | done |
 | BO.4 | The sauna's restore | todo |
 | BO.5 | A foil read on its floor probe | todo |
 | BO.6 | A battery's round trip, measured | todo |

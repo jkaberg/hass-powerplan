@@ -19,7 +19,7 @@ import pytest
 
 from custom_components.powerplan.core.accounting.shadow.base import StoreKind, shadow_for
 from custom_components.powerplan.core.accounting_hook import params_of, store_kind_of
-from custom_components.powerplan.core.tariffs.evaluator import Period
+from custom_components.powerplan.core.tariffs.evaluator import Bill, Period
 from tests.builders.houses import tensio
 from tests.scenarios import catalogue
 from tests.scenarios.cache import cached
@@ -29,6 +29,8 @@ pytestmark = pytest.mark.scenario
 
 #: D9 §5.3: the counterfactual within ±10 % of the twin's actual cost.
 TWIN_TOLERANCE = 0.10
+#: D9 §5.3, D-0860: the reference's busiest-day mean within 15 % of the twin's, in kW.
+TWIN_PEAK_TOLERANCE = 0.15
 #: D9 §5.3: `|savings| ≤ 5 %` of cost per load after five observe days.
 OBSERVE_SAVINGS_SHARE = 0.05
 #: D9 §5.3, D11 §5.5: calibration error below 0.10 on the house's own physics.
@@ -104,6 +106,18 @@ def _twin_fee(twin: ScenarioResult) -> Decimal:
     return tensio().bill(_period(), twin.house.tariff.history).capacity_fee.amount
 
 
+def _twin_peak_kw(twin: ScenarioResult) -> float:
+    """Return the twin's busiest-day mean over the month's counted days, in kW (D2 `bill`)."""
+    assert twin.house is not None
+    return tensio().bill(_period(), twin.house.tariff.history).metric_kw
+
+
+def _cf_bill(controlled: ScenarioResult) -> Bill:
+    """Price the controlled house's recorded counterfactual days, as D11 §5.4 does."""
+    assert controlled.house is not None
+    return tensio().bill(_period(), controlled.house.tariff.history.counterfactual())
+
+
 def _controlled_fee(controlled: ScenarioResult) -> Decimal:
     assert controlled.house is not None
     return controlled.house.tariff.bill(_period()).capacity_fee.amount
@@ -116,18 +130,38 @@ def _controlled_fee(controlled: ScenarioResult) -> Decimal:
 
 @pytest.mark.xdist_group(name="accounting_twin")
 @pytest.mark.inv("INV-69")
-def test_the_counterfactual_lands_within_ten_percent_of_the_twins_bill(
+def test_the_counterfactual_energy_lands_within_ten_percent_of_the_twins(
     controlled: ScenarioResult, twin: ScenarioResult
 ) -> None:
-    """D11's `cost_counterfactual` (energy + capacity) vs the twin's actual energy + Tensio fee."""
+    """D11's counterfactual energy cost vs the twin's actual energy cost (D-0860).
+
+    The capacity half is not compared as a fee: a fee flips on a tariff step, and
+    the reference puts a day's coincident peak at its mean, not where the twin
+    lands it (D11 §5.9.3). Its peaks are checked in kW below.
+    """
     month = _month()
     assert set(controlled.accounting_months) == {month}, controlled.accounting_months
     assert set(twin.accounting_months) == {month}, twin.accounting_months
-    cf_cost = _money(controlled.accounting_months[month]["cf_cost"])
-    twin_actual = _money(twin.accounting_months[month]["energy_cost"]) + _twin_fee(twin)
-    assert twin_actual > 0
-    gap = abs(cf_cost - twin_actual) / twin_actual
-    assert gap <= TWIN_TOLERANCE, (cf_cost, twin_actual, gap)
+    cf_energy = _money(controlled.accounting_months[month]["cf_cost"]) - (
+        _cf_bill(controlled).capacity_fee.amount
+    )
+    twin_energy = _money(twin.accounting_months[month]["energy_cost"])
+    assert twin_energy > 0
+    gap = abs(cf_energy - twin_energy) / twin_energy
+    assert gap <= TWIN_TOLERANCE, (cf_energy, twin_energy, gap)
+
+
+@pytest.mark.xdist_group(name="accounting_twin")
+@pytest.mark.inv("INV-69")
+def test_the_counterfactual_peaks_land_within_fifteen_percent_of_the_twins(
+    controlled: ScenarioResult, twin: ScenarioResult
+) -> None:
+    """The cf's busiest-day mean, in kW over the counted days, vs the twin's (D-0860)."""
+    twin_kw = _twin_peak_kw(twin)
+    cf_kw = _cf_bill(controlled).metric_kw
+    assert twin_kw > 0
+    gap = abs(cf_kw - twin_kw) / twin_kw
+    assert gap <= TWIN_PEAK_TOLERANCE, (cf_kw, twin_kw, gap)
 
 
 @pytest.mark.xdist_group(name="accounting_twin")
@@ -151,17 +185,15 @@ def test_the_site_saves_money_and_the_sign_is_right(
 
 @pytest.mark.xdist_group(name="accounting_twin")
 @pytest.mark.inv("INV-52")
-def test_capacity_savings_are_the_twins_fee_minus_the_controlled_fee(
-    controlled: ScenarioResult, twin: ScenarioResult
+def test_capacity_savings_are_the_evaluators_difference_over_the_recorded_books(
+    controlled: ScenarioResult,
 ) -> None:
     """One evaluator, one version, two histories: the fee difference is exact (D11 §5.4)."""
     month = _month()
-    reported = _money(controlled.accounting_months[month]["capacity_savings"])
-    expected = _twin_fee(twin) - _controlled_fee(controlled)
-    assert reported == expected, (reported, expected)
-    assert _money(controlled.accounting_months[month]["capacity_fee"]) == _controlled_fee(
-        controlled
-    )
+    row = controlled.accounting_months[month]
+    expected = _cf_bill(controlled).capacity_fee.amount - _controlled_fee(controlled)
+    assert _money(row["capacity_savings"]) == expected, (row["capacity_savings"], expected)
+    assert _money(row["capacity_fee"]) == _controlled_fee(controlled)
 
 
 @pytest.mark.xdist_group(name="accounting_twin")
