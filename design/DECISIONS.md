@@ -3300,3 +3300,162 @@ A `mode` floor pauses by selecting its eco option, and its eco setpoint was the 
 D-0761 asked for the outdoor temperature as a required picker, pre-filled from what the house has. A home with no outdoor sensor and no weather entity had nothing to pre-fill and could not finish setup, and every flow test walking the household setup stopped there. Now the picker is optional when nothing is found; an empty answer stores no `outdoor`, and `outdoor_missing` asks once an appliance that reads it exists. The repair passes `required` to the same schema, since it exists to set the value. hassfest also requires a fixable issue's text on its fix flow's step, not at the issue's top level, so `outdoor_missing`'s description moved there and `SetOutdoorFlow` passes the issue's `{site}` and `{loads}`. Affects D8 §5.1, §5.9.
 
 **Rejected:** skipping the step when nothing is found (the household never learns it can add one); requiring the weather integration (a dependency the home may not want).
+
+### D-0766 · Heat is moved only across a price change, and a move is worth its timing alone
+
+The shipped `heat_capacitor` (D-0727, D-0732) credited a price stretch with all the holding energy it skipped, and charged neither the re-heat after it nor the fill it could not fit (`_fit` was discarded). Under Norgespris (0.8779 by day, 0.7379 from 22:00) heat pump 1 claimed 3.44 NOK a day for being planned 1 K under target 16 h a day; its timing was worth about 0.36. The paused `heat-moves` branch (`169bf8b`, agreed with the owner on a prototype) set the goal this entry records. A store's energy moves only across a price *change*: it banks before a rise, coasts before a fall and buys back after, and holds comfort through a flat block. A move is valued on timing only, so the heat a store saves while below target earns nothing (D-0724); otherwise sitting at `lo` all day always wins. Heat pumps price a kWh of heat at `p / COP(outdoor of that hour)`. A `mode` lever skips whole slots and never banks. The household's `preheat` answer is read, and a pre-heat is judged at the hour it happens, not at plan time. How the moves are found is D-0767. Affects D5 §5.7, §6, §9 40–43.
+
+**Rejected:** crediting the skipped holding (the 6× overstatement above); crediting the losses saved below target (it makes "sit at `lo`" the answer to every curve, a comfort loss the household did not ask for).
+
+### D-0767 · A level planner finds the moves, exactly, for every store
+
+The moves were found by hand-made searches: stretches and pause pairs on `main`, a greedy over move pairs on `heat-moves`. On 14 Oct 2026 both were measured against the exact optimum of the same one-node store (HiGHS, 13 synthetic 48 h price days, re-planned every 15 min as the runtime does).
+- **`main`:** captured 27–55 % of the achievable saving with a 1–2 K bank, −3 to 16 % with pause only, and was up to 50 % dearer than the thermostat on a sawtooth day.
+- **`heat-moves`:** captured 44–60 % on the slab but 10–37 % in rooms. It left the band in 73 of 312 runs (by up to 1.5 K; `main` did so once, by 0.1 K), and one plan took up to 2.2 s against D9 §5.1's 500 ms for 20 loads.
+
+The losses came from the searches, not their numbers. A started stretch was forgotten at the next replan, and the bank was sized twice over. A pause was recovered at the next slot's price, not the cheap one it was priced in. Fixing the sizing alone made results worse, because the other rules leaned on the error. A store with linear losses and a price per slot is the textbook case for dynamic programming over its level. `core/strategies/levels.py` searches every reachable level at every slot, backwards from the horizon, in the actions the lever has: power steps for a switch or element, setpoints for a thermostat, comfort/eco for a `mode` device. The route it returns is optimal to the level grid, which costs about 1 % at 200 levels against the LP. It is also time-consistent: re-planned from the level reached, it finds the rest of the same route, so nothing is forgotten. It takes 3–14 ms per load in numpy on an i5-9500 (192 slots, 100–400 levels, 5–21 actions). `heat_capacitor` keeps its key, its parameters and D-0766's goal. `best_save` becomes the same planner with no bank and its `max_off_min` as a limit on the off-run (D5 §5.5). The battery follows in D-0768. Affects HLD §1.1, §1.2, §6.5; D5 §3, §5.5, §5.7, §5.14, §9 40–45, §10, §11; manifest `requirements` (numpy, which Home Assistant ships pinned).
+
+**Rejected:**
+- Patching the stretch rules (above: the fixes interact).
+- Finishing `heat-moves`' greedy (still a search that guesses; band exits and a 2.2 s tail).
+- HiGHS at runtime (most levers are on/off or two-step, which turns the LP into a MILP with a seconds-long tail, and a compiled wheel is then owed for every Python HA moves to).
+- Plain Python without numpy (50–330 ms a load; a dozen heating loads break the budget).
+
+### D-0768 · The battery plans on the level planner: trade, peak reserve and self-use in one plan
+
+`arbitrage` paired the K cheapest charge slots with the K dearest discharge slots, regardless of the battery's size, and then executed them in time order. On a double-peak day it picked 81 pairs for a battery that holds 6–8 slots, so it discharged on the shoulders before each peak and not at it. It filled at +0.70 just before a negative night, and it never sold what was left without a cheaper pair. It captured a median 50–65 % of the exact optimum (0–100 %). `peak_shave` forced its reserve's charge into the cheapest slots of the whole horizon, after the peak as readily as before it, and let arbitrage spend the reserve. It left 1.1–8.0 kWh of an 8 kWh capacity deficit uncovered on 7 of 13 days. Now one level-planner route over the state of charge carries the whole battery:
+- the import price for the house's import and the export price for its export, from the forecast baseline and surplus (D5 §2);
+- the wear cost per kWh discharged (D-0769);
+- a slot whose headroom is negative must be covered by discharge (`peak_shave`'s duty), so the reserve's charge lands before the peak by construction;
+- the commands the row has (INV-30) as the actions;
+- stored energy left at the horizon valued at the mean future import price × discharge efficiency.
+
+`arbitrage` and `peak_shave` stay as keys. `peak_shave` is the same plan with the arbitrage terms switched off. Affects D5 §5.8, §6, §9 46–48, §11.
+
+**Rejected:** repairing the pairing (it would need SoC-cycle-aware pairing, a min-cost-flow by another name); an LP per battery (the same answer at 10 ms, but a solver dependency and a binary per slot at negative prices).
+
+### D-0769 · A battery's wear is a cost per kWh in the plan, from its chemistry and the currency
+
+`threshold`, 0.05 per kWh in the site's currency, stood in for wear. In Norway that is 5 øre. HTW Berlin's warranty data price a cycled kWh at about 0.04 EUR for LFP (6 000 cycles or more) and 0.10–0.20 EUR for 2.4–3 MWh/kWh warranties ([HTW/aquu Stromspeicher-Inspektion 2026](https://solar.htw-berlin.de/wp-content/uploads/HTW-aquu-Stromspeicher-Inspektion-2026.pdf)). A wear cost set wrongly loses 30–50 % of the profit ([Kumtepeli et al. 2024](https://arxiv.org/pdf/2403.10617v1)), and one chosen for lifetime value earns 29 % more than one taken from the system's price ([Collath et al. 2023](https://opus4.kobv.de/opus4-hs-kempten/files/1891/ID1891_Increasing_the_lifetime_profitability.pdf)). `wear_cost` replaces `threshold`. It is a cost per kWh discharged inside D-0768's plan, not a gate after it. The default comes from the chemistry D4 §6.6 already asks: LFP 0.04 EUR, NMC 0.10 EUR per kWh, converted once at setup into the site's currency by a table in D4, and materialised (INV-66). It stays an Advanced override. `round_trip_eff` falls back to 0.80, not 0.85: HTW measured 63–78 % grid-to-load at a 200 W discharge. It is fitted from the battery's own energy counters once a fit passes (D10 §5.6). The charge ceiling stays 100 % for LFP, whose warranties set none, and becomes 90 % for NMC. Time at high charge ages both chemistries ([Zsoldos et al. 2024](https://www.julianehehl.de/voltaik/lfp-studie.pdf) for LFP; Wikner 2018 for NMC), and NMC's warranties are the shorter. Affects D4 §6.6, D5 §5.8, §6, D10 §5.6.
+
+**Rejected:**
+- Keeping a fixed margin (wrong by 10× in NOK or SEK, and a gate after the plan can't trade the wear against a better hour).
+- Asking the household for the battery's price (a question few can answer, and the warranty already prices it).
+- Scaling the wear cost down when the battery cycles far less than its warranty allows (sound, but not until a year of cycles is measured; deferred).
+
+### D-0770 · Every strategy is measured against the best plan on a catalogue of price days
+
+D5 §9 1 and 2 compared `deadline_fill` with brute force. Nothing compared a store's plan with what was possible, which is how D-0767's and D-0768's gaps went unseen through three redesigns. D9 §5.17 adds a catalogue of 13 price days of 48 h each:
+- flat, and flat with ±0.1 % noise;
+- Norgespris day/night, and a three-step time of use;
+- a winter double peak, a solar dip below zero, and a negative night;
+- a volatile day, and one spike on a flat day;
+- rising and falling, a 15-minute sawtooth, and the repo's NO3 day.
+
+An exact optimiser (HiGHS through `highspy`, a test-only dependency) solves each load's own problem on each day. The test runs each strategy as the runtime does, re-planned every 15 minutes, and asserts per strategy and day:
+- never dearer than its hands-off reference;
+- never outside its band or deadline;
+- at least the captured share recorded in `tests/optimality/baseline.json`, a ratchet like the benchmark's.
+
+The targets for the level planner are ≥ 90 % on every day. The exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) must match the optimum. Affects D9 §5.14, §5.17, §9 17; `.claude/rules/test-selection.md`.
+
+**Rejected:** measuring only on the reference benchmark (one house and one year, whose spot months are one curve shape; and an optimum over its two-node simulators would measure the model's mismatch, not the search); a hand-made LP per test (the catalogue is cheaper to keep honest in one place).
+
+### D-0771 · `deadline_fill` judges a flat day over its own window, and `run_once` prices what it places
+
+`deadline_fill` asked `is_flat` of the local day of `now`. A flat evening with a deadline in tomorrow's structured night filled in time order from now: on the probe, 20 kWh by 07:00 cost 16.00 against the optimum's 9.58 NOK (+67 %). It now asks it of the slots between now and the deadline. `run_once` ranked starts by sampling each of its ten segments at the segment's start, but placed the energy by overlap. When `duration / 10` is not a multiple of the slot, the start it chose was not the cheapest for what it ran: 15 of 234 cases, worst 1.8 %. It now ranks by the energy each slot receives. Affects D5 §5.2, §5.6, §9 49, 50.
+
+**Rejected:** dropping the flat-day rule (INV-32 needs it); a finer segment grid for `run_once` (still sampled).
+
+### D-0772 · Lowering comfort when nobody notices is the household's choice, not a default
+
+`follow_presence` ("save when nobody is home": 3 K below target while away) was on by default for heating. It stays, but is **off** for a new load (owner, 14 Oct 2026). The 3 K is inside the 2–3 K the evidence finds unnoticed in an empty home ([DTU thermostat overrides](https://orbit.dtu.dk/en/publications/a-data-driven-study-of-thermostat-overrides-during-demand-respons/), [EQUINOX](https://octopus.energy/blog/EQUINOX-heat-pump-trial-24-25-FAQs/)). A second opt-in, `night_setback` ("save while asleep"), lowers the target by `night_delta` 1 K during the site's quiet hours, which the household already sets for notifications (D8 §2, default 22:00–07:00), and returns it by their end. The return is an ordinary step-up deadline (D4 §5.8), so the room is back at comfort when the night ends. Both are target moves, clamped to the floor, which never moves (INV-55). A load with `follow_presence` on keeps it: the switch is the household's from setup on (INV-66). Affects D4 §5.8, §6.1, §6.4, §6.5; D8 §5.16; D5 §9 13.
+
+**Rejected:**
+- On by default (the owner wants comfort lowered only where asked).
+- Migrating existing loads to off (INV-66: an entity's state is the household's).
+- Widening the planner's band at night instead of moving the target (a timing-only plan, D-0766, would rarely use it, and the household expects a setback to save the heat).
+- A bedtime question (quiet hours already say when the house sleeps).
+- 1.5 K at night (the comfort research's upper figure; 1 K is the cautious default, and the household can raise it).
+
+### D-0773 · A heat pump pre-heats when the hour pays for its lost efficiency, and its curve follows the heating type
+
+Pre-heating a heat pump was allowed only at or below 5 °C outdoors (`preheat_max_outdoor_c`, from effektstyring). No source supports it, and frost losses peak inside the band it allows (about −5 to +3 °C). In Norway, price-based heat-pump control saved nothing at the spreads of the time ([Clauß et al. 2019](https://ideas.repec.org/a/eee/appene/v237y2019icp500-518.html)). By Carnot, raising the supply 1–2 K costs 2–6 % of COP, and a pre-heat hour 3–5 K colder costs 8–13 % more. Now the level planner prices heat at `p / COP(outdoor of that hour)`, with COP × 0.85 between −5 and +3 °C for defrost (an estimate from the defrost literature's ≤ 20 % hourly loss; the review names it). A bank is taken only where the route still wins. The household's `preheat` answer stays off by default; where it is on, each hour decides. `preheat_max_outdoor_c` stays as an optional cap, default none. The air-to-water curve is within 6–9 % of the radiator case and understates a floor-heating system by 17–29 % between −7 and +7 °C. D4 derives it from the heating type the questionnaire asks: COP = 0.35 × Carnot at a supply of 28 + 0.25·(20 − T_out) °C for floor heating, and 35 + 0.5·(20 − T_out), capped at 55 °C, for radiators. 0.35 is conservative against a NIBE F2120 data point at 0.42. The air-to-air and ground-source curves stay. Heat pumps are planned in blocks of at least an hour, since they take 0.5–1.5 h to respond. Affects D4 §6.4, D5 §5.7, §9 44.
+
+**Rejected:**
+- Keeping the 5 °C cap (unsourced, and it allows exactly the frost band).
+- Pre-heat on by default for heat pumps (Clauß 2019 finds no saving at Norwegian spreads; a household on a volatile tariff turns it on, and then each hour decides).
+- A measured COP (no heat meter; deferred to a heat-metered pump).
+
+### D-0774 · `min_saving` is the margin above what the plan already counts
+
+`min_saving` (10 %, from node-red-contrib-power-saver) asked each move to beat its price by 10 %. That was right for a screed floor at τ 40–60 h, where a 4 h bank loses about 7 %. It is too little for a heat pump, whose banked kWh also loses COP, or for a light room, which loses 20 % or more at τ 20 h ([Reynders et al. 2017](https://ideas.repec.org/a/eee/appene/v198y2017icp192-202.html): over 90 % storage efficiency for floor-heated dwellings, 66–85 % with radiators). In the level planner, the loss and the COP are in the route itself. `min_saving` is now only the margin a move must clear *beyond* them, against model error. The default is 0.03, and the key and its Advanced override stay. A load stored at 0.10 keeps it (INV-66), which under the new meaning is a stricter margin. *Re-derive* writes 0.03. D-0764's rule (a run of moves must save `min_saving` on an hour of the element at full power) and D-0724's gate (4 % / 6 %, judged ex ante; INV-68 forbids judging it on the ledger's savings) stay. Affects D5 §5.7, §6, §9 41.
+
+**Rejected:** deriving a per-load percentage from `τ` and the COP ratio (right for a rule that does not model the losses; double-counted in a planner that does); keeping 0.10 as the margin (it refuses the 5–10 % moves a screed floor earns on a spot day).
+
+### D-0775 · Comfort and floor limits from the standards
+
+D4 §6.1's defaults came from the reference house and from trade practice. Against the standards:
+- **Bedroom floor:** the 17 °C floor is under the WHO's 18 °C cold-season minimum and EN 16798-1's lowest bedroom class ([REHVA](https://www.rehva.eu/rehva-journal/chapter/european-standardisation-on-thermal-environment)). It becomes 18 °C.
+- **Floor coverings:**
+  - Vinyl and carpet at 28 °C have no source; they become 27 °C, like wood and laminate ([Boen 2025](https://boen.com/media/bo1ctauh/bo_leggeanvisning_2-lags-parkett_n-f_no_2025.pdf)).
+  - Tile stays 30 °C in a bathroom, where EN 1264 allows room temperature + 9 K, and becomes 29 °C elsewhere, EN 1264's limit for occupied zones.
+- **Setpoint rate:** the limit stays 1 K/h downward (ASHRAE 55 allows 2.2 K/h; depth matters more than rate, Kolarik 2007). It becomes 2 K/h upward, since warmth is judged by where it ends ([Favero et al. 2021](https://www.sintef.no/en/publications/publication/1922431)).
+- **Unchanged:** the coast band (1 K, EN 16798-1 Category I), the bank band, eco = comfort − 2 K and the heat pump's 21 °C ± 1 K are supported.
+
+Affects D4 §6.1, D5 §5.7 (`max_rate_k_per_h` is the downward rate), §9 42.
+
+**Rejected:**
+- A bank expressed as an absolute ceiling (23–24 °C) rather than a step (supported, but it changes a parameter's meaning for a small gain; v1.x).
+- 26–28 °C bathroom comfort on a floor sensor (the house's 24 °C is a measured preference).
+
+### D-0776 · An EV is paused only once it is known to resume
+
+In ElaadNL's lab, 14–17 % of car models failed to resume after a 20-minute pause and 29–33 % after 6 hours ([Brinkel et al. 2024, Nature Communications](https://www.nature.com/articles/s41467-024-48477-w)). A car that does not resume misses its departure, the one failure a household always notices. D4's `ev` type keeps a latch per load, `resumes ∈ {unknown, yes, no}`. After each resume the charger must draw power within 120 s. Once it does, the latch is `yes`. If it does not, the latch is `no`, the load's reason says so, and `deadline_at_risk` fires if the deadline is near. Unless the latch is `yes`:
+- D5 plans the session as one run, gaps raised to `min_w`;
+- D6's `plan_stop_ok` is false, so the car is held at 6 A instead of stopped.
+
+A budget stop (`blunt`) still stops it (INV-1). A car that resumes is still held to at most 4 planned pauses per session (an inference from the same study's start-stop failures). Charging efficiency is fitted per phase count and current band, since a 1-phase 6 A session loses 13–24 % against 5–13 % at 3-phase 10–16 A ([Reick et al. 2021](https://arbor.bfh.ch/bitstreams/67fb6c67-ed54-4535-a0fb-f43b55a2a3f5/download), ADAC). `deadline_fill` prices each slot's band at `p / η(power)`, so slow charging is chosen only where it is enough cheaper. The 80 % charge-to and 20 % floor stay. D4 §6.2 has no car database, so chemistry is not guessed. Affects D4 §5.11, §6.2; D5 §5.2, §9 51; D6 §5.3, §9 34; D10 §5.6, §9 31.
+
+**Rejected:**
+- Pausing freely (the stranded car).
+- Never pausing (a car that resumes gives up the price gaps for nothing).
+- A per-model list (no car database, and it would go stale).
+
+### D-0777 · A switching budget per device type
+
+The 60 s replan limit (D5 §8) caps replans, not starts. A relay rated for 100 000 resistive switchings ([Finder S40](https://cdn.findernet.com/app/uploads/S40EN.pdf)) at its 900 s minimum on and off can switch 48 times a day, which uses up its rating in 5.7 years. Compressor makers allow 4–12 starts an hour ([Bitzer](https://bitzer.de/shared_media/html/kt-420/en-GB/242642187242698891.html), [Copeland](https://media.copeland.com/0cfb235b-7155-4885-b009-b16b0107a750/AGL_AC_ST_ZRKRE_E_Rev02_FULL.pdf)). The level planner counts planned starts and gives back the least valuable moves past:
+- 24 a day for a relay or element (11 years at full rated current);
+- one change an hour for a heat pump (D-0773's blocks, inside the 3 an hour the compressor data allows);
+- 4 pauses a session for an EV (D-0776).
+
+The device's own minimum on and off times (D4 §6) stay. Affects D4 §6, D5 §5.14, §9 45.
+
+**Rejected:** a cost per start (no evidence prices one); counting the allocator's switchings too (D6's ladder must be free to protect the ceiling, INV-1).
+
+### D-0778 · Fit bounds and fallbacks from the evidence
+
+The fits are kept; their bounds and the values used before a fit passes change.
+- **A foil's `coast_tau_h`:** bounded to [2, 48] h (D-0740). A foil room on an *air* sensor coasts on the building's mass, about 44–65 h in a TEK10 house, so good fits were refused. The bound now follows the sensor: [5, 500] h on an air sensor, [0.3, 6] h on a floor sensor over a floating floor.
+- **The slab and room upper bound:** tightened from 1 000 h to 500 h.
+- **The room-to-outdoor loss coefficient:** bounded to [0.3, 5] W/K per m² of floor. The old floor of 0.5 refused TEK17 and passive houses. D10's two-node rule for slabs stays.
+- **`RoomStore`'s fallback mass:** 0.03 kWh/K per m³ was ISO 13790's *heavy* class (260 kJ/m²K at 2.5 m), though D4 called it light timber. It becomes the *light* class, 0.012 kWh/K per m³ (110 kJ/m²K) ([ISO 13790 classes](https://simulationresearch.lbl.gov/modelica/releases/latest/help/Buildings_ThermalZones_ISO13790_Data.html)).
+- **A battery's round-trip efficiency:** fitted from its AC energy counters over windows where the state of charge returns to its start (D-0769).
+
+Affects D4 §5.7, D10 §5.6, §9 30, 32.
+
+**Rejected:**
+- A two-node fit for floor sensors (needed, but it wants coasts of 6 h or more on a floor sensor the house has; v1.x).
+- `τ` per outdoor band (still deferred, D10 §10).
+
+### D-0779 · The water heater's numbers stay
+
+The evidence offered several changes to the water heater:
+- a 55 °C floor where the tank holds 45 °C (Helsedirektoratet asks for 55 °C at the heater's outlet);
+- 60–65 °C day to day where it charges to 75 °C (about 2.3–3.2 kWh a week saved, with a weekly cycle then owed);
+- a reserve from the measured largest hour;
+- a lead from the element's power.
+
+The owner keeps the tank's numbers as they are (14 Oct 2026). 75 °C nightly is what lets the tank pasteurise itself (D-0742). The 45 °C floor is a shed level for the capacity axis, not a delivery temperature. The reserve and the lead were measured against the reference house's draws (D-0743). Affects nothing.
+
+**Rejected:** the four changes above, recorded so the next pass need not re-open them.

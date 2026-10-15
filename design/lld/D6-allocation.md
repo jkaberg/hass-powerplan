@@ -212,6 +212,7 @@ allocate():
       # stage 3 never stops an EV - the trim walks it down to the floor and holds it there (INV-28, §8 "veto forever")
       min_stop_ok  = expected off-time ≥ EV_MIN_STOP_S (600): budget horizon = min(t_rem, plan.next_active)   # undone by the window turning OR the plan
       plan_stop_ok = plan.idle_seconds_from(now) ≥ EV_MIN_STOP_S ∧ (plan.next_active(now) exists ∨ nothing owed)   # undone by the plan alone; a plan that never draws again while energy is owed ran out, the floor until the re-cut (D-0253)
+      plan_stop_ok ∧= view.resumes is yes                     # D-0776: a car not known to resume is held at min_w, not stopped to follow a plan; a budget stop (blunt) still stops it (INV-1)
  9 trim (5.5) against measured P_total if deficit > 0
 10 report + unconstrained_ask_w = Σ demands.max_w for loads that wanted power, published in AllocReport; D11 records its own counterfactual per window
 ```
@@ -423,6 +424,8 @@ Events to D7: `stage_changed(old, new, reason, blunt)`, `breach(kind, excess_w, 
 31. Idle thermostats (D-0686): five idle `mode` floors with banked plans reserve Σ their plans' draw for the slot, not 5 × 500 W; a floor whose relay closes reserves its nameplate on the next tick (D-0169); a heat pump at 23 W still reserves 523 W (test 5).
 32. The walk's own cut in flight (D-0718): a charger cut to 19 A and settling while it still draws 28 A, under an allowance whose true residual is 19 A, keeps 19 A (10 A before); settled, the walk's own answer stands; a blunt stage takes it lower. Scenario `pv_no_battery_ev_waits` still charges nothing at night.
 33. The de-escalation band (D-0721): a projection hovering 84–85 % stays at stage 1; 82 % leaves after two clean ticks; 85 % still escalates at once and 84.9 % doesn't; stage 3 is left under 98 %.
+34. A car that may not resume (D-0776): with `resumes = unknown`, a plan whose next slot is idle for 2 h gives `plan_stop_ok = false` and the EV is held at 6 A; with `yes` it stops; a `spent_window` budget stop stops it either way.
+
 ---
 
 ## 10. Deliberately deferred

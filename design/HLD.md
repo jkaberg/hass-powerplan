@@ -23,14 +23,14 @@ powerplan is a Home Assistant custom integration that steers flexible loads - EV
 - Fully UI-configured. No YAML, no `input_*` helpers, no restart to change a limit.
 - Self-explanatory setup. The user describes a device in plain terms (room, floor covering, heating type, area); powerplan derives the technical parameters, picks a sensible default strategy and says what it decided and why (§7.9).
 - Every domain extensible by adding one module to a registry; the config flow renders new entries without changes.
-- The decision core is pure Python: testable and backtestable with no Home Assistant present.
+- The decision core is Python and numpy, which Home Assistant ships (D-0767): testable and backtestable with no Home Assistant present.
 - Safe by construction: the precedence rule (§3) and the write discipline (§6.4) each live in exactly one place.
 - Observable: every decision is published with a machine-readable reason; the household is warned **before** a peak or a comfort miss, not told afterwards.
 - Fail-safe: every state the controller leaves a device in is a safe state if the controller dies (§7.8).
 
 ### 1.2 Non-goals
 
-- Global optimisation of the multi-load schedule (MPC / MILP, EMHASS-style). Loads are decomposed by priority; the one-load greedy fill is provably optimal and stays. An `optimizer` strategy slot can be added later without changing anything else.
+- Global optimisation of the multi-load schedule (MPC / MILP, EMHASS-style). Loads are decomposed by priority (INV-33), and each load's own plan is exact: the greedy fill for a deadline, the level planner for a store or a battery (D5 §5.14, D-0767), each measured against the best plan on a catalogue of price days (D9 §5.17, D-0770). An `optimizer` strategy slot can be added later without changing anything else.
 - Controlling generation. PV is measured (D3), forecast (D10) and its surplus is consumed by strategies (D5); PV output is never commanded and export is never curtailed. A battery behind a hybrid inverter is a load, commanded through that inverter's integration (§6.4). Lowering PV output at a negative export price is designed for v1.x, as a kind that only lowers and never raises past the grid operator's cap (D4 §10).
 - Automatic tariff detection from meter IDs or bill import. The postcode and a grid-company list, with the tariff fetched (§6.13), is the answer; a per-metering-point lookup is v1.x.
 - Reproducing the invoice. Cost and savings accounting (§6.11) is in scope; billing reconciliation is not.
@@ -382,7 +382,7 @@ Load            = DeviceType logic + ControlKind + DeviceProfile + WriteGate + S
 
 Load **mode** (one select per load): `auto` · `force` (ignore price, keep the ceiling) · `observe` (decide, publish, never write) · `delegated` (someone else drives it - Intelligent Octopus, Hilo, §14a - reserve its nameplate, never write) · `off` (the controller lets go; release first).
 
-**Target profiles and presence.** A thermal load's comfort target is a *profile*, not a number: a weekly schedule (a bound HA `schedule.*` helper in v1, §10) × the site's presence mode (`home` / `away` / `vacation`, automatic from HA `person` entities or set by hand) → target °C. Away and vacation lower targets; an **arrival** (a calendar event, or presence returning) becomes a deadline for `heat_capacitor` - the cabin use case. The comfort **floor** (frost guard, emergency minimum) is one number that no schedule or presence mode can lower.
+**Target profiles and presence.** A thermal load's comfort target is a *profile*, not a number: a weekly schedule (a bound HA `schedule.*` helper in v1, §10) × the site's presence mode (`home` / `away` / `vacation`, automatic from HA `person` entities or set by hand) → target °C. Away and vacation lower targets, and so does the night where the household asks for it; both are opt-in (`follow_presence`, `night_setback`, D-0772). An **arrival** (a calendar event, or presence returning) becomes a deadline for `heat_capacitor` - the cabin use case. The comfort **floor** (frost guard, emergency minimum) is one number that no schedule or presence mode can lower.
 
 **Water heaters run a legionella cycle.** A tank held down to save peaks needs a periodic ≥ 60 °C cycle. The type schedules it into the cheapest slot before it falls due and never lets it lapse.
 
@@ -467,16 +467,16 @@ class PlanSlot: start; end; envelope_w: float | None      # None = no plan (cont
 |---|---|---|
 | `deadline_fill` | effektstyring planner | cheapest slots covering `required_kwh` before the deadline; `force` → time order, deadline ignored. Greedy is exact for one load. |
 | `cheapest_hours` | powersaver Lowest Price | N cheapest slots in a window; optional consecutive; optional max price |
-| `best_save` | powersaver Best Save | off in slots where saving vs. the next on-slot exceeds a threshold, bounded by max-off / min-on; offered for heating beside `heat_capacitor`, the default (D-0738) |
-| `heat_capacitor` | powersaver Heat Capacitor + effektstyring preheat/coast | a stretch to stay off in (dear by price, full by capacity) becomes a deadline: the level that coasts it to the lowest temperature, capped at the highest, filled before it; dear slots no stretch covers are paused if waiting saves a minimum; the store's coast measured at setup and refined daily; heat pumps' fills gated on outdoor temperature (D-0727, D-0732) |
+| `best_save` | powersaver Best Save | postpones only, bounded by max-off / min-on; with a store it is the level planner with no bank, so the store sets how far a pause may go (D-0767); offered for heating beside `heat_capacitor`, the default (D-0738) |
+| `heat_capacitor` | powersaver Heat Capacitor + effektstyring preheat/coast | a store's energy moved only across a price change - banked before a rise, coasted before a fall and bought back after, comfort held through a flat block - valued on timing alone (D-0766); found by the level planner, an exact search over the store's level in the lever's own actions, inside the band; capacity-limited hours are banked for by the same search; a heat pump's heat priced at its COP for that hour (D-0767, D-0773) |
 | `hot_water` | new | a tank's level, kWh above its floor, kept at or above a reserve plus the next hour's draws at every slot; each shortfall bought in the cheapest block before it, ranked by price and the heat it loses waiting (D5 §5.13, D-0743) |
-| `arbitrage`, `peak_shave` | new | battery: charge cheap / discharge expensive with a round-trip-efficiency floor; discharge when the window projects over the ceiling |
+| `arbitrage`, `peak_shave` | new | battery: one route over the state of charge on the level planner - import and export prices, self-use, hold, the wear cost per kWh and the peak duty in one plan; `peak_shave` the same route with the price terms flattened (D-0768, D-0769) |
 | `schedule` | powersaver Fixed Schedule | fixed windows |
 | `always` | - | no price steering |
 | `run_once` | new | for cycles: the cheapest **contiguous** window of the cycle's duration before the ready-by time; started once, never interrupted |
 | `surplus` | evcc | v1 (phase 7): consume PV surplus first (live surplus + D10 forecast); grid top-up only when the deadline requires it or import is cheaper than the export price |
 
-*(phase 7, D5 §2)* With a PV forecast every ranking strategy plans on an **effective curve**: the slot's forecast surplus priced at the export price (0 above an export cap), the rest at the composed import price - INV-31's composed curve with a surplus tier, identical to it when there is no surplus. `surplus` is the stricter surplus-only mode; the battery ranks charge and discharge on the same curve after `peak_shave`'s reserve (INV-1).
+*(phase 7, D5 §2)* With a PV forecast every ranking strategy plans on an **effective curve**: the slot's forecast surplus priced at the export price (0 above an export cap), the rest at the composed import price - INV-31's composed curve with a surplus tier, identical to it when there is no surplus. `surplus` is the stricter surplus-only mode; the battery plans its route on the same curve, the peak duty inside it (INV-1, D-0768).
 
 Combinators (optional extras on any load, not separate strategies): `threshold(inner, off_above, on_below)`, `merge(a, b, and|or)`, and `opportunistic(inner, below_price)` - below the threshold (typically ≤ 0) every store fills to its **maximum**, not its requirement (INV-51, INV-56).
 

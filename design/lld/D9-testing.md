@@ -50,6 +50,7 @@ tests/
 │   ├── metering/ tariffs/ pricing/ loads/ strategies/ allocation/ forecasts/ engine/     one file per D-LLD §9 item group
 │   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py, test_no_network.py
 ├── property/                      hypothesis: greedy_vs_bruteforce, window_sums, normalise_roundtrip, gate_matrix
+├── optimality/                    days.py, oracle.py, baseline.json, test_<strategy>.py: every strategy against the best plan (§5.17, D-0770)
 ├── fixtures/presets/              labelled synthetic tariff versions the benchmark needs and no operator has published (a next-year switch, INV-52), never shipped (D2 §2); the company tariffs the houses run on
 ├── golden/                        presets/<id>.json (history → expected level/fee); questionnaires/<type>.json; profiles/; snapshot_schema.json
 ├── scenarios/                     runner.py, catalogue.py, cache.py (a day in the house; a month; DST day; restart mid-window; BLE flaps; price outage)
@@ -435,6 +436,22 @@ The path → tests map is in `CONTRIBUTING.md`, the only copy. It rests on four 
 
 The cards are tested twice. `vitest` in node covers each card's pure half - the transforms that turn states into what is drawn - with the reference house's numbers. The **fit harness** runs the cards themselves in Chromium (Vitest's browser mode with Playwright, `frontend/test/browser/`, `npm run test:browser`): a copy of HA's sections grid - columns 320–500 px, 32 px gaps (8 px under 600 px), 12 columns per span, 56 px rows - HA's default theme variables light and dark, `ha-card` and `ha-icon` as HA draws them, and a `hass` that answers states, `recorder/statistics_during_period`, `history/history_during_period` and `repairs/list_issues` from `frontend/test/fixtures/`: the reference house's states, plan and price curves and one floor's day as captured, and a month of statistics generated from a fixed seed around the three days its tariff counted. Every card is mounted at 320, 390, 768, 1024, 1184 and 1664 px of screen and in both themes, and the assertions are geometric, never pixel snapshots: nothing outside the card, no clipped text except where the card ellipsises by design, every tooltip target at least 24 × 24 px, the PowerPlan mark at 3 : 1 against the card, and no console error. Each run writes its screenshots to `frontend/test/browser/__screenshots__/` (ignored by git) for review. CI's `frontend` job installs Chromium and runs it (D-0696).
 
+### 5.17 The best-plan catalogue (D-0770)
+
+Every strategy that plans a store or a deadline, against the exact optimum of its own load, on 13 price days. This is the test that shows a strategy holds up on every shape of day, not the one shape the benchmark year has in a given month.
+
+| part | what |
+|---|---|
+| days | `tests/optimality/days.py`, 48 h of 15-minute slots each, seeded: flat; flat ± 0.1 %; Norgespris day/night (0.8779 / 0.7379 from 22:00); a three-step time of use; a winter double peak; a solar dip below zero; a negative night; a volatile day with spikes; one spike on a flat day; rising; falling; a 15-minute sawtooth; `builders/curves.py`'s NO3 day |
+| loads | the strategy's own store and demand, from `tests/builders/`: a 12 m² and a 57.5 m² slab, a 40 m³ room, a heat pump at −10 and +5 °C, the 300 L tank, a 30 kWh EV session, a 10 kWh battery at η 0.95 and 0.80; and the site walk, a floor, the tank and an EV under 5, 7 and 10 kW, against a joint optimum (PLAN R16) |
+| oracle | `tests/optimality/oracle.py`: the load's own problem on the same model, an LP, or a MILP where the lever is on/off or a battery must not charge and discharge at once, on HiGHS through `highspy` (MIT), a dev dependency never imported under `custom_components/` |
+| run | as the runtime runs it: `plan_all` every 15 minutes with the previous plan, the store moved by its own model in between |
+| asserts | per strategy × day: never dearer than its hands-off reference; never outside its band or past its deadline; a captured share ≥ the value in `tests/optimality/baseline.json`, a ratchet that moves up in the PR that earns it and down only with a DECISIONS entry |
+| targets | the exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) equal the optimum; the level planner (`heat_capacitor`, `best_save` with a store, the battery) ≥ 90 % on every day |
+| marker and cost | `optimality`, ≈ 2 min on six workers; before a commit that touches `core/strategies/`, at the end of the WP, and in CI on every PR. BP.1 adds the row to the path map (§5.14) |
+
+The captured share is `(hands-off − ours) / (hands-off − optimum)` over 48 h, with the store's end level valued alike for both. A day where the optimum saves under 1 % of the hands-off cost asserts only "never dearer". The catalogue measures the search, on the strategy's own model; the reference benchmark (§5.9) still measures the house, with its two-node simulators and its whole bill.
+
 ## 6. Configuration schema
 
 Not applicable, the tooling has CLI flags only: `backtest.py` (`--months --db --csv --tariff --loads --simulate --house --compare --out`), `benchmark.py` (`--house --year --tier smoke|month|full --seed --compare --update-baseline --out --sweep key=a,b,c` (v1.x); the `e2e` tier is `pytest -m e2e`, §5.10, D-0278), `capture_fixture.py` (`--url --token --device --out`), `price_replay.py` (`--regime flat|variable|outage`).
@@ -481,6 +498,7 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 14. No test in the PR suite opens a socket (a pytest plugin refuses connections outside `127.0.0.1`), and the tariff-source fixtures each name their capture.
 15. `vat_check.py` flags a module whose rate differs from the captured TEDB response and passes one that matches; `preset_age.py` lists a country-module fact verified seven months ago.
 16. The fit harness (§5.16) mounts every card `frontend/src/cards.ts` defines, fails on a card that overflows at 320 px, and runs in CI's `frontend` job.
+17. The best-plan catalogue (D-0770): every registered strategy that plans a store or a deadline runs on its 13 days; `deadline_fill`, `cheapest_hours` and `run_once` equal the oracle to 10⁻⁹ of the requirement × the day's price span; none is dearer than its hands-off reference on any day; `baseline.json` has a share for every strategy × day, and lowering one fails without a DECISIONS entry naming it.
 
 ---
 
@@ -527,3 +545,5 @@ Test artefacts under `tests/fixtures/`, `tests/golden/` and `tests/benchmark/bas
 **Shipped tariff adapters in every test.** *For:* nothing to register. *Against:* a test would then depend on every adapter's registration side effects. **Decision:** the shipped adapters are out of the registry during every test (`tests/conftest.py`), and a test that wants one registers it and serves its captured documents - `tests/builders/tariff_sources.py` (`fri_http()`: fri-nettleie's archive at a pinned commit and NVE's county list), or `Http._download` replaced, which keeps `Http`'s cache and release as shipped (D-0566).
 
 **Test the hold with unit tests only, no inverter simulator.** *For:* D4 §9 40 and D5 §9 28 pin the writes and the plan, and a simulator is more code. *Against:* the defect lives between the layers - each unit is right on its own (the plan idle, the profile's release right), and only a battery that self-uses when released shows the evening arriving empty. §11's rule is simulators over mocks for anything physical. **Decision:** `tests/sim/battery.py` has the inverter's self-use, and `battery_holds_for_peak` runs on each command shape that can grid-charge.
+
+**Measure the strategies on the reference benchmark only (D-0770).** *For:* one gate, the whole bill, the real two-node simulators; a strategy that wins there wins where it counts. *Against:* one house and one year. Its autumn is flat and its spot months are one NO3 shape, so a strategy can pass while failing on a solar dip, a sawtooth or a falling day. And an optimum over two-node simulators measures the planner's one-node model as much as its search. Three redesigns of `heat_capacitor` passed the benchmark while capturing a third to a half of what was possible. **Decision:** both: the catalogue measures each search against its own model on every shape of day; the benchmark measures the house.

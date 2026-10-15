@@ -6,7 +6,7 @@ How the design in [HLD.md](HLD.md) and [lld/](lld/) becomes a released integrati
 
 ## 1. Definition of done
 
-**v1.0** is HLD §9's phases 0-6, plus this plan's Phase 7 (solar and the battery together, dec. 25), released last: every LLD §9 test exists and passes, every safety invariant (HLD §7.5) has a marked test, the scenario catalogue (D9 §5.3) is green, the **reference benchmark** (D9 §5.9) meets its baseline with every load under control, the Norwegian backtest lands every window under target on 12 months of history, and the integration passes hassfest and HACS validation with `en` and `nb` translations. Every shipped tariff version is read from its operator's own document (dec. 21), every registered price format is configurable through the flow (dec. 22), every non-review flow step links to its section of the user pages (dec. 23, 40), and the site has its dashboard (dec. 26).
+**v1.0** is HLD §9's phases 0-6, plus this plan's Phase 7 (solar and the battery together, dec. 25), released last: every LLD §9 test exists and passes, every safety invariant (HLD §7.5) has a marked test, the scenario catalogue (D9 §5.3) is green, the **reference benchmark** (D9 §5.9) meets its baseline with every load under control, the Norwegian backtest lands every window under target on 12 months of history, and the integration passes hassfest and HACS validation with `en` and `nb` translations. Every shipped tariff version is read from its operator's own document (dec. 21), every registered price format is configurable through the flow (dec. 22), every non-review flow step links to its section of the user pages (dec. 23, 40), the site has its dashboard (dec. 26), and every strategy meets its target on the best-plan catalogue (D9 §5.17, dec. 54).
 
 **v0.x pre-release** ships after phase 3 as a HACS beta for Norway: a second house before breadth is built on assumptions one house can't test (dec. 3).
 
@@ -276,6 +276,43 @@ User pages: DP.1 `docs/appliances/floor_heating.md` (a "Since v0.x" note: the fl
 
 User pages: SF.1 `docs/entities.md` (the learned sensor's `kept` attributes) and `docs/how-it-works.md` (a learned value survives a summer). SF.2 `docs/appliances/water_heater.md` if the window changes.
 
+### 3.0t Plans measured against the best plan
+
+[D5 §5.2, §5.5–5.8, §5.14, §6, §9, §11](lld/D5-strategies.md), [D9 §5.17](lld/D9-testing.md), [D4 §5.7, §5.8, §5.11, §6](lld/D4-loads.md), [D10 §5.6](lld/D10-forecasts.md), [D6 §5.3](lld/D6-allocation.md), [D8 §5.16](lld/D8-ha-surface.md), HLD §1, §6.5.
+
+On 14 Oct 2026 every strategy was measured against the exact optimum of its own load, on 13 kinds of price day.
+- **At or near the best:** `deadline_fill`, `cheapest_hours` and `run_once` were exact, apart from two slips; the block fill was exact within its rule; `hot_water` captured 88–101 %.
+- **`heat_capacitor`:** captured 27–55 % of what was possible, and was up to 50 % dearer than the thermostat on one day. The paused `heat-moves` branch reached 44–60 % on a slab but left the band in 73 of 312 runs.
+- **The battery:** captured about half, and its peak reserve missed 7 of 13 deficits.
+
+The losses were in the searches, not in their numbers. Separately, a pass over the standards and field studies checked every steering number the house can't measure. The heat moved by the store gets an exact search over its level, and so does the battery; each strategy is measured against the best plan from now on. The numbers follow the evidence, except the water heater's, which stay, and lowering comfort when nobody notices becomes the household's choice (dec. 54).
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **BP.1 The best-plan catalogue** | `tests/optimality/`: the 13 days, the oracle on `highspy` (a dev dependency), a test per strategy, `baseline.json` holding today's shares; the `optimality` marker; its row in the path map (`CONTRIBUTING.md`, `.claude/rules/test-selection.md`) | D9 §5.17; D-0770 | D9 §9 17; the baseline records the shares above, and no strategy is dearer than its hands-off reference except the `heat_capacitor` and `best_save` days D-0767 names, and no deficit is left uncovered except `peak_shave`'s (D-0768), each marked `xfail` with the WP that removes it | - |
+| **BP.2 Two exactness slips** | `deadline_fill` judging a flat day over its window; `run_once` ranking by the energy each slot receives | D5 §5.2, §5.6; D-0771 | D5 §9 49, 50; both equal the oracle on every catalogue day | BP.1 |
+| **BP.3 The level planner, and heat moved across price changes** | `core/strategies/levels.py` (numpy; `numpy` in the manifest's `requirements`, unpinned, Home Assistant's own pin applying); `heat_capacitor` on it with D-0766's goal, carrying from `heat-moves` (`169bf8b`) its `preheat` field, COP per hour, `mode` rule, reason constants, `LOWERED` kind, the dashboard's held-low hatch and behaviour tests; `best_save` with a store on it; `min_saving` the 3 % margin; the downward and upward rates; a relay's 24 starts a day; D5 §9 32–34, 36, 39 rewritten as properties of the route; the site case (a floor, the tank and an EV at 5, 7 and 10 kW) added to the catalogue (R16) | D5 §5.5, §5.7, §5.14, §6; D4 §6; HLD §1.1, §1.2, §6.5; D-0766, D-0767, D-0774, D-0775, D-0777 | D5 §9 3, 8, 22, 26, 32–34, 36, 39, 40–43, 45; D4 §9 70; on the catalogue ≥ 90 % for `heat_capacitor` and `best_save` on every day, never dearer, never out of band; `tests/perf/plan_budget.py` p95 under 500 ms with 20 loads; scenarios phase0 and phase3; smoke `--compare` with the heating loads' savings on the spot year at or above the baseline's; house check through a cold week: every loop's plan followed or handed back with its reason, and no loop under `lo` for more than 15 min | BP.1 |
+| **BP.4 Heat pumps by the hour** | heat priced at the COP of its hour, × 0.85 from −5 to +3 °C; the air-to-water curve from the heating type; `preheat` deciding by the hour, `preheat_max_outdoor_c` an optional cap; one change an hour | D4 §6.4; D5 §5.7; D-0773 | D4 §9 66; D5 §9 44; on the catalogue ≥ 90 % for both heat pump cases on every day | BP.3 |
+| **BP.5 The battery's route** | `arbitrage` and `peak_shave` on the level planner; `wear_cost` replacing `threshold`, from chemistry and the country module's rate; a config entry migration writing it for every battery (a `threshold` still at 0.05 is replaced, a typed one kept as `wear_cost`); `round_trip_eff` falling back to 0.80; NMC's 90 % ceiling for a new battery; D10's round-trip fit | D5 §5.8, §6; D4 §6.6; D10 §5.6; D-0768, D-0769 | D5 §9 16, 19, 28, 29, 46–48; D4 §9 67; D10 §9 32; on the catalogue ≥ 90 % on every day, every deficit covered where the charge can hold it; the phase7 scenarios | BP.1, BP.3 |
+| **BP.6 Lowering comfort is opt-in** | `follow_presence` off for a new load; `night_setback` and `night_delta` on the three heating types, the site's quiet hours as the night, the night's end a step-up; `switch.<load>_night_setback`; the bedroom floor at 18 °C and the coverings' maxima; the types' `DERIVATION_VERSION` bumped | D4 §5.8, §6.1; D8 §5.16; D-0772, D-0775 | D4 §9 64, 65; D8 §9 56; D5 §9 13; the e2e day | - |
+| **BP.7 A car that resumes** | the `resumes` latch; `deadline_fill`'s single run and its four-pause cap; efficiency per phase count and current band (D10's fit) and the slot priced by it; D6's `plan_stop_ok` reading the latch; `button.<load>_ev_resumes` | D4 §5.11, §6.2; D5 §5.2; D6 §5.3; D8 §5.16; D10 §5.6; D-0776 | D4 §9 68; D5 §9 51; D6 §9 34; D8 §9 56; D10 §9 31; scenarios phase2 and phase4 | - |
+| **BP.8 Fit bounds from the evidence** | a foil's `coast_tau_h` bounded by its sensor; the slab and room bound at 500 h; the room loss coefficient at [0.3, 5] W/K per m²; `RoomStore`'s fallback mass 0.012 kWh/K per m³ | D10 §5.6; D4 §5.7; D-0778 | D10 §9 30; D4 §9 69; on the reference house's recorder, each loop's fit named as passed or refused with why | - |
+
+User pages:
+- **BP.1, BP.2:** none.
+- **BP.3:**
+  - `docs/strategies.md`: what the two heating strategies do now, their numbers, and the generated table, since `min_saving`'s default changes; a "Since v0.x" note that a load keeps a stored `min_saving` until re-derived;
+  - `docs/how-it-works.md`;
+  - `docs/appliances/heat_pump.md`: `preheat`.
+- **BP.4:** `docs/appliances/heat_pump.md`: the curve by heating type, and pre-heating by the hour.
+- **BP.5:** `docs/strategies.md` (the battery) and `docs/appliances/battery.md`: the wear cost and the ceiling by chemistry.
+- **BP.6:**
+  - the four thermal appliance pages: the two opt-in switches, with a "Since v0.x" note that a load set up before keeps `follow_presence`;
+  - `docs/entities.md`: `night_setback`;
+  - `docs/appliances/floor_heating.md`: the bedroom floor and the coverings.
+- **BP.7:** `docs/appliances/ev.md` (pauses and resumes), `docs/entities.md` (the button) and `docs/troubleshooting.md` (a car that didn't resume).
+- **BP.8:** `docs/appliances/floor_heating.md` (what a foil's fit accepts) and `docs/appliances/heat_pump.md` (the room's starting mass).
+
 ### Phase 0 - Pure core and the backtest gate
 
 HLD §9 phase 0. Nothing here imports `homeassistant` except WP0.1's loadable shell. **Gate (simulated):** INV-2's test passes; the reference benchmark runs the full year deterministically and its first baseline is committed; 12 months of recorder history through the backtest land every window under target for the NO tariff.
@@ -499,6 +536,8 @@ Contributor notes are in [CONTRIBUTING.md](../CONTRIBUTING.md).
 | R12 | **Verified tariffs go stale between releases** (dec. 21). DSOs change prices more than once a year. | high / medium | Tariffs fetched from the operators' data where a source exists (dec. 39); the review shows each tariff's source and date; the flow lets the household override. |
 | R13 | **Third-party integrations drift** under the charger, battery and price rows. | medium / medium | Match by role tokens and platform, never full entity ids (D4 §5.9); fixtures written from each integration's source; a role that stops binding is named in the flow and as a repair (INV-53). |
 | R14 | **HA's frontend drifts under the dashboard** (dec. 26). | medium / medium | The layout is data generated in Python and tested against a golden; `layout.py` degrades by HA version; the cards bundle their own chart library; the bundle is rebuilt and diffed in CI. |
+| R15 | **The planner trusts a loose model.** An exact search leans on `τ` harder than a rule did, and two of the reference house's six loops have no passing fit yet. | medium / medium | The band is hard and re-planning every 15 minutes starts from the measured level; D10's gates decide which `τ` it uses (INV-63); BP.3's exit includes a cold-week house check with no loop under `lo` for more than 15 min; the two-node route for floor sensors is deferred with a reason (D5 §10). |
+| R16 | **Priority order at a tight ceiling.** In the scratch benchmark, with each load's plan exact, an on/off tank found no slot it could run in under a 5 kW per-slot ceiling on 11 of 13 days, where a joint plan found one. | medium / medium | The real ceiling is energy per window and D6 serves priority live, so the house may not show it; BP.3 adds the floor, tank and EV case at 5, 7 and 10 kW to the catalogue and names the result; a joint step is the `optimizer` slot's, and INV-33 is the owner's to change. |
 
 ---
 
@@ -559,6 +598,7 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 51. **A tank is measured, credited and planned for its draws** (D-0740 … D-0743). The load flow's measurement is bounded by what the parameters say - per m² for a floor's table rating, [2, 48] h for a foil's coast - and runs on a tank too: element, standby, the household's day. A tank's probes above and below are bound and its level is their mean. Any hour the coldest water holds the legionella band counts toward INV-54. `hot_water` keeps a reserve plus the next hour's draws in the tank at every slot and buys each shortfall in the cheapest block before it, ranked by price and the heat it loses waiting; it failed the money gate on the benchmark (10–35 % dearer on the tank), so it is offered and `deadline_fill` stays the default. *Rejected:* a second ready-by (fills at the day rate every day), a refill-within-N-hours rule (buys by the clock), an optimiser (no sentence per move), learning each household's draw times (weeks before it works), a thermal dose for legionella (claims a precision the guidance doesn't).
 52. **An appliance says what it needs, and the flow finds it, shows it or asks** (D-0746 … D-0753, INV-76). Each type, control kind and strategy declares its data points, tiered as required, recommended or optional, each with what it is for and what the load does without it. The flow resolves each one: *found* when one candidate survives the pool (never powerplan's own, a disabled or a diagnostic entity), a *tie* the household picks by live value, a *nearby* suggestion, or *not found* with the fallback said. A ranking orders the choice and never makes it; only an exact cross-check binds alone. Parameters are measured from the bound history through D10's gates, read from the device, answered, or typical, in that order, and never estimated outside a gate. Provisioning runs from the stored bindings. Loads stored before are surfaced by a repair, not re-bound behind the household's back. *Rejected:* binding a tie's top-ranked candidate (silent when wrong, and the household asked for no guessing), asking for every data point (ten pickers to confirm on a thermostat), a weighted score (no prior art and no explanation), per-model endpoint tables (private formats, the long tail unknown, and a generic cross-check settles the house's case).
 53. **A learned value outlives a season without data** (D-0754, D-0755). A fit that misses its gate keeps the last value that passed for 400 days before it falls back to the setup value, since `τ`, the loss coefficient and the COP are already relative to the outdoor temperature and turned into today's rate at plan time. The tank's daily-draw window is chosen on the house's own recorder. Fitting `τ` per outdoor band waits for a house with a full winter in every band. *Rejected:* a longer fit window (it lags the season it should follow), calendar seasons (weather is not a calendar), expiring a kept value with the window (that is the summer it exists for).
+54. **Each load's plan is measured against the best plan, and the store and the battery plan on an exact search** (D-0766 … D-0779). A catalogue of 13 price days runs every strategy against the exact optimum of its own load, as the runtime does, re-planning every quarter hour, and a ratchet keeps the shares. `heat_capacitor`, `best_save` with a store, and the battery plan on one level planner. It is dynamic programming over the store's level, in numpy, in the lever's own actions, and time-consistent, so a started move is not forgotten. Heat moves only across a price change and is valued on its timing (the goal agreed on `heat-moves`). The battery's trade, peak duty, self-use and wear are one route. The steering numbers the house can't measure follow the standards and field studies; the water heater's stay as they are (owner, 14 Oct 2026). Lowering comfort while away or asleep is opt-in. INV-33 stands: loads are still planned one at a time in priority order, which lost at most 3 % against a joint optimum once each load's own plan was exact. *Rejected:* patching the stretch rules (their fixes interact); finishing `heat-moves`' greedy (73 of 312 runs out of band, 2.2 s plans); HiGHS at runtime (on/off levers make it a MILP with a seconds-long tail, and a compiled wheel per Python); a library (none installs in Home Assistant and knows our levers); a joint optimiser (INV-33; with each load's plan exact the walk lost at most 3 %, though the tight-ceiling case is a risk, R16); lowering comfort by default (the household's decision).
 
 ---
 
@@ -595,6 +635,15 @@ Numbered so PRs can cite them. Each settles something the design documents left 
 **Build the data points step first, provisioning after.** *For:* the step is what the household sees, and provisioning needs the floor minimum the step binds. *Against:* the eco setpoints are bound today and have never been written, and INV-64's floor is a safety property, not a screen. **Decision:** DP.1 first, alone.
 
 **Write the user pages last, in one block.** *For:* surfaces still move, and pages written early get rewritten. *Against:* pages written at the end describe reasons nobody remembers, and until then nothing keeps them current. **Decision:** the docs foundation (tests, tools, generated reference) early; pages for moving surfaces once they settle.
+
+
+**Build the planner first, measure after.** *For:* the savings arrive a WP sooner, and the scratch benchmark already showed the gaps. *Against:* without the catalogue in the suite, nothing shows the planner beats what it replaces, or keeps it there. Three redesigns of `heat_capacitor` passed every test while capturing a third to a half of what was possible. **Decision:** BP.1 first; it is small and changes no plan.
+
+**Merge `heat-moves` now, the planner after.** *For:* the household gets the agreed goal this week, its tests pass, and it ends the days where heating cost more than the thermostat. *Against:* it left the band in 73 of 312 runs, by up to 1.5 K, which a household feels. One plan took 2.2 s against a 500 ms budget for the whole house, and the next WP would replace its search anyway. **Decision:** BP.3 carries its goal and every product piece; the branch closes when BP.3 merges.
+
+**One WP for the planner, the heating and the battery.** *For:* one engine, one review, one benchmark table. *Against:* well over a thousand lines across two strategies with different physics and different tests, for one maintainer to review. **Decision:** the engine with the heating (BP.3), then the heat pumps (BP.4) and the battery (BP.5) on it.
+
+**Every tuning number in one WP.** *For:* one pass over the evidence, one migration. *Against:* the numbers touch five LLDs and every appliance type, and each changes what a household sees on a different page. **Decision:** split by what the household notices: comfort (BP.6), the car (BP.7), the fits (BP.8), the heat pump and the battery with their planners.
 
 ---
 
@@ -777,6 +826,14 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | DP.6 | Measured, not asked | done |
 | SF.1 | A season without data keeps the last good fit | done |
 | SF.2 | The tank's window, measured | done |
+| BP.1 | The best-plan catalogue | todo |
+| BP.2 | Two exactness slips | todo |
+| BP.3 | The level planner, and heat moved across price changes | todo |
+| BP.4 | Heat pumps by the hour | todo |
+| BP.5 | The battery's route | todo |
+| BP.6 | Lowering comfort is opt-in | todo |
+| BP.7 | A car that resumes | todo |
+| BP.8 | Fit bounds from the evidence | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

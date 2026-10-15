@@ -186,11 +186,12 @@ Every fit runs in the planning loop, never in the tick, atmost once per day per 
 
 | fit | data | method | bounds | quality gate |
 |---|---|---|---|---|
-| slab/room `loss_coeff_w_per_k` (coast) | episodes ≥ 2 h with the load off, indoor & outdoor temps | dT/dt vs (T_in − T_out), weighted LS through origin | [0.5, 50] W/K per m² × area | n ≥ 5 episodes, R² ≥ 0.5, span ≥ 7 days |
-| slab/room `coast_tau_h` (D-0730) | the same off episodes, level and outdoor | per episode `(T̄ − T̄_out) / fall rate`; the median | [5, 1 000] h; a foil [2, 48] h (D-0740) | n ≥ 10, span ≥ 7 days, interquartile range ≤ 1.0 × median |
+| slab/room `loss_coeff_w_per_k` (coast) | episodes ≥ 2 h with the load off, indoor & outdoor temps | dT/dt vs (T_in − T_out), weighted LS through origin | slab [0.5, 50] W/K per m² × area; room [0.3, 5] W/K per m² of floor, which TEK17 and passive houses reach (D-0778) | n ≥ 5 episodes, R² ≥ 0.5, span ≥ 7 days |
+| slab/room `coast_tau_h` (D-0730) | the same off episodes, level and outdoor | per episode `(T̄ − T̄_out) / fall rate`; the median | [5, 500] h (D-0778); a foil by its sensor: [5, 500] h on an air sensor, which coasts on the building's mass (44–65 h in a TEK10 house), [0.3, 6] h on a floor sensor over a floating floor (D-0778; D-0740's [2, 48] h refused good air-sensor fits) | n ≥ 10, span ≥ 7 days, interquartile range ≤ 1.0 × median |
 | heat-up rate K/h at nameplate | episodes with the load on, temp rising | median slope | [0.1, 10] | n ≥ 5 |
-| EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy | Σ(ΔSoC × capacity) / Σ energy | [0.75, 0.98] | n ≥ 3 |
+| EV `charge_efficiency` | sessions with SoC delta ≥ 20 % and session energy, split by phase count and current band (6–9 A, 10–15 A, ≥ 16 A, D-0776) | Σ(ΔSoC × capacity) / Σ energy, per band | [0.75, 0.98] | n ≥ 3 per band; a band without its own falls back to the session-wide fit |
 | `nameplate_w` | measured power while "on"/heating | p95 | [0.5, 1.5] × configured; a rating from a W/m² table [10, 250] W/m² × area (D-0741) | n ≥ 100 samples |
+| battery `round_trip_eff` (D-0769) | the battery's AC charge and discharge energy counters and its SoC | windows where the SoC returns within 2 % of where it started; Σ discharged / Σ charged | [0.55, 0.97] | n ≥ 5 windows, span ≥ 7 days; counters on the DC side read high, and a profile that exposes only those is not fitted |
 | tank `standby_loss_w` | idle episodes with temp falling, no draw | slope × thermal capacity, the lower quartile over episodes (D-0741) | [20, 200] | n ≥ 3 |
 | tank `draw_kwh_day` (D-0741) | element power and level, whole 24 h windows | `E_in·η − P_standby·24 h − C·η·(T_end − T_start)`, the median of the last 21 days, days under 0.3 kWh left out while five remain (D-0755) | [0.3, 60] kWh | n ≥ 5 days, span ≥ 5 days |
 | switch `hours_per_day` (D-0752) | the switch's state history | on-time per local day, the median | [0.25, 24] h | n ≥ 7 days, span ≥ 7 days |
@@ -299,6 +300,9 @@ Events: `baseline_ready` (first time confidence ≥ 0.6) and `fit_updated(load, 
 27. The held setpoint (D-0752): a thermostat at 22.0 °C for 10 of 14 days and 18.0 °C for 4 fits 22.0; 22.0 for 6 days and 21.0 for 8 fits 21.0; 21.0, 22.0 and 23.0 for a third each fit nothing; a device with a powerplan write record fits nothing (INV-27). `tests/core/forecasts/test_27_held_setpoint.py`.
 28. A season without data (D-0754): a floor whose `coast_tau_h` passed at 61 h in March, and whose June history holds three coasts, plans in June on 61 h, not the setup value; the fit sensor reports 61 h kept since March; a pass at 58 h in October replaces it; with `kept_at` 401 days old the setup value returns; a value out of bounds is never kept. A stored 382.7 h that passed under (5, 1000) is not in force once the load's parameters bound it at a foil's (2, 48), and the runtime takes it off the load (D-0762). `tests/core/forecasts/test_28_kept_fit.py`, `tests/runtime/test_fits_wired.py`.
 29. The tank's window (D-0755): a replay of the reference tank's recorder at 21, 30 and 60 days prints each window's day-to-day movement and the window chosen, and `draw_kwh_day`'s window is that one; a test pins the chosen window against a simulated tank whose daily draw steps 15 % up between two months. `tests/core/forecasts/test_29_draw_window.py`.
+30. Bounds by the sensor (D-0778): a foil on an air sensor with coasts giving 52 h passes; on a floor sensor 52 h is refused and 2.5 h passes; a slab's 700 h is refused; a room fit of 0.35 W/K per m² is applied.
+31. EV efficiency per band (D-0776): sessions at 6 A on one phase fitting 0.80 and at 16 A on three fitting 0.91 give two fits; a band with two sessions uses the session-wide value.
+32. A battery's round-trip efficiency (D-0769): 21 days of counters with eleven SoC round trips at 0.78 fit 0.78; a profile exposing DC counters only is not fitted and keeps 0.80.
 
 ---
 
