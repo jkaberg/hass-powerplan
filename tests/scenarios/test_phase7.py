@@ -6,8 +6,10 @@ curve (`House.export`):
 
 - `pv_no_battery_ev_waits`: a spring Sunday, the car home, Monday's 07:30
   deadline. The midday surplus, priced at the spot it would have been sold for,
-  is cheaper than the night's import price, so the car charges on the sun and
-  not at night, and makes its deadline.
+  is cheaper than the night's import price, so the car charges on the sun first.
+  What the sun cannot carry (the house's ceiling and the roof's hours cap the
+  car near 2.4 kW) is bought at the night's low price, never in the dear evening,
+  and the car makes its deadline (D-0842).
 - `pv_battery_self_consumption`: a June weekday, a 10 kWh battery, a flat
   0.10 NOK feed-in. The battery charges from the surplus and imports nothing
   for it, then discharges into the house's own import, never into export.
@@ -123,19 +125,23 @@ def _local_hour(at: datetime) -> int:
 def test_pv_no_battery_ev_waits_charges_on_the_sun_and_makes_its_deadline(
     ev_waits: tuple[ScenarioResult, _Trail],
 ) -> None:
-    """Every kWh the car takes it takes by day; none at night; 80 % by Monday 07:30."""
+    """The sun first, the rest at the night price and none in the evening; 80 % by Monday 07:30."""
     result, trail = ev_waits
     assert result.engine_failures == 0
     assert result.deadline_misses == 0
     assert result.ev_soc_at_departure is not None
     assert result.ev_soc_at_departure >= 0.79
 
-    by_day = trail.kwh(trail.ev_w, lambda i: 8 <= _local_hour(trail.at[i]) < 20)
+    by_day = trail.kwh(trail.ev_w, lambda i: 8 <= _local_hour(trail.at[i]) < 17)
+    evening = trail.kwh(trail.ev_w, lambda i: 17 <= _local_hour(trail.at[i]) < 22)
     at_night = trail.kwh(
         trail.ev_w, lambda i: _local_hour(trail.at[i]) >= 22 or _local_hour(trail.at[i]) < 7
     )
     assert by_day > 10.0
-    assert at_night == pytest.approx(0.0, abs=0.05)
+    # The evening costs 0.52-0.55 NOK/kWh to import, the night 0.36-0.41: what the sun
+    # could not carry waits for the night (D-0842).
+    assert evening == pytest.approx(0.0, abs=0.05)
+    assert at_night < by_day
 
 
 @pytest.mark.xdist_group(name="phase7_self_consumption")
