@@ -310,7 +310,11 @@ def plan_all(
                 stale=ctx.stale,
             )
         )
-        chosen = _with_surplus(plan if take or held is None else held, own)
+        # A hands-off plan decides nothing, so there is nothing for the hysteresis to keep from
+        # churning: the reason, the strategy and the prices the household reads are today's, not
+        # those of the cycle that first handed the load back (D-0841). It is not an adoption.
+        handed_back = held is not None and held.mode is PlanMode.NONE and plan.mode is PlanMode.NONE
+        chosen = _with_surplus(plan if take or held is None or handed_back else held, own)
         kept[view.load_id] = chosen
         if take:
             adopted.add(view.load_id)

@@ -206,3 +206,30 @@ def test_26_a_mode_devices_buy_back_counts_as_drawn() -> None:
     assert sum(slot.hold_kwh for slot in moved.slots) < 0.95 * holding, (
         "without it, energy vanishes"
     )
+
+
+def test_26_a_load_left_to_its_thermostat_shows_todays_reason() -> None:
+    """D-0841: a hands-off plan kept by the hysteresis carried the first cycle's "earns 3.0 %" for days.
+
+    On 15 Oct 2026 the owner moved the site from Norgespris to spot. The floors were restored
+    hands-off, the new plans were hands-off as well, and the sensor went on saying what the
+    fixed-price day had earned - and, for one floor, the strategy it had before a migration. A
+    plan with nothing to say has nothing to keep from churning, so the new one stands without
+    being counted as an adoption.
+    """
+
+    def dearer_days(local: datetime) -> Decimal:
+        return Decimal("0.8779") if 6 <= local.hour < 22 else Decimal("0.7879")
+
+    other = curve(raw_days(ORDINARY, 2, shape=dearer_days))
+    view = _floor("heat_capacitor", "mode")
+    context = site_ctx(forecasts=OCTOBER)
+    first = plan_all([view], curves_of(HOUSE), context, NOW)
+    fresh = plan_all([view], curves_of(other), context, NOW).plans[view.load_id]
+    again = plan_all([view], curves_of(other), context, NOW, previous=first.plans)
+
+    kept = first.plans[view.load_id]
+    assert kept.mode is fresh.mode is PlanMode.NONE
+    assert kept.reason != fresh.reason, "the two curves must say different things"
+    assert again.plans[view.load_id] == fresh
+    assert view.load_id not in again.adopted
