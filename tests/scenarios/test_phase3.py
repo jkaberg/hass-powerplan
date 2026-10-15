@@ -51,7 +51,7 @@ from custom_components.powerplan.core.loads.types.water_heater import LEGIONELLA
 from tests.builders.houses import FLOOR_GROUP
 from tests.scenarios import catalogue
 from tests.scenarios.cache import cached
-from tests.scenarios.runner import run_scenario
+from tests.scenarios.runner import TICK_S, run_scenario
 
 if TYPE_CHECKING:
     from custom_components.powerplan.core.model import Snapshot
@@ -140,13 +140,14 @@ def test_a_held_back_loop_jumps_the_queue_after_the_starve_timeout(
         due = [
             load_id
             for load_id in LOOPS
-            if snapshot.loads[load_id].starved_s >= DEFAULT_STARVE_SECONDS
+            if snapshot.loads[load_id].starved_s + TICK_S >= DEFAULT_STARVE_SECONDS
         ]
         reached_timeout.update(due)
         if not due or index + 1 >= len(rows):
             continue
-        # A member's clock is cleared the moment it is admitted (`GroupCap._clocks`),
-        # so the observable outcome sits one tick after the threshold is crossed.
+        # The snapshot carries the clock after the tick's admission, so a loop that
+        # crosses the threshold on the next tick shows `starved_s` one tick short of
+        # it and is cleared in that same tick: `due` is the last tick before.
         _next_now, _next_snapshot, next_rotation = rows[index + 1]
         if next_rotation.queue and next_rotation.queue[0][0] in due:
             jumped_to_front.add(next_rotation.queue[0][0])
