@@ -3357,7 +3357,7 @@ An exact optimiser (HiGHS through `highspy`, a test-only dependency) solves each
 - never outside its band or deadline;
 - at least the captured share recorded in `tests/optimality/baseline.json`, a ratchet like the benchmark's.
 
-The targets for the level planner are ≥ 90 % on every day. The exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) must match the optimum. Affects D9 §5.14, §5.17, §9 17; `.claude/rules/test-selection.md`.
+The targets for the level planner are ≥ 90 % on every day. The exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) must match the optimum. Affects D9 §5.14, §5.17, §9 17; `CONTRIBUTING.md`'s path map.
 
 **Rejected:** measuring only on the reference benchmark (one house and one year, whose spot months are one curve shape; and an optimum over its two-node simulators would measure the model's mismatch, not the search); a hand-made LP per test (the catalogue is cheaper to keep honest in one place).
 

@@ -90,7 +90,7 @@ Until it has seen the car resume, PowerPlan plans one run: the car charges throu
 If the car does not draw, PowerPlan marks it as not resuming, holds it at 6 A, and the appliance's plan status names the date. PowerPlan still stops the car to protect the capacity step. If the departure is within 12 hours, you also get a **Deadline at risk** notice.
 
 > [!NOTE]
-> Since v0.0.12, a car is paused only after it has resumed once. Before that, PowerPlan stopped it whenever the plan had a gap.
+> Since v0.0.11, a car is paused only after it has resumed once. Before that, PowerPlan stopped it whenever the plan had a gap.
 
 After you update the car's software or change the charger, press **The car resumes after a pause** on the appliance. PowerPlan forgets what it learned and watches the next resume.
 

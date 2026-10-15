@@ -48,7 +48,7 @@ Where the floor's temperature and power are already in Home Assistant's history,
 Without history, a heating foil under wood, laminate, vinyl or carpet is taken to draw 60 W per square meter, and a mat under tiles 120. A foil warms the room more than the floor. When the thermostat regulates on the floor sensor, PowerPlan accepts a measured cooling time between 20 minutes and 6 hours. When it regulates on the room's air, it accepts 5 hours to 500 hours, because the room's air follows the building. A number outside that range is shown on the review but not used.
 
 > [!NOTE]
-> Since v0.0.12, a foil floor measured on the room's air can keep a cooling time over 48 hours; before, such a number was refused. Since v0.0.11, a foil floor's measured power is used even when it is far from the typical figure, and a foil floor set up before then at the mat figure, 120 W per square meter, is moved to 60 when you update.
+> Since v0.0.11, a foil floor measured on the room's air can keep a cooling time over 48 hours; before, such a number was refused. Since v0.0.11, a foil floor's measured power is used even when it is far from the typical figure, and a foil floor set up before then at the mat figure, 120 W per square meter, is moved to 60 when you update.
 
 Where the thermostat's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a thermostat PowerPlan has already controlled, since then the history is PowerPlan's own.
 
@@ -79,7 +79,7 @@ Where the thermostat's setpoint is in Home Assistant's history, a temperature it
 PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are off for a new appliance. You turn them on under **Advanced** as **Follow presence** and **Save while asleep**, or later with the switches on the appliance, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
-> Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
+> Since v0.0.11, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
 
 <a name="questions_followup"></a>
 ## How far should preheat go?
@@ -98,7 +98,7 @@ Put several floors in a group so they take turns when an hour is tight, as [Circ
 
 The highest floor temperature depends on the covering: 30 °C for tiles in a bathroom, 29 °C for tiles in other rooms, and 27 °C for wood, laminate, vinyl and carpet. A bedroom never goes under 18 °C, the lowest the WHO advises for a cold season. PowerPlan sets the thermostat's own floor limit, so the floor is safe even if PowerPlan stops.
 
-Since v0.0.12, a floor under vinyl or carpet is limited to 27 °C instead of 28, tiles to 29 °C outside a bathroom instead of 30, and a bedroom floor never goes under 18 °C instead of 17. A floor set up before keeps its numbers until you open **Change setup** on it and save.
+Since v0.0.11, a floor under vinyl or carpet is limited to 27 °C instead of 28, tiles to 29 °C outside a bathroom instead of 30, and a bedroom floor never goes under 18 °C instead of 17. A floor set up before keeps its numbers until you open **Change setup** on it and save.
 
 On **Heat capacitor**, the energy-saving setpoint is your comfort temperature minus the coast, 0.5 °C by default, and never under the lowest temperature you allow. A pause switches the thermostat to energy saving, so the thermostat itself keeps the floor there. When you change the comfort temperature, the energy-saving setpoint follows within 15 minutes.
 

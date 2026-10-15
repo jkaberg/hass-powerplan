@@ -44,7 +44,7 @@ Answer what you know. Every other setting is worked out from these answers and s
 Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**. Until it is measured, the room is taken to hold 0.012 kWh of heat per degree for every cubic meter, the light timber building of a typical Nordic home, so a 250 cubic meter room starts at 3 kWh per degree.
 
 > [!NOTE]
-> Since v0.0.12, that starting figure is 0.012 where it was 0.03. A heat pump set up before it keeps the cooling time it was given, until the next measurement replaces it.
+> Since v0.0.11, that starting figure is 0.012 where it was 0.03. A heat pump set up before it keeps the cooling time it was given, until the next measurement replaces it.
 
 Where the heat pump's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a heat pump PowerPlan has already controlled, since then the history is PowerPlan's own.
 
@@ -87,12 +87,12 @@ An air-to-water pump's curve follows what it heats, which is the **Heating syste
 The curve is a third of the best a heat pump could do at the water temperature, 28 °C plus a quarter of the cold under a floor, and 35 °C plus half of it on radiators, at most 55 °C. It is written when you set the heat pump up. A heat pump set up before keeps the curve it has; to use the new one, answer the questions again.
 
 > [!NOTE]
-> Since v0.0.12, an air-to-water pump's curve follows the **Heating system**. Before, it was one table that was close to the radiator case and too low for a floor.
+> Since v0.0.11, an air-to-water pump's curve follows the **Heating system**. Before, it was one table that was close to the radiator case and too low for a floor.
 
 PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are off for a new appliance. You turn them on under **Advanced** as **Follow presence** and **Save while asleep**, or later with the switches on the appliance, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
-> Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
+> Since v0.0.11, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
 
 <a name="questions_followup"></a>
 ## How far should preheat go?
@@ -111,6 +111,6 @@ Switch **Plan for cooling** on and off when you switch your unit between heating
 
 PowerPlan never turns the heat pump's power off and never pauses it while it defrosts. The band is at most 2 degrees each way. It changes the setpoint at most once an hour, since a heat pump takes up to an hour and a half to respond, so a price that moves every 15 minutes is planned by its hourly average.
 
-Since v0.0.12, **Preheat up to** has no default. A heat pump set up before keeps the 5 °C it was given.
+Since v0.0.11, **Preheat up to** has no default. A heat pump set up before keeps the 5 °C it was given.
 
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

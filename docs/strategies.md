@@ -49,7 +49,7 @@ Plans the battery's charge for the next two days as one route: it charges where 
 Keeps the appliance at comfort and lets it fall toward its lowest temperature in an expensive hour, then brings it back in a cheaper one. Where PowerPlan knows how fast the appliance cools, it finds the best such route through the next two days and never warms the room above comfort. A pause never lasts longer than two hours, and the appliance stays on at least 30 minutes between pauses. Without that, a floor or room that cools slowly would coast all afternoon on price alone. The appliance never falls below its lowest temperature. A move must save at least 10 % beyond what it already costs in lost heat, so small gains are left alone. When moving the heating would save less than 4 % of what it costs, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
 
 > [!NOTE]
-> Since v0.0.12, **Best save** plans the whole route for floors and rooms that PowerPlan can measure, instead of pausing hour by hour. Without a cooling measurement it keeps pausing hour by hour, as before. A floor or room coasts at most 1 °C under comfort on this plan.
+> Since v0.0.11, **Best save** plans the whole route for floors and rooms that PowerPlan can measure, instead of pausing hour by hour. Without a cooling measurement it keeps pausing hour by hour, as before. A floor or room coasts at most 1 °C under comfort on this plan.
 
 | | |
 |---|---|
@@ -63,7 +63,7 @@ Keeps the appliance at comfort and lets it fall toward its lowest temperature in
 Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
 
 > [!NOTE]
-> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.12, the hours already run today count; before, every new plan bought the hours again.
+> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.11, the hours already run today count; before, every new plan bought the hours again.
 
 | | |
 |---|---|
@@ -96,7 +96,7 @@ Every move must save at least 3 % of the heat it moves, and a run of moves must 
 A heat pump warms ahead only if its **Preheat** answer is on, and then only where the cheaper hour still pays for the heat the pump loses by working harder and colder (and below an outdoor limit, if you set one). It is planned in whole hours, one setpoint per hour, since a heat pump takes most of an hour to answer. A room that is still warmer than comfort at that hour is not warmed further.
 
 > [!NOTE]
-> Since v0.0.12, this plan finds the route by searching it instead of by rules, and the smallest saving it acts on is 3 %. An appliance set up before keeps the value it has, 10 % for most; open **Re-derive** on it to get 3 %. A panel heater still starts at 10 %. The appliance also coasts at most 0.5 °C under comfort instead of 1 °C, and an energy-saving thermostat holds 0.5 °C under it instead of 2 °C. A heat pump set up before keeps its coast of 1 °C until you open **Re-derive**. A floor or a room is planned a quarter of an hour at a time and a heat pump an hour at a time, where they used to be planned as pauses and stretches.
+> Since v0.0.11, this plan finds the route by searching it instead of by rules, and the smallest saving it acts on is 3 %. An appliance set up before keeps the value it has, 10 % for most; open **Re-derive** on it to get 3 %. A panel heater still starts at 10 %. The appliance also coasts at most 0.5 °C under comfort instead of 1 °C, and an energy-saving thermostat holds 0.5 °C under it instead of 2 °C. A heat pump set up before keeps its coast of 1 °C until you open **Re-derive**. A floor or a room is planned a quarter of an hour at a time and a heat pump an hour at a time, where they used to be planned as pauses and stretches.
 
 | | |
 |---|---|

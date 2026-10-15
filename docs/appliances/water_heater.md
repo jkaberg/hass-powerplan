@@ -75,7 +75,7 @@ Where the tank's power and temperature are already in Home Assistant's history, 
 PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away. It is off for a new water heater. You turn it on under **Advanced** as **Follow presence**, or later with the switch on the water heater, and it never goes under the lowest temperature.
 
 > [!NOTE]
-> Since v0.0.12, **Save when nobody is home** is off for a new water heater. One set up before keeps it as it was.
+> Since v0.0.11, **Save when nobody is home** is off for a new water heater. One set up before keeps it as it was.
 
 <a name="questions_followup"></a>
 ## How far should preheat go?
