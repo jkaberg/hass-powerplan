@@ -61,10 +61,6 @@ FLAT_TODAY = tuple(0.80 if day_of(i) == 0 else 0.30 + DAYS["no3"][i] for i in ra
 #: The share an exact fill reaches (the MILP's own gap and a slot's rounding aside).
 EXACT = 0.995
 
-#: Runs dearer than charging at once, or past the deadline, and the work package that removes them.
-KNOWN: dict[str, str] = {
-    "deadline_fill/ev/flat_today": "BP.2",
-}
 #: The block variant spreads the requirement over its chosen slots in proportion to their
 #: capacity, which is dearer than charging at once when the prices rise (not in PLAN.md).
 SPREAD: frozenset[str] = frozenset({"deadline_fill/tank_block/rising"})
@@ -157,7 +153,6 @@ def test_deadline_fill_flat_today() -> None:
         key,
         Outcome(ours, hands_off, optimum(fill, FLAT_TODAY)),
         violation=breach,
-        known={"exact": KNOWN[key]},
         exact=EXACT,
     )
 

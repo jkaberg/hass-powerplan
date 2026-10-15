@@ -3460,6 +3460,30 @@ The owner keeps the tank's numbers as they are (14 Oct 2026). 75 °C nightly is 
 
 **Rejected:** the four changes above, recorded so the next pass need not re-open them.
 
+### D-0780 · What the catalogue runs, and what it calls hands-off
+
+D-0770 left the harness's own choices open; the code forced these (`tests/optimality/harness.py`, D9 §5.17):
+- **The site context is the shipped one**, with D-0724's worth-it gate on. The scratch benchmark's headline numbers had it off; its gate-on column is what this baseline reproduces.
+- **Hands-off** is the thermostat at the target for a thermal store, the idle battery for `arbitrage`, a battery that charges to full at once and covers a deficit when it comes for `peak_shave` (an idle one costs nothing and would make covering a deficit "dearer"), the first four hours of each day for `cheapest_hours`, charging at once for `deadline_fill` (a 17:00 plug-in), pressing the button at 12:00 for `run_once`, and a tank refilled to 75 °C every slot for `hot_water`.
+- **A plan that cannot cover its deadline hands the load to the allocator**, which draws the rest at full power (D5 §8): the block variant's last slot is otherwise left short.
+- **`run_once` is costed at the start the plan first asks for**: the machine runs its own programme from there. The plan's later slots for a block under way are the rest of that programme since D-0811; before it they slid a quarter hour at every replan, which is why the harness did not read them.
+- **`hot_water`'s optimum is the LP**, not the 30-minute MILP: the loop executes a slot's planned fraction of the element's energy, and the MILP is not a bound on that (shares reached 140 %).
+- **Stored energy at the end** is valued at the day's mean price: a kelvin of a thermal store at `C` kWh, a battery's kWh at the discharge efficiency, a tank's level in element kWh.
+- **"Saves under 1 %"** has a floor of 0.01 in the site's currency, for hands-off costs of zero (an idle battery).
+- **A band breach** is more than 0.1 K outside `[lo, hi]`.
+
+Affects D9 §5.17.
+
+### D-0785 · The night reaches a target profile through the load's parameters, in the site's zone
+
+`TargetProfile.night` is the site's quiet hours (D4 §5.8), but `profile_from_params` sees only a load's parameters, and the engine rebuilds the profile from them when a comfort knob moves (`_apply_load_knobs`). So `Runtime.night_params` puts `night_start`, `night_end` and `night_zone` (the site's zone, `ZoneInfo` key) into each load's parameters when it is built from its subentry, from the site's `quiet_hours` or D8 §2's 22:00–07:00. They are never stored in the subentry (INV-66: a changed quiet hour reaches every load on the next reload). `TargetProfile` gains `zone` (default UTC) because the night is a local clock and `target(t)` takes an aware instant. `deadlines()` adds the night's edges to the schedule's own changes, since a constant schedule never changes; only a step-up is a deadline. `night_delta` is a derived parameter (1.0), not a question or an entity: D4 §4.4 names the field, D-0772 lets the household raise it, and nothing in the surface asks for it yet.
+
+**Rejected:** a `night` argument threaded through `profile_from_params` and the engine (a second path for what the parameters already carry); asking a bedtime (D-0772).
+
+### D-0786 · The radiator and the heat pump share the bedroom floor's 18 °C
+
+`radiator` takes `ROOM_DEFAULTS` from `floor_heating`, so D-0775's bedroom floor (17 → 18 °C) moves a radiator's floor and its vacation level (floor + 1) too. The heat pump does not use the table and is unchanged in its numbers. Every thermal type's `DERIVATION_VERSION` is bumped for the `follow_presence` default; the floor's and the radiator's also for the floor numbers.
+
 ### D-0790 · How the resume latch is watched
 
 D-0776 says a charger must draw within 120 s of a resume. The code needed five more choices:
@@ -3479,28 +3503,6 @@ D-0776 prices each slot's band at `p / η(power)`. The plan keeps three simplifi
 - **Closing a gap** (no latch `yes`, or more than 4 pauses) raises the cheapest gap, by `rank × min_w` energy, to `min_w`, then gives back the dearest energy to the requirement: a slot inside a run only down to its floor, a run's end to nothing, so no gap reopens. A gap with a slot the car cannot run in (headroom under `min_w`) stays, since the ceiling outranks the plan (INV-1).
 
 The band fits are six `FitKey`s (`charge_efficiency_<1p|3p>_<6_9|10_15|16>`), published like the other fits; the load's parameter is `charge_eff_<phases>p_<band>`, applied only when the fit passed its gate. No storage or entry version changes: both new `LoadState` fields and parameters are optional. Affects D5 §5.2, D10 §5.6, §9 31.
-### D-0780 · What the catalogue runs, and what it calls hands-off
-
-D-0770 left the harness's own choices open; the code forced these (`tests/optimality/harness.py`, D9 §5.17):
-- **The site context is the shipped one**, with D-0724's worth-it gate on. The scratch benchmark's headline numbers had it off; its gate-on column is what this baseline reproduces.
-- **Hands-off** is the thermostat at the target for a thermal store, the idle battery for `arbitrage`, a battery that charges to full at once and covers a deficit when it comes for `peak_shave` (an idle one costs nothing and would make covering a deficit "dearer"), the first four hours of each day for `cheapest_hours`, charging at once for `deadline_fill` (a 17:00 plug-in), pressing the button at 12:00 for `run_once`, and a tank refilled to 75 °C every slot for `hot_water`.
-- **A plan that cannot cover its deadline hands the load to the allocator**, which draws the rest at full power (D5 §8): the block variant's last slot is otherwise left short.
-- **`run_once` is costed at the start the plan first asks for**: the machine runs its own programme from there, and the plan's later slots for a block under way are not energy it draws.
-- **`hot_water`'s optimum is the LP**, not the 30-minute MILP: the loop executes a slot's planned fraction of the element's energy, and the MILP is not a bound on that (shares reached 140 %).
-- **Stored energy at the end** is valued at the day's mean price: a kelvin of a thermal store at `C` kWh, a battery's kWh at the discharge efficiency, a tank's level in element kWh.
-- **"Saves under 1 %"** has a floor of 0.01 in the site's currency, for hands-off costs of zero (an idle battery).
-- **A band breach** is more than 0.1 K outside `[lo, hi]`.
-
-Affects D9 §5.17.
-### D-0785 · The night reaches a target profile through the load's parameters, in the site's zone
-
-`TargetProfile.night` is the site's quiet hours (D4 §5.8), but `profile_from_params` sees only a load's parameters, and the engine rebuilds the profile from them when a comfort knob moves (`_apply_load_knobs`). So `Runtime.night_params` puts `night_start`, `night_end` and `night_zone` (the site's zone, `ZoneInfo` key) into each load's parameters when it is built from its subentry, from the site's `quiet_hours` or D8 §2's 22:00–07:00. They are never stored in the subentry (INV-66: a changed quiet hour reaches every load on the next reload). `TargetProfile` gains `zone` (default UTC) because the night is a local clock and `target(t)` takes an aware instant. `deadlines()` adds the night's edges to the schedule's own changes, since a constant schedule never changes; only a step-up is a deadline. `night_delta` is a derived parameter (1.0), not a question or an entity: D4 §4.4 names the field, D-0772 lets the household raise it, and nothing in the surface asks for it yet.
-
-**Rejected:** a `night` argument threaded through `profile_from_params` and the engine (a second path for what the parameters already carry); asking a bedtime (D-0772).
-
-### D-0786 · The radiator and the heat pump share the bedroom floor's 18 °C
-
-`radiator` takes `ROOM_DEFAULTS` from `floor_heating`, so D-0775's bedroom floor (17 → 18 °C) moves a radiator's floor and its vacation level (floor + 1) too. The heat pump does not use the table and is unchanged in its numbers. Every thermal type's `DERIVATION_VERSION` is bumped for the `follow_presence` default; the floor's and the radiator's also for the floor numbers.
 
 ### D-0795 · What "a foil's sensor" and "a room's floor" mean to the fit
 
@@ -3510,3 +3512,38 @@ D-0778 bounds a foil's `coast_tau_h` by its sensor and a room's loss coefficient
 - **Migration 7 keeps D-0740's [2, 48] h as its own constant.** It corrected a stored value on the day; a foil on an air sensor with 52 h is valid now but was a room's number then, and a tau it moved to the default stays there until the next fit.
 
 `DERIVATION_VERSION` rises for the heat pump (3 → 4: its derived `coast_tau_h` follows the mass, 107.1 h → 42.9 h in the golden) and for floor heating (4 → 5: a room-store floor's `kwh_per_k`). Affects D10 §5.6, D4 §5.7.
+
+### D-0810 · `cheapest_hours` reads the hours already run from the plan in force
+
+The strategy ranked "the N cheapest slots of what is left of the day" and had no memory, so every 15-minute replan bought N hours again; a 4 h/day pump ran 16-96 quarter-hours a day closed loop (the catalogue, D-0780). The code forced three choices:
+- **The source is the plan in force.** `LoadView` has no measured on-time and the runtime plumbing for one is a WP of its own; the previous plan's slots of today's local day that end before the window starts, and that were on, count as run. A load that was shed in one of them is counted as run all the same; the next day starts from nothing either way.
+- **The history is carried.** A plan is built from `now`'s slot, so it prepends the previous plan's slots of today that lie behind the window, and the next replan reads them in turn. They stay in `planned_kwh` and `cost_estimate`: the plan is today's plan. A restart, or a plan from another strategy, forgets them and the day's hours are bought again once.
+- **Consecutive is one run a day.** A run under way (the slot just behind the window was on) continues from the first slot of the window for the hours it still owes, and a cheaper run later is not a second one; a run that has ended is the day's. A run the price cap or the headroom cut short is not topped up.
+
+**Rejected:** a measured on-time on `LoadView` (the same answer with more plumbing, and the catalogue could not exercise it); a counter in `LoadState` (a second source of truth for what the plan already says).
+
+Affects D5 §5.4, §9 52.
+
+### D-0811 · A cycle under way keeps its start in the plan
+
+`run_once` read a running cycle's start back from the previous plan's first active slot. A plan begins at `now`'s slot, so after the first replan that slot was no longer the cycle's start and the start slid a quarter hour at every replan, with the planned energy of the running cycle sliding with it (INV-59 says a started block does not move). `Plan.started_at` carries the start: set while a block is under way, read back by the next replan, which keeps it. A plan the hysteresis keeps is the old plan itself and still holds its first slot, so both paths give the same start.
+
+Affects D5 §5.6, §9 53.
+
+### D-0812 · A flat window takes its threshold from its own mean
+
+D-0771 judges flatness over the slots from now to the deadline (or the horizon). `HysteresisPolicy.flat_threshold` is defined per local day, so `deadline_fill` applies the same rule to the window: spread under `max(fraction_of_spread × the window's time-weighted mean, floor_major)`. A window with no slots is flat. The stale doubling does not apply, as for the day form (D1 §5.7).
+
+Affects D5 §5.2, §9 49.
+
+### D-0813 · `run_once` ranks with the energy it plans
+
+`_cost(start)` sums each slot's price over the energy `_energy_by_slot` places in it, the function that builds the plan's slots, so the ranking and the plan cannot disagree (D-0771, §9 50). The slot lookup is a bisect, since a candidate is now costed over the slots it touches and not over ten price points.
+
+Affects D5 §5.6.
+
+### D-0814 · The catalogue runs in the `core` job
+
+D9 §5.17 says the catalogue runs in CI on every PR, but no job named `tests/optimality`: `core` names its directories, `scenarios` runs `tests/scenarios`. A step in `core` runs `pytest tests/optimality -m optimality`; it is the job that already has the dependencies and the fast half of the suite's workers, and the `scenarios` job is the longest on the path. `highspy` is in the dev group and the lock.
+
+Affects D9 §5.17.

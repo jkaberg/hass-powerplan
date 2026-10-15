@@ -34,15 +34,12 @@ READY_SLOT: Final = 96 + 28
 UNIFORM: Final = (1.0,) * 10
 FRONT: Final = (3.0, 2.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5)
 
-#: name -> (duration in minutes, ten-segment profile, is the ranking exact on it).
+#: name -> (duration in minutes, ten-segment profile).
 PROGRAMMES: Final = {
-    "eco150": (150.0, UNIFORM, True),
-    "fast100": (100.0, UNIFORM, False),
-    "front180": (180.0, FRONT, False),
+    "eco150": (150.0, UNIFORM),
+    "fast100": (100.0, UNIFORM),
+    "front180": (180.0, FRONT),
 }
-
-#: Where the start it ranks first is not the cheapest for the energy it places (D-0771).
-STRADDLING: Final = "BP.2"
 
 
 def run(
@@ -98,7 +95,7 @@ def run(
 @pytest.mark.parametrize("programme", list(PROGRAMMES))
 def test_run_once(programme: str, day: str) -> None:
     """Never dearer than starting now, finished by 07:00, a captured share at the ratchet."""
-    duration, profile, aligned = PROGRAMMES[programme]
+    duration, profile = PROGRAMMES[programme]
     prices = DAYS[day]
     ours, breach = run(duration, profile, prices)
     best, now_cost = cycle_costs(
@@ -114,6 +111,5 @@ def test_run_once(programme: str, day: str) -> None:
         key,
         Outcome(ours, now_cost, best),
         violation=breach,
-        known=None if aligned else {"exact": STRADDLING},
         exact=0.999,
     )

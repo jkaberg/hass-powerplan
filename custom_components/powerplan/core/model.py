@@ -577,6 +577,9 @@ class Plan:
     coverage: float = 1.0
     deadline: datetime | None = None
     inputs_hash: str = ""
+    #: Where a block under way began (`run_once`, INV-59): the slots behind `now` fall
+    #: out of every later plan, so the start is carried here and a replan keeps it.
+    started_at: datetime | None = None
     #: Derived once from `slots` (time order, D5 §4), never compared (D-0261):
     #: every start, and the active slots' (`envelope_w > 0`) starts and ends for
     #: the stop horizons D6 asks about every tick.

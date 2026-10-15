@@ -37,6 +37,7 @@ every other knob and default to the three-hour eco programme drawing evenly
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from decimal import Decimal
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from ..loads.needs import Need
-    from ..model import Demand, Plan, PriceCurve
+    from ..model import Demand, Plan
     from .context import Headroom, PlanContext
 
 __all__ = ["SEGMENTS", "RunOnce"]
@@ -129,8 +130,14 @@ def _time_of_day(value: Any) -> time:
 
 
 def _touched(window: Sequence[Slot], start: datetime, end: datetime) -> list[Slot]:
-    """Return the slots the run `[start, end)` overlaps."""
-    return [slot for slot in window if slot.end > start and slot.start < end]
+    """Return the slots the run `[start, end)` overlaps (the window is in time order)."""
+    first = bisect_right(window, start, key=lambda slot: slot.end)
+    out: list[Slot] = []
+    for slot in window[first:]:
+        if slot.start >= end:
+            break
+        out.append(slot)
+    return out
 
 
 def _fits(room: Headroom, slots: Sequence[Slot], nameplate_w: float) -> bool:
@@ -140,17 +147,6 @@ def _fits(room: Headroom, slots: Sequence[Slot], nameplate_w: float) -> bool:
     test is all-or-nothing, unlike the per-slot cap a modulating load gets.
     """
     return all(room.w_at(slot.start) + 1e-9 >= nameplate_w for slot in slots)
-
-
-def _cost(curve: PriceCurve, programme: _Programme, start: datetime) -> Decimal:
-    """Return the profile-weighted cost of starting at `start` (§5.6)."""
-    total = Decimal(0)
-    for index in range(SEGMENTS):
-        slot = curve.price_at(start + programme.segment * index)
-        if slot is None:
-            continue
-        total += Decimal(str(programme.energy_at(index))) * slot.total
-    return total
 
 
 def _energy_by_slot(
@@ -178,6 +174,18 @@ def _energy_by_slot(
     return out
 
 
+def _cost(window: Sequence[Slot], programme: _Programme, start: datetime) -> Decimal:
+    """Return what starting at `start` costs: each slot's price on the energy it receives.
+
+    Not the price at each segment's start: a segment that straddles two slots pays
+    both of them, in proportion (§5.6, D-0771), so the ranking is the cost the plan
+    itself reports.
+    """
+    energy = _energy_by_slot(window, programme, start)
+    price = {slot.start: slot.total for slot in _touched(window, start, start + programme.duration)}
+    return sum((Decimal(str(kwh)) * price[at] for at, kwh in energy.items()), Decimal(0))
+
+
 def _candidates(
     window: Sequence[Slot], programme: _Programme, *, now: datetime, until: datetime
 ) -> list[datetime]:
@@ -192,13 +200,20 @@ def _candidates(
 
 
 def _started(previous: Plan | None, now: datetime) -> datetime | None:
-    """Return the start of a block already under way, or `None` (INV-59)."""
+    """Return the start of a block already under way, or `None` (INV-59).
+
+    A plan already carrying `started_at` keeps it: its first active slot is only the
+    first slot *left*, and re-reading that would slide the start a quarter hour at
+    every replan (D-0811). Otherwise the block's planned start is its start once
+    that moment has passed.
+    """
     if previous is None:
         return None
     run = [slot for slot in previous.slots if (slot.envelope_w or 0.0) > 0.0]
-    if not run or run[0].start > now or run[-1].end <= now:
+    if not run or run[-1].end <= now:
         return None
-    return run[0].start
+    start = previous.started_at or run[0].start
+    return start if start <= now else None
 
 
 @register
@@ -276,6 +291,8 @@ class RunOnce:
                 programme.profile,
             ),
         )
+        if running:
+            plan = replace(plan, started_at=start)
         # §8's "deadline unreachable" and "headroom zero everywhere" rows, for a
         # load whose requirement is a *block*: the energy is all planned, so
         # `build_plan`'s comparison says covered - but the block lands after the
@@ -322,7 +339,7 @@ def _choose(
         )
     ]
     if feasible:
-        best = min(feasible, key=lambda start: (_cost(ctx.effective, programme, start), start))
+        best = min(feasible, key=lambda start: (_cost(window, programme, start), start))
         return best, "block", True
 
     if allow_late:

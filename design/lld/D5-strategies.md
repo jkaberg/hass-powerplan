@@ -210,6 +210,8 @@ Greedy over *blocks* (D-0199): every contiguous run of usable slots reaching `mi
 
 Parameters: `hours_per_day` (or `slots`), `window` (`TimeFilter`, default the whole local day), `consecutive: bool`, `max_price: Decimal | None`. Non-consecutive: the N cheapest slots in the window (stable tie-break). Consecutive: the cheapest run of N by prefix sums. Slots above `max_price` are excluded even if that leaves fewer than N - the load then runs less, the user asked for a price cap. So is a slot whose headroom is below `max_w`: the load runs at its maximum or not at all, and the ceiling outranks the plan (INV-1, INV-31, D-0756). Envelope = `max_w` in chosen slots, 0 elsewhere.
 
+**It remembers the day (D-0810).** The plan is remade every quarter hour from the slots left of the day, so it reads what the plan in force has already run: the slots of today's local day behind the window that were on. Each day plans `hours_per_day` less that, and the new plan carries those slots so the next replan reads them too (a restart forgets them). With `consecutive`, a run under way continues from the window's first slot for what it still owes, and a run that has ended is the day's one run. Closed loop, a 4 h/day pump runs 16 quarter-hours on each day, the first plan's answer.
+
 ### 5.5 `best_save` (powersaver's algorithm)
 
 Parameters: `min_saving` (fraction of the slot price, default 0.10, or absolute), `max_off_min` (120), `min_on_min` (30), `recovery_min` (the on-time needed after an off period, default = off duration × 0.5).
@@ -232,7 +234,7 @@ candidates = every start time on the slot grid with start + duration ≤ ready_b
 cost(start) = Σ_slot price(slot) × energy the run places in slot   # each segment spread over the slots it overlaps (D-0771); exact for a fixed profile
 feasible if headroom ≥ nameplate in every slot the run touches
 pick min cost, earliest on ties; none feasible → earliest start that fits headroom, warning `deadline_at_risk`; none at all → start now
-plan: one contiguous block, envelope_w = profile power, reason "block"; committed once started
+plan: one contiguous block, envelope_w = profile power, reason "block"; committed once started; `Plan.started_at` carries the start of a block under way, so a replan keeps it and the slots behind `now` that fall out of the window do not re-base the cycle (D-0811)
 ```
 
 ### 5.7 `heat_capacitor`: heat moved across price changes, on the level planner (D-0766, D-0767)
@@ -525,6 +527,8 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 49. Flat over the window (D-0771): today flat, the deadline at 07:00 tomorrow in a structured night, `deadline_fill` plans the night's cheapest slots, not time order from now.
 50. `run_once` by overlap (D-0771): a 100-minute cycle whose segments straddle quarter hours picks the start whose placed energy is cheapest; on 234 seeded cases it equals brute force.
 51. An EV that may not resume (D-0776): with `resumes = unknown` a 30 kWh session is one run with its gaps at `min_w`; with `yes` it has at most 4 pauses; a slot whose headroom allows only 6 A on one phase is chosen over a 3-phase 16 A slot only when it is at least the efficiency ratio cheaper.
+52. `cheapest_hours` remembers the day (D-0810): replanned every 15 minutes for 48 h on flat, rising, volatile and one-spike days, a 1 kW pump asked for 4 h/day runs 16 quarter-hours on each day, spread or consecutive; a plan made at 23:00 after four hours run plans none of that day and four hours of the next.
+53. A cycle under way keeps its start (D-0811, INV-59): a 150-minute cycle replanned at every quarter hour from its start keeps `started_at`, its block's end and a planned energy that only falls.
 
 *(D-0767)* 32–34, 36 and 39 describe the stretches and pause pairs the level planner replaces. BP.3 rewrites them as properties of the route, under the same numbers: the margin (32), pause only (33), a coast sized by `τ` (34), a capacity stretch (36), and no slot over `min(max_w, headroom)` (39).
 

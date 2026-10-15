@@ -6,10 +6,8 @@ each day; hands-off is running the first 4 h of the day.
 
 Two tests. The first plan of the horizon is the strategy's own answer and equals
 the optimum. The closed loop (every 15 minutes, with the previous plan) is what
-the runtime does, and there the strategy has a gap the design did not name: it
-ranks "the N cheapest slots of what is left of the day" and has no notion of the
-hours already run, so each replan buys N hours again and the pump runs 27-96
-quarter-hours a day instead of 16 (see `KNOWN`).
+the runtime does: a replan reads the hours the plan already ran today and buys
+only the rest (D-0810), so the pump runs 16 quarter-hours a day, at the optimum.
 """
 
 from __future__ import annotations
@@ -27,12 +25,6 @@ from tests.optimality.harness import DAY_NAMES, Outcome, check
 from tests.optimality.oracle import cheapest_hours_optimum
 
 pytestmark = pytest.mark.optimality
-
-#: The failure the closed loop shows, which no work package in PLAN.md removes.
-KNOWN: Final = {
-    "dearer": "unplanned: a replan forgets the hours already run",
-    "violation": "unplanned: a replan forgets the hours already run",
-}
 
 HOURS: Final = 4
 PER_DAY: Final = HOURS * 4
@@ -96,7 +88,6 @@ def test_cheapest_hours(consecutive: bool, day: str) -> None:
         key,
         Outcome(ours, hands_off * KW * H, best),
         violation=breach,
-        known=KNOWN,
         exact=0.999,
     )
 

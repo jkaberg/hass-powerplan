@@ -121,7 +121,7 @@ def block(plan: Plan) -> list[PlanSlot]:
 
 
 def cheapest_start(source: PriceCurve, profile: tuple[float, ...]) -> datetime:
-    """Return the brute-force cheapest start, for comparison with the plan's."""
+    """Return the brute-force cheapest start, each slot priced on the energy it receives."""
     segment = timedelta(minutes=DURATION_MIN / 10)
     best: tuple[Decimal, datetime] | None = None
     for slot in source.slots:
@@ -129,9 +129,12 @@ def cheapest_start(source: PriceCurve, profile: tuple[float, ...]) -> datetime:
             continue
         cost = Decimal(0)
         for index, share in enumerate(profile):
-            priced = source.price_at(slot.start + segment * index)
-            assert priced is not None
-            cost += Decimal(str(CYCLE_KWH * share / sum(profile))) * priced.total
+            first = slot.start + segment * index
+            for other in source.slots:
+                overlap = min(other.end, first + segment) - max(other.start, first)
+                if overlap > timedelta(0):
+                    kwh = CYCLE_KWH * share / sum(profile) * (overlap / segment)
+                    cost += Decimal(str(kwh)) * other.total
         key = (cost, slot.start)
         if best is None or key < best:
             best = key

@@ -60,7 +60,7 @@ Keeps the appliance at comfort and pauses it in an expensive hour when a cheaper
 <a name="cheapest_hours"></a>
 ## Cheapest hours
 
-Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours.
+Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set.
 
 > [!NOTE]
 > Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target.

@@ -177,6 +177,12 @@ jobs:
           name: coverage-core
           path: .coverage.core
           include-hidden-files: true
+      - name: Best-plan catalogue (D9 §5.17)
+        # Every strategy against the exact optimum on 13 price days, ~2 min on six
+        # workers (D-0814). The pytest step above names its directories and
+        # `tests/optimality` is none of them, so the ratchet in baseline.json
+        # would otherwise never be held on a PR.
+        run: uv run pytest tests/optimality -m optimality -q -n auto --dist=loadgroup
       - name: Perf budgets (D9 §5.1)
         # tick < 50 ms, planning < 500 ms, both at 20 loads. Named explicitly:
         # tick_budget.py/plan_budget.py are D9's own module names, not test_*.py,

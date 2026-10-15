@@ -448,7 +448,7 @@ Every strategy that plans a store or a deadline, against the exact optimum of it
 | run | as the runtime runs it: `plan_all` every 15 minutes with the previous plan, the store moved by its own model in between |
 | asserts | per strategy × day: never dearer than its hands-off reference; never outside its band or past its deadline; a captured share ≥ the value in `tests/optimality/baseline.json`, a ratchet that moves up in the PR that earns it and down only with a DECISIONS entry |
 | targets | the exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) equal the optimum; the level planner (`heat_capacitor`, `best_save` with a store, the battery) ≥ 90 % on every day |
-| marker and cost | `optimality`, ≈ 2 min on six workers; before a commit that touches `core/strategies/`, at the end of the WP, and in CI on every PR. BP.1 adds the row to the path map (§5.14) |
+| marker and cost | `optimality`, ≈ 2 min on six workers; before a commit that touches `core/strategies/`, at the end of the WP, and in CI on every PR, as a step of the `core` job (D-0814). BP.1 adds the row to the path map (§5.14) |
 
 The captured share is `(hands-off − ours) / (hands-off − optimum)` over 48 h, with the store's end level valued alike for both. A day where the optimum saves under 1 % of the hands-off cost asserts only "never dearer". The catalogue measures the search, on the strategy's own model; the reference benchmark (§5.9) still measures the house, with its two-node simulators and its whole bill.
 

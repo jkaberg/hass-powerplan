@@ -787,6 +787,26 @@ def _pause_cap(ctx: PlanContext) -> int | None:
     return cap if ctx.load.resumes is Resumes.YES else 0
 
 
+def _flat_window(ctx: PlanContext, deadline: datetime | None) -> bool:
+    """Return whether the slots from now to the deadline are flat (D5 §5.2, D-0771).
+
+    The plan fills the slots between now and the deadline, so those are the ones
+    whose spread says whether the price can order them: a flat evening in front of
+    a structured night is not a flat day. The threshold is `HysteresisPolicy`'s
+    (INV-8), a fraction of the window's own mean with the minor-unit floor.
+    """
+    end = ctx.horizon_end() if deadline is None else min(deadline, ctx.horizon_end())
+    slots = ctx.curve_in.slots_between(ctx.now, end)
+    if not slots:
+        return True
+    totals = [slot.total for slot in slots]
+    weight = sum(slot.minutes for slot in slots)
+    mean = sum((slot.total * slot.minutes for slot in slots), Decimal(0)) / weight
+    policy = ctx.hysteresis
+    threshold = max(Decimal(str(policy.fraction_of_spread)) * mean, policy.floor_major)
+    return max(totals) - min(totals) < threshold
+
+
 @register
 class DeadlineFill:
     """Cheapest slots covering the requirement before the deadline (D5 §5.2, §6)."""
@@ -820,7 +840,6 @@ class DeadlineFill:
         if not demand.price_sensitive and not ctx.load.forced:
             return free_plan(ctx, strategy=self.key, mode=PlanMode.URGENT, reason=demand.reason)
 
-        day = ctx.now.astimezone(ctx.tz).date()
         return plan_one(
             ctx.curve_in,
             required_kwh=demand.required_kwh,
@@ -832,7 +851,7 @@ class DeadlineFill:
             min_w=demand.min_w,
             min_block_min=int(params["min_block_min"]),
             force=ctx.load.forced,
-            flat=ctx.hysteresis.is_flat(ctx.curve_in, day, ctx.tz),
+            flat=_flat_window(ctx, demand.deadline),
             flat_policy=params["flat_policy"],
             prefer_late=bool(params["prefer_late"]),
             load_id=ctx.load.load_id,

@@ -30,7 +30,7 @@ first hour taken (INV-51).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
@@ -169,6 +169,49 @@ def _cheapest_run(rows: Sequence[_Row], hours: float) -> set[int]:
     return {row.index for row in best}
 
 
+def _history(
+    ctx: PlanContext, first: datetime, key: str
+) -> tuple[list[PlanSlot], dict[date, float], bool]:
+    """Return today's slots behind the window, the hours they ran, and whether a run is on.
+
+    A replan every quarter hour sees only the slots from `now`, so what the load has
+    already run today is read back from the plan in force: its slots of the local
+    day that end before the window starts (D5 §5.4, D-0810). They are carried into
+    the new plan so the next replan reads them too. The third value is whether the
+    last of them was on and touches the window: a consecutive run under way.
+    """
+    previous = ctx.previous
+    if previous is None or previous.strategy != key:
+        return [], {}, False
+    midnight = datetime.combine(ctx.now.astimezone(ctx.tz).date(), time(), tzinfo=ctx.tz)
+    behind = [slot for slot in previous.slots if slot.end <= first and slot.start >= midnight]
+    ran: dict[date, float] = {}
+    for slot in behind:
+        if (slot.envelope_w or 0.0) > 0.0:
+            day = slot.start.astimezone(ctx.tz).date()
+            ran[day] = ran.get(day, 0.0) + slot.hours
+    running = bool(behind) and behind[-1].end == first and (behind[-1].envelope_w or 0.0) > 0.0
+    return behind, ran, running
+
+
+def _continue(rows: Sequence[_Row], hours: float) -> set[int]:
+    """Return the slots that carry a run under way on for `hours` more (§5.4).
+
+    The run began in a slot behind the window, so it goes on from the first slot of
+    it or not at all: a cheaper run later in the day would be a second one.
+    """
+    taken: set[int] = set()
+    total = 0.0
+    for row in rows:
+        if total >= hours - _EPS_H:
+            break
+        if row.index != len(taken):
+            break
+        taken.add(row.index)
+        total += row.hours
+    return taken
+
+
 def _reason(hours: float, *, consecutive: bool, max_price: Decimal | None) -> str:
     """Return the one line the review sensor shows (D5 §8)."""
     shape = "consecutive " if consecutive else ""
@@ -240,21 +283,32 @@ class CheapestHours:
         cap = _cap(params["max_price"])
         window = params["window"] if isinstance(params["window"], TimeFilter) else None
 
+        whole = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
+        behind, ran, running = _history(ctx, whole[0].start if whole else ctx.now, self.key)
         pick = _cheapest_run if consecutive else _cheapest
         chosen: set[int] = set()
-        for day_rows in _by_day(
+        for day, day_rows in _by_day(
             _rows(ctx, window=window, max_price=cap, max_w=demand.max_w)
-        ).values():
-            chosen |= pick(day_rows, hours)
+        ).items():
+            left = hours - ran.get(day, 0.0)
+            if left <= _EPS_H:
+                continue
+            if consecutive and ran.get(day, 0.0) > 0.0:
+                # One run a day: a run under way goes on, one that has ended is the day's.
+                chosen |= _continue(day_rows, left) if running else set()
+            else:
+                chosen |= pick(day_rows, left)
 
-        whole = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
         return build_plan(
             load_id=ctx.load.load_id,
             strategy=self.key,
             mode=PlanMode.PRICE,
-            slots=tuple(
-                _slot(slot, on=index in chosen, max_w=demand.max_w, kind=ctx.load.kind)
-                for index, slot in enumerate(whole)
+            slots=(
+                *behind,
+                *(
+                    _slot(slot, on=index in chosen, max_w=demand.max_w, kind=ctx.load.kind)
+                    for index, slot in enumerate(whole)
+                ),
             ),
             now=ctx.now,
             currency=ctx.effective.currency,
