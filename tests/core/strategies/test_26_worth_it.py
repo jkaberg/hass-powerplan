@@ -16,9 +16,17 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+import pytest
+
 from custom_components.powerplan.core.model import PlanMode
 from custom_components.powerplan.core.strategies import get, params_of, plan_all
 from custom_components.powerplan.core.strategies.base import _worth_it
+from custom_components.powerplan.core.strategies.plan import (
+    BACK_UP_WHILE_CHEAP,
+    COAST_ON_STORED,
+    LOWER_WHILE_DEAR,
+    WARM_BEFORE_RISE,
+)
 from tests.builders.curves import ORDINARY, raw_days
 from tests.core.strategies.conftest import (
     NOW,
@@ -46,6 +54,9 @@ def _norgespris(local: datetime) -> Decimal:
 
 
 HOUSE = curve(raw_days(ORDINARY, 2, shape=_norgespris))
+
+#: What a price move's slots say (D-0766).
+MOVED = (LOWER_WHILE_DEAR, COAST_ON_STORED, BACK_UP_WHILE_CHEAP)
 
 
 def _floor(strategy: str, kind: str) -> LoadView:
@@ -82,17 +93,22 @@ def test_26_best_save_under_norgespris_is_left_alone() -> None:
     assert _planned(_floor("best_save", "setpoint"), HOUSE).mode is PlanMode.NONE
 
 
-def test_26_a_setpoint_floor_under_norgespris_has_no_pause_worth_its_comfort() -> None:
-    """Its one act was a 3.5 h pause before 22:00, worth a few øre: given back (D-0764).
+def test_26_a_setpoint_floor_under_norgespris_moves_nothing_worth_its_comfort() -> None:
+    """Its one move would be a coast before 22:00, worth a few øre: not taken (D-0764).
 
     This test said the plan banked the night. It never did - no slot banked, and
     the 0.9 % it earned was that pause. On 14 Oct 2026 the same pauses stood the
     house's floors in eco for 8 and 10 hours to save 1.5 øre each.
     """
-    plan = _planned(_floor("heat_capacitor", "setpoint"), HOUSE, worth_share=None)
+    view = _floor("heat_capacitor", "setpoint")
+    view = replace(view, level_now=24.0, params={**view.params, "min_saving": 0.10})
+    plan = _planned(view, HOUSE, worth_share=None)
 
-    assert not [slot for slot in plan.slots if slot.reason == "paused"]
-    assert not [slot for slot in plan.slots if slot.reason == "back from a pause"]
+    assert not [
+        slot
+        for slot in plan.slots
+        if slot.reason in MOVED or slot.reason.startswith(WARM_BEFORE_RISE)
+    ]
     assert plan.reason == "nothing worth moving"
 
 
@@ -102,11 +118,13 @@ def test_26_what_a_pause_must_save_scales_with_the_element() -> None:
         strategy="heat_capacitor",
         kind="setpoint",
         demand=demand(required_kwh=3.0, deadline=None, min_w=0.0, max_w=250.0, reason="24 °C"),
+        params={"min_saving": 0.10},
+        nameplate_w=250.0,
     )
     plan = _planned(small, HOUSE, worth_share=None)
 
-    assert [slot for slot in plan.slots if slot.reason == "paused"]
-    assert [slot for slot in plan.slots if slot.reason == "back from a pause"]
+    assert [slot for slot in plan.slots if slot.reason == LOWER_WHILE_DEAR]
+    assert [slot for slot in plan.slots if slot.reason.startswith(WARM_BEFORE_RISE)]
 
 
 def test_26_spot_prices_pay_for_the_same_plans() -> None:
@@ -141,18 +159,18 @@ def _raw_plan(view: LoadView, **ctx: object) -> tuple[Plan, object]:
 
 
 def test_26_leaving_hands_off_needs_more_than_entering_it() -> None:
-    """0.8 % clears a 0.6 % entry but not a 1.0 % way back: no flip-flop at the line.
+    """1.8 % clears a 1.5 % entry but not a 2 % way back: no flip-flop at the line.
 
-    `min_saving` 1 % keeps the evening pause the 10 % default gives back (D-0764),
-    so the plan has something to judge.
+    `min_saving` 1 % keeps the evening coast the 10 % default gives back (D-0764),
+    so the plan has something to judge; its buy-back is counted (D-0766).
     """
     view = _floor("heat_capacitor", "mode")
-    view = replace(view, params={**view.params, "min_saving": 0.01})
+    view = replace(view, params={**view.params, "min_saving": 0.01, "coast_k": 1.0})
     plan, pctx = _raw_plan(view)
-    band = (0.006, 0.010)
+    band = (0.015, 0.02)
 
     assert _worth_it(plan, view, pctx, None, band).mode is PlanMode.PRICE
-    gated = _worth_it(plan, view, pctx, None, (0.04, 0.06))
+    gated = _worth_it(plan, view, pctx, None, (0.02, 0.025))
     assert gated.mode is PlanMode.NONE
     assert _worth_it(plan, view, pctx, gated, band).mode is PlanMode.NONE
 
@@ -164,3 +182,27 @@ def test_26_a_tariff_with_peak_windows_is_not_judged() -> None:
     plan, pctx = _raw_plan(view, tariff_eligible=((opens, opens + timedelta(hours=16), 1.0),))
 
     assert _worth_it(plan, view, pctx, None, (0.04, 0.06)) is plan
+
+
+def test_26_a_mode_devices_buy_back_counts_as_drawn() -> None:
+    """D-0766: what a coast buys back a `mode` device draws, so the gate weighs it.
+
+    The plan's energy, holding plus what it buys back, is what holding comfort
+    takes, give or take the loss the coast saved: nothing vanishes from the
+    estimate the gate prices.
+    """
+    view = replace(_floor("heat_capacitor", "mode"), level_now=24.0)
+    moved, _pctx = _raw_plan(
+        replace(view, params={**view.params, "min_saving": 0.01, "coast_k": 1.0})
+    )
+    held, _ = _raw_plan(replace(view, params={**view.params, "min_saving": 5.0}))
+    bought = [slot for slot in moved.slots if slot.reason == BACK_UP_WHILE_CHEAP]
+    assert bought
+
+    drawn = sum(slot.hold_kwh for slot in moved.slots) + sum(slot.kwh for slot in bought)
+    holding = sum(slot.hold_kwh for slot in held.slots)
+
+    assert drawn == pytest.approx(holding, rel=0.15)
+    assert sum(slot.hold_kwh for slot in moved.slots) < 0.95 * holding, (
+        "without it, energy vanishes"
+    )

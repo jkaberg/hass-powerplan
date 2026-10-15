@@ -2,41 +2,25 @@
 
 A 12 m² slab, a 57.5 m² slab and a 40 m³ room, banking 0, 1 and 2 K above the
 target, at +5 and -10 °C outside. The optimum is the LP over the store's own
-coast model with the same band; hands-off is the thermostat at the target.
+coast model with the same band, the same setpoint rate limits and the same
+charge-back of the heat saved under the target (D-0766, D-0800); hands-off is the
+thermostat at the target.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tests.optimality.harness import DAY_NAMES, THERMAL_CASES, check, thermal_outcome
-
-pytestmark = pytest.mark.optimality
-
-#: Runs dearer than the thermostat, removed by the level planner (BP.3, D-0767). The room's
-#: seven since D-0796 came with its lighter fallback mass (D-0778).
-DEARER: frozenset[str] = frozenset(
-    {
-        "heat_capacitor/room40/bank2/-10/negative_night",
-        "heat_capacitor/room40/bank0/+5/double_peak",
-        "heat_capacitor/room40/bank0/-10/sawtooth",
-        "heat_capacitor/room40/bank1/+5/solar_dip",
-        "heat_capacitor/room40/bank1/-10/solar_dip",
-        "heat_capacitor/room40/bank1/-10/sawtooth",
-        "heat_capacitor/room40/bank2/-10/solar_dip",
-        "heat_capacitor/room40/bank2/-10/sawtooth",
-        "heat_capacitor/slab12/bank0/+5/double_peak",
-        "heat_capacitor/slab12/bank0/-10/negative_night",
-        "heat_capacitor/slab57/bank0/+5/volatile",
-        "heat_capacitor/slab57/bank0/-10/double_peak",
-        "heat_capacitor/slab57/bank0/-10/negative_night",
-    }
+from tests.optimality.harness import (
+    DAY_NAMES,
+    THERMAL_CASES,
+    check,
+    margin_params,
+    share,
+    thermal_outcome,
 )
 
-
-#: Runs that leave the band, removed by the level planner (BP.3, D-0767); the room's since its
-#: lighter fallback mass (D-0778, D-0796).
-OUT_OF_BAND: frozenset[str] = frozenset({"heat_capacitor/room40/bank1/+5/solar_dip"})
+pytestmark = pytest.mark.optimality
 
 
 @pytest.mark.parametrize("day", DAY_NAMES)
@@ -50,10 +34,38 @@ def test_heat_capacitor(case_name: str, bank_k: float, t_out: float, day: str) -
     lo = max(case.target - coast_k, case.floor)
     hi = min(case.target + bank_k, case.ceiling, case.store.max_level())
     outcome, breach = thermal_outcome(
-        case, "heat_capacitor", {"bank_k": bank_k, "coast_k": coast_k}, day, t_out, lo=lo, hi=hi
+        case,
+        "heat_capacitor",
+        {"bank_k": bank_k, "coast_k": coast_k, **margin_params()},
+        day,
+        t_out,
+        lo=lo,
+        hi=hi,
     )
     key = f"heat_capacitor/{case_name}/bank{bank_k:g}/{t_out:+g}/{day}"
-    known = {"dearer": "BP.3"} if key in DEARER else {}
-    if key in OUT_OF_BAND:
-        known["violation"] = "BP.3"
-    check(key, outcome, violation=breach, known=known or None)
+    check(key, outcome, violation=breach)
+
+
+def test_a_room_at_minus_ten_does_not_boost_and_coast_through_a_flat_peak() -> None:
+    """D-0820: `room40/bank1/-10/tou3` captured 0.872 closed loop with its open-loop plan at the optimum.
+
+    A flat 1.20 peak makes every route from the floor to the floor cost the same, and the search
+    chose a boost-and-coast sawtooth over the straight descent because an action that ends off
+    the grid looked cheaper than one that ends on it by the bend in the value function. Then the
+    next re-plan, from the level the boost reached, committed to it. The grid is now laid on the
+    setpoints the lever can take.
+    """
+    case = THERMAL_CASES["room40"]
+    outcome, breach = thermal_outcome(
+        case,
+        "heat_capacitor",
+        {"bank_k": 1.0, "coast_k": 1.0, **margin_params()},
+        "tou3",
+        -10.0,
+        lo=max(case.target - 1.0, case.floor),
+        hi=case.target + 1.0,
+    )
+    captured = share(outcome)
+    assert breach is None
+    assert captured is not None
+    assert captured >= 0.97, captured

@@ -88,3 +88,7 @@ COMFORT_MIN_C  # unused variable (tests/sim/tank.py:33)
 SSB_DETACHED_ANNUAL_KWH  # unused variable (tests/sim/uncontrolled.py:56)
 hass_config_dir  # unused variable (tests/surface/test_repairs.py:167)
 BOLT  # unused variable (tools/brand/make_brand.py:34)
+# Looked up by value: `FitKey(f"charge_efficiency_{phases}p_{name}")` in `core/forecasts/fit/ev.py` (D-0776).
+CHARGE_EFF_3P_6_9  # unused variable (custom_components/powerplan/core/forecasts/fit/base.py:79)
+CHARGE_EFF_3P_10_15  # unused variable (custom_components/powerplan/core/forecasts/fit/base.py:80)
+CHARGE_EFF_3P_16  # unused variable (custom_components/powerplan/core/forecasts/fit/base.py:81)

@@ -16,6 +16,13 @@ Three rules bound the postponement, and each of them comes from a defect:
 * `recovery_min = recovery_factor × off_minutes` - a store that has been coasting
   needs the next stretch to put back what it lost, whatever the price is doing.
 
+**With a store** the rule below is not used: a load with a level, a target, a coast
+model and an outdoor temperature is planned on `levels.py` with `heat_capacitor`'s
+goal, no bank, and these same limits on the route it returns (D5 §5.5, D-0767).
+The rule recovered in the very next on-slot at whatever it cost; on a 15-minute
+sawtooth that was 13-15 % dearer than the thermostat. What follows is the rule a
+load with no level keeps.
+
 **What "the next on slot" means here.** §5.5's pseudocode defines the comparison
 slot as "the next slot after `s` that is on", while on/off is exactly what the
 pass is deciding - the definition is circular. The comparison slot is therefore
@@ -39,6 +46,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, register
+from .heat_capacitor import BestSaveLimits, can_route, plan_route
 from .holding import comfort_target, holding_kwh
 from .plan import build_plan, confidence_of, inputs_digest
 
@@ -53,6 +61,9 @@ __all__ = ["BestSave"]
 
 #: A saving has to be a saving: below this many minor units it is float noise.
 _EPS: Final = Decimal("0.0000001")
+
+#: With a store, how far below its target a pause may let it fall (D5 §5.5): `coast_k`'s default.
+_COAST_K: Final = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +206,18 @@ class BestSave:
 
         policy = _policy(params)
         window = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
+        store = ctx.store
+        if store is not None and can_route(demand, ctx, store, window):
+            # A store has a level: the level planner finds the route, no bank, bounded by the
+            # same `max_off_min` and `min_on_min` the rule keeps (D5 §5.5, D-0767).
+            return plan_route(
+                self.key,
+                demand,
+                ctx,
+                store,
+                {**params, "bank_k": 0.0, "coast_k": _COAST_K},
+                limits=BestSaveLimits(policy.max_off_min, policy.min_on_min),
+            )
         off = _decide(window, policy)
         postponed = [slot for slot, skip in zip(window, off, strict=True) if skip]
         return build_plan(

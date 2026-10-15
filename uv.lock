@@ -2107,6 +2107,7 @@ version = "0.0.11"
 source = { virtual = "." }
 dependencies = [
     { name = "holidays" },
+    { name = "numpy" },
 ]
 
 [package.dev-dependencies]
@@ -2122,7 +2123,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "holidays", specifier = ">=0.106" }]
+requires-dist = [
+    { name = "holidays", specifier = ">=0.106" },
+    { name = "numpy" },
+]
 
 [package.metadata.requires-dev]
 dev = [

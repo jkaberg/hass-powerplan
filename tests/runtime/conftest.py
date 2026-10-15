@@ -101,8 +101,20 @@ async def restart_entry(
 
 async def advance(hass: HomeAssistant, freezer: FrozenDateTimeFactory, seconds: float) -> None:
     """Move the clock `seconds` forward and run whatever fell due."""
+    await settled(hass)
     freezer.tick(timedelta(seconds=seconds))
     async_fire_time_changed_exact(hass)
+    await hass.async_block_till_done()
+    await settled(hass)
+
+
+async def settled(hass: HomeAssistant) -> None:
+    """Wait for a plan running in its executor job: it holds the lock until its result is applied."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        runtime = getattr(entry, "runtime_data", None)
+        if runtime is not None:
+            async with runtime.lock:
+                pass
     await hass.async_block_till_done()
 
 

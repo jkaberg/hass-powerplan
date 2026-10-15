@@ -57,6 +57,7 @@ __all__ = [
     "battery_model",
     "check",
     "deficits_17_19",
+    "margin_params",
     "share",
     "thermal_loop",
     "thermal_outcome",
@@ -189,6 +190,15 @@ def merge(directory: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
+#: The margin (`min_saving`) the thermal strategies are measured at: none, so the catalogue
+#: measures the search (D-0816). The defaults, 0.03 and 0.10, are margins against model error
+#: that give up small runs on purpose, and a light room on a 4 kW element has runs smaller than
+#: D-0764's one-hour floor. `POWERPLAN_OPTIMALITY_MARGIN=default` measures them as shipped.
+MARGIN: Final = os.environ.get("POWERPLAN_OPTIMALITY_MARGIN", "0")
+#: A setpoint falls at most this fast, and rises at most twice it (D5 §5.7, D-0775).
+RATE_K_PER_H: Final = 1.0
+
+
 @dataclass(frozen=True, slots=True)
 class ThermalCase:
     """A store, its element and its comfort band, built as the floor and room types do."""
@@ -239,6 +249,8 @@ class ThermalRun:
     cost_hands_off: float
     temps: tuple[float, ...]
     end_value: float
+    #: What the draw alone cost, the saved heat not charged back: the household's money.
+    money: float = 0.0
 
 
 def _thermal_view(case: ThermalCase, strategy: str, params: Mapping[str, Any], level: float) -> Any:
@@ -296,17 +308,24 @@ def thermal_loop(
 ) -> ThermalRun:
     """Run `strategy` for 48 h from the target, re-planned every quarter hour, and hands-off.
 
-    The stored heat left at the end is valued at the day's mean price (a kelvin is
-    `C` kWh), for ours and for hands-off alike, so ending cool is not a saving.
+    The heat left at the end is valued at the day's mean price (a kelvin is
+    `C` kWh), for ours and for hands-off alike, so ending cool is not a saving. The
+    heat saved by sitting under the target is charged back at the slot's price, for
+    ours and for the oracle alike (D-0766): a route earns by timing alone, so the
+    share measures the search, not how cold the room is allowed to be.
     """
     rc = rc_of(case, t_out)
-    curve = curve_of(prices)
-    site = site_ctx(forecasts=Weather(outdoor=t_out))
-    room = Headroom(by_slot={s.start: 1e5 for s in curve.slots})
+    # The day is followed by its own mean, so the last hours are planned on a full horizon and
+    # the heat left at the end is worth that mean to ours, to hands-off and to the oracle (D-0816).
     mean = sum(prices) / len(prices)
+    curve = curve_of(prices, beyond=mean)
+    # The catalogue measures the search; D5 §5.9a's gate on the whole plan has its own test.
+    site = site_ctx(forecasts=Weather(outdoor=t_out), worth_share=None)
+    room = Headroom(by_slot={s.start: 1e5 for s in curve.slots})
     t = case.target
     previous: Plan | None = None
     cost = 0.0
+    money = 0.0
     temps: list[float] = []
     for k in range(N):
         now = START + timedelta(minutes=15 * k)
@@ -320,9 +339,12 @@ def thermal_loop(
             previous=None if previous is None else {view.load_id: previous},
         )
         previous = planned.plans[view.load_id]
+        before = t
         t, power = _execute(rc, case.target, t, previous.slot_at(now))
         temps.append(t)
+        money += prices[k] * power * H / 1000.0
         cost += prices[k] * power * H / 1000.0
+        cost += prices[k] * rc.ua_w * H / 1000.0 * max(0.0, case.target - (before + t) / 2.0)
     end_value = (case.target - t) * rc.c_kwh_per_k * mean
     base = case.target
     base_cost = 0.0
@@ -334,6 +356,7 @@ def thermal_loop(
         cost_hands_off=base_cost + (case.target - base) * rc.c_kwh_per_k * mean,
         temps=tuple(temps),
         end_value=end_value,
+        money=money + end_value,
     )
 
 
@@ -357,7 +380,15 @@ def thermal_outcome(
     prices = DAYS[day]
     run = thermal_loop(case, strategy, params, prices, t_out)
     optimum = rc_optimum(
-        prices, rc_of(case, t_out), t0=case.target, lo=lo, hi=hi, terminal=case.target
+        prices,
+        rc_of(case, t_out),
+        t0=case.target,
+        lo=lo,
+        hi=hi,
+        terminal=case.target,
+        target=case.target,
+        rate=(RATE_K_PER_H, 2.0 * RATE_K_PER_H),
+        end_price=sum(prices) / len(prices),
     )
     assert optimum is not None
     tol = 0.1
@@ -505,3 +536,8 @@ if __name__ == "__main__":
         merge(sys.argv[2])
     else:
         sys.exit("usage: python -m tests.optimality.harness merge <record dir>")
+
+
+def margin_params() -> dict[str, float]:
+    """Return the `min_saving` the thermal tests plan with, or nothing for the strategy's default."""
+    return {} if MARGIN == "default" else {"min_saving": float(MARGIN)}

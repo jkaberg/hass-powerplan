@@ -321,7 +321,7 @@ FLOOR_PARAMS: Mapping[str, Any] = {
     "swing_k": 1.0,
     "min_on_s": 900,
     "min_off_s": 900,
-    "command_interval_s": 600,
+    "command_interval_s": 1200,
     "substitutable": False,
     "follow_presence": True,
 }

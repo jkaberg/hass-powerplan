@@ -351,7 +351,12 @@ def test_us_srp_on_peak_demand_stays_at_or_under_the_target(
 def test_us_srp_the_heat_pump_cools_before_the_window_and_coasts_through_it(
     cooling_days: tuple[ScenarioResult, _CoolingTrail],
 ) -> None:
-    """D9 §5.3's pre-cooling: more cooling energy 10–14 than 14–20, on each weekday."""
+    """D9 §5.3's pre-cooling: a higher mean draw 10–14 than 14–20, on each day.
+
+    Mean power, not energy: the window is six hours and the morning four, and the level
+    planner banks as late as the price allows and coasts for the room's one kelvin of
+    band, which it spends before the window ends (D-0817).
+    """
     _, trail = cooling_days
     days = sorted({day for day, _ in trail.wh_by_hour})
     assert days
@@ -363,4 +368,6 @@ def test_us_srp_the_heat_pump_cools_before_the_window_and_coasts_through_it(
             trail.wh_by_hour.get((day, hour), 0.0) for hour in range(ON_PEAK_FROM_H, ON_PEAK_TO_H)
         )
         if before or during:
-            assert before > during, (day, before, during)
+            window_h = ON_PEAK_TO_H - ON_PEAK_FROM_H
+            morning_h = ON_PEAK_FROM_H - BEFORE_FROM_H
+            assert before / morning_h > during / window_h, (day, before, during)

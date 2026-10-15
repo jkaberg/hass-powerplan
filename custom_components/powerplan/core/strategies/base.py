@@ -36,7 +36,14 @@ from .context import (
     with_rewards,
 )
 from .holding import comfort_target, holding_kwh
-from .plan import STAY_OFF_FOR_CAPACITY, build_plan, with_hold_of
+from .plan import (
+    BACK_UP_WHILE_CHEAP,
+    COAST_ON_STORED,
+    LOWER_WHILE_DEAR,
+    STAY_OFF_FOR_CAPACITY,
+    build_plan,
+    with_hold_of,
+)
 
 if TYPE_CHECKING:
     from ..loads.needs import Need
@@ -343,6 +350,10 @@ def peak_windows(
     return peaks
 
 
+#: The `heat_capacitor` move rows whose energy a `mode` device draws too (D-0766).
+_DRAWN_BY_ANY_LEVER: Final = frozenset({BACK_UP_WHILE_CHEAP, COAST_ON_STORED, LOWER_WHILE_DEAR})
+
+
 def _worth_it(
     plan: Plan,
     view: LoadView,
@@ -353,9 +364,9 @@ def _worth_it(
     """Return `plan`, or hands-off when its timing cannot pay (D5 §5.9a, D-0724).
 
     The estimate is the headline's own (D11 §5.9.1 `day`): the plan's draw per slot,
-    `kwh + hold_kwh` (`hold_kwh` alone for a `mode` device, which cannot bank), priced at the slots' time-weighted mean against what it pays
+    `kwh + hold_kwh` (a `mode` device's bank rows left out: it cannot bank), priced at the slots' time-weighted mean against what it pays
     where the plan puts it. What a coast saves in losses is not credited, and the
-    recovery after it is not charged: timing only, nothing fitted. A plan with no
+    recovery after it is charged where the plan buys it (D-0766): timing only. A plan with no
     energy anyone can price is weighed by its hours instead: each hour it lets the
     store draw counts the same, each it stands still or coasts counts nothing.
 
@@ -384,9 +395,13 @@ def _worth_it(
     ):
         return plan
     # A `mode` device banks nothing: its comfort option is its own setpoint, so a
-    # bank row's energy is never drawn and only what holding costs is real.
+    # bank row's energy is never drawn. What a price move buys back after a coast,
+    # or draws inside one, it draws whatever its lever (D-0766).
     banks = view.kind != "mode"
-    weights = [slot.hold_kwh + (slot.kwh if banks else 0.0) for slot in plan.slots]
+    weights = [
+        slot.hold_kwh + (slot.kwh if banks or slot.reason in _DRAWN_BY_ANY_LEVER else 0.0)
+        for slot in plan.slots
+    ]
     if sum(weights) <= 0.0:
         # Nothing priced the store's draw yet (no fit, no measured holding): each
         # hour the plan lets it draw weighs the same, each one it stands still none.

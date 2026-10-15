@@ -41,11 +41,17 @@ from .base import (
 if TYPE_CHECKING:
     from ...model import Grant
 
-__all__ = ["BAND_MAX_K", "Setpoint", "SetpointCfg"]
+__all__ = ["BAND_MAX_K", "DEFAULT_STEP_K", "FINE_STEP_K", "Setpoint", "SetpointCfg"]
 
 #: The hard cap on a band, in kelvin: **rejected, not clipped** - a config file
 #: and the behaviour must never disagree (INV-29).
 BAND_MAX_K = 2.0
+
+#: The step a thermostat is assumed to take its setpoint in when its entity declares none, in kelvin:
+#: Home Assistant's own climate card steps by 0.5 K (D-0818).
+DEFAULT_STEP_K = 0.5
+#: The finest move a `SetpointCfg` without a step makes: the planner's own (D-0818).
+FINE_STEP_K = 0.05
 
 
 def _clamp(value: float, low: float | None, high: float | None) -> float:
@@ -80,6 +86,9 @@ class SetpointCfg:
     #: rests at, "on" is a setpoint under it, and a restore's dwell holds a move
     #: **down**. Heating is the default and unchanged.
     cooling: bool = False
+    #: The finest setpoint move the device takes (its entity's `target_temp_step`); a plan asks for
+    #: whole steps from the target and nothing finer is written (D-0818).
+    step_k: float = FINE_STEP_K
 
     def __post_init__(self) -> None:
         """Reject a band wider than the hard cap (INV-29)."""
@@ -97,6 +106,11 @@ class Setpoint:
     cfg: SetpointCfg
     key: ClassVar[str] = "setpoint"
     needs: ClassVar[tuple[Need, ...]] = (need("setpoint", Role.SETPOINT, Tier.REQUIRED),)
+
+    @property
+    def step_k(self) -> float:
+        """The step the device takes its setpoint in, K (D-0818)."""
+        return self.cfg.step_k
 
     def quantise(self, w: float, ctx: KindCtx) -> Quantised:
         """Return the setpoint this tick, bounded by construction (§5.4)."""
@@ -135,13 +149,12 @@ class Setpoint:
             why = "the plan says charge"
             key = ActionReason.STORE_HEAT
         else:
-            value = _clamp(
-                target + ctx.setpoint_delta, target - cfg.band_down, target + cfg.band_up
-            )
-            why = "target" if ctx.setpoint_delta == 0.0 else f"target {ctx.setpoint_delta:+.1f} K"
-            if ctx.setpoint_delta != 0.0:
+            delta = round(ctx.setpoint_delta / cfg.step_k) * cfg.step_k
+            value = _clamp(target + delta, target - cfg.band_down, target + cfg.band_up)
+            why = "target" if delta == 0.0 else f"target {delta:+.1f} K"
+            if delta != 0.0:
                 key = ActionReason.TARGET_OFFSET
-                params = {"delta": round(ctx.setpoint_delta, 1)}
+                params = {"delta": round(delta, 1)}
             else:
                 key = ActionReason.TARGET
             value = _clamp(value, floor, ctx.ceiling)

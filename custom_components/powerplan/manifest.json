@@ -9,6 +9,6 @@
   "integration_type": "hub",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/jkaberg/hass-powerplan/issues",
-  "requirements": ["holidays>=0.84"],
+  "requirements": ["holidays>=0.84", "numpy"],
   "version": "0.0.11"
 }

@@ -457,6 +457,9 @@ class LoadView:
     #: The most planned pauses a session of this load may have once it is known to
     #: resume; `None` is a load whose run is not limited that way (D-0776, D-0777).
     max_pauses: int | None = None
+    #: The step a `SETPOINT` device takes its setpoint in, K; `None` is a load whose lever is not a
+    #: setpoint, or a view built without one (D-0818).
+    setpoint_step_k: float | None = None
 
     @property
     def max_w(self) -> float:
@@ -579,6 +582,7 @@ def _static_fields(load: Load) -> tuple[dict[str, Any], dict[str, Any]]:
         "grid_tariff": load.config.grid_tariff,
         "allowed": load.config.allowed,
         "max_pauses": getattr(load.device_type, "max_pauses", None),
+        "setpoint_step_k": getattr(load.kind, "step_k", None),
     }
     _STATIC[id(load)] = (load, static, params)
     return static, params

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
-from ..kinds.setpoint import Setpoint, SetpointCfg
+from ..kinds.setpoint import DEFAULT_STEP_K, Setpoint, SetpointCfg
 from ..kinds.switch import Switch, SwitchCfg
 from ..needs import Need, Tier, need
 from ..questionnaire import (
@@ -385,6 +385,7 @@ class Radiator:
                 # A room with a panel heater falls in minutes, not hours: it is
                 # the fast lever, urgent from stage 2 like a tank's thermostat.
                 urgent_from_stage=2,
+                step_k=float(params.get("setpoint_step_k", DEFAULT_STEP_K)),
             )
         )
 

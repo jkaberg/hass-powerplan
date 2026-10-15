@@ -13,6 +13,7 @@ import pytest
 
 from custom_components.powerplan.core.loads.questionnaire import QCtx
 from custom_components.powerplan.core.loads.types import base as device_types
+from custom_components.powerplan.core.loads.types.heat_pump import COAST_BELOW_COMFORT_K
 from custom_components.powerplan.core.loads.types.radiator import BANK_ABOVE_COMFORT_K
 
 
@@ -51,12 +52,16 @@ def test_52_a_radiator_on_a_plug_pauses_and_reads_its_threshold(
 
 
 def test_52_a_heat_pump_moves_inside_its_band() -> None:
-    """`bank_k` and `coast_k` are the band the kind clamps to (INV-29)."""
+    """`bank_k` is the band the kind clamps to (INV-29); `coast_k` is no deeper than half a kelvin (D-0819)."""
     derived = _derive(
         "heat_pump", {"band_k": 1.5, "area_m2": 60.0, "rated_kw": 3.0, "comfort_c": 21.0}
     )
     assert derived.strategy_params["bank_k"] == 1.5
-    assert derived.strategy_params["coast_k"] == 1.5
+    assert derived.strategy_params["coast_k"] == COAST_BELOW_COMFORT_K
+    narrow = _derive(
+        "heat_pump", {"band_k": 0.3, "area_m2": 60.0, "rated_kw": 3.0, "comfort_c": 21.0}
+    )
+    assert narrow.strategy_params["coast_k"] == 0.3, "never deeper than the band the household gave"
 
 
 def test_52_every_heating_type_offers_both_and_defaults_to_moving_heat() -> None:

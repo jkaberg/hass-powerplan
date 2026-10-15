@@ -82,7 +82,7 @@ This follow-up comes after **Preheat** is turned on: above the outdoor temperatu
 
 ## The plan
 
-By default the room is warmed within its band before expensive hours, and the heat pump stays off through them as long as the room stays in the band. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
+By default the room is warmed within its band before the price rises, and the heat pump coasts through the expensive hours as long as the room stays in the band. If you turn **Preheat** off, the room is never warmed above comfort; the pump still eases off before a price rise. Each hour's heat is priced at what the pump delivers at that hour's outdoor temperature, so a cold night is not the place to warm ahead unless the price gap is wide. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 

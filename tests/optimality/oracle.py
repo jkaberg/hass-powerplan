@@ -182,6 +182,47 @@ def rc_step(model: RcModel, t: float, p_w: float, hours: float = 0.25) -> float:
     return model.t_out + (t - model.t_out) * a + (p_w / model.ua_w) * (1.0 - a)
 
 
+#: Wider than any gap between a temperature and its target, K: the big-M of `_charge_back`.
+_BIG_K: Final = 50.0
+
+
+def _charge_back(
+    prog: _Program,
+    price: float,
+    model: RcModel,
+    *,
+    first: float | None,
+    temp: Sequence[int],
+    k: int,
+    target: float,
+) -> None:
+    """Add slot `k`'s charge-back `p * UA * h * max(0, target - mean T)` (D-0766).
+
+    Convex at a positive price, one variable. At a negative price it is concave
+    (a credit for sitting cold, bounded by the cold itself), which takes a binary:
+    `delta = 1` when the slot's mean is under the target.
+    """
+    weight = price * model.ua_w * 0.25 / 1000.0
+    # z = target - (T[k-1] + T[k]) / 2, written as  z + T[k] / 2 + T[k-1] / 2 = target.
+    shift = target if first is None else target - 0.5 * first
+    terms = {temp[k]: 0.5}
+    if first is None:
+        terms[temp[k - 1]] = 0.5
+    if weight >= 0.0:
+        under = prog.col(0.0, INF, weight)
+        prog.row({under: 1.0, **terms}, lo=shift)
+        return
+    under = prog.col(0.0, _BIG_K, weight)
+    delta = prog.col(0.0, 1.0, integer=True)
+    gap = prog.col(-_BIG_K, _BIG_K)
+    prog.row({gap: 1.0, **terms}, shift, shift)
+    prog.row({gap: 1.0, delta: -_BIG_K}, hi=0.0)
+    prog.row({gap: 1.0, delta: -_BIG_K}, lo=-_BIG_K)
+    prog.row({under: 1.0, gap: -1.0, delta: _BIG_K}, hi=_BIG_K)
+    prog.row({under: 1.0, gap: -1.0, delta: -_BIG_K}, lo=-_BIG_K)
+    prog.row({under: 1.0, delta: -_BIG_K}, hi=0.0)
+
+
 def rc_optimum(
     prices: Sequence[float],
     model: RcModel,
@@ -190,8 +231,21 @@ def rc_optimum(
     lo: float,
     hi: float,
     terminal: float,
+    target: float | None = None,
+    rate: tuple[float, float] | None = None,
+    end_price: float | None = None,
 ) -> float | None:
-    """Return the least cost of keeping `lo <= T <= hi` and ending at or above `terminal`."""
+    """Return the least cost of keeping `lo <= T <= hi` and ending at or above `terminal`.
+
+    With `target`, the heat a store saves by sitting under it is charged back at
+    the slot's price (D-0766): a move is worth its timing alone, so the optimum
+    does not "save" by letting the room stay cold. The slot's mean temperature is
+    the mean of its ends, which is the planner's own approximation where the slot
+    crosses the target. `rate` is how far the temperature may fall and rise per
+    hour: a setpoint moves no faster (D-0775), so neither does the room it holds.
+    With `end_price` the level left at the end is not forced to `terminal` but valued, as the
+    loop values ours and hands-off: `(terminal - T_end) * C * end_price`, a credit above it (D-0778).
+    """
     prog = _Program()
     n = len(prices)
     a = math.exp(-0.25 / model.tau_h)
@@ -206,9 +260,22 @@ def rc_optimum(
         else:
             terms[temp[k - 1]] = -a
         prog.row(terms, rhs, rhs)
-    prog.row({temp[-1]: 1.0}, lo=min(max(terminal, lo), hi))
+        if rate is not None:
+            step = {temp[k]: 1.0} if k == 0 else {temp[k]: 1.0, temp[k - 1]: -1.0}
+            before = t0 if k == 0 else 0.0
+            prog.row(step, lo=before - rate[0] * 0.25, hi=before + rate[1] * 0.25)
+        if target is not None:
+            _charge_back(
+                prog, prices[k], model, first=t0 if k == 0 else None, temp=temp, k=k, target=target
+            )
+    if end_price is None:
+        prog.row({temp[-1]: 1.0}, lo=min(max(terminal, lo), hi))
+        solved = prog.solve()
+        return None if solved is None else solved[0]
+    kept = prog.col(lo, hi, -end_price * model.c_kwh_per_k)
+    prog.row({kept: 1.0, temp[-1]: -1.0}, 0.0, 0.0)
     solved = prog.solve()
-    return None if solved is None else solved[0]
+    return None if solved is None else solved[0] + end_price * model.c_kwh_per_k * terminal
 
 
 # --------------------------------------------------------------------------- #

@@ -160,8 +160,16 @@ def starts() -> list[datetime]:
     return [START + timedelta(minutes=15 * i) for i in range(N)]
 
 
-def curve_of(prices: Sequence[float], *, currency: str = "NOK") -> PriceCurve:
-    """Return the prices as a one-component import curve of known slots."""
+def curve_of(
+    prices: Sequence[float], *, currency: str = "NOK", beyond: float | None = None
+) -> PriceCurve:
+    """Return the prices as a one-component import curve of known slots.
+
+    With `beyond`, 48 hours more follow the day at that price, so a planner re-planned through
+    the last hours of the day still sees a full horizon, as the runtime does (D-0816).
+    """
+    every = [START + timedelta(minutes=15 * i) for i in range(N * (1 if beyond is None else 2))]
+    values = [*prices, *([] if beyond is None else [beyond] * N)]
     slots = tuple(
         Slot(
             start=s,
@@ -170,7 +178,7 @@ def curve_of(prices: Sequence[float], *, currency: str = "NOK") -> PriceCurve:
             components={"spot": Decimal(str(v))},
             confidence=Confidence.KNOWN,
         )
-        for s, v in zip(starts(), prices, strict=True)
+        for s, v in zip(every, values, strict=True)
     )
     return PriceCurve(
         carrier=Carrier.ELECTRICITY,

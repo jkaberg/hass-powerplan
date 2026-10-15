@@ -26,6 +26,8 @@ PowerPlan works on two clocks.
 - **The plan** is made every quarter of an hour, and when prices, presence or an appliance change. It looks up to two days ahead and picks, for each appliance, the hours it should run in. It uses tomorrow's prices as soon as they are published, and estimates them until then.
 - **The moment** is checked every few seconds, from the meter. If the hour is heading over the target, PowerPlan pauses appliances now, starting with the lowest priority, and lets them run again when there is room.
 
+Heating is planned as a route through the temperature, not hour by hour. For a floor, a room or a heat pump PowerPlan looks at every temperature the appliance may have in every quarter of the next two days, and takes the cheapest way through. It warms ahead of a price rise, coasts through it and heats again after, but only inside the highest and lowest temperature you allow, and it holds comfort through hours where the price does not change. Every quarter of an hour it starts again from the measured temperature, so a plan under way is carried on, not forgotten.
+
 The plan says what would be cheapest. The moment makes sure the home stays safe while the plan runs.
 
 <a name="never"></a>

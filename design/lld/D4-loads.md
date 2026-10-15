@@ -453,7 +453,7 @@ target ← profile.target(now, presence)  (configuration - or, for a type with a
                                           device's own setpoint once adopted; never a value powerplan wrote itself or one seen before its
                                           write record has reconciled, INV-27, D8 §5.16, D-0414)
 shed   ← grant.shed (from the shed set, never inferred from w == 0, INV-25)
-delta  ← plan.desired_state_at(now).setpoint_delta or 0   (D5 §5.7: +Δ in cheap slots, −Δ in expensive ones. For SETPOINT and MODE loads the plan's
+delta  ← plan.desired_state_at(now).setpoint_delta or 0, rounded to whole `step_k` (D-0818)   (D5 §5.7: +Δ in cheap slots, −Δ in expensive ones. For SETPOINT and MODE loads the plan's
                                                            envelope_w is a reservation hint the allocator caps against (INV-30); the DELTA is the lever the device feels)
 desired =
     heat pump:  clamp(target + delta + offset(stage), target − band_down, target + band_up) then device min/max (INV-29); offset: coast −1 K at stage ≥ 3; +Δ arrives already gated by D5 (outdoor ≤ preheat_max_outdoor ∧ room < target)
@@ -461,6 +461,7 @@ desired =
     floor:      the lowest setpoint written - shed or plan delta - is floor + swing_k / 2: a thermostat holds setpoint ± half its swing, and the floor is a temperature, not a dial (D-0259)
     radiator:   the same half band above the floor - the comfort target it wants power towards on a plug, the shed setpoint and the clamp on a dial (D-0265)
     thermostat: clamp(target + delta, floor, ceiling) if not shed else shed_setpoint (≥ floor)      - a comfort violation is served at `target` whatever the plan says
+step_k: the finest setpoint move the device takes - the `target_temp_step` its entity declares (the SETPOINT binding's `step`, in powerplan's unit), else 0.5 K, which is what Home Assistant's own climate card steps by (a Z-TRM declares none). Floor, radiator and heat pump read it from the load's `setpoint_step_k` parameter; a tank keeps the kind's 0.05 K. D5 plans in whole steps from the target, so a setpoint nothing takes is never written.
 gate: tolerance 0.05 °C (heat pump 0.25), min_interval, dwell, urgent (stage ≥ 2 shed = urgent: past interval, never past tolerance)
 restore(): undo our own recorded write, back to what the device held before it (§5.2); no upward move within one dwell of a restore
 ```
@@ -1072,7 +1073,7 @@ and the only one a plan may stop outright. The golden answers are
 | Building | before 1980 · 1980–2000 · 2000–2010 · after 2010 | heat loss 1.6 / 1.0 / 0.7 / 0.5 W/m²K → `heat_loss_w_per_k` | typical envelope values by period |
 | Rated power | kW (device or 3) - **asked, always**; powerplan computes forward from it | forecast ceiling, expected draw = demand / COP capped at rated | nameplate |
 | Comfort | °C (21) | target profile | - |
-| *Advanced* | band ±1 K (max 2, rejected not clipped), min setpoint interval 900 s, dwell 1800 s, preheat off (on: each hour decides by the price against the COP it loses, D-0773), preheat max outdoor (none; an optional cap), never-switch entities, outdoor/outlet sensors | kind, INV-29; `heat_capacitor`'s `bank_k` = `coast_k` = band (D-0728) | effektstyring; the 5 °C cap had no source and allowed the frost band (D-0773) |
+| *Advanced* | band ±1 K (max 2, rejected not clipped), min setpoint interval 900 s, dwell 1800 s, preheat off (on: each hour decides by the price against the COP it loses, D-0773), preheat max outdoor (none; an optional cap), never-switch entities, outdoor/outlet sensors | kind, INV-29; `heat_capacitor`'s `bank_k` = band (D-0728), `coast_k` = the band or 0.5 K, whichever is less (D-0819) | effektstyring; the 5 °C cap had no source and allowed the frost band (D-0773) |
 
 ### 6.5 `radiator`
 
@@ -1209,6 +1210,7 @@ Every write logs `load, role, old → new, reason, stage` at INFO (INV-29's last
 68. Does it resume (D-0776): a pause, then a resume with no draw within 120 s while connected and not done, sets `resumes = no` with the date in the reason; a draw sets `yes`; the latch survives a restart; only the household's button clears `no`.
 69. `RoomStore`'s fallback mass is 0.012 kWh/K per m³ (D-0778): a 250 m³ heat pump room starts at 3.0 kWh/K until its fits pass.
 70. Switching budgets (D-0777): the constants per type are 24 starts a day for a relay or element, one setpoint change an hour for a heat pump, 4 pauses a session for an EV.
+71. Setpoint steps (D-0818): a `SETPOINT` kind writes the plan's delta in whole steps of the device's own, from the target (`test_71_setpoint_steps.py`); a load built from a subentry takes the `target_temp_step` its entity declares, in powerplan's unit, else 0.5 K (`tests/runtime/test_setpoint_step.py`); a heat pump's derived `coast_k` is the band or 0.5 K, whichever is less (D-0819, `test_52_bank_by_the_lever.py`).
 
 ---
 

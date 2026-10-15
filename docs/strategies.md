@@ -46,10 +46,10 @@ Charges the battery in the cheapest hours and discharges it in the dearest, when
 <a name="best_save"></a>
 ## Best save
 
-Keeps the appliance at comfort and pauses it in an expensive hour when a cheaper hour soon after can make up for it. A pause never lasts longer than two hours, and the appliance stays on at least 30 minutes between pauses. It never lets the room fall below its lowest temperature. When pausing would save less than 4 % of what the heating costs, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
+Keeps the appliance at comfort and lets it fall toward its lowest temperature in an expensive hour, then brings it back in a cheaper one. Where PowerPlan knows how fast the appliance cools, it finds the best such route through the next two days and never warms the room above comfort. A pause never lasts longer than two hours, and the appliance stays on at least 30 minutes between pauses. Without that, a floor or room that cools slowly would coast all afternoon on price alone. The appliance never falls below its lowest temperature. A move must save at least 10 % beyond what it already costs in lost heat, so small gains are left alone. When moving the heating would save less than 4 % of what it costs, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
 
 > [!NOTE]
-> Since v0.0.11, a new panel heater or foil floor starts on **Heat capacitor**, which also pauses, for as long as the room or floor can take. An appliance already on this plan keeps it.
+> Since v0.0.13, **Best save** plans the whole route for floors and rooms that PowerPlan can measure, instead of pausing hour by hour. Without a cooling measurement it keeps pausing hour by hour, as before.
 
 | | |
 |---|---|
@@ -85,12 +85,18 @@ Charges or heats in the cheapest hours before the time you set, and stops when t
 <a name="heat_capacitor"></a>
 ## Heat capacitor
 
-Keeps the appliance off through expensive hours, and through hours when your home has no room under its capacity step. Before such a run of hours, it warms the floor, the room or the tank just enough to stay above the lowest temperature you allow until the run ends. How much is worked out from how fast the appliance cools, which PowerPlan measures from its history.
+Moves the appliance's heat to where it costs least. It warms the floor, the room or the tank before the price rises, lets it coast on that heat while the price is high, and heats again after the price falls. Through a stretch where the price does not change, it holds the comfort temperature and moves nothing. How far it can warm and coast comes from how fast the appliance cools, which PowerPlan measures from its history, and from the highest and lowest temperatures you allow. Comfort is judged against the temperature you set: by default the appliance coasts at most 0.5 degrees under it and warms at most 1 degree over it.
 
-When the highest temperature you allow is not enough to last the whole run, the appliance heats a little inside it, spread evenly, so no hour gets the whole top-up. A single expensive hour with no run around it is paused if cheaper hours soon after can make up for it. The make-up is spread over those hours, never above the appliance's power or your target, and a pause with no room to make up for it is not planned. Every move must save at least 10 % on the hours it skips. A run of paused hours must also save at least 10 % of what one hour of the appliance at full power costs, so a floor that barely draws is not paused for next to nothing. An appliance that only switches between comfort and an energy-saving mode, or a panel heater on a plug, cannot store heat above comfort, so it only pauses; see [When a plan is not worth it](#worth_it). In energy-saving mode such a thermostat holds 1 °C under comfort by default, never under the lowest temperature you allow, so a pause cannot leave the floor colder than that.
+PowerPlan works out the cheapest route through the next two days from the temperature measured now, every quarter of an hour. It is the same route one quarter later, unless the prices or the weather change, so a warm-up that has started is not forgotten. A move counts only for the timing: letting a room sit colder than comfort saves nothing by itself, because the heat it did not use has to be bought back. A heat pump's heat is priced at what the pump delivers per kWh at that hour's outdoor temperature, so a cold night's warm-up costs more than the meter price says.
+
+Hours when your home has no room under its capacity step are stayed off in. The appliance warms before them, just enough to coast through, and heats only what it needs to stay above its lowest temperature. A floor with a step-up in its schedule is warm by then, bought in the cheapest hours the allowed range lets it.
+
+Every move must save at least 3 % of the heat it moves, and a run of moves must also save at least 3 % of what one hour of the appliance at full power costs, so a floor that barely draws is not moved for next to nothing. A setpoint falls at most 1 degree an hour and rises at most 2 degrees an hour, in the steps the thermostat takes (0.5 degrees if it does not say). A floor is told at most every 20 minutes. A relay or element is switched on at most 24 times a day. An appliance that only switches between comfort and an energy-saving mode, or a panel heater on a plug, cannot store heat above comfort, so it only coasts; see [When a plan is not worth it](#worth_it). In energy-saving mode such a thermostat holds 0.5 °C under comfort by default, never under the lowest temperature you allow.
+
+A heat pump warms ahead only if its **Preheat** answer is on and the outdoor temperature at that hour allows it. A room that is still warmer than comfort at that hour is not warmed further.
 
 > [!NOTE]
-> Since v0.0.12, a run of paused hours that saves less than that is skipped, and an energy-saving thermostat holds 1 °C under comfort instead of 2 °C. Since v0.0.11, this plan sizes its warm-up from how fast the appliance cools, and stays off through full hours of the capacity step. Before that it warmed by a fixed degree in the cheapest quarter of the day, and it was called **Bank heat in cheap hours**.
+> Since v0.0.13, this plan finds the route by searching it instead of by rules, and the smallest saving it acts on is 3 %. An appliance set up before keeps the value it has, 10 % for most; open **Re-derive** on it to get 3 %. The appliance also coasts at most 0.5 °C under comfort instead of 1 °C, and an energy-saving thermostat holds 0.5 °C under it. A heat pump set up before keeps its coast of 1 °C until you open **Re-derive**. Since v0.0.12, a run of paused hours that saves less is skipped, and an energy-saving thermostat holds 1 °C under comfort instead of 2 °C.
 
 | | |
 |---|---|

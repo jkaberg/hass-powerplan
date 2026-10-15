@@ -55,20 +55,24 @@ async def test_28_a_hand_on_the_dial_is_adopted_and_our_write_is_not(
     assert floor.seen, "the first tick in control wrote the configured target"
     written = floor.setpoint_c
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     assert "comfort_c" not in runtime.load_params.get(LOAD_ID, {}), "our write is not a hand"
 
     # A hand while our write still settles is nobody's decision yet.
     floor.turn_dial(22.0)
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     assert "comfort_c" not in runtime.load_params.get(LOAD_ID, {}), "held while settling"
 
     await advance(hass, freezer, runtime.build.loads[0].gate.verify_after_s + 1.0)
     floor.turn_dial(22.5)
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     # At the device: a candidate until it has stood the grace (D-0497).
     assert "comfort_c" not in runtime.load_params.get(LOAD_ID, {})
     await advance(hass, freezer, OVERRIDE_GRACE.total_seconds() + 1.0)
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
 
     assert runtime.load_params[LOAD_ID]["comfort_c"] == 22.5
     assert LOAD_ID in runtime.overridden_at
@@ -95,14 +99,17 @@ async def test_28_a_device_that_springs_back_within_the_grace_is_not_a_hand(
     written = floor.setpoint_c
     floor.turn_dial(24.0)
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     floor.turn_dial(written)
     await advance(hass, freezer, OVERRIDE_GRACE.total_seconds() + 1.0)
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     assert "comfort_c" not in runtime.load_params.get(LOAD_ID, {})
     assert LOAD_ID not in runtime.overridden_at
 
     floor.turn_dial(23.0, user_id="person")
     await runtime.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     assert runtime.load_params[LOAD_ID]["comfort_c"] == 23.0
     await runtime.stop("unload")
 
@@ -132,8 +139,10 @@ async def test_28_a_fresh_context_on_an_unchanged_setpoint_is_not_a_hand(
 
     floor.report_temperature(floor.temp_c + 0.5)
     await again.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
     await advance(hass, freezer, OVERRIDE_GRACE.total_seconds() + 1.0)
     await again.run_tick("test")
+    await hass.async_block_till_done()  # a tick parked behind a plan runs after it
 
     assert "comfort_c" not in again.load_params.get(LOAD_ID, {})
     assert LOAD_ID not in again.overridden_at

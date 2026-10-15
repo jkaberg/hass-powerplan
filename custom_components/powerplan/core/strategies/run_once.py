@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 from ..model import PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, register
-from .plan import build_plan, confidence_of, inputs_digest
+from .plan import COMMIT_MIN, build_plan, confidence_of, inputs_digest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -149,6 +149,18 @@ def _fits(room: Headroom, slots: Sequence[Slot], nameplate_w: float) -> bool:
     return all(room.w_at(slot.start) + 1e-9 >= nameplate_w for slot in slots)
 
 
+def _holds(room: Headroom, window: Sequence[Slot], programme: _Programme, start: datetime) -> bool:
+    """Return whether the room still holds what the programme draws in each slot from `start`.
+
+    The engine keeps a plan while the room holds the watts the plan reserves (`_fits`, D-0628),
+    which for a cycle is its own profile and not the nameplate a new search asks for; a start
+    committed to stays until the engine itself would replace the plan.
+    """
+    energy = _energy_by_slot(window, programme, start)
+    hours = {slot.start: (slot.end - slot.start).total_seconds() / 3600.0 for slot in window}
+    return all(room.w_at(at) + 1e-9 >= kwh / hours[at] * 1000.0 for at, kwh in energy.items())
+
+
 def _energy_by_slot(
     window: Sequence[Slot], programme: _Programme, start: datetime
 ) -> dict[datetime, float]:
@@ -214,6 +226,32 @@ def _started(previous: Plan | None, now: datetime) -> datetime | None:
         return None
     start = previous.started_at or run[0].start
     return start if start <= now else None
+
+
+def _committed_start(
+    previous: Plan | None, window: Sequence[Slot], programme: _Programme, *, now: datetime
+) -> datetime | None:
+    """Return the start the previous plan has inside its commitment window, if it can still run (INV-32).
+
+    A block that has not started but begins within `COMMIT_MIN` is a commitment (D5 §5.9): the
+    machine may already be loaded and waiting for it. Re-searching every quarter hour moved it
+    whenever the room the loads above it left wiggled by a few watts, which is the churn INV-32
+    forbids; it moves only when it no longer fits the room, and the engine then re-cuts it
+    (`refit`, D-0628) (D-0821).
+    """
+    if previous is None:
+        return None
+    ahead = [slot for slot in previous.slots if slot.reason == "block" and slot.end > now]
+    if not ahead:
+        return None
+    start = ahead[0].start
+    if start < now or start > now + timedelta(minutes=COMMIT_MIN):
+        return None
+    if start not in {slot.start for slot in window}:
+        return None
+    if start + programme.duration > window[-1].end:
+        return None
+    return start
 
 
 @register
@@ -327,6 +365,13 @@ def _choose(
     running = _started(ctx.previous, ctx.now)
     if running is not None:
         return running, "block under way", True
+
+    kept = _committed_start(ctx.previous, window, programme, now=ctx.now)
+    if kept is not None and _holds(ctx.headroom, window, programme, kept):
+        if kept + programme.duration <= min(ready_by, horizon):
+            return kept, "block", True
+        if allow_late:
+            return kept, "deadline at risk: earliest start with room", False
 
     in_time = _candidates(window, programme, now=ctx.now, until=min(ready_by, horizon))
     feasible = [

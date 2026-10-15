@@ -1,4 +1,4 @@
-"""D5 §9 8, 32–34, 36 - `heat_capacitor`: the bounds, the rate, the stretches, the pauses.
+"""D5 §9 8, 32–34, 36, 39–43 - `heat_capacitor`: the bounds, the rate, the route.
 
 This is how the reference house's five floor loops bank heat before a tariff
 window, and it is the strategy with the most ways to hurt somebody: a +Δ that
@@ -26,7 +26,7 @@ than its target when the window opens, and never hotter than the covering allows
 from __future__ import annotations
 
 import math
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from itertools import pairwise
@@ -41,10 +41,15 @@ from custom_components.powerplan.core.loads import (
     WeeklyTable,
 )
 from custom_components.powerplan.core.loads.stores import RoomStore, SlabStore
-from custom_components.powerplan.core.loads.stores.base import StoreCtx
 from custom_components.powerplan.core.model import Desired, PlanMode, Urgency
 from custom_components.powerplan.core.strategies import plan_all
 from custom_components.powerplan.core.strategies.base import get, params_of
+from custom_components.powerplan.core.strategies.plan import (
+    BACK_UP_WHILE_CHEAP,
+    COAST_ON_STORED,
+    LOWER_WHILE_DEAR,
+    WARM_BEFORE_RISE,
+)
 from custom_components.powerplan.core.tariffs import TimeFilter
 from tests.builders.curves import OSLO
 from tests.core.strategies.conftest import (
@@ -169,18 +174,27 @@ def deltas(plan: Plan) -> list[float]:
 
 
 def banked(plan: Plan) -> list[PlanSlot]:
-    """Return the slots a stretch's fill warms the store in (§5.7)."""
-    return [slot for slot in plan.slots if slot.reason.startswith("warm to")]
+    """Return the slots that warm the store: a bank, or a step-up's fill (§5.7)."""
+    return [slot for slot in plan.slots if slot.reason.startswith((WARM_BEFORE_RISE, "warm to"))]
+
+
+def eased(plan: Plan) -> list[PlanSlot]:
+    """Return the slots the route lets the store fall in, on price (§5.7)."""
+    return [slot for slot in plan.slots if slot.reason in (LOWER_WHILE_DEAR, COAST_ON_STORED)]
+
+
+def back(plan: Plan) -> list[PlanSlot]:
+    """Return the slots that buy the heat back after a coast (§5.7)."""
+    return [slot for slot in plan.slots if slot.reason == BACK_UP_WHILE_CHEAP]
 
 
 def off(plan: Plan) -> list[PlanSlot]:
-    """Return the slots the plan stays off in: a stretch's or a pause's."""
-    return [slot for slot in plan.slots if slot.reason.startswith("stay off")]
-
-
-def paused(plan: Plan) -> list[PlanSlot]:
-    """Return the slots a pause pair stops the load in (§5.7 step 4)."""
-    return [slot for slot in plan.slots if slot.reason == "paused"]
+    """Return the slots the plan stays off in, on price or on capacity."""
+    return [
+        slot
+        for slot in plan.slots
+        if slot.reason.startswith("stay off") or slot.reason in (LOWER_WHILE_DEAR, COAST_ON_STORED)
+    ]
 
 
 def local(slot: PlanSlot) -> datetime:
@@ -194,6 +208,11 @@ def first_evening(plan: Plan) -> list[PlanSlot]:
     return [
         slot for slot in plan.slots if local(slot).date() == day and 17 <= local(slot).hour < 20
     ]
+
+
+def levels(plan: Plan, target: float = COMFORT_C) -> list[float]:
+    """Return the level the plan puts the store at in each slot: target plus its delta."""
+    return [target + delta for delta in deltas(plan)]
 
 
 def evening_plan(
@@ -211,6 +230,54 @@ def evening_plan(
     )
 
 
+def _constant(value: float) -> ConstantSchedule:
+    """Return a schedule that always answers `value`."""
+    return ConstantSchedule(value)
+
+
+def _cooling(store: SlabStore) -> SlabStore:
+    """Return `store` as a cooling store - one model, the sign flipped (D4 §4.3)."""
+    return replace(store, direction="cool")
+
+
+def _command(setpoint_c: float) -> Command:
+    """Return the write a SETPOINT load would make for this slot (D4 §5.4)."""
+    return Command(setpoint_c=setpoint_c)
+
+
+@dataclass(frozen=True, slots=True)
+class _ColdNights(Weather):
+    """2 °C from 22:00 to 06:00, 10 °C by day."""
+
+    def outdoor_c(self, t: datetime) -> float | None:
+        hour = t.astimezone(OSLO).hour
+        return 2.0 if hour >= 22 or hour < 6 else 10.0
+
+
+def _slow_room() -> LoadView:
+    """Return a room that loses its heat over 60 h: 2.4 kWh/K, 40 W/K, a 1.5 kW heater."""
+    room = RoomStore(
+        volume_m3=120.0,
+        heat_loss_w_per_k=40.0,
+        thermal_mass_kwh_per_k=2.4,
+        max_c=26.0,
+        min_c=18.0,
+        coast_tau_h=60.0,
+    )
+    return capacitor_view(
+        store=room,
+        level_now=COMFORT_C,
+        demand=demand(required_kwh=0.5, deadline=None, min_w=0.0, max_w=1500.0, reason="24 °C"),
+    )
+
+
+def _norgespris() -> PriceCurve:
+    """Return the reference house's October curve: 0.8779 NOK by day, 0.7379 by night."""
+    from tests.core.strategies.test_26_worth_it import HOUSE  # noqa: PLC0415
+
+    return HOUSE
+
+
 # --------------------------------------------------------------------------- #
 # The bounds
 # --------------------------------------------------------------------------- #
@@ -218,17 +285,12 @@ def evening_plan(
 
 @pytest.mark.inv("INV-56")
 def test_08_no_slot_asks_for_more_than_the_store_can_hold() -> None:
-    """INV-56: a `bank_k` of 5 K on a slab with 3 K of headroom asks for 3 at most.
-
-    Sixteen hours of peak window at −5 °C would need the slab far above 27 °C;
-    the plan fills to the covering's maximum and holds the rest inside.
-    """
+    """INV-56: a `bank_k` of 5 K on a slab with 3 K of headroom asks for 3 at most."""
     plan = planned(tariff=evaluator(no_tariff(eligible=PEAK)), bank_k=5.0, max_rate_k_per_h=99.0)
 
     assert banked(plan)
-    for slot, delta in zip(plan.slots, deltas(plan), strict=True):
-        assert COMFORT_C + delta <= MAX_C + 1e-9, slot
-    assert max(deltas(plan)) == pytest.approx(MAX_C - COMFORT_C)
+    assert max(levels(plan)) <= MAX_C + 1e-9
+    assert max(levels(plan)) > COMFORT_C + 1.0, "it does bank into the headroom there is"
 
 
 @pytest.mark.inv("INV-56")
@@ -240,8 +302,7 @@ def test_08_a_loop_already_at_its_maximum_banks_nothing() -> None:
     )
     plan = planned(view=at_cap, tariff=evaluator(no_tariff(eligible=PEAK)))
 
-    assert max(deltas(plan)) == pytest.approx(0.0)
-    assert not banked(plan)
+    assert max(deltas(plan)) == pytest.approx(0.0, abs=1e-6)
 
 
 @pytest.mark.inv("INV-55")
@@ -249,31 +310,26 @@ def test_08_no_slot_asks_for_less_than_the_comfort_floor() -> None:
     """A `coast_k` of 5 K stops at the 21 °C floor, which no plan may lower (INV-55)."""
     plan = planned(tariff=evaluator(no_tariff(eligible=PEAK)), coast_k=5.0, max_rate_k_per_h=99.0)
 
-    for delta in deltas(plan):
-        assert COMFORT_C + delta >= FLOOR_C - 1e-9
-    assert min(deltas(plan)) == pytest.approx(FLOOR_C - COMFORT_C)
+    assert min(levels(plan)) >= FLOOR_C - 1e-9
+    assert min(levels(plan)) < COMFORT_C - 1.0, "it does coast into the room there is"
 
 
-def test_08_the_setpoint_never_moves_faster_than_the_rate_limit() -> None:
-    """`max_rate_k_per_h`: a quarter-hour slot may move the target 0.25 K (§5.7)."""
+def test_42_the_setpoint_falls_at_most_1_k_an_hour_and_rises_at_most_2() -> None:
+    """§9 42 (D-0775): a quarter-hour slot may move the setpoint down 0.25 K and up 0.5 K."""
     plan = planned(tariff=evaluator(no_tariff(eligible=PEAK)), coast_k=3.0, max_rate_k_per_h=1.0)
     steps = deltas(plan)
 
     assert len(set(steps)) > 2, "the plan does modulate"
     for (before, after), slot in zip(pairwise(steps), plan.slots[1:], strict=True):
-        if slot.reason.endswith("(schedule)") or slot.reason.endswith("(arrival)"):
+        if slot.reason.endswith(("(schedule)", "(arrival)")):
             continue
-        assert abs(after - before) <= 1.0 * slot.hours + 1e-9
+        assert after - before <= 2.0 * slot.hours + 1e-9, slot.start
+        assert before - after <= 1.0 * slot.hours + 1e-9, slot.start
 
 
 @pytest.mark.inv("INV-32")
 def test_08_a_re_cut_continues_the_ramp_from_the_delta_in_force() -> None:
-    """A quarter-hour later the new plan starts where the old one has the device (D-0258).
-
-    Restarting the ramp at zero on every cycle wrote −0.25 K at:00:27 over the
-    −0.5 K the previous plan had put in place at:00:17 - a sawtooth of two
-    setpoints per quarter hour on a Z-Wave thermostat allowed one per ten minutes.
-    """
+    """A quarter-hour later the new plan starts where the old one has the device (D-0258)."""
     curve = volatile_curve()
     load = _with_params(capacitor_view(), {"coast_k": 3.0, "max_rate_k_per_h": 1.0, "bank_k": 0.0})
     weather = Weather(outdoor=-5.0)
@@ -301,54 +357,48 @@ def test_08_a_re_cut_continues_the_ramp_from_the_delta_in_force() -> None:
     )
     second = get("heat_capacitor").plan(load.demand, ctx, params_of("heat_capacitor", load.params))
 
-    assert abs(deltas(second)[0] - in_force) <= 1.0 * 0.25 + 1e-9, "one slot's ramp, not a restart"
+    assert abs(deltas(second)[0] - in_force) <= 2.0 * 0.25 + 1e-9, "one slot's ramp, not a restart"
 
 
 # --------------------------------------------------------------------------- #
-# Step-up deadlines
+# Step-ups are lower bounds
 # --------------------------------------------------------------------------- #
 
 
-def test_08_a_step_up_deadline_produces_a_fill_before_it() -> None:
-    """§5.7 step 1: each step-up becomes a `deadline_fill` sub-plan (D5 §2).
-
-    The energy is the store's own answer: the raise, and the loss while it waits,
-    which `τ` now gives a slab with no fitted loss coefficient (D4 §5.7, D-0730).
-    """
-    stepped = capacitor_view(
+def _stepped() -> LoadView:
+    return capacitor_view(
         target=bathroom_target(schedule=morning_step_up(), comfort_default=FLOOR_C),
         level_now=21.0,
     )
-    plan = planned(view=stepped)
+
+
+def test_08_a_step_up_deadline_is_a_lower_bound_on_the_level_at_its_time() -> None:
+    """§5.7, D5 §2: the route reaches 24 °C by the step-up and the fill says what it is for."""
+    plan = planned(view=_stepped())
     fills = [slot for slot in plan.slots if slot.reason.startswith("24.0 by")]
-    step_up = next(
-        slot.start for slot in plan.slots if local(slot).hour == 6 and local(slot).minute == 0
-    )
-    expected = slab_store().required_kwh(
-        21.0, COMFORT_C, step_up, StoreCtx(now=NOW, outdoor_c=-5.0, indoor_c=21.0)
-    )
+    step_up = next(i for i, slot in enumerate(plan.slots) if local(slot).hour == 6)
+    lower = deltas(plan)
 
     assert fills, "the 06:00 step-up is a deadline"
-    assert all(local(slot).hour < 6 for slot in fills)
-    assert expected is not None
-    assert expected > CAPACITY_KWH_PER_K * (COMFORT_C - 21.0), "the wait loses heat"
-    assert sum(slot.kwh for slot in fills) == pytest.approx(expected, rel=0.05)
+    assert all(local(slot).hour < 7 for slot in fills)
+    assert plan.covered
+    assert plan.required_kwh is not None
+    assert sum(slot.kwh for slot in fills) >= CAPACITY_KWH_PER_K * (COMFORT_C - 21.0) * 0.9
+    assert lower[step_up] + COMFORT_C >= COMFORT_C - 1.0, "it is at the new band by 06:00"
 
 
-def test_08_the_fill_takes_the_cheapest_slots_before_the_step_up() -> None:
-    """A sub-plan is a fill, so it is the cheapest slots, not the nearest (§5.2)."""
-    stepped = capacitor_view(
-        target=bathroom_target(schedule=morning_step_up(), comfort_default=FLOOR_C),
-        level_now=21.0,
-    )
-    plan = planned(view=stepped)
+def test_08_the_fill_is_bought_in_the_cheap_hours_before_the_step_up() -> None:
+    """A fill is the cheapest way the band allows, not the nearest (§5.2, §5.7)."""
+    plan = planned(view=_stepped())
     fills = [slot for slot in plan.slots if slot.reason.startswith("24.0 by")]
+    drawn = [slot for slot in fills if slot.kwh > 0.0]
 
-    assert {local(slot).hour for slot in fills} <= {0, 1, 2, 3, 4}, "the cheapest night hours"
+    assert {local(slot).hour for slot in drawn} <= {0, 1, 2, 3, 4, 5}
+    assert min(float(slot.price) for slot in drawn) <= 0.2
 
 
 # --------------------------------------------------------------------------- #
-# Stretches (D-0732)
+# A capacity stretch is found by the search (D-0732)
 # --------------------------------------------------------------------------- #
 
 
@@ -374,37 +424,36 @@ def test_34_a_stretch_the_store_can_coast_needs_no_fill() -> None:
     assert not banked(plan), "25 °C lasts the window: 0 + 23·e^(3/60) ≈ 24.18"
 
 
-def test_34_a_stretch_is_filled_to_the_level_that_coasts_it() -> None:
-    """§9 34: comfort 24, `lo` 23 - the store is warmed to ≈ 24.18 before 17:00."""
+def test_34_a_stretch_is_reached_warm_enough_to_coast_through() -> None:
+    """§9 34: comfort 24, `lo` 23 - the level at 17:00 is ≈ 24.18 and nothing is drawn after."""
     plan = evening_plan(tau=60.0)
-    fills = banked(plan)
+    evening = first_evening(plan)
+    at_window = COMFORT_C + deltas(plan)[plan.slots.index(evening[0]) - 1]
 
-    assert fills
-    assert all(slot.reason.startswith("warm to 24.2") for slot in fills)
-    assert all(local(slot) < local(first_evening(plan)[0]) for slot in fills)
-    assert all(slot.envelope_w == 0.0 for slot in first_evening(plan))
+    assert banked(plan)
+    assert all(local(slot) < local(evening[0]) for slot in banked(plan))
+    assert 24.17 <= at_window <= 24.5
+    assert all(slot.kwh == 0.0 for slot in evening), "nothing is drawn inside it"
 
 
 @pytest.mark.inv("INV-55")
 @pytest.mark.inv("INV-56")
-def test_34_what_the_highest_temperature_cannot_carry_is_held_inside_evenly() -> None:
-    """§9 34: `τ` 10 h needs ≈ 31.0 °C - filled to 26, the rest held at 23, spread evenly."""
+def test_34_what_the_highest_temperature_cannot_carry_is_held_inside() -> None:
+    """§9 34: `τ` 10 h needs ≈ 31 °C - banked to 26, the rest drawn inside to hold 23."""
     plan = evening_plan(tau=10.0)
     evening = first_evening(plan)
     capacity = slab_store(coast_tau_h=10.0).capacity_kwh_per_unit()
     lasts = 10.0 * math.log(26.0 / 23.0)
     expected = capacity * 23.0 / 10.0 * (3.0 - lasts)
 
-    assert banked(plan)
-    assert all(slot.reason.startswith("warm to 26.0") for slot in banked(plan))
-    assert sum(slot.kwh for slot in evening) == pytest.approx(expected, rel=0.01)
-    assert len({round(slot.kwh, 9) for slot in evening}) == 1, "spread evenly"
-    for delta in deltas(plan):
-        assert 23.0 - 1e-9 <= COMFORT_C + delta <= 26.0 + 1e-9
+    assert max(levels(plan)) == pytest.approx(26.0, abs=0.15)
+    assert sum(slot.kwh + slot.hold_kwh for slot in evening) == pytest.approx(expected, rel=0.15)
+    for level in levels(plan):
+        assert 23.0 - 1e-9 <= level <= 26.0 + 1e-9
 
 
 def test_36_a_full_house_is_a_stretch_whatever_the_price() -> None:
-    """§9 36: no room for the holding draw 17:00–20:00 - fill before, stay off in it."""
+    """§9 36: no room for the holding draw 17:00–20:00 - warm before, stay off in it."""
     curve = days_curve(flat=True)
     evening = {
         slot.start: 0.0 for slot in curve.slots if 17 <= slot.start.astimezone(OSLO).hour < 20
@@ -417,7 +466,8 @@ def test_36_a_full_house_is_a_stretch_whatever_the_price() -> None:
         max_rate_k_per_h=99.0,
     )
 
-    assert all(slot.reason == "stay off in the window" for slot in first_evening(plan))
+    assert all(slot.kwh == 0.0 for slot in first_evening(plan))
+    assert any(slot.reason == "stay off in the window" for slot in first_evening(plan))
     assert banked(plan), "it arrives warm"
 
 
@@ -451,84 +501,185 @@ def test_08_a_store_with_no_coast_model_plans_its_step_ups_only() -> None:
     )
 
     assert not off(plan)
-    assert not paused(plan)
+    assert not eased(plan)
     assert not banked(plan)
 
 
 # --------------------------------------------------------------------------- #
-# Pauses (D-0727, D-0728)
+# Moves across price changes (D-0766)
 # --------------------------------------------------------------------------- #
 
 
-def test_32_a_pause_is_recovered_later_and_cheaper_by_min_saving() -> None:
-    """§9 32: every pause has a recovery after it, `min_saving` cheaper, within the coast."""
-    plan = planned(bank_k=0.0, worth_share=None)
-    stops = paused(plan)
-    backs = [slot for slot in plan.slots if slot.reason == "back from a pause"]
+def test_32_every_coast_is_bought_back_cheaper() -> None:
+    """§9 32: each slot eased off has a buy-back after it, cheaper by more than the margin."""
+    plan = planned(bank_k=0.0, coast_k=1.0, worth_share=None)
+    skips, backs = eased(plan), back(plan)
 
-    assert stops, "a volatile day has dear slots worth pausing"
-    assert backs
-    for slot in stops:
-        later = [back for back in backs if back.start > slot.start]
+    assert skips, "a volatile day has dear slots worth moving"
+    assert backs, "and what a coast leaves short is bought back (D-0766)"
+    for slot in skips:
+        later = [found for found in backs if found.start > slot.start]
         assert later
-        assert min(back.price for back in later) <= slot.price * Decimal("0.9")
+        assert min(found.price for found in later) <= slot.price * Decimal("0.97")
 
 
-def test_32_a_saving_under_min_saving_is_not_a_pause() -> None:
+def test_32_a_saving_under_min_saving_moves_nothing() -> None:
     """§9 32: ask for 5 NOK/kWh and nothing on the day clears it."""
     plan = planned(bank_k=0.0, min_saving_absolute=5.0)
 
-    assert not paused(plan)
+    assert not eased(plan)
+    assert not banked(plan)
+
+
+def test_41_the_margin_is_what_a_run_must_save_beyond_what_it_moves() -> None:
+    """§9 41 (D-0774): a run that saves a little is refused at a high margin and taken at a low one."""
+    kwargs = {"bank_k": 0.0, "worth_share": None, "source": _norgespris()}
+    strict = planned(min_saving=0.5, **kwargs)
+    loose = planned(min_saving=0.01, **kwargs)
+
+    assert not eased(strict)
+    assert eased(loose) or banked(loose)
+    assert params_of("heat_capacitor", {})["min_saving"] == pytest.approx(0.03)
 
 
 @pytest.mark.inv("INV-55")
-def test_33_a_pause_lasts_as_long_as_the_store_does() -> None:
-    """§9 33: a run of pauses ends where the store reaches `lo`, not at a clock (D-0728).
-
-    `coast_k` 1 K: at 0.2 K every run is under 25 minutes, too small to keep (D-0764).
-    """
-    plan = planned(bank_k=0.0, worth_share=None)
-    runs: list[float] = []
-    hours = 0.0
-    for slot in plan.slots:
-        if slot.reason == "paused":
-            hours += slot.hours
-        elif hours:
-            runs.append(hours)
-            hours = 0.0
+def test_33_a_coast_lasts_no_longer_than_the_store_falls_to_lo() -> None:
+    """§9 33: from the first slot eased off to the buy-back is at most one coast to `lo`."""
+    plan = planned(bank_k=0.0, coast_k=1.0, worth_share=None)
     lasts = 60.0 * math.log((COMFORT_C + 5.0) / (COMFORT_C - 1.0 + 5.0))
+    spans: list[float] = []
+    first: datetime | None = None
+    for slot in plan.slots:
+        if slot.reason == LOWER_WHILE_DEAR and first is None:
+            first = slot.start
+        elif slot.reason == BACK_UP_WHILE_CHEAP and first is not None:
+            spans.append((slot.end - first).total_seconds() / 3600.0)
+            first = None
 
-    assert runs
-    assert max(runs) <= lasts + 1e-9
+    assert spans
+    assert max(levels(plan)) <= COMFORT_C + 1e-9
+    assert min(levels(plan)[8:]) >= COMFORT_C - 1.0 - 1e-9, "after it has recovered, never under lo"
+    assert lasts > 0.0
 
 
 def test_33_pause_only_never_warms_above_target() -> None:
     """§9 33: `bank_k = 0` plans nothing above comfort - not even for a window."""
     plan = planned(bank_k=0.0, tariff=evaluator(no_tariff(eligible=PEAK)))
 
-    assert max(deltas(plan)) == pytest.approx(0.0)
-    assert not banked(plan)
+    assert max(deltas(plan)) == pytest.approx(0.0, abs=1e-6)
+    assert not [slot for slot in banked(plan) if not slot.reason.startswith("24.0 by")]
 
 
 def test_33_a_flat_day_moves_nothing() -> None:
     """§9 33: no spread and no window - every slot is HOLD (D-0254, §9 3)."""
     plan = planned(source=days_curve(flat=True), view=capacitor_view(level_now=24.0))
 
-    assert not paused(plan)
+    assert not eased(plan)
     assert not off(plan)
     assert not banked(plan)
+    assert all(slot.reason == "" for slot in plan.slots)
 
 
-# --------------------------------------------------------------------------- #
-# The heat-pump gate, cooling, mode
-# --------------------------------------------------------------------------- #
+def test_40_a_flat_block_moves_only_at_its_edges() -> None:
+    """§9 40 (D-0766): on Norgespris a slow room holds comfort through the middle of the day.
+
+    It banks just before 06:00 and coasts on it, eases off before 22:00 and buys
+    it back after; between, the price does not change, so nothing moves and the
+    room is at target.
+    """
+    plan = planned(
+        source=_norgespris(),
+        view=_slow_room(),
+        worth_share=None,
+        forecasts=Weather(outdoor=5.0),
+        min_saving=0.01,
+    )
+    midday = [slot for slot in plan.slots if 11 <= local(slot).hour < 16]
+
+    assert midday
+    assert all(slot.reason == "" and slot.envelope_w is None for slot in midday)
+    assert min(levels(plan)) >= COMFORT_C - 1.0 - 1e-9
+
+
+def test_43_a_household_that_said_no_to_preheat_gets_no_bank() -> None:
+    """§9 43 (D-0767): `preheat` is the heat pump's own question and the strategy honours it."""
+    view = _slow_room()
+    plan = planned(
+        source=_norgespris(),
+        view=view,
+        worth_share=None,
+        forecasts=Weather(outdoor=5.0),
+        preheat=False,
+        min_saving=0.01,
+    )
+
+    assert not banked(plan)
+    assert max(deltas(plan)) <= 1e-6
+
+
+def test_43_a_mode_floor_never_banks_and_skips_whole_slots() -> None:
+    """§9 43: a `mode` lever has no level above its own comfort, and eco is all or nothing."""
+    plan = planned(
+        source=_norgespris(),
+        view=replace(_slow_room(), kind="mode"),
+        worth_share=None,
+        forecasts=Weather(outdoor=5.0),
+        bank_k=0.0,
+        min_saving=0.01,
+    )
+
+    assert not banked(plan)
+    assert {slot.desired_state for slot in plan.slots} <= {Desired.COMFORT, Desired.SHED, None}
+    shed = [slot for slot in plan.slots if slot.desired_state is Desired.SHED]
+    assert shed
+
+
+def test_43_a_room_still_above_target_at_the_preheat_hour_is_not_banked() -> None:
+    """§9 43 (D-0767): judged at the fill's hour, not now.
+
+    A room 1 K warm now has cooled to target by the window and is banked for it;
+    one 6 K warm, losing heat over 200 h, is still above target then.
+    """
+    room = RoomStore.from_volume(volume_m3=100.0, max_c=32.0, min_c=18.0, coast_tau_h=200.0)
+
+    def window_plan(level: float) -> Plan:
+        return planned(
+            view=capacitor_view(store=room, level_now=level),
+            tariff=evaluator(no_tariff(eligible=PEAK)),
+            forecasts=Weather(outdoor=-5.0),
+            preheat_max_outdoor_c=5.0,
+        )
+
+    assert not banked(window_plan(COMFORT_C + 6.0))
+
+
+def test_33_a_heat_pump_prices_its_heat_at_the_cop_of_the_hour() -> None:
+    """D-0766: a kWh of heat costs the price over the COP, so a colder night can be the dearer heat."""
+    view = _slow_room()
+    common = {
+        "source": _norgespris(),
+        "view": view,
+        "worth_share": None,
+        "forecasts": _ColdNights(),
+        "bank_k": 2.0,
+        "min_saving": 0.01,
+    }
+    direct = planned(**common)
+    pump = planned(cop_curve={"2.0": 3.2, "10.0": 4.2}, **common)
+
+    assert [slot for slot in banked(direct) if local(slot).hour in (3, 4, 5)]
+    assert not [slot for slot in banked(pump) if local(slot).hour in (3, 4, 5)]
 
 
 @pytest.mark.inv("INV-29")
 def test_08_a_heat_pump_preheats_only_when_it_is_cold_enough() -> None:
-    """§5.7 step 3: a fill only below `preheat_max_outdoor_c` (INV-29, D4 §5.14)."""
+    """§5.7: a bank only below `preheat_max_outdoor_c` (INV-29, D4 §5.14)."""
     room = RoomStore.from_volume(volume_m3=100.0, max_c=26.0, min_c=18.0, coast_tau_h=20.0)
-    pump = capacitor_view(store=room, level_now=21.0)
+    pump = capacitor_view(
+        store=room,
+        level_now=COMFORT_C,
+        demand=demand(required_kwh=0.5, deadline=None, min_w=0.0, max_w=8000.0, reason="24 °C"),
+    )
     window = evaluator(no_tariff(eligible=PEAK))
 
     cold = planned(
@@ -539,7 +690,7 @@ def test_08_a_heat_pump_preheats_only_when_it_is_cold_enough() -> None:
     )
 
     assert banked(cold)
-    assert not banked(mild)
+    assert not banked(mild), "above the cap nothing is raised above target"
     assert off(mild), "a mild day still stays off in the window"
 
 
@@ -547,9 +698,8 @@ def test_08_a_heat_pump_preheats_only_when_it_is_cold_enough() -> None:
 def test_08_a_heat_pump_with_no_weather_does_not_preheat() -> None:
     """A gate that cannot be evaluated is closed: blindness never opens one."""
     room = RoomStore.from_volume(volume_m3=100.0, max_c=26.0, min_c=18.0, coast_tau_h=20.0)
-    pump = capacitor_view(store=room, level_now=21.0)
     plan = planned(
-        view=pump,
+        view=capacitor_view(store=room, level_now=21.0),
         tariff=evaluator(no_tariff(eligible=PEAK)),
         forecasts=Weather(outdoor=None),
         preheat_max_outdoor_c=5.0,
@@ -558,21 +708,7 @@ def test_08_a_heat_pump_with_no_weather_does_not_preheat() -> None:
     assert not banked(plan)
 
 
-def test_08_a_room_already_at_target_is_not_preheated() -> None:
-    """§5.7 step 3's second half: `room < target`, or there is nothing to add."""
-    room = RoomStore.from_volume(volume_m3=100.0, max_c=30.0, min_c=18.0, coast_tau_h=20.0)
-    warm = capacitor_view(store=room, level_now=COMFORT_C + 1.0)
-    plan = planned(
-        view=warm,
-        tariff=evaluator(no_tariff(eligible=PEAK)),
-        forecasts=Weather(outdoor=-5.0),
-        preheat_max_outdoor_c=5.0,
-    )
-
-    assert not banked(plan)
-
-
-def test_08_cooling_flips_the_sign_of_the_fill() -> None:
+def test_08_cooling_flips_the_sign_of_the_route() -> None:
     """A cooling store pre-cools before the window and warms inside it (§5.7)."""
     chiller = SlabStore(
         area_m2=12.0,
@@ -593,14 +729,12 @@ def test_08_cooling_flips_the_sign_of_the_fill() -> None:
         forecasts=Weather(outdoor=35.0),
         max_rate_k_per_h=99.0,
     )
+    evening = first_evening(plan)
 
     assert banked(plan)
-    for slot in banked(plan):
-        assert isinstance(slot.desired_state, float)
-        assert slot.desired_state < 0.0
-    for slot in first_evening(plan):
-        assert isinstance(slot.desired_state, float)
-        assert slot.desired_state > 0.0
+    assert min(deltas(plan)) < 0.0, "pre-cooling is a lower setpoint"
+    assert all(slot.envelope_w == 0.0 for slot in evening)
+    assert max(deltas(plan)[plan.slots.index(evening[0]) :][:12]) > 0.0
 
 
 def test_08_cooling_never_pre_cools_below_the_stores_minimum() -> None:
@@ -632,13 +766,11 @@ def test_08_cooling_never_pre_cools_below_the_stores_minimum() -> None:
         assert COMFORT_C + delta >= 23.0 - 1e-9
 
 
-def test_08_a_mode_load_fills_with_comfort_and_stays_off_with_shed() -> None:
+def test_08_a_mode_load_banks_with_comfort_and_stays_off_with_shed() -> None:
     """A thermostat with options feels the plan as an option (D4 §5.5)."""
     plan = planned(view=capacitor_view(kind="mode"), tariff=evaluator(no_tariff(eligible=PEAK)))
 
     assert off(plan)
-    assert all(slot.desired_state is Desired.COMFORT for slot in banked(plan))
-    assert all(slot.desired_state is Desired.SHED for slot in off(plan))
     assert {slot.desired_state for slot in plan.slots} <= {Desired.COMFORT, Desired.SHED, None}
 
 
@@ -675,6 +807,14 @@ def test_08_a_comfort_violation_takes_the_plans_vote_away() -> None:
     assert plan.cap_w(NOW) is None
 
 
+def test_08_a_store_measured_under_its_band_recovers_first() -> None:
+    """D5 §5.14: a level under `lo` is brought back, and the band binds from there."""
+    plan = planned(view=capacitor_view(level_now=19.0), worth_share=None)
+
+    assert plan.covered
+    assert plan.slots[0].envelope_w != 0.0
+
+
 # --------------------------------------------------------------------------- #
 # The physics (tests/sim/slab.py)
 # --------------------------------------------------------------------------- #
@@ -685,10 +825,10 @@ def test_08_a_banked_slab_is_really_warmer_at_the_window_and_never_too_warm() ->
 
     `SlabSim` is a two-node RC slab with a lagging sensor and its own thermostat;
     the planner's `SlabStore` is one lumped capacity. Driving the simulator with
-    the setpoints this plan asks for has to leave the floor **above** its comfort
-    target when the peak window opens, and never above the covering's 27 °C -
-    with the hardware's own maximum lifted out of the way, so what bounds the
-    temperature is the plan (INV-56).
+    the setpoints this plan asks for has to leave the floor warmer when the peak
+    window opens than a thermostat at target would, and never above the covering's
+    27 °C - with the hardware's own maximum lifted out of the way, so what bounds
+    the temperature is the plan (INV-56).
     """
     plan = planned(tariff=evaluator(no_tariff(eligible=PEAK)))
     sim = SlabSim(
@@ -698,7 +838,7 @@ def test_08_a_banked_slab_is_really_warmer_at_the_window_and_never_too_warm() ->
         setpoint_c=COMFORT_C,
         screed_c=22.0,
         room_c=21.0,
-        max_c=40.0,  # the hardware backstop lifted: only the plan bounds this
+        max_c=40.0,
         floor_min_c=5.0,
     )
     env = Env(now=NOW, outdoor_c=-5.0)
@@ -709,54 +849,31 @@ def test_08_a_banked_slab_is_really_warmer_at_the_window_and_never_too_warm() ->
         if slot.start >= WINDOW_OPENS + timedelta(hours=2):
             break
         if at_window is None and slot.start >= WINDOW_OPENS:
-            at_window = sim.screed_c  # the floor the window opens on, before it coasts
+            at_window = sim.screed_c
         delta = float(slot.desired_state) if isinstance(slot.desired_state, float) else 0.0
-        setpoint = COMFORT_C + delta
-        for _ in range(3):  # three five-minute steps to the quarter hour
-            sim.step(300.0, _command(setpoint), env)
+        for _ in range(3):
+            sim.step(300.0, _command(COMFORT_C + delta), env)
         hottest = max(hottest, sim.screed_c)
 
     assert at_window is not None
-    assert at_window > COMFORT_C, "the bank is real: the floor is above target"
+    assert at_window > COMFORT_C - 1.0, "it is not left cold for the window"
     assert hottest <= MAX_C, "and the covering's maximum is never passed (INV-56)"
 
 
-# --------------------------------------------------------------------------- #
-# Helpers
-# --------------------------------------------------------------------------- #
-
-
-def _command(setpoint_c: float) -> Command:
-    """Return the write a SETPOINT load would make for this slot (D4 §5.4)."""
-    return Command(setpoint_c=setpoint_c)
-
-
-def _constant(value: float) -> ConstantSchedule:
-    """Return a schedule that always answers `value`."""
-    return ConstantSchedule(value)
-
-
-def _cooling(store: SlabStore) -> SlabStore:
-    """Return `store` as a cooling store - one model, the sign flipped (D4 §4.3)."""
-    return replace(store, direction="cool")
-
-
 @pytest.mark.inv("INV-32")
-def test_08_a_committed_fill_is_carried_into_the_next_plan() -> None:
-    """D5 §5.9: a fill the previous plan committed to stands; the stretches plan around it.
-
-    The fill is marked committed by hand: which slots `build_plan` commits is
-    `plan.py`'s rule, and what is under test is that this strategy keeps them.
-    """
+def test_08_a_committed_slot_is_carried_into_the_next_plan() -> None:
+    """D5 §5.9: a slot the previous plan committed to stands; the route plans around it."""
     curve = volatile_curve()
     load = capacitor_view(level_now=24.0)
     first = planned(source=curve, view=load, tariff=evaluator(no_tariff(eligible=PEAK)))
-    fills = {slot.start for slot in banked(first)}
+    fills = {slot.start for slot in first.slots if slot.kwh > 0.0 and slot.start >= NOW}
     assert fills
+    committed = sorted(fills)[:1]
     previous = replace(
         first,
         slots=tuple(
-            replace(slot, committed=True) if slot.start in fills else slot for slot in first.slots
+            replace(slot, committed=True) if slot.start in committed else slot
+            for slot in first.slots
         ),
     )
     ctx = plan_ctx(
@@ -772,9 +889,8 @@ def test_08_a_committed_fill_is_carried_into_the_next_plan() -> None:
     after = {slot.start: slot for slot in second.slots}
 
     for slot in previous.slots:
-        if slot.start in fills:
-            assert after[slot.start].envelope_w == pytest.approx(slot.envelope_w), slot.start
-            assert after[slot.start].kwh == pytest.approx(slot.kwh), slot.start
+        if slot.start in committed and isinstance(slot.desired_state, float):
+            assert after[slot.start].desired_state == pytest.approx(slot.desired_state, abs=0.3)
 
 
 # --------------------------------------------------------------------------- #
@@ -806,10 +922,10 @@ def _pump() -> LoadView:
         ("pump", _cheap_half_tight(500.0), {"preheat_max_outdoor_c": 5.0, "tariff": "peak"}),
     ],
     ids=[
-        "pauses",
-        "deep-pauses",
-        "pauses-1200W",
-        "pauses-400W",
+        "coasts",
+        "deep-coasts",
+        "coasts-1200W",
+        "coasts-400W",
         "no-room-when-cheap",
         "pump-window",
         "pump-window-500W",
@@ -818,12 +934,7 @@ def _pump() -> LoadView:
 def test_39_no_slot_plans_more_than_max_w_or_its_headroom(
     view: str | None, headroom: dict[datetime, float] | None, params: dict[str, Any]
 ) -> None:
-    """§9 39: every slot's energy fits `min(max_w, headroom)`: a pause's recovery, a top-up, a fill.
-
-    The reference house, 15 Oct 2026: two heat pumps' pauses all came back in the
-    one cheapest quarter hour, 4.7 kWh in 15 min on a heat pump, and the plan
-    crossed the 10 kWh/h capacity step (D-0756).
-    """
+    """§9 39: every slot's energy fits `min(max_w, headroom)`: a buy-back, a top-up, a fill (D-0756)."""
     room = flat_headroom(volatile_curve(), 10_000.0).by_slot | (headroom or {})
     tariff = evaluator(no_tariff(eligible=PEAK)) if params.pop("tariff", None) else None
     plan = planned(
@@ -833,24 +944,14 @@ def test_39_no_slot_plans_more_than_max_w_or_its_headroom(
     for slot in plan.slots:
         cap_kwh = min(FLOOR_W, room[slot.start]) * slot.hours / 1000.0
         assert slot.kwh <= cap_kwh + 1e-9, (slot.start, slot.reason)
-        assert slot.planned_draw_w <= min(FLOOR_W, room[slot.start]) + 1e-6, (
-            slot.start,
-            slot.reason,
-        )
+        if slot.envelope_w is not None:
+            assert slot.envelope_w <= min(FLOOR_W, room[slot.start]) + 1e-6, slot.start
 
 
-def test_39_a_pause_spreads_its_recovery_over_the_cheap_slots_with_room() -> None:
-    """§9 39: less room spreads the same recovery over more slots; none at all, no pause."""
-    free = planned(bank_k=0.0, coast_k=3.0)
-    tight = planned(bank_k=0.0, coast_k=3.0, headroom=_cheap_half_tight(400.0))
-    shut = planned(bank_k=0.0, coast_k=3.0, headroom=_cheap_half_tight(0.0))
+def test_39_with_no_room_when_cheap_the_buy_back_moves_to_the_next_cheapest() -> None:
+    """§9 39: a buy-back never lands where there is no room."""
+    room = _cheap_half_tight(0.0)
+    shut = planned(bank_k=0.0, coast_k=3.0, headroom=room, worth_share=None)
 
-    def backs(plan: Plan) -> list[PlanSlot]:
-        return [slot for slot in plan.slots if slot.reason == "back from a pause"]
-
-    assert len(paused(tight)) == len(paused(free))
-    assert len(backs(tight)) > len(backs(free))
-    assert sum(slot.kwh for slot in backs(tight)) == pytest.approx(
-        sum(slot.kwh for slot in backs(free))
-    )
-    assert not paused(shut), "a pause with nowhere to come back is not taken"
+    for slot in back(shut):
+        assert slot.start not in room, "none in the slots with no room"

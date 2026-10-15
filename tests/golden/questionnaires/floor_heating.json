@@ -5,7 +5,7 @@
     "arrival_sources": [],
     "coast_tau_h": null,
     "comfort_c": null,
-    "command_interval_s": 600.0,
+    "command_interval_s": 1200.0,
     "covering": "wood",
     "follow_presence": false,
     "heating_type": "cable_in_screed",
@@ -28,7 +28,7 @@
     ]
   },
   "derived": {
-    "derivation_version": 5,
+    "derivation_version": 6,
     "explanation_key": "floor_heating_review",
     "explanation_params": {
       "comfort_c": 24.0,
@@ -46,7 +46,7 @@
       "arrival_sources": [],
       "coast_tau_h": 60.0,
       "comfort_c": 24.0,
-      "command_interval_s": 600.0,
+      "command_interval_s": 1200.0,
       "covering": "wood",
       "eco_setpoint_c": 22.0,
       "floor_c": 21.0,

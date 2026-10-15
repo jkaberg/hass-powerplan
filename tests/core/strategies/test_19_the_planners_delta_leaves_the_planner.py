@@ -98,8 +98,8 @@ def test_19_a_mode_loads_bank_and_coast_reach_the_select() -> None:
         tariff=evaluator(no_tariff(eligible=PEAK)),
         max_rate_k_per_h=99.0,
     )
-    bank = banked(plan)[0]
-    coast = off(plan)[0]
+    bank = next(slot for slot in plan.slots if slot.desired_state is Desired.COMFORT and slot.kwh)
+    coast = next(slot for slot in plan.slots if slot.desired_state is Desired.SHED)
     kind = mode_kind()
 
     warm = as_kind_ctx(bank, reads=_select("Energy saving heating mode"))
@@ -121,7 +121,8 @@ def test_19_a_hold_slot_asks_the_device_for_nothing_new() -> None:
 
     quantised = setpoint_kind().quantise(0.0, as_kind_ctx(hold))
 
-    assert quantised.value == pytest.approx(COMFORT_C + float(hold.desired_state or 0.0))
+    # The kind writes the setpoint in its own steps, 0.05 K.
+    assert quantised.value == pytest.approx(COMFORT_C + float(hold.desired_state or 0.0), abs=0.05)
     assert abs(float(hold.desired_state or 0.0)) <= 1.0
 
 

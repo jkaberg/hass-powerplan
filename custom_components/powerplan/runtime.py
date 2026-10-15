@@ -123,6 +123,7 @@ from .core.engine import (
     Knobs,
     LoadReads,
     Notification,
+    PlanReport,
     SiteConfig,
     SitePath,
 )
@@ -153,7 +154,7 @@ from .core.metering import (
     reconstruct_windows,
     window_bounds,
 )
-from .core.model import Carrier, Confidence, Direction, Mode, Plan, Slot
+from .core.model import Carrier, Confidence, Desired, Direction, Mode, Plan, PlanSlot, Slot
 from .core.pricing import (
     CoverageError,
     PriceContext,
@@ -343,6 +344,8 @@ RISK_LABELS: dict[str, float] = {"flat": RISK_FLAT, "free_ride": RISK_FREE_RIDE,
 FETCH_LOG_KEEP = 200
 #: How far `sensor.<site>_plan`'s `slots` reach: the dashboard's longest timeline (D12 §5.2).
 PLAN_SLOTS_HORIZON = timedelta(hours=48)
+#: How often a plan computed off the loop is computed again before it is run inline (D-0815).
+_PLAN_ATTEMPTS = 3
 
 #: D5 §5.9 (Phase 7): a production reading this far off its forecast, for this
 #: long, is a replan trigger.
@@ -998,6 +1001,19 @@ def night_params(quiet: QuietHours | None, tz: tzinfo) -> dict[str, str]:
     }
 
 
+def declared_setpoint_step(data: Mapping[str, Any]) -> float | None:
+    """Return the step the bound thermostat declares for its setpoint, in kelvin, or `None` (D-0818).
+
+    The `target_temp_step` its entity carries, in powerplan's unit (`scale` points from the
+    entity to powerplan); a Z-TRM declares none and is left to the default.
+    """
+    for row in data.get(LOAD_BINDINGS) or ():
+        binding = binding_from_data(row)
+        if binding.role is Role.SETPOINT and binding.step is not None and binding.step > 0.0:
+            return float(binding.step) * (binding.scale if binding.scale != 0.0 else 1.0)
+    return None
+
+
 def load_from_subentry(
     subentry_id: str,
     title: str,
@@ -1014,6 +1030,10 @@ def load_from_subentry(
     are not known (G15) - never planned, never written.
     """
     params = {**(data.get(LOAD_PARAMS) or {}), **(night or {})}
+    if (step := declared_setpoint_step(data)) is not None and "setpoint_step_k" not in params:
+        # The thermostat's own step is the finest setpoint the plan may ask it for (D-0818).
+        params["setpoint_step_k"] = step
+        data = {**data, LOAD_PARAMS: {**(data.get(LOAD_PARAMS) or {}), "setpoint_step_k": step}}
     device_type = device_types.get(str(data[LOAD_TYPE]))
     profile_key = str(data.get(LOAD_PROFILE) or "")
     quirks = profiles.get(profile_key).quirks() if profile_key in profiles.entries() else None
@@ -1070,6 +1090,19 @@ def device_from_subentry(
         profile.bind(bindings), device_id=device_id, params=dict(data.get("params") or {})
     )
     return LiveDevice(hass, device_id, bound)
+
+
+#: A setpoint held this far under target is lowered on the dashboard; less is the rate
+#: limit's ramp or rounding (D-0766).
+LOWERED_K: Final = 0.1
+
+
+def _held_low(slot: PlanSlot) -> bool:
+    """Whether a plan slot keeps its load below what it would draw on its own (D-0766)."""
+    if slot.envelope_w == 0.0 or slot.desired_state is Desired.SHED:
+        return True
+    lowered = slot.desired_state
+    return isinstance(lowered, float) and lowered < -LOWERED_K
 
 
 def _holds(state: State | None, call: DeviceCall) -> bool | None:
@@ -1367,6 +1400,10 @@ class Runtime:
         )
         self.gate = WriteGate(hass, read_state=self._read_state, on_state=self._on_gate_state)
         self.lock = asyncio.Lock()
+        #: Plans asked for, and the count when the latest began: a plan asked for before that
+        #: one began is answered by it (D-0815).
+        self._plan_asked = 0
+        self._plan_began = 0
         self.startup: list[str] = []
         self.state = EngineState()
         self.snapshot: Snapshot | None = None
@@ -2019,6 +2056,9 @@ class Runtime:
         if not self._stopped:
             self._stopped = True
             self._release_subscriptions()
+            # A plan running in its executor job finishes first, and its result is dropped.
+            async with self.lock:
+                pass
             await self.release_all(reason)
             self.gate.cancel()
             await self.store.flush()
@@ -3186,7 +3226,14 @@ class Runtime:
         """One planning cycle under the lock; the fetch before it never holds it (INV-46)."""
         if self.engine is None or self._stopped:
             return
+        self._plan_asked += 1
+        ticket = self._plan_asked
         async with self.lock:
+            if self._plan_began >= ticket:
+                # A plan that began after this one was asked for read fresher inputs: this
+                # trigger is in it (D7 §5.2, D-0815).
+                return
+            self._plan_began = self._plan_asked
             now = dt_util.utcnow()
             # An announcement past its end is dropped in the cycle (D7 §5.2).
             pruned = self.events.prune(now)
@@ -3194,7 +3241,12 @@ class Runtime:
                 self.events = pruned
                 self._save_prices()
             inputs = replace(await self._inputs(now, trigger), events=self.events.all())
-            state, report, effects = self.engine.plan(self.state, inputs)
+            # The search is pure and takes tens of milliseconds a heating load: it runs in an
+            # executor on a snapshot (state and inputs are frozen), and its result is applied
+            # here, on the loop, under the lock (D-0815).
+            state, report, effects = await self._plan_off_the_loop(inputs)
+            if self._stopped:
+                return
             self.state = state
             self.plans += 1
             self.plan_slots = self._plan_slots(now, inputs)
@@ -3207,6 +3259,26 @@ class Runtime:
                 list(report.adopted),
                 report.slots_closed,
             )
+        # A tick that arrived while the plan held the lock was parked (INV-13): it runs now.
+        trailing, self._pending_trigger = self._pending_trigger, None
+        if trailing is not None and not self._stopped:
+            await self.run_tick(trailing)
+
+    async def _plan_off_the_loop(self, inputs: Inputs) -> tuple[EngineState, PlanReport, Effects]:
+        """Run `Engine.plan` in an executor on the state as it is, and apply it only to that state.
+
+        Provisioning and a few other callbacks change a load's state without the lock. A plan
+        that finds `self.state` moved when it returns was computed from a state that no longer
+        is, and applying it would undo that change: it is run again, and inline after
+        `_PLAN_ATTEMPTS` (D-0815).
+        """
+        assert self.engine is not None
+        for _ in range(_PLAN_ATTEMPTS):
+            before = self.state
+            result = await self.hass.async_add_executor_job(self.engine.plan, before, inputs)
+            if self.state is before:
+                return result
+        return self.engine.plan(self.state, inputs)
 
     def _plan_slots(self, now: datetime, inputs: Inputs) -> tuple[dict[str, Any], ...]:
         """Return the adopted plans per slot, for the dashboard's timeline (D12 §5.6).
@@ -3264,12 +3336,13 @@ class Runtime:
                 for load_id, plan in sorted(plans.items())
                 if (kwh := _planned_kwh_in(plan, start, end, hold=True)) > 0.0
             }
-            # Standing still on purpose - a coast, a postponement (envelope 0,
-            # INV-30) - so the dashboard can say so rather than draw nothing (D-0507).
+            # Standing still or held lower on purpose - a coast, a postponement
+            # (envelope 0, INV-30), an eco shed or a setpoint below target - so the
+            # dashboard can say so rather than draw nothing (D-0507, D-0766).
             paused = sorted(
                 load_id
                 for load_id, plan in plans.items()
-                if (found := plan.slot_at(start)) is not None and found.envelope_w == 0.0
+                if (found := plan.slot_at(start)) is not None and _held_low(found)
             )
             rows.append(
                 {

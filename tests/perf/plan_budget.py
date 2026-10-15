@@ -17,7 +17,11 @@ from typing import Any
 import pytest
 
 from custom_components.powerplan.core.engine import EngineState
-from tests.core.engine.conftest import START, curves, engine_for, inputs_at, site
+from tests.core.engine.conftest import START, curves, engine_for, floor_reads, inputs_at, site
+from tests.core.loads.conftest import FLOOR_PARAMS, floor_load
+from tests.core.strategies.conftest import curves_of
+from tests.optimality.days import DAYS, curve_of
+from tests.optimality.days import START as DAY_START
 from tests.perf.tick_budget import _loads, _reads
 
 WARMUP_CYCLES = 3
@@ -61,5 +65,47 @@ def test_plan_p95_is_under_500ms_with_20_loads() -> None:
     p95 = _p95(cycles)
     assert p95 < PLAN_P95_BUDGET_MS, (
         f"plan p95 {p95:.2f} ms over {len(loads)} loads – D9 §5.1's budget is "
+        f"{PLAN_P95_BUDGET_MS:.0f} ms"
+    )
+
+
+#: The reference house's twelve loops, each a floor on `heat_capacitor`: the level planner's
+#: search is the plan's whole cost (D-0815).
+HEATING_LOADS = 12
+
+
+@pytest.mark.perf
+def test_plan_p95_is_under_500ms_with_12_heating_loads_on_heat_capacitor() -> None:
+    """D9 §5.1: the executor job that plans twelve heating loads stays inside 500 ms."""
+    cfg = site()
+    loads = tuple(
+        floor_load(
+            load_id=f"loop_{i}",
+            strategy="heat_capacitor",
+            params={**FLOOR_PARAMS, "coast_tau_h": 60.0},
+        )
+        for i in range(HEATING_LOADS)
+    )
+    engine = engine_for(loads, cfg=cfg)
+    # A day with a double peak: the search has something to find.
+    curves_ = curves_of(curve_of(DAYS["double_peak"]))
+
+    def _inputs(at: Any) -> Any:
+        reads = {f"loop_{i}": floor_reads(at) for i in range(HEATING_LOADS)}
+        return inputs_at(cfg, at, grid_w=1_500.0, loads=reads, curves_=curves_)
+
+    state = EngineState()
+    cycles: list[float] = []
+    for index in range(WARMUP_CYCLES + MEASURED_CYCLES):
+        at = DAY_START + CYCLE_APART * index
+        started = time.process_time()
+        state, _report, _effects = engine.plan(state, _inputs(at))
+        elapsed_ms = (time.process_time() - started) * 1000.0
+        if index >= WARMUP_CYCLES:
+            cycles.append(elapsed_ms)
+
+    p95 = _p95(cycles)
+    assert p95 < PLAN_P95_BUDGET_MS, (
+        f"plan p95 {p95:.2f} ms over {HEATING_LOADS} heating loads - D9 §5.1's budget is "
         f"{PLAN_P95_BUDGET_MS:.0f} ms"
     )

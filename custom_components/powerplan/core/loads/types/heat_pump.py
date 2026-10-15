@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final
 from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config, recall, remember
 from ..kinds.base import ControlKind, KindCtx, Role
-from ..kinds.setpoint import BAND_MAX_K, Setpoint, SetpointCfg
+from ..kinds.setpoint import BAND_MAX_K, DEFAULT_STEP_K, Setpoint, SetpointCfg
 from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
 from ..stores.cop import DEFAULT_COP_CURVES, CopCurve
@@ -63,7 +63,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 4
+DERIVATION_VERSION: Final = 5
 
 #: `LoadState.learned` keys this type owns: the previous outlet and power sample
 #: the defrost detector compares against (`design/DECISIONS.md` D-0200).
@@ -108,6 +108,9 @@ _NEVER_URGENT: Final = 5
 
 #: The ladder stage at which the pump coasts a kelvin under target (§5.4).
 _COAST_STAGE: Final = 3
+#: How far below comfort the plan lets the room fall, K, at most: half of EN 16798-1 Category I,
+#: so the household notices little of it (D-0819). The band the kind clamps to is the household's.
+COAST_BELOW_COMFORT_K: Final = 0.5
 
 #: How far the comfort floor sits under the comfort target, kelvin
 #: (`design/DECISIONS.md` D-0205). One kelvin under the `away` setback, so an empty
@@ -405,7 +408,7 @@ class HeatPump:
                 "band_k": band_k,
                 # The plan moves the room inside the same band the kind clamps to (D-0728).
                 "bank_k": band_k,
-                "coast_k": band_k,
+                "coast_k": min(band_k, COAST_BELOW_COMFORT_K),
                 "preheat": params["preheat"],
                 "preheat_max_outdoor_c": params["preheat_max_outdoor_c"],
                 "cop_curve": params["cop_curve"],
@@ -473,6 +476,7 @@ class HeatPump:
                 restore_dwell_s=float(params.get("dwell_s", 1800.0)),
                 urgent_from_stage=_NEVER_URGENT,
                 cooling=params.get("direction") == "cool",
+                step_k=float(params.get("setpoint_step_k", DEFAULT_STEP_K)),
             )
         )
 

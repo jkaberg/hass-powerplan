@@ -828,7 +828,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | SF.2 | The tank's window, measured | done |
 | BP.1 | The best-plan catalogue | todo |
 | BP.2 | Two exactness slips | todo |
-| BP.3 | The level planner, and heat moved across price changes | todo |
+| BP.3 | The level planner, and heat moved across price changes | done |
 | BP.4 | Heat pumps by the hour | todo |
 | BP.5 | The battery's route | todo |
 | BP.6 | Lowering comfort is opt-in | done |

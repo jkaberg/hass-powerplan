@@ -36,7 +36,7 @@
     }
   },
   "derived": {
-    "derivation_version": 4,
+    "derivation_version": 5,
     "explanation_key": "heat_pump_review",
     "explanation_params": {
       "area_m2": 60.0,
@@ -103,7 +103,7 @@
     "strategy_params": {
       "band_k": 1.0,
       "bank_k": 1.0,
-      "coast_k": 1.0,
+      "coast_k": 0.5,
       "cop_curve": {
         "-10.0": 2.2,
         "-15.0": 1.8,

@@ -216,7 +216,7 @@ Parameters: `hours_per_day` (or `slots`), `window` (`TimeFilter`, default the wh
 
 Parameters: `min_saving` (fraction of the slot price, default 0.10, or absolute), `max_off_min` (120), `min_on_min` (30), `recovery_min` (the on-time needed after an off period, default = off duration × 0.5).
 
-**With a store** (every heating type offers it beside `heat_capacitor`, D-0738), `best_save` is §5.14's level planner with `heat_capacitor`'s goal (§5.7) and three limits that keep its promise to the household: no bank (the band's top is the target, as `bank_k = 0`), no off-run longer than `max_off_min`, no on-run shorter than `min_on_min`. Its `min_saving` is the margin of D-0774, at the stricter 0.10. It still only postpones; the store says how far below target a pause may go (`coast_k`), and the recovery lands where the route puts it. The rule below recovered in the very next on-slot at whatever it cost: on a 15-minute sawtooth it was 13–15 % dearer than the thermostat, and in a cold room it ratcheted down to 18 °C (D-0767).
+**With a store** (every heating type offers it beside `heat_capacitor`, D-0738), `best_save` is §5.14's level planner with `heat_capacitor`'s goal (§5.7) and three limits that keep its promise to the household: no bank (the band's top is the target, as `bank_k = 0`), no off-run longer than `max_off_min`, no on-run shorter than `min_on_min`. It needs a level, a target, a coast model (`τ`) and an outdoor temperature in every slot; without them it keeps the rule below. Its `min_saving` is the margin of D-0774, at the stricter 0.10, and how far a pause may go is `coast_k`, 1.0 K (D-0803). It still only postpones; the store says how far below target a pause may go, and the recovery lands where the route puts it. A slot is off where the route draws under half of what holding its level would; the limits are met by pinning slots to *keep* (hold the level where it is: the holding draw and no more) and searching again, at most 4 times, and the plan holds if they still break (D-0803). The rule below recovered in the very next on-slot at whatever it cost: on a 15-minute sawtooth it was 13–15 % dearer than the thermostat, and in a cold room it ratcheted down to 18 °C (D-0767).
 
 **Without one** (a load with no level), the rule stays:
 ```
@@ -241,7 +241,7 @@ plan: one contiguous block, envelope_w = profile power, reason "block"; committe
 
 Parameters: `min_saving` (0.03: the margin a move must clear beyond the losses and the COP the route already counts, D-0774; or `min_saving_absolute`), `bank_k` (how far above target the store may be raised; D4 derives it from the lever, 0 = pause only, D-0728), `coast_k` (1.0: how far below target it may fall), `max_rate_k_per_h` (1.0: the setpoint's downward rate; upward is 2 K/h, D-0775), `preheat: bool` (D4 derives it; the household's answer on a heat pump), `preheat_max_outdoor_c` (None: an optional cap, D-0773), `respect_tariff_windows` (True).
 
-**The band** is `[lo, hi] = [max(target − coast_k, floor), min(target + bank_k, store.max_level)]` per slot, `target` the target profile's at that slot (schedules, and the household's opt-in setbacks, D4 §5.8, D-0772). It is hard: no route leaves it (INV-55, INV-56). A step-up is a lower bound at its time (§2).
+**The band** is `[lo, hi] = [max(target − coast_k, floor), min(target + bank_k, store.max_level)]` per slot, `target` the target profile's at that slot (schedules, and the household's opt-in setbacks, D4 §5.8, D-0772). It is hard: no route leaves it (INV-55, INV-56). For a `SETPOINT` lever each edge is moved in to a setpoint the device takes (D-0818). A step-up is a lower bound at its time (§2).
 
 **The goal** (D-0766). A store's energy moves only where the price changes: it banks before a rise, coasts before a fall and buys back after, and holds comfort through a flat block. A slot's cost is its draw at the effective price (§2), plus the heat the store saves by sitting below target, charged back at that slot's price:
 ```
@@ -254,12 +254,12 @@ So a route earns by timing alone (D-0724): sitting at `lo` is worth nothing, and
 | lever | actions per slot |
 |---|---|
 | SWITCH, element | 0, the holding draw, `max_w`, each capped at `min(max_w, headroom)` |
-| SETPOINT | a setpoint from `lo` to `hi` in 0.1 K steps; the draw is the thermostat's response over the slot |
+| SETPOINT | a setpoint from `lo` to `hi`: the target and whole steps of the device's setpoint step from it (0.5 K unless its entity declares another, 0.05 K for a view built without one; D-0818); the draw is the thermostat's response over the slot |
 | MODE | comfort or eco for the whole slot; never a bank (D-0728) |
 
-In an eligible peak window with `respect_tariff_windows`, and wherever the headroom is below the holding draw, the store may draw only what the headroom allows. The route then banks before: D-0732's capacity stretch, now found by the search instead of a rule. Heat pumps change at most once an hour (D-0773, D-0777).
+In an eligible peak window with `respect_tariff_windows`, the store draws only what keeps it at `lo`, and every kWh drawn there ranks 10 times the dearest price dearer, so the route banks before and coasts through; wherever the headroom is below the holding draw, a slot draws at most the headroom. That is D-0732's capacity stretch, found by the search instead of a rule (D-0803). Heat pumps change at most once an hour (D-0773, D-0777; BP.4).
 
-**The search** is §5.14's, from the level measured now to the horizon, with committed slots fixed (§5.9). The route is kept only where it beats holding the target by `min_saving` of the heating's cost, and each run of moves saves `min_saving` on an hour of the element at full power (D-0764). Otherwise the plan holds. Planned starts past the type's switching budget give back the least valuable moves (D-0777). A store with no `τ` plans its step-ups only (D-0734).
+**The search** is §5.14's, from the level measured now to the horizon, with committed slots fixed (§5.9). A run of moves (consecutive slots where the route differs from holding the target) is kept only if it saves `min_saving` of the heat it moves, the most the route's level differs from holding times the store's capacity, and never less than `min_saving` on an hour of the element at full power (D-0764, D-0774, D-0801). A run already under way when the plan is made is not judged: its start is sunk. A run that is too small is pinned to the reference action and the search is run again, at most 4 times. A thermostat that would leave the band is no reference: the route is then not optional. Otherwise the plan holds. Planned starts past the type's switching budget give back the least valuable run (D-0777). A store with no `τ`, or no outdoor temperature, plans its step-ups only (D-0734).
 
 **The route becomes the slots.** Relative to holding the target, each slot is:
 - BANK: rising above target, "bank to 25.6 °C before the price rises";
@@ -269,7 +269,7 @@ In an eligible peak window with `respect_tariff_windows`, and wherever the headr
 - RAISED or LOWERED: holding off target.
 
 `envelope_w` is the planned draw on BANK and RECOVER, the route's draw (often 0) on COAST, and `None` on HOLD (D-0629). `desired_state` follows the lever:
-- SETPOINT: the route's level − target, rate-limited (D-0258).
+- SETPOINT: a setpoint the device takes (D-0818). A slot that heats writes the step at or above the level it ends at; a run of slots that stand still writes one step at or below the lowest level the room reaches in it, and the setpoint in force is kept while it is a little under that or within half a step over it, so a thermostat is not told what it does anyway. The delta is rate-limited from the one in force (D-0258, D-0775), in whole steps and at least one.
 - MODE: comfort where the route draws, shed where it skips, `None` on HOLD.
 - SWITCH: `None`, since the envelope is the lever.
 
@@ -283,7 +283,9 @@ Cooling flips the signs (`store.direction`). A store with no level (`level_now =
 |---|---|---|---|---|---|---|
 | stretches and pause pairs (`main`, `cf3f006`) | 35–55 % | 3–10 % | 27–45 % | 50 % dearer | 1 of 312 runs | 53 ms |
 | move pairs (`heat-moves`, `169bf8b`) | 44–52 % | 57–60 % | 10–37 % | 5 % dearer | 73 of 312 runs, by up to 1.5 K | 2.2 s |
-| the level planner (target, D9 §5.17) | ≥ 90 % | ≥ 90 % | ≥ 90 % | never dearer | never | ≤ 25 ms |
+| the level planner (target) | ≥ 90 % | ≥ 90 % | ≥ 90 % | never dearer | never | ≤ 25 ms |
+| the level planner (measured, 15 Oct 2026, BP.3, margin 0, D-0816) | 95–100 % (median 99.5) | 91–100 % (median 97.7) | 91–100 % (median 99.8) | never dearer in 312 runs | never | 25 ms a load, 0.3 s for twelve |
+| the same at the shipped margins (0.03; `best_save` 0.10) | 74–100 % | 91–100 % | 0–100 % | never dearer | never | the same |
 
 ### 5.8 Battery: one route over the state of charge (D-0768, D-0769)
 
@@ -395,27 +397,29 @@ No comfort violation either way. The night charge stops at the ready temperature
 
 ```
 solve(grid, stages, terminal, fixed) -> Route
-  grid      the level's values over the whole horizon's band: steps ≤ 0.02 K for heat (150–200 levels on a 3 K band),
+  grid      the level's values over the whole horizon's band: steps ≤ 0.05 K for heat (60–150 levels on a 3 K band), laid so that the target and every setpoint the lever can take are grid points (D-0820),
             ≤ 0.5 % of capacity for a battery
   stages    per slot: the actions (a vector); next(level, action), exact over the slot
-            (heat: T' = T_out + P/UA + (T − T_out − P/UA)·e^(−h/τ)); cost(level, action); the slot's [lo, hi]
-  terminal  each level's value at the horizon's end (heat: 0 at or above the last target, else its re-heat at the mean price)
+            (heat: T' = T_out + P/UA + (T − T_out − P/UA)·e^(−h/τ)); cost(level, action); the slot's [lo, hi] at its end
+  terminal  each level's value at the horizon's end (heat: `mean price · C · (last target − level)`, a credit above the target, D-0778, D-0816)
   fixed     the actions of committed slots (§5.9)
 backward    V_N = terminal; for k = N−1 … 0:
             Q[level, action] = cost + V_{k+1}(next) interpolated, +∞ where next leaves [lo, hi];  V_k = min over actions
 forward     from the level measured now, the argmin at each slot, interpolated
-ties        equal Q (within 10⁻⁹ of the slot's price × max_w × h) go to the reference action (hold the target;
-            `None` for a battery), then to the lower draw
+ties        equal Q (within a tenth of a grid step's worth of heat, the interpolation's own error) go to the
+            reference action (hold the target; `None` for a battery), then to the one that moves the level least, then to
+            the lower draw
 ```
 
 | property | how |
 |---|---|
 | exact | within 1 % of the LP at 200 levels on the catalogue (D9 §5.17) |
 | time-consistent | re-planned one slot later from the level reached, the rest of the route is unchanged unless an input changed: a started bank is not forgotten, and few replans pass the hysteresis at all (INV-32) |
+| aligned grid (D-0820) | the interpolation of `V` is exact between grid points where `V` is linear, and wrong by the bend where it is not. Setpoints 0.1 K apart from the coast level are off the grid whatever its step, and an action that ends off-grid looked cheaper than one that ends on it by the bend: a room at −10 °C coasting to its floor chose a boost-and-coast sawtooth over the straight descent, the same cost in the model and 0.005 NOK dearer in the interpolation, and re-planned from the level it reached, committed to it: 0.872 of the optimum on `room40/bank1/-10/tou3`, 0.985 now |
 | stable tie-break (INV-32) | a flat curve gives equal `Q`; the reference action wins, so a flat day holds (§9 3) |
-| a start outside the band | a store measured under `lo` recovers at the cheapest power it can first; `lo` binds from the first slot it can reach, so no plan is infeasible |
+| a start outside the band | `relaxed()` widens each band to what the actions reach from the start: the floor to what full power reaches, and a ceiling that has just come down (a target lowered, a schedule step-down) to what the level falls to by itself. A store measured under `lo` recovers at the cheapest power it can first, so no plan is infeasible (D-0805) |
 | switching budget (D-0777) | after the forward pass the planned starts are counted against the type's budget; past it, the least valuable run is pinned to the reference action and the pass repeats, at most 4 times |
-| cost | numpy arrays of levels × actions per slot: 3–14 ms for 192 slots, 100–400 levels and 5–21 actions on an i5-9500 (D-0767); 20 loads stay inside D9 §5.1's 500 ms |
+| cost | numpy arrays of levels × actions per slot: 3–14 ms for a bare store in the first prototype (D-0767); the heating planner (150 levels, 13 actions, 192 slots) measured about 25 ms a load: 0.3 s of CPU for twelve heating loops, 0.38 s at worst over 33 cycles; the reference house's smoke month plans at p95 359 ms with the executor (D-0804, D-0815). The backward pass is arrays, the forward pass plain floats, and the plan runs in an executor (D7 §5.2, D-0815). `tests/perf/plan_budget.py` gates twenty loads and twelve heating loads at D9 §5.1's 500 ms |
 | dependency | numpy, which Home Assistant ships pinned; `mypy --strict` with numpy's own typing |
 
 Each move on the route has its sentence, read off the route (§5.7, §5.8), so the review sensor says why as before.
@@ -432,7 +436,7 @@ Strategies are pre-selected by D4's derivation. Their parameters are under **Adv
 | `hot_water` | `reserve_kwh` (4.4; D4 derives two showers or half the shift), `min_block_min` (30); offered to the water heater, not its default (D-0743) |
 | `cheapest_hours` | `hours_per_day` (4), `window` (all day), `consecutive` (False), `max_price` (None) |
 | `best_save` | `min_saving` (10 %; with a store the margin of D-0774), `max_off_min` (120), `min_on_min` (30), `recovery_factor` (0.5, without a store only); offered to every heating type beside `heat_capacitor` (D-0738) |
-| `heat_capacitor` | `min_saving` (3 %, the margin above what the route counts, D-0774), `min_saving_absolute` (None), `bank_k` (1.0; D4 derives 0 where the lever can't bank), `coast_k` (1.0), `max_rate_k_per_h` (1.0, downward; upward 2 K/h, D-0775), `preheat` (D4 derives it), `respect_tariff_windows` (True), `preheat_max_outdoor_c` (None, D-0773) |
+| `heat_capacitor` | `min_saving` (3 %, the margin a run of moves must save of the heat it moves, D-0774, D-0801), `min_saving_absolute` (None), `bank_k` (1.0; D4 derives 0 where the lever can't bank), `coast_k` (0.5, D-0819), `max_rate_k_per_h` (1.0, downward; upward 2 K/h, D-0775), `preheat` (True; D4 derives it, a heat pump's own answer), `respect_tariff_windows` (True), `preheat_max_outdoor_c` (None, D-0773) |
 | `run_once` | `ready_by` (07:00), `allow_late_start` (True) |
 | `schedule` | windows (weekly) |
 | `always` | - |
@@ -516,8 +520,8 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 39. No slot plans more than it can draw (D-0756): in every `heat_capacitor` plan - pauses, deep pauses, a cheap half of the day with 1 200, 400 or 0 W of headroom, and a heat pump whose room cannot coast a 16 h window from `hi` - every slot's `kwh` is at most `min(max_w, headroom)·h` and its planned draw at most `min(max_w, headroom)`. With 400 W the same pauses come back over more slots for the same energy; with none, no pause is planned. `cheapest_hours` skips an hour whose headroom is below `max_w` and takes the next cheapest. `tests/core/strategies/test_08_heat_capacitor.py`, `test_05_cheapest_hours.py`.
 
 40. Timing only (D-0766): a flat day is all HOLD; under Norgespris (0.8779 / 0.7379 from 22:00) a slab with `τ` 60 h banks before 06:00 only as far as the 16 % spread outlasts the bank's loss, holds comfort through the day and eases off before 22:00; the same store with the below-target term removed sits at `lo` all day, which the test asserts the real cost function never does.
-41. The margin (D-0774): a move whose route saving over holding is 2 % of the heating's cost is refused at `min_saving` 0.03 and taken at 0.01; a run of moves under D-0764's bar is given back.
-42. Rates and limits (D-0775): a setpoint route never falls faster than 1 K/h nor rises faster than 2 K/h; a bedroom's floor is 18 °C; a vinyl floor's ceiling 27 °C.
+41. The margin (D-0774, D-0801): a run of moves is refused at a `min_saving` high enough that its saving is under that share of the heat it moves, and taken at 0.01; the schema default is 0.03; a run under way when the plan is made is kept; a run of moves under D-0764's bar is given back.
+42. Rates (D-0775): a setpoint route never falls faster than 1 K/h nor rises faster than 2 K/h (`test_08_heat_capacitor.py`). A bedroom's 18 °C floor and a vinyl floor's 27 °C ceiling are D4's tables (D4 §9 64, BP.6).
 43. Levers (D-0766): a `mode` floor's route skips whole slots and never banks; `preheat = False` gives no bank; a room still above target at the pre-heat hour is not banked.
 44. Heat pumps (D-0773): heat priced at `p / COP(T_out)` per slot, × 0.85 from −5 to +3 °C; a bank before a 20 % rise at −10 °C is refused where the COP ratio and the loss eat it and taken at +5 °C; `preheat_max_outdoor_c` set to 0 refuses a bank at +5 °C; no setpoint changes more than once an hour.
 45. The level planner (D-0767, D-0777): on D9 §5.17's catalogue it is within 1 % of the LP for a one-node store at 200 levels; re-planned at every slot from the level its own route reached, the remainder of the route is unchanged; no slot leaves `[lo, hi]`; ties go to the reference action; a relay's planned starts never pass 24 a day; 20 loads plan within 500 ms p95 (`tests/perf/plan_budget.py`).
@@ -529,8 +533,11 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 51. An EV that may not resume (D-0776): with `resumes = unknown` a 30 kWh session is one run with its gaps at `min_w`; with `yes` it has at most 4 pauses; a slot whose headroom allows only 6 A on one phase is chosen over a 3-phase 16 A slot only when it is at least the efficiency ratio cheaper.
 52. `cheapest_hours` remembers the day (D-0810): replanned every 15 minutes for 48 h on flat, rising, volatile and one-spike days, a 1 kW pump asked for 4 h/day runs 16 quarter-hours on each day, spread or consecutive; a plan made at 23:00 after four hours run plans none of that day and four hours of the next.
 53. A cycle under way keeps its start (D-0811, INV-59): a 150-minute cycle replanned at every quarter hour from its start keeps `started_at`, its block's end and a planned energy that only falls.
+54. Setpoints in the device's steps (D-0818): every setpoint a `SETPOINT` route asks for is the target plus whole steps (0.5 K, 0.25 K and 0.1 K tested); a volatile day written in 0.5 K steps changes the setpoint about a third less often than in 0.05 K; a slab coasting through an evening window writes it at most 12 times at 0.05 K and 8 at 0.5 K (`test_54_setpoints_in_the_devices_steps.py`).
+55. A committed cycle keeps its start (D-0821, INV-32): a cycle that has not started but begins within `COMMIT_MIN` keeps its start while the room still holds the watts its programme draws, whatever the room does elsewhere; when it no longer does, the start moves to where there is room, and a start more than the window ahead is free to move (`test_55_a_committed_cycle_keeps_its_start.py`).
+56. Comfort against the target (D-0819): the default `coast_k` is 0.5 K; on a volatile day no slot of the default plan is under target − 0.5 K, and 1 K gets the deeper coast (`test_56_comfort_against_the_target.py`).
 
-*(D-0767)* 32–34, 36 and 39 describe the stretches and pause pairs the level planner replaces. BP.3 rewrites them as properties of the route, under the same numbers: the margin (32), pause only (33), a coast sized by `τ` (34), a capacity stretch (36), and no slot over `min(max_w, headroom)` (39).
+*(D-0767)* 32–34, 36 and 39 described the stretches and pause pairs the level planner replaces. BP.3 wrote them as properties of the route, under the same numbers (`tests/core/strategies/test_08_heat_capacitor.py`): a coast is bought back cheaper (32), `bank_k` 0 plans nothing above comfort (33), a store at 25 °C needs no fill for a 3 h window at `τ` 60 h and one at 24 °C is at ≈ 24.2 when it opens, and at `τ` 10 h it is banked to its ceiling and drawn what holds `lo` inside (34), a full house is stayed off in after a warm-up (36), and no slot draws over `min(max_w, headroom)` (39). Test 45 is `test_45_level_planner.py` and the catalogue.
 
 ---
 

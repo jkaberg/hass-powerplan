@@ -545,8 +545,8 @@ def test_03q_on_heat_capacitor_the_eco_target_is_the_pauses_floor(heatit: Device
         [value] = [p.value for p in PROFILE.provisions(heatit, cfg) if p.role is Role.ECO_SETPOINT]
         return value
 
-    assert eco() == 23.0, "comfort 24 − the schema's coast_k of 1 K"
-    assert eco(params={"comfort_c": 25.0}) == 24.0, "a raised comfort moves it; 22 is the setup's"
+    assert eco() == 23.5, "comfort 24 − the schema's coast_k of 0.5 K"
+    assert eco(params={"comfort_c": 25.0}) == 24.5, "a raised comfort moves it; 22 is the setup's"
     assert eco(strategy_params={"coast_k": 2.5}) == 21.5
     assert eco(strategy_params={"coast_k": 5.0}) == 21.0, "never under the floor"
     assert eco(strategy="always") == 22.0, "another strategy keeps the materialised eco"

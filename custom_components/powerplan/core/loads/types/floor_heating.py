@@ -25,7 +25,7 @@ from ...model import ComfortState, Demand, Grant, Mode, Urgency
 from ..base import Load, LoadConfig, LoadCtx, LoadState, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.mode import ModeCfg, ModeKind
-from ..kinds.setpoint import Setpoint, SetpointCfg
+from ..kinds.setpoint import DEFAULT_STEP_K, Setpoint, SetpointCfg
 from ..needs import Need, Tier, need
 from ..questionnaire import (
     Answers,
@@ -60,7 +60,7 @@ __all__ = [
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
 #: it was derived with, and nothing recomputes behind the user's back (INV-66).
-DERIVATION_VERSION: Final = 5
+DERIVATION_VERSION: Final = 6
 
 #: How far ahead a loop looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -295,7 +295,7 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="command_interval_s",
             kind=QuestionKind.NUMBER,
-            default=600.0,
+            default=1200.0,
             unit="s",
             min=0.0,
             max=7200.0,
@@ -517,6 +517,7 @@ class FloorHeating:
                 # A slab is the slow lever: its shed is urgent from stage 3,
                 # where a thermostat on a tank is urgent from stage 2 (§5.10).
                 urgent_from_stage=3,
+                step_k=float(params.get("setpoint_step_k", DEFAULT_STEP_K)),
             )
         )
 

@@ -16,6 +16,7 @@ import pytest
 from custom_components.powerplan.core.loads.stores import SlabStore
 from custom_components.powerplan.core.strategies import plan_all
 from custom_components.powerplan.core.strategies.holding import holding_kwh
+from custom_components.powerplan.core.strategies.plan import COAST_ON_STORED, LOWER_WHILE_DEAR
 from tests.core.strategies.conftest import (
     NOW,
     Weather,
@@ -61,18 +62,20 @@ def test_22c_heat_capacitor_holds_with_energy_and_coasts_without() -> None:
     plan = capacitor_planned(view=capacitor_view(), forecasts=weather)
     before = capacitor_planned(view=capacitor_view(), forecasts=Weather(outdoor=-5.0))
     for slot in plan.slots:
-        if slot.reason.startswith("stay off") or slot.reason == "paused":
+        if slot.reason.startswith("stay off") or slot.reason in (LOWER_WHILE_DEAR, COAST_ON_STORED):
             assert slot.hold_kwh == 0.0
         else:
             assert slot.hold_kwh >= 400.0 * slot.hours / 1000.0 - 1e-9
     # Holding is priced and kept apart: it never counts as moving the store (coverage).
-    # What a pause recovers is the holding it skipped, so it moves with the draw (D-0727).
+    # What a move buys back is the holding it skipped, so it moves with the draw (D-0766).
     assert plan.planned_kwh == pytest.approx(sum(slot.kwh for slot in plan.slots))
     assert before.planned_kwh == pytest.approx(sum(slot.kwh for slot in before.slots))
     held = sum(
         slot.hours
         for slot in plan.slots
-        if not (slot.reason.startswith("stay off") or slot.reason == "paused")
+        if not (
+            slot.reason.startswith("stay off") or slot.reason in (LOWER_WHILE_DEAR, COAST_ON_STORED)
+        )
     )
     assert held > 0.0
     assert plan.hold_kwh >= 400.0 * held / 1000.0 - 1e-9
@@ -110,10 +113,11 @@ def test_22e_a_kept_plan_takes_the_holding_energy_and_holding_never_decides_adop
         target=bathroom_target(),
         demand=demand(required_kwh=3.0, deadline=None, min_w=0.0, max_w=960.0),
     )
-    first = plan_all([view], curves_of(source), site_ctx(forecasts=Weather(outdoor=-5.0)), NOW)
+    # No outdoor temperature: the rule, not the level planner, and nothing to price holding with.
+    first = plan_all([view], curves_of(source), site_ctx(forecasts=Weather(outdoor=None)), NOW)
     old = first.plans["loop_bath"]
     assert old.hold_kwh == 0.0
-    site = site_ctx(forecasts=Weather(outdoor=-5.0, hold={"loop_bath": 400.0}))
+    site = site_ctx(forecasts=Weather(outdoor=None, hold={"loop_bath": 400.0}))
     second = plan_all([view], curves_of(source), site, NOW, previous=first.plans)
     kept = second.plans["loop_bath"]
     assert "loop_bath" not in second.adopted

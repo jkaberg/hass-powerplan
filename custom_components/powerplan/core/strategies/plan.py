@@ -40,10 +40,14 @@ if TYPE_CHECKING:
     from ..model import Slot
 
 __all__ = [
+    "BACK_UP_WHILE_CHEAP",
+    "COAST_ON_STORED",
     "COMMIT_MIN",
     "COVER_EPS_KWH",
+    "LOWER_WHILE_DEAR",
     "STAY_OFF_FOR_CAPACITY",
     "TRUST",
+    "WARM_BEFORE_RISE",
     "DesiredState",
     "Plan",
     "PlanMode",
@@ -103,6 +107,15 @@ def desired_for(kind: str, delta_k: float) -> DesiredState | None:
 #: (D5 §5.7, D-0732): the capacity pays for it, which an energy estimate cannot
 #: see, so D5 §5.9a's gate does not judge such a plan.
 STAY_OFF_FOR_CAPACITY: Final = "stay off in the window"
+
+#: What a `heat_capacitor` price move's slots say (D5 §5.7 step 3, D-0766). A
+#: recovery is energy the device really draws whatever its lever, so D5 §5.9a's
+#: gate counts it for a `mode` device too.
+#: A prefix: the slot names the level it banks to.
+WARM_BEFORE_RISE: Final = "bank to"
+COAST_ON_STORED: Final = "coast on what is banked"
+LOWER_WHILE_DEAR: Final = "ease off while dear"
+BACK_UP_WHILE_CHEAP: Final = "back to target while cheap"
 
 COVER_EPS_KWH: Final = 1e-6
 
