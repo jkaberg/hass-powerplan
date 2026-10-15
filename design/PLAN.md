@@ -289,7 +289,7 @@ The losses were in the searches, not in their numbers. Separately, a pass over t
 
 | WP | Produces | Implements | Exit criteria | Depends on |
 |---|---|---|---|---|
-| **BP.1 The best-plan catalogue** | `tests/optimality/`: the 13 days, the oracle on `highspy` (a dev dependency), a test per strategy, `baseline.json` holding today's shares; the `optimality` marker; its row in the path map (`CONTRIBUTING.md`, `.claude/rules/test-selection.md`) | D9 §5.17; D-0770 | D9 §9 17; the baseline records the shares above, and no strategy is dearer than its hands-off reference except the `heat_capacitor` and `best_save` days D-0767 names, and no deficit is left uncovered except `peak_shave`'s (D-0768), each marked `xfail` with the WP that removes it | - |
+| **BP.1 The best-plan catalogue** | `tests/optimality/`: the 13 days, the oracle on `highspy` (a dev dependency), a test per strategy, `baseline.json` holding today's shares; the `optimality` marker; its row in the path map (`CONTRIBUTING.md`) | D9 §5.17; D-0770 | D9 §9 17; the baseline records the shares above, and no strategy is dearer than its hands-off reference except the `heat_capacitor` and `best_save` days D-0767 names, and no deficit is left uncovered except `peak_shave`'s (D-0768), each marked `xfail` with the WP that removes it | - |
 | **BP.2 Two exactness slips** | `deadline_fill` judging a flat day over its window; `run_once` ranking by the energy each slot receives; `cheapest_hours` planning only what is left of today's hours, from the plan in force; `run_once` keeping the start of a cycle under way (`Plan.started_at`); the catalogue as a step of CI's `core` job | D5 §5.2, §5.4, §5.6; D9 §5.17; D-0771, D-0810 to D-0814 | D5 §9 49, 50, 52, 53; all three exact strategies equal the oracle on every catalogue day, with no `xfail` left for them; the CI step runs `tests/optimality` | BP.1 |
 | **BP.3 The level planner, and heat moved across price changes** | `core/strategies/levels.py` (numpy; `numpy` in the manifest's `requirements`, unpinned, Home Assistant's own pin applying); `heat_capacitor` on it with D-0766's goal, carrying from `heat-moves` (`169bf8b`) its `preheat` field, COP per hour, `mode` rule, reason constants, `LOWERED` kind, the dashboard's held-low hatch and behaviour tests; `best_save` with a store on it; `min_saving` the 3 % margin; the downward and upward rates; a relay's 24 starts a day; the coast 0.5 K by default (D-0819); setpoints planned and written in the device's steps (D-0818); the plan run in an executor, one at a time (D-0815); D5 §9 32–34, 36, 39 rewritten as properties of the route; the site case (a floor, the tank and an EV at 5, 7 and 10 kW) added to the catalogue (R16) | D5 §5.5, §5.7, §5.14, §6; D4 §6; HLD §1.1, §1.2, §6.5; D-0766, D-0767, D-0774, D-0775, D-0777, D-0800 to D-0809, D-0815 to D-0822 | D5 §9 3, 8, 22, 26, 32–34, 36, 39, 40–43, 45; D4 §9 70; on the catalogue ≥ 90 % for `heat_capacitor` and `best_save` on every day, never dearer, never out of band; `tests/perf/plan_budget.py` p95 under 500 ms with 20 loads; scenarios phase0 and phase3; smoke `--compare` with the heating loads' savings on the spot year at or above the baseline's; house check through a cold week: every loop's plan followed or handed back with its reason, and no loop under `lo` for more than 15 min | BP.1 |
 | **BP.4 Heat pumps by the hour** | heat priced at the COP of its hour, × 0.85 from −5 to +3 °C; the air-to-water curve from the heating type; `preheat` deciding by the hour, `preheat_max_outdoor_c` an optional cap; one change an hour | D4 §6.4; D5 §5.7; D-0773 | D4 §9 66; D5 §9 44; on the catalogue ≥ 90 % for both heat pump cases on every day | BP.3 |
@@ -312,6 +312,22 @@ User pages:
   - `docs/appliances/floor_heating.md`: the bedroom floor and the coverings.
 - **BP.7:** `docs/appliances/ev.md` (pauses and resumes), `docs/entities.md` (the button) and `docs/troubleshooting.md` (a car that didn't resume).
 - **BP.8:** `docs/appliances/floor_heating.md` (what a foil's fit accepts) and `docs/appliances/heat_pump.md` (the room's starting mass).
+
+### 3.0u What the best plan left open
+
+What the BP series measured but did not settle, in order of what a household would gain. Each row names the decision that records the finding.
+
+| WP | Produces | Implements | Exit criteria | Depends on |
+|---|---|---|---|---|
+| **BO.1 A heat pump plans in heat, reserves in electricity** | a second `Demand` field, so D6 reserves the electric draw while the route plans the heat a COP-3 pump can bank; `plan_route`'s nameplate workaround removed | D4 §4, D5 §5.7, D6 §5.1; D-0817, D-0829 | a COP-3 pump banks up to its heat reach in the catalogue; D6 §9 reservations unchanged in watts; smoke `--compare` | - |
+| **BO.2 The margin follows the fit** | `min_saving` for a heat pump, and for any store, derived from how well its `τ` is fitted instead of a flat 3 %; at the shipped margin a heat pump caught 41–98 % at +5 °C | D5 §5.7, §6; D10 §5.6; D-0774, D-0828 | catalogue run at the shipped margins: ≥ 90 % on days the optimum saves ≥ 1 %, never dearer | BO.1 |
+| **BO.3 The scenarios that fail on main** | `test_accounting`'s twin checks (2), `test_phase7` `pv_no_battery_ev_waits` and `negative_price_soak` green, each fixed at its cause | D11 §5.3; D5 §2, §5.2; D9 §5.3 | the PR command with no scenario failure | - |
+| **BO.4 The sauna's restore** | an on-call load shed by the ladder is not restored once the household's session has ended; the simulated stove no longer runs 28 h | D4 §6.7, D6 §5.3; D-0822 | a scenario: a sauna shed mid-session draws nothing after its session ends | - |
+| **BO.5 A foil read on its floor probe** | the daily coast fit of a foil on a floor sensor reads the floor probe, so the [0.3, 6] h bound applies outside setup too | D10 §5.6; D-0795 | D10 §9 30 extended to the daily fit; the reference house's three foils named as passed or refused | - |
+| **BO.6 A battery's round trip, measured** | the recorder side of D10's round-trip fit, wired where a profile row exposes charged and discharged registers | D10 §5.6, D4 §6.6; D-0834 | D10 §9 32 through the runtime; a captured fixture of one inverter that exposes both | - |
+| **BO.7 A cold week in the house** | BP.3's house check: through a cold week every loop's plan followed or handed back with its reason, no loop under `lo` for more than 15 min, the planning time on the house's own loads | PLAN R15 | the house check's numbers in `design/reviews/` | winter |
+
+**Owner decision, not a WP: the whole house at a tight limit (R16).** Planning one appliance at a time caught 81–89 % of a joint plan on the hardest catalogue day at 5–10 kW, and an on/off tank or the car was sometimes left short. A coordinated step needs INV-33 changed.
 
 ### Phase 0 - Pure core and the backtest gate
 
@@ -834,6 +850,13 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BP.6 | Lowering comfort is opt-in | done |
 | BP.7 | A car that resumes | done |
 | BP.8 | Fit bounds from the evidence | done |
+| BO.1 | A heat pump plans in heat, reserves in electricity | todo |
+| BO.2 | The margin follows the fit | todo |
+| BO.3 | The scenarios that fail on main | todo |
+| BO.4 | The sauna's restore | todo |
+| BO.5 | A foil read on its floor probe | todo |
+| BO.6 | A battery's round trip, measured | todo |
+| BO.7 | A cold week in the house | todo |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog
