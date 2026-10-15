@@ -511,11 +511,6 @@ def filled(plan: Plan, *, after: datetime | None = None) -> tuple[datetime, ...]
     )
 
 
-def envelopes(plan: Plan) -> tuple[tuple[datetime, float | None], ...]:
-    """Return every slot of the plan as `(start, envelope_w)` - the whole shape."""
-    return tuple((slot.start, slot.envelope_w) for slot in plan.slots)
-
-
 def replay_levels(
     plan: Plan, start: float, *, drain_w: float | None = 5000.0, max_soc: float = 100.0
 ) -> list[float]:

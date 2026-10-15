@@ -1146,8 +1146,16 @@ def _market_house(
         # D4 §5.14, WP4.10: the same unit, told to plan the summer at 24 °C.
         loads["heat_pump"] = load_from(
             "heat_pump",
-            # A Phoenix house holds its air conditioning all day: no away setback.
-            {**pump, "comfort_c": COOLING_COMFORT_C, "cooling": True, "follow_presence": False},
+            # A Phoenix house holds its air conditioning all day: no away setback. Pre-cooling
+            # before the on-peak window is the point of the scenario, and a pump banks only when
+            # the household has said yes (`preheat`, off by default, D-0773, D-0827).
+            {
+                **pump,
+                "comfort_c": COOLING_COMFORT_C,
+                "cooling": True,
+                "follow_presence": False,
+                "preheat": True,
+            },
             load_id="heat_pump",
             qctx={"capabilities": frozenset({"cool"})},
         )

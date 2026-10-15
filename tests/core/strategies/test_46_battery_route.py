@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from custom_components.powerplan.core.model import Plan
 
-PER_UNIT = 0.095
 ETA = 0.95
 RESERVE = 20.0
 PARAMS = {"wear_cost": Decimal("0.45"), "round_trip_eff": ETA * ETA}
