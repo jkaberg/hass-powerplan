@@ -480,13 +480,29 @@ class LoadRunNowButton(LoadEntity, ButtonEntity):
         await self.runtime.async_run_now(self.load_id)
 
 
+class LoadEvResumesButton(LoadEntity, ButtonEntity):
+    """`ev_resumes` (ev, D8 §5.16, D-0776): the car resumes after a pause, so plan pauses again."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "ev_resumes")
+
+    async def async_press(self) -> None:
+        """Forget the latch; the next resume is watched again."""
+        await self.runtime.async_clear_resumes(self.load_id)
+
+
 def load_buttons(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[ButtonEntity]:
-    """Return a run-now button for the cycle type."""
-    return [
-        LoadRunNowButton(runtime, load)
-        for load in _loads(runtime, loads)
-        if load.config.type_key == "appliance_cycle"
-    ]
+    """Return a run-now button for the cycle type and a resume button for the car."""
+    out: list[ButtonEntity] = []
+    for load in _loads(runtime, loads):
+        if load.config.type_key == "appliance_cycle":
+            out.append(LoadRunNowButton(runtime, load))
+        if load.config.type_key == "ev":
+            out.append(LoadEvResumesButton(runtime, load))
+    return out
 
 
 # --------------------------------------------------------------------------- #

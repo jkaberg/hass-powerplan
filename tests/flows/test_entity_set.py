@@ -11,12 +11,14 @@ mode, shed, override and health a load can reach.
 from __future__ import annotations
 
 import itertools
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from homeassistant.const import EntityCategory
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan.const import (
     DOMAIN,
@@ -24,6 +26,7 @@ from custom_components.powerplan.const import (
     LOAD_STRATEGY,
     SUBENTRY_LOAD,
 )
+from custom_components.powerplan.core.loads import Resumes
 from custom_components.powerplan.core.model import Mode
 from custom_components.powerplan.load_entities import PLAN_STATES, plan_state
 from tests.flows.conftest import past_match, shown
@@ -118,6 +121,7 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
         "strategy": (CONFIG, True),
         "run_now_max": (CONFIG, True),
         "charge_min": (CONFIG, True),
+        "ev_resumes": (CONFIG, True),
     },
     "water_heater": {
         **COMMON,
@@ -178,6 +182,31 @@ async def test_every_type_gets_its_set_small_and_by_level(
         assert got == EXPECTED[type_key], type_key
         shown = [key for key, (category, enabled) in got.items() if category is None and enabled]
         assert 3 <= len(shown) <= 6, (type_key, shown)
+
+
+async def test_56_the_resume_button_forgets_a_car_that_did_not_resume(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """§9 56, the button half (D-0776): pressing it on a latched `no` sets `unknown`; only the car has one."""
+    loads = await _house(hass, site, charger)
+    rows = _rows(hass, site, loads["ev"])
+    assert "ev_resumes" in rows
+    for type_key, load_id in loads.items():
+        if type_key != "ev":
+            assert "ev_resumes" not in _rows(hass, site, load_id)
+    runtime = site.runtime_data
+    now = dt_util.utcnow()
+    runtime._set_load_state(
+        loads["ev"],
+        replace(runtime._load_state(loads["ev"]), resumes=Resumes.NO, resumes_at=now),
+    )
+    entity_id = rows["ev_resumes"].entity_id
+    assert entity_id.startswith("button.")
+
+    await hass.services.async_call("button", "press", {"entity_id": entity_id}, blocking=True)
+
+    assert runtime._load_state(loads["ev"]).resumes is Resumes.UNKNOWN
+    assert runtime._load_state(loads["ev"]).resumes_at is None
 
 
 async def test_24_names_carry_no_prefix_and_ids_are_home_assistants_own(

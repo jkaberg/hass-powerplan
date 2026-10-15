@@ -33,12 +33,12 @@ from datetime import datetime, time, timedelta, tzinfo
 from typing import TYPE_CHECKING, Any, ClassVar, Final
 
 from ...model import Demand, Grant, Mode, Urgency
-from ..base import Load, LoadConfig, LoadCtx, LoadState, SessionDone, gate_config
+from ..base import Load, LoadConfig, LoadCtx, LoadState, Resumes, SessionDone, gate_config
 from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.modulate import EV_MIN_A, Modulate, ModulateCfg
 from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
-from ..stores.energy import EnergyStore
+from ..stores.energy import BAND_KEYS, EnergyStore
 from .base import register
 
 if TYPE_CHECKING:
@@ -54,6 +54,7 @@ __all__ = [
     "EV_DONE_SOC_HYST",
     "LIMIT_PAUSES",
     "OFFLINE_STATUSES",
+    "RESUME_WITHIN_S",
     "Ev",
 ]
 
@@ -87,6 +88,10 @@ CONNECTED_STATUSES: frozenset[str] = frozenset(
 BLOCKED_AFTER_S: Final = 180.0
 #: Below this the charger is not charging, whatever the standby electronics draw.
 BLOCKED_W: Final = 100.0
+
+#: After a resume the charger must draw within this long, or the car does not
+#: resume (D4 §5.11, D-0776). The draw is `BLOCKED_W`.
+RESUME_WITHIN_S: Final = 120.0
 
 #: No contact with the charger. Not "unplugged" (README).
 OFFLINE_STATUSES: frozenset[str] = frozenset({"offline", "unavailable", "unknown", "error"})
@@ -251,6 +256,8 @@ class Ev:
     kinds: ClassVar[tuple[str, ...]] = ("modulate",)
     strategies: ClassVar[tuple[str, ...]] = ("deadline_fill", "cheapest_hours", "surplus", "always")
     default_strategy: ClassVar[str] = "deadline_fill"
+    #: Pauses a session may plan once the car is known to resume (D4 §5.11, D-0776, D-0777).
+    max_pauses: ClassVar[int] = 4
     questionnaire: ClassVar[Questionnaire] = QUESTIONNAIRE
 
     # ------------------------------------------------------------------ derive #
@@ -365,8 +372,18 @@ class Ev:
     def _store(self, cfg: LoadConfig) -> EnergyStore:
         """Return the car's battery (§5.7)."""
         params = cfg.params
+        max_a = float(params.get("max_a", 32.0))
+        keys = [f"{phases}p_{band}" for phases in (1, 3) for band in BAND_KEYS]
+        bands = tuple(
+            (key, float(params[f"charge_eff_{key}"]))
+            for key in keys
+            if f"charge_eff_{key}" in params
+        )
         return EnergyStore(
             capacity_kwh=float(params.get("capacity_kwh", 64.0)),
+            eta_by_band=bands,
+            phases=cfg.phases,
+            w_per_amp=cfg.nameplate_w / max_a if max_a > 0.0 else 0.0,
             min_soc=float(params.get("min_soc_now", 20.0)),
             max_soc=float(params.get("target_soc", 80.0)),
             max_charge_w=cfg.nameplate_w,
@@ -419,7 +436,81 @@ class Ev:
 
     def latch(self, load: Load, state: LoadState, ctx: LoadCtx) -> LoadState:
         """Return the type's own conclusions about what the charger said (§5.11)."""
-        return self._note_blocked(load, self._latch_session(load, state, ctx), ctx)
+        state = self._latch_session(load, state, ctx)
+        return self._note_blocked(load, self._note_resume(load, state, ctx), ctx)
+
+    def clear_resumes(self, state: LoadState) -> LoadState:
+        """Forget what was learned about pausing: `button.<load>_ev_resumes` (D8 §5.16, D-0776).
+
+        The household has updated the car or the charger, or swapped the car; the
+        next resume is watched again and the plan stays one run until it is seen.
+        """
+        return replace(
+            state,
+            resumes=Resumes.UNKNOWN,
+            resumes_at=None,
+            session_drew=False,
+            paused_since=None,
+            resume_since=None,
+        )
+
+    def _granted(self, load: Load, ctx: LoadCtx) -> bool:
+        """Whether the entities show the charger allowed to draw: enabled, limit at the floor or above."""
+        held = ctx.reads.value(Role.CURRENT_SET)
+        return (
+            self.connected(ctx) is True
+            and self.enabled(load, ctx)
+            and held is not None
+            and held >= float(load.config.params.get("min_a", EV_MIN_A))
+        )
+
+    def _note_resume(  # noqa: PLR0911 - one return per way the watch ends or goes on
+        self, load: Load, state: LoadState, ctx: LoadCtx
+    ) -> LoadState:
+        """Watch the charger after every pause: does the car draw again? (§5.11, D-0776).
+
+        A pause is the charger held back (switch off, or a limit under the floor)
+        after the session has drawn; a resume is the grant coming back. The car
+        must draw `BLOCKED_W` within `RESUME_WITHIN_S` of that while it is still
+        connected and not done: `yes`, else `no` with the date. Only the
+        household's button leaves `no`; `yes` stays. A link loss judges nothing.
+        """
+        connected = self.connected(ctx)
+        if connected is None:
+            return state
+        watching = state.session_drew or state.paused_since or state.resume_since
+        if (
+            connected is False
+            or state.session_done is not None
+            or state.resumes is not Resumes.UNKNOWN
+        ):
+            if not watching:
+                return state
+            return replace(state, session_drew=False, paused_since=None, resume_since=None)
+        power = ctx.reads.value(Role.POWER)
+        drawing = power >= BLOCKED_W if power is not None else self.status(ctx) == "charging"
+        granted = self._granted(load, ctx)
+        if state.resume_since is not None:
+            if not granted:
+                return replace(state, resume_since=None, paused_since=ctx.now)
+            if drawing:
+                return replace(state, resumes=Resumes.YES, resume_since=None, paused_since=None)
+            if (ctx.now - state.resume_since).total_seconds() < RESUME_WITHIN_S:
+                return state
+            _LOGGER.warning(
+                "%s: drew nothing %.0f s after a resume – this car does not resume after a pause",
+                load.load_id,
+                RESUME_WITHIN_S,
+            )
+            return replace(state, resumes=Resumes.NO, resumes_at=ctx.now, resume_since=None)
+        if granted:
+            if state.paused_since is not None:
+                state = replace(state, paused_since=None, resume_since=ctx.now)
+                return self._note_resume(load, state, ctx) if drawing else state
+            return state if state.session_drew or not drawing else replace(state, session_drew=True)
+        if state.session_drew and state.paused_since is None:
+            return replace(state, paused_since=ctx.now)
+        return state
 
     def _latch_session(  # noqa: PLR0911 - two ways in and four ways out, each its own line
         self, load: Load, state: LoadState, ctx: LoadCtx
@@ -476,16 +567,9 @@ class Ev:
         it waits for, a queue, a fuse - and the reason its `blocked_by` sensor
         gives is logged once per reason, never once per tick.
         """
-        params = load.config.params
         held = ctx.reads.value(Role.CURRENT_SET)
-        enabled = self.enabled(load, ctx)
         power = ctx.reads.value(Role.POWER)
-        granted = (
-            self.connected(ctx) is True
-            and enabled
-            and held is not None
-            and held >= float(params.get("min_a", EV_MIN_A))
-        )
+        granted = self._granted(load, ctx)
         idle = power is not None and power < BLOCKED_W
         if not (granted and idle):
             if state.blocked_since is None and state.blocked_reason is None:
@@ -546,6 +630,13 @@ class Ev:
             reason = f"charging to {target:.0f} %"
         if state.blocked_reason is not None:
             reason = f"{reason}; blocked by {state.blocked_reason}"
+        if state.resumes is Resumes.NO and state.resumes_at is not None:
+            local = (
+                state.resumes_at.astimezone(ctx.zone) if ctx.zone is not None else state.resumes_at
+            )
+            reason = (
+                f"{reason}; did not resume after a pause on {local:%Y-%m-%d}, held at the floor"
+            )
 
         required = (
             None

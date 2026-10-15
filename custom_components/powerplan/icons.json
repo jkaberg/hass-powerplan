@@ -198,6 +198,9 @@
       "run_now": {
         "default": "mdi:play-circle-outline"
       },
+      "ev_resumes": {
+        "default": "mdi:car-clock"
+      },
       "refresh_prices": {
         "default": "mdi:cloud-refresh"
       }

@@ -13,13 +13,21 @@ from datetime import timedelta
 from itertools import pairwise
 from typing import TYPE_CHECKING
 
+from ...loads.stores.energy import BAND_KEYS, band_key
 from .base import EvSession, Fit, FitKey, Gate, LoadHistory, resolve
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime
 
-__all__ = ["EFFICIENCY_BOUNDS", "EV_GATE", "MIN_SOC_DELTA", "charge_efficiency", "sessions_from"]
+__all__ = [
+    "BAND_FITS",
+    "EFFICIENCY_BOUNDS",
+    "EV_GATE",
+    "MIN_SOC_DELTA",
+    "charge_efficiency",
+    "sessions_from",
+]
 
 #: D10 §5.6: three sessions, each at least 20 points of SoC.
 EV_GATE = Gate(min_n=3, unit="sessions")
@@ -32,25 +40,66 @@ SECONDS_PER_DAY = 86400.0
 PERCENT = 100.0
 
 
-def charge_efficiency(history: LoadHistory, now: datetime) -> Fit | None:
-    """Fit the wall-to-battery efficiency, or `None` with no usable session."""
-    usable = [
+def _usable(history: LoadHistory) -> list[EvSession]:
+    """Return the sessions that moved the SoC enough and drew energy."""
+    return [
         session
         for session in history.sessions
         if session.soc_delta >= MIN_SOC_DELTA and session.energy_kwh > 0.0
     ]
+
+
+def charge_efficiency(history: LoadHistory, now: datetime) -> Fit | None:
+    """Fit the wall-to-battery efficiency, or `None` with no usable session."""
+    return _fit(FitKey.CHARGE_EFFICIENCY, history, _usable(history), now)
+
+
+def _band_fit(key: FitKey, band: str) -> Callable[[LoadHistory, datetime], Fit | None]:
+    """Return the fit of one phase count and current band (D10 §5.6, D-0776).
+
+    The same `Σ(ΔSoC × capacity) / Σ energy` over the sessions whose mean current
+    fell in the band. Three sessions in the band or the fit is not applied, and
+    the load then keeps the session-wide value for that band.
+    """
+
+    def fit(history: LoadHistory, now: datetime) -> Fit | None:
+        if history.w_per_amp <= 0.0:
+            return None
+        inside = [
+            session
+            for session in _usable(history)
+            if session.mean_w > 0.0
+            and band_key(history.phases, session.mean_w / history.w_per_amp) == band
+        ]
+        return _fit(key, history, inside, now)
+
+    return fit
+
+
+#: One row per phase count and band (D10 §5.6): the fit's key and the function.
+BAND_FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
+    FitKey(f"charge_efficiency_{phases}p_{name}"): _band_fit(
+        FitKey(f"charge_efficiency_{phases}p_{name}"), f"{phases}p_{name}"
+    )
+    for phases in (1, 3)
+    for name in BAND_KEYS
+}
+
+
+def _fit(key: FitKey, history: LoadHistory, usable: list[EvSession], now: datetime) -> Fit | None:
+    """Fit the efficiency of `usable` sessions under `key`, or `None` with none."""
     if not usable:
         return None
     delivered = sum(session.soc_delta / PERCENT * session.capacity_kwh for session in usable)
     drawn = sum(session.energy_kwh for session in usable)
     return resolve(
-        FitKey.CHARGE_EFFICIENCY,
+        key,
         history.load_id,
         value=delivered / drawn,
         unit="",
         bounds=EFFICIENCY_BOUNDS,
         quality=EV_GATE.check(n=len(usable), span_days=_span_days(usable)),
-        configured=history.configured_value(FitKey.CHARGE_EFFICIENCY),
+        configured=history.configured_value(key),
         fitted_at=now,
     )
 
@@ -121,9 +170,24 @@ def sessions_from(
                 soc_start=before[-1],
                 soc_end=after[0],
                 capacity_kwh=capacity_kwh,
+                mean_w=_mean_on_w(power, start, end, threshold),
             )
         )
     return tuple(out)
+
+
+def _mean_on_w(
+    power: Sequence[tuple[datetime, float]], start: datetime, end: datetime, threshold: float
+) -> float:
+    """Return the time-weighted mean power over the part of `[start, end)` above `threshold`."""
+    energy = 0.0
+    seconds = 0.0
+    for (at, watts), (until, _next) in pairwise(power):
+        lo, hi = max(at, start), min(until, end)
+        if hi > lo and watts > threshold:
+            energy += watts * (hi - lo).total_seconds()
+            seconds += (hi - lo).total_seconds()
+    return energy / seconds if seconds > 0.0 else 0.0
 
 
 def _integrated_kwh(

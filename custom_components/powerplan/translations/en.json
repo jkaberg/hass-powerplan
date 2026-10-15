@@ -1188,6 +1188,9 @@
       },
       "run_now": {
         "name": "Run now"
+      },
+      "ev_resumes": {
+        "name": "The car resumes after a pause"
       }
     },
     "time": {

@@ -33,7 +33,7 @@ from .base import (
     span_days,
 )
 from .cycle import cycle_duration_min, cycle_energy_kwh, runs
-from .ev import charge_efficiency, sessions_from
+from .ev import BAND_FITS, charge_efficiency, sessions_from
 from .nameplate import nameplate_w, table_bounds
 from .phases import phases
 from .setpoint import held_setpoint
@@ -84,6 +84,7 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
     FitKey.COAST_TAU: coast_tau,
     FitKey.HEATUP_RATE: heatup_rate,
     FitKey.CHARGE_EFFICIENCY: charge_efficiency,
+    **BAND_FITS,
     FitKey.NAMEPLATE: nameplate_w,
     FitKey.STANDBY_LOSS: standby_loss_w,
     FitKey.DAILY_DRAW: daily_draw_kwh,

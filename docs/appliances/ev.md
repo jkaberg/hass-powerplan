@@ -80,6 +80,20 @@ By default the car charges in the cheapest hours before your next departure, and
 
 Set when you leave each weekday under **Departures**, or bind a calendar whose events are departures. **Run now** charges at full power for a while, whatever the price.
 
+<a name="pauses"></a>
+## Pauses and resumes
+
+Some cars never start charging again after a pause. PowerPlan does not know yours, so it learns.
+
+Until it has seen the car resume, PowerPlan plans one run: the car charges through the dear hours at 6 A instead of stopping. When the capacity step or the price makes PowerPlan pause the charger, it checks that the car draws power again within two minutes. If it does, PowerPlan plans pauses for this car from then on, at most four in a session, and it gives the slow, 6 A hours a price that counts the extra loss in slow charging.
+
+If the car does not draw, PowerPlan marks it as not resuming, holds it at 6 A, and the appliance's plan status names the date. PowerPlan still stops the car to protect the capacity step. If the departure is within 12 hours, you also get a **Deadline at risk** notice.
+
+> [!NOTE]
+> Since v0.0.12, a car is paused only after it has resumed once. Before that, PowerPlan stopped it whenever the plan had a gap.
+
+After you update the car's software or change the charger, press **The car resumes after a pause** on the appliance. PowerPlan forgets what it learned and watches the next resume.
+
 ## Limits
 
 PowerPlan never sets the current below 6 A while a car is charging, because most cars stop there. A charger that is also controlled by evcc or the car's own app should stay in trial mode.

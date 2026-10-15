@@ -80,6 +80,9 @@ class FitSpec:
     #: An EV's battery, and its charger's cumulative energy register where one is bound (D-0502).
     capacity_kwh: float | None = None
     energy: str | None = None
+    #: Its phase count and watts per ampere, to read a session's current band (D-0776).
+    phases: int = 1
+    w_per_amp: float = 0.0
     #: The bounds the load's own parameters put on its fits (`bounds_for`, D-0740).
     bounds: Mapping[FitKey, tuple[float, float]] = field(default_factory=dict)
 
@@ -152,6 +155,8 @@ async def async_load_history(
         indoor_rows=await read(spec.indoor),
         outdoor_rows=await read(spec.outdoor),
         sessions=sessions,
+        phases=spec.phases,
+        w_per_amp=spec.w_per_amp,
         bounds=dict(spec.bounds),
     )
 

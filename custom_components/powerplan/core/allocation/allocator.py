@@ -34,6 +34,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from ..loads.base import Resumes
 from ..model import Grant, PlanAnswer
 from .budget import PiState
 from .constraints.base import AllocCtx, Constraint, Violation
@@ -930,6 +931,9 @@ class _Walk:
             plan is not None
             and plan.idle_seconds_from(self.ctx.now) >= self.cfg.ev_min_stop_s
             and (plan.next_active(self.ctx.now) is not None or not owed)
+            # A car not known to resume is held at its floor, not stopped to
+            # follow the plan; a budget stop above still stops it (D-0776, INV-1).
+            and load.resumes is Resumes.YES
         )
         return (self.ctx.blunt and budget_ok) or (plan_stop and plan_ok), plan_stop
 

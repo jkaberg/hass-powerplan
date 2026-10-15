@@ -30,7 +30,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Final, Literal, Protocol
 
-from ..loads import CalendarEvent, PresenceMode, TargetProfile
+from ..loads import CalendarEvent, PresenceMode, Resumes, TargetProfile
 from ..loads.stores.base import StoreModel
 from ..model import Carrier, Demand, Mode, Plan, PriceCurve, Slot
 from ..pricing import Event, EventKind, HolidayCalendar, HysteresisPolicy
@@ -450,6 +450,13 @@ class LoadView:
     #: The windows the grid switches it in (G14): nothing planned or granted
     #: outside them. `None` is a load the grid does not switch.
     allowed: tuple[TimeFilter, ...] | None = None
+    #: An EV's D4 §5.11 latch (D-0776): unless `yes`, D5 plans one run and D6 holds
+    #: the car at its floor instead of stopping it to follow a plan. A load with no
+    #: such latch is never held back by it, so the default is `yes`.
+    resumes: Resumes = Resumes.YES
+    #: The most planned pauses a session of this load may have once it is known to
+    #: resume; `None` is a load whose run is not limited that way (D-0776, D-0777).
+    max_pauses: int | None = None
 
     @property
     def max_w(self) -> float:
@@ -506,6 +513,7 @@ class LoadView:
         mode: Mode = Mode.AUTO,
         level_now: float | None = None,
         quantiser: Quantiser | None = None,
+        resumes: Resumes = Resumes.YES,
     ) -> LoadView:
         """Return the view of `load` D7 hands the planner (D7 §5.2).
 
@@ -523,6 +531,7 @@ class LoadView:
             mode=mode,
             level_now=level_now,
             quantiser=quantiser,
+            resumes=resumes,
             params=dict(params),
             **static,
         )
@@ -569,6 +578,7 @@ def _static_fields(load: Load) -> tuple[dict[str, Any], dict[str, Any]]:
         "phases": load.config.phases,
         "grid_tariff": load.config.grid_tariff,
         "allowed": load.config.allowed,
+        "max_pauses": getattr(load.device_type, "max_pauses", None),
     }
     _STATIC[id(load)] = (load, static, params)
     return static, params

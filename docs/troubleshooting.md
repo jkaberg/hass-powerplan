@@ -240,6 +240,13 @@ Look at the appliance's **Plan status**: it says what PowerPlan plans and why, f
 
 The device accepted PowerPlan's last three commands but didn't apply them, for example a heat pump that keeps its old temperature. PowerPlan keeps controlling it and tries again when it may. After 30 minutes it becomes the repair [An appliance is not following its commands](#device_not_following). Check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands. It clears by itself the first time a command takes.
 
+<a name="ev_resumes"></a>
+### The car did not resume after a pause
+
+The plan status of the car charger says the car did not resume after a pause, with a date. The car did not draw power within two minutes of the charger starting again, so PowerPlan holds it at 6 A and no longer pauses it to follow the plan. A **Deadline at risk** notice means the departure is within 12 hours.
+
+Check that the car is awake and the cable is fully in. Some cars need a new charge command from their own app. Once it charges again, update the car or the charger if you can, then press **The car resumes after a pause** on the appliance. The next pause is then tested again.
+
 <a name="over_target"></a>
 ### An hour went over the target
 

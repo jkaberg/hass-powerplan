@@ -1188,6 +1188,9 @@
       },
       "run_now": {
         "name": "Kjør nå"
+      },
+      "ev_resumes": {
+        "name": "Bilen tåler pauser"
       }
     },
     "time": {

@@ -28,8 +28,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from decimal import Decimal
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
+from ..loads.base import Resumes
 from ..model import Confidence, DesiredState, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, register
@@ -69,6 +71,15 @@ class _Candidate:
     bands: tuple[tuple[float, Decimal], ...] = ()
     #: How many of `bands` are surplus; the rest are grid.
     surplus_bands: int = 0
+    #: The efficiency a car charges at in this slot (D5 §5.2, D-0776): its kWh cost
+    #: `price / eta` at the wall per kWh delivered, so a slot is ranked on that.
+    #: 1.0 is a load with no efficiency to price.
+    eta: float = 1.0
+
+    @property
+    def rank(self) -> Decimal:
+        """The price this slot is ranked at: its composed price per kWh delivered (D-0776)."""
+        return self.price if self.eta == 1.0 else self.price / Decimal(str(self.eta))
 
     @property
     def hours(self) -> float:
@@ -129,6 +140,7 @@ def _candidates(
     not_before: datetime | None,
     surplus: SurplusOf | None = None,
     grid: bool = True,
+    eta_at: Callable[[float], float] | None = None,
 ) -> tuple[_Candidate, ...]:
     """Return the usable slots of `[now, until)` with their per-slot caps (§5.2).
 
@@ -150,7 +162,8 @@ def _candidates(
         cap_w = min(max_w, grid_w + sun_w)
         if cap_w <= 0.0 or (min_w > 0.0 and cap_w < min_w):
             continue
-        out.append(_candidate(index, slot, cap_w, own, headroom.tier_at(slot.start)))
+        row = _candidate(index, slot, cap_w, own, headroom.tier_at(slot.start))
+        out.append(row if eta_at is None else replace(row, eta=eta_at(cap_w)))
     return tuple(out)
 
 
@@ -207,11 +220,11 @@ def _fill_priced(
     for row in candidates:
         index = -row.index if prefer_late else row.index
         if not row.bands:
-            tiers.append((row.price + grid_penalty, index, 0, row))
+            tiers.append((_per_delivered(row.price + grid_penalty, row.eta), index, 0, row))
             continue
         for band, (watts, price) in enumerate(row.bands):
             rank = price if band < row.surplus_bands else price + grid_penalty
-            tiers.append((rank, index, band, replace(row, cap_w=watts)))
+            tiers.append((_per_delivered(rank, row.eta), index, band, replace(row, cap_w=watts)))
     tiers.sort(key=lambda entry: entry[:3])
     taken: dict[int, float] = {}
     remaining = required
@@ -229,6 +242,11 @@ def _fill_priced(
             row = by_index[index]
             taken[index] = min(row.cap_kwh, max(kwh, min_w * row.hours / 1000.0))
     return taken
+
+
+def _per_delivered(price: Decimal, eta: float) -> Decimal:
+    """Return `price` per kWh that reaches the battery: `price / eta` (D5 §5.2, D-0776)."""
+    return price if eta == 1.0 else price / Decimal(str(eta))
 
 
 def _fill_time_order(
@@ -256,6 +274,82 @@ def _take(order: Sequence[_Candidate], required: float, *, min_w: float) -> dict
         taken[row.index] = take
         remaining -= take
     return taken
+
+
+def _limit_pauses(
+    by_index: Mapping[int, _Candidate],
+    taken: Mapping[int, float],
+    required: float,
+    *,
+    min_w: float,
+    max_pauses: int,
+) -> dict[int, float]:
+    """Close the cheapest gaps of a car's run until at most `max_pauses` remain (D5 §5.2, D-0776).
+
+    A gap is a stretch of slots between two chosen ones. Closing it runs the car
+    at `min_w` through it, which is energy the requirement did not ask for, so
+    the dearest chosen energy is given back to keep `required` - down to a slot's
+    floor, or to nothing at the ends of a run, where taking a slot away opens no
+    gap. A gap with a slot the car cannot run in (no candidate) stays: the
+    ceiling outranks the plan (INV-1).
+    """
+    out = dict(taken)
+    while True:
+        gaps = _gaps(out)
+        closable = [gap for gap in gaps if all(index in by_index for index in gap)]
+        if len(gaps) <= max_pauses or not closable:
+            break
+        cheapest = min(
+            closable,
+            key=lambda gap: (
+                sum(
+                    (
+                        by_index[i].rank * Decimal(str(min_w * by_index[i].hours / 1000.0))
+                        for i in gap
+                    ),
+                    Decimal(0),
+                ),
+                gap[0],
+            ),
+        )
+        for index in cheapest:
+            out[index] = min(by_index[index].cap_kwh, min_w * by_index[index].hours / 1000.0)
+    excess = sum(out.values()) - required
+    while excess > _EPS_KWH:
+        reducible = [
+            (index, _reducible_kwh(by_index[index], out, index, min_w)) for index in sorted(out)
+        ]
+        index, room = max(
+            ((i, r) for i, r in reducible if r > _EPS_KWH),
+            key=lambda pair: (by_index[pair[0]].rank, pair[0]),
+            default=(-1, 0.0),
+        )
+        if index < 0:
+            break
+        cut = min(excess, room)
+        out[index] -= cut
+        if out[index] <= _EPS_KWH:
+            del out[index]
+        excess -= cut
+    return out
+
+
+def _gaps(taken: Mapping[int, float]) -> list[tuple[int, ...]]:
+    """Return the runs of unchosen slot indices between the first and last chosen one."""
+    chosen = sorted(taken)
+    return [
+        tuple(range(before + 1, after)) for before, after in pairwise(chosen) if after > before + 1
+    ]
+
+
+def _reducible_kwh(row: _Candidate, taken: Mapping[int, float], index: int, min_w: float) -> float:
+    """Return how much of a chosen slot can be given back without opening a gap.
+
+    The end of a run goes entirely; one inside keeps its `min_w` floor.
+    """
+    floor = min_w * row.hours / 1000.0
+    edge = (index - 1) not in taken or (index + 1) not in taken
+    return taken[index] if edge else max(0.0, taken[index] - floor)
 
 
 def _fill_spread(candidates: Sequence[_Candidate], required: float) -> dict[int, float]:
@@ -527,6 +621,8 @@ def plan_one(
     surplus: SurplusOf | None = None,
     grid: bool = True,
     grid_penalty: Decimal = Decimal(0),
+    eta_at: Callable[[float], float] | None = None,
+    max_pauses: int | None = None,
 ) -> Plan:
     """Return the cheapest plan covering `required_kwh` (D5 §5.2, §5.3).
 
@@ -550,6 +646,7 @@ def plan_one(
         not_before=now if force and not_before is None else not_before,
         surplus=surplus,
         grid=grid,
+        eta_at=eta_at,
     )
     banded = any(row.bands for row in candidates)
 
@@ -586,6 +683,8 @@ def plan_one(
         )
 
     by_index = {row.index: row for row in candidates}
+    if max_pauses is not None and taken and not force and min_block_min == 0:
+        taken = _limit_pauses(by_index, taken, required_kwh, min_w=min_w, max_pauses=max_pauses)
     slots = tuple(
         _slot(
             index,
@@ -675,6 +774,19 @@ def _reason(planned: float, required: float, deadline: datetime | None, *, force
     return f"cheapest {planned:.1f} kWh before {deadline:%H:%M}"
 
 
+def _eta_of(ctx: PlanContext) -> Callable[[float], float] | None:
+    """Return a car's efficiency at a draw, where its store has one (D-0776); `None` for any other load."""
+    return getattr(ctx.load.store, "eta_at", None) if ctx.load.max_pauses is not None else None
+
+
+def _pause_cap(ctx: PlanContext) -> int | None:
+    """How many pauses the load's run may have: none until it resumes, then its type's cap (D-0776)."""
+    cap = ctx.load.max_pauses
+    if cap is None:
+        return None
+    return cap if ctx.load.resumes is Resumes.YES else 0
+
+
 @register
 class DeadlineFill:
     """Cheapest slots covering the requirement before the deadline (D5 §5.2, §6)."""
@@ -726,6 +838,8 @@ class DeadlineFill:
             load_id=ctx.load.load_id,
             strategy=self.key,
             surplus=ctx.surplus_bands if ctx.surplus else None,
+            eta_at=_eta_of(ctx),
+            max_pauses=_pause_cap(ctx),
             inputs_hash=inputs_digest(
                 self.key,
                 ctx.load.mode,
@@ -734,5 +848,6 @@ class DeadlineFill:
                 demand.min_w,
                 sorted(params.items()),
                 ctx.presence,
+                ctx.load.resumes,
             ),
         )

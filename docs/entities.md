@@ -69,6 +69,7 @@ Where your grid company bills no capacity step, **Target this hour** and **Capac
 | Entity | Name | Unit | Where | Appliances |
 |---|---|---|---|---|
 | `button.<appliance>_run_now` | Run now | – | shown | Dishwasher, washer or dryer |
+| `button.<appliance>_the_car_resumes_after_a_pause` | The car resumes after a pause | – | Configuration | Car charger |
 | `number.<appliance>_always_charge_to_at_least` | Always charge to at least | % | Configuration | Car charger |
 | `number.<appliance>_charge_to` | Charge to | % | shown | Car charger |
 | `number.<appliance>_never_colder_than` | Never colder than | °C | Configuration, off by default | Floor heating, Heat pump, Panel heater, Water heater |

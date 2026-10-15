@@ -71,6 +71,14 @@ class FitKey(StrEnum):
     LOSS_COEFF = "loss_coeff_w_per_k"
     HEATUP_RATE = "heatup_k_per_h"
     CHARGE_EFFICIENCY = "charge_efficiency"
+    #: …and per phase count and current band (D-0776); the value after `charge_efficiency_`
+    #: is `energy.band_key`'s, and the load's parameter is `charge_eff_<that>`.
+    CHARGE_EFF_1P_6_9 = "charge_efficiency_1p_6_9"
+    CHARGE_EFF_1P_10_15 = "charge_efficiency_1p_10_15"
+    CHARGE_EFF_1P_16 = "charge_efficiency_1p_16"
+    CHARGE_EFF_3P_6_9 = "charge_efficiency_3p_6_9"
+    CHARGE_EFF_3P_10_15 = "charge_efficiency_3p_10_15"
+    CHARGE_EFF_3P_16 = "charge_efficiency_3p_16"
     NAMEPLATE = "nameplate_w"
     STANDBY_LOSS = "standby_loss_w"
     COAST_TAU = "coast_tau_h"
@@ -183,6 +191,9 @@ class EvSession:
     soc_start: float
     soc_end: float
     capacity_kwh: float
+    #: The mean power over the stretches the charger was on, W (0 when unknown): what
+    #: the session's current band is read from (D10 §5.6, D-0776).
+    mean_w: float = 0.0
 
     @property
     def soc_delta(self) -> float:
@@ -211,6 +222,9 @@ class LoadHistory:
     indoor_rows: tuple[tuple[datetime, float], ...] = ()
     outdoor_rows: tuple[tuple[datetime, float], ...] = ()
     sessions: tuple[EvSession, ...] = ()
+    #: An EV's phase count and watts per ampere, to read a session's current band from its power (D-0776).
+    phases: int = 1
+    w_per_amp: float = 0.0
     #: Where the load's own parameters bound a fit better than the fit's defaults
     #: (`design/DECISIONS.md` D-0740): a rating that came from a W/m² table, a foil's
     #: room. `bounds_for()` builds it from the subentry.

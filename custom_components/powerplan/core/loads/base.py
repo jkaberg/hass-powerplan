@@ -84,6 +84,7 @@ __all__ = [
     "Observation",
     "Reads",
     "ReasonParams",
+    "Resumes",
     "Role",
     "RoleRead",
     "SessionDone",
@@ -110,6 +111,14 @@ _PHASE_COUNTS: Mapping[int, Literal[1, 2, 3]] = {1: 1, 2: 2, 3: 3}
 # --------------------------------------------------------------------------- #
 # Latches and learned values
 # --------------------------------------------------------------------------- #
+
+
+class Resumes(StrEnum):
+    """Whether a car resumes charging after a pause powerplan made (D4 §5.11, D-0776)."""
+
+    UNKNOWN = "unknown"
+    YES = "yes"
+    NO = "no"
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +359,16 @@ class LoadState:
     #: when, and the reason its `blocked_by` sensor gave once it counted.
     blocked_since: datetime | None = None
     blocked_reason: str | None = None
+    #: An EV's resume latch (D4 §5.11, D-0776): whether the car draws again after a
+    #: pause powerplan made. Only the household's button clears `no`. `resumes_at`
+    #: is when `no` was latched (the reason names the date); the rest is the
+    #: detector's: the session has drawn, the charger was held back since
+    #: `paused_since`, and the resume under watch began at `resume_since`.
+    resumes: Resumes = Resumes.UNKNOWN
+    resumes_at: datetime | None = None
+    session_drew: bool = False
+    paused_since: datetime | None = None
+    resume_since: datetime | None = None
     #: Since when a bound role has been unreadable: what `Health.transient_since`
     #: carries while the load is transient for a stale role rather than a
     #: write (H.1 F-6, `design/DECISIONS.md` D-0362).
@@ -684,6 +703,12 @@ class Load:
             cycle_state=None if state.cycle is None else state.cycle.notify_state,
             cycle_started_at=None if state.cycle is None else state.cycle.started_at,
         )
+
+    def resumes_of(self, state: LoadState) -> Resumes:
+        """Return the resume latch the planner reads: the type's own, or `yes` where it has none (D-0776)."""
+        if callable(getattr(self.device_type, "clear_resumes", None)):
+            return state.resumes
+        return Resumes.YES
 
     def apply(self, grant: Grant, state: LoadState, ctx: LoadCtx) -> tuple[LoadState, ApplyResult]:
         """Turn a grant into the fewest, safest writes that achieve it (D4 §5.1).

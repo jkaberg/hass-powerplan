@@ -99,12 +99,14 @@ from .loads import (
     Mode,
     Reads,
     ReasonParams,
+    Resumes,
     Role,
     Urgency,
     effective_mode,
     transition,
 )
 from .loads.gate import Decision, GateState, TransportBudget
+from .loads.stores.energy import BAND_KEYS
 from .loads.targets import CalendarEvent, PresenceMode, profile_from_params
 from .loads.types import base as device_types
 from .metering import (
@@ -327,6 +329,7 @@ _STORE_KEYS: Final = (
     "heat_loss_w_per_k",
     "standby_loss_w",
     "charge_eff",
+    *(f"charge_eff_{phases}p_{band}" for phases in (1, 3) for band in BAND_KEYS),
     "coast_tau_h",
 )
 
@@ -780,6 +783,8 @@ OVER_WINDOW_KWH = 0.05
 #: A deadline is met when no more than this was still wanted before it (D7 §5.10).
 DEADLINE_MET_KWH = 0.1
 #: How far a plan's energy moves before `plan_adopted` says so again (D-0714).
+#: A car latched `no` is at risk when its departure is this near (D4 §5.11, D-0790).
+RESUME_RISK_WINDOW: Final = timedelta(hours=12)
 PLAN_ANNOUNCE_KWH: Final = 0.5
 PLAN_ANNOUNCE_SHARE: Final = 0.25
 #: How long a device stays `unhealthy` or `not_following` before it is a repair and a
@@ -1847,6 +1852,7 @@ class Engine:
                     mode=mode,
                     level_now=_level_now(observation.demand, ctx.reads),
                     quantiser=_quantiser(load, after, ctx, mode),
+                    resumes=load.resumes_of(after),
                 )
             )
         return out_states, observations, tuple(views)
@@ -2304,6 +2310,18 @@ class Engine:
             # not a deadline anyone is about to miss (D-0720).
             asking = {view.load_id for view in views if view.demand.wants}
             uncovered = tuple(lid for lid in site_plan.uncovered if lid in asking)
+            # A car that did not resume is held at the floor with its deadline
+            # near: the plan is no longer what decides, so say so (D4 §5.11, D-0776).
+            stalled = tuple(
+                view.load_id
+                for view in views
+                if view.resumes is Resumes.NO
+                and view.demand.wants
+                and view.demand.deadline is not None
+                and view.demand.deadline - now <= RESUME_RISK_WINDOW
+                and view.load_id not in uncovered
+            )
+            uncovered = (*uncovered, *stalled)
             refit = tuple(sorted(site_plan.refit))
             plans = PlansState(schema=state.plans.schema, plans=dict(site_plan.plans), built_at=now)
             if adopted:

@@ -128,6 +128,7 @@ from .core.engine import (
 )
 from .core.forecasts.baseline import BaselineState, HourOfWeekBaseline
 from .core.forecasts.fit import Fit, FitKey, bounds_for, fit_all, in_force, keep
+from .core.forecasts.fit.ev import BAND_FITS
 from .core.forecasts.hold import HourOfDayMean
 from .core.forecasts.model import OFFER_CONFIDENCE, Forecasts
 from .core.forecasts.quantiles import HourOfWeekQuantile
@@ -1793,10 +1794,12 @@ class Runtime:
         if power is None or soc is None:
             return None
         configured = load.config.params.get("charge_eff")
+        mine = f"charge_efficiency_{load.config.phases}p_"
+        bands = tuple(key for key in BAND_FITS if key.startswith(mine))
         spec = FitSpec(
             load_id=load.load_id,
             type_key=load.config.type_key,
-            fits=(FitKey.CHARGE_EFFICIENCY,),
+            fits=(FitKey.CHARGE_EFFICIENCY, *bands),
             nameplate_w=load.config.nameplate_w,
             capacity_kwh_per_k=None,
             area_m2=None,
@@ -1807,8 +1810,13 @@ class Runtime:
             level=HistorySeries(soc, device.attribute_of(Role.SOC)),
             capacity_kwh=store.capacity_kwh,
             energy=device.entity_of(Role.ENERGY),
+            phases=load.config.phases,
+            w_per_amp=store.w_per_amp,
         )
-        return spec, (("charge_eff", FitKey.CHARGE_EFFICIENCY),)
+        return spec, (
+            ("charge_eff", FitKey.CHARGE_EFFICIENCY),
+            *((f"charge_eff_{key.removeprefix('charge_efficiency_')}", key) for key in bands),
+        )
 
     async def _refresh_fits(self, now: datetime) -> None:
         """Run D10's fits and fold each thermal load's holding draw, once a day (D-0500, D-0501).
@@ -4348,6 +4356,16 @@ class Runtime:
             msg = f"{load_id} takes no run request"
             raise ValueError(msg)
         self._set_load_state(load_id, request(self._load_state(load_id), dt_util.utcnow()))
+        await self._tick_and_plan("service")
+
+    async def async_clear_resumes(self, load_id: str) -> None:
+        """`button.<load>_ev_resumes`: forget what the car did after a pause (D4 §5.11, D-0776)."""
+        load = self._load(load_id)
+        clear = getattr(load.device_type, "clear_resumes", None)
+        if clear is None:
+            msg = f"{load_id} keeps no resume latch"
+            raise ValueError(msg)
+        self._set_load_state(load_id, clear(self._load_state(load_id)))
         await self._tick_and_plan("service")
 
     async def async_reset_window_anchor(self) -> None:

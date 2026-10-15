@@ -3459,3 +3459,23 @@ The evidence offered several changes to the water heater:
 The owner keeps the tank's numbers as they are (14 Oct 2026). 75 °C nightly is what lets the tank pasteurise itself (D-0742). The 45 °C floor is a shed level for the capacity axis, not a delivery temperature. The reserve and the lead were measured against the reference house's draws (D-0743). Affects nothing.
 
 **Rejected:** the four changes above, recorded so the next pass need not re-open them.
+
+### D-0790 · How the resume latch is watched
+
+D-0776 says a charger must draw within 120 s of a resume. The code needed five more choices:
+- **A pause is the charger held back after the session has drawn** (`BLOCKED_W` or `status = charging`, with the charger granted). A car that was never started in this session is a first start, not a resume, so a plug-in held for the plan's first slot judges nothing.
+- **Only `unknown` is watched.** `yes` stays and `no` waits for the household. Powerplan pauses an unknown car only for a budget stop (D6 §5.3), so `yes` comes from the first of those the car survives.
+- **The button clears any value, not only `no`.** A car swapped for another, or updated, has a `yes` that no longer means anything.
+- **Judged only while connected, not done and readable.** An unplug, a finished session or a link loss drops the watch without a verdict.
+- **At risk means the departure is within 12 hours.** A car latched `no` with its departure inside `RESUME_RISK_WINDOW` sends `deadline_at_risk` once, on the edge. The plan itself is no longer what decides (D6 holds it at 6 A), so the plan's own coverage says nothing.
+
+`LoadView.resumes` is `yes` for a load whose type keeps no latch, so D6's `plan_stop_ok ∧= resumes is yes` never holds one back. Affects D4 §5.11, D6 §5.3, §9 34.
+
+### D-0791 · How a car's efficiency prices a slot
+
+D-0776 prices each slot's band at `p / η(power)`. The plan keeps three simplifications:
+- **A slot is ranked at its cap**, `min(max_w, headroom)`, read through the band that power falls in. The slot's reported price stays `p`. A car with no fitted band has one η everywhere, and the ranking is the old one.
+- **`required_kwh` keeps the session-wide `charge_eff`.** The sum over bands is not known before the slots are chosen, and the difference is under the fit's own noise.
+- **Closing a gap** (no latch `yes`, or more than 4 pauses) raises the cheapest gap, by `rank × min_w` energy, to `min_w`, then gives back the dearest energy to the requirement: a slot inside a run only down to its floor, a run's end to nothing, so no gap reopens. A gap with a slot the car cannot run in (headroom under `min_w`) stays, since the ceiling outranks the plan (INV-1).
+
+The band fits are six `FitKey`s (`charge_efficiency_<1p|3p>_<6_9|10_15|16>`), published like the other fits; the load's parameter is `charge_eff_<phases>p_<band>`, applied only when the fit passed its gate. No storage or entry version changes: both new `LoadState` fields and parameters are optional. Affects D5 §5.2, D10 §5.6, §9 31.
