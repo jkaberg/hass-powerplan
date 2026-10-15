@@ -6,6 +6,7 @@
 | Depends on | D1 (curves, hysteresis policy, events), D2 (eligible windows, ceiling per window), D4 (Demand, store models, target profiles), D10 (forecasts: weather, surplus, baseline) |
 | Consumers | D6 (`plan.cap_w(load, now)`, reservations for cycles), D7 (plan adoption events), D8 (plan sensors) |
 | Invariants owned | INV-30 … INV-33, INV-59 |
+| Design history | [How the strategies were designed (Oct 2026)](../reviews/strategy-design-2026-10.md): the measurements, the options, the sources |
 
 ---
 
