@@ -833,7 +833,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BP.5 | The battery's route | todo |
 | BP.6 | Lowering comfort is opt-in | done |
 | BP.7 | A car that resumes | todo |
-| BP.8 | Fit bounds from the evidence | todo |
+| BP.8 | Fit bounds from the evidence | done |
 | 6.3 | Release v1.0 | todo |
 
 ### v1.x backlog

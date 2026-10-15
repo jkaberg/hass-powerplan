@@ -38,9 +38,10 @@ if TYPE_CHECKING:
 __all__ = [
     "COAST_BOUNDS_W_PER_K_M2",
     "COAST_GATE",
-    "FOIL_TAU_BOUNDS_H",
+    "FOIL_FLOOR_TAU_BOUNDS_H",
     "HEATUP_BOUNDS_K_PER_H",
     "HEATUP_GATE",
+    "ROOM_COAST_BOUNDS_W_PER_K_M2",
     "TAU_BOUNDS_H",
     "TAU_GATE",
     "coast_rate",
@@ -56,14 +57,20 @@ MIN_COAST_HOURS = 2.0
 #: bounded per unit - the same numbers with area 1 (D-0215).
 COAST_BOUNDS_W_PER_K_M2 = (0.5, 50.0)
 
+#: A room's loss to outdoors per m² of *floor*, not of a store's area (D10 §5.6,
+#: D-0778): TEK17 and passive houses sit at 0.3-1, a leaky one near 5. The old
+#: floor of 0.5 refused the tight envelopes.
+ROOM_COAST_BOUNDS_W_PER_K_M2 = (0.3, 5.0)
+
 #: D10 §5.6 (D-0730): 10 coasts over a week, the middle half within 1.0 × the
 #: median - the reference house's loops measured 0.48–0.81 in October 2026.
 TAU_GATE = Gate(min_n=10, min_span_days=7.0, max_spread=1.0)
-TAU_BOUNDS_H = (5.0, 1000.0)
-#: A foil or mat under the covering heats the room's air and little else: the
-#: floor probe of one left off follows the room, which the house's other heaters
-#: hold, and that is not the foil coasting (D-0740). TV-stua's 383 h was that.
-FOIL_TAU_BOUNDS_H = (2.0, 48.0)
+TAU_BOUNDS_H = (5.0, 500.0)
+#: A foil or mat under a floating floor, read on its floor probe, coasts on the
+#: floor covering alone: minutes to hours, not the building's days (D-0778). On
+#: an air sensor the foil coasts on the building's mass, 44-65 h in a TEK10
+#: house, and `TAU_BOUNDS_H` stands. D-0740's [2, 48] h refused good air fits.
+FOIL_FLOOR_TAU_BOUNDS_H = (0.3, 6.0)
 
 #: D10 §5.6: 5 episodes and [0.1, 10] K/h. Half an hour is the shortest run a
 #: slope means anything over (D-0215).
@@ -103,7 +110,10 @@ def coast_rate(history: LoadHistory, now: datetime) -> Fit | None:
         history.load_id,
         value=value,
         unit="W/K",
-        bounds=(COAST_BOUNDS_W_PER_K_M2[0] * area, COAST_BOUNDS_W_PER_K_M2[1] * area),
+        bounds=history.bounds.get(
+            FitKey.LOSS_COEFF,
+            (COAST_BOUNDS_W_PER_K_M2[0] * area, COAST_BOUNDS_W_PER_K_M2[1] * area),
+        ),
         quality=quality,
         configured=history.configured_value(FitKey.LOSS_COEFF),
         fitted_at=now,

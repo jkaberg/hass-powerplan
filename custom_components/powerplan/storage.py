@@ -38,7 +38,6 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.json import load_json
 
 from .const import DOMAIN
-from .core.forecasts.fit.thermal import FOIL_TAU_BOUNDS_H
 from .core.loads.stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3
 from .core.loads.types.floor_heating import (
     COAST_TAU_DEFAULT_H,
@@ -647,6 +646,11 @@ def migrate_heat_strategy(data: Mapping[str, Any]) -> dict[str, Any] | None:
 # --------------------------------------------------------------------------- #
 
 
+#: What D-0740 held a foil's coast to, hours. Migration 7 is that moment's: D-0778
+#: bounds a foil by its sensor instead, and a tau it already corrected stays.
+FOIL_TAU_BOUNDS_V7_H: Final = (2.0, 48.0)
+
+
 def migrate_foil_floor(data: Mapping[str, Any]) -> dict[str, Any] | None:
     """Return a foil floor's subentry corrected, or `None` to leave it (D-0740).
 
@@ -675,7 +679,7 @@ def migrate_foil_floor(data: Mapping[str, Any]) -> dict[str, Any] | None:
         params["w_per_m2"] = FOIL_UNDER_FLOATING_W_PER_M2
         params["nameplate_w"] = FOIL_UNDER_FLOATING_W_PER_M2 * area
     tau = params.get("coast_tau_h")
-    low, high = FOIL_TAU_BOUNDS_H
+    low, high = FOIL_TAU_BOUNDS_V7_H
     if "coast_tau_h" not in manual and tau is not None and not low <= float(tau) <= high:
         params["coast_tau_h"] = COAST_TAU_DEFAULT_H["room"]
     if params == before:

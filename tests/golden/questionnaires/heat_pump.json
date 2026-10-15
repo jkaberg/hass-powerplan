@@ -1,17 +1,5 @@
 {
-  "type": "heat_pump",
   "about": "D4 §6.4: the reference house's air-to-air unit – 1.5 kW rated over the open-plan 60 m², built 2000–2010, band ±1 K, the A2A COP curve of §6.4 shown and editable, and the mains switch listed as never-actuated (INV-29).",
-  "ctx": {
-    "area": "Stue",
-    "capabilities": [
-      "setpoint",
-      "cool"
-    ],
-    "readable": {
-      "min_temp": 16.0,
-      "max_temp": 30.0
-    }
-  },
   "answers": {
     "area_m2": 60.0,
     "arrival_sources": [],
@@ -36,6 +24,17 @@
     "rated_kw": 1.5,
     "schedule_entity": null
   },
+  "ctx": {
+    "area": "Stue",
+    "capabilities": [
+      "setpoint",
+      "cool"
+    ],
+    "readable": {
+      "max_temp": 30.0,
+      "min_temp": 16.0
+    }
+  },
   "derived": {
     "derivation_version": 4,
     "explanation_key": "heat_pump_review",
@@ -57,7 +56,7 @@
       "band_k": 1.0,
       "building": "2000_2010",
       "can_cool": true,
-      "coast_tau_h": 107.1,
+      "coast_tau_h": 42.9,
       "comfort_c": 21.0,
       "command_interval_s": 900.0,
       "cop_curve": {
@@ -116,5 +115,6 @@
       "preheat": false,
       "preheat_max_outdoor_c": 5.0
     }
-  }
+  },
+  "type": "heat_pump"
 }

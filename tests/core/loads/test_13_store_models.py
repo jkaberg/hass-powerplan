@@ -92,10 +92,10 @@ def test_13d_cooling_flips_the_sign() -> None:
     assert cooling.required_kwh(20.0, 22.0, None, ctx()) == pytest.approx(0.0)
 
 
-def test_13d2_a_room_stores_three_percent_of_its_volume_per_kelvin() -> None:
-    """The effective building mass of light-weight construction (D4 §5.7)."""
+def test_69_a_room_stores_1_2_percent_of_its_volume_per_kelvin() -> None:
+    """D4 §9 69 (D-0778): ISO 13790 light class, 250 m³ starts at 3.0 kWh/K."""
     store = RoomStore.from_volume(volume_m3=250.0, max_c=24.0, min_c=17.0)
-    assert store.capacity_kwh_per_unit() == pytest.approx(7.5)
+    assert store.capacity_kwh_per_unit() == pytest.approx(3.0)
 
 
 def test_13e_loss_and_coast_need_a_fitted_coefficient() -> None:
@@ -158,7 +158,7 @@ def test_13g_every_store_reports_its_bounds_and_its_coast() -> None:
     cold = ctx(outdoor_c=-8.0)
     coast = room.coast_hours(22.0, 21.0, cold)
     assert coast is not None
-    assert coast == pytest.approx(7.5 / (120.0 * 30.0 / 1000.0), abs=0.01)
+    assert coast == pytest.approx(3.0 / (120.0 * 30.0 / 1000.0), abs=0.01)
     assert room.coast_hours(22.0, 21.0, ctx()) is None, "no outdoor reading, no coast"
     assert room.required_kwh(None, 22.0, None, ctx()) is None
 

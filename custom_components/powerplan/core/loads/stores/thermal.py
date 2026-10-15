@@ -53,8 +53,9 @@ CP_SCREED = 0.9
 WATER_KJ_PER_LK = 4.186
 
 #: The effective building mass of light-weight (timber) construction, kWh/K per
-#: m³ (D4 §5.7). The air alone would be 0.0003; heavy masonry is 2–3× this.
-ROOM_MASS_KWH_PER_K_PER_M3 = 0.03
+#: m³ (D4 §5.7, D-0778): ISO 13790's *light* class, 110 kJ/m²K of floor at 2.5 m.
+#: The air alone would be 0.0003; the 0.03 held before D-0778 was the heavy class.
+ROOM_MASS_KWH_PER_K_PER_M3 = 0.012
 
 #: Domestic hot water per person per day, litres at `DRAW_TEMP_C` (D4 §5.7, §6.3).
 DRAW_L_PER_PERSON_DAY: Final = 45.0

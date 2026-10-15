@@ -39,7 +39,13 @@ from .phases import phases
 from .setpoint import held_setpoint
 from .switch import hours_per_day
 from .tank import daily_draw_kwh, standby_loss_w
-from .thermal import FOIL_TAU_BOUNDS_H, coast_rate, coast_tau, heatup_rate
+from .thermal import (
+    FOIL_FLOOR_TAU_BOUNDS_H,
+    ROOM_COAST_BOUNDS_W_PER_K_M2,
+    coast_rate,
+    coast_tau,
+    heatup_rate,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -96,17 +102,27 @@ FITS: Mapping[FitKey, Callable[[LoadHistory, datetime], Fit | None]] = {
 }
 
 
-def bounds_for(params: Mapping[str, Any]) -> dict[FitKey, tuple[float, float]]:
-    """Return the bounds a load's own parameters put on its fits (D-0740).
+def bounds_for(
+    params: Mapping[str, Any],
+    *,
+    reads_floor_probe: bool = False,
+    room_floor_m2: float | None = None,
+) -> dict[FitKey, tuple[float, float]]:
+    """Return the bounds a load's own parameters put on its fits (D-0740, D-0778).
 
     The setup measurement and the daily fit read one answer: a floor's table
-    rating is bounded per square metre, a foil's coast by what a foil can hold.
+    rating is bounded per square metre, a foil's coast by what its sensor can
+    show (`reads_floor_probe`: the series the fit reads is the floor probe, not
+    the air), a room's loss coefficient per square metre of its floor.
     """
     out: dict[FitKey, tuple[float, float]] = {}
     if (per_m2 := table_bounds(params)) is not None:
         out[FitKey.NAMEPLATE] = per_m2
-    if params.get("heating_type") == "foil_or_mat":
-        out[FitKey.COAST_TAU] = FOIL_TAU_BOUNDS_H
+    if params.get("heating_type") == "foil_or_mat" and reads_floor_probe:
+        out[FitKey.COAST_TAU] = FOIL_FLOOR_TAU_BOUNDS_H
+    if room_floor_m2 is not None:
+        low, high = ROOM_COAST_BOUNDS_W_PER_K_M2
+        out[FitKey.LOSS_COEFF] = (low * room_floor_m2, high * room_floor_m2)
     return out
 
 

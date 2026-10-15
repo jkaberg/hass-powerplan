@@ -41,7 +41,10 @@ The **Outdoor temperature** data point is the heat pump's own sensor, if its dev
 
 Answer what you know. Every other setting is worked out from these answers and shown under **Advanced**.
 
-Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**.
+Where the room's temperature is already in Home Assistant's history, PowerPlan measures how fast the room cools when the heat pump is off. That number replaces the one worked out from the building's age, and the review says how many days it came from. You can change it under **Advanced**. Until it is measured, the room is taken to hold 0.012 kWh of heat per degree for every cubic meter, the light timber building of a typical Nordic home, so a 250 cubic meter room starts at 3 kWh per degree.
+
+> [!NOTE]
+> Since v0.0.12, that starting figure is 0.012 where it was 0.03. A heat pump set up before it keeps the cooling time it was given, until the next measurement replaces it.
 
 Where the heat pump's setpoint is in Home Assistant's history, a temperature it held for at least half of the last 14 days is the comfort temperature, and is not asked. It is never taken from a heat pump PowerPlan has already controlled, since then the history is PowerPlan's own.
 

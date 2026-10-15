@@ -216,7 +216,7 @@ async def async_measure(
         level=series(Role.TEMP_FLOOR if floor else Role.TEMP),
         indoor=series(Role.TEMP) if floor else None,
         outdoor=outdoor,
-        bounds=bounds_for(params),
+        bounds=bounds_for(params, reads_floor_probe=floor),
     )
     if spec.level is None and power is None:
         return {}

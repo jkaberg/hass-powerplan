@@ -164,11 +164,11 @@ async def test_21_a_stored_coast_time_out_of_todays_bounds_is_not_applied(
 ) -> None:
     """D-0762: a fit restored from the store meets the bounds the load's parameters set now.
 
-    TV-stua's 382.7 h passed at 03:17 under (5, 1000); D-0740 bounded a foil at
+    TV-stua's 382.7 h passed at 03:17 under (5, 500); D-0740 bounded a foil at
     (2, 48) and HA restarted. The restore applied it, and the floor paused ten hours.
     """
     from custom_components.powerplan.core.forecasts.fit.thermal import (  # noqa: PLC0415
-        FOIL_TAU_BOUNDS_H,
+        FOIL_FLOOR_TAU_BOUNDS_H,
     )
     from tests.core.forecasts.test_28_kept_fit import OCTOBER, _fit  # noqa: PLC0415
 
@@ -188,6 +188,8 @@ async def test_21_a_stored_coast_time_out_of_todays_bounds_is_not_applied(
     runtime._apply_fits([(spec, applied)])
     assert runtime.load_params[LOAD_ID]["coast_tau_h"] == 382.7, "a slab may coast that long"
 
-    runtime._apply_fits([(replace(spec, bounds={FitKey.COAST_TAU: FOIL_TAU_BOUNDS_H}), applied)])
+    runtime._apply_fits(
+        [(replace(spec, bounds={FitKey.COAST_TAU: FOIL_FLOOR_TAU_BOUNDS_H}), applied)]
+    )
     assert "coast_tau_h" not in runtime.load_params[LOAD_ID], "a foil may not: its own value runs"
     await runtime.stop("unload")

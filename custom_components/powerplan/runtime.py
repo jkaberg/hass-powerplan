@@ -142,7 +142,7 @@ from .core.loads.stores.energy import EnergyStore
 from .core.loads.stores.thermal import RoomStore, SlabStore, TankStore
 from .core.loads.targets import CalendarEvent, HaScheduleEntity, PresenceMode, profile_from_params
 from .core.loads.types import base as device_types
-from .core.loads.types.heat_pump import curve_of
+from .core.loads.types.heat_pump import ROOM_HEIGHT_M, curve_of
 from .core.metering import (
     ClosedWindow,
     ElectricalProfile,
@@ -1721,6 +1721,7 @@ class Runtime:
         if device is None:
             return None
         params = load.config.params
+        room_floor_m2: float | None = None
         if isinstance(store, SlabStore):
             key, param, capacity, area = (
                 FitKey.LOSS_COEFF,
@@ -1735,6 +1736,7 @@ class Runtime:
                 store.capacity_kwh_per_unit(),
                 None,
             )
+            room_floor_m2 = float(params.get("area_m2") or store.volume_m3 / ROOM_HEIGHT_M)
         elif isinstance(store, TankStore):
             key, param, capacity, area = (
                 FitKey.STANDBY_LOSS,
@@ -1795,7 +1797,11 @@ class Runtime:
             level=series(level_role),
             indoor=series(Role.TEMP) if level_role is Role.TEMP_FLOOR else None,
             outdoor=outdoor,
-            bounds=bounds_for(params),
+            bounds=bounds_for(
+                params,
+                reads_floor_probe=level_role is Role.TEMP_FLOOR,
+                room_floor_m2=room_floor_m2,
+            ),
         )
         learned: tuple[tuple[str, FitKey], ...] = (
             (("coast_tau_h", FitKey.COAST_TAU),)

@@ -3501,3 +3501,12 @@ Affects D9 §5.17.
 ### D-0786 · The radiator and the heat pump share the bedroom floor's 18 °C
 
 `radiator` takes `ROOM_DEFAULTS` from `floor_heating`, so D-0775's bedroom floor (17 → 18 °C) moves a radiator's floor and its vacation level (floor + 1) too. The heat pump does not use the table and is unchanged in its numbers. Every thermal type's `DERIVATION_VERSION` is bumped for the `follow_presence` default; the floor's and the radiator's also for the floor numbers.
+
+### D-0795 · What "a foil's sensor" and "a room's floor" mean to the fit
+
+D-0778 bounds a foil's `coast_tau_h` by its sensor and a room's loss coefficient per m² of floor. The code needed three choices:
+- **The sensor is the series the fit reads, not the `sensor` answer.** `bounds_for(params, reads_floor_probe=…)` takes it from the caller: the setup measurement reads the floor probe when the answer is `floor` and one is bound; the daily fit reads it only for a `SlabStore`. A foil is a `RoomStore`, so its daily fit reads the air and is bounded [5, 500] h; only the setup measurement of a floor-sensor foil meets [0.3, 6] h. Reading the floor probe in the daily fit too is a separate change (the room's mass would then describe the wrong series).
+- **A room's floor area is `area_m2`, else `volume_m3 / 2.5`** (the height every room derivation uses). The room's bounds are written per fit through `LoadHistory.bounds`; a slab keeps [0.5, 50] W/K per m² of its own area.
+- **Migration 7 keeps D-0740's [2, 48] h as its own constant.** It corrected a stored value on the day; a foil on an air sensor with 52 h is valid now but was a room's number then, and a tau it moved to the default stays there until the next fit.
+
+`DERIVATION_VERSION` rises for the heat pump (3 → 4: its derived `coast_tau_h` follows the mass, 107.1 h → 42.9 h in the golden) and for floor heating (4 → 5: a room-store floor's `kwh_per_k`). Affects D10 §5.6, D4 §5.7.

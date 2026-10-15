@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from custom_components.powerplan.core.forecasts.fit import Fit, FitKey, FitQuality, in_force, keep
-from custom_components.powerplan.core.forecasts.fit.thermal import FOIL_TAU_BOUNDS_H
+from custom_components.powerplan.core.forecasts.fit.thermal import FOIL_FLOOR_TAU_BOUNDS_H
 
 KEY = "loop_bath.coast_tau_h"
 MARCH = datetime(2026, 3, 15, 3, 17, tzinfo=UTC)
@@ -82,9 +82,9 @@ def test_28_a_kept_value_401_days_old_gives_way_to_the_setup_value() -> None:
 
 @pytest.mark.inv("INV-63")
 def test_28_a_value_out_of_bounds_is_never_kept() -> None:
-    """Out of today's bounds (a foil's 48 h), the kept 61 h is not used; a miss never becomes kept."""
+    """Out of today's bounds (a foil's 6 h on its floor probe), the kept 61 h is not used; a miss never becomes kept."""
     march = keep({}, {KEY: _fit(61.0, MARCH, ok=True)}, MARCH)
-    june = keep(march, {KEY: _fit(30.0, JUNE, ok=False, bounds=(2.0, 48.0))}, JUNE)[KEY]
+    june = keep(march, {KEY: _fit(30.0, JUNE, ok=False, bounds=(0.3, 6.0))}, JUNE)[KEY]
     assert june.effective == SETUP_H
     missed_first = keep({}, {KEY: _fit(140.0, MARCH, ok=False)}, MARCH)[KEY]
     assert missed_first.kept is None
@@ -99,11 +99,11 @@ def test_28_a_fit_stored_before_kept_existed_counts_as_kept() -> None:
 
 @pytest.mark.inv("INV-63")
 def test_28_a_stored_fit_out_of_todays_bounds_is_not_in_force() -> None:
-    """TV-stua, 14 Oct 2026: 382.7 h passed at 03:17 under (5, 1000) and was restored after D-0740."""
+    """TV-stua, 14 Oct 2026: 382.7 h passed at 03:17 under (5, 500) and was restored after D-0740."""
     stored = _fit(382.7, OCTOBER, ok=True)
     assert stored.applied, "the fit passed on the day it was made"
-    assert in_force(stored, {FitKey.COAST_TAU: FOIL_TAU_BOUNDS_H}) is None
-    assert in_force(stored, {}) == 382.7, "a slab's bounds are still (5, 1000)"
+    assert in_force(stored, {FitKey.COAST_TAU: FOIL_FLOOR_TAU_BOUNDS_H}) is None
+    assert in_force(stored, {}) == 382.7, "a slab's bounds are still (5, 500)"
 
 
 def test_28_a_fit_that_missed_its_gate_is_not_in_force() -> None:

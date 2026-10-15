@@ -38,10 +38,10 @@ def test_a_foil_loop_gets_the_rooms_default() -> None:
 
 
 def test_a_heat_pumps_room_is_its_mass_over_its_loss() -> None:
-    """150 m³ of light-weight construction (4.5 kWh/K) over 70 W/K: ≈ 64.3 h."""
+    """150 m³ of light-weight construction (1.8 kWh/K, D-0778) over 70 W/K: ≈ 25.7 h."""
     migrated = migrate_coast_tau(_load("heat_pump", volume_m3=150.0, heat_loss_w_per_k=70.0))
     assert migrated is not None
-    assert migrated["params"]["coast_tau_h"] == 64.3
+    assert migrated["params"]["coast_tau_h"] == 25.7
 
 
 def test_a_panel_heater_waits_for_the_house() -> None:
