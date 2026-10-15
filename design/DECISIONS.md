@@ -3513,6 +3513,12 @@ D-0778 bounds a foil's `coast_tau_h` by its sensor and a room's loss coefficient
 
 `DERIVATION_VERSION` rises for the heat pump (3 → 4: its derived `coast_tau_h` follows the mass, 107.1 h → 42.9 h in the golden) and for floor heating (4 → 5: a room-store floor's `kwh_per_k`). Affects D10 §5.6, D4 §5.7.
 
+### D-0796 · The catalogue's room re-recorded for its lighter mass
+
+BP.8 moved `RoomStore`'s fallback mass from 0.03 to 0.012 kWh/K per m³ (D-0778), and the catalogue's 40 m³ room is built on that fallback. Its physics changed under the baseline: the same thermostat costs less, and the stretch-and-pause `heat_capacitor` captures less of a lighter room, which loses a bank faster. 47 room entries of `tests/optimality/baseline.json` moved, all `room40`, none elsewhere, and seven room runs are now dearer than the thermostat and one leaves its band (19.67 °C under a 20 °C floor, `bank1`, +5 °C, solar dip). They join the `xfail` set BP.3 removes. The ratchet moved down only because the model under it changed, not the search. Affects `tests/optimality/`.
+
+**Rejected:** pinning the catalogue's room to the old 0.03 (it would measure a store the product no longer builds).
+
 ### D-0810 · `cheapest_hours` reads the hours already run from the plan in force
 
 The strategy ranked "the N cheapest slots of what is left of the day" and had no memory, so every 15-minute replan bought N hours again; a 4 h/day pump ran 16-96 quarter-hours a day closed loop (the catalogue, D-0780). The code forced three choices:

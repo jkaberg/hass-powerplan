@@ -13,10 +13,18 @@ from tests.optimality.harness import DAY_NAMES, THERMAL_CASES, check, thermal_ou
 
 pytestmark = pytest.mark.optimality
 
-#: Runs dearer than the thermostat, removed by the level planner (BP.3, D-0767).
+#: Runs dearer than the thermostat, removed by the level planner (BP.3, D-0767). The room's
+#: seven since D-0796 came with its lighter fallback mass (D-0778).
 DEARER: frozenset[str] = frozenset(
     {
         "heat_capacitor/room40/bank2/-10/negative_night",
+        "heat_capacitor/room40/bank0/+5/double_peak",
+        "heat_capacitor/room40/bank0/-10/sawtooth",
+        "heat_capacitor/room40/bank1/+5/solar_dip",
+        "heat_capacitor/room40/bank1/-10/solar_dip",
+        "heat_capacitor/room40/bank1/-10/sawtooth",
+        "heat_capacitor/room40/bank2/-10/solar_dip",
+        "heat_capacitor/room40/bank2/-10/sawtooth",
         "heat_capacitor/slab12/bank0/+5/double_peak",
         "heat_capacitor/slab12/bank0/-10/negative_night",
         "heat_capacitor/slab57/bank0/+5/volatile",
@@ -24,6 +32,11 @@ DEARER: frozenset[str] = frozenset(
         "heat_capacitor/slab57/bank0/-10/negative_night",
     }
 )
+
+
+#: Runs that leave the band, removed by the level planner (BP.3, D-0767); the room's since its
+#: lighter fallback mass (D-0778, D-0796).
+OUT_OF_BAND: frozenset[str] = frozenset({"heat_capacitor/room40/bank1/+5/solar_dip"})
 
 
 @pytest.mark.parametrize("day", DAY_NAMES)
@@ -40,4 +53,7 @@ def test_heat_capacitor(case_name: str, bank_k: float, t_out: float, day: str) -
         case, "heat_capacitor", {"bank_k": bank_k, "coast_k": coast_k}, day, t_out, lo=lo, hi=hi
     )
     key = f"heat_capacitor/{case_name}/bank{bank_k:g}/{t_out:+g}/{day}"
-    check(key, outcome, violation=breach, known={"dearer": "BP.3"} if key in DEARER else None)
+    known = {"dearer": "BP.3"} if key in DEARER else {}
+    if key in OUT_OF_BAND:
+        known["violation"] = "BP.3"
+    check(key, outcome, violation=breach, known=known or None)
