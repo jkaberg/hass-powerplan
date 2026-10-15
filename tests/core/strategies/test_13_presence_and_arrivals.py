@@ -17,7 +17,7 @@ then does with it:
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from custom_components.powerplan.core.loads import CalendarEvent, PresenceMode
@@ -181,3 +181,23 @@ def test_13_presence_is_part_of_the_fills_own_inputs_digest() -> None:
     away = plan_all([view], curves_of(source), site_ctx(presence=PresenceMode.AWAY), NOW)
 
     assert home.plans["loop_bath"].inputs_hash != away.plans["loop_bath"].inputs_hash
+
+
+def test_13_the_nights_end_is_a_deadline_the_plan_fills_before() -> None:
+    """`night_setback` (D-0772): 07:00 is a step-up, so the room is back at comfort by then (D4 §5.8)."""
+    night = bathroom_target(night_setback=True, night=(time(22, 0), time(7, 0)), zone=OSLO)
+    plan = planned(presence=PresenceMode.HOME, view=capacitor_view(level_now=22.0, target=night))
+    morning = fills(plan, "schedule")
+    deadline = night.deadlines(NOW, NOW + timedelta(hours=24), PresenceMode.HOME)[0][0]
+
+    assert deadline.astimezone(OSLO).time() == time(7, 0)
+    assert morning, "the night's end is a deadline"
+    assert all(slot.start < deadline for slot in morning)
+    assert plan.deadline == deadline
+
+
+def test_13_a_night_that_is_off_is_no_deadline() -> None:
+    """Without `night_setback` there is no step at 07:00 (the default, D-0772)."""
+    plan = planned(presence=PresenceMode.HOME, view=capacitor_view(level_now=22.0))
+
+    assert plan.deadline is None

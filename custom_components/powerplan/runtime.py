@@ -761,7 +761,14 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         persons=persons,
         away_delay=timedelta(minutes=int(presence_data.get("away_delay_min", 30))),
     )
-    loads, devices = build_loads(hass, entry, electrical, None if price is None else price.grid)
+    quiet_hours = QuietHours.from_data(data.get(CONF_QUIET_HOURS))
+    loads, devices = build_loads(
+        hass,
+        entry,
+        electrical,
+        None if price is None else price.grid,
+        night=night_params(quiet_hours, tz),
+    )
     load_ids = frozenset(load.load_id for load in loads)
     circuits, circuit_meters = build_circuits(hass, entry, load_ids)
     groups = build_groups(entry, load_ids)
@@ -798,7 +805,7 @@ def build_site(hass: HomeAssistant, entry: ConfigEntry) -> SiteBuild:
         added_modifiers=tuple(added),
         source_basis=basis,
         notifications=dict(data.get(CONF_NOTIFICATIONS) or {}),
-        quiet_hours=QuietHours.from_data(data.get(CONF_QUIET_HOURS)),
+        quiet_hours=quiet_hours,
     )
 
 
@@ -807,6 +814,7 @@ def build_loads(
     entry: ConfigEntry,
     electrical: ElectricalProfile,
     grid: household.GridTariff | None = None,
+    night: Mapping[str, str] | None = None,
 ) -> tuple[tuple[Load, ...], dict[str, LoadDevice]]:
     """Build every load subentry's `Load` and its bound device (D8 §4, D7 §5.5 step 2).
 
@@ -823,7 +831,7 @@ def build_loads(
         data = entity_refs.live(hass, subentry.data)
         try:
             load = load_from_subentry(
-                subentry.subentry_id, subentry.title, data, electrical, grid=grid
+                subentry.subentry_id, subentry.title, data, electrical, grid=grid, night=night
             )
             device = device_from_subentry(hass, data, home_outdoor_of(hass, entry))
         except KeyError, ValueError:
@@ -975,6 +983,21 @@ def build_zones(entry: ConfigEntry, loads: Sequence[Load]) -> tuple[ZoneSpec, ..
     return tuple(specs)
 
 
+def night_params(quiet: QuietHours | None, tz: tzinfo) -> dict[str, str]:
+    """Return the night a thermal load's `night_setback` lowers through (D4 §5.8, D-0772).
+
+    The site's quiet hours, or D8 §2's default, in the site's zone: the runtime
+    puts them in each load's parameters, and `profile_from_params` reads them
+    back, so the knobs rebuild the same profile the subentry made.
+    """
+    window = quiet or QuietHours()
+    return {
+        "night_start": window.start.isoformat(),
+        "night_end": window.end.isoformat(),
+        "night_zone": getattr(tz, "key", "UTC"),
+    }
+
+
 def load_from_subentry(
     subentry_id: str,
     title: str,
@@ -982,6 +1005,7 @@ def load_from_subentry(
     electrical: ElectricalProfile,
     *,
     grid: household.GridTariff | None = None,
+    night: Mapping[str, str] | None = None,
 ) -> Load:
     """Return the pure `Load` a load subentry describes (INV-66).
 
@@ -989,7 +1013,7 @@ def load_from_subentry(
     copy: `unknown`, or a code the copy no longer names, is a circuit whose times
     are not known (G15) - never planned, never written.
     """
-    params = dict(data.get(LOAD_PARAMS) or {})
+    params = {**(data.get(LOAD_PARAMS) or {}), **(night or {})}
     device_type = device_types.get(str(data[LOAD_TYPE]))
     profile_key = str(data.get(LOAD_PROFILE) or "")
     quirks = profiles.get(profile_key).quirks() if profile_key in profiles.entries() else None
@@ -2591,6 +2615,7 @@ class Runtime:
                 data,
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
+                night=night_params(self.build.quiet_hours, self.build.cfg.tz),
             )
             device = device_from_subentry(self.hass, data, home_outdoor_of(self.hass, self.entry))
         except KeyError, ValueError:
@@ -2695,6 +2720,7 @@ class Runtime:
                 data,
                 self.build.cfg.electrical,
                 grid=None if self.build.price is None else self.build.price.grid,
+                night=night_params(self.build.quiet_hours, self.build.cfg.tz),
             )
             device = device_from_subentry(self.hass, data, home_outdoor_of(self.hass, self.entry))
         except KeyError, ValueError:

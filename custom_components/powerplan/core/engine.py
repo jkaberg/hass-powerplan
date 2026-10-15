@@ -321,7 +321,15 @@ class SiteConfig:
 
 
 #: The knob keys that rebuild a thermal load's target profile (D4 §4.4).
-_TARGET_KEYS: Final = ("comfort_c", "floor_c", "max_c", "vacation_c", "follow_presence")
+_TARGET_KEYS: Final = (
+    "comfort_c",
+    "floor_c",
+    "max_c",
+    "vacation_c",
+    "follow_presence",
+    "night_setback",
+    "night_delta",
+)
 #: The parameters a load's store is built from that D10 fits (D10 §5.6): an
 #: override of one rebuilds the load, so the store and D11's shadow read it (D-0500).
 _STORE_KEYS: Final = (

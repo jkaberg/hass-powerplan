@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from ..stores.base import StoreModel
 
 __all__ = [
+    "BATHROOM_TILE_MAX_C",
     "COAST_TAU_DEFAULT_H",
     "COVERING_MAX_C",
     "DERIVATION_VERSION",
@@ -59,7 +60,7 @@ __all__ = [
 
 #: Bumped whenever a table below changes. A materialised load keeps the version
 #: it was derived with, and nothing recomputes behind the user's back (INV-66).
-DERIVATION_VERSION: Final = 4
+DERIVATION_VERSION: Final = 5
 
 #: How far ahead a loop looks for its next step-up; D5 plans the rest (§5.8).
 _DEADLINE_HORIZON: Final = timedelta(hours=24)
@@ -82,19 +83,23 @@ ROOM_DEFAULTS: Mapping[str, RoomDefaults] = {
     "living": RoomDefaults(comfort_c=22.0, floor_c=19.0, priority=30),
     "kitchen": RoomDefaults(comfort_c=22.0, floor_c=19.0, priority=30),
     "hall": RoomDefaults(comfort_c=21.0, floor_c=19.0, priority=30),
-    "bedroom": RoomDefaults(comfort_c=19.0, floor_c=17.0, priority=30),
+    "bedroom": RoomDefaults(comfort_c=19.0, floor_c=18.0, priority=30),
     "other": RoomDefaults(comfort_c=21.0, floor_c=19.0, priority=30),
 }
 
-#: Maximum floor temperature by covering (D4 §6.1). EN 1264 limits the surface
-#: to 29 °C in occupied zones; wood and laminate are commonly 27 °C.
+#: Maximum floor temperature by covering (D4 §6.1, D-0775). EN 1264 limits the
+#: surface to 29 °C in occupied zones; wood, laminate, vinyl and carpet take the
+#: 27 °C of a floating floor ([Boen 2025](https://boen.com/media/bo1ctauh/bo_leggeanvisning_2-lags-parkett_n-f_no_2025.pdf)).
 COVERING_MAX_C: Mapping[str, float] = {
-    "tile": 30.0,
+    "tile": 29.0,
     "wood": 27.0,
     "laminate": 27.0,
-    "vinyl": 28.0,
-    "carpet": 28.0,
+    "vinyl": 27.0,
+    "carpet": 27.0,
 }
+
+#: Tile in a bathroom: EN 1264 allows room temperature + 9 K there (D-0775).
+BATHROOM_TILE_MAX_C: Final = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -300,9 +305,16 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="follow_presence",
             kind=QuestionKind.BOOL,
-            default=True,
+            default=False,
             advanced=True,
             help_key="floor_heating_presence",
+        ),
+        Question(
+            key="night_setback",
+            kind=QuestionKind.BOOL,
+            default=False,
+            advanced=True,
+            help_key="floor_heating_night_setback",
         ),
         Question(
             key="schedule_entity",
@@ -369,7 +381,12 @@ class FloorHeating:
 
         comfort_c = _or(answers.get("comfort_c"), defaults.comfort_c)
         floor_c = _or(answers.get("min_c"), defaults.floor_c)
-        max_c = _or(answers.get("max_c"), COVERING_MAX_C[covering])
+        max_c = _or(
+            answers.get("max_c"),
+            BATHROOM_TILE_MAX_C
+            if room == "bathroom" and covering == "tile"
+            else COVERING_MAX_C[covering],
+        )
         screed_mm = _or(answers.get("screed_depth_mm"), heating.screed_mm)
         swing_k = _or(answers.get("swing_k"), 1.0 if room == "bathroom" else 1.5)
         hydronic = heating.store == "hydronic"
@@ -425,6 +442,8 @@ class FloorHeating:
             "command_interval_s": answers.number("command_interval_s"),
             "substitutable": room != "bathroom",
             "follow_presence": answers.flag("follow_presence"),
+            "night_setback": answers.flag("night_setback"),
+            "night_delta": 1.0,
             "schedule_entity": answers.get("schedule_entity"),
             "arrival_sources": [str(entity) for entity in answers.get("arrival_sources") or ()],
             "hydronic": hydronic,

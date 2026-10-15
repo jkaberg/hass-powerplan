@@ -253,13 +253,50 @@ class LoadFollowPresenceSwitch(LoadEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
+class LoadNightSetbackSwitch(LoadEntity, SwitchEntity):
+    """`night_setback` (level 2): lower the target through the site's quiet hours (D-0772).
+
+    Off for a new load. It moves the target by `night_delta`, never the floor,
+    and the night's end is a step-up `deadlines()` hands the planner (D4 §5.8).
+    Merges like `follow_presence` does.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, runtime: Runtime, load: Load) -> None:
+        """Bind to the load."""
+        super().__init__(runtime, load, "night_setback")
+
+    @property
+    def is_on(self) -> bool:
+        """Whether the quiet hours presently lower this load's target."""
+        return bool(self.runtime.load_param(self.load_id, "night_setback"))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Lower the target while the house sleeps."""
+        await self.runtime.async_set_load_param(self.load_id, "night_setback", True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Hold the target at comfort through the night."""
+        await self.runtime.async_set_load_param(self.load_id, "night_setback", False)
+        self.async_write_ha_state()
+
+
+#: The types that heat a room, and so have a night to lower it through (D8 §5.16).
+_NIGHT_SETBACK_TYPES: Final = frozenset({"floor_heating", "heat_pump", "radiator"})
+
+
 def load_switches(runtime: Runtime, loads: Iterable[Load] | None = None) -> list[SwitchEntity]:
-    """Return `follow_presence` for the thermal types with a target profile (D-0300)."""
-    return [
-        LoadFollowPresenceSwitch(runtime, load)
-        for load in _loads(runtime, loads)
-        if _thermal_target(load)
-    ]
+    """Return the setback switches for the thermal types with a target profile (D-0300, D-0772)."""
+    out: list[SwitchEntity] = []
+    for load in _loads(runtime, loads):
+        if not _thermal_target(load):
+            continue
+        out.append(LoadFollowPresenceSwitch(runtime, load))
+        if load.config.type_key in _NIGHT_SETBACK_TYPES:
+            out.append(LoadNightSetbackSwitch(runtime, load))
+    return out
 
 
 # --------------------------------------------------------------------------- #

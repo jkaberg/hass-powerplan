@@ -61,10 +61,16 @@ Where the heat pump's setpoint is in Home Assistant's history, a temperature it 
 | Advanced › Preheat | Advanced: bank heat before an expensive hour. |
 | Advanced › Never switch when | Advanced: entities that, when on, stop PowerPlan changing this device. |
 | Advanced › Follow presence | Advanced: lower the target when nobody is home. |
+| Advanced › Save while asleep | Advanced: lower the target 1 K through the quiet hours. |
 | Advanced › Weekly schedule | Advanced: a schedule helper – on is comfort, off is the vacation level. |
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:heat_pump -->
+
+PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are switches on the appliance, off for a new one, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
+
+> [!NOTE]
+> Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
 
 <a name="questions_followup"></a>
 ## How far should preheat go?

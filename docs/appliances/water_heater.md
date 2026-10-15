@@ -72,6 +72,11 @@ Where the tank's power and temperature are already in Home Assistant's history, 
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:water_heater -->
 
+PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away. It is a switch on the water heater, off for a new one, and it never goes under the lowest temperature.
+
+> [!NOTE]
+> Since v0.0.12, **Save when nobody is home** is off for a new water heater. One set up before keeps it as it was.
+
 <a name="questions_followup"></a>
 ## How far should preheat go?
 

@@ -15,7 +15,7 @@ When you switch **Automatic control** off, PowerPlan hands every appliance back 
 <a name="presence"></a>
 ## Presence
 
-**Presence** on your home is **Automatic** when PowerPlan follows the people you picked in setup. Set it to **Away** or **Vacation** yourself, or from an automation, to lower comfort while nobody is home. Each heating appliance has **Save when nobody is home** to take part or not.
+**Presence** on your home is **Automatic** when PowerPlan follows the people you picked in setup. Set it to **Away** or **Vacation** yourself, or from an automation, to lower comfort while nobody is home. Each heating appliance has **Save when nobody is home** to take part or not, and **Save while asleep** to lower the temperature 1 °C through the quiet hours. Both are off for a new appliance.
 
 <a name="run_now"></a>
 ## Run now

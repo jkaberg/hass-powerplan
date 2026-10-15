@@ -1171,6 +1171,9 @@
       },
       "follow_presence": {
         "name": "Save when nobody is home"
+      },
+      "night_setback": {
+        "name": "Save while asleep"
       }
     },
     "button": {
@@ -2722,6 +2725,7 @@
                 "dwell_s": "Dwell",
                 "energy_kwh": "Energy per cycle",
                 "follow_presence": "Follow presence",
+                "night_setback": "Save while asleep",
                 "force_max_h": "Run now lasts at most",
                 "inverted": "Inverted switch",
                 "legionella_hold_min": "Legionella hold",
@@ -2764,6 +2768,7 @@
                 "dwell_s": "Advanced: seconds a setpoint is held before the next change.",
                 "energy_kwh": "Advanced: kWh one program uses.",
                 "follow_presence": "Advanced: lower the target when nobody is home.",
+                "night_setback": "Advanced: lower the target 1 K through the quiet hours.",
                 "force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "inverted": "Advanced: on means off for this switch.",
                 "legionella_hold_min": "Advanced: minutes the temperature is held.",
@@ -2843,6 +2848,7 @@
                 "param_energy_kwh": "Energy per cycle",
                 "param_floor_c": "Floor temperature",
                 "param_follow_presence": "Follow presence",
+                "param_night_setback": "Save while asleep",
                 "param_force_max_h": "Run now lasts at most",
                 "param_heater_type": "Heater type",
                 "param_heating_type": "Heating type",
@@ -2932,6 +2938,7 @@
                 "param_energy_kwh": "Advanced: kWh one program uses.",
                 "param_floor_c": "Derived.",
                 "param_follow_presence": "Advanced: lower the target when nobody is home.",
+                "param_night_setback": "Advanced: lower the target 1 K through the quiet hours.",
                 "param_force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "param_heater_type": "What kind of heater this is.",
                 "param_heating_type": "What is under the floor.",
@@ -3043,6 +3050,7 @@
                 "param_energy_kwh": "Energy per cycle",
                 "param_floor_c": "Floor temperature",
                 "param_follow_presence": "Follow presence",
+                "param_night_setback": "Save while asleep",
                 "param_force_max_h": "Run now lasts at most",
                 "param_heater_type": "Heater type",
                 "param_heating_type": "Heating type",
@@ -3132,6 +3140,7 @@
                 "param_energy_kwh": "Advanced: kWh one program uses.",
                 "param_floor_c": "Derived.",
                 "param_follow_presence": "Advanced: lower the target when nobody is home.",
+                "param_night_setback": "Advanced: lower the target 1 K through the quiet hours.",
                 "param_force_max_h": "Advanced: how many hours Run now lasts before it turns itself off.",
                 "param_heater_type": "What kind of heater this is.",
                 "param_heating_type": "What is under the floor.",

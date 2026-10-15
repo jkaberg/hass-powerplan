@@ -96,6 +96,7 @@ Where your grid company bills no capacity step, **Target this hour** and **Capac
 | `sensor.<appliance>_savings_this_month` | Savings this month | ‹currency› | shown | Car charger, Dishwasher, washer or dryer, Floor heating, Heat pump, Panel heater, Water heater |
 | `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | – | Configuration | Floor heating, Heat pump, Panel heater |
 | `switch.<appliance>_save_when_nobody_is_home` | Save when nobody is home | – | Configuration, off by default | Water heater |
+| `switch.<appliance>_save_while_asleep` | Save while asleep | – | Configuration | Floor heating, Heat pump, Panel heater |
 | `time.<appliance>_ready_by` | Ready by | – | shown | Car charger, Dishwasher, washer or dryer, Water heater |
 <!-- generated:end entities:appliance -->
 

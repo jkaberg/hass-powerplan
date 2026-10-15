@@ -83,9 +83,9 @@ ENTITY_SETTINGS: Final[dict[str, frozenset[str]]] = {
     "generic_switch": frozenset({"hours_per_day", "force_max_h"}),
     "water_heater": _THERMAL_SETTINGS | {"ready_by", "force_max_h"},
     "appliance_cycle": frozenset({"ready_by"}),
-    "floor_heating": _THERMAL_SETTINGS,
-    "heat_pump": _THERMAL_SETTINGS,
-    "radiator": _THERMAL_SETTINGS,
+    "floor_heating": _THERMAL_SETTINGS | {"night_setback"},
+    "heat_pump": _THERMAL_SETTINGS | {"night_setback"},
+    "radiator": _THERMAL_SETTINGS | {"night_setback"},
     "battery": frozenset(),
 }
 

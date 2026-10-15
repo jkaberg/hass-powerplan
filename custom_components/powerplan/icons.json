@@ -189,6 +189,9 @@
       },
       "follow_presence": {
         "default": "mdi:home-export-outline"
+      },
+      "night_setback": {
+        "default": "mdi:weather-night"
       }
     },
     "button": {

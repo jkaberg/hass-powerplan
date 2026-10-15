@@ -91,7 +91,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 3
+DERIVATION_VERSION: Final = 4
 
 #: The legionella temperature a new tank is given (D-0744): what the Norwegian
 #: guidance names - FHI's "minst 70 °C", Helsedirektoratet's "minst 70 °C, også
@@ -368,7 +368,7 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="follow_presence",
             kind=QuestionKind.BOOL,
-            default=True,
+            default=False,
             advanced=True,
             help_key="water_heater_presence",
         ),

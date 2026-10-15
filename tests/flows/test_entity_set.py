@@ -11,7 +11,9 @@ mode, shed, override and health a load can reach.
 from __future__ import annotations
 
 import itertools
+import json
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
 
     from tests.e2e.fake_house import FakeHouse
 
+COMPONENT = Path(__file__).resolve().parents[2] / "custom_components" / "powerplan"
 CONFIG = EntityCategory.CONFIG
 DIAGNOSTIC = EntityCategory.DIAGNOSTIC
 
@@ -148,6 +151,7 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
         "savings_month": (None, True),
         "strategy": (CONFIG, True),
         "follow_presence": (CONFIG, True),
+        "night_setback": (CONFIG, True),
         "temp_min": (CONFIG, False),
         "temp_max": (CONFIG, False),
     },
@@ -158,6 +162,7 @@ EXPECTED: dict[str, dict[str, tuple[EntityCategory | None, bool]]] = {
         "savings_month": (None, True),
         "strategy": (CONFIG, True),
         "follow_presence": (CONFIG, True),
+        "night_setback": (CONFIG, True),
         "temp_min": (CONFIG, False),
         "temp_max": (CONFIG, False),
     },
@@ -207,6 +212,32 @@ async def test_56_the_resume_button_forgets_a_car_that_did_not_resume(
 
     assert runtime._load_state(loads["ev"]).resumes is Resumes.UNKNOWN
     assert runtime._load_state(loads["ev"]).resumes_at is None
+
+
+async def test_56_the_night_setback_switch_is_off_translated_and_only_for_heating(
+    hass: HomeAssistant, site: MockConfigEntry, charger: FakeHouse
+) -> None:
+    """D8 §9 56, the `night_setback` half (D-0772): off for a new load, en and nb, no tank."""
+    loads = await _house(hass, site, charger)
+    for type_key in ("floor_heating", "heat_pump"):
+        rows = _rows(hass, site, loads[type_key])
+        entry = rows["night_setback"]
+        assert entry.domain == "switch"
+        assert entry.entity_category is CONFIG
+        state = hass.states.get(entry.entity_id)
+        assert state is not None
+        assert state.state == "off", "lowering comfort is opt-in"
+        assert rows["follow_presence"].disabled_by is None
+        follow = hass.states.get(rows["follow_presence"].entity_id)
+        assert follow is not None
+        assert follow.state == "off"
+    for type_key in ("water_heater", "ev", "generic_switch"):
+        assert "night_setback" not in _rows(hass, site, loads[type_key])
+    for language, name in (("en", "Save while asleep"), ("nb", "Spar mens dere sover")):
+        translations = json.loads(
+            (COMPONENT / "translations" / f"{language}.json").read_text(encoding="utf-8")
+        )
+        assert translations["entity"]["switch"]["night_setback"]["name"] == name
 
 
 async def test_24_names_carry_no_prefix_and_ids_are_home_assistants_own(

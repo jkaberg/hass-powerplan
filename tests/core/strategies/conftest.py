@@ -266,6 +266,7 @@ def bathroom_target(**kwargs: Any) -> TargetProfile:
         "comfort_default": 24.0,
         "floor": 21.0,
         "ceiling": 27.0,
+        "follow_presence": True,  # the reference house follows presence; it is opt-in now (D-0772)
     }
     options.update(kwargs)
     return TargetProfile(**options)

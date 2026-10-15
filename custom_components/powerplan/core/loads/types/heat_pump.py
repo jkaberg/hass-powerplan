@@ -63,7 +63,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 3
+DERIVATION_VERSION: Final = 4
 
 #: `LoadState.learned` keys this type owns: the previous outlet and power sample
 #: the defrost detector compares against (`design/DECISIONS.md` D-0200).
@@ -261,9 +261,16 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="follow_presence",
             kind=QuestionKind.BOOL,
-            default=True,
+            default=False,
             advanced=True,
             help_key="heat_pump_presence",
+        ),
+        Question(
+            key="night_setback",
+            kind=QuestionKind.BOOL,
+            default=False,
+            advanced=True,
+            help_key="heat_pump_night_setback",
         ),
         Question(
             key="schedule_entity",
@@ -379,6 +386,8 @@ class HeatPump:
             "can_cool": "cool" in ctx.capabilities,
             "direction": "cool" if cooling else "heat",
             "follow_presence": answers.flag("follow_presence"),
+            "night_setback": answers.flag("night_setback"),
+            "night_delta": 1.0,
             "schedule_entity": answers.get("schedule_entity"),
             "arrival_sources": [str(entity) for entity in answers.get("arrival_sources") or ()],
             "force_max_h": answers.number("force_max_h"),

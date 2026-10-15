@@ -130,8 +130,8 @@ async def test_the_knob_it_drives_reaches_the_next_tick(
     await hass.async_block_till_done()
     sub = next(s for s in site.subentries.values() if s.subentry_type == SUBENTRY_LOAD)
     runtime: Runtime = site.runtime_data
-    assert bool(runtime.load_param(sub.subentry_id, "follow_presence")) is True
+    assert bool(runtime.load_param(sub.subentry_id, "follow_presence")) is False, "opt-in (D-0772)"
 
-    await runtime.async_set_load_param(sub.subentry_id, "follow_presence", False)
+    await runtime.async_set_load_param(sub.subentry_id, "follow_presence", True)
 
-    assert runtime.load_param(sub.subentry_id, "follow_presence") is False
+    assert runtime.load_param(sub.subentry_id, "follow_presence") is True

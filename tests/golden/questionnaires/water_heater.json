@@ -7,7 +7,7 @@
     "control": "thermostat",
     "draw_kwh_day": null,
     "element_kw": "3",
-    "follow_presence": true,
+    "follow_presence": false,
     "force_max_h": 6.0,
     "legionella": "powerplan",
     "legionella_hold_min": 60.0,
@@ -36,7 +36,7 @@
     ]
   },
   "derived": {
-    "derivation_version": 3,
+    "derivation_version": 4,
     "explanation_key": "water_heater_review",
     "explanation_params": {
       "comfort_min_c": 45.0,
@@ -64,7 +64,7 @@
       "draw_l_per_person_day": 45.0,
       "element_kw": 3.0,
       "floor_c": 45.0,
-      "follow_presence": true,
+      "follow_presence": false,
       "force_max_h": 6.0,
       "has_temp_sensor": true,
       "kind": "setpoint",

@@ -831,7 +831,7 @@ Status: `todo` · `in progress` · `done` · `replaced`.
 | BP.3 | The level planner, and heat moved across price changes | todo |
 | BP.4 | Heat pumps by the hour | todo |
 | BP.5 | The battery's route | todo |
-| BP.6 | Lowering comfort is opt-in | todo |
+| BP.6 | Lowering comfort is opt-in | done |
 | BP.7 | A car that resumes | todo |
 | BP.8 | Fit bounds from the evidence | todo |
 | 6.3 | Release v1.0 | todo |

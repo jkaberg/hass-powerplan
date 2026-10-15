@@ -18,9 +18,10 @@ without Home Assistant.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, tzinfo
+from datetime import UTC, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
+from zoneinfo import ZoneInfo
 
 from ..model import HeatDirection
 
@@ -44,6 +45,9 @@ __all__ = [
 #: quarter hour. 48 h of horizon at 15-minute grain is 192 probes, which is
 #: cheaper than it looks and exactly the planner's horizon (D5 §5.2).
 _PROBE = timedelta(minutes=15)
+
+#: The night when the site has set no quiet hours: D8 §2's default, 22:00 to 07:00.
+DEFAULT_NIGHT: tuple[time, time] = (time(22, 0), time(7, 0))
 
 
 class PresenceMode(StrEnum):
@@ -206,7 +210,10 @@ def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
 
     `comfort_c` makes a thermal load; `floor_c` (the questionnaire's `min_c`,
     derived) is the floor it never goes under, `max_c` the ceiling, and
-    `follow_presence` whether away and vacation move it. No `comfort_c`, no
+    `follow_presence` whether away and vacation move it. `night_setback` and
+    `night_delta` lower it through the night, which is `night_start` to
+    `night_end` in `night_zone` - the site's quiet hours, which the runtime puts
+    in the parameters (D4 §5.8, D-0772); both lowerings are off unless asked. No `comfort_c`, no
     profile - a charger or a plug has none (D-0282). `arrival_sources`
     is every calendar entity id the questionnaire's `arrival_sources` answer
     named (D4 §4.4) - `Runtime._calendar_events` (D7) is what turns
@@ -222,7 +229,16 @@ def profile_from_params(params: Mapping[str, Any]) -> TargetProfile | None:
         floor=float(params.get("floor_c", comfort)),
         ceiling=None if params.get("max_c") is None else float(params["max_c"]),
         vacation_level=None if params.get("vacation_c") is None else float(params["vacation_c"]),
-        follow_presence=bool(params.get("follow_presence", True)),
+        follow_presence=bool(params.get("follow_presence", False)),
+        night_setback=bool(params.get("night_setback", False)),
+        night_delta=float(params.get("night_delta", 1.0)),
+        night=(
+            time.fromisoformat(str(params["night_start"])),
+            time.fromisoformat(str(params["night_end"])),
+        )
+        if params.get("night_start") and params.get("night_end")
+        else DEFAULT_NIGHT,
+        zone=ZoneInfo(str(params["night_zone"])) if params.get("night_zone") else UTC,
         arrival_sources=tuple(str(entity) for entity in params.get("arrival_sources") or ()),
         direction="cool" if params.get("direction") == "cool" else "heat",
     )
@@ -238,7 +254,11 @@ class TargetProfile:
     ceiling: float | None = None
     away_delta: float = 3.0
     vacation_level: float | None = None
-    follow_presence: bool = True
+    follow_presence: bool = False
+    night_setback: bool = False
+    night_delta: float = 1.0
+    night: tuple[time, time] | None = None
+    zone: tzinfo = UTC
     arrival_sources: tuple[str, ...] = ()
     direction: HeatDirection = "heat"
 
@@ -253,6 +273,10 @@ class TargetProfile:
                 )
             elif presence is PresenceMode.VACATION:
                 value = self.vacation_level if self.vacation_level is not None else self._resting()
+        if self.night_setback and self._in_night(t):
+            value = (
+                value - self.night_delta if self.direction == "heat" else value + self.night_delta
+            )
         low, high = (
             (self.floor, self.ceiling) if self.direction == "heat" else (self.ceiling, self.floor)
         )
@@ -261,6 +285,28 @@ class TargetProfile:
         if high is not None:
             value = min(value, high)
         return value
+
+    def _in_night(self, t: datetime) -> bool:
+        """Whether `t` falls in the night, the window wrapping midnight when it starts later."""
+        if self.night is None:
+            return False
+        start, end = self.night
+        moment = t.astimezone(self.zone).time()
+        if start <= end:
+            return start <= moment < end
+        return moment >= start or moment < end
+
+    def _next_night_edge(self, after: datetime) -> datetime | None:
+        """Return the next instant the night starts or ends after `after`, if any."""
+        if self.night is None or not self.night_setback:
+            return None
+        local = after.astimezone(self.zone)
+        edges = (
+            datetime.combine(local.date() + timedelta(days=days), edge, tzinfo=self.zone)
+            for days in range(3)
+            for edge in self.night
+        )
+        return min((edge for edge in edges if edge > after), default=None)
 
     def _resting(self) -> float:
         """Vacation's default: one degree off the floor, the other way from comfort."""
@@ -286,9 +332,11 @@ class TargetProfile:
             current = self.target(cursor, presence)
             while cursor < until:
                 nxt = self.schedule.next_change(cursor)
-                if nxt is None or nxt[0] >= until:
+                edge = self._next_night_edge(cursor)
+                steps = [x for x in (None if nxt is None else nxt[0], edge) if x is not None]
+                at = min(steps, default=None)
+                if at is None or at >= until:
                     break
-                at, _ = nxt
                 value = self.target(at, presence)
                 if value > current:
                     found.append((at, value))

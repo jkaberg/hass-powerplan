@@ -51,7 +51,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 3
+DERIVATION_VERSION: Final = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,9 +202,16 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="follow_presence",
             kind=QuestionKind.BOOL,
-            default=True,
+            default=False,
             advanced=True,
             help_key="radiator_presence",
+        ),
+        Question(
+            key="night_setback",
+            kind=QuestionKind.BOOL,
+            default=False,
+            advanced=True,
+            help_key="radiator_night_setback",
         ),
         Question(
             key="schedule_entity",
@@ -299,6 +306,8 @@ class Radiator:
             "min_off_s": answers.number("min_off_s"),
             "command_interval_s": answers.number("command_interval_s"),
             "follow_presence": answers.flag("follow_presence"),
+            "night_setback": answers.flag("night_setback"),
+            "night_delta": 1.0,
             "schedule_entity": answers.get("schedule_entity"),
             "arrival_sources": [str(entity) for entity in answers.get("arrival_sources") or ()],
             "force_max_h": answers.number("force_max_h"),

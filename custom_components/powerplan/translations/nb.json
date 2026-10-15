@@ -1171,6 +1171,9 @@
       },
       "follow_presence": {
         "name": "Spar når ingen er hjemme"
+      },
+      "night_setback": {
+        "name": "Spar mens dere sover"
       }
     },
     "button": {
@@ -2722,6 +2725,7 @@
                 "dwell_s": "Hviletid",
                 "energy_kwh": "Energi per program",
                 "follow_presence": "Følg tilstedeværelse",
+                "night_setback": "Spar mens dere sover",
                 "force_max_h": "Kjør nå varer maks",
                 "inverted": "Invertert bryter",
                 "legionella_hold_min": "Legionellahold",
@@ -2764,6 +2768,7 @@
                 "dwell_s": "Avansert: sekunder et settpunkt holdes før neste endring.",
                 "energy_kwh": "Avansert: kWh ett program bruker.",
                 "follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "night_setback": "Avansert: senk målet 1 K i stille timer.",
                 "force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "inverted": "Avansert: på betyr av for denne bryteren.",
                 "legionella_hold_min": "Avansert: minutter temperaturen holdes.",
@@ -2859,6 +2864,7 @@
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
+                "param_night_setback": "Spar mens dere sover",
                 "param_force_max_h": "Kjør nå varer maks",
                 "param_heater_type": "Ovnstype",
                 "param_heating_type": "Varmetype",
@@ -2948,6 +2954,7 @@
                 "param_energy_kwh": "Avansert: kWh ett program bruker.",
                 "param_floor_c": "Utledet.",
                 "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "param_night_setback": "Avansert: senk målet 1 K i stille timer.",
                 "param_force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "param_heater_type": "Hva slags ovn dette er.",
                 "param_heating_type": "Hva som ligger under gulvet.",
@@ -3059,6 +3066,7 @@
                 "param_energy_kwh": "Energi per program",
                 "param_floor_c": "Gulvtemperatur",
                 "param_follow_presence": "Følg tilstedeværelse",
+                "param_night_setback": "Spar mens dere sover",
                 "param_force_max_h": "Kjør nå varer maks",
                 "param_heater_type": "Ovnstype",
                 "param_heating_type": "Varmetype",
@@ -3148,6 +3156,7 @@
                 "param_energy_kwh": "Avansert: kWh ett program bruker.",
                 "param_floor_c": "Utledet.",
                 "param_follow_presence": "Avansert: senk målet når ingen er hjemme.",
+                "param_night_setback": "Avansert: senk målet 1 K i stille timer.",
                 "param_force_max_h": "Avansert: hvor mange timer Kjør nå varer før den slår seg av selv.",
                 "param_heater_type": "Hva slags ovn dette er.",
                 "param_heating_type": "Hva som ligger under gulvet.",

@@ -14,26 +14,40 @@
     "comfort_c": null,
     "command_interval_s": 300.0,
     "control": "plug",
-    "follow_presence": true,
+    "follow_presence": false,
     "force_max_h": 6.0,
     "heater_type": "panel",
     "min_c": null,
     "min_off_s": 1800.0,
     "min_on_s": 1800.0,
+    "night_setback": false,
     "power_entity": "sensor.panelovn_power",
     "power_w": 800.0,
     "room": "bedroom",
     "schedule_entity": null
   },
   "derived": {
+    "derivation_version": 4,
+    "explanation_key": "radiator_review",
+    "explanation_params": {
+      "comfort_c": 19.0,
+      "control": "plug",
+      "floor_c": 18.0,
+      "heater_type": "panel",
+      "nameplate_w": 800.0,
+      "room": "bedroom",
+      "threshold_pct": 10.0
+    },
+    "group": "radiators",
     "params": {
       "area_m2": 12.0,
       "arrival_sources": [],
+      "coast_tau_h": null,
       "comfort_c": 19.0,
       "command_interval_s": 300.0,
       "control": "plug",
-      "floor_c": 17.0,
-      "follow_presence": true,
+      "floor_c": 18.0,
+      "follow_presence": false,
       "force_max_h": 6.0,
       "heat_loss_w_per_k": null,
       "heater_type": "panel",
@@ -42,34 +56,23 @@
       "min_off_s": 1800.0,
       "min_on_s": 1800.0,
       "nameplate_w": 800.0,
+      "night_delta": 1.0,
+      "night_setback": false,
       "phases": 1,
       "power_entity": "sensor.panelovn_power",
       "room": "bedroom",
       "schedule_entity": null,
-      "shed_setpoint_c": 17.0,
+      "shed_setpoint_c": 18.0,
       "store": "room",
       "substitutable": true,
-      "vacation_c": 18.0,
-      "volume_m3": 30.0,
-      "coast_tau_h": null
-    },
-    "strategy": "heat_capacitor",
-    "strategy_params": {
-      "min_saving": 0.1,
-      "bank_k": 0.0
+      "vacation_c": 19.0,
+      "volume_m3": 30.0
     },
     "priority": 30,
-    "group": "radiators",
-    "explanation_key": "radiator_review",
-    "explanation_params": {
-      "heater_type": "panel",
-      "room": "bedroom",
-      "control": "plug",
-      "nameplate_w": 800.0,
-      "comfort_c": 19.0,
-      "floor_c": 17.0,
-      "threshold_pct": 10.0
-    },
-    "derivation_version": 3
+    "strategy": "heat_capacitor",
+    "strategy_params": {
+      "bank_k": 0.0,
+      "min_saving": 0.1
+    }
   }
 }

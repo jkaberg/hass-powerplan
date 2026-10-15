@@ -3492,3 +3492,12 @@ D-0770 left the harness's own choices open; the code forced these (`tests/optima
 - **A band breach** is more than 0.1 K outside `[lo, hi]`.
 
 Affects D9 §5.17.
+### D-0785 · The night reaches a target profile through the load's parameters, in the site's zone
+
+`TargetProfile.night` is the site's quiet hours (D4 §5.8), but `profile_from_params` sees only a load's parameters, and the engine rebuilds the profile from them when a comfort knob moves (`_apply_load_knobs`). So `Runtime.night_params` puts `night_start`, `night_end` and `night_zone` (the site's zone, `ZoneInfo` key) into each load's parameters when it is built from its subentry, from the site's `quiet_hours` or D8 §2's 22:00–07:00. They are never stored in the subentry (INV-66: a changed quiet hour reaches every load on the next reload). `TargetProfile` gains `zone` (default UTC) because the night is a local clock and `target(t)` takes an aware instant. `deadlines()` adds the night's edges to the schedule's own changes, since a constant schedule never changes; only a step-up is a deadline. `night_delta` is a derived parameter (1.0), not a question or an entity: D4 §4.4 names the field, D-0772 lets the household raise it, and nothing in the surface asks for it yet.
+
+**Rejected:** a `night` argument threaded through `profile_from_params` and the engine (a second path for what the parameters already carry); asking a bedtime (D-0772).
+
+### D-0786 · The radiator and the heat pump share the bedroom floor's 18 °C
+
+`radiator` takes `ROOM_DEFAULTS` from `floor_heating`, so D-0775's bedroom floor (17 → 18 °C) moves a radiator's floor and its vacation level (floor + 1) too. The heat pump does not use the table and is unchanged in its numbers. Every thermal type's `DERIVATION_VERSION` is bumped for the `follow_presence` default; the floor's and the radiator's also for the floor numbers.
