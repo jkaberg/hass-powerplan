@@ -12,6 +12,7 @@
     "dwell_s": 1800.0,
     "follow_presence": false,
     "force_max_h": 6.0,
+    "heating": "radiators",
     "hp_type": "a2a",
     "never_switch": [
       "switch.varmepumpe_mains"
@@ -20,7 +21,7 @@
     "outdoor_entity": null,
     "outlet_entity": null,
     "preheat": false,
-    "preheat_max_outdoor_c": 5.0,
+    "preheat_max_outdoor_c": null,
     "rated_kw": 1.5,
     "schedule_entity": null
   },
@@ -36,7 +37,7 @@
     }
   },
   "derived": {
-    "derivation_version": 5,
+    "derivation_version": 6,
     "explanation_key": "heat_pump_review",
     "explanation_params": {
       "area_m2": 60.0,
@@ -75,6 +76,7 @@
       "follow_presence": false,
       "force_max_h": 6.0,
       "heat_loss_w_per_k": 42.0,
+      "heating": "radiators",
       "hp_type": "a2a",
       "kind": "setpoint",
       "max_c": 22.0,
@@ -88,7 +90,7 @@
       "outlet_entity": null,
       "phases": 1,
       "preheat": false,
-      "preheat_max_outdoor_c": 5.0,
+      "preheat_max_outdoor_c": null,
       "rated_kw": 1.5,
       "schedule_entity": null,
       "shed_setpoint_c": 17.0,
@@ -112,8 +114,9 @@
         "15.0": 4.5,
         "7.0": 3.8
       },
+      "defrost": true,
       "preheat": false,
-      "preheat_max_outdoor_c": 5.0
+      "preheat_max_outdoor_c": null
     }
   },
   "type": "heat_pump"

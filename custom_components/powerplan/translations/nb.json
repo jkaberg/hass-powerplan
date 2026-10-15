@@ -1578,6 +1578,12 @@
         "gshp": "Bergvarme"
       }
     },
+    "heat_pump_heating": {
+      "options": {
+        "radiators": "Radiatorer",
+        "floor": "Gulvvarme"
+      }
+    },
     "heat_pump_building": {
       "options": {
         "before_1980": "Før 1980",
@@ -2638,6 +2644,7 @@
             "heating_type": "Varmetype",
             "hours_per_day": "Timer per dag",
             "hp_type": "Varmepumpetype",
+            "heating": "Varmesystem",
             "legionella": "Legionellasyklus",
             "litres": "Tankstørrelse",
             "max_a": "Ladermaks",
@@ -2685,6 +2692,7 @@
             "heating_type": "Hva som ligger under gulvet.",
             "hours_per_day": "Hvor mange timer om dagen det skal gå, i de billigste timene.",
             "hp_type": "Luft-til-luft, luft-til-vann eller bergvarme.",
+            "heating": "Avansert: radiatorer eller gulvvarme, for COP-kurven til en luft-til-vann-pumpe.",
             "legionella": "Hvem som kjører den ukentlige legionellasyklusen.",
             "litres": "Tankens volum, i liter.",
             "max_a": "Den høyeste strømmen laderen kan levere, i ampere.",

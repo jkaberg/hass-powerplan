@@ -41,7 +41,7 @@ from ..kinds.base import ControlKind, KindCtx, Role
 from ..kinds.setpoint import BAND_MAX_K, DEFAULT_STEP_K, Setpoint, SetpointCfg
 from ..needs import Need, Tier, need
 from ..questionnaire import Answers, Derived, Option, QCtx, Question, QuestionKind, Questionnaire
-from ..stores.cop import DEFAULT_COP_CURVES, CopCurve
+from ..stores.cop import DEFAULT_COP_CURVES, HEATING_TYPES, CopCurve, a2w_curve
 from ..stores.thermal import ROOM_MASS_KWH_PER_K_PER_M3, RoomStore
 from .base import register
 
@@ -63,7 +63,7 @@ __all__ = [
 ]
 
 #: Bumped whenever a table below changes (INV-66).
-DERIVATION_VERSION: Final = 5
+DERIVATION_VERSION: Final = 6
 
 #: `LoadState.learned` keys this type owns: the previous outlet and power sample
 #: the defrost detector compares against (`design/DECISIONS.md` D-0200).
@@ -134,6 +134,16 @@ QUESTIONNAIRE = Questionnaire(
             options=tuple(Option(value=key) for key in DEFAULT_COP_CURVES),
             default="a2a",
             help_key="heat_pump_type",
+        ),
+        Question(
+            # Only the air-to-water curve reads it (D-0773, D-0825): the water the pump has to
+            # make hot is what its COP depends on. Radiators are the cautious answer.
+            key="heating",
+            kind=QuestionKind.CHOICE,
+            options=tuple(Option(value=key) for key in HEATING_TYPES),
+            default="radiators",
+            advanced=True,
+            help_key="heat_pump_heating",
         ),
         Question(
             key="area_m2",
@@ -232,7 +242,10 @@ QUESTIONNAIRE = Questionnaire(
         Question(
             key="preheat_max_outdoor_c",
             kind=QuestionKind.NUMBER,
-            default=5.0,
+            # No default: each hour decides by its COP and the price (D-0773). A cap is the
+            # household's, and an empty answer is none. Not derived; the flag lets it be empty.
+            default=None,
+            derived_default=True,
             unit="°C",
             min=-20.0,
             max=20.0,
@@ -346,7 +359,13 @@ class HeatPump:
         comfort_c = answers.number("comfort_c")
         band_k = answers.number("band_k")
         u_value = BUILDING_U_VALUE[building]
-        curve = answers.get("cop_curve") or dict(DEFAULT_COP_CURVES[hp_type].points)
+        curve = answers.get("cop_curve") or dict(
+            (
+                a2w_curve(answers.choice("heating"))
+                if hp_type == "a2w"
+                else DEFAULT_COP_CURVES[hp_type]
+            ).points
+        )
         cooling = answers.flag("cooling") and "cool" in ctx.capabilities
         # Cooling mirrors the band (D4 §5.14): the limit it never crosses is
         # *above* comfort, and the bank's end is below it (INV-29, INV-55, INV-56).
@@ -357,6 +376,7 @@ class HeatPump:
             "kind": "setpoint",
             "store": "room",
             "hp_type": hp_type,
+            "heating": answers.choice("heating"),
             "area_m2": area_m2,
             "volume_m3": round(area_m2 * ROOM_HEIGHT_M, 1),
             "building": building,
@@ -382,7 +402,7 @@ class HeatPump:
             "command_interval_s": answers.number("command_interval_s"),
             "dwell_s": answers.number("dwell_s"),
             "preheat": answers.flag("preheat"),
-            "preheat_max_outdoor_c": answers.number("preheat_max_outdoor_c"),
+            "preheat_max_outdoor_c": answers.get("preheat_max_outdoor_c"),
             "never_switch": [str(entity) for entity in answers.get("never_switch") or ()],
             "outdoor_entity": answers.get("outdoor_entity"),
             "outlet_entity": answers.get("outlet_entity"),
@@ -412,6 +432,8 @@ class HeatPump:
                 "preheat": params["preheat"],
                 "preheat_max_outdoor_c": params["preheat_max_outdoor_c"],
                 "cop_curve": params["cop_curve"],
+                # A ground-source unit has no outdoor coil to frost (D-0773).
+                "defrost": hp_type != "gshp",
             },
             # The reference house's heat pumps, above the floor loops' 30 and the
             # tank's 40: a room served by a heat pump coasts for minutes where a

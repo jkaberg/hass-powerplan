@@ -52,6 +52,7 @@ Where the heat pump's setpoint is in Home Assistant's history, a temperature it 
 | Question | What it asks |
 |---|---|
 | Heat pump type | Air-to-air, air-to-water or ground source. |
+| Heating system | Advanced: radiators or floor heating, for an air-to-water pump's COP curve. |
 | Area | The heated area, in square meters. |
 | Building age | When the house was built, which sets its heat loss. |
 | Rated power | The heat pump's rated electrical power, in kW. |
@@ -70,6 +71,24 @@ Where the heat pump's setpoint is in Home Assistant's history, a temperature it 
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:heat_pump -->
 
+<a name="cop_curve"></a>
+## The COP curve
+
+The curve says how many units of heat the pump delivers for each unit of electricity at an outdoor temperature. PowerPlan uses it to price each hour's heat, so it is shown under **Advanced** and you can edit it. An air-to-air pump starts from the curve measured in a Nordic home, and a ground-source pump from a flat one.
+
+An air-to-water pump's curve follows what it heats, which is the **Heating system** answer under **Advanced**. Floor heating needs warmer water than the room only slightly, and radiators need much warmer water, so the same pump does better under a floor. Radiators are the answer when you say nothing, since they give the lower, cautious curve.
+
+| Outdoor | Floor heating | Radiators |
+|---|---|---|
+| -7 °C | 2.6 | 2.0 |
+| 2 °C | 3.5 | 2.6 |
+| 7 °C | 4.4 | 3.2 |
+
+The curve is a third of the best a heat pump could do at the water temperature, 28 °C plus a quarter of the cold under a floor, and 35 °C plus half of it on radiators, at most 55 °C. It is written when you set the heat pump up. A heat pump set up before keeps the curve it has; to use the new one, answer the questions again.
+
+> [!NOTE]
+> Since v0.x, an air-to-water pump's curve follows the **Heating system**. Before, it was one table that was close to the radiator case and too low for a floor.
+
 PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are switches on the appliance, off for a new one, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
@@ -78,11 +97,11 @@ PowerPlan never lowers the temperature unless you ask. **Save when nobody is hom
 <a name="questions_followup"></a>
 ## How far should preheat go?
 
-This follow-up comes after **Preheat** is turned on: above the outdoor temperature you set, storing heat stops being worth it.
+This follow-up comes after **Preheat** is turned on. You can leave **Preheat up to** empty, which is the default, and let each hour decide. Set a temperature to stop preheating above it.
 
 ## The plan
 
-By default the room is warmed within its band before the price rises, and the heat pump coasts through the expensive hours as long as the room stays in the band. If you turn **Preheat** off, the room is never warmed above comfort; the pump still eases off before a price rise. Each hour's heat is priced at what the pump delivers at that hour's outdoor temperature, so a cold night is not the place to warm ahead unless the price gap is wide. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
+By default the room is warmed within its band before the price rises, and the heat pump coasts through the expensive hours as long as the room stays in the band. If you turn **Preheat** off, the room is never warmed above comfort; the pump still eases off before a price rise. Each hour's heat is priced at what the pump delivers at that hour's outdoor temperature, and 15 percent dearer between -5 and +3 °C, where the pump spends heat defrosting. A cold night is not the place to warm ahead unless the price gap is wide enough to pay for it, and a mild night before a colder day is. **Preheat** is off for a new heat pump. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 
@@ -90,6 +109,8 @@ Switch **Plan for cooling** on and off when you switch your unit between heating
 
 ## Limits
 
-PowerPlan never turns the heat pump's power off and never pauses it while it defrosts. The band is at most 2 degrees each way.
+PowerPlan never turns the heat pump's power off and never pauses it while it defrosts. The band is at most 2 degrees each way. It changes the setpoint at most once an hour, since a heat pump takes up to an hour and a half to respond, so a price that moves every 15 minutes is planned by its hourly average.
+
+Since v0.x, **Preheat up to** has no default. A heat pump set up before keeps the 5 °C it was given.
 
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

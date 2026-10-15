@@ -43,14 +43,22 @@ from ..loads.kinds.base import Role
 from ..loads.needs import Need, Tier
 from ..loads.needs import need as declare_need
 from ..loads.stores.base import StoreCtx, StoreModel
-from ..loads.stores.cop import CopCurve
+from ..loads.stores.cop import CopCurve, defrost_factor
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from .base import free_plan, params_of, peak_windows, register
 from .deadline_fill import plan_one
 from .deadlines import DeadlineNeed, needs
 from .holding import holding_kwh
-from .levels import STARTS_PER_DAY, Outcome, Route, Stage, relaxed, solve
+from .levels import (
+    HEAT_PUMP_CHANGES_PER_HOUR,
+    STARTS_PER_DAY,
+    Outcome,
+    Route,
+    Stage,
+    relaxed,
+    solve,
+)
 from .plan import (
     BACK_UP_WHILE_CHEAP,
     COAST_ON_STORED,
@@ -233,6 +241,8 @@ class _Model:
     lever: str
     #: The step a `SETPOINT` lever moves in, K: the device's own (D-0818).
     step: float
+    #: A heat pump (it has a COP curve) changes its setpoint at most once an hour (D-0777).
+    hourly: bool = False
     #: Each step-up as `(slot index it falls on, the need, the level it must reach, first slot of
     #: its fill window)`.
     needs: list[tuple[int, DeadlineNeed, float, int]] = field(default_factory=list)
@@ -253,6 +263,8 @@ class _Result:
     hold: Route
     #: Whether each slot took the reference action (the thermostat at its target).
     held: list[bool]
+    #: The setpoint delta written in each slot, where the route was cut into blocks (a heat pump).
+    deltas: list[float] | None = None
 
 
 # --------------------------------------------------------------------------- #
@@ -463,6 +475,7 @@ def plan_route(
             peaks=peaks,
             found=found,
             cop=_cop(params),
+            defrost=bool(params.get("defrost", True)),
         )
         rows, fits = _route_rows(model, demand, ctx, store, policy=policy, limits=limits)
         idle = _idle_margin(model, ctx)
@@ -519,6 +532,7 @@ def _model(
     peaks: Sequence[tuple[datetime, datetime]],
     found: Sequence[DeadlineNeed],
     cop: CopCurve | None,
+    defrost: bool = False,
 ) -> _Model:
     """Return the store as the search sees it: per slot a band, a cap and a price (§5.7)."""
     sign = -1.0 if store.direction == "cool" else 1.0
@@ -551,12 +565,15 @@ def _model(
                 hi=hi,
                 outdoor=outdoor,
                 price=float(slot.total),
-                cop=max(cop.at(outdoor), _EPS_COP) if cop is not None else 1.0,
+                cop=_hour_cop(cop, outdoor, defrost=defrost),
                 cap_w=max(0.0, draw_w),
                 capacity=capacity_slot,
                 peak=in_peak,
             )
         )
+    hourly = cop is not None and ctx.load.kind == "setpoint"
+    if hourly:
+        _price_by_block(slots)
     hours_a = np.array([s.hours for s in slots])
     a = np.exp(-hours_a / tau)
     heat_price = np.array([s.price / s.cop for s in slots])
@@ -580,9 +597,30 @@ def _model(
         rate=_rate(policy, sign),
         lever=ctx.load.kind,
         step=step,
+        hourly=hourly,
     )
     _step_up_bounds(model, bounds, found)
     return model
+
+
+def _block_of(start: datetime) -> int:
+    """Return the block a slot falls in: a heat pump changes its setpoint once a block (D-0777)."""
+    return int(start.timestamp() // (3600.0 / HEAT_PUMP_CHANGES_PER_HOUR))
+
+
+def _price_by_block(slots: Sequence[_Slot]) -> None:
+    """Price each slot at the mean of its block: a pump cannot follow a price inside one (D-0773).
+
+    A heat pump takes 0.5-1.5 h to respond and changes its setpoint once a block, so the price a
+    quarter hour pays for is the block's, weighted by the length of the slots that are left of it.
+    """
+    blocks: dict[int, list[_Slot]] = {}
+    for slot in slots:
+        blocks.setdefault(_block_of(slot.slot.start), []).append(slot)
+    for members in blocks.values():
+        mean = sum(s.price * s.hours for s in members) / sum(s.hours for s in members)
+        for slot in members:
+            slot.price = mean
 
 
 def _lever_step(ctx: PlanContext) -> float:
@@ -922,6 +960,24 @@ def _search(
     return _Result(route=route, hold=hold, held=held)
 
 
+def _slot_cost(model: _Model, k: int, level: float, nxt: float) -> tuple[float, float]:
+    """Return what slot `k` costs when the room goes from `level` to `nxt`, and the peak's rank on top (§5.7).
+
+    The goal of D-0766 in plain floats: the draw at the heat's price, plus the heat saved by
+    sitting under the target, charged back. The same arithmetic as `_stage`, for one level.
+    """
+    a, b, c0 = float(model.a[k]), float(model.b[k]), float(model.c0[k])
+    q, target, hours = float(model.heat_price[k]), float(model.target[k]), float(model.hours[k])
+    drawn = nxt - (c0 + a * level)
+    k_e = hours / (1000.0 * b)
+    k_loss = model.loss_w_per_k * hours / 1000.0
+    extra = model.peak_rank * k_e * drawn if model.slots[k].peak else 0.0
+    if max(level, nxt) <= target + 1e-12:
+        outdoor = c0 / (1.0 - a)
+        return q * (k_loss * (target - outdoor) + model.capacity * (nxt - level)), extra
+    return q * k_e * drawn + q * k_loss * max(0.0, target - 0.5 * (level + nxt)), extra
+
+
 def _hold(model: _Model, free: Sequence[Stage], start: float) -> Route:
     """Return the route of the thermostat holding the target, whatever the band says.
 
@@ -934,7 +990,7 @@ def _hold(model: _Model, free: Sequence[Stage], start: float) -> Route:
     draws: list[float] = []
     for k, slot in enumerate(model.slots):
         a, b, c0 = float(model.a[k]), float(model.b[k]), float(model.c0[k])
-        q, target, hours = float(model.heat_price[k]), float(model.target[k]), float(model.hours[k])
+        target, hours = float(model.target[k]), float(model.hours[k])
         cap, lo = float(model.cap[k]), float(model.lo[k])
         coast = c0 + a * level
         upper = coast + b * cap
@@ -945,15 +1001,7 @@ def _hold(model: _Model, free: Sequence[Stage], start: float) -> Route:
             down, up_k = _slot_rate(model, hours) or (0.0, 0.0)
             nxt = min(max(nxt, min(level - down, upper)), level + up_k)
         drawn = nxt - coast
-        k_e = hours / (1000.0 * b)
-        k_loss = model.loss_w_per_k * hours / 1000.0
-        if max(level, nxt) <= target + 1e-12:
-            outdoor = c0 / (1.0 - a)
-            cost = q * (k_loss * (target - outdoor) + model.capacity * (nxt - level))
-            extra = model.peak_rank * k_e * drawn if slot.peak else 0.0
-        else:
-            cost = q * k_e * drawn + q * k_loss * max(0.0, target - 0.5 * (level + nxt))
-            extra = model.peak_rank * k_e * drawn if slot.peak else 0.0
+        cost, extra = _slot_cost(model, k, level, nxt)
         costs.append(cost + extra)
         draws.append(drawn / b)
         level = nxt
@@ -1011,12 +1059,120 @@ def _route_rows(
     ):
         hold = _hold(model, free, start)
         result = _Result(route=hold, hold=hold, held=[True] * len(free))
+    if model.hourly and result.route.values is not None:
+        result = _in_blocks(model, result, ctx)
     rows = _rows(model, result, demand, ctx, store)
     fits = all(
         float(result.route.levels[index]) >= want - 0.05
         for index, _need, want, _first in model.needs
     )
     return rows, fits
+
+
+def _in_blocks(model: _Model, result: _Result, ctx: PlanContext) -> _Result:
+    """Return the result as a heat pump can follow it: one setpoint to a block (D-0773, D-0777).
+
+    The search is slot by slot, and a route that changes its mind inside an hour is a thermostat
+    the compressor cannot be. Each block of `1 / HEAT_PUMP_CHANGES_PER_HOUR` hours is written with
+    the one setpoint, a step from the target, that costs least as the thermostat will run the
+    block plus what the search values the level it ends at. A tie
+    keeps the setpoint in force, then takes the highest, so a room that falls to its floor is
+    never asked for less. A block under way when the plan is made keeps the setpoint it began
+    with; a step-up's fill and a block whose target moves are free of the rate limit, since a
+    deadline outranks it.
+    """
+    sign, step = model.sign, model.step
+    count = len(model.slots)
+    route = result.route
+    previous = sign * _delta_in_force(ctx)
+    fills = _fill_slots(model, route)
+    levels = [float(route.levels[0])]
+    costs: list[float] = []
+    draws: list[float] = []
+    deltas: list[float] = []
+    k = 0
+    while k < count:
+        block = _block_of(model.slots[k].slot.start)
+        last = k
+        while last + 1 < count and _block_of(model.slots[last + 1].slot.start) == block:
+            last += 1
+        members = range(k, last + 1)
+        under_way = k == 0 and model.slots[0].slot.start.timestamp() % 3600.0 > 0.0
+        free = any(m in fills for m in members) or any(
+            abs(float(model.target[m]) - float(model.target[k])) > _EPS_K for m in members
+        )
+        low = min(float(model.lo[m]) - float(model.target[m]) for m in members)
+        high = max(float(model.hi[m]) - float(model.target[m]) for m in members)
+        first = math.floor(low / step + 1e-6)
+        wanted = [step * j for j in range(first, math.ceil(high / step - 1e-6) + 1)]
+        if under_way and not free:
+            wanted = [previous]
+        elif not free and model.rate is not None:
+            down, up = _slot_rate(model, float(sum(model.hours[m] for m in members))) or (0.0, 0.0)
+            wanted = [
+                d for d in wanted if previous - down - 1e-6 <= d <= previous + up + 1e-6
+            ] or wanted
+        best: tuple[tuple[float, ...], float, list[float], list[float], list[float]] | None = None
+        for delta in wanted:
+            path, spent, drawn, outside = _thermostat(model, members, levels[-1], delta)
+            total = sum(spent) + route.value_at(last + 1, path[-1])
+            key = (
+                round(outside, 6),
+                round(total, 9),
+                0.0 if abs(delta - previous) < _EPS_K else 1.0,
+                -delta,
+            )
+            if best is None or key < best[0]:
+                best = (key, delta, path, spent, drawn)
+        assert best is not None  # the lattice has at least one step
+        _, delta, path, spent, drawn = best
+        levels.extend(path)
+        costs.extend(spent)
+        draws.extend(drawn)
+        deltas.extend([sign * delta] * len(members))
+        previous = delta
+        k = last + 1
+    end_value = float(_terminal(model)(np.array([levels[-1]]))[0])
+    followed = Route(
+        np.array(levels),
+        route.actions,
+        np.array(costs),
+        np.array(draws),
+        np.array(levels[1:]),
+        end_value,
+        route.feasible,
+    )
+    held = [abs(delta) < _EPS_K for delta in deltas]
+    inside = [_inside(delta, model, m) for m, delta in enumerate(deltas)]
+    return _Result(route=followed, hold=result.hold, held=held, deltas=inside)
+
+
+def _thermostat(
+    model: _Model, members: range, level: float, delta: float
+) -> tuple[list[float], list[float], list[float], float]:
+    """Run the slots `members` with a thermostat at `target + delta`, from `level` (§5.14).
+
+    Returns the level after each slot, each slot's cost and draw, and how far the room strays
+    outside the band in any of them (INV-55, INV-56).
+    """
+    path: list[float] = []
+    spent: list[float] = []
+    drawn: list[float] = []
+    outside = 0.0
+    for m in members:
+        a, b, c0 = float(model.a[m]), float(model.b[m]), float(model.c0[m])
+        coast = c0 + a * level
+        upper = coast + b * float(model.cap[m])
+        if model.slots[m].peak:
+            upper = min(upper, max(coast, float(model.lo[m])))
+        nxt = min(max(float(model.target[m]) + delta, coast), upper)
+        cost, extra = _slot_cost(model, m, level, nxt)
+        spent.append(cost + extra)
+        drawn.append((nxt - coast) / b)
+        outside += max(0.0, float(model.lo[m]) - nxt, nxt - float(model.hi[m]))
+        level = nxt
+        path.append(level)
+    return path, spent, drawn, outside
 
 
 def _worth_moving(result: _Result) -> bool:
@@ -1083,7 +1239,8 @@ def _repairs(
 
     Three limits (D5 §5.14): a run of moves must save `min_saving` on an hour of
     the element at full power (D-0764); a relay starts at most 24 times a day
-    (D-0777); and `best_save`'s off-runs and on-runs (D5 §5.5). A pinned slot
+    (D-0777); and
+    `best_save`'s off-runs and on-runs (D5 §5.5). A pinned slot
     takes the reference action, or keeps its level, and the search is run again.
     """
     runs = _moves(result)
@@ -1304,6 +1461,8 @@ def _setpoints(
         low = math.inf if heating[k] else min(low, ends[k])
         lowest[k] = low
     previous = _delta_in_force(ctx)
+    if result.deltas is not None:
+        return result.deltas
     out: list[float] = []
     for k in range(count):
         hours = float(model.hours[k])
@@ -1570,6 +1729,13 @@ def _cop(params: Mapping[str, Any]) -> CopCurve | None:
     if not stored:
         return None
     return CopCurve.from_mapping({float(key): float(value) for key, value in stored.items()})
+
+
+def _hour_cop(cop: CopCurve | None, outdoor: float, *, defrost: bool) -> float:
+    """Return the COP heat is priced at in an hour: the curve's, less the defrost, 1 for a direct heater (D-0773)."""
+    if cop is None:
+        return 1.0
+    return max(cop.at(outdoor) * (defrost_factor(outdoor) if defrost else 1.0), _EPS_COP)
 
 
 def _banking_now(ctx: PlanContext) -> bool:

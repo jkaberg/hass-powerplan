@@ -22,7 +22,37 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-__all__ = ["DEFAULT_COP_CURVES", "CopCurve"]
+__all__ = [
+    "A2W_ANCHORS_C",
+    "DEFAULT_COP_CURVES",
+    "DEFROST_BAND_C",
+    "DEFROST_FACTOR",
+    "HEATING_TYPES",
+    "CopCurve",
+    "a2w_curve",
+    "defrost_factor",
+]
+
+#: What an air-to-water pump reaches of Carnot (D-0773): conservative against a NIBE F2120 data
+#: point at 0.42.
+CARNOT_FRACTION: Final = 0.35
+
+#: The heating types the air-to-water curve is derived for (D4 §6.4, D-0825).
+HEATING_TYPES: Final = ("radiators", "floor")
+
+#: The outdoor temperatures an air-to-water curve is materialised at: EN 14511's rating points
+#: (−7, 2, 7 °C) and the steps between them, so the curve at a rating point is the formula's.
+A2W_ANCHORS_C: Final = (-20.0, -15.0, -10.0, -7.0, -5.0, 0.0, 2.0, 7.0, 10.0, 15.0)
+
+#: Frost forms on the outdoor coil between these temperatures, and the unit spends its heat on
+#: defrosting it: the COP of those hours is cut (D-0773, an estimate from the defrost
+#: literature's ≤ 20 % hourly loss).
+DEFROST_BAND_C: Final = (-5.0, 3.0)
+DEFROST_FACTOR: Final = 0.85
+
+_KELVIN: Final = 273.15
+#: The hottest water a radiator circuit is run at, °C.
+_RADIATOR_SUPPLY_MAX_C: Final = 55.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,10 +99,33 @@ class CopCurve:
         return min(rated_w, heat_w / cop) if cop > 0.0 else rated_w
 
 
-#: D4 §6.4: A2A from the reference house's own measurements, A2W and GSHP from
-#: typical SCOP data. Shown to the user and editable - never a hidden constant.
+def defrost_factor(outdoor_c: float) -> float:
+    """Return what is left of the COP at `outdoor_c` after defrosting: 0.85 from −5 to +3 °C, else 1."""
+    low, high = DEFROST_BAND_C
+    return DEFROST_FACTOR if low <= outdoor_c <= high else 1.0
+
+
+def a2w_curve(heating: str) -> CopCurve:
+    """Return the air-to-water curve for a heating type: 0.35 × Carnot at the supply it needs (D-0773).
+
+    The supply is 28 + 0.25·(20 − T_out) °C under floor heating and 35 + 0.5·(20 − T_out) °C,
+    at most 55, on radiators. Materialised into the subentry at setup (INV-66).
+    """
+    points: dict[float, float] = {}
+    for outdoor in A2W_ANCHORS_C:
+        if heating == "floor":
+            supply = 28.0 + 0.25 * (20.0 - outdoor)
+        else:
+            supply = min(_RADIATOR_SUPPLY_MAX_C, 35.0 + 0.5 * (20.0 - outdoor))
+        points[outdoor] = CARNOT_FRACTION * (supply + _KELVIN) / (supply - outdoor)
+    return CopCurve.from_mapping(points)
+
+
+#: D4 §6.4: A2A from the reference house's own measurements, A2W from Carnot at the radiator
+#: supply (the floor case is `a2w_curve("floor")`, D-0773) and GSHP from typical SCOP data.
+#: Shown to the user and editable - never a hidden constant.
 DEFAULT_COP_CURVES: Final[Mapping[str, CopCurve]] = {
     "a2a": CopCurve.from_mapping({-15: 1.8, -10: 2.2, -5: 2.6, 0: 3.0, 7: 3.8, 15: 4.5}),
-    "a2w": CopCurve.from_mapping({-15: 1.6, -7: 2.2, 2: 2.9, 7: 3.4, 15: 4.0}),
+    "a2w": a2w_curve("radiators"),
     "gshp": CopCurve.from_mapping({-15: 3.5, 0: 3.8, 15: 4.5}),
 }

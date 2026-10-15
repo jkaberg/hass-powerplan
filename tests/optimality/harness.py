@@ -27,6 +27,12 @@ import pytest
 
 from custom_components.powerplan.core.loads import ConstantSchedule, TargetProfile
 from custom_components.powerplan.core.loads.stores import EnergyStore, RoomStore, SlabStore
+from custom_components.powerplan.core.loads.stores.cop import (
+    DEFAULT_COP_CURVES,
+    CopCurve,
+    a2w_curve,
+    defrost_factor,
+)
 from custom_components.powerplan.core.model import Plan, PlanSlot, Urgency
 from custom_components.powerplan.core.strategies import Headroom, plan_all
 from tests.core.strategies.conftest import (
@@ -210,6 +216,35 @@ class ThermalCase:
     target: float
     floor: float
     ceiling: float
+    #: A heat pump's curve: the heat costs `price / (COP × defrost)` at the day's outdoor
+    #: temperature, for ours, for hands-off and for the optimum alike (D-0773).
+    cop: CopCurve | None = None
+
+    def heat_per_kwh(self, t_out: float) -> float:
+        """Return the electric kWh a kWh of heat costs at `t_out`: 1 for a direct heater."""
+        if self.cop is None:
+            return 1.0
+        return 1.0 / (self.cop.at(t_out) * defrost_factor(t_out))
+
+    def bill(self, prices: Sequence[float], t_out: float) -> list[float]:
+        """Return what a kWh of heat costs in each quarter hour: the price over the COP.
+
+        A pump is billed at its hour's mean price, for ours, for hands-off and for the optimum alike:
+        it changes its setpoint once an hour (D-0777), so a price that moves inside one is a price
+        no plan of its can follow, and the best plan is the one that follows the hours (D-0828).
+        """
+        per = self.heat_per_kwh(t_out)
+        if self.cop is None:
+            return [price * per for price in prices]
+        hours = [sum(prices[i : i + 4]) / 4.0 for i in range(0, len(prices), 4)]
+        return [hours[k // 4] * per for k in range(len(prices))]
+
+    def strategy_params(self) -> dict[str, Any]:
+        """Return what the pump type hands the strategy besides its band: the curve and the opt-in."""
+        if self.cop is None:
+            return {}
+        curve = {f"{t}": cop for t, cop in self.cop.points}
+        return {"cop_curve": curve, "defrost": True, "preheat": True}
 
 
 def _slab(area: float, w_per_m2: float = 80.0) -> SlabStore:
@@ -228,6 +263,20 @@ def _room() -> RoomStore:
         volume_m3=40.0, max_c=25.0, min_c=5.0, heat_loss_w_per_k=100.0, coast_tau_h=12.0
     )
 
+
+def _pump(curve: CopCurve) -> ThermalCase:
+    """Return a 100 m³ room heated by a pump that gives 4 kW of heat (D4 §6.4)."""
+    room = RoomStore.from_volume(
+        volume_m3=100.0, max_c=23.0, min_c=5.0, heat_loss_w_per_k=100.0, coast_tau_h=12.0
+    )
+    return ThermalCase("pump", room, 12.0, 4000.0, 21.0, 17.0, 23.0, cop=curve)
+
+
+#: The two heat pump cases of D5 §9 44: air-to-air and air-to-water under floor heating.
+PUMP_CASES: Final = {
+    "a2a": _pump(DEFAULT_COP_CURVES["a2a"]),
+    "a2w": _pump(a2w_curve("floor")),
+}
 
 THERMAL_CASES: Final = {
     "slab12": ThermalCase("slab12", _slab(12.0), 60.0, 960.0, 24.0, 21.0, 27.0),
@@ -315,10 +364,15 @@ def thermal_loop(
     share measures the search, not how cold the room is allowed to be.
     """
     rc = rc_of(case, t_out)
+    # What a kWh of heat costs in electricity: the strategy plans against the raw price and its own
+    # curve, and the bill is the heat over the COP of the day (D-0773).
+    raw = prices
+    prices = case.bill(raw, t_out)
+    params = {**case.strategy_params(), **params}
     # The day is followed by its own mean, so the last hours are planned on a full horizon and
     # the heat left at the end is worth that mean to ours, to hands-off and to the oracle (D-0816).
     mean = sum(prices) / len(prices)
-    curve = curve_of(prices, beyond=mean)
+    curve = curve_of(raw, beyond=sum(raw) / len(raw))
     # The catalogue measures the search; D5 §5.9a's gate on the whole plan has its own test.
     site = site_ctx(forecasts=Weather(outdoor=t_out), worth_share=None)
     room = Headroom(by_slot={s.start: 1e5 for s in curve.slots})
@@ -379,8 +433,9 @@ def thermal_outcome(
     """
     prices = DAYS[day]
     run = thermal_loop(case, strategy, params, prices, t_out)
+    bill = case.bill(prices, t_out)
     optimum = rc_optimum(
-        prices,
+        bill,
         rc_of(case, t_out),
         t0=case.target,
         lo=lo,
@@ -388,7 +443,7 @@ def thermal_outcome(
         terminal=case.target,
         target=case.target,
         rate=(RATE_K_PER_H, 2.0 * RATE_K_PER_H),
-        end_price=sum(prices) / len(prices),
+        end_price=sum(bill) / len(bill),
     )
     assert optimum is not None
     tol = 0.1

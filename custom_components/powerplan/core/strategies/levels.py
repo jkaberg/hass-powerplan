@@ -116,11 +116,25 @@ class Route:
     feasible: bool
     #: What the backward pass expected the route to cost from the start.
     expected: float = 0.0
+    #: The backward pass's value of each level at the start of each stage (and at the horizon),
+    #: shape (stages + 1, levels), on the grid `grid0 + step · i`. `None` for a route that was not
+    #: searched. A caller that cuts a route into blocks values a block's end level with it.
+    values: Floats | None = None
+    grid0: float = 0.0
+    step: float = 1.0
 
     @property
     def total(self) -> float:
         """Return what the route costs, horizon value included."""
         return float(self.costs.sum()) + self.terminal
+
+    def value_at(self, stage: int, level: float) -> float:
+        """Return the cost-to-go from `level` at the start of `stage`; the route must have been searched."""
+        assert self.values is not None
+        row = self.values[stage]
+        pos = min(max((level - self.grid0) / self.step, 0.0), len(row) - 1.000001)
+        low = int(pos)
+        return float(row[low] + (pos - low) * (row[low + 1] - row[low]))
 
 
 def relaxed(stages: Sequence[Stage], start: float) -> list[Stage]:
@@ -277,7 +291,7 @@ def solve(  # noqa: PLR0915 - the two passes of one search
     expected = float(_value(values[0], grid, step, np.array([start]))[0])
     return Route(
         np.array(path), tuple(actions), np.array(costs), np.array(draws), np.array(levers),
-        end_value, feasible, expected,
+        end_value, feasible, expected, values, grid0, step,
     )  # fmt: skip
 
 

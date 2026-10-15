@@ -1578,6 +1578,12 @@
         "gshp": "Ground source"
       }
     },
+    "heat_pump_heating": {
+      "options": {
+        "radiators": "Radiators",
+        "floor": "Floor heating"
+      }
+    },
     "heat_pump_building": {
       "options": {
         "before_1980": "Before 1980",
@@ -2638,6 +2644,7 @@
             "heating_type": "Heating type",
             "hours_per_day": "Hours per day",
             "hp_type": "Heat pump type",
+            "heating": "Heating system",
             "legionella": "Legionella cycle",
             "litres": "Tank size",
             "max_a": "Charger maximum",
@@ -2685,6 +2692,7 @@
             "heating_type": "What is under the floor.",
             "hours_per_day": "How many hours a day it should run, in the cheapest hours.",
             "hp_type": "Air-to-air, air-to-water or ground source.",
+            "heating": "Advanced: radiators or floor heating, for an air-to-water pump's COP curve.",
             "legionella": "Who runs the weekly anti-legionella cycle.",
             "litres": "The tank's volume, in liters.",
             "max_a": "The most current the charger can deliver, in amps.",
