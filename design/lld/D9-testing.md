@@ -50,7 +50,7 @@ tests/
 │   ├── metering/ tariffs/ pricing/ loads/ strategies/ allocation/ forecasts/ engine/     one file per D-LLD §9 item group
 │   └── invariants/test_inv_traceability.py, test_purity.py, test_single_writer.py, test_no_network.py
 ├── property/                      hypothesis: greedy_vs_bruteforce, window_sums, normalise_roundtrip, gate_matrix
-├── optimality/                    days.py, oracle.py, baseline.json, test_<strategy>.py: every strategy against the best plan (§5.17, D-0770)
+├── optimality/                    days.py, oracle.py, harness.py, baseline.json, test_<strategy>.py, test_site.py: every strategy against the best plan (§5.17, D-0770)
 ├── fixtures/presets/              labelled synthetic tariff versions the benchmark needs and no operator has published (a next-year switch, INV-52), never shipped (D2 §2); the company tariffs the houses run on
 ├── golden/                        presets/<id>.json (history → expected level/fee); questionnaires/<type>.json; profiles/; snapshot_schema.json
 ├── scenarios/                     runner.py, catalogue.py, cache.py (a day in the house; a month; DST day; restart mid-window; BLE flaps; price outage)
@@ -448,7 +448,7 @@ Every strategy that plans a store or a deadline, against the exact optimum of it
 | run | as the runtime runs it: `plan_all` every 15 minutes with the previous plan, the store moved by its own model in between. A thermal store runs with D5 §5.9a's gate off (it has its own test, D5 §9 26) and `min_saving` 0, so the catalogue measures the search; the shipped margins give up small runs on purpose and `POWERPLAN_OPTIMALITY_MARGIN=default` measures them (D-0816). The day is followed by 48 h at its own mean, and the heat left at the end is worth that mean to ours, to hands-off and to the oracle (D-0816) |
 | asserts | per strategy × day: never dearer than its hands-off reference; never outside its band or past its deadline; a captured share ≥ the value in `tests/optimality/baseline.json`, a ratchet that moves up in the PR that earns it and down only with a DECISIONS entry |
 | targets | the exact strategies (`deadline_fill`, `cheapest_hours`, `run_once`) equal the optimum; the level planner (`heat_capacitor`, `best_save` with a store, the battery) ≥ 90 % on every day |
-| marker and cost | `optimality`, ≈ 2 min on six workers; before a commit that touches `core/strategies/`, at the end of the WP, and in CI on every PR, as a step of the `core` job (D-0814). BP.1 adds the row to the path map (§5.14) |
+| marker and cost | `optimality`, ≈ 2 min on six workers; before a commit that touches `core/strategies/`, at the end of the WP, and in CI on every PR, as a step of the `core` job (D-0814). the row is in `CONTRIBUTING.md`'s path map (§5.14) |
 
 The captured share is `(hands-off − ours) / (hands-off − optimum)` over 48 h, with the store's end level valued alike for both. A day where the optimum saves under 1 % of the hands-off cost asserts only "never dearer". The catalogue measures the search, on the strategy's own model; the reference benchmark (§5.9) still measures the house, with its two-node simulators and its whole bill.
 

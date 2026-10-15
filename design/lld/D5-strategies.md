@@ -239,7 +239,7 @@ plan: one contiguous block, envelope_w = profile power, reason "block"; committe
 
 ### 5.7 `heat_capacitor`: heat moved across price changes, on the level planner (D-0766, D-0767)
 
-Parameters: `min_saving` (0.03: the margin a move must clear beyond the losses and the COP the route already counts, D-0774; or `min_saving_absolute`), `bank_k` (how far above target the store may be raised; D4 derives it from the lever, 0 = pause only, D-0728), `coast_k` (1.0: how far below target it may fall), `max_rate_k_per_h` (1.0: the setpoint's downward rate; upward is 2 K/h, D-0775), `preheat: bool` (D4 derives it; the household's answer on a heat pump), `preheat_max_outdoor_c` (None: an optional cap, D-0773), `respect_tariff_windows` (True).
+Parameters: `min_saving` (0.03: the margin a move must clear beyond the losses and the COP the route already counts, D-0774; or `min_saving_absolute`), `bank_k` (how far above target the store may be raised; D4 derives it from the lever, 0 = pause only, D-0728), `coast_k` (0.5: how far below target it may fall, half of EN 16798-1 Category I; D4 derives a heat pump's as the band or 0.5 K, whichever is less; `best_save` plans at 1.0, D-0819), `max_rate_k_per_h` (1.0: the setpoint's downward rate; upward is 2 K/h, D-0775), `preheat: bool` (D4 derives it; the household's answer on a heat pump), `preheat_max_outdoor_c` (None: an optional cap, D-0773), `respect_tariff_windows` (True).
 
 **The band** is `[lo, hi] = [max(target − coast_k, floor), min(target + bank_k, store.max_level)]` per slot, `target` the target profile's at that slot (schedules, and the household's opt-in setbacks, D4 §5.8, D-0772). It is hard: no route leaves it (INV-55, INV-56). For a `SETPOINT` lever each edge is moved in to a setpoint the device takes (D-0818). A step-up is a lower bound at its time (§2).
 
@@ -397,7 +397,7 @@ No comfort violation either way. The night charge stops at the ready temperature
 
 ```
 solve(grid, stages, terminal, fixed) -> Route
-  grid      the level's values over the whole horizon's band: steps ≤ 0.05 K for heat (60–150 levels on a 3 K band), laid so that the target and every setpoint the lever can take are grid points (D-0820),
+  grid      the level's values over the whole horizon's band: steps of about 0.04 K for heat, `_GRID_K`, dividing the lever's setpoint step (60–150 levels on a 3 K band), laid so that the target and every setpoint the lever can take are grid points (D-0820),
             ≤ 0.5 % of capacity for a battery
   stages    per slot: the actions (a vector); next(level, action), exact over the slot
             (heat: T' = T_out + P/UA + (T − T_out − P/UA)·e^(−h/τ)); cost(level, action); the slot's [lo, hi] at its end
@@ -419,7 +419,7 @@ ties        equal Q (within a tenth of a grid step's worth of heat, the interpol
 | stable tie-break (INV-32) | a flat curve gives equal `Q`; the reference action wins, so a flat day holds (§9 3) |
 | a start outside the band | `relaxed()` widens each band to what the actions reach from the start: the floor to what full power reaches, and a ceiling that has just come down (a target lowered, a schedule step-down) to what the level falls to by itself. A store measured under `lo` recovers at the cheapest power it can first, so no plan is infeasible (D-0805) |
 | switching budget (D-0777) | after the forward pass the planned starts are counted against the type's budget; past it, the least valuable run is pinned to the reference action and the pass repeats, at most 4 times |
-| cost | numpy arrays of levels × actions per slot: 3–14 ms for a bare store in the first prototype (D-0767); the heating planner (150 levels, 13 actions, 192 slots) measured about 25 ms a load: 0.3 s of CPU for twelve heating loops, 0.38 s at worst over 33 cycles; the reference house's smoke month plans at p95 359 ms with the executor (D-0804, D-0815). The backward pass is arrays, the forward pass plain floats, and the plan runs in an executor (D7 §5.2, D-0815). `tests/perf/plan_budget.py` gates twenty loads and twelve heating loads at D9 §5.1's 500 ms |
+| cost | numpy arrays of levels × actions per slot: 3–14 ms for a bare store in the first prototype (D-0767); the heating planner (150 levels, 13 actions, 192 slots) measured about 25 ms a load: 0.3 s of CPU for twelve heating loops, 0.38 s at worst over 33 cycles; the reference house's smoke month plans at p95 399 ms (the smoke baseline) with the executor (D-0804, D-0815). The backward pass is arrays, the forward pass plain floats, and the plan runs in an executor (D7 §5.2, D-0815). `tests/perf/plan_budget.py` gates twenty loads and twelve heating loads at D9 §5.1's 500 ms |
 | dependency | numpy, which Home Assistant ships pinned; `mypy --strict` with numpy's own typing |
 
 Each move on the route has its sentence, read off the route (§5.7, §5.8), so the review sensor says why as before.

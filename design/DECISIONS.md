@@ -3519,41 +3519,6 @@ BP.8 moved `RoomStore`'s fallback mass from 0.03 to 0.012 kWh/K per m³ (D-0778)
 
 **Rejected:** pinning the catalogue's room to the old 0.03 (it would measure a store the product no longer builds).
 
-### D-0810 · `cheapest_hours` reads the hours already run from the plan in force
-
-The strategy ranked "the N cheapest slots of what is left of the day" and had no memory, so every 15-minute replan bought N hours again; a 4 h/day pump ran 16-96 quarter-hours a day closed loop (the catalogue, D-0780). The code forced three choices:
-- **The source is the plan in force.** `LoadView` has no measured on-time and the runtime plumbing for one is a WP of its own; the previous plan's slots of today's local day that end before the window starts, and that were on, count as run. A load that was shed in one of them is counted as run all the same; the next day starts from nothing either way.
-- **The history is carried.** A plan is built from `now`'s slot, so it prepends the previous plan's slots of today that lie behind the window, and the next replan reads them in turn. They stay in `planned_kwh` and `cost_estimate`: the plan is today's plan. A restart, or a plan from another strategy, forgets them and the day's hours are bought again once.
-- **Consecutive is one run a day.** A run under way (the slot just behind the window was on) continues from the first slot of the window for the hours it still owes, and a cheaper run later is not a second one; a run that has ended is the day's. A run the price cap or the headroom cut short is not topped up.
-
-**Rejected:** a measured on-time on `LoadView` (the same answer with more plumbing, and the catalogue could not exercise it); a counter in `LoadState` (a second source of truth for what the plan already says).
-
-Affects D5 §5.4, §9 52.
-
-### D-0811 · A cycle under way keeps its start in the plan
-
-`run_once` read a running cycle's start back from the previous plan's first active slot. A plan begins at `now`'s slot, so after the first replan that slot was no longer the cycle's start and the start slid a quarter hour at every replan, with the planned energy of the running cycle sliding with it (INV-59 says a started block does not move). `Plan.started_at` carries the start: set while a block is under way, read back by the next replan, which keeps it. A plan the hysteresis keeps is the old plan itself and still holds its first slot, so both paths give the same start.
-
-Affects D5 §5.6, §9 53.
-
-### D-0812 · A flat window takes its threshold from its own mean
-
-D-0771 judges flatness over the slots from now to the deadline (or the horizon). `HysteresisPolicy.flat_threshold` is defined per local day, so `deadline_fill` applies the same rule to the window: spread under `max(fraction_of_spread × the window's time-weighted mean, floor_major)`. A window with no slots is flat. The stale doubling does not apply, as for the day form (D1 §5.7).
-
-Affects D5 §5.2, §9 49.
-
-### D-0813 · `run_once` ranks with the energy it plans
-
-`_cost(start)` sums each slot's price over the energy `_energy_by_slot` places in it, the function that builds the plan's slots, so the ranking and the plan cannot disagree (D-0771, §9 50). The slot lookup is a bisect, since a candidate is now costed over the slots it touches and not over ten price points.
-
-Affects D5 §5.6.
-
-### D-0814 · The catalogue runs in the `core` job
-
-D9 §5.17 says the catalogue runs in CI on every PR, but no job named `tests/optimality`: `core` names its directories, `scenarios` runs `tests/scenarios`. A step in `core` runs `pytest tests/optimality -m optimality`; it is the job that already has the dependencies and the fast half of the suite's workers, and the `scenarios` job is the longest on the path. `highspy` is in the dev group and the lock.
-
-Affects D9 §5.17.
-
 ### D-0800 · The catalogue measures the search on D-0766's objective, with the rate limits, and with D-0724's gate off
 
 BP.1's oracle priced a thermal store in real money from the target back to the target. That optimum "saves" by letting the room stay cold: on the flat day it saved 3–4 % (room40 at −10 °C, slab57 at +5 °C) where D-0766 and D5 §9 3 and 40 say a flat day is all HOLD, and a ratchet of 90 % on it could only be met by sitting at `lo` all day, a comfort the household did not ask for. It also ignored D-0775's setpoint rates (1 K/h down, 2 K/h up), which a 40 m³ room at −10 °C hits every slot, since it cools 2.6 K/h by itself. And D5 §5.9a's gate (4 %/6 %) hands a plan off on a day whose optimum saves 1–4 %, which the catalogue would score as 0. Now:
@@ -3602,7 +3567,7 @@ D5 §5.14's tie order was the reference, then the lower draw. On a rising night 
 
 ### D-0807 · The site walk is held to the ratchet and not to a promise
 
-R16 asked the catalogue to name what plan-in-priority-order costs against a joint plan. `tests/optimality/test_site.py` walks a 57.5 m² floor, the 300 L tank and a 30 kWh EV under 5, 7 and 10 kW per slot on the 13 days and compares them with one LP for the three. A day it is dearer than hands-off, or leaves a load short, is an `xfail` naming R16; its share is a ratchet like any other. A joint step stays the `optimizer` slot's, and INV-33 the owner's. Affects D9 §5.17, PLAN R16.
+R16 asked the catalogue to name what plan-in-priority-order costs against a joint plan. `tests/optimality/test_site.py` walks a 57.5 m² floor, the 300 L tank and a 30 kWh EV under 5, 7 and 10 kW per slot on the 13 days and compares them with one LP for the three. A day it is dearer than hands-off, or leaves a load short, is an `xfail` naming R16; its share is a ratchet like any other. A joint step stays the `optimizer` slot's, and INV-33 the owner's. Measured (15 Oct 2026): the walk captures 0.81, 0.88 and 0.89 of the joint plan at 5, 7 and 10 kW on the worst day, the 15-minute sawtooth, and above 0.92 on the others. Affects D9 §5.17, PLAN R16.
 
 ### D-0808 · `numpy` is a dependency, unpinned
 
@@ -3611,6 +3576,41 @@ R16 asked the catalogue to name what plan-in-priority-order costs against a join
 ### D-0809 · The switching budget BP.3 keeps is the relay's
 
 D-0777 gives three budgets. BP.3 holds a switch lever's planned starts to 24 a day (`levels.STARTS_PER_DAY`); the heat pump's one setpoint change an hour (`HEAT_PUMP_CHANGES_PER_HOUR`) is BP.4's with its by-the-hour pricing, and the EV's four pauses were BP.7's. The constants are tested together (D4 §9 70). A start is a slot that draws after a planned-idle slot the thermostat would have drawn in; past 24 in a day the least valuable run of moves is pinned to the reference and the search is run again. Affects D4 §6, D5 §5.14.
+
+### D-0810 · `cheapest_hours` reads the hours already run from the plan in force
+
+The strategy ranked "the N cheapest slots of what is left of the day" and had no memory, so every 15-minute replan bought N hours again; a 4 h/day pump ran 16-96 quarter-hours a day closed loop (the catalogue, D-0780). The code forced three choices:
+- **The source is the plan in force.** `LoadView` has no measured on-time and the runtime plumbing for one is a WP of its own; the previous plan's slots of today's local day that end before the window starts, and that were on, count as run. A load that was shed in one of them is counted as run all the same; the next day starts from nothing either way.
+- **The history is carried.** A plan is built from `now`'s slot, so it prepends the previous plan's slots of today that lie behind the window, and the next replan reads them in turn. They stay in `planned_kwh` and `cost_estimate`: the plan is today's plan. A restart, or a plan from another strategy, forgets them and the day's hours are bought again once.
+- **Consecutive is one run a day.** A run under way (the slot just behind the window was on) continues from the first slot of the window for the hours it still owes, and a cheaper run later is not a second one; a run that has ended is the day's. A run the price cap or the headroom cut short is not topped up.
+
+**Rejected:** a measured on-time on `LoadView` (the same answer with more plumbing, and the catalogue could not exercise it); a counter in `LoadState` (a second source of truth for what the plan already says).
+
+Affects D5 §5.4, §9 52.
+
+### D-0811 · A cycle under way keeps its start in the plan
+
+`run_once` read a running cycle's start back from the previous plan's first active slot. A plan begins at `now`'s slot, so after the first replan that slot was no longer the cycle's start and the start slid a quarter hour at every replan, with the planned energy of the running cycle sliding with it (INV-59 says a started block does not move). `Plan.started_at` carries the start: set while a block is under way, read back by the next replan, which keeps it. A plan the hysteresis keeps is the old plan itself and still holds its first slot, so both paths give the same start.
+
+Affects D5 §5.6, §9 53.
+
+### D-0812 · A flat window takes its threshold from its own mean
+
+D-0771 judges flatness over the slots from now to the deadline (or the horizon). `HysteresisPolicy.flat_threshold` is defined per local day, so `deadline_fill` applies the same rule to the window: spread under `max(fraction_of_spread × the window's time-weighted mean, floor_major)`. A window with no slots is flat. The stale doubling does not apply, as for the day form (D1 §5.7).
+
+Affects D5 §5.2, §9 49.
+
+### D-0813 · `run_once` ranks with the energy it plans
+
+`_cost(start)` sums each slot's price over the energy `_energy_by_slot` places in it, the function that builds the plan's slots, so the ranking and the plan cannot disagree (D-0771, §9 50). The slot lookup is a bisect, since a candidate is now costed over the slots it touches and not over ten price points.
+
+Affects D5 §5.6.
+
+### D-0814 · The catalogue runs in the `core` job
+
+D9 §5.17 says the catalogue runs in CI on every PR, but no job named `tests/optimality`: `core` names its directories, `scenarios` runs `tests/scenarios`. A step in `core` runs `pytest tests/optimality -m optimality`; it is the job that already has the dependencies and the fast half of the suite's workers, and the `scenarios` job is the longest on the path. `highspy` is in the dev group and the lock.
+
+Affects D9 §5.17.
 
 ### D-0815 · The plan runs in an executor, one at a time, and waiting triggers are one
 

@@ -76,7 +76,7 @@ Where the thermostat's setpoint is in Home Assistant's history, a temperature it
 | Advanced › Arrival calendars | Advanced: calendars whose next event is an arrival, a deadline for the comfort target. |
 <!-- generated:end questions:floor_heating -->
 
-PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are switches on the appliance, off for a new one, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
+PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are off for a new appliance. You turn them on under **Advanced** as **Follow presence** and **Save while asleep**, or later with the switches on the appliance, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
 > Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
@@ -88,7 +88,7 @@ The floor heating has no follow-up question.
 
 ## The plan
 
-By default the floor stays off through expensive hours and through hours your home has no room for, after warming just enough beforehand to last them. It never goes under the room's lowest temperature, and never above what the covering allows. The other plans it offers are listed on [Appliances](README.md#floor_heating); each is explained on [Plans](../strategies.md).
+By default the floor is warmed a little before the price rises, coasts through the expensive hours, and heats again after. It stays off through hours your home has no room for, after warming just enough beforehand to last them. Through hours where the price does not change it holds comfort. It coasts at most half a degree under comfort and warms at most a degree over it. It never goes under the room's lowest temperature, and never above what the covering allows. PowerPlan tells the thermostat of a new floor at most every 20 minutes. The other plans it offers are listed on [Appliances](README.md#floor_heating); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 
@@ -100,7 +100,7 @@ The highest floor temperature depends on the covering: 30 °C for tiles in a bat
 
 Since v0.0.12, a floor under vinyl or carpet is limited to 27 °C instead of 28, tiles to 29 °C outside a bathroom instead of 30, and a bedroom floor never goes under 18 °C instead of 17. A floor set up before keeps its numbers until you open **Change setup** on it and save.
 
-On **Heat capacitor**, the energy-saving setpoint is your comfort temperature minus 1 °C, and never under the lowest temperature you allow. A pause switches the thermostat to energy saving, so the thermostat itself keeps the floor there. When you change the comfort temperature, the energy-saving setpoint follows within 15 minutes.
+On **Heat capacitor**, the energy-saving setpoint is your comfort temperature minus the coast, 0.5 °C by default, and never under the lowest temperature you allow. A pause switches the thermostat to energy saving, so the thermostat itself keeps the floor there. When you change the comfort temperature, the energy-saving setpoint follows within 15 minutes.
 
 > [!NOTE]
 > Since v0.0.11, PowerPlan writes the thermostat's lowest floor temperature and its energy-saving setpoint while it controls the floor: at start and when the floor is added, then it checks them once a day. A setting that does not take is tried again every 15 minutes, and a [repair](../troubleshooting.md#provision_refused) says so if the thermostat keeps refusing. In trial mode nothing is written. Before v0.0.11, both stayed at the thermostat's own values.

@@ -240,6 +240,10 @@ Look at the appliance's **Plan status**: it says what PowerPlan plans and why, f
 
 The device accepted PowerPlan's last three commands but didn't apply them, for example a heat pump that keeps its old temperature. PowerPlan keeps controlling it and tries again when it may. After 30 minutes it becomes the repair [An appliance is not following its commands](#device_not_following). Check the device's own integration and logs: often a cloud connection or a Bluetooth link drops the commands. It clears by itself the first time a command takes.
 
+### The room is not cooler when nobody is home
+
+**Save when nobody is home** and **Save while asleep** are off for a new heating appliance. Turn them on under **Advanced** when you add or change the appliance, or with the switches on the appliance. PowerPlan then lowers the target 3 °C while everyone is away and 1 °C through the quiet hours. See [Presence](daily-use.md#presence).
+
 <a name="ev_resumes"></a>
 ### The car did not resume after a pause
 

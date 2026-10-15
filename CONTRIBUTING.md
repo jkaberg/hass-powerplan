@@ -35,6 +35,9 @@ The PR description has the WP id, the LLD §9 tests it adds, the invariants it t
 
 ## Home Assistant conventions
 
+- Runtime dependencies are in `manifest.json` `requirements` and in `pyproject.toml` `dependencies`, and stay in step: `holidays` and `numpy`. `numpy` is unpinned because Home Assistant ships it pinned (D-0808), and `core/strategies/levels.py` uses it for the level planner. A dependency only the tests need, such as `highspy`, goes in the `dev` group and nowhere else.
+- `Engine.plan` is pure over frozen state, so `runtime.py` runs it in an executor job, one plan at a time, and applies the result on the event loop (D-0815). Don't call it on the loop.
+
 The integration tracks the quality scale in `quality_scale.yaml`: Silver for v1.0, plus the Gold rules the design already meets.
 
 - `entry.runtime_data` (`type PowerplanConfigEntry = ConfigEntry[Runtime]`), never `hass.data[DOMAIN]`. Services are registered once in `async_setup` and take a site argument.
@@ -53,6 +56,8 @@ The integration tracks the quality scale in `quality_scale.yaml`: Silver for v1.
 - A WP is done when its LLD's §9 list passes. Write those tests first, and mark a test that guards an invariant with `@pytest.mark.inv("INV-nn")`. `test_inv_traceability` fails when a safety invariant (HLD §7.5) has no marked test.
 - Physical things are simulators with quirks in `tests/sim/`: a slab that cools, an EV with the 6 A cliff, a charger that drops its Bluetooth link. A static mock would have passed the broken heat pump driver this design exists to prevent. Fixtures come from builders in `tests/builders/`, and captured entity dumps only live in `tests/fixtures/captured/`.
 - Scenarios in `tests/scenarios/` are deterministic with seeded noise. A flaky scenario is a bug, not a retry.
+- The yardstick in `tests/optimality/` (D9 §5.17, marker `optimality`) runs every strategy against the exact best plan, solved with `highspy` (a dev dependency, never imported by the integration), on 13 price days. A strategy must never cost more than leaving the appliance alone, must stay in its band or meet its deadline, and must capture at least the share recorded in `tests/optimality/baseline.json`. The baseline is a ratchet: it moves up in the PR that earns it, and down only when the model under it changed, with an entry in `design/DECISIONS.md` that says so (D-0796). Run it with `uv run pytest tests/optimality -m optimality -q -n auto --dist=loadgroup` (about 2 min on six workers). CI runs it in the `core` job.
+- Where a test lives: `tests/core/<domain>/` for the pure core, `tests/runtime/` for `runtime.py` and the planning thread, `tests/flows/` and `tests/surface/` for the config flow and entities, `tests/providers/` for price, tariff and profile adapters, `tests/sim/` for the simulators, `tests/scenarios/` for whole days, `tests/optimality/` for the yardstick, `tests/benchmark/` and `tests/perf/` for the reference house and the time budgets, `tests/docs/` for the user pages, `tests/golden/` for questionnaire snapshots, `tests/e2e/` for the Home Assistant day.
 - Never weaken, skip, `xfail` or narrow a test to get a change green. If a test is wrong, fix it in the same PR and say why.
 
 ### The reference benchmark
@@ -134,6 +139,7 @@ uv sync                                                  # environment (Python 3
 uv run pytest tests/core/metering/test_window_bounds.py -q   # one module's tests
 uv run pytest tests --ignore=tests/scenarios --ignore=tests/optimality -m "not perf and not backtest and not bench and not e2e" -q -n auto --dist=loadgroup   # the fast suite
 uv run pytest -m "not perf and not backtest and not bench and not e2e" -q -n auto --dist=loadgroup   # the PR command
+uv run pytest tests/optimality -m optimality -q -n auto --dist=loadgroup   # the yardstick (about 2 min)
 uv run ruff format . && uv run ruff check --fix .
 uv run mypy custom_components/powerplan/core             # strict, must be clean
 uv run python tools/inv_report.py                        # INV → tests matrix, for the PR

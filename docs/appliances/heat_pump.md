@@ -87,9 +87,9 @@ An air-to-water pump's curve follows what it heats, which is the **Heating syste
 The curve is a third of the best a heat pump could do at the water temperature, 28 °C plus a quarter of the cold under a floor, and 35 °C plus half of it on radiators, at most 55 °C. It is written when you set the heat pump up. A heat pump set up before keeps the curve it has; to use the new one, answer the questions again.
 
 > [!NOTE]
-> Since v0.x, an air-to-water pump's curve follows the **Heating system**. Before, it was one table that was close to the radiator case and too low for a floor.
+> Since v0.0.12, an air-to-water pump's curve follows the **Heating system**. Before, it was one table that was close to the radiator case and too low for a floor.
 
-PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are switches on the appliance, off for a new one, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
+PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are off for a new appliance. You turn them on under **Advanced** as **Follow presence** and **Save while asleep**, or later with the switches on the appliance, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
 > Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
@@ -101,7 +101,7 @@ This follow-up comes after **Preheat** is turned on. You can leave **Preheat up 
 
 ## The plan
 
-By default the room is warmed within its band before the price rises, and the heat pump coasts through the expensive hours as long as the room stays in the band. If you turn **Preheat** off, the room is never warmed above comfort; the pump still eases off before a price rise. Each hour's heat is priced at what the pump delivers at that hour's outdoor temperature, and 15 percent dearer between -5 and +3 °C, where the pump spends heat defrosting. A cold night is not the place to warm ahead unless the price gap is wide enough to pay for it, and a mild night before a colder day is. **Preheat** is off for a new heat pump. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
+By default the room is warmed within its band before the price rises, and the heat pump coasts through the expensive hours as long as the room stays in the band. By default it lets the room fall at most half a degree under comfort, or the band if that is smaller. If you turn **Preheat** off, the room is never warmed above comfort; the pump still eases off before a price rise. Each hour's heat is priced at what the pump delivers at that hour's outdoor temperature, and 15 percent dearer between -5 and +3 °C, where the pump spends heat defrosting. A cold night is not the place to warm ahead unless the price gap is wide enough to pay for it, and a mild night before a colder day is. **Preheat** is off for a new heat pump. A unit that can cool asks **Plan for cooling**: turned on, PowerPlan cools the room ahead of expensive hours instead. The other plans it offers are listed on [Appliances](README.md#heat_pump); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 
@@ -111,6 +111,6 @@ Switch **Plan for cooling** on and off when you switch your unit between heating
 
 PowerPlan never turns the heat pump's power off and never pauses it while it defrosts. The band is at most 2 degrees each way. It changes the setpoint at most once an hour, since a heat pump takes up to an hour and a half to respond, so a price that moves every 15 minutes is planned by its hourly average.
 
-Since v0.x, **Preheat up to** has no default. A heat pump set up before keeps the 5 °C it was given.
+Since v0.0.12, **Preheat up to** has no default. A heat pump set up before keeps the 5 °C it was given.
 
 **See also:** [Appliances](README.md) · [Plans](../strategies.md) · [Devices](../devices.md)

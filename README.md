@@ -23,7 +23,7 @@ I built it for my own house in Norway, where the grid fee follows the highest ho
 - **Fetches your grid tariff** from the regulator or the grid companies in many countries, with VAT and taxes by date and region. Where no source covers yours, you type it in from your bill.
 - **Reads your electricity price** from Nord Pool, ENTSO-e, Tibber, Octopus Energy, Energi Data Service and other integrations, and adds what your supplier charges on top.
 - **Uses your solar panels and home battery.** Solar power you would otherwise sell can charge the car or heat water, and the battery can shave peaks or buy low and sell high.
-- **Saves while nobody is home.** Heating turns down when you are away or on vacation.
+- **Saves only where you ask.** Heating never lowers the temperature unless you turn on saving while nobody is home, or while you sleep, for that appliance.
 - **Counts cost and savings.** The month's cost is split by grid company, supplier and state, and each appliance's savings are measured against running without PowerPlan.
 - **Works with your automations.** Entities, actions, events and a calendar of planned runs, so a button or a script can start or pause an appliance.
 

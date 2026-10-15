@@ -28,6 +28,10 @@ PowerPlan works on two clocks.
 
 Heating is planned as a route through the temperature, not hour by hour. For a floor, a room or a heat pump PowerPlan looks at every temperature the appliance may have in every quarter of the next two days, and takes the cheapest way through. It warms ahead of a price rise, coasts through it and heats again after, but only inside the highest and lowest temperature you allow, and it holds comfort through hours where the price does not change. Every quarter of an hour it starts again from the measured temperature, so a plan under way is carried on, not forgotten.
 
+A heat pump takes up to an hour and a half to respond, so it is planned by the hour: it changes its setpoint at most once an hour, and a price that moves every 15 minutes counts as its average over the hour. Its heat is priced by the outdoor temperature of each hour.
+
+Working out the plan takes a fraction of a second for a home with many heating appliances. PowerPlan does it in a background thread, so Home Assistant does not wait for it, and one plan runs at a time. Triggers that arrive while a plan runs are answered by the next one.
+
 The plan says what would be cheapest. The moment makes sure the home stays safe while the plan runs.
 
 <a name="never"></a>

@@ -49,7 +49,7 @@ custom_components/powerplan/core/forecasts/
 │   ├── __init__.py  fit_all(): the FitKey → function table
 │   ├── base.py      Fit, FitQuality, FitKey, Gate, LoadHistory, EvSession, Episode, episodes(), resolve()
 │   ├── thermal.py   coast_rate(), heatup_rate() from on/off episodes
-│   ├── ev.py        charge_efficiency() from session energy vs SoC delta
+│   ├── ev.py        charge_efficiency() from session energy vs SoC delta, per phase count and current band (D-0776)
 │   ├── nameplate.py p95 of measured power while on
 │   └── tank.py      standby_loss_w() from idle cooling episodes
 └── registry.py      forecast sources by key with their Schema (empty until providers/ register)

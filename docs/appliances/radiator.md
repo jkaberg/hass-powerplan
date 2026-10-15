@@ -62,7 +62,7 @@ Where the thermostat's setpoint is in Home Assistant's history, a temperature it
 | Advanced › Run now lasts at most | Advanced: how many hours Run now lasts before it turns itself off. |
 <!-- generated:end questions:radiator -->
 
-PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are switches on the appliance, off for a new one, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
+PowerPlan never lowers the temperature unless you ask. **Save when nobody is home** lowers the target 3 °C while everyone is away, and **Save while asleep** lowers it 1 °C through the quiet hours you set for notifications, 22:00 to 07:00 unless you changed them. Both are off for a new appliance. You turn them on under **Advanced** as **Follow presence** and **Save while asleep**, or later with the switches on the appliance, and neither goes under the lowest temperature. The temperature is back at comfort when the quiet hours end.
 
 > [!NOTE]
 > Since v0.0.12, **Save when nobody is home** is off for a new appliance, and **Save while asleep** is new. An appliance set up before keeps its **Save when nobody is home** as it was.
@@ -74,7 +74,7 @@ The panel heater has no follow-up question.
 
 ## The plan
 
-By default PowerPlan keeps the room at comfort and pauses the heater in expensive hours, for as long as the room stays above its lowest temperature. A heater with its own thermostat may also be warmed up to 2 °C above comfort before a long expensive stretch; one on a plug only pauses. The other plans it offers are listed on [Appliances](README.md#radiator); each is explained on [Plans](../strategies.md).
+By default PowerPlan keeps the room at comfort and lets it fall at most half a degree in expensive hours, then heats again when the price falls. A heater with its own thermostat may also be warmed up to 2 °C above comfort before a price rise; one on a plug only pauses. A move must save at least 10 % of the heat it moves. The room never goes under its lowest temperature, and a bedroom never under 18 °C. The other plans it offers are listed on [Appliances](README.md#radiator); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 

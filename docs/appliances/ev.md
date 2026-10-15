@@ -74,7 +74,7 @@ The car charger has no follow-up question.
 
 ## The plan
 
-By default the car charges in the cheapest hours before your next departure, and at once below the charge level you set as **Never below**. The other plans it offers are listed on [Appliances](README.md#ev); each is explained on [Plans](../strategies.md).
+By default the car charges in the cheapest hours before your next departure, and at once below the charge level you set as **Never below**. Slow, 6 A hours cost more energy per kWh in the battery than fast ones, so PowerPlan charges slowly only where the price makes up for it. The other plans it offers are listed on [Appliances](README.md#ev); each is explained on [Plans](../strategies.md).
 
 ## Everyday use
 
@@ -85,7 +85,7 @@ Set when you leave each weekday under **Departures**, or bind a calendar whose e
 
 Some cars never start charging again after a pause. PowerPlan does not know yours, so it learns.
 
-Until it has seen the car resume, PowerPlan plans one run: the car charges through the dear hours at 6 A instead of stopping. When the capacity step or the price makes PowerPlan pause the charger, it checks that the car draws power again within two minutes. If it does, PowerPlan plans pauses for this car from then on, at most four in a session, and it gives the slow, 6 A hours a price that counts the extra loss in slow charging.
+Until it has seen the car resume, PowerPlan plans one run: the car charges through the dear hours at 6 A instead of stopping. Each time PowerPlan stops the charger to protect the capacity step and then lets it start again, it checks that the car draws power again within two minutes. If it does, PowerPlan plans pauses for this car from then on, at most four in a session, and it gives the slow, 6 A hours a price that counts the extra loss in slow charging.
 
 If the car does not draw, PowerPlan marks it as not resuming, holds it at 6 A, and the appliance's plan status names the date. PowerPlan still stops the car to protect the capacity step. If the departure is within 12 hours, you also get a **Deadline at risk** notice.
 

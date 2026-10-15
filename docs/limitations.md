@@ -17,6 +17,8 @@ What PowerPlan does not do, or not yet. Each item says what to do meanwhile, whe
 - A charger whose integration adds no device, such as KEBA, cannot be added.
 - A dishwasher, washer or dryer without remote start can only be told the best time, not started.
 - A heat pump plans heating or cooling as you set it; switch **Plan for cooling** yourself when the season changes.
+- A heat pump changes its setpoint at most once an hour. A price that moves every 15 minutes is planned by its hourly average, and a plan made inside an hour keeps the setpoint until the hour ends, so a warm-up can start up to 45 minutes late.
+- PowerPlan does not yet know whether a car resumes after a pause until it has seen one. Until then it charges in one run; see [Pauses and resumes](appliances/ev.md#pauses).
 - A water heater on **Heat capacitor** only heats for its ready-by times: PowerPlan cannot yet tell how fast a tank cools to room air. Use **Deadline fill**, the water heater's default, or **Hot water** for a tank.
 
 ## Solar and batteries

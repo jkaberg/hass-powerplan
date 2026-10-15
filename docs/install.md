@@ -17,6 +17,8 @@ Install PowerPlan through HACS, then add it to Home Assistant. This page also co
 | Version | 0.0.11 |
 <!-- generated:end requirements -->
 
+Home Assistant installs the packages under **Installs** when it starts PowerPlan. `numpy` comes with Home Assistant already, and PowerPlan uses it for the heating plan.
+
 PowerPlan uses these integrations when they are set up: the grid meter's power reading, the Nord Pool integration for prices, a weather entity, and the integrations your appliances already use.
 
 <a name="hacs"></a>

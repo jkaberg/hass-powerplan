@@ -523,7 +523,7 @@ Your target is the capacity step you want to stay in. **Automatic** keeps you in
 <a name="presence"></a>
 ### Is anyone home?
 
-Comfort matters less in an empty home. With **Automatic**, PowerPlan follows the people you pick next and lowers comfort while everyone is away. With the manual choice, you or your automations set presence with the **Presence** entity or an action.
+Comfort matters less in an empty home. With **Automatic**, PowerPlan follows the people you pick next. It lowers the temperature while everyone is away only for the heating appliances where you turned on **Save when nobody is home**; they are off for a new appliance. With the manual choice, you or your automations set presence with the **Presence** entity or an action.
 
 <!-- generated:begin fields:config.presence · tools/docs.py writes this block; change strings.json, not this table -->
 | Question | What it asks |

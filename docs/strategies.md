@@ -49,7 +49,7 @@ Charges the battery in the cheapest hours and discharges it in the dearest, when
 Keeps the appliance at comfort and lets it fall toward its lowest temperature in an expensive hour, then brings it back in a cheaper one. Where PowerPlan knows how fast the appliance cools, it finds the best such route through the next two days and never warms the room above comfort. A pause never lasts longer than two hours, and the appliance stays on at least 30 minutes between pauses. Without that, a floor or room that cools slowly would coast all afternoon on price alone. The appliance never falls below its lowest temperature. A move must save at least 10 % beyond what it already costs in lost heat, so small gains are left alone. When moving the heating would save less than 4 % of what it costs, PowerPlan leaves the appliance to its own thermostat; see [When a plan is not worth it](#worth_it).
 
 > [!NOTE]
-> Since v0.0.13, **Best save** plans the whole route for floors and rooms that PowerPlan can measure, instead of pausing hour by hour. Without a cooling measurement it keeps pausing hour by hour, as before.
+> Since v0.0.12, **Best save** plans the whole route for floors and rooms that PowerPlan can measure, instead of pausing hour by hour. Without a cooling measurement it keeps pausing hour by hour, as before. A floor or room coasts at most 1 °C under comfort on this plan.
 
 | | |
 |---|---|
@@ -60,10 +60,10 @@ Keeps the appliance at comfort and lets it fall toward its lowest temperature in
 <a name="cheapest_hours"></a>
 ## Cheapest hours
 
-Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set.
+Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
 
 > [!NOTE]
-> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target.
+> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.12, the hours already run today count; before, every new plan bought the hours again.
 
 | | |
 |---|---|
@@ -74,7 +74,7 @@ Runs the appliance for the hours a day you set, in the cheapest of them. Nothing
 <a name="deadline_fill"></a>
 ## Deadline fill
 
-Charges or heats in the cheapest hours before the time you set, and stops when the appliance is full. If time runs short, it runs whatever the price. Where several hours cost the same, a car charges in the first of them and a water heater heats in the last, so the water is hot at the time you set.
+Charges or heats in the cheapest hours before the time you set, and stops when the appliance is full. If time runs short, it runs whatever the price. Where several hours cost the same, a car charges in the first of them and a water heater heats in the last, so the water is hot at the time you set. Whether the price is flat is judged between now and the deadline, not over the whole day, so a flat evening before a cheaper night is spent waiting for the night. A car that has not shown it resumes after a pause is charged in one run, without gaps; see [Pauses and resumes](appliances/ev.md#pauses).
 
 | | |
 |---|---|
@@ -93,10 +93,10 @@ Hours when your home has no room under its capacity step are stayed off in. The 
 
 Every move must save at least 3 % of the heat it moves, and a run of moves must also save at least 3 % of what one hour of the appliance at full power costs, so a floor that barely draws is not moved for next to nothing. A setpoint falls at most 1 degree an hour and rises at most 2 degrees an hour, in the steps the thermostat takes (0.5 degrees if it does not say). A floor is told at most every 20 minutes. A relay or element is switched on at most 24 times a day. An appliance that only switches between comfort and an energy-saving mode, or a panel heater on a plug, cannot store heat above comfort, so it only coasts; see [When a plan is not worth it](#worth_it). In energy-saving mode such a thermostat holds 0.5 °C under comfort by default, never under the lowest temperature you allow.
 
-A heat pump warms ahead only if its **Preheat** answer is on and the outdoor temperature at that hour allows it. A room that is still warmer than comfort at that hour is not warmed further.
+A heat pump warms ahead only if its **Preheat** answer is on, and then only where the cheaper hour still pays for the heat the pump loses by working harder and colder (and below an outdoor limit, if you set one). It is planned in whole hours, one setpoint per hour, since a heat pump takes most of an hour to answer. A room that is still warmer than comfort at that hour is not warmed further.
 
 > [!NOTE]
-> Since v0.0.13, this plan finds the route by searching it instead of by rules, and the smallest saving it acts on is 3 %. An appliance set up before keeps the value it has, 10 % for most; open **Re-derive** on it to get 3 %. The appliance also coasts at most 0.5 °C under comfort instead of 1 °C, and an energy-saving thermostat holds 0.5 °C under it. A heat pump set up before keeps its coast of 1 °C until you open **Re-derive**. Since v0.0.12, a run of paused hours that saves less is skipped, and an energy-saving thermostat holds 1 °C under comfort instead of 2 °C.
+> Since v0.0.12, this plan finds the route by searching it instead of by rules, and the smallest saving it acts on is 3 %. An appliance set up before keeps the value it has, 10 % for most; open **Re-derive** on it to get 3 %. A panel heater still starts at 10 %. The appliance also coasts at most 0.5 °C under comfort instead of 1 °C, and an energy-saving thermostat holds 0.5 °C under it instead of 2 °C. A heat pump set up before keeps its coast of 1 °C until you open **Re-derive**. A floor or a room is planned a quarter of an hour at a time and a heat pump an hour at a time, where they used to be planned as pauses and stretches.
 
 | | |
 |---|---|
@@ -140,7 +140,7 @@ Discharges the battery when the home would otherwise go over your target, and re
 <a name="run_once"></a>
 ## Run once
 
-Starts the dishwasher, washer or dryer once, in the cheapest window that finishes before the time you set. You fill it and press start; PowerPlan picks the moment.
+Starts the dishwasher, washer or dryer once, in the cheapest window that finishes before the time you set. You fill it and press start; PowerPlan picks the moment. It compares the windows by the power the program draws in each hour, and a cycle that has started keeps its start, however the prices move.
 
 | | |
 |---|---|

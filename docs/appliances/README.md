@@ -31,7 +31,7 @@ A water heater PowerPlan heats in the cheapest hours, so the water is hot when t
 <a name="floor_heating"></a>
 ## Floor heating
 
-Electric floor heating PowerPlan warms in cheap hours, storing heat in the floor so the room stays at comfort through expensive ones. [More about the floor heating](floor_heating.md).
+Electric floor heating PowerPlan warms in cheap hours, storing heat in the floor so the room stays within half a degree of comfort through expensive ones. [More about the floor heating](floor_heating.md).
 
 <a name="heat_pump"></a>
 ## Heat pump

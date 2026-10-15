@@ -254,7 +254,9 @@ Single step each with members (entity/subentry multi-select filtered by type), p
 |---|---|---|---|---|
 | `select.<load>_mode` | select | control | on | all - auto / force / observe / delegated / off |
 | `switch.<load>_force` | switch | control | on | ev, water_heater, generic_switch (sauna) - a view on mode `force` |
-| `switch.<load>_follow_presence` | switch | config | off | thermal types with a target profile - a knob over `TargetProfile.follow_presence` |
+| `switch.<load>_save_when_nobody_is_home` (key `follow_presence`) | switch | config | on (off for a water heater) | thermal types with a target profile - a knob over `TargetProfile.follow_presence`; its state is off for a new load (D-0772) |
+| `switch.<load>_save_while_asleep` (key `night_setback`) | switch | config | on | floor_heating, heat_pump, radiator - off for a new load; lowers the target `night_delta` through the site's quiet hours (D-0772) |
+| `button.<load>_the_car_resumes_after_a_pause` (key `ev_resumes`) | button | config | on | ev - clears a `resumes = no` latch (D-0776) |
 | `number.<load>_force_max_hours` | number | config | off | same |
 | `button.<load>_run_now` | button | control | on | appliance_cycle |
 | `time.<load>_ready_by` | time | control | on | appliance_cycle |
@@ -998,7 +1000,7 @@ Where they live: 4 (the site half, table-driven), 5, 6, 7, 8, 9, 10, 11, 12 and 
 53. Ties, misses and declines (D-0748, D-0753): the ESPHome heat pump with the household's helper asks one energy question, the native meter pre-filled; **Another entity** opens `data_points_other`; a `generic_switch` with no power sensor shows power as recommended with its `without` text, and submitting it empty stores `declined: ["power"]` and raises nothing later; a required role left empty cannot continue and `role_missing` names it. `tests/flows/test_53_data_points_ladder.py`.
 54. One place for a data point (D-0746): no type's questions step offers `power_entity`, `soc_entity`, `outdoor_entity`, `outlet_entity` or a tank's probes; a subentry stored before with `outdoor_entity` still binds it at load build. `tests/flows/test_54_one_place.py`.
 55. Reconfigure keeps what was picked (D-0753): a heat pump whose energy meter the household picked keeps it through a reconfigure in which detection would rank another first; `needs_review_<load>` on the reference floors opens the reconfigure at the data points step, and confirming clears it. `tests/flows/test_55_reconfigure_data_points.py`.
-56. Opt-in comfort and the resume latch (D-0772, D-0776): a new floor, heat pump or radiator has `switch.<load>_follow_presence` and `switch.<load>_night_setback` off, both translated (`en`, `nb`); a water heater has no `night_setback`; pressing `button.<load>_ev_resumes` on a car latched `no` sets it `unknown`, and the plan's next session may pause again only once a resume is seen.
+56. Opt-in comfort and the resume latch (D-0772, D-0776): a new floor, heat pump or radiator has `switch.<load>_save_when_nobody_is_home` and `switch.<load>_save_while_asleep` (keys `follow_presence`, `night_setback`) off, both translated (`en`, `nb`); a water heater has no `night_setback`; pressing `button.<load>_the_car_resumes_after_a_pause` (key `ev_resumes`) on a car latched `no` sets it `unknown`, and the plan's next session may pause again only once a resume is seen.
 
 ---
 

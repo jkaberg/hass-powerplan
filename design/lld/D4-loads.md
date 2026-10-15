@@ -75,7 +75,7 @@ custom_components/powerplan/core/loads/
 │   ├── base.py        StoreModel protocol (direction-agnostic)
 │   ├── thermal.py     SlabStore, RoomStore, TankStore, coast/loss, heat-up rate
 │   ├── energy.py      EnergyStore (EV battery, home battery), efficiency, SoC bounds
-│   └── cop.py         COP/efficiency curves, interpolation, defaults per heat-pump class
+│   └── cop.py         COP/efficiency curves, interpolation, defaults per heat-pump class, `a2w_curve(heating)` (the air-to-water curve from the heating system) and `defrost_factor` (D-0773, D-0825)
 ├── targets.py         TargetProfile, ScheduleSource (constant | ha_schedule | weekly), PresenceMode, arrival deadlines
 ├── types/
 │   ├── base.py        DeviceType protocol, registry
@@ -1019,7 +1019,7 @@ D6's ladder is not counted: it must be free to protect the ceiling (INV-1).
 | Area | m² | nameplate = W/m² × area until measured (p95 of power when heating); kWh/K | slab physics (ρ 2200, cp 0.9) |
 | Sensor | floor · air · both (read from `sensor_mode` where the device exposes it) | what comfort refers to; floor mode ⇒ `TEMP_FLOOR` role | Heatit F/A/A2F modes |
 | Comfort / min / max °C | sliders pre-filled from the above | target profile constant, floor, ceiling | - |
-| *Advanced* | screed depth, loss coefficient, coast time constant `coast_tau_h` (cable in screed and water-borne 60 h, measured on the reference house's three loops that coasted in October, D-0730; foil 10 h, an estimate no house has checked yet, and a foil's fit is bounded to 2–48 h because a foil left off follows its room, D-0740; measured at setup wins, D-0731), swing K (1.0 bathroom / 1.5 others), min on/off (900 s, the mode's reversal dwell too, §5.5), command interval (600 s), eco setpoint (= comfort − 2; on `heat_capacitor` the device gets `max(comfort − coast_k, floor)` instead, D-0763), floor min limit | store, kind, provisions | effektstyring |
+| *Advanced* | screed depth, loss coefficient, coast time constant `coast_tau_h` (cable in screed and water-borne 60 h, measured on the reference house's three loops that coasted in October, D-0730; foil 10 h, an estimate no house has checked yet, and a foil's fit is bounded by its sensor, [5, 500] h on an air sensor, which coasts on the building's mass, and [0.3, 6] h on a floor sensor, D-0740, D-0778; measured at setup wins, D-0731), swing K (1.0 bathroom / 1.5 others), min on/off (900 s, the mode's reversal dwell too, §5.5), command interval (1 200 s, D-0818), eco setpoint (= comfort − 2; on `heat_capacitor` the device gets `max(comfort − coast_k, floor)` instead, D-0763), floor min limit | store, kind, provisions | effektstyring |
 
 Review: "A heavy slab under wood in a bathroom. powerplan charges it at night, lets it coast through the morning, never above 27 °C, never substituted by the heat pump."
 
