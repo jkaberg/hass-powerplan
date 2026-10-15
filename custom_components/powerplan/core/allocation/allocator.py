@@ -565,6 +565,14 @@ class _Walk:
         room = self.ceiling_w - self.reserved_running
         if load.kind in MODULATING_KINDS:
             room += self._own_cut_in_flight(load)
+            if (
+                _SURPLUS in capped_by
+                and self._grid_limit(load, self.ctx.plans.get(load.load_id)) == 0.0
+            ):
+                # Surplus only: it imports nothing, and the ceiling counts import (INV-19), so
+                # the window's room - near zero for the first minutes of every window - is not
+                # its to ask for. The hold branch of `_decide_battery` always granted it so.
+                room = max(room, want)
             watts = self._quantise(
                 load, min(want, room), stop_ok=stop_ok, session=self._session(load)
             )

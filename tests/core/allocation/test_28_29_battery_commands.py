@@ -58,6 +58,7 @@ def _tick(
     envelope_w: float | None = None,
     stage: int = 0,
     sunny: bool = False,
+    room_w: float = 8000.0,
 ) -> Any:
     plans = (
         {}
@@ -67,7 +68,7 @@ def _tick(
     state = AllocState(sun_since={"battery": NOW - timedelta(minutes=5)}) if sunny else AllocState()
     ctx = alloc_ctx(
         [battery],
-        budget=budget_of(8000.0),
+        budget=budget_of(room_w),
         plans=plans,
         views={"battery": controlled("battery", measured_w=0.0)},
         meter_snapshot=meter(grid_w=grid_w),
@@ -160,3 +161,17 @@ def test_29_at_its_reserve_a_bare_number_battery_gives_nothing() -> None:
     )
 
     assert _tick(at_reserve, grid_w=800.0).w >= 0.0
+
+
+def test_29_a_charge_on_the_sun_alone_is_not_capped_by_the_window_s_import_budget() -> None:
+    """The first minutes of a window leave no room under the ceiling; the sun still charges it.
+
+    A grant with `import_w = 0` imports nothing, and the ceiling counts import
+    (INV-19), so the budget's room is not its to ask for - the hold branch has always
+    granted it so, and the free slot of a bare-number battery now does too (BO.3).
+    """
+    shut = _tick(_battery(self_use=False), grid_w=-1800.0, sunny=True, room_w=0.0)
+    open_ = _tick(_battery(self_use=False), grid_w=-1800.0, sunny=True, room_w=8000.0)
+
+    assert shut.w == pytest.approx(1800.0) == pytest.approx(open_.w)
+    assert not shut.shed
