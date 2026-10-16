@@ -382,9 +382,10 @@ export class PowerplanApplianceDialog extends HTMLElement {
     const top = 12, lh = 20;
     lanes.push(`<rect x="1" y="${top}" width="${W - 2}" height="${lh}" rx="${lh / 2}" class="track"/>`);
     // cheap hours
-    const thr = cheapLimit(ps);
+    const fixed = pe?.attributes?.fixed_price != null;
+    const thr = cheapLimit(ps, fixed);
     if (thr != null) {
-      for (const x of ps) if (!x.est && x.p <= thr) {
+      for (const x of ps) if ((fixed || !x.est) && x.p <= thr) {
         lanes.unshift(`<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="${lh + 16}" class="band"/>`
           + `<rect x="${sx(x.s).toFixed(1)}" y="${top - 8}" width="${(sx(x.e) - sx(x.s)).toFixed(1)}" height="3" class="cheapline"/>`);
       }

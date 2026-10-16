@@ -91,6 +91,7 @@ export function renderPlanMode(host: HTMLElement, hass: Hass, cfg: PlanModeCfg, 
   const o = {
     now: Date.now(), a0, hours, windowMin, rail, compact, fs: resolvePx(host, "--ha-font-size-s", 12),
     tf: timeFmt(hass), nf: numFmt(hass, 2), nf1: numFmt(hass, 1), labels, css,
+    fixedPrice: (cfg.entities.price_forecast ? hass.states[cfg.entities.price_forecast]?.attributes?.fixed_price : null) != null,
     currency: cfg.currency === "NOK" || !cfg.currency ? (l.startsWith("en") ? "NOK" : "kr") : cfg.currency,
   };
   side.style.cssText = compact ? "position:absolute;left:0;right:0;top:0;height:0" : `position:absolute;left:0;top:0;bottom:0;width:${rail}px`;

@@ -73,6 +73,7 @@ export interface ForecastOpts {
   labels: Record<string, string>;
   css: ForecastColors;
   currency: string;
+  fixedPrice: boolean;               // price_forecast.fixed_price is set: estimated slots still count as cheap or not
 }
 
 export function forecastOption(b: Bucket[], loads: LoadRef[], o: ForecastOpts): any {
@@ -143,10 +144,10 @@ export function forecastOption(b: Bucket[], loads: LoadRef[], o: ForecastOpts): 
           label: { show: Math.abs(m.x - nowX) > 1.5 * (o.hours / 24), position: "end", formatter: m.label, color: o.css.text2, fontSize: o.fs } })),
       ],
     },
-    markArea: { silent: true, itemStyle: { color: o.css.cheap }, data: cheapAreas(b, step) },
+    markArea: { silent: true, itemStyle: { color: o.css.cheap }, data: cheapAreas(b, step, o.fixedPrice) },
   });
   // Cheap hours also get a 3 px line along the top of the plot: the tinted column alone is too faint on dark.
-  const cheapRuns = cheapAreas(b, step).map((a: any) => [a[0].xAxis, a[1].xAxis]);
+  const cheapRuns = cheapAreas(b, step, o.fixedPrice).map((a: any) => [a[0].xAxis, a[1].xAxis]);
   if (cheapRuns.length) series.push({
     type: "custom", id: "cheapline", xAxisIndex: 0, yAxisIndex: 0, silent: true, z: 1, data: cheapRuns,
     renderItem: (p: any, api: any) => {
@@ -197,13 +198,13 @@ function cheapRows(b: Bucket[]): { p: number; est: boolean }[] {
   return b.flatMap((k) => (k.price == null ? [] : [{ p: k.price, est: k.estimated }]));
 }
 
-function cheapAreas(b: Bucket[], step: number): any[] {
-  const thr = cheapLimit(cheapRows(b));
+function cheapAreas(b: Bucket[], step: number, fixed: boolean): any[] {
+  const thr = cheapLimit(cheapRows(b), fixed);
   if (thr == null) return [];
   const out: any[] = [];
   let s: number | null = null;
   b.forEach((k, i) => {
-    const on = k.price != null && !k.estimated && k.price <= thr;
+    const on = k.price != null && (fixed || !k.estimated) && k.price <= thr;
     if (on && s === null) s = i;
     if ((!on || i === b.length - 1) && s !== null) {
       out.push([{ xAxis: s * step }, { xAxis: (on ? i + 1 : i) * step }]);
@@ -246,7 +247,7 @@ export function railHtml(b: Bucket[], loads: LoadRef[], o: ForecastOpts): string
   const hold = b.reduce((t, k) => t + k.hold, 0);
   const per = loads.map((l) => ({ l, v: b.reduce((t, k) => t + (k.moved[l.id] ?? 0), 0) })).filter((x) => x.v > 0.005);
   const moved = per.reduce((t, x) => t + x.v, 0);
-  const cheap = cheapShare(b);
+  const cheap = cheapShare(b, o.fixedPrice);
   const row = (sw: string, name: string, val: string, sub = "") =>
     `<div class="lr"><span class="sw" style="${sw}"></span><span class="n">${name}${sub ? `<small>${sub}</small>` : ""}</span><span class="v">${val}</span></div>`;
   return `<div class="rail">
@@ -268,11 +269,11 @@ function stripes(colors: string[]): string {
 }
 
 /** Share of MOVED energy (not holding) that lands in the cheapest quarter of the window. */
-export function cheapShare(b: Bucket[]): number | null {
-  const thr = cheapLimit(cheapRows(b));
+export function cheapShare(b: Bucket[], fixed = false): number | null {
+  const thr = cheapLimit(cheapRows(b), fixed);
   const moved = b.reduce((t, k) => t + sum(k.moved), 0);
   if (thr == null || moved < 0.01) return null;
-  const inCheap = b.reduce((t, k) => t + (!k.estimated && (k.price ?? Infinity) <= thr ? sum(k.moved) : 0), 0);
+  const inCheap = b.reduce((t, k) => t + ((fixed || !k.estimated) && (k.price ?? Infinity) <= thr ? sum(k.moved) : 0), 0);
   return Math.round((inCheap / moved) * 100);
 }
 

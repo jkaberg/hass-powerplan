@@ -236,11 +236,19 @@ export function outlierCap(values: number[]): number | null {
  * min-to-max range, which one dip pulled to a single quarter hour (15 Oct 2026: a 1,30 slot among
  * 1,45-1,87 left 06:45-07:00 the only cheap time of a 35 % spread day). `null` when there is nothing
  * known to rank or the known prices do not differ.
+ *
+ * A tie at the limit that is itself over a quarter of the known slots (a two-level fixed price: 58 of 66
+ * quarters at the day rate) would mark the whole window, so the limit drops to the highest price strictly
+ * under it. When the tied level is the lowest one there is nothing under it and it stays the band: the
+ * night rate of a two-level price viewed over a whole day. Under `fixed` the household's price is known whatever the spot
+ * confidence, so estimates rank like any slot; the caller draws them by the same rule.
  */
-export function cheapLimit(rows: readonly { p: number; est: boolean }[]): number | null {
-  const known = rows.filter((x) => !x.est && Number.isFinite(x.p)).map((x) => x.p).sort((a, b) => a - b);
+export function cheapLimit(rows: readonly { p: number; est: boolean }[], fixed = false): number | null {
+  const known = rows.filter((x) => (fixed || !x.est) && Number.isFinite(x.p)).map((x) => x.p).sort((a, b) => a - b);
   if (!known.length || known[known.length - 1]! - known[0]! < 1e-4) return null;
-  return known[Math.floor((known.length - 1) / 4)]!;
+  const limit = known[Math.floor((known.length - 1) / 4)]!;
+  if (known.filter((p) => p === limit).length * 4 <= known.length) return limit;
+  return known.filter((p) => p < limit).pop() ?? limit;
 }
 
 /** The words of `resultLines`, nb and en (D12 §5.19). */

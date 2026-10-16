@@ -184,13 +184,14 @@ export class PowerplanAppliancesCard extends HTMLElement {
   private cheapBands(a0: Date, a1: Date): [Date, Date][] {
     const id = this.config!.entities.price_forecast;
     const slots: any[] = (id && this.hassRef!.states[id]?.attributes?.slots) || [];
+    const fixed = this.hassRef!.states[id ?? ""]?.attributes?.fixed_price != null;
     const win = slots.map((s) => ({ s: new Date(s.start), e: new Date(s.end), p: Number(s.total), est: s.confidence !== "known" }))
       .filter((x) => x.e > a0 && x.s < a1 && Number.isFinite(x.p));
-    const thr = cheapLimit(win);
+    const thr = cheapLimit(win, fixed);
     if (thr == null) return [];
     const out: [Date, Date][] = [];
     for (const x of win) {
-      if (x.est || x.p > thr) continue;
+      if ((x.est && !fixed) || x.p > thr) continue;
       const last = out[out.length - 1];
       if (last && Math.abs(last[1].getTime() - x.s.getTime()) < 1000) last[1] = x.e;
       else out.push([x.s, x.e]);

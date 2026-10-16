@@ -82,7 +82,20 @@ const P_LABELS: Record<string, Record<string, string>> = {
   },
 };
 
-interface Pt { s: number; e: number; din: number; est: boolean; spot?: number; uten?: number }
+export interface Pt { s: number; e: number; din: number; est: boolean; spot?: number; uten?: number }
+
+/** The cheap-hour runs [start, end] in ms over the household's own price (`din`); estimates count under a fixed price. */
+export function cheapBandRuns(pts: readonly Pt[], fixed: boolean): [number, number][] {
+  const thr = cheapLimit(pts.map((p) => ({ p: p.din, est: p.est })), fixed);
+  const out: [number, number][] = [];
+  if (thr == null) return out;
+  for (const p of pts) {
+    if (!((fixed || !p.est) && p.din <= thr)) continue;
+    const last = out[out.length - 1];
+    if (last && last[1] === p.s) last[1] = p.e; else out.push([p.s, p.e]);
+  }
+  return out;
+}
 
 export class PowerplanPriceCard extends HTMLElement {
   private config?: PriceCfg;
@@ -229,8 +242,14 @@ export class PowerplanPriceCard extends HTMLElement {
     this.geo = { x0, x1, t0, t1, top, bottom, ymax };
     const U = this.uid;
     const g: string[] = [];
+    // Cheap bands (the lowest quarter of the window's known prices, future + past; D-0840) go under the rest, so
+    // the fixed-price gap fill below lies over them and the 3 px line at the foot of each stays readable.
+    for (const [r0, r1] of cheapBandRuns(pts, fixed != null)) {
+      g.push(`<rect class="band" x="${sx(r0).toFixed(1)}" y="${top}" width="${(sx(r1) - sx(r0)).toFixed(1)}" height="${bottom - top}"/>`
+        + `<rect class="cheapline" x="${sx(r0).toFixed(1)}" y="${top}" width="${(sx(r1) - sx(r0)).toFixed(1)}" height="3" rx="1.5"/>`);
+    }
     // V3: under a fixed price the gap to "without" is filled - green where the fixed price is lower, red
-    // where higher - and the cheap bands go, since the grid tariff's own step already shows the cheap hours.
+    // where higher - in addition to the cheap bands.
     const gap = fixed != null && pts.some((p) => p.uten != null);
     if (gap) {
       // One path per contiguous same-sign run: per-slot translucent rects leave seams where they meet.
@@ -251,20 +270,6 @@ export class PowerplanPriceCard extends HTMLElement {
         run.e = p.e;
       }
       flush();
-    }
-    // cheap bands (the lowest quarter of the window's known prices, future + past; D-0840)
-    if (pts.length && !gap) {
-      const thr = cheapLimit(pts.map((p) => ({ p: p.din, est: p.est })));
-      if (thr != null) {
-        let run: [number, number] | null = null;
-        const flush = () => {
-          if (run) g.push(`<rect class="band" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="${bottom - top}"/>`
-            + `<rect class="cheapline" x="${sx(run[0]).toFixed(1)}" y="${top}" width="${(sx(run[1]) - sx(run[0])).toFixed(1)}" height="3" rx="1.5"/>`);
-          run = null;
-        };
-        for (const p of pts) { if (!p.est && p.din <= thr) { run = run ? [run[0], p.e] : [p.s, p.e]; } else flush(); }
-        flush();
-      }
     }
     // grid
     for (let v = 0; v <= ymax + 1e-9; v += 0.5) {
@@ -322,7 +327,8 @@ export class PowerplanPriceCard extends HTMLElement {
       <span><i class="l din"></i>${esc(L.your_price)}</span>
       ${pts.some((p) => p.est) ? `<span><i class="l din est"></i>${esc(L.estimated)}</span>` : ""}
       ${pts.some((p) => p.uten != null) ? `<span><i class="l uten"></i>${esc(fixed != null ? L.without : fmtTemplate(L.spot, { area }))}</span>` : ""}
-      ${gap ? `<span><i class="sw gapsw"></i>${esc(L.saved_fixed)}</span>` : `<span><i class="sw"></i>${esc(L.cheap)}</span>`}
+      ${gap ? `<span><i class="sw gapsw"></i>${esc(L.saved_fixed)}</span>` : ""}
+      ${cheapBandRuns(pts, fixed != null).length ? `<span><i class="sw"></i>${esc(L.cheap)}</span>` : ""}
       ${[...runs.keys()].some((hour) => hour + 3600e3 > now) ? `<span>${markSwatch}${esc(L.runs_here)}</span>` : ""}</div>`;
 
     const alert = stale ? `<div class="alertbox">${alertHtml({
