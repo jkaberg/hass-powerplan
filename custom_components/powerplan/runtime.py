@@ -1810,6 +1810,13 @@ class Runtime:
             and device.entity_of(Role.TEMP_FLOOR) is not None
             else Role.TEMP
         )
+        # D-0778 bounds a foil's coast by the series the fit reads: a thermostat on its floor
+        # sensor reports the probe as its room temperature too, so `TEMP` can be the probe (D-0862).
+        probe = (device.entity_of(Role.TEMP_FLOOR), device.attribute_of(Role.TEMP_FLOOR))
+        reads_floor_probe = probe[0] is not None and (
+            level_role is Role.TEMP_FLOOR
+            or (device.entity_of(level_role), device.attribute_of(level_role)) == probe
+        )
 
         def series(role: Role) -> HistorySeries | None:
             entity_id = device.entity_of(role)
@@ -1854,7 +1861,7 @@ class Runtime:
             outdoor=outdoor,
             bounds=bounds_for(
                 params,
-                reads_floor_probe=level_role is Role.TEMP_FLOOR,
+                reads_floor_probe=reads_floor_probe,
                 room_floor_m2=room_floor_m2,
             ),
         )

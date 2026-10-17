@@ -20,8 +20,13 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan import runtime as runtime_module
 from custom_components.powerplan.core.forecasts.fit import Fit, FitKey
+from custom_components.powerplan.core.forecasts.fit.thermal import FOIL_FLOOR_TAU_BOUNDS_H
 from custom_components.powerplan.core.forecasts.reconstruct import UncontrolledHistory
-from custom_components.powerplan.core.loads.stores import SlabStore
+from custom_components.powerplan.core.loads.base import LoadConfig
+from custom_components.powerplan.core.loads.kinds.base import Role
+from custom_components.powerplan.core.loads.registry import build_load
+from custom_components.powerplan.core.loads.stores import RoomStore, SlabStore
+from custom_components.powerplan.core.loads.targets import profile_from_params
 from custom_components.powerplan.core.state_codec import decode
 from tests.core.forecasts.test_07_thermal_fits import (
     HEAVY_SCREED_MM,
@@ -176,9 +181,6 @@ async def test_21_a_stored_coast_time_out_of_todays_bounds_is_not_applied(
     TV-stua's 382.7 h passed at 03:17 under (5, 500); D-0740 bounded a foil at
     (2, 48) and HA restarted. The restore applied it, and the floor paused ten hours.
     """
-    from custom_components.powerplan.core.forecasts.fit.thermal import (  # noqa: PLC0415
-        FOIL_FLOOR_TAU_BOUNDS_H,
-    )
     from tests.core.forecasts.test_28_kept_fit import OCTOBER, _fit  # noqa: PLC0415
 
     floor = FakeFloor(hass, setpoint_c=19.0)
@@ -239,3 +241,63 @@ async def test_33_a_missed_gate_with_a_week_of_draw_is_calibrated_from_it(
     runtime._restore_fits()
     assert runtime.load_params[LOAD_ID]["loss_coeff_w_per_k"] == loss.effective
     await runtime.stop("unload")
+
+
+class _FloorModeThermostat:
+    """A foil's thermostat in floor-sensor mode: its room temperature is the floor probe (D-0862)."""
+
+    def __init__(self, air: str | None = None) -> None:
+        self.air = air
+
+    def entity_of(self, role: Role) -> str | None:
+        if role is Role.TEMP:
+            return self.air or "climate.kitchen_floor"
+        return "climate.kitchen_floor" if role is Role.TEMP_FLOOR else None
+
+    def attribute_of(self, role: Role) -> str | None:
+        if role is Role.TEMP and self.air is not None:
+            return None
+        return "current_temperature" if role in {Role.TEMP, Role.TEMP_FLOOR} else None
+
+
+@pytest.mark.parametrize(
+    ("air", "bounded"),
+    [(None, FOIL_FLOOR_TAU_BOUNDS_H), ("sensor.kitchen_air", None)],
+    ids=["probe-as-room", "own-air-sensor"],
+)
+async def test_30_a_foil_whose_room_reading_is_its_floor_probe_coasts_on_the_foils_bounds(
+    hass: HomeAssistant,
+    meter: FakeMeter,
+    air: str | None,
+    bounded: tuple[float, float] | None,
+) -> None:
+    """D-0778 follows the series the fit reads, not the role's name (D-0862).
+
+    The house's kitchen and TV-stua foils sit on thermostats in floor-sensor mode:
+    `current_temperature` is the probe, bound as both the room and the floor
+    temperature. Read as air, the calibration took the room's τ, 391 h, for a probe
+    that falls 1.4 K in half an hour, and the plan flipped between eco and comfort
+    on every swing of the thermostat - 54 and 79 writes in 36 h.
+    """
+    floor = FakeFloor(hass, setpoint_c=19.0)
+    floor.register()
+    runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
+    await hass.async_block_till_done()
+    params = {
+        "area_m2": 10.0, "comfort_c": 23.5, "floor_c": 20.0, "max_c": 24.0, "kind": "mode",
+        "heating_type": "foil_or_mat", "store": "room", "sensor": "floor", "swing_k": 1.5,
+    }  # fmt: skip
+    foil = build_load(
+        LoadConfig(
+            load_id=LOAD_ID, name="Kitchen", type_key="floor_heating", priority=30,
+            nameplate_w=600.0, params=params, target=profile_from_params(params),
+            strategy="heat_capacitor",
+        )
+    )  # fmt: skip
+    assert isinstance(foil.store, RoomStore)
+    await runtime.stop("unload")
+    runtime.build.devices[LOAD_ID] = _FloorModeThermostat(air)
+
+    found = runtime._fit_spec(foil)
+    assert found is not None
+    assert found[0].bounds.get(FitKey.COAST_TAU) == bounded
