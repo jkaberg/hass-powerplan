@@ -175,6 +175,22 @@ def test_33_the_calibration_is_in_force_below_the_loads_physical_bounds() -> Non
     assert in_force(measured, spec_bounds) is None, "a coast fit still is"
 
 
+def test_33_a_restored_calibration_meets_a_band_tightened_since() -> None:
+    """D-0863: a τ made under a room's band runs on the foil's, the value tonight's run makes.
+
+    TV-stua on 18 Oct 2026: calibrated at 03:17 to 279 h under (5, 500) by code
+    D-0862 had replaced but HA had not loaded; the 06:59 restart restored it, and
+    the foil planned eco for fourteen hours on a probe that falls 1 K in 45 minutes.
+    """
+    stored = calibrate_loss([_history()], {}, NOW)
+    foil = {FitKey.COAST_TAU: FOIL_FLOOR_TAU_BOUNDS_H}
+    assert stored[TAU].effective == pytest.approx(312.5), "made under the room's (5, 500)"
+    tonight = calibrate_loss([_history(bounds=foil)], {}, NOW)
+    assert in_force(stored[TAU], foil) == tonight[TAU].effective == FOIL_FLOOR_TAU_BOUNDS_H[1]
+    assert in_force(stored[TAU], {}) == pytest.approx(312.5), "the band it was made in stands"
+    assert in_force(stored[LOSS], foil) == pytest.approx(0.96), "the loss is still the measured one"
+
+
 def test_33_a_calibration_is_never_kept_past_its_data() -> None:
     """Tomorrow with no draw to read, yesterday's calibration is gone, not kept 400 days."""
     today = calibrate_loss([_history()], {}, NOW)

@@ -449,11 +449,20 @@ def in_force(fit: Fit, bounds: Mapping[FitKey, tuple[float, float]]) -> float | 
     `τ`, D-0740 - would let a value today's code refuses run until the next daily
     fit. So it is checked again where it is applied, against the bounds the
     load's parameters put on it now as well as its own.
+
+    A calibration (D-0856) goes below the load's physical loss on purpose, so its
+    loss meets its own bounds only. Its `τ` is clamped into the load's band when it
+    is made, and a band tightened since clamps a restored one the same way, the
+    value the next daily run will make (D-0863).
     """
     if not fit.applied or fit.effective is None:
         return None
     if fit.calibrated:
-        return fit.effective if fit.bounds[0] <= fit.effective <= fit.bounds[1] else None
+        if not fit.bounds[0] <= fit.effective <= fit.bounds[1]:
+            return None
+        if fit.key is FitKey.COAST_TAU and (band := bounds.get(fit.key)) is not None:
+            return min(max(fit.effective, band[0]), band[1])
+        return fit.effective
     low, high = bounds.get(fit.key, fit.bounds)
     if not (low <= fit.effective <= high and fit.bounds[0] <= fit.effective <= fit.bounds[1]):
         return None

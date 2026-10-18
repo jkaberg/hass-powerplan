@@ -19,7 +19,7 @@ import pytest
 from homeassistant.util import dt as dt_util
 
 from custom_components.powerplan import runtime as runtime_module
-from custom_components.powerplan.core.forecasts.fit import Fit, FitKey
+from custom_components.powerplan.core.forecasts.fit import Fit, FitKey, FitQuality
 from custom_components.powerplan.core.forecasts.fit.thermal import FOIL_FLOOR_TAU_BOUNDS_H
 from custom_components.powerplan.core.forecasts.reconstruct import UncontrolledHistory
 from custom_components.powerplan.core.loads.base import LoadConfig
@@ -301,3 +301,59 @@ async def test_30_a_foil_whose_room_reading_is_its_floor_probe_coasts_on_the_foi
     found = runtime._fit_spec(foil)
     assert found is not None
     assert found[0].bounds.get(FitKey.COAST_TAU) == bounded
+
+
+@pytest.mark.inv("INV-63")
+async def test_33_a_restored_calibration_runs_on_the_foils_band(
+    hass: HomeAssistant, meter: FakeMeter
+) -> None:
+    """D-0863: the restart that loads D-0862 applies its band to the calibration it restores.
+
+    TV-stua's 03:17 run on 18 Oct 2026 still ran the code D-0862 replaced: 28 W at a
+    16.1 K drive, UA 1.72 W/K, τ 279 h under a room's (5, 500). The 06:59 restart
+    loaded the fix and restored that τ, and the foil planned eco for fourteen hours.
+    """
+    floor = FakeFloor(hass, setpoint_c=19.0)
+    floor.register()
+    runtime = await start_site(hass, site_entry(hass, target_kw=TARGET_KW), floor)
+    await hass.async_block_till_done()
+    params = {
+        "area_m2": 16.0, "comfort_c": 23.5, "floor_c": 20.0, "max_c": 24.0, "kind": "mode",
+        "heating_type": "foil_or_mat", "store": "room", "sensor": "floor",
+    }  # fmt: skip
+    foil = build_load(
+        LoadConfig(
+            load_id=LOAD_ID, name="TV-stua", type_key="floor_heating", priority=30,
+            nameplate_w=600.0, params=params, target=profile_from_params(params),
+            strategy="heat_capacitor",
+        )
+    )  # fmt: skip
+    await runtime.stop("unload")
+    runtime.build.devices[LOAD_ID] = _FloorModeThermostat()
+    found = runtime._fit_spec(foil)
+    assert found is not None
+    at = dt_util.utcnow()
+    quality = FitQuality(r2=None, n=14, span_days=14.0, ok=True, reason="measured: holds on 28 W")
+    stored = {
+        FitKey.LOSS_COEFF: (1.72, (0.1, 80.0)),
+        FitKey.COAST_TAU: (279.2, (5.0, 500.0)),
+    }
+    runtime.fits = {
+        f"{LOAD_ID}.{key}": Fit(
+            key=key,
+            load_id=LOAD_ID,
+            value=value,
+            unit="",
+            bounds=bounds,
+            quality=quality,
+            configured=None,
+            effective=value,
+            fitted_at=at,
+            calibrated=True,
+        )
+        for key, (value, bounds) in stored.items()
+    }
+
+    runtime._apply_fits([found])
+    assert runtime.load_params[LOAD_ID]["coast_tau_h"] == FOIL_FLOOR_TAU_BOUNDS_H[1]
+    assert runtime.load_params[LOAD_ID]["heat_loss_w_per_k"] == 1.72, "one model: the measured loss"
