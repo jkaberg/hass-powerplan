@@ -1014,3 +1014,25 @@ export function heldKey(t: number, zone?: string): string {
   const { day, hour } = localParts(t, zone);
   return `${day} ${String(hour).padStart(2, "0")}`;
 }
+
+/** What the appliances card sorts and folds a row by (D12 §5.12 R1, R6, D-0864). */
+export interface ApplianceRank {
+  kind: string;
+  /** How long the row is lowered from now to the lane's end, ms. */
+  loweredMs: number;
+  nextStart: number;
+  name: string;
+}
+
+const KIND_ORDER = ["running", "waiting", "paused", "planned", "holding", "manual", "unavailable", "idle"];
+
+/** The row lowered longest first, then the rest by kind, next start and name. */
+export function applianceOrder<T extends ApplianceRank>(rows: T[]): T[] {
+  return [...rows].sort((x, y) => y.loweredMs - x.loweredMs ||
+    KIND_ORDER.indexOf(x.kind) - KIND_ORDER.indexOf(y.kind) || x.nextStart - y.nextStart || x.name.localeCompare(y.name));
+}
+
+/** Whether a row waits behind "Show all": it only holds its temperature, or needs nothing, and is never lowered. */
+export function applianceFolded(row: ApplianceRank): boolean {
+  return (row.kind === "idle" || row.kind === "holding") && row.loweredMs <= 0;
+}

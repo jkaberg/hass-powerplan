@@ -6,7 +6,7 @@
 //   hatch        = lowered in expensive hours (slots[].paused) - the ONE legend entry, in the footer
 //   green column = cheap hours - keyed once, in Strømpris above
 //   amber tick   = deadline - not repeated as "frist 06:00" text
-// Iteration 5 ("one metric once"): no Aktive/Alle filter (the footer's "N uten behov · Vis alle" does the same),
+// Iteration 5 ("one metric once"): no Aktive/Alle filter (the footer's "N holder eller uten behov · Vis alle" does the same),
 // no start times written next to the lanes on desktop (the axis + the dialog's "Valgt tid"), no "frist" in
 // the state line, hatch fragments less than 30 min apart are merged. Phone keeps "Neste 22:00" because
 // its lanes are too narrow to read a time from.
@@ -17,6 +17,7 @@ import {
 } from "./r3-util";
 import { StatusDebouncer, StatusView, rawStatus, STATUS_LABELS, Kind } from "./status";
 import { openApplianceDialog } from "./appliance-dialog";
+import { applianceFolded, applianceOrder } from "./transforms";
 import { TOKENS, SHARED, hatchDef, skeletonRows } from "./tokens";
 
 export interface LoadCfg {
@@ -48,17 +49,16 @@ export interface AppliancesCfg {
   labels?: Record<string, string>;
 }
 
-const ORDER: Kind[] = ["running", "waiting", "paused", "planned", "holding", "manual", "unavailable", "idle"];
 const FILTER_KEY = "powerplan-appliances-filter";
 
 const CARD_LABELS: Record<string, Record<string, string>> = {
   nb: {
     show_all: "Vis alle", show_less: "Vis færre", lg_low: "Senket i dyre timer", lg_low_short: "Senket",
-    now: "Nå", n_idle: "{n} uten behov", open: "Åpne detaljer", idle_state: "Ingen behov neste {h} t",
+    now: "Nå", n_idle: "{n} holder eller uten behov", open: "Åpne detaljer", idle_state: "Ingen behov neste {h} t",
   },
   en: {
     show_all: "Show all", show_less: "Show fewer", lg_low: "Lowered in expensive hours", lg_low_short: "Lowered",
-    now: "Now", n_idle: "{n} idle", open: "Open details", idle_state: "Nothing needed in the next {h} h",
+    now: "Now", n_idle: "{n} holding or idle", open: "Open details", idle_state: "Nothing needed in the next {h} h",
   },
 };
 
@@ -75,6 +75,9 @@ interface Row {
   lineWide: string;      // "Venter · fra 22:00 · 54,8 °C · mål 45": the wide row has no "Neste" at its end
   deadline: Date | null;
   nextStart: number;
+  kind: Kind;
+  loweredMs: number;     // lowered from now to the lane's end
+  name: string;
 }
 
 export class PowerplanAppliancesCard extends HTMLElement {
@@ -142,7 +145,7 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const plan = readPlan(hass.states[c.entities.plan]);
     const nf1 = numFmt01(hass);
     const cur = plan.slots.find((s) => s.start <= now && s.end > now);
-    return c.loads.map((load) => {
+    const rows = c.loads.map((load): Row => {
       const st = hass.states[load.status];
       const ctl = load.control ? hass.states[load.control] : undefined;
       const runs = runsFor(load.id, plan.slots).filter((r) => r.end > now && r.start < a1);
@@ -171,13 +174,15 @@ export class PowerplanAppliancesCard extends HTMLElement {
       const upcoming = runs.find((r) => r.start > now);
       const from = upcoming && (view.kind === "waiting" || view.kind === "planned")
         ? fmtTemplate(L.from, { time: tf.format(upcoming.start) }) : "";
+      const loweredMs = lowered.reduce((t, w) =>
+        t + Math.max(0, Math.min(w.end.getTime(), a1.getTime()) - Math.max(w.start.getTime(), now.getTime())), 0);
       return {
-        load, view, runs, lowered, deadline, line: [view.word, ...parts].filter(Boolean).join(" · "),
+        load, view, runs, lowered, deadline, kind: view.kind, loweredMs, name: load.name, line: [view.word, ...parts].filter(Boolean).join(" · "),
         lineWide: [view.word, from, ...parts].filter(Boolean).join(" · "),
         nextStart: runs.find((r) => r.start > now)?.start.getTime() ?? Number.MAX_SAFE_INTEGER,
       };
-    }).sort((x, y) => ORDER.indexOf(x.view.kind) - ORDER.indexOf(y.view.kind) || x.nextStart - y.nextStart ||
-      x.load.name.localeCompare(y.load.name));
+    });
+    return applianceOrder(rows);
   }
 
   /** Cheap hours: the lowest quarter of the known prices inside the window (D-0840). */
@@ -222,8 +227,9 @@ export class PowerplanAppliancesCard extends HTMLElement {
     const a0 = startOfHour(now);
     const a1 = new Date(a0.getTime() + hours * 3600e3);
     const rows = this.rows(now, a1);
-    const idle = rows.filter((r) => r.view.kind === "idle");
-    const shown = this.filter === "all" ? rows : rows.filter((r) => r.view.kind !== "idle");
+    // Rows that only hold their temperature or need nothing wait behind "Show all" (D-0864).
+    const idle = rows.filter(applianceFolded);
+    const shown = this.filter === "all" ? rows : rows.filter((r) => !applianceFolded(r));
     const rail = compact ? 0 : (c.rail_width ?? 256);
     const lx0 = compact ? 60 : rail;
     const lx1 = W - (compact ? 12 : 16);
