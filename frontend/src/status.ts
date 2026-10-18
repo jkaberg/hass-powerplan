@@ -17,6 +17,9 @@ export interface StatusView {
 
 export const DEBOUNCE_MS = 90_000;
 
+/** Kinds read off the plan, not the flapping plan_status: the lane drawn beside them changes with them (D-0865). */
+const PLAN_KINDS = new Set<Kind>(["planned", "holding", "idle"]);
+
 export const STATUS_LABELS: Record<string, Record<string, string>> = {
   nb: {
     running: "Går", charging: "Lader", forced: "Tvunget på", holding: "Holder", planned: "Planlagt", waiting: "Venter",
@@ -55,9 +58,12 @@ export function rawStatus(
     return { kind: "manual", word: L.manual, reason: L.manual_reason };
   }
   if (s === "charging") return { kind: "running", word: L.charging };
-  if (o.runNow || s.startsWith("running")) return { kind: "running", word: L.running };
+  if (o.runNow) return { kind: "running", word: L.running };
   if (s === "waiting") return { kind: "waiting", word: L.waiting };
+  // A thermostat allowed to hold its target reads `running_plan` too; with no run of the plan's
+  // in this slot it is holding, which the lane shows as an empty track (D-0865).
   if (o.holdNow) return { kind: "holding", word: L.holding };
+  if (s.startsWith("running")) return { kind: "running", word: L.running };
   if (o.futureRun) return { kind: "planned", word: L.planned };
   return { kind: "idle", word: "" };
 }
@@ -76,7 +82,8 @@ export class StatusDebouncer {
     }
     // Immediate: availability, anything the user caused via the control select, or no real change.
     const immediate = next.kind === "unavailable" || m.shown.kind === "unavailable" ||
-      (next.kind === "manual") !== (m.shown.kind === "manual") || (next.kind === m.shown.kind && next.word === m.shown.word);
+      (next.kind === "manual") !== (m.shown.kind === "manual") || (next.kind === m.shown.kind && next.word === m.shown.word) ||
+      (PLAN_KINDS.has(next.kind) && PLAN_KINDS.has(m.shown.kind));
     if (immediate) {
       m.shown = next; m.cand = next; m.since = now;
       return next;

@@ -33,6 +33,13 @@ describe("rawStatus (F2)", () => {
     expect(rawStatus(entity("running_plan", { display_status: "waiting" }), undefined, none, L).kind).toBe("waiting");
   });
 
+  it("a thermostat granted its holding draw holds; only the plan's own run is Går (D-0865)", () => {
+    // TV-stua, 18 Oct 2026: running_plan, 595 W granted, 0 kWh planned, eco on the dial.
+    expect(rawStatus(entity("running_plan"), undefined, { ...none, holdNow: true }, L).kind).toBe("holding");
+    expect(rawStatus(entity("running_plan"), undefined, { ...none, holdNow: true, runNow: true }, L).kind).toBe("running");
+    expect(rawStatus(entity("waiting"), undefined, { ...none, holdNow: true }, L).kind).toBe("waiting");
+  });
+
   it("already_at is the plan, not a hand on the dial; the control select speaks first", () => {
     expect(rawStatus(entity("manual_override", { reason_key: "already_at" }), undefined, none, L).kind).toBe("idle");
     expect(rawStatus(entity("manual_override", { reason_key: "setpoint" }), undefined, none, L).kind).toBe("manual");
@@ -51,6 +58,17 @@ describe("StatusDebouncer (R5)", () => {
     expect(d.nextFlip()).toBe(10_000 + DEBOUNCE_MS);
     expect(d.view("tv", paused, 10_000 + DEBOUNCE_MS)).toEqual(paused);
     expect(d.view("tv", { kind: "manual", word: "Manuell" }, 10_001 + DEBOUNCE_MS).kind).toBe("manual");
+  });
+
+  it("follows the plan's own kinds at once: the lane beside the word changed with them (D-0865)", () => {
+    const d = new StatusDebouncer();
+    const idle = { kind: "idle" as const, word: "" };
+    const planned = { kind: "planned" as const, word: "Planlagt" };
+    const holding = { kind: "holding" as const, word: "Holder" };
+    expect(d.view("ev", idle, 0)).toEqual(idle);
+    expect(d.view("ev", planned, 1_000)).toEqual(planned);
+    expect(d.view("ev", holding, 2_000)).toEqual(holding);
+    expect(d.view("ev", { kind: "running", word: "Går" }, 3_000)).toEqual(holding);
   });
 });
 
