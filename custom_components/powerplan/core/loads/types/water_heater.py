@@ -934,7 +934,13 @@ class WaterHeater:
 
         held = recall(state, LEGIONELLA_HOLD_S)
         accumulated = 0.0 if held is None else held.value + (ctx.now - held.at).total_seconds()
-        if accumulated >= cycle.hold_required_s:
+        # One credit per stay in the band: a tank that sits at 75 °C all morning
+        # pasteurised itself once, not once an hour. A stay that outlasts the
+        # interval is credited again when the cycle comes due.
+        entered = ctx.now - timedelta(seconds=accumulated)
+        last = state.legionella_last_completed
+        credited = last is not None and last > entered
+        if accumulated >= cycle.hold_required_s and (not credited or cycle.active):
             return remember(
                 replace(
                     state,
@@ -942,7 +948,7 @@ class WaterHeater:
                     legionella_in_progress_since=None,
                 ),
                 ctx.now,
-                **{LEGIONELLA_HOLD_S: None},
+                **{LEGIONELLA_HOLD_S: accumulated},
             )
         if not cycle.in_progress and cycle.active:
             state = replace(state, legionella_in_progress_since=ctx.now)

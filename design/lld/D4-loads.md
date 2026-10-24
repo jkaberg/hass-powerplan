@@ -905,7 +905,7 @@ re-arms from whatever the charger now says - which, after a lost write, is its o
 legionella_due_at = last_completed + interval_days
 if now ≥ legionella_due_at − lead_h (default 24): Demand.urgency = LEGIONELLA, deadline = legionella_due_at, required = kWh to legionella_temp, price_sensitive = True until due_at − 6 h, then False
 in progress: hold charge_setpoint = legionella_temp until temp ≥ legionella_temp − 1 K for hold_min (default 60) → last_completed = now, event `legionella_completed`
-any time (D-0742): the coldest probe (`TEMP_BOTTOM`, else `TEMP`, else the sensorless estimate) ≥ legionella_temp − 1 K for hold_min → last_completed = now, the same event: a tank that charges hot pasteurises itself and the cycle never opens
+any time (D-0742): the coldest probe (`TEMP_BOTTOM`, else `TEMP`, else the sensorless estimate) ≥ legionella_temp − 1 K for hold_min → last_completed = now, the same event: a tank that charges hot pasteurises itself and the cycle never opens; once per stay in the band, and again inside the stay only when the cycle comes due (D-0866)
 built-in program (questionnaire "yes"): skip; the review says so
 cannot complete within lead (element too small / shed too often) → warning event, never silently dropped
 ```

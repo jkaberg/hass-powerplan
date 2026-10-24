@@ -61,7 +61,7 @@ def test_56_a_nightly_charge_moves_the_due_date_and_no_cycle_ever_opens() -> Non
 
 @pytest.mark.inv("INV-54")
 def test_56b_a_hot_top_over_a_cold_bottom_is_not_a_pasteurisation() -> None:
-    """75 °C at the top and 40 °C at the bottom credits nothing; the cycle comes due."""
+    """75 °C at the top and 40 °C at the bottom completions nothing; the cycle comes due."""
     load = load_from("water_heater", {"legionella": "powerplan"})
     anchor = START - timedelta(days=6, hours=12)
     state = LoadState(legionella_last_completed=anchor)
@@ -77,3 +77,30 @@ def test_56c_one_probe_is_all_a_single_probe_tank_has() -> None:
     state = _night(load, state, START, TEMP=75.0)
     assert state.legionella_last_completed is not None
     assert state.legionella_last_completed > START
+
+
+def test_56d_a_long_stay_in_the_band_is_one_credit() -> None:
+    """Five hours at 75 °C credit once, an hour in - not once an hour (D-0742)."""
+    load = load_from("water_heater", {"legionella": "powerplan"})
+    state = LoadState(legionella_last_completed=START - timedelta(days=2))
+    completions = set()
+    at = START
+    for _ in range(12 * 5):
+        state = _tick(load, state, at, TEMP_TOP=75.0, TEMP=75.0, TEMP_BOTTOM=74.0)
+        completions.add(state.legionella_last_completed)
+        at += STEP
+    assert len(completions - {START - timedelta(days=2)}) == 1
+
+
+def test_56e_a_stay_that_outlasts_the_interval_is_credited_again_when_due() -> None:
+    """A tank held hot for over a week is credited again once the cycle comes due."""
+    load = load_from("water_heater", {"legionella": "powerplan"})
+    state = LoadState(legionella_last_completed=START - timedelta(days=2))
+    at = START
+    for _ in range(12 * 24 * 9):
+        state = _tick(load, state, at, TEMP_TOP=75.0, TEMP=75.0, TEMP_BOTTOM=74.0)
+        at += STEP
+    assert state.legionella_last_completed is not None
+    assert state.legionella_last_completed > START + timedelta(days=5)
+    cycle = TANK.legionella(load, state, load_ctx(now=at, zone=OSLO))
+    assert not cycle.active
