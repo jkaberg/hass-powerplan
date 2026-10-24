@@ -14,7 +14,7 @@ Install PowerPlan through HACS, then add it to Home Assistant. This page also co
 | Home Assistant | 2026.3.0 or newer |
 | Uses, when set up | `energy`, `frontend`, `http`, `lovelace`, `recorder`, `nordpool`, `weather`, `zwave_js` |
 | Installs | `holidays>=0.84`, `numpy` |
-| Version | 0.0.14 |
+| Version | 0.0.15 |
 <!-- generated:end requirements -->
 
 Home Assistant installs the packages under **Installs** when it starts PowerPlan. `numpy` comes with Home Assistant already, and PowerPlan uses it for the heating plan.
