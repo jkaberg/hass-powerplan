@@ -3308,7 +3308,8 @@ def _domain_events(  # noqa: PLR0917 - one edge per D8 §5.6 row, in one place
                     EventKind.BREACH,
                     {
                         "breach": "window",
-                        "excess_w": report.breach_w,
+                        # a measured deficit is an excess too, with no comfort grant over
+                        "excess_w": max(report.breach_w, report.deficit_w),
                         "scope": "site",
                         "breach_w": report.breach_w,
                         "deficit_w": report.deficit_w,
