@@ -9,6 +9,7 @@ off.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
@@ -48,23 +49,37 @@ def plan_events(
 
     A slot is active when its envelope is a cap above zero - the plan's own
     reading (`Plan.next_start`); `None` (no plan) and `0.0` (stand still) are
-    not runs (INV-30). Two active slots join when one ends where the next starts.
+    not runs (INV-30). Two active slots join when one ends where the next starts
+    and the local UTC offset is the same at both.
+
+    HA validates and compares an event in local wall-clock time, so a run from
+    02:30 summer time to 02:00 winter time reads as negative and is rejected.
+    A block therefore breaks where the offset changes, and the part before the
+    change ends a microsecond early, still on the old offset.
     """
     events: list[CalendarEvent] = []
     for load_id, plan in plans.items():
         block: list[PlanSlot] = []
         for slot in (*plan.slots, None):
             active = slot is not None and slot.envelope_w is not None and slot.envelope_w > 0.0
-            if active and block and block[-1].end == slot.start:
+            if (
+                active
+                and block
+                and block[-1].end == slot.start
+                and _offset(slot.start) == _offset(block[0].start)
+            ):
                 block.append(slot)
                 continue
             if block and block[-1].end > now:
                 kwh = sum(part.kwh for part in block)
                 cost = sum(float(part.price) * part.kwh for part in block)
+                end = block[-1].end
+                if _offset(end) != _offset(block[0].start):
+                    end -= timedelta(microseconds=1)
                 events.append(
                     CalendarEvent(
                         start=block[0].start,
-                        end=block[-1].end,
+                        end=end,
                         summary=f"{names.get(load_id, load_id)}: {kwh:.1f} kWh",
                         description=f"{kwh:.2f} kWh · ≈ {cost:.2f} {currency}",
                         uid=f"{load_id}:{block[0].start.isoformat()}",
@@ -72,6 +87,10 @@ def plan_events(
                 )
             block = [slot] if active else []
     return sorted(events, key=lambda event: (event.start, event.summary))
+
+
+def _offset(moment: datetime) -> timedelta | None:
+    return dt_util.as_local(moment).utcoffset()
 
 
 class SitePlanCalendar(PowerplanEntity, CalendarEntity):

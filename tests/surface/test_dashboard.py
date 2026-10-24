@@ -742,6 +742,42 @@ def test_05_a_block_that_ended_is_gone() -> None:
     assert [event.start for event in during] == [T0, T0 + timedelta(hours=2)]
 
 
+def test_05_a_run_across_the_autumn_fold_is_two_valid_events() -> None:
+    """HA reads an event in wall-clock time: a run 02:30 CEST - 02:00 CET splits at the fold."""
+    zone = dt_util.get_default_time_zone()
+    dt_util.set_default_time_zone(dt_util.get_time_zone("Europe/Oslo"))
+    try:
+        start = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)
+        slots = tuple(
+            PlanSlot(
+                start=start + timedelta(minutes=15 * i),
+                end=start + timedelta(minutes=15 * (i + 1)),
+                envelope_w=4000.0,
+                kwh=1.0,
+                price=Decimal("1.00"),
+            )
+            for i in range(4)
+        )
+        plan = Plan(
+            load_id="ev",
+            strategy="deadline_fill",
+            mode=PlanMode.PRICE,
+            slots=slots,
+            built_at=start,
+            cost_estimate=Money(Decimal(0), "NOK"),
+            confidence=Confidence.KNOWN,
+        )
+        events = plan_events({"ev": plan}, {}, "NOK", start)
+    finally:
+        dt_util.set_default_time_zone(zone)
+    fold = datetime(2026, 10, 25, 1, 0, tzinfo=UTC)
+    assert [(e.start, e.end) for e in events] == [
+        (start, fold - timedelta(microseconds=1)),
+        (fold, fold + timedelta(minutes=30)),
+    ]
+    assert [e.summary for e in events] == ["ev: 2.0 kWh", "ev: 2.0 kWh"]
+
+
 async def test_05_the_calendar_moves_only_on_adoption(
     hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime
 ) -> None:
