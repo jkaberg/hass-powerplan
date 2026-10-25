@@ -181,7 +181,11 @@ def test_24_a_modul_3_heat_pump_plans_on_its_own_curve() -> None:
     house = _shifted(base, range(12, 16))
     modul3 = _shifted(base, range(1, 5))
     curves = Curves(import_=curves_of(house).import_, per_load={"modul3": modul3})
-    wants = {"strategy": "cheapest_hours", "params": {"hours_per_day": 4}}
+    wants = {
+        "strategy": "cheapest_hours",
+        "params": {"hours_per_day": 4},
+        "demand": demand(required_kwh=None),
+    }
     pump = ev_view(load_id="hp", grid_tariff="modul3", **wants)
     ev = ev_view(load_id="ev", **wants)
     plans = plan_all([pump, ev], curves, site_ctx(), NOW).plans
@@ -192,7 +196,12 @@ def test_24_a_modul_3_heat_pump_plans_on_its_own_curve() -> None:
 def test_24_a_tariff_the_curves_do_not_carry_plans_on_the_house_curve() -> None:
     """A key with no curve (the copy lost it) falls back to the house's, never to nothing."""
     house = _shifted(flat_curve(days=2), range(12, 16))
-    view = ev_view(grid_tariff="gone", strategy="cheapest_hours", params={"hours_per_day": 4})
+    view = ev_view(
+        grid_tariff="gone",
+        strategy="cheapest_hours",
+        params={"hours_per_day": 4},
+        demand=demand(required_kwh=None),
+    )
     plan = plan_all([view], curves_of(house), site_ctx(), NOW).plans["ev"]
     assert _hours(plan.slots, next_day=True) == set(range(12, 16))
 

@@ -145,9 +145,16 @@ class Schedule:
     )
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:
-        """Return the fixed-window plan over the horizon (D5 §6)."""
+        """Return the fixed-window plan over the horizon (D5 §6).
+
+        A demand with no vote - a legionella cycle, a comfort violation - is not
+        held to the windows: the plan says nothing and the allocator serves it
+        (D5 §8, D-0138, D-0867).
+        """
         if ctx.load.forced:
             return free_plan(ctx, strategy=self.key, mode=PlanMode.FORCE, reason="forced")
+        if not demand.price_sensitive:
+            return free_plan(ctx, strategy=self.key, mode=PlanMode.URGENT, reason=demand.reason)
 
         window = ctx.curve_in.slots_between(ctx.now, ctx.horizon_end())
         rows = _windows(params)

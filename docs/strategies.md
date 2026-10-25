@@ -60,10 +60,10 @@ Keeps the appliance at comfort and lets it fall toward its lowest temperature in
 <a name="cheapest_hours"></a>
 ## Cheapest hours
 
-Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
+Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. A car charger takes only what the battery lacks: the hours stop once the car would reach the charge level you set, the earliest first, so a full car plans none. Under **Never below** the car charges at once, whatever hour it is. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
 
 > [!NOTE]
-> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.11, the hours already run today count; before, every new plan bought the hours again.
+> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.11, the hours already run today count; before, every new plan bought the hours again. Since v0.0.16, a car's hours stop when its battery is full. Before, a full car still showed its hours on the plan, though it never charged in them.
 
 | | |
 |---|---|
@@ -151,7 +151,7 @@ Starts the dishwasher, washer or dryer once, in the cheapest window that finishe
 <a name="schedule"></a>
 ## Schedule
 
-Follows a Home Assistant schedule helper: on in its windows, off outside them. PowerPlan still keeps it under your fuse and your target.
+Follows a Home Assistant schedule helper: on in its windows, off outside them. PowerPlan still keeps it under your fuse and your target. A water heater's legionella cycle, once due, is not held to the windows; before v0.0.16 it waited for the next one.
 
 | | |
 |---|---|

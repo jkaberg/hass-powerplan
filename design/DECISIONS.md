@@ -3936,3 +3936,11 @@ On 24 Oct 2026 the reference tank sent `legionella: completed` 42 times in four 
 
 **Rejected:** dropping the event for a credit outside a cycle (D4 §5.12 names it the same event, and an automation counting cycles would lose them); de-duplicating in the engine's edge (the state would still move `last_completed` every hour, which no reader expects).
 
+### D-0867 · A car's cheapest hours stop at its requirement, and `cheapest_hours` and `schedule` give a demand with no vote no envelope
+
+`cheapest_hours` counted hours and never read the demand. On 2026-10-25 the reference house's car read 100 % (target 100 %) and its plan held 73.6 kWh: ten hours at 7.36 kW over the coming nights. D6 granted 0 W, because the car did not want, so nothing charged. The plan, the calendar and the planned consumption all showed the energy. For a load whose store is an `EnergyStore` the chosen slots are now taken in time order until `demand.required_kwh` is covered, and a full car plans none. A tank's or a slab's requirement is now's and bounds nothing, so their hours stand. The plan carries no `required_kwh`, since a car the hours cannot fill is not a deadline at risk. Its digest carries whether the car is full, so filling up is adopted whatever the prices.
+
+The same audit found `cheapest_hours` and `schedule` without D-0138's guard. D6 serves a comfort violator ahead of every plan, but a car under its minimum SoC and a mandatory legionella cycle go through the walk, where a plan's `0` holds them. A car on `cheapest_hours` that arrived at 15 % waited for the night. Both strategies now return `URGENT`. D5 §9 59 and 60 cover every strategy a car may have, and the whole registry but `run_once` and the battery's two. Affects D5 §5.4, §8, §9, §11.
+
+**Rejected:** a gate in `plan_all` for a car that does not want, which would also drop an absent car's plan (D-0709, D-0720); bounding every store by its requirement, which leaves a tank on 4 h a day cold by evening; enforcing D-0138 in D6, where `_reserved_by` would still read a `PRICE` plan for an urgent demand (D-0255); taking a car's hours cheapest-first across the horizon, which can move tonight's charge past the morning's departure.
+

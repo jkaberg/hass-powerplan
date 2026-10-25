@@ -17,7 +17,7 @@ from custom_components.powerplan.core.strategies import plan_all
 from custom_components.powerplan.core.tariffs.household import TaxZone, from_preset
 from tests.builders.curves import ORDINARY, OSLO, context
 from tests.builders.presets import fixture_raw
-from tests.core.strategies.conftest import NOW, curves_of, ev_view, flat_curve, site_ctx
+from tests.core.strategies.conftest import NOW, curves_of, demand, ev_view, flat_curve, site_ctx
 
 
 def test_16_a_norgespris_house_charges_in_the_grids_night_hours() -> None:
@@ -34,7 +34,9 @@ def test_16_a_norgespris_house_charges_in_the_grids_night_hours() -> None:
     source = replace(flat, slots=tuple(slots))
     assert len({slot.components["spot"] for slot in source.slots}) == 1, "the supplier is flat"
 
-    view = ev_view(strategy="cheapest_hours", params={"hours_per_day": 4})
+    view = ev_view(
+        strategy="cheapest_hours", params={"hours_per_day": 4}, demand=demand(required_kwh=None)
+    )
     plan = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
     # The whole next day: the first one has only 21:07–24:00 left and runs in all of it.

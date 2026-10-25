@@ -22,6 +22,11 @@ Three consequences the code makes explicit:
   cheapest slots, so it is found over contiguous runs - for a device that dislikes
   being started and stopped, one run at a slightly worse mean price is the better
   answer (§5.3's reasoning without its block bookkeeping).
+* **A battery takes no more than it lacks.** A car's SoC does not fall while it is
+  parked, so its requirement holds over the whole horizon: the chosen hours are
+  taken in time order until it is covered, and a full car plans none (D-0867). A
+  tank or a slab cools between the hours, so its requirement of now bounds nothing
+  and the hours stand.
 
 Nothing here clamps a negative slot: hour 13 of an NO3 day is paid-for and is the
 first hour taken (INV-51).
@@ -34,6 +39,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, ClassVar, Final, Literal
 
+from ..loads.stores.energy import EnergyStore
 from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from ..tariffs import TimeFilter
@@ -212,6 +218,26 @@ def _continue(rows: Sequence[_Row], hours: float) -> set[int]:
     return taken
 
 
+def _energy(
+    whole: Sequence[Slot], chosen: set[int], max_w: float, budget: float | None
+) -> dict[int, float]:
+    """Return the kWh each chosen slot plans, in time order until `budget` is covered (D-0867).
+
+    `None` is no bound: every chosen slot runs whole. The last slot a bound reaches
+    keeps `max_w` as its envelope and plans only what is left.
+    """
+    out: dict[int, float] = {}
+    left = budget
+    for index in sorted(chosen):
+        if left is not None and left <= 0.0:
+            break
+        slot = whole[index]
+        kwh = max_w * (slot.end - slot.start).total_seconds() / 3600.0 / 1000.0
+        out[index] = kwh if left is None else min(kwh, left)
+        left = None if left is None else left - out[index]
+    return out
+
+
 def _reason(hours: float, *, consecutive: bool, max_price: Decimal | None) -> str:
     """Return the one line the review sensor shows (D5 §8)."""
     shape = "consecutive " if consecutive else ""
@@ -219,15 +245,15 @@ def _reason(hours: float, *, consecutive: bool, max_price: Decimal | None) -> st
     return f"cheapest {shape}{hours:g} h/day{cap}"
 
 
-def _slot(slot: Slot, *, on: bool, max_w: float, kind: str) -> PlanSlot:
+def _slot(slot: Slot, *, kwh: float | None, max_w: float, kind: str) -> PlanSlot:
     """Return one slot of the plan: the maximum, or standing still (INV-30)."""
-    hours = (slot.end - slot.start).total_seconds() / 3600.0
+    on = kwh is not None
     return PlanSlot(
         start=slot.start,
         end=slot.end,
         envelope_w=max_w if on else 0.0,
         desired_state=_desired(kind, on=on),
-        kwh=max_w * hours / 1000.0 if on else 0.0,
+        kwh=kwh or 0.0,
         price=slot.total,
         reason="cheapest-hours" if on else "not one of the cheapest",
     )
@@ -273,10 +299,14 @@ class CheapestHours:
 
         A forced load gets a plan that says nothing at all: force ignores the
         price, and asserting a grant is the allocator's job, not a plan's
-        (`design/DECISIONS.md` D-0138, D-0191).
+        (`design/DECISIONS.md` D-0138, D-0191). Nor does a demand with no vote -
+        a car under its minimum SoC, a legionella cycle: a zero in the hours not
+        chosen would hold it there (D5 §8, D-0867).
         """
         if ctx.load.forced:
             return free_plan(ctx, strategy=self.key, mode=PlanMode.FORCE, reason="forced")
+        if not demand.price_sensitive:
+            return free_plan(ctx, strategy=self.key, mode=PlanMode.URGENT, reason=demand.reason)
 
         hours = float(params["hours_per_day"])
         consecutive = bool(params["consecutive"])
@@ -298,6 +328,8 @@ class CheapestHours:
                 chosen |= _continue(day_rows, left) if running else set()
             else:
                 chosen |= pick(day_rows, left)
+        budget = demand.required_kwh if isinstance(ctx.store, EnergyStore) else None
+        energy = _energy(whole, chosen, demand.max_w, budget)
 
         return build_plan(
             load_id=ctx.load.load_id,
@@ -306,19 +338,25 @@ class CheapestHours:
             slots=(
                 *behind,
                 *(
-                    _slot(slot, on=index in chosen, max_w=demand.max_w, kind=ctx.load.kind)
+                    _slot(slot, kwh=energy.get(index), max_w=demand.max_w, kind=ctx.load.kind)
                     for index, slot in enumerate(whole)
                 ),
             ),
             now=ctx.now,
             currency=ctx.effective.currency,
-            confidence=confidence_of([slot for index, slot in enumerate(whole) if index in chosen]),
+            confidence=confidence_of([slot for index, slot in enumerate(whole) if index in energy]),
             known_until=ctx.now + timedelta(hours=ctx.effective.coverage_h(ctx.now)),
-            reason=_reason(hours, consecutive=consecutive, max_price=cap),
+            reason=(
+                demand.reason
+                if budget is not None and budget <= 0.0
+                else _reason(hours, consecutive=consecutive, max_price=cap)
+            ),
             inputs_hash=inputs_digest(
                 self.key,
                 ctx.load.mode,
                 demand.max_w,
                 sorted((key, repr(value)) for key, value in params.items()),
+                # A car that fills up is a different question, whatever the prices (§5.9).
+                budget is not None and budget <= 0.0,
             ),
         )

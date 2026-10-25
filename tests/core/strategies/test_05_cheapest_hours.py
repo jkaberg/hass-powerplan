@@ -47,6 +47,9 @@ NEXT_DAY = ORDINARY + timedelta(days=1)
 
 EV_W = 32.0 * W_PER_AMP
 
+#: A load that asks for hours alone: no requirement to stop at (D5 §5.4, D-0867).
+HOURS_ONLY = demand(required_kwh=None)
+
 
 def hours_on(plan: Plan, day: object = NEXT_DAY) -> list[int]:
     """Return the local hours the plan draws in on `day`, sorted and unique."""
@@ -79,7 +82,7 @@ def slots_on(plan: Plan, day: object = NEXT_DAY) -> int:
 def planned(**params: object) -> Plan:
     """Return the charger's `cheapest_hours` plan over the two-day NO3 curve."""
     source = volatile_curve()
-    view = ev_view(strategy="cheapest_hours", params=params)
+    view = ev_view(demand=HOURS_ONLY, strategy="cheapest_hours", params=params)
     return plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
 
@@ -147,7 +150,7 @@ def test_39_a_slot_without_room_for_max_w_is_not_a_cheapest_hour() -> None:
         for slot in source.slots
         if slot.start.astimezone(OSLO).date() == NEXT_DAY and slot.start.astimezone(OSLO).hour == 13
     }
-    view = ev_view(strategy="cheapest_hours", params={"hours_per_day": 4})
+    view = ev_view(demand=HOURS_ONLY, strategy="cheapest_hours", params={"hours_per_day": 4})
     plan = plan_all(
         [view],
         curves_of(source),
@@ -193,7 +196,9 @@ def test_05_a_negative_hour_is_chosen_first_and_never_clamped() -> None:
 def test_05_a_forced_load_gets_out_of_the_way() -> None:
     """Force ignores the price: the plan says nothing and the allocator runs it."""
     source = volatile_curve()
-    view = ev_view(strategy="cheapest_hours", mode=Mode.FORCE, params={"hours_per_day": 4})
+    view = ev_view(
+        demand=HOURS_ONLY, strategy="cheapest_hours", mode=Mode.FORCE, params={"hours_per_day": 4}
+    )
     plan = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
     assert plan.mode is PlanMode.FORCE
@@ -203,7 +208,7 @@ def test_05_a_forced_load_gets_out_of_the_way() -> None:
 def test_05_an_hourly_curve_counts_hours_not_slots() -> None:
     """`hours_per_day` is hours: one 60-minute slot answers it once (INV-7)."""
     source = volatile_curve(minutes=60)
-    view = ev_view(strategy="cheapest_hours", params={"hours_per_day": 2})
+    view = ev_view(demand=HOURS_ONLY, strategy="cheapest_hours", params={"hours_per_day": 2})
     plan = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
     assert hours_on(plan) == [2, 13]
@@ -239,7 +244,7 @@ def test_05_the_strategy_is_registered_with_its_four_parameters() -> None:
 def test_05_the_same_inputs_give_the_same_plan_twice() -> None:
     """The tie-break is `(price, index)`, so nothing re-decides on noise (INV-32)."""
     source = volatile_curve()
-    view = ev_view(strategy="cheapest_hours", params={"hours_per_day": 4})
+    view = ev_view(demand=HOURS_ONLY, strategy="cheapest_hours", params={"hours_per_day": 4})
     first = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
     again = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
