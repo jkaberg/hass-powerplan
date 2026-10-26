@@ -143,7 +143,9 @@ def _open(
 
     Filling to the maximum is what "not beyond" is measured against: the envelope
     opens to the load's maximum in every eligible slot, and the *energy* stops at
-    the store's own capacity (INV-56).
+    the store's own capacity (INV-56). A load whose draw follows its grant keeps
+    `max_w` where the room planned is less: D6 grants it the room the hour really
+    has (D-0868).
     """
     cap_w = min(demand.max_w, ctx.headroom.w_at(slot.start))
     if cap_w <= 0.0:
@@ -153,7 +155,7 @@ def _open(
     return (
         replace(
             slot,
-            envelope_w=cap_w,
+            envelope_w=demand.max_w if ctx.load.modulating else cap_w,
             kwh=take if budget is not None else max(slot.kwh, take),
             desired_state=_charge(ctx.load.kind, slot.desired_state),
             reason=reason,

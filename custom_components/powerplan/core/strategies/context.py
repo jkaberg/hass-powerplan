@@ -117,6 +117,11 @@ class _NoHolidays:
         return None
 
 
+#: The control kinds whose draw follows the grant continuously between their floor and
+#: `max_w` (D4 §4.2). D6 charges them their grant, not a nameplate (D6 §5.2), and a slot
+#: their plan opens takes what the live room allows, not the room planned (D-0868).
+MODULATING_KINDS: Final = frozenset({"modulate", "battery"})
+
 #: The calendar used when the site has none (`design/DECISIONS.md` D-0190).
 NO_HOLIDAYS: Final[HolidayCalendar] = _NoHolidays()
 
@@ -485,6 +490,11 @@ class LoadView:
     def min_w(self) -> float:
         """The least it can run at - the 6 A cliff for a charger (INV-28)."""
         return self.demand.min_w
+
+    @property
+    def modulating(self) -> bool:
+        """Whether its draw follows the grant between `min_w` and `max_w` (D-0868)."""
+        return self.kind in MODULATING_KINDS
 
     def allowed_at(self, when: datetime, tz: tzinfo, calendar: HolidayCalendar) -> bool:
         """Whether the grid lets this load draw at `when` (G14); always, where it does not switch."""

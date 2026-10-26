@@ -97,7 +97,11 @@ def test_04_force_does_not_consult_the_price() -> None:
 
 @pytest.mark.inv("INV-30")
 def test_04_force_still_respects_the_headroom() -> None:
-    """A forced plan is capped by the tariff's headroom, never above it (INV-30)."""
+    """A forced plan plans no more than the tariff's headroom (INV-30).
+
+    Its envelope stays the charger's maximum: D6 grants the room the hour really
+    has, and the ceiling is D6's to defend (INV-1, D-0868).
+    """
     source = volatile_curve()
     site = plan_all(
         [forced_view()],
@@ -108,4 +112,6 @@ def test_04_force_still_respects_the_headroom() -> None:
     )
     for slot in site.plans["ev"].slots:
         assert slot.envelope_w is not None
-        assert slot.envelope_w <= 3000.0
+        assert slot.planned_draw_w <= 3000.0 + 1e-6
+        # The room's slots open to the maximum; the last, cut to the requirement, keeps its pace.
+        assert slot.envelope_w in {0.0, forced_view().max_w, slot.planned_draw_w}

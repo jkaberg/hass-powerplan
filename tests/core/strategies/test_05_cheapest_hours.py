@@ -141,8 +141,11 @@ def test_05_max_price_excludes_a_slot_even_when_that_leaves_fewer_hours() -> Non
     assert "0.18" in plan.reason
 
 
-def test_39_a_slot_without_room_for_max_w_is_not_a_cheapest_hour() -> None:
-    """§9 39: the ceiling outranks the plan - an hour it cannot run at `max_w` is skipped (INV-1)."""
+def test_39_a_slot_without_room_for_max_w_is_not_a_relays_cheapest_hour() -> None:
+    """§9 39: the ceiling outranks the plan - a relay that cannot run at `max_w` skips the hour (INV-1).
+
+    A charger runs from its floor up and keeps the hour (§9 61, D-0868).
+    """
     source = volatile_curve()
     room = flat_headroom(source, 10_000.0)
     noon = {
@@ -150,9 +153,14 @@ def test_39_a_slot_without_room_for_max_w_is_not_a_cheapest_hour() -> None:
         for slot in source.slots
         if slot.start.astimezone(OSLO).date() == NEXT_DAY and slot.start.astimezone(OSLO).hour == 13
     }
-    view = ev_view(demand=HOURS_ONLY, strategy="cheapest_hours", params={"hours_per_day": 4})
+    relay = ev_view(
+        demand=replace(HOURS_ONLY, min_w=0.0),
+        kind="switch",
+        strategy="cheapest_hours",
+        params={"hours_per_day": 4},
+    )
     plan = plan_all(
-        [view],
+        [relay],
         curves_of(source),
         site_ctx(),
         NOW,

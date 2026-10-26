@@ -15,9 +15,11 @@ Three consequences the code makes explicit:
 * **`max_price` may leave fewer than N.** The user set a cap; the hours above it
   are not worth having, so the load runs less and the plan is still covered. A
   plan that quietly ignored the cap to reach N would answer a question nobody
-  asked. A slot whose headroom cannot carry `max_w` is left out the same way: the
-  load runs at its maximum or not at all, and the ceiling outranks the plan
-  (INV-1, INV-31).
+  asked. A slot whose headroom cannot carry `max_w` is left out the same way: a
+  relay runs at its maximum or not at all, and the ceiling outranks the plan
+  (INV-1, INV-31). A charger runs at anything from its floor up, so for it only a
+  slot under `min_w` is left out; the rest plan what the room holds and keep
+  `max_w` as the envelope, and D6 grants what the live room allows (D-0868).
 * **Consecutive is a different problem.** The cheapest *run* of N is not the N
   cheapest slots, so it is found over contiguous runs - for a device that dislikes
   being started and stopped, one run at a slightly worse mean price is the better
@@ -51,7 +53,7 @@ if TYPE_CHECKING:
 
     from ..loads.needs import Need
     from ..model import Demand, Plan
-    from .context import PlanContext
+    from .context import Headroom, PlanContext
 
 __all__ = ["CheapestHours"]
 
@@ -83,14 +85,25 @@ class _Row:
         return self.price * Decimal(str(self.hours))
 
 
+def _floor_w(ctx: PlanContext, demand: Demand) -> float:
+    """Return the least room a slot needs to be one of the hours (§5.4, D-0868).
+
+    A relay draws `max_w` or nothing; a charger runs from its floor up, so a slot
+    with room for 6 A is an hour it can charge in.
+    """
+    if ctx.load.modulating and demand.min_w > 0.0:
+        return demand.min_w
+    return demand.max_w
+
+
 def _rows(
-    ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | None, max_w: float
+    ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | None, floor_w: float
 ) -> list[_Row]:
     """Return the slots of the horizon a chosen hour may come from (§5.4).
 
     Filtered by the `window` - evaluated in **local** time against the site's
     holiday calendar, because "the night rate" and "weekdays" are local
-    statements (HLD §7.1) - by the price cap, and by the headroom for `max_w`.
+    statements (HLD §7.1) - by the price cap, and by the headroom for `floor_w`.
     """
     out: list[_Row] = []
     for index, slot in enumerate(ctx.effective.slots_between(ctx.now, ctx.horizon_end())):
@@ -98,7 +111,7 @@ def _rows(
             continue
         if max_price is not None and slot.total > max_price:
             continue
-        if ctx.headroom.w_at(slot.start) < max_w:
+        if ctx.headroom.w_at(slot.start) < floor_w:
             continue
         out.append(_Row(index=index, slot=slot, day=slot.start.astimezone(ctx.tz).date()))
     return out
@@ -219,12 +232,18 @@ def _continue(rows: Sequence[_Row], hours: float) -> set[int]:
 
 
 def _energy(
-    whole: Sequence[Slot], chosen: set[int], max_w: float, budget: float | None
+    whole: Sequence[Slot],
+    chosen: set[int],
+    max_w: float,
+    budget: float | None,
+    headroom: Headroom,
 ) -> dict[int, float]:
     """Return the kWh each chosen slot plans, in time order until `budget` is covered (D-0867).
 
     `None` is no bound: every chosen slot runs whole. The last slot a bound reaches
-    keeps `max_w` as its envelope and plans only what is left.
+    keeps `max_w` as its envelope and plans only what is left. A slot plans at
+    most what its room holds, `min(max_w, headroom)` (D-0756): a relay's slots all
+    hold `max_w`, a charger's may hold less (D-0868).
     """
     out: dict[int, float] = {}
     left = budget
@@ -232,7 +251,8 @@ def _energy(
         if left is not None and left <= 0.0:
             break
         slot = whole[index]
-        kwh = max_w * (slot.end - slot.start).total_seconds() / 3600.0 / 1000.0
+        watts = min(max_w, headroom.w_at(slot.start))
+        kwh = watts * (slot.end - slot.start).total_seconds() / 3600.0 / 1000.0
         out[index] = kwh if left is None else min(kwh, left)
         left = None if left is None else left - out[index]
     return out
@@ -318,7 +338,7 @@ class CheapestHours:
         pick = _cheapest_run if consecutive else _cheapest
         chosen: set[int] = set()
         for day, day_rows in _by_day(
-            _rows(ctx, window=window, max_price=cap, max_w=demand.max_w)
+            _rows(ctx, window=window, max_price=cap, floor_w=_floor_w(ctx, demand))
         ).items():
             left = hours - ran.get(day, 0.0)
             if left <= _EPS_H:
@@ -329,7 +349,7 @@ class CheapestHours:
             else:
                 chosen |= pick(day_rows, left)
         budget = demand.required_kwh if isinstance(ctx.store, EnergyStore) else None
-        energy = _energy(whole, chosen, demand.max_w, budget)
+        energy = _energy(whole, chosen, demand.max_w, budget, ctx.headroom)
 
         return build_plan(
             load_id=ctx.load.load_id,

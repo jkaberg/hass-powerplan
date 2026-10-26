@@ -623,6 +623,7 @@ def plan_one(
     grid_penalty: Decimal = Decimal(0),
     eta_at: Callable[[float], float] | None = None,
     max_pauses: int | None = None,
+    modulating: bool = False,
 ) -> Plan:
     """Return the cheapest plan covering `required_kwh` (D5 §5.2, §5.3).
 
@@ -633,6 +634,9 @@ def plan_one(
     `surplus`, `grid` and `grid_penalty` are Phase 7's (D5 §2): the slot's
     surplus bands, whether the grid may be used at all, and how much dearer a
     grid kWh ranks than its price - `surplus`'s surplus-first order.
+
+    `modulating` is a load whose draw follows its grant (`LoadView.modulating`):
+    a slot it fills to a room under `max_w` publishes `max_w` (`_room_bound`).
     """
     until = horizon_end if force or deadline is None else min(deadline, horizon_end)
     window = curve.slots_between(now, horizon_end)
@@ -695,6 +699,11 @@ def plan_one(
             price=None
             if index not in by_index
             else by_index[index].price_of(taken.get(index, 0.0)),
+            envelope_w=max_w
+            if modulating
+            and index in by_index
+            and _room_bound(by_index[index], taken.get(index, 0.0), max_w)
+            else None,
         )
         for index, slot in enumerate(window)
     )
@@ -716,6 +725,20 @@ def plan_one(
     )
 
 
+def _room_bound(row: _Candidate, kwh: float, max_w: float) -> bool:
+    """Return whether the slot is filled to a cap the room set, not the load (D-0868).
+
+    The plan's room is a forecast: the baseline, and every load above at what it
+    planned. Where the slot is taken whole and only the room held it under
+    `max_w`, a load whose draw follows its grant may take whatever room the hour
+    really has - more energy in a slot that is already among the cheapest only
+    displaces dearer energy. A slot cut to the requirement keeps its pace, since
+    more there would be bought where the greedy chose not to buy. A slot with
+    surplus keeps its cap, which is what it may import (INV-19).
+    """
+    return kwh > 0.0 and not row.bands and row.cap_w < max_w and kwh + COVER_EPS_KWH >= row.cap_kwh
+
+
 def _slot(
     index: int,
     slot: Slot,
@@ -724,17 +747,21 @@ def _slot(
     reason: str,
     desired_state: DesiredState | None,
     price: Decimal | None = None,
+    envelope_w: float | None = None,
 ) -> PlanSlot:
     """Return one `PlanSlot`: the envelope is the energy over the slot's own hours.
 
     `price` is what the slot's energy costs through its bands (D5 §2); the slot's
-    own price where it has none.
+    own price where it has none. `envelope_w` overrides the envelope of a slot the
+    room bound (`_room_bound`).
     """
     hours = (slot.end - slot.start).total_seconds() / 3600.0
+    if envelope_w is None:
+        envelope_w = 0.0 if kwh <= 0.0 or hours <= 0.0 else kwh / hours * 1000.0
     return PlanSlot(
         start=slot.start,
         end=slot.end,
-        envelope_w=0.0 if kwh <= 0.0 or hours <= 0.0 else kwh / hours * 1000.0,
+        envelope_w=envelope_w,
         desired_state=desired_state if kwh > 0.0 else None,
         kwh=max(0.0, kwh),
         price=slot.total if price is None else price,
@@ -859,6 +886,7 @@ class DeadlineFill:
             surplus=ctx.surplus_bands if ctx.surplus else None,
             eta_at=_eta_of(ctx),
             max_pauses=_pause_cap(ctx),
+            modulating=ctx.load.modulating,
             inputs_hash=inputs_digest(
                 self.key,
                 ctx.load.mode,

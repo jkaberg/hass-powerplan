@@ -73,7 +73,8 @@ def test_26_a_kept_plan_the_room_moved_under_is_replaced() -> None:
     floor = {slot.start: slot.envelope_w or 0.0 for slot in second.plans["loop_bath"].slots}
     for slot in second.plans["ev"].slots:
         if slot.end > NOW:
-            assert (slot.envelope_w or 0.0) <= 5_000.0 - floor.get(slot.start, 0.0) + EPS_W
+            # What it plans fits; its envelope may be its maximum, for D6 to fill live (D-0868).
+            assert slot.planned_draw_w <= 5_000.0 - floor.get(slot.start, 0.0) + EPS_W
 
 
 @pytest.mark.inv("INV-32")

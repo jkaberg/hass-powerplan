@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 
 FLOOR_W = 960.0
 EV_MIN_W = 6.0 * W_PER_AMP
+EV_MAX_W = 32.0 * W_PER_AMP
 TARGET_KW = 5.0
 
 
@@ -76,7 +77,11 @@ def morning_step_up() -> ScheduleSource:
 
 @pytest.mark.inv("INV-33")
 def test_10_the_floor_reservation_reduces_the_ev_headroom() -> None:
-    """In every slot the loop plans, the charger gets the target less the loop."""
+    """In every slot the loop plans, the charger plans the target less the loop.
+
+    It plans that much energy; its envelope is its maximum where the room held it
+    under, because D6 grants it the room the hour really has (D-0868).
+    """
     source = volatile_curve()
     site = plan_all(
         [ev_view(), floor_view()],
@@ -92,7 +97,8 @@ def test_10_the_floor_reservation_reduces_the_ev_headroom() -> None:
 
     for slot in site.plans["ev"].slots:
         assert slot.envelope_w is not None
-        assert slot.envelope_w <= TARGET_KW * 1000.0 - loop[slot.start] + 1e-6
+        assert slot.planned_draw_w <= TARGET_KW * 1000.0 - loop[slot.start] + 1e-6
+        assert slot.envelope_w in {0.0, EV_MAX_W} or slot.envelope_w == slot.planned_draw_w
 
 
 @pytest.mark.inv("INV-33")
@@ -151,7 +157,7 @@ def test_10_the_headroom_left_records_what_the_loads_reserved() -> None:
     )
     for start in filled(site.plans["loop_bath"]):
         reserved = sum(
-            slot.envelope_w or 0.0
+            slot.planned_draw_w
             for plan in site.plans.values()
             for slot in plan.slots
             if slot.start == start

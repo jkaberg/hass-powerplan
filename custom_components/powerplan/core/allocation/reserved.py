@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..model import Mode
+from ..strategies.context import MODULATING_KINDS
 
 if TYPE_CHECKING:
     from ..metering import ControlledView
@@ -38,10 +39,6 @@ ON_W = 50.0
 #: Room for a thermostatic load to modulate up inside its own control loop, in
 #: watts (D6 §6 `grant_margin_w`).
 GRANT_MARGIN_W = 500.0
-
-#: The control kinds whose draw follows the grant continuously (D4 §4.2). Anything
-#: else is a relay somewhere behind a thermostat, whatever the plan paced it at.
-MODULATING_KINDS = frozenset({"modulate", "battery"})
 
 
 def measured_w(view: ControlledView | None) -> float | None:
