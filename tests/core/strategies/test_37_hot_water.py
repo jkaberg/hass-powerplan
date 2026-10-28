@@ -1,4 +1,4 @@
-"""D5 §9 37 - `hot_water`: every draw ahead covered, the reserve kept, the cheapest blocks (D-0743).
+"""D5 §9 37 - `hot_water`: every draw ahead covered, the margin kept, the reserve bought cheap (D-0743, D-0870).
 
 The reference tank on 6 Oct 2026: full at 06:00, a draw at 13:00 took its bottom
 probe to 28 °C, and nothing planned until the floor reheated at 19:00 - day rate,
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from custom_components.powerplan.core.model import Plan, PriceCurve
 
 RESERVE = 4.4
+MARGIN = 0.5
 NIGHT = Decimal("0.55")
 DAY = Decimal("0.69")
 
@@ -76,12 +77,16 @@ def _view(store: TankStore, level: float, **kwargs: Any) -> LoadView:
     return LoadView(**options)
 
 
-def _plan(now: datetime, store: TankStore, level: float, **ctx: Any) -> Plan:
+def _plan(
+    now: datetime, store: TankStore, level: float, *, margin: float = MARGIN, **ctx: Any
+) -> Plan:
     source = _grid_rated(flat_curve(days=3))
     view = _view(store, level, **ctx.pop("view", {}))
     context = plan_ctx(source, now=now, load=view, **ctx)
     return get("hot_water").plan(
-        view.demand, context, params_of("hot_water", {"reserve_kwh": RESERVE})
+        view.demand,
+        context,
+        params_of("hot_water", {"reserve_kwh": RESERVE, "margin_kwh": margin}),
     )
 
 
@@ -111,27 +116,45 @@ def _between(plan: Plan, start: datetime, end: datetime) -> float:
     return sum(slot.kwh for slot in plan.slots if start <= slot.start < end)
 
 
-def test_37_the_afternoon_after_a_big_draw_is_topped_up_ahead_of_every_draw() -> None:
+def _keeps(levels: list[tuple[datetime, float]], now: datetime, floor: float) -> None:
+    """Assert every slot past the first half-hour ends at or above `floor` plus the next hour's draws."""
+    for index, (end, heat) in enumerate(levels):
+        if end <= now + timedelta(minutes=30):
+            continue
+        assert heat >= floor - 1e-6, (end, heat)
+        if index + 4 < len(levels):
+            ahead = heat - levels[index + 4][1]
+            assert heat >= floor + min(ahead, 0.0) - 1e-6
+
+
+def test_37_the_afternoon_after_a_big_draw_waits_for_the_night_above_the_margin() -> None:
     """6 Oct at 13:07: 69/64/28 °C is 53.7 °C, under the reserve.
 
-    Bought at once, then each evening draw's heat an hour ahead of it, and never
-    above where a charge stops.
+    The day keeps the margin and each evening draw's heat an hour ahead of it;
+    the reserve above that waits for the night rate, and is back by 06:00.
     """
     store = _tank(persons=4)
     now = _local(0, 13)
     plan = _plan(now, store, 53.7)
     assert plan.mode is PlanMode.PRICE
-    assert plan.slots[0].kwh > 0.0, "under the reserve now: bought now"
     top = store.capacity_kwh_per_unit() * (75.0 - 45.0)
     levels = _levels(plan, store, 53.7)
-    for index, (end, heat) in enumerate(levels):
-        assert heat <= top + 1e-6, (end, heat)
-        if end <= now + timedelta(minutes=30):
-            continue
-        assert heat >= RESERVE - 1e-6, (end, heat)
-        if index + 4 < len(levels):
-            ahead = heat - levels[index + 4][1]
-            assert heat >= RESERVE + min(ahead, 0.0) - 1e-6
+    assert all(heat <= top + 1e-6 for _, heat in levels)
+    _keeps(levels, now, MARGIN)
+    night = now.replace(hour=22, minute=0, second=0)
+    morning = night + timedelta(hours=8)
+    assert min(heat for end, heat in levels if now + timedelta(hours=1) < end <= night) < RESERVE
+    assert _between(plan, night, morning) > _between(plan, now, night)
+    assert next(heat for end, heat in levels if end >= morning) >= RESERVE - 1e-6
+
+
+def test_37h_a_margin_equal_to_the_reserve_holds_it_in_every_slot() -> None:
+    """`margin_kwh` = `reserve_kwh` is D-0743's tank: the reserve bought at once, by day too."""
+    store = _tank(persons=4)
+    now = _local(0, 13)
+    plan = _plan(now, store, 53.7, margin=RESERVE)
+    assert plan.slots[0].kwh > 0.0, "under the reserve now: bought now"
+    _keeps(_levels(plan, store, 53.7), now, RESERVE)
 
 
 def test_37a_a_dear_evening_moves_the_top_up_into_the_afternoon() -> None:
@@ -182,7 +205,9 @@ def test_37c_a_light_night_is_not_charged_to_the_ready_temperature() -> None:
     morning = now.replace(hour=6, minute=0, second=0) + timedelta(days=1)
     peak = max(heat for end, heat in _levels(plan, store, 57.4) if end <= morning)
     assert peak < top - 1.0, "the tank was not filled to 75 °C for a day that needs less"
-    assert all(heat >= RESERVE - 1e-6 for _, heat in _levels(plan, store, 57.4))
+    levels = _levels(plan, store, 57.4)
+    assert all(heat >= MARGIN - 1e-6 for _, heat in levels)
+    assert next(heat for end, heat in levels if end >= morning) >= RESERVE - 1e-6
 
 
 def test_37d_hours_without_room_for_the_element_are_not_offered() -> None:

@@ -1,8 +1,9 @@
 """`hot_water` against the best plan, on 13 price days (D9 §5.17, D-0770).
 
 A 300 L tank on a 3 kW element, four people drawing. The tank is a level in kWh
-above its 45 °C floor; every slot must end at or above the reserve plus the next
-hour's draws, and below the 75 °C charge level. The plan's slots carry fractions of
+above its 45 °C floor; every slot must end at or above the margin plus the next
+hour's draws, and below the 75 °C charge level. The reserve above the margin is
+bought only where nothing later is cheaper (D-0870), so it is no constraint here. The plan's slots carry fractions of
 the element's energy and the loop executes them as planned, so the optimum is the
 LP over the same slots (an on/off element in 30-minute blocks, `on_off=True`, costs
 a little more and is what the plan's blocks approximate). Hands-off is a
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.optimality
 ELEMENT_W: Final = 3000.0
 START_C: Final = 60.0
 RESERVE_KWH: Final = 4.4
+MARGIN_KWH: Final = 0.5
 #: A draw's heat is in the tank an hour before it starts (D-0743).
 LEAD_SLOTS: Final = 4
 
@@ -67,8 +69,8 @@ def out_per_slot() -> list[float]:
 
 
 def need_per_slot(out: list[float]) -> list[float]:
-    """Return the level each slot must end at: the reserve and the next hour's draws."""
-    return [RESERVE_KWH + sum(out[k + 1 : k + 1 + LEAD_SLOTS]) for k in range(N)]
+    """Return the level each slot must end at: the margin and the next hour's draws."""
+    return [MARGIN_KWH + sum(out[k + 1 : k + 1 + LEAD_SLOTS]) for k in range(N)]
 
 
 def run(

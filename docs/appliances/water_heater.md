@@ -86,7 +86,7 @@ The water heater has no follow-up question.
 
 By default the tank is heated in the cheapest hours before the morning's ready-by time, and a second time if you set one. It never falls below its lowest temperature. When several hours cost the same, as at night on a fixed price, the tank heats in the last of them, so it is hot at the ready-by time and loses less heat waiting.
 
-If the hot water runs low in the evening, choose **Hot water** on the appliance. It keeps a reserve of hot water for the showers ahead and tops the tank up in the cheapest hours before them, at a somewhat higher cost; see [Plans](../strategies.md#hot_water).
+If the hot water runs low in the evening, choose **Hot water** on the appliance. It keeps hot water for the showers ahead and buys its reserve back in the cheapest hours still to come; see [Plans](../strategies.md#hot_water).
 
 > [!NOTE]
 > Since v0.0.8, a water heater heats as late as it can among hours that cost the same. A water heater set up before that keeps heating early until you open **Change setup** on it and save. The other plans it offers are listed on [Appliances](README.md#water_heater); each is explained on [Plans](../strategies.md).

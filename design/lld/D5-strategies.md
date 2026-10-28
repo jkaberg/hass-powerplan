@@ -68,7 +68,7 @@ custom_components/powerplan/core/strategies/
 ├── cheapest_hours.py
 ├── best_save.py
 ├── heat_capacitor.py
-├── hot_water.py        the tank's draws ahead, the reserve, the cheapest blocks (§5.13)
+├── hot_water.py        the tank's draws ahead, the margin, the reserve bought cheap (§5.13)
 ├── holding.py          hold_kwh per slot (§5.7)
 ├── levels.py           the level planner: an exact search over a store's level, numpy (§5.14, D-0767)
 ├── run_once.py
@@ -386,7 +386,7 @@ A hands-off plan kept hands-off is not held by the hysteresis: it decides nothin
 
 Per load: `next_start`, `planned_kwh`, `cost_estimate`, `mode`, `covered`, `reason`, `slots` (attribute, recorder-excluded, INV-61). Site: the `SitePlan` summary - total planned kWh per window, headroom left, loads uncovered. Event `powerplan_plan_adopted(load, mode, planned_kwh, cost, next_start)` on adoption (edge).
 
-### 5.13 `hot_water`: every draw ahead covered, in the cheapest blocks (D-0743)
+### 5.13 `hot_water`: every draw ahead covered, in the cheapest blocks (D-0743, D-0870)
 
 `deadline_fill` gives a tank one deadline, the next ready-by, and fills it to the ready temperature. On the reference house (6–13 Oct 2026, 300 L, 3 kW, five people) that left the tank full at 06:00 and on its 45 °C floor in the evening on two days in eight: a draw at 13:00 took the bottom probe to 28 °C, nothing was planned until 22:00, and the floor reheated at full power at 19:00 - day rate, in the evening's peak. A tank's need is every draw the household will make.
 
@@ -394,11 +394,12 @@ The tank's heat is a level `L`, kWh above its floor, `C·(T − T_floor)` with `
 
 ```
 out_j  = (draws_j + standby·h_j) / η            draws: D4 §5.7's profile, measured where the recorder had a week (D-0741)
-need_k = R + Σ out over the hour after slot k    R = reserve_kwh; the heat must be in the tank before a draw starts
+need_k = M + Σ out over the hour after slot k    M = margin_kwh; the heat must be in the tank before a draw starts
+want_k = R + Σ out over the hour after slot k    R = reserve_kwh ≥ M
 L_k    = C·(T_now − T_floor) + Σ_{j≤k} (x_j − out_j)    ≥ need_k,   ≤ C·(T_charge − T_floor)
 ```
 
-The greedy walks the slots in time order. Where `L_k` would end under `need_k`, it buys the shortfall in the block ending by `k` that ranks cheapest at `price × (1 + λ·hours held)`, `λ = standby / (T_charge − 20 °C) / C` (the marginal loss of a held kWh; ranking only, D-0743), with room under the charge level from that block on. A block is `min_block_min` (30) of slots bought whole where the charge level has room, because an element is on or off (D-0204). A slot whose headroom cannot carry the element at its nameplate is not offered (D6 would shed it); a slot in a tariff's peak window ranks after every other. Equal ranks go to the later block. A ready-by (`Urgency.DEADLINE`) raises the need at that slot by the next three hours' draws. `vacation` drops the draws and the reserve. A running or mandatory legionella cycle, force, and the comfort floor keep their one deadline or their missing vote as in §5.2 and §8.
+The greedy walks the slots in time order. Where `L_k` would end under `need_k`, it buys the shortfall in the block ending by `k` that ranks cheapest; where it would end under `want_k`, the same among the blocks priced no higher than the cheapest block that starts after `k` (D-0870). The margin is not running out and is bought at any price; the reserve above it is comfort and waits for the cheapest hours still to come, so under a night grid rate a day-rate afternoon keeps the margin and the night buys the reserve back. A block ranks at `price × (1 + λ·hours held)`, `λ = standby / (T_charge − 20 °C) / C` (the marginal loss of a held kWh; ranking only, D-0743), and only a block with room under the charge level from it on is offered. A block is `min_block_min` (30) of slots bought whole where the charge level has room, because an element is on or off (D-0204). A slot whose headroom cannot carry the element at its nameplate is not offered (D6 would shed it); a slot in a tariff's peak window ranks after every other. Equal ranks go to the later block. A ready-by (`Urgency.DEADLINE`) raises the need at that slot to the reserve and the next three hours' draws. `vacation` drops the draws, the margin and the reserve. A running or mandatory legionella cycle, force, and the comfort floor keep their one deadline or their missing vote as in §5.2 and §8.
 
 What it does that `deadline_fill` can't: a heavy day gets a top-up in the cheapest block before the evening's draws, never at the floor in the evening's peak; an expensive evening moves the top-up into the afternoon. `reserve_kwh` is two showers (40 L at 55 °C each, 4.4 kWh) or half the tank's shift, whichever is less (D4 §6.3).
 
@@ -410,6 +411,17 @@ What it does that `deadline_fill` can't: a heavy day gets a top-up in the cheape
 | Jan 2027 | 28.48 NOK, 62.9 kWh | 38.46 NOK, 68.7 kWh | 34.11 NOK | 31.40 NOK | 35.77 NOK |
 
 No comfort violation either way. The night charge stops at the ready temperature, a 3-person day takes the tank under the reserve by noon, and the reserve is then bought at the day price; `deadline_fill` lets the same tank run to its floor before the night, and the simulator's household never ran short. With no reserve at all the one-hour lead still buys evening heat the floor-and-night pattern doesn't. So `hot_water` buys comfort - no evening at the floor - not money, and it is offered for the household whose tank runs low.
+
+**The margin (D-0870).** Most of that cost was the reserve bought at the day rate. On the reference house's own data, 10 Dec 2025 – 27 Oct 2026 (322 days, closed loop: the recorder's hourly draws from the probes' energy balance, NO3 spot, Tensio's 2025–26 grid rates, the planner's measured 2.4 kWh/day draw profile, replanned hourly, the floor heating at full power below 45 °C), the tank's cost and how often its mean probe fell under 40 °C:
+
+| | `deadline_fill` | reserve every slot (D-0743) | margin 0.5 kWh | margin 1 kWh | margin 0 | reserve 2 kWh every slot |
+|---|---|---|---|---|---|---|
+| Norgespris + grid, NOK | 1 613 | 1 665 | 1 608 | 1 614 | 1 605 | 1 586 |
+| spot + grid, NOK | 2 928 | 2 935 | 2 719 | 2 733 | 2 701 | 2 780 |
+| hours under 40 °C, Norgespris / spot | 6.3 / 5.3 | 5.5 / 6.5 | 8.5 / 12.0 | 8.8 / 12.8 | 7.8 / 13.5 | 20.8 / 21.0 |
+| kWh the floor reheated, Norgespris / spot | 140 / 87 | 7 / 6 | 26 / 41 | 24 / 28 | 35 / 69 | 33 / 23 |
+
+The margin of 0.5 kWh costs 3 % less than the reserve every slot under Norgespris and 7 % less on spot, as little as `deadline_fill` under Norgespris and 7 % less on spot, with a fifth of `deadline_fill`'s floor reheats. Lowering the reserve instead saves less on spot and doubles the cold hours. With the draw profile at the energy balance's 4.7 kWh/day the order holds (Norgespris 1 633 against 1 686, spot 2 756 against 2 970).
 
 ### 5.14 The level planner (D-0767)
 
@@ -453,7 +465,7 @@ Strategies are pre-selected by D4's derivation. Their parameters are under **Adv
 | Strategy | Parameters (defaults) |
 |---|---|
 | `deadline_fill` | `min_block_min` (EV 0, tank 30), `flat_policy` (`fill`), `prefer_late: bool` (False: equal prices take the earlier slots; True keeps a car warm-charged near departure; the water heater derives True, D-0710) |
-| `hot_water` | `reserve_kwh` (4.4; D4 derives two showers or half the shift), `min_block_min` (30); offered to the water heater, not its default (D-0743) |
+| `hot_water` | `reserve_kwh` (4.4; D4 derives two showers or half the shift), `margin_kwh` (0.5, Advanced, D-0870), `min_block_min` (30); offered to the water heater, not its default (D-0743) |
 | `cheapest_hours` | `hours_per_day` (4), `window` (all day), `consecutive` (False), `max_price` (None) |
 | `best_save` | `min_saving` (10 %; with a store the margin of D-0774), `max_off_min` (120), `min_on_min` (30), `recovery_factor` (0.5, without a store only); offered to every heating type beside `heat_capacitor` (D-0738) |
 | `heat_capacitor` | `min_saving` (3 %, the margin a run of moves must save of the heat it moves, D-0774, D-0801), `min_saving_absolute` (None), `bank_k` (1.0; D4 derives 0 where the lever can't bank), `coast_k` (0.5, D-0819), `max_rate_k_per_h` (1.0, downward; upward 2 K/h, D-0775), `preheat` (True; D4 derives it, a heat pump's own answer), `respect_tariff_windows` (True), `preheat_max_outdoor_c` (None, D-0773) |
@@ -536,7 +548,7 @@ Every plan carries a `reason` per slot, and the review sensor shows "charging 23
 34. A stretch is sized by the coast (D-0732): with `τ` 60 h, outdoor 0 °C, `lo` 23 and `hi` 26, a 3 h stretch needs `T0` = 0 + 23·e^(3/60) ≈ 24.18 °C. A store at 25 °C gets no fill, and one at 22 °C gets `store.required_kwh(22 → 24.18)` before the stretch, in its cheapest slots. With `τ` 10 h, `level_needed` ≈ 31.0 °C passes `hi`: the store is filled to 26 °C and topped up inside the stretch with `C·23/10·(3 − coast_h(26, 23))`, spread evenly. The planned level never leaves `[lo, hi]` in any of them (INV-55, INV-56).
 35. The migration (D-0728, D-0729, D-0738): an entry at minor version 4 with a `radiator` on `best_save` and `threshold_pct` 10 comes back at minor 5 still on `best_save`, with `min_saving` 0.10; a `mode` floor on `heat_capacitor` gets `bank_k` 0, a `setpoint` floor 1.0, a heat pump its `band_k` as `bank_k` and `coast_k`; a `generic_switch` is untouched; an entry at minor 5 is left alone.
 36. A capacity stretch (D-0732): a floor below a 9 kW tank and a 5 kW baseline under a 10 kW ceiling sees headroom under its holding draw 17:00–20:00. It plans a fill before 17:00 and coasts through, though the energy price is flat. With `respect_tariff_windows = False` and no headroom shortfall the same plan is all HOLD. A weighted peak window is a capacity stretch the same way.
-37. `hot_water` (D-0743): the reference tank at 13:07 on a Norgespris day with a 0.14 NOK night rate, four people, 53.7 °C, buys at once and keeps every slot at or above 4.4 kWh and the next hour's draws, never above the 75 °C charge level; spot at 1.20 NOK 16–21 moves the evening's heat before 16:00; full at 06:07 for two people buys nothing until 22:00; one person at 57.4 °C at 21:07 is not charged to 75 °C; 2 kW of headroom 13–17 offers no slot there to a 3 kW element; on a flat day what the afternoon needs is bought as late as reaches it; a legionella demand is placed as `deadline_fill` places it; a comfort violation is `URGENT` with no slots. `tests/core/strategies/test_37_hot_water.py`.
+37. `hot_water` (D-0743, D-0870): the reference tank at 13:07 on a Norgespris day with a 0.14 NOK night rate, four people, 53.7 °C, keeps every slot at or above the 0.5 kWh margin and the next hour's draws, never above the 75 °C charge level, lets the afternoon run under the 4.4 kWh reserve, buys more at night than by day and has the reserve back by 06:00; with the margin at the reserve it buys at once and keeps the reserve in every slot; spot at 1.20 NOK 16–21 moves the evening's heat before 16:00; full at 06:07 for two people buys nothing until 22:00; one person at 57.4 °C at 21:07 is not charged to 75 °C, keeps the margin and has the reserve at 06:00; 2 kW of headroom 13–17 offers no slot there to a 3 kW element; on a flat day what the afternoon needs is bought as late as reaches it; a legionella demand is placed as `deadline_fill` places it; a comfort violation is `URGENT` with no slots. `tests/core/strategies/test_37_hot_water.py`.
 38. The migration (D-0741, D-0743): config entry minor version 8 keeps every tank's strategy, writes `hot_water`'s reserve in beside it, clears a standby answer at the old 60 W default unless typed, and binds the top and lower probes found on the centre probe's device; a legionella temperature still at the old 65 °C becomes 70 °C with its drive recomputed, a typed one stays, and a new tank is given 70 °C (D-0744). `tests/surface/test_hot_water_migration.py`.
 39. No slot plans more than it can draw (D-0756): in every `heat_capacitor` plan - pauses, deep pauses, a cheap half of the day with 1 200, 400 or 0 W of headroom, and a heat pump whose room cannot coast a 16 h window from `hi` - every slot's `kwh` is at most `min(max_w, headroom)·h` and its planned draw at most `min(max_w, headroom)`. With 400 W the same pauses come back over more slots for the same energy; with none, no pause is planned. `cheapest_hours` skips an hour whose headroom is below a relay's `max_w` and takes the next cheapest; a charger's is §9 61. `tests/core/strategies/test_08_heat_capacitor.py`, `test_05_cheapest_hours.py`.
 

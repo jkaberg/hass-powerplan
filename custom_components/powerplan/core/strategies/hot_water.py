@@ -11,22 +11,30 @@ every draw the household is going to make.
 So the tank's heat is a level, in kWh above its floor, that every slot of the
 horizon must end at or above:
 
-    L_k = E₀ + Σ_{j ≤ k} (x_j − out_j)   ≥   R        (the reserve)
+    L_k = E₀ + Σ_{j ≤ k} (x_j − out_j)   ≥   M        (the margin)
     L_k ≤ C · (T_charge − T_floor)                     (where a charge stops)
+
+and, where nothing later in the horizon is cheaper, at or above the reserve
+`R ≥ M` too. The margin is not running out, bought at whatever price; the
+reserve above it is comfort, bought only in the cheapest hours still to come
+(D-0870). On the reference house's own draws and prices (Dec 2025 – Oct 2026)
+that cut the tank's cost 3 % under Norgespris and 7 % on spot against a
+reserve held in every slot.
 
 `out_j` is the draw-off profile (D4 §5.7, measured where the recorder had a day's
 draws, D-0741) plus standby, and `x_j` what the element puts in. The greedy walks
-the slots in time order; where a slot would end under the reserve, it buys the
+the slots in time order; where a slot would end under the margin, it buys the
 shortfall in the cheapest block before it that still has room under the charge
-level, ranked by price × (1 + λ·hours held) so a kWh bought at 03:00 for 19:00
+level, and where it would end under the reserve, the same among the blocks no
+dearer than the cheapest one after it, ranked by price × (1 + λ·hours held) so a kWh bought at 03:00 for 19:00
 pays for the heat it loses waiting. A light day is carried by the night; a heavy
 one gets a top-up in the cheapest daytime block before its evening, never at the
 floor at 19:00.
 
-**It buys comfort, not money.** On the reference benchmark the tank cost 10–35 %
-more on this plan than on `deadline_fill`, which lets the tank run to its floor
-before the night (D-0743). It is offered for the household whose tank runs low in
-the evening, and `deadline_fill` stays the water heater's default.
+With a reserve held in every slot (D-0743) the tank cost 10–35 % more on the
+reference benchmark than on `deadline_fill`, which lets the tank run to its floor
+before the night; the margin closes most of that (D-0870). `deadline_fill` stays
+the water heater's default.
 
 What stays with the type, and is not this strategy's to decide: the comfort floor
 (an urgent demand with no vote, D5 §8), a running or mandatory legionella cycle
@@ -117,6 +125,7 @@ class HotWater:
     )
     schema: ClassVar[Schema] = (
         Field(key="reserve_kwh", kind=FieldKind.NUMBER, default=4.4, unit="kWh"),
+        Field(key="margin_kwh", kind=FieldKind.NUMBER, default=0.5, unit="kWh", advanced=True),
         Field(key="min_block_min", kind=FieldKind.NUMBER, default=30, unit="min", advanced=True),
     )
 
@@ -177,34 +186,45 @@ def _plan(
     vacation = ctx.presence is PresenceMode.VACATION
 
     out = [_out_kwh(store, slot, ctx, vacation=vacation) for slot in window]
+    margin = min(reserve, max(0.0, float(params["margin_kwh"])))
     # The heat a draw takes must be in the tank before it starts: a shower takes
     # 2 kWh in eight minutes and a 3 kW element puts back 0.4 (D-0743).
-    need = [
-        0.0 if vacation else reserve + _ahead(window, out, index, DRAW_LEAD)
-        for index in range(len(window))
-    ]
+    ahead = [_ahead(window, out, index, DRAW_LEAD) for index in range(len(window))]
+    need = [0.0 if vacation else margin + ahead[index] for index in range(len(window))]
+    # The reserve above the margin is comfort, bought only where nothing later is
+    # cheaper: a day-rate afternoon waits for the night (D-0870).
+    soft = [0.0 if vacation else reserve + ahead[index] for index in range(len(window))]
     if demand.urgency is Urgency.DEADLINE and demand.deadline is not None and not vacation:
         # The household's ready-by: the next three hours' draws in the tank first.
         _ready(need, window, out, demand.deadline, reserve)
 
     blocks = _blocks(window, ctx, demand.max_w, int(params["min_block_min"]))
     loss_per_h = _loss_per_h(store, per_k)
+    later = _cheapest_after(blocks, len(window))
     binding: datetime | None = None
     for index, slot in enumerate(window):
-        while True:
-            levels = _levels(start, out, blocks, len(window))
-            deficit = need[index] - levels[index]
-            if deficit <= _EPS_KWH:
-                break
-            pick = _best(
-                blocks, levels, index=index, top=top, at=slot.end, loss_per_h=loss_per_h, ctx=ctx
-            )
-            if pick is None:
-                break
-            block, room = pick
-            # An element runs a block whole where the charge level has room for it.
-            block.taken += min(block.spare, room)
-            binding = slot.end
+        for wanted, ceiling in ((need, None), (soft, later[index])):
+            while True:
+                levels = _levels(start, out, blocks, len(window))
+                deficit = wanted[index] - levels[index]
+                if deficit <= _EPS_KWH:
+                    break
+                pick = _best(
+                    blocks,
+                    levels,
+                    index=index,
+                    top=top,
+                    at=slot.end,
+                    loss_per_h=loss_per_h,
+                    ctx=ctx,
+                    ceiling=ceiling,
+                )
+                if pick is None:
+                    break
+                block, room = pick
+                # An element runs a block whole where the charge level has room for it.
+                block.taken += min(block.spare, room)
+                binding = slot.end
 
     kwh = _per_slot(blocks, len(window))
     planned = sum(kwh)
@@ -341,6 +361,21 @@ def _per_slot(blocks: Sequence[_Block], n: int) -> list[float]:
     return kwh
 
 
+def _cheapest_after(blocks: Sequence[_Block], n: int) -> list[Decimal | None]:
+    """Return, per slot, the lowest block price that starts after it (`None` at the end)."""
+    out: list[Decimal | None] = [None] * n
+    lowest: Decimal | None = None
+    ordered = sorted(blocks, key=lambda block: block.first, reverse=True)
+    position = 0
+    for index in range(n - 1, -1, -1):
+        while position < len(ordered) and ordered[position].first > index:
+            price = ordered[position].rank_price
+            lowest = price if lowest is None else min(lowest, price)
+            position += 1
+        out[index] = lowest
+    return out
+
+
 def _best(
     blocks: Sequence[_Block],
     levels: Sequence[float],
@@ -350,6 +385,7 @@ def _best(
     at: datetime,
     loss_per_h: float,
     ctx: PlanContext,
+    ceiling: Decimal | None = None,
 ) -> tuple[_Block, float] | None:
     """Return the cheapest block ending by slot `index` with room under the charge level."""
     hours_at = (at - ctx.now).total_seconds() / 3600.0
@@ -365,6 +401,8 @@ def _best(
         if block.last > index:
             break
         if block.spare <= _EPS_KWH:
+            continue
+        if ceiling is not None and block.rank_price > ceiling:
             continue
         room = room_from[block.first]
         if room <= _EPS_KWH:
