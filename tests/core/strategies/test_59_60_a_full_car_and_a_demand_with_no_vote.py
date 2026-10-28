@@ -25,6 +25,7 @@ from custom_components.powerplan.core.strategies import keys, plan_all, supports
 from tests.builders.curves import ORDINARY, OSLO
 from tests.core.loads.conftest import reads
 from tests.core.strategies.conftest import (
+    DEPARTURE,
     EV_PARAMS,
     NOW,
     curves_of,
@@ -78,7 +79,7 @@ def test_59_a_car_at_its_target_plans_no_energy(strategy: str) -> None:
 
 
 def test_59_cheapest_hours_stops_a_car_when_it_is_covered() -> None:
-    """A car lacking 10 kWh takes 10 kWh, in the earliest of its cheapest hours."""
+    """A car lacking 10 kWh takes 10 kWh, in the cheapest slots before it leaves (D-0869)."""
     view = ev_view(
         strategy="cheapest_hours",
         demand=demand(required_kwh=10.0),
@@ -88,8 +89,9 @@ def test_59_cheapest_hours_stops_a_car_when_it_is_covered() -> None:
 
     assert plan.planned_kwh == pytest.approx(10.0)
     drawing = [slot for slot in plan.slots if slot.kwh > 0.0]
-    assert all(slot.start.astimezone(OSLO).date() == ORDINARY for slot in drawing), drawing
-    assert all(slot.envelope_w == 32.0 * 230.0 for slot in drawing)
+    assert all(slot.end <= DEPARTURE for slot in drawing), drawing
+    # Every slot taken whole runs at `max_w`; only the one cut to the requirement is slower.
+    assert sum(slot.envelope_w != 32.0 * 230.0 for slot in drawing) <= 1
 
 
 def test_59_a_store_that_cools_keeps_its_hours() -> None:

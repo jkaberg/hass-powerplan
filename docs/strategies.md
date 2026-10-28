@@ -60,14 +60,16 @@ Keeps the appliance at comfort and lets it fall toward its lowest temperature in
 <a name="cheapest_hours"></a>
 ## Cheapest hours
 
-Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. A car charger is the exception: it keeps an hour with room for its lowest current, and charges with whatever room the hour has left. A car charger takes only what the battery lacks: the hours stop once the car would reach the charge level you set, the earliest first, so a full car plans none. Under **Never below** the car charges at once, whatever hour it is. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
+Runs the appliance for the hours a day you set, in the cheapest of them. Nothing tells it when to be finished. An hour where your home has no room for the appliance at full power under your target is skipped, so on a full day it may run fewer hours. The hours it has already run today count, so a day never gets more than you set. The hours run in one stretch stay one stretch.
+
+A car charger that reads the car's charge level charges by energy instead of hours. It looks at every hour from now until you leave, or until the last known price, as one stretch: a cheap night from 22:00 to 06:00 counts as one night, not two days. It charges what the car lacks, in the cheapest hours first, with whatever room each hour has under your target. It uses only cheap hours: those at or under your price limit, or else at or under the average price until you leave. If they cannot fill the car, it leaves short and PowerPlan tells you, rather than charging in a dear hour. That is the difference from [Deadline fill](#deadline_fill), which reaches your charge level whatever the price. Under **Never below** the car charges at once, whatever hour it is. A car charger without a charge level still runs hours, and its day starts at the time you leave, so the whole night is one day.
 
 > [!NOTE]
-> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.11, the hours already run today count; before, every new plan bought the hours again. Since v0.0.16, a car's hours stop when its battery is full. Before, a full car still showed its hours on the plan, though it never charged in them. Since v0.0.16, a car charger also keeps an hour where another appliance leaves it less than full power. Before, it stopped for that hour.
+> Since v0.0.11, this plan skips hours with no room under your target. Before that it could plan the appliance into an hour above the target. Since v0.0.11, the hours already run today count; before, every new plan bought the hours again. Since v0.0.16, a car charger also keeps an hour where another appliance leaves it less than full power. Before, it stopped for that hour. Since v0.0.17, a car charger with a charge level charges by energy across the whole night until you leave. Before, it took the hours a day you set, counted from midnight, so the hours after midnight could use up the hours before it.
 
 | | |
 |---|---|
-| Good for | a pump, a dehumidifier, anything that needs so many hours a day |
+| Good for | a pump, a dehumidifier, anything that needs so many hours a day; a car you would rather leave short than charge at a dear hour |
 | Needs | how many hours a day it should run |
 | Key | `cheapest_hours` |
 

@@ -184,7 +184,7 @@ def test_24_a_modul_3_heat_pump_plans_on_its_own_curve() -> None:
     wants = {
         "strategy": "cheapest_hours",
         "params": {"hours_per_day": 4},
-        "demand": demand(required_kwh=None),
+        "demand": demand(required_kwh=None, deadline=None),
     }
     pump = ev_view(load_id="hp", grid_tariff="modul3", **wants)
     ev = ev_view(load_id="ev", **wants)
@@ -200,7 +200,7 @@ def test_24_a_tariff_the_curves_do_not_carry_plans_on_the_house_curve() -> None:
         grid_tariff="gone",
         strategy="cheapest_hours",
         params={"hours_per_day": 4},
-        demand=demand(required_kwh=None),
+        demand=demand(required_kwh=None, deadline=None),
     )
     plan = plan_all([view], curves_of(house), site_ctx(), NOW).plans["ev"]
     assert _hours(plan.slots, next_day=True) == set(range(12, 16))

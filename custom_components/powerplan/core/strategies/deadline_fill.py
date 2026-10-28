@@ -45,7 +45,15 @@ if TYPE_CHECKING:
     from ..model import Demand, Plan, PriceCurve
     from .context import Headroom, PlanContext
 
-__all__ = ["DeadlineFill", "FlatPolicy", "SurplusOf", "plan_one"]
+__all__ = [
+    "DeadlineFill",
+    "FlatPolicy",
+    "SurplusOf",
+    "eta_of",
+    "flat_window",
+    "pause_cap",
+    "plan_one",
+]
 
 #: How a flat day is ordered when the price cannot order it (D5 §5.9).
 type FlatPolicy = Literal["fill", "spread"]
@@ -141,6 +149,7 @@ def _candidates(
     surplus: SurplusOf | None = None,
     grid: bool = True,
     eta_at: Callable[[float], float] | None = None,
+    max_price: Decimal | None = None,
 ) -> tuple[_Candidate, ...]:
     """Return the usable slots of `[now, until)` with their per-slot caps (§5.2).
 
@@ -151,10 +160,14 @@ def _candidates(
     `surplus` answers a slot's surplus bands (Phase 7, D5 §2): watts that do not
     import, so on top of the headroom, which counts import only (INV-19).
     `grid=False` is D5's `surplus` without its top-up: the surplus bands alone.
+    `max_price` drops a slot priced above it: `cheapest_hours`' car buys only
+    cheap slots, and leaves short rather than buy a dear one (D-0869).
     """
     out: list[_Candidate] = []
     for index, slot in enumerate(curve.slots_between(now, until)):
         if not_before is not None and slot.end <= not_before:
+            continue
+        if max_price is not None and slot.total > max_price:
             continue
         own = () if surplus is None else surplus(slot)
         sun_w = sum(watts for watts, _ in own)
@@ -624,6 +637,7 @@ def plan_one(
     eta_at: Callable[[float], float] | None = None,
     max_pauses: int | None = None,
     modulating: bool = False,
+    max_price: Decimal | None = None,
 ) -> Plan:
     """Return the cheapest plan covering `required_kwh` (D5 §5.2, §5.3).
 
@@ -651,6 +665,7 @@ def plan_one(
         surplus=surplus,
         grid=grid,
         eta_at=eta_at,
+        max_price=max_price,
     )
     banded = any(row.bands for row in candidates)
 
@@ -801,12 +816,12 @@ def _reason(planned: float, required: float, deadline: datetime | None, *, force
     return f"cheapest {planned:.1f} kWh before {deadline:%H:%M}"
 
 
-def _eta_of(ctx: PlanContext) -> Callable[[float], float] | None:
+def eta_of(ctx: PlanContext) -> Callable[[float], float] | None:
     """Return a car's efficiency at a draw, where its store has one (D-0776); `None` for any other load."""
     return getattr(ctx.load.store, "eta_at", None) if ctx.load.max_pauses is not None else None
 
 
-def _pause_cap(ctx: PlanContext) -> int | None:
+def pause_cap(ctx: PlanContext) -> int | None:
     """How many pauses the load's run may have: none until it resumes, then its type's cap (D-0776)."""
     cap = ctx.load.max_pauses
     if cap is None:
@@ -814,7 +829,7 @@ def _pause_cap(ctx: PlanContext) -> int | None:
     return cap if ctx.load.resumes is Resumes.YES else 0
 
 
-def _flat_window(ctx: PlanContext, deadline: datetime | None) -> bool:
+def flat_window(ctx: PlanContext, deadline: datetime | None) -> bool:
     """Return whether the slots from now to the deadline are flat (D5 §5.2, D-0771).
 
     The plan fills the slots between now and the deadline, so those are the ones
@@ -878,14 +893,14 @@ class DeadlineFill:
             min_w=demand.min_w,
             min_block_min=int(params["min_block_min"]),
             force=ctx.load.forced,
-            flat=_flat_window(ctx, demand.deadline),
+            flat=flat_window(ctx, demand.deadline),
             flat_policy=params["flat_policy"],
             prefer_late=bool(params["prefer_late"]),
             load_id=ctx.load.load_id,
             strategy=self.key,
             surplus=ctx.surplus_bands if ctx.surplus else None,
-            eta_at=_eta_of(ctx),
-            max_pauses=_pause_cap(ctx),
+            eta_at=eta_of(ctx),
+            max_pauses=pause_cap(ctx),
             modulating=ctx.load.modulating,
             inputs_hash=inputs_digest(
                 self.key,

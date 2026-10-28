@@ -47,8 +47,9 @@ NEXT_DAY = ORDINARY + timedelta(days=1)
 
 EV_W = 32.0 * W_PER_AMP
 
-#: A load that asks for hours alone: no requirement to stop at (D5 §5.4, D-0867).
-HOURS_ONLY = demand(required_kwh=None)
+#: A load that asks for hours alone: no requirement to stop at, and no departure to
+#: start its days at (D5 §5.4, D-0867, D-0869).
+HOURS_ONLY = demand(required_kwh=None, deadline=None)
 
 
 def hours_on(plan: Plan, day: object = NEXT_DAY) -> list[int]:

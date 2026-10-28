@@ -24,11 +24,15 @@ Three consequences the code makes explicit:
   cheapest slots, so it is found over contiguous runs - for a device that dislikes
   being started and stopped, one run at a slightly worse mean price is the better
   answer (§5.3's reasoning without its block bookkeeping).
-* **A battery takes no more than it lacks.** A car's SoC does not fall while it is
-  parked, so its requirement holds over the whole horizon: the chosen hours are
-  taken in time order until it is covered, and a full car plans none (D-0867). A
-  tank or a slab cools between the hours, so its requirement of now bounds nothing
-  and the hours stand.
+* **A car asks for kWh, not hours.** A car whose SoC is known is planned on
+  `deadline_fill`'s exact greedy over one window, now to its next departure (or
+  the end of the prices), with no day boundary in it: a cheap night from 22:00 to
+  06:00 is one night, not two days' quotas (D-0869). Only the cheap slots of that
+  window may be bought - at or under `max_price`, or the window's own mean - so
+  where they cannot hold the requirement the car leaves short rather than buy a
+  dear hour; that, and nothing else, is what sets it apart from `deadline_fill`.
+  A car with no SoC still runs hours, on days that start at its departure, and a
+  slot that passed while it did not want counts as none of them.
 
 Nothing here clamps a negative slot: hour 13 of an NO3 day is paid-for and is the
 first hour taken (INV-51).
@@ -46,6 +50,7 @@ from ..model import Desired, PlanMode, PlanSlot, Slot
 from ..pricing import Field, FieldKind, Schema
 from ..tariffs import TimeFilter
 from .base import free_plan, register
+from .deadline_fill import eta_of, flat_window, pause_cap, plan_one
 from .plan import build_plan, confidence_of, inputs_digest
 
 if TYPE_CHECKING:
@@ -96,8 +101,31 @@ def _floor_w(ctx: PlanContext, demand: Demand) -> float:
     return demand.max_w
 
 
+def _day_start(ctx: PlanContext, demand: Demand) -> time:
+    """Return the local time a day of hours starts at: a car's departure, else midnight.
+
+    A car's night is one night: counted from midnight, 22:00-24:00 and 00:00-06:00
+    are two days, and the morning's hours had already used up the evening's
+    (D-0869). A car with a departure counts its day from it.
+    """
+    if isinstance(ctx.store, EnergyStore) and demand.deadline is not None:
+        return demand.deadline.astimezone(ctx.tz).time()
+    return time()
+
+
+def _day_of(moment: datetime, ctx: PlanContext, start: time) -> date:
+    """Return the day of hours `moment` belongs to, days starting at local `start`."""
+    local = moment.astimezone(ctx.tz)
+    return (local - timedelta(hours=start.hour, minutes=start.minute)).date()
+
+
 def _rows(
-    ctx: PlanContext, *, window: TimeFilter | None, max_price: Decimal | None, floor_w: float
+    ctx: PlanContext,
+    *,
+    window: TimeFilter | None,
+    max_price: Decimal | None,
+    floor_w: float,
+    start: time,
 ) -> list[_Row]:
     """Return the slots of the horizon a chosen hour may come from (§5.4).
 
@@ -113,12 +141,12 @@ def _rows(
             continue
         if ctx.headroom.w_at(slot.start) < floor_w:
             continue
-        out.append(_Row(index=index, slot=slot, day=slot.start.astimezone(ctx.tz).date()))
+        out.append(_Row(index=index, slot=slot, day=_day_of(slot.start, ctx, start)))
     return out
 
 
 def _by_day(rows: Sequence[_Row]) -> dict[date, list[_Row]]:
-    """Group the candidate slots by their own local day, in time order."""
+    """Group the candidate slots by their day of hours, in time order."""
     days: dict[date, list[_Row]] = {}
     for row in rows:
         days.setdefault(row.day, []).append(row)
@@ -189,7 +217,7 @@ def _cheapest_run(rows: Sequence[_Row], hours: float) -> set[int]:
 
 
 def _history(
-    ctx: PlanContext, first: datetime, key: str
+    ctx: PlanContext, first: datetime, key: str, start: time
 ) -> tuple[list[PlanSlot], dict[date, float], bool]:
     """Return today's slots behind the window, the hours they ran, and whether a run is on.
 
@@ -202,12 +230,12 @@ def _history(
     previous = ctx.previous
     if previous is None or previous.strategy != key:
         return [], {}, False
-    midnight = datetime.combine(ctx.now.astimezone(ctx.tz).date(), time(), tzinfo=ctx.tz)
-    behind = [slot for slot in previous.slots if slot.end <= first and slot.start >= midnight]
+    began = datetime.combine(_day_of(ctx.now, ctx, start), start, tzinfo=ctx.tz)
+    behind = [slot for slot in previous.slots if slot.end <= first and slot.start >= began]
     ran: dict[date, float] = {}
     for slot in behind:
         if (slot.envelope_w or 0.0) > 0.0:
-            day = slot.start.astimezone(ctx.tz).date()
+            day = _day_of(slot.start, ctx, start)
             ran[day] = ran.get(day, 0.0) + slot.hours
     running = bool(behind) and behind[-1].end == first and (behind[-1].envelope_w or 0.0) > 0.0
     return behind, ran, running
@@ -291,6 +319,22 @@ def _desired(kind: str, *, on: bool) -> Desired | None:
     return Desired.COMFORT if on else Desired.SHED
 
 
+def _cheap_limit(ctx: PlanContext, until: datetime, cap: Decimal | None) -> Decimal | None:
+    """Return the dearest price a car may be charged at: `max_price`, else the window's mean.
+
+    The mean is time-weighted over the slots from now to `until`, so a night at
+    the grid's night rate is cheap against the day around it, and a flat window
+    is cheap throughout (D-0869).
+    """
+    if cap is not None:
+        return cap
+    slots = ctx.curve_in.slots_between(ctx.now, until)
+    weight = sum(slot.minutes for slot in slots)
+    if not weight:
+        return None
+    return sum((slot.total * slot.minutes for slot in slots), Decimal(0)) / weight
+
+
 def _cap(value: Any) -> Decimal | None:
     """Return a configured price cap as a `Decimal`, or `None` when unset."""
     if value is None:
@@ -332,13 +376,20 @@ class CheapestHours:
         consecutive = bool(params["consecutive"])
         cap = _cap(params["max_price"])
         window = params["window"] if isinstance(params["window"], TimeFilter) else None
+        if (
+            isinstance(ctx.store, EnergyStore)
+            and demand.required_kwh is not None
+            and window is None
+        ):
+            return self._car(demand, demand.required_kwh, ctx, params, cap=cap)
 
+        start = _day_start(ctx, demand)
         whole = ctx.effective.slots_between(ctx.now, ctx.horizon_end())
-        behind, ran, running = _history(ctx, whole[0].start if whole else ctx.now, self.key)
+        behind, ran, running = _history(ctx, whole[0].start if whole else ctx.now, self.key, start)
         pick = _cheapest_run if consecutive else _cheapest
         chosen: set[int] = set()
         for day, day_rows in _by_day(
-            _rows(ctx, window=window, max_price=cap, floor_w=_floor_w(ctx, demand))
+            _rows(ctx, window=window, max_price=cap, floor_w=_floor_w(ctx, demand), start=start)
         ).items():
             left = hours - ran.get(day, 0.0)
             if left <= _EPS_H:
@@ -378,5 +429,58 @@ class CheapestHours:
                 sorted((key, repr(value)) for key, value in params.items()),
                 # A car that fills up is a different question, whatever the prices (§5.9).
                 budget is not None and budget <= 0.0,
+                start,
+            ),
+        )
+
+    def _car(
+        self,
+        demand: Demand,
+        required: float,
+        ctx: PlanContext,
+        params: Mapping[str, Any],
+        *,
+        cap: Decimal | None,
+    ) -> Plan:
+        """Return a car's plan: its requirement in the cheap slots before it leaves (D-0869).
+
+        `deadline_fill`'s greedy over now to the departure, or to the end of the
+        prices without one, so the whole night competes on price with no day
+        boundary in it. Only slots at or under `_cheap_limit` are candidates: a
+        requirement they cannot hold leaves the plan short, never a dear hour
+        bought - the soft departure that sets this apart from `deadline_fill`.
+        `consecutive` is one run, no pause.
+        """
+        until = (
+            ctx.horizon_end()
+            if demand.deadline is None
+            else min(demand.deadline, ctx.horizon_end())
+        )
+        return plan_one(
+            ctx.curve_in,
+            required_kwh=required,
+            max_w=demand.max_w,
+            headroom=ctx.headroom,
+            now=ctx.now,
+            horizon_end=ctx.horizon_end(),
+            deadline=demand.deadline,
+            min_w=demand.min_w,
+            flat=flat_window(ctx, demand.deadline),
+            load_id=ctx.load.load_id,
+            strategy=self.key,
+            surplus=ctx.surplus_bands if ctx.surplus else None,
+            eta_at=eta_of(ctx),
+            max_pauses=0 if params["consecutive"] else pause_cap(ctx),
+            modulating=ctx.load.modulating,
+            max_price=_cheap_limit(ctx, until, cap),
+            inputs_hash=inputs_digest(
+                self.key,
+                ctx.load.mode,
+                demand.deadline,
+                demand.max_w,
+                demand.min_w,
+                sorted((key, repr(value)) for key, value in params.items()),
+                ctx.presence,
+                ctx.load.resumes,
             ),
         )

@@ -35,7 +35,8 @@ def test_16_a_norgespris_house_charges_in_the_grids_night_hours() -> None:
     assert len({slot.components["spot"] for slot in source.slots}) == 1, "the supplier is flat"
 
     view = ev_view(
-        strategy="cheapest_hours", params={"hours_per_day": 4}, demand=demand(required_kwh=None)
+        strategy="cheapest_hours", params={"hours_per_day": 4},
+        demand=demand(required_kwh=None, deadline=None),
     )
     plan = plan_all([view], curves_of(source), site_ctx(), NOW).plans["ev"]
 
