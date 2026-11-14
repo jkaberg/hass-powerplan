@@ -126,7 +126,7 @@ class HotWater:
     schema: ClassVar[Schema] = (
         Field(key="reserve_kwh", kind=FieldKind.NUMBER, default=4.4, unit="kWh"),
         Field(key="margin_kwh", kind=FieldKind.NUMBER, default=0.5, unit="kWh", advanced=True),
-        Field(key="min_block_min", kind=FieldKind.NUMBER, default=30, unit="min", advanced=True),
+        Field(key="min_block_min", kind=FieldKind.NUMBER, default=15, unit="min", advanced=True),
     )
 
     def plan(self, demand: Demand, ctx: PlanContext, params: Mapping[str, Any]) -> Plan:

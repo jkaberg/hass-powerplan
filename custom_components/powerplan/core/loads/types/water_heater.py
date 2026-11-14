@@ -138,9 +138,10 @@ TANK_LITRES: Final = (100.0, 120.0, 150.0, 200.0, 300.0, 400.0)
 ELEMENT_KW: Final = (1.5, 2.0, 3.0, 4.5, 6.0, 9.0)
 
 #: How much of a tank's charge is worth committing to in one block, minutes
-#: (`design/DECISIONS.md` D-0204). D5's `deadline_fill` uses it to refuse the
-#: flipping tank: four reversals in 23 minutes on the ancestor controller.
-MIN_BLOCK_MIN: Final = 30.0
+#: (`design/DECISIONS.md` D-0204, D-0871). D5's `deadline_fill` uses it to refuse the
+#: flipping tank: four reversals in 23 minutes on the ancestor controller. A
+#: quarter-hour still refuses that and lets a block skip a dear quarter.
+MIN_BLOCK_MIN: Final = 15.0
 
 #: The temperature difference that counts as "there" for a tank, kelvin.
 _EPS_K: Final = 0.1

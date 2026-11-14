@@ -102,7 +102,7 @@
     "priority": 40,
     "strategy": "deadline_fill",
     "strategy_params": {
-      "min_block_min": 30.0,
+      "min_block_min": 15.0,
       "prefer_late": true,
       "reserve_kwh": 4.4
     }

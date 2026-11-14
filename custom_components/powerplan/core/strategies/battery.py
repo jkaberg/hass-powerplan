@@ -72,8 +72,11 @@ _POWER_STEP_W: Final = 100.0
 #: The most explicit powers a slot offers on each side: the search is one array of
 #: levels by actions per slot, and a 5 kW inverter in 100 W steps is 50 of them.
 _SIDE_ACTIONS: Final = 20
-#: The level grid, as a share of the usable capacity (D5 §5.14: at most 0.5 %).
-_RESOLUTION: Final = 0.005
+#: The level grid, as a share of the usable capacity (D5 §5.14, D-0871): 0.5 % left a peak
+#: ending 3 points above the reserve, the step the interpolation could not see past.
+_RESOLUTION: Final = 0.001
+#: Levels the battery's grid may have: the whole usable range at `_RESOLUTION`.
+_MAX_LEVELS: Final = 1001
 #: Costs within this are equal (INV-32): float noise, never a decision.
 _TIE: Final = 1e-6
 #: What the house imports where the forecast offers no baseline: more than any battery delivers.
@@ -415,7 +418,13 @@ def _plan(
     def terminal(levels: Floats) -> Floats:
         return -value * levels
 
-    route = solve(stages, start=start, terminal=terminal, resolution=_RESOLUTION * 100.0 * per_unit)
+    route = solve(
+        stages,
+        start=start,
+        terminal=terminal,
+        resolution=_RESOLUTION * 100.0 * per_unit,
+        max_levels=_MAX_LEVELS,
+    )
     found = _published(rows, [commands for _, commands in built], route, bat)
     planned = [_plan_slot(row, command) for row, command in zip(rows, found, strict=True)]
     charging = sum(1 for c in found if c is not None and c > 0.0)

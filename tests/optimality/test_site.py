@@ -96,7 +96,7 @@ def _tank_view(level_kwh: float) -> LoadView:
         kind="setpoint",
         store=STORE,
         level_now=level_c(level_kwh),
-        params={"reserve_kwh": RESERVE_KWH, "min_block_min": 30},
+        params={"reserve_kwh": RESERVE_KWH, "min_block_min": 15},
     )
 
 
@@ -125,8 +125,8 @@ def _floor_power(rc: RcModel, setpoint: float, t: float, cap_w: float) -> float:
 
 def _walk(  # noqa: PLR0912, PLR0915 - one slot of three loads, shared by priority
     prices: Sequence[float], ceiling_w: float, *, planned: bool
-) -> tuple[float, str | None]:
-    """Run the three loads for 48 h under `ceiling_w`; return the cost and any breach.
+) -> tuple[float, float, str | None]:
+    """Run the three loads for 48 h under `ceiling_w`; return the cost, the tank's level and any breach.
 
     `planned` is `plan_all` every quarter hour with the previous plans; otherwise
     each load does the plain thing. In both, a slot's power is shared by priority.
@@ -218,11 +218,14 @@ def _walk(  # noqa: PLR0912, PLR0915 - one slot of three loads, shared by priori
         problems.append(f"the floor was under its band in {cold} slots")
     if left > 1e-6:
         problems.append(f"{left:.2f} kWh of the car missing at 07:00")
-    return cost, "; ".join(problems) or None
+    return cost, level, "; ".join(problems) or None
 
 
-def _joint_optimum(prices: Sequence[float], ceiling_w: float) -> float:
-    """Return the cost of the best plan for all three at once, under the same ceiling."""
+def _joint_optimum(prices: Sequence[float], ceiling_w: float, end_kwh: float) -> float:
+    """Return the cost of the best plan for all three at once, under the same ceiling.
+
+    The tank ends no emptier than `end_kwh`, the level ours left it at (D-0871).
+    """
     rc = rc_of(FLOOR, T_OUT)
     out = out_per_slot()
     need = need_per_slot(out)
@@ -260,7 +263,8 @@ def _joint_optimum(prices: Sequence[float], ceiling_w: float) -> float:
         )
         cum_out += out[k]
         cum[tank[k]] = 1.0
-        prog.row(dict(cum), need[k] - level0 + cum_out, TOP - level0 + cum_out)
+        floor_k = need[k] if k < N - 1 else max(need[k], end_kwh)
+        prog.row(dict(cum), floor_k - level0 + cum_out, TOP - level0 + cum_out)
         # The three share the ceiling: watts for the floor, kWh/h for the other two.
         prog.row(
             {power[k]: 1.0, tank[k]: 1000.0 / H, car[k]: 1000.0 / H},
@@ -278,7 +282,8 @@ def _joint_optimum(prices: Sequence[float], ceiling_w: float) -> float:
 
 def _hands_off(prices: Sequence[float], ceiling_w: float) -> tuple[float, str | None]:
     """Return the plain loads' cost under the ceiling, shared by priority."""
-    return _walk(prices, ceiling_w, planned=False)
+    cost, _, breach = _walk(prices, ceiling_w, planned=False)
+    return cost, breach
 
 
 @pytest.mark.parametrize("day", DAY_NAMES)
@@ -286,9 +291,9 @@ def _hands_off(prices: Sequence[float], ceiling_w: float) -> tuple[float, str | 
 def test_site(ceiling_w: float, day: str) -> None:
     """The walk against hands-off and the joint optimum, under 5, 7 and 10 kW."""
     prices = DAYS[day]
-    ours, breach = _walk(prices, ceiling_w, planned=True)
+    ours, level, breach = _walk(prices, ceiling_w, planned=True)
     base, _ = _hands_off(prices, ceiling_w)
-    best = _joint_optimum(prices, ceiling_w)
+    best = _joint_optimum(prices, ceiling_w, level)
     key = f"site/{ceiling_w / 1000:g}kW/{day}"
     check(
         key,

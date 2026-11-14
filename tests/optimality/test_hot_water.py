@@ -5,10 +5,13 @@ above its 45 °C floor; every slot must end at or above the margin plus the next
 hour's draws, and below the 75 °C charge level. The reserve above the margin is
 bought only where nothing later is cheaper (D-0870), so it is no constraint here. The plan's slots carry fractions of
 the element's energy and the loop executes them as planned, so the optimum is the
-LP over the same slots (an on/off element in 30-minute blocks, `on_off=True`, costs
+LP over the same slots (an on/off element in quarter-hour blocks, `on_off=True`, costs
 a little more and is what the plan's blocks approximate). Hands-off is a
 thermostat that tops the tank up to 75 °C every slot. The level left in the tank
-at the end is valued at the day's mean price, for ours, hands-off and the optimum.
+at the end is valued at the day's mean price for ours and hands-off, and the
+optimum must leave at least what ours left: an LP free to end on the margin bought
+less than ours and was credited nothing for it, so a strategy that kept a cheap
+reserve scored over the optimum (D-0871).
 """
 
 from __future__ import annotations
@@ -75,8 +78,8 @@ def need_per_slot(out: list[float]) -> list[float]:
 
 def run(
     strategy: str, prices: tuple[float, ...], out: list[float], need: list[float]
-) -> tuple[float, float, str | None]:
-    """Run `strategy` closed-loop, or the thermostat, and return `(cost, kept, breach)`."""
+) -> tuple[float, float, float, str | None]:
+    """Run `strategy` closed-loop, or the thermostat, and return `(cost, kept, level, breach)`."""
     curve = curve_of(prices)
     site = site_ctx()
     room = Headroom(by_slot={})
@@ -106,7 +109,7 @@ def run(
                 kind="setpoint",
                 store=STORE,
                 level_now=level_c(level),
-                params={"reserve_kwh": RESERVE_KWH, "min_block_min": 30},
+                params={"reserve_kwh": RESERVE_KWH, "min_block_min": 15},
             )
             planned = plan_all(
                 [view],
@@ -128,7 +131,7 @@ def run(
         short += level < need[k] - 1e-6
     kept = (level - start_level) * sum(prices) / N
     breach = f"{short} slots ended under their need" if short else None
-    return cost, kept, breach
+    return cost, kept, level, breach
 
 
 @pytest.mark.parametrize("day", DAY_NAMES)
@@ -137,12 +140,14 @@ def test_hot_water(day: str) -> None:
     prices = DAYS[day]
     out = out_per_slot()
     need = need_per_slot(out)
-    ours, kept, breach = run("hot_water", prices, out, need)
-    base, base_kept, _ = run("thermostat", prices, out, need)
+    ours, kept, level, breach = run("hot_water", prices, out, need)
+    base, base_kept, _, _ = run("thermostat", prices, out, need)
+    # The optimum leaves the tank no emptier than ours did (D-0871).
+    need_best = [*need[:-1], max(need[-1], level)]
     best = tank_optimum(
         prices,
         out_kwh=out,
-        need_kwh=need,
+        need_kwh=need_best,
         top_kwh=TOP,
         level0_kwh=PER_K * (START_C - 45.0),
         element_w=ELEMENT_W,
