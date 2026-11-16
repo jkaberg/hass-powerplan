@@ -60,10 +60,11 @@ _MINUTES_PER_DAY: Final = 24 * 60
 
 @dataclass(frozen=True, slots=True)
 class _Pattern:
-    """A calendar pattern: ISO weekdays, or the country's public holidays."""
+    """A calendar pattern: ISO weekdays, the country's public holidays, or dates now past."""
 
     days: frozenset[int]
     holidays: bool
+    past: bool = False
 
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +150,7 @@ def parse(
     if not tariffs:
         msg = f"{KEY}: {org} publishes no household tariff {product!r}"
         raise QualityError(msg)
-    patterns = _patterns(document)
+    patterns = _patterns(document, fetched)
     capacity: list[TariffVersion] = []
     energy: list[EnergyVersion] = []
     fees: list[FeeVersion] = []
@@ -394,12 +395,23 @@ def _summed(fees: Sequence[FeeVersion]) -> tuple[FeeVersion, ...]:
 # --------------------------------------------------------------------------- #
 
 
-def _patterns(document: Mapping[str, Any]) -> dict[str, _Pattern]:
-    """Return the document's calendar patterns; one with dates is refused where used."""
+def _patterns(document: Mapping[str, Any], fetched: date) -> dict[str, _Pattern]:
+    """Return the document's calendar patterns; one with dates still to come is refused where used.
+
+    Falu Elnät lists its "holidays" as dates, the country's red days with Christmas
+    and New Year's Eve: read as the country's holidays. Its "peak_exemptions", the
+    weekdays after storm Johannes, were all past when first seen (D-0873).
+    """
     found: dict[str, _Pattern] = {}
     for pattern in document.get("calendarPatterns") or ():
         reference = pattern.get("reference")
-        if reference is None or pattern.get("dates"):
+        if reference is None:
+            continue
+        if dates := pattern.get("dates"):
+            if reference == "holidays":
+                found[str(reference)] = _Pattern(days=frozenset(), holidays=True)
+            elif all(date.fromisoformat(str(d)) < fetched for d in dates):
+                found[str(reference)] = _Pattern(days=frozenset(), holidays=False, past=True)
             continue
         days = frozenset(int(day) for day in pattern.get("days") or ())
         found[str(reference)] = _Pattern(days=days, holidays=not days and reference == "holidays")
@@ -431,7 +443,10 @@ def _filter(active: Mapping[str, Any], patterns: Mapping[str, _Pattern], org: st
     include = [patterns.get(str(r)) for r in references.get("include") or ()]
     exclude = [patterns.get(str(r)) for r in references.get("exclude") or ()]
     if None in include or None in exclude:
-        msg = f"{KEY}: {org} names a calendar pattern it does not define"
+        msg = f"{KEY}: {org} names a calendar pattern it does not define, or dates still to come"
+        raise QualityError(msg)
+    if any(p.past for p in include if p is not None):
+        msg = f"{KEY}: {org} prices only on dates now past"
         raise QualityError(msg)
     days = frozenset().union(*(p.days for p in include if p is not None))
     with_holidays = any(p.holidays for p in include if p is not None)

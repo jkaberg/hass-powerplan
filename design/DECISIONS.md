@@ -3988,3 +3988,15 @@ Measured on the best-plan catalogue (D9 §5.17), 14 Nov 2026. Three findings, ea
 
 The ratchet in `tests/optimality/baseline.json` moves down for 32 entries, all `hot_water/tank300/*` and `site/*`: their yardstick moved, not the strategies. On it `hot_water` captures 93–100 % and `site` 87–100 %, no share is over 1, and the three `site/*/falling` days now fill the car. A tank derived before keeps its stored 30 (INV-66) until **Change setup** is saved. Affects D4 §6.3, D5 §5.13, §5.14, §6.
 **Rejected:** a finer grid for `heat_capacitor` (`_RESOLUTION_K` 0.04 → 0.01 changed none of its six weakest cases, whose step is the thermostat's); 15-minute blocks only where prices change inside the hour (a rule on the curve's shape for a gain the planner already finds itself); a joint plan for the site (R16, INV-33, the owner's call).
+
+### D-0873 · Eltariff calendar patterns of dates
+
+Falu Elnät (556002-8473) answered with two date-list patterns on 16 Nov 2026, and every one of its tariffs was refused, since a pattern with `dates` was refused wherever used. Its peak window is weekdays 07–19, November to March, excluding both.
+
+| pattern | dates | read as |
+|---|---|---|
+| `holidays` | 90, 2025–2030: Sweden's public holidays plus 24 and 31 Dec | the country's holidays (`HolidayMode.EXCLUDE`); our SE calendar lacks the two eves, which are then read as peak days, the cautious side |
+| `peak_exemptions` | 23, 24 Dec 2025 – 15 Jan 2026, after storm Johannes | ignored: every date is before the fetch |
+
+Any other date list, or one with a date still to come, is refused as before, since `TimeFilter` holds weekdays and holidays, not dates. A past-only pattern that a period includes is refused too: it prices nothing. Affects D13 §5.11's `eltariff` row and `docs/tariffs.md`.
+**Rejected:** matching a dated pattern to the country's holidays by its dates rather than its reference (the eves already differ, so a match would need a tolerance to tune); dropping a future exemption (the copy would state a window that is wrong on those days, with nothing to show it).

@@ -13,6 +13,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+import pytest
+
 from custom_components.powerplan.core.tariffs.household import (
     EXCL,
     HouseholdPrice,
@@ -30,6 +32,7 @@ from custom_components.powerplan.core.tariffs.model import (
     TimeFilter,
 )
 from custom_components.powerplan.core.tariffs.sources import eltariff
+from custom_components.powerplan.core.tariffs.sources.base import QualityError
 from tests.builders.tariff_sources import CAPTURED, FIXTURES
 
 GOTEBORG = "556379-2729"
@@ -141,3 +144,29 @@ def test_2_the_list_offers_households_only_with_the_countrys_zones() -> None:
     assert "GNO63" not in products, "over 63 A"
     assert "GN10KW" in products
     assert found[0].zones == ("", "norr")
+
+
+FALU = "556002-8473"
+FALU_FILE = "api-grid-tariff-bitv-is-pub-falu-elnat-v0.json"
+FALU_16A = "FEV-16A"
+
+
+def test_2_falu_lists_its_holidays_and_past_exemptions_as_dates() -> None:
+    """Falu Elnät: weekdays 07-19 but its red days, listed as dates; storm Johannes' are past (D-0873)."""
+    winter = _parse(FALU_FILE, FALU, FALU_16A).grid.capacity_at(date(2026, 1, 15)).rules[0]
+    assert isinstance(winter, PeakTariff)
+    assert winter.n == 3
+    assert winter.eligible == TimeFilter(
+        weekdays=(0, 1, 2, 3, 4), hours=((420, 1140),), holidays=HolidayMode.EXCLUDE
+    )
+
+
+def test_2_exemption_dates_still_to_come_are_refused() -> None:
+    """A date list the tariff model can't hold is refused until its last date has passed (D-0873)."""
+    document = _document(FALU_FILE)
+    exemptions = next(
+        p for p in document["calendarPatterns"] if p["reference"] == "peak_exemptions"
+    )
+    exemptions["dates"] = [*exemptions["dates"], "2099-01-02"]
+    with pytest.raises(QualityError, match="dates still to come"):
+        eltariff.parse(document, FALU, FALU_16A, fetched=CAPTURED, url="https://x.invalid")
