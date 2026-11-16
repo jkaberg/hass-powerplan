@@ -124,6 +124,15 @@ async def test_denmarks_elpris_and_datahub_agree_on_the_captured_documents() -> 
     assert findings, "areas 131 and 145 have no Datahub rows captured: said so, not skipped"
 
 
+def test_datahub_is_rounded_half_up_like_elpris() -> None:
+    """Aal El-net's 0.11625 on Datahub is 0.1163 on elpris.dk, not 0.1162."""
+    version = SimpleNamespace(
+        fallback=Decimal("0.03875"),
+        periods=[SimpleNamespace(when=21, price=Decimal("0.11625"))],
+    )
+    assert tariff_canary._rounded(version) == (Decimal("0.0388"), ((21, Decimal("0.1163")),))
+
+
 def test_a_long_only_source_is_sampled_the_same_every_night() -> None:
     """ElCom's ~2 100 municipalities fit no night: a fixed spread of them does (D-0681)."""
     municipalities = list(range(2135))
@@ -168,6 +177,25 @@ async def test_a_429_is_asked_again_and_a_404_is_not(monkeypatch: pytest.MonkeyP
     with pytest.raises(UnreachableError, match="HTTP 404"):
         await tariff_canary.CanaryHttp(gone, DAY).get("https://example.invalid/gone")  # type: ignore[arg-type]
     assert gone.asked == 1
+
+
+async def test_datahub_is_asked_once_a_minute(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Energi Data Service answers DatahubPricelist's second request in a minute with a 429 (D-0872)."""
+    waits: list[float] = []
+
+    async def wait(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(tariff_canary.asyncio, "sleep", wait)
+    replies = _Replies([], b"{}")
+    http = tariff_canary.CanaryHttp(replies, DAY)  # type: ignore[arg-type]
+    dataset = tariff_canary.datahub_pricelist.DATASET
+    await http.get(f"{dataset}?filter=a")
+    await http.get("https://example.invalid/other")
+    await http.get(f"{dataset}?filter=b")
+    assert replies.asked == 3
+    assert len(waits) == 1, "the first Datahub query and the other host wait for nothing"
+    assert 60.0 < waits[0] <= tariff_canary.PACED[dataset]
 
 
 def test_like_products_are_compared_across_tiers() -> None:

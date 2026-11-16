@@ -19,7 +19,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -71,6 +71,10 @@ BACKOFF_S = (5.0, 20.0, 60.0)
 #: Seconds to wait before asking again after a dropped connection or a timeout: Ei's
 #: workbook failed at 03:59 and fetched at 10:00 (D-0705). An HTTP answer isn't retried.
 RETRY_S = (5.0, 30.0)
+#: Seconds between two requests to an endpoint that allows one a minute: Energi Data
+#: Service's DatahubPricelist has answered a second within 60 s with a 429 since
+#: 2026-11-04, and the canary asks it once per Danish area (D-0872).
+PACED: Final = {datahub_pricelist.DATASET: 61.0}
 #: The findings the maintainer has read and that no fix of ours can settle (D-0705).
 KNOWN = REPO_ROOT / "tools" / "tariff_canary_known.json"
 #: Days an acknowledgement holds before the finding is shown again.
@@ -110,6 +114,7 @@ class CanaryHttp(base.Http):
         self._day = day
         self._cache: dict[str, bytes] = {}
         self._parsed: dict[tuple[str, Callable[[bytes], Any]], Any] = {}
+        self._asked: dict[str, float] = {}
 
     def today(self) -> date:
         """Return the run's day: what every fetch is dated by."""
@@ -124,6 +129,7 @@ class CanaryHttp(base.Http):
         dropped = iter(RETRY_S)
         for pause in (*BACKOFF_S, None):
             while True:
+                await self._pace(url)
                 try:
                     return await super()._download(url, headers)
                 except UnreachableError as err:
@@ -135,6 +141,17 @@ class CanaryHttp(base.Http):
                 await asyncio.sleep(wait)
             await asyncio.sleep(pause)
         raise AssertionError  # unreachable: the last pass returns or raises
+
+    async def _pace(self, url: str) -> None:
+        """Wait out an endpoint's interval since the last request to it (`PACED`)."""
+        prefix = next((p for p in PACED if url.startswith(p)), None)
+        if prefix is None:
+            return
+        loop = asyncio.get_running_loop()
+        last = self._asked.get(prefix)
+        if last is not None:
+            await asyncio.sleep(max(0.0, last + PACED[prefix] - loop.time()))
+        self._asked[prefix] = loop.time()
 
     async def _send(self, url: str, body: Mapping[str, Any]) -> bytes:
         """POST, asking again after a dropped connection (ElCom's "Server disconnected")."""
@@ -288,11 +305,14 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
 
 
 def _rounded(version):  # type: ignore[no-untyped-def]
-    """Datahub prices to six decimals, elpris.dk to four: compare at four."""
+    """Datahub prices to six decimals, elpris.dk to four, half up: compare at four.
+
+    Aal El-net's 0.11625 is 0.1163 on elpris.dk; banker's rounding made it 0.1162.
+    """
     quantum = Decimal("0.0001")
     return (
-        version.fallback.quantize(quantum),
-        tuple((p.when, p.price.quantize(quantum)) for p in version.periods),
+        version.fallback.quantize(quantum, ROUND_HALF_UP),
+        tuple((p.when, p.price.quantize(quantum, ROUND_HALF_UP)) for p in version.periods),
     )
 
 
