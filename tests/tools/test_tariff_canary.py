@@ -170,6 +170,25 @@ async def test_a_429_is_asked_again_and_a_404_is_not(monkeypatch: pytest.MonkeyP
     assert gone.asked == 1
 
 
+async def test_datahub_is_asked_once_a_minute(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Energi Data Service answers DatahubPricelist's second request in a minute with a 429 (D-0872)."""
+    waits: list[float] = []
+
+    async def wait(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(tariff_canary.asyncio, "sleep", wait)
+    replies = _Replies([], b"{}")
+    http = tariff_canary.CanaryHttp(replies, DAY)  # type: ignore[arg-type]
+    dataset = tariff_canary.datahub_pricelist.DATASET
+    await http.get(f"{dataset}?filter=a")
+    await http.get("https://example.invalid/other")
+    await http.get(f"{dataset}?filter=b")
+    assert replies.asked == 3
+    assert len(waits) == 1, "the first Datahub query and the other host wait for nothing"
+    assert 60.0 < waits[0] <= tariff_canary.PACED[dataset]
+
+
 def test_like_products_are_compared_across_tiers() -> None:
     """Eltariff and Ei name a product differently: the dwelling, the fuse and the region pair them."""
     kind = tariff_canary.kind

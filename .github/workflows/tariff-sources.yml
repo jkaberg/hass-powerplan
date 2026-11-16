@@ -20,7 +20,8 @@ jobs:
   canary:
     name: tariff sources, live
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Denmark alone takes 34 minutes: one Datahub query a minute, one per area (D-0872).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
