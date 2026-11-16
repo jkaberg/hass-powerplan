@@ -4001,3 +4001,15 @@ Since 2026-11-04 Energi Data Service answers a second `DatahubPricelist` request
 
 A household's renewal asks Datahub once and is untouched (D-0571).
 **Rejected:** one query for every code at once, served to each area by the canary (it would replay the API's `start` and `limit` rules, not test them); checking a sample of areas a night (a changed tariff would go unseen for days).
+
+### D-0873 · Eltariff calendar patterns of dates
+
+Falu Elnät (556002-8473) answered with two date-list patterns on 16 Nov 2026, and every one of its tariffs was refused, since a pattern with `dates` was refused wherever used. Its peak window is weekdays 07–19, November to March, excluding both.
+
+| pattern | dates | read as |
+|---|---|---|
+| `holidays` | 90, 2025–2030: Sweden's public holidays plus 24 and 31 Dec | the country's holidays (`HolidayMode.EXCLUDE`); our SE calendar lacks the two eves, which are then read as peak days, the cautious side |
+| `peak_exemptions` | 23, 24 Dec 2025 – 15 Jan 2026, after storm Johannes | ignored: every date is before the fetch |
+
+Any other date list, or one with a date still to come, is refused as before, since `TimeFilter` holds weekdays and holidays, not dates. A past-only pattern that a period includes is refused too: it prices nothing. Affects D13 §5.11's `eltariff` row and `docs/tariffs.md`.
+**Rejected:** matching a dated pattern to the country's holidays by its dates rather than its reference (the eves already differ, so a match would need a tolerance to tune); dropping a future exemption (the copy would state a window that is wrong on those days, with nothing to show it).

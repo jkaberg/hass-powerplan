@@ -67,7 +67,7 @@ Norway. Every grid company in [Fri Nettleie](https://github.com/kraftsystemet/fr
 <a name="eltariff"></a>
 ### Eltariff
 
-Sweden. The grid companies that publish their tariffs through the industry's Eltariff API. Tariffs with a day and a night power price are both billed. Setup asks whether you pay the lower energy tax in the north.
+Sweden. The grid companies that publish their tariffs through the industry's Eltariff API. Tariffs with a day and a night power price are both billed. A company that lists its holidays as dates is read with Sweden's public holidays, so Christmas Eve and New Year's Eve count as ordinary days unless you add them to your holidays. Setup asks whether you pay the lower energy tax in the north.
 
 <a name="ei_household"></a>
 ### Energimarknadsinspektionen
