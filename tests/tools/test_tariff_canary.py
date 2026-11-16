@@ -124,6 +124,15 @@ async def test_denmarks_elpris_and_datahub_agree_on_the_captured_documents() -> 
     assert findings, "areas 131 and 145 have no Datahub rows captured: said so, not skipped"
 
 
+def test_datahub_is_rounded_half_up_like_elpris() -> None:
+    """Aal El-net's 0.11625 on Datahub is 0.1163 on elpris.dk, not 0.1162."""
+    version = SimpleNamespace(
+        fallback=Decimal("0.03875"),
+        periods=[SimpleNamespace(when=21, price=Decimal("0.11625"))],
+    )
+    assert tariff_canary._rounded(version) == (Decimal("0.0388"), ((21, Decimal("0.1163")),))
+
+
 def test_a_long_only_source_is_sampled_the_same_every_night() -> None:
     """ElCom's ~2 100 municipalities fit no night: a fixed spread of them does (D-0681)."""
     municipalities = list(range(2135))

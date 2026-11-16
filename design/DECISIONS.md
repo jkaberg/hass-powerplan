@@ -3997,6 +3997,7 @@ Since 2026-11-04 Energi Data Service answers a second `DatahubPricelist` request
 |---|---|
 | `CanaryHttp` waits 61 s between two `DatahubPricelist` requests (`PACED`) | the server's own window; the 429 backoff stays for a stray one |
 | the job's limit 30 → 60 min | Denmark alone now takes about 34 min; the other ten countries about 8 |
+| `_rounded` rounds Datahub half up, not half even | Aal El-net's 0.11625 is 0.1163 on elpris.dk; half even made 0.1162 and a finding every night since 2 Nov |
 
 A household's renewal asks Datahub once and is untouched (D-0571).
 **Rejected:** one query for every code at once, served to each area by the canary (it would replay the API's `start` and `limit` rules, not test them); checking a sample of areas a night (a changed tariff would go unseen for days).

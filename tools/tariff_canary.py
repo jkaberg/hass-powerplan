@@ -19,7 +19,7 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -305,11 +305,14 @@ async def datahub_check(http: CanaryHttp, day: date) -> list[Finding]:
 
 
 def _rounded(version):  # type: ignore[no-untyped-def]
-    """Datahub prices to six decimals, elpris.dk to four: compare at four."""
+    """Datahub prices to six decimals, elpris.dk to four, half up: compare at four.
+
+    Aal El-net's 0.11625 is 0.1163 on elpris.dk; banker's rounding made it 0.1162.
+    """
     quantum = Decimal("0.0001")
     return (
-        version.fallback.quantize(quantum),
-        tuple((p.when, p.price.quantize(quantum)) for p in version.periods),
+        version.fallback.quantize(quantum, ROUND_HALF_UP),
+        tuple((p.when, p.price.quantize(quantum, ROUND_HALF_UP)) for p in version.periods),
     )
 
 
