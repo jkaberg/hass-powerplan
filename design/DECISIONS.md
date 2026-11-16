@@ -3988,3 +3988,16 @@ Measured on the best-plan catalogue (D9 §5.17), 14 Nov 2026. Three findings, ea
 
 The ratchet in `tests/optimality/baseline.json` moves down for 32 entries, all `hot_water/tank300/*` and `site/*`: their yardstick moved, not the strategies. On it `hot_water` captures 93–100 % and `site` 87–100 %, no share is over 1, and the three `site/*/falling` days now fill the car. A tank derived before keeps its stored 30 (INV-66) until **Change setup** is saved. Affects D4 §6.3, D5 §5.13, §5.14, §6.
 **Rejected:** a finer grid for `heat_capacitor` (`_RESOLUTION_K` 0.04 → 0.01 changed none of its six weakest cases, whose step is the thermostat's); 15-minute blocks only where prices change inside the hour (a rule on the curve's shape for a gain the planner already finds itself); a joint plan for the site (R16, INV-33, the owner's call).
+
+### D-0872 · The canary asks Datahub once a minute
+
+Since 2026-11-04 Energi Data Service answers a second `DatahubPricelist` request within 60 s with a 429 (`Retry-After` counts down from 60; `Elspotprices` allows one in 300 s). Measured 16 Nov 2026. The canary asks it once per Danish area, 33 distinct queries for 34 areas, so its 5/20/60 s backoff ran out on most of them and the nightly `tariff-sources` job hit its 30-minute limit every night from 4 Nov.
+
+| change | why |
+|---|---|
+| `CanaryHttp` waits 61 s between two `DatahubPricelist` requests (`PACED`) | the server's own window; the 429 backoff stays for a stray one |
+| the job's limit 30 → 60 min | Denmark alone now takes about 34 min; the other ten countries about 8 |
+| `_rounded` rounds Datahub half up, not half even | Aal El-net's 0.11625 is 0.1163 on elpris.dk; half even made 0.1162 and a finding every night since 2 Nov |
+
+A household's renewal asks Datahub once and is untouched (D-0571).
+**Rejected:** one query for every code at once, served to each area by the canary (it would replay the API's `start` and `limit` rules, not test them); checking a sample of areas a night (a changed tariff would go unseen for days).
