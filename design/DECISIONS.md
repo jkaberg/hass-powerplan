@@ -4013,3 +4013,17 @@ Falu Elnät (556002-8473) answered with two date-list patterns on 16 Nov 2026, a
 
 Any other date list, or one with a date still to come, is refused as before, since `TimeFilter` holds weekdays and holidays, not dates. A past-only pattern that a period includes is refused too: it prices nothing. Affects D13 §5.11's `eltariff` row and `docs/tariffs.md`.
 **Rejected:** matching a dated pattern to the country's holidays by its dates rather than its reference (the eves already differ, so a match would need a tolerance to tune); dropping a future exemption (the copy would state a window that is wrong on those days, with nothing to show it).
+
+### D-0874 · The route holds on the store's own loss where τ's band put `C/τ` above it
+
+On 21 Nov 2026 the live living-room foil ("Gulvvarme stua", 30 m², 1.74 kW, floor probe) was planned at 0.435 kWh every quarter-hour, 74 kWh over the horizon, while the meter showed 0.1-1.3 kWh a day. Its calibration had passed (D-0856): 59 W at a 22.6 K drive, so UA 2.6 W/K and `τ = 0.9 kWh/K / 2.6 W/K = 345 h`, clamped to the floor probe's 6 h (D-0778, D-0863). `holding.py` held on the 2.6 W/K. The route did not: `_model` set `loss = C·1000/τ` = 150 W/K, 57× the measured one, and held the target at the nameplate. The plan showed it whenever the worth gate let the route run, as the first plan after that day's restart did.
+
+| point | choice |
+|---|---|
+| loss | `C·1000/τ` as before, unless the store's own coefficient (fitted, calibrated or answered: `_loss`, the one `holding.py` reads) is lower. A τ clamped from above is exactly that case |
+| capacity | `loss·τ/1000`, so the route stays one node: holding at the measured draw, coasting at the clamped τ. Unclamped, it is the store's `C` again |
+| unchanged | a loss above `C/τ` (the optimality catalogue's `room40` answers 100 W/K beside a 40 W/K `C/τ` and is simulated on `C` and τ), `_tau`'s precedence, `holding.py`, the fits and their bounds |
+
+On the live foil the route now holds at 2.6 × 26 K = 68 W against 1 739 W (`test_08_a_clamped_tau_keeps_the_measured_loss`).
+
+**Rejected:** the store's own loss always (43 optimality cases fell under 0.97 of the best plan, `room40` to 0.92: its configured loss is not what its simulator loses); keeping the store's 0.9 kWh/K beside the lower loss (a fall of 1 K would be priced at 57× what the dynamics charge to recover it, so the route would sit at `lo`); lifting the clamp for calibrated fits (D-0863: TV-stua at 279 h planned eco for 14 h on a probe that falls 1 K in 45 minutes); a two-node floor model (v1.x, D-0778).

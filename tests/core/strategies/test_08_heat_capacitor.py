@@ -955,3 +955,36 @@ def test_39_with_no_room_when_cheap_the_buy_back_moves_to_the_next_cheapest() ->
 
     for slot in back(shut):
         assert slot.start not in room, "none in the slots with no room"
+
+
+def test_08_a_clamped_tau_keeps_the_measured_loss() -> None:
+    """D-0874: a foil on its floor probe holds on its measured 2.6 W/K, not the room's mass over 6 h.
+
+    The live living-room foil (30 m², 1.74 kW, 0.9 kWh/K of room) is calibrated to 59 W at a
+    22.6 K drive (D-0856): UA 2.6 W/K, `τ` 345 h clamped to the floor probe's 6 h (D-0778).
+    Rebuilt from that τ the route's loss was 150 W/K and it planned the foil flat out all day:
+    0.435 kWh a quarter, the live plan of 21 Nov 2026.
+    """
+    foil = RoomStore(
+        volume_m3=75.0,
+        heat_loss_w_per_k=2.6,
+        thermal_mass_kwh_per_k=0.9,
+        max_c=MAX_C,
+        min_c=FLOOR_C,
+        coast_tau_h=6.0,
+    )
+    view = capacitor_view(
+        store=foil,
+        level_now=COMFORT_C - 0.6,
+        demand=demand(required_kwh=0.0, deadline=None, min_w=0.0, max_w=1739.0, reason="24 °C"),
+    )
+
+    plan = planned(
+        source=_norgespris(), view=view, forecasts=Weather(outdoor=-2.0), worth_share=None
+    )
+
+    hold_kwh_per_h = 2.6 * (COMFORT_C + 2.0) / 1000.0
+    drawn = sum(slot.kwh + slot.hold_kwh for slot in plan.slots)
+    hours = sum(slot.hours for slot in plan.slots)
+    assert hours > 0.0
+    assert drawn / hours < 3.0 * hold_kwh_per_h, f"{drawn:.2f} kWh over {hours:.0f} h"
