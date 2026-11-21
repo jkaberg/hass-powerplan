@@ -8,7 +8,7 @@ O20) and its night variant; IE's 23–08 night read on standard time.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -27,6 +27,36 @@ from tests.core.tariffs.conftest import spec as inline_spec
 
 LUXEMBOURG = ZoneInfo("Europe/Luxembourg")
 DUBLIN = ZoneInfo("Europe/Dublin")
+
+
+class _MainFormatDublin(tzinfo):
+    """Dublin as tzdata's main format has it: IST standard, winter GMT a negative DST.
+
+    Which sign `ZoneInfo` gives depends on the host's tzdata build; this one is fixed.
+    """
+
+    _SUMMER = (datetime(2026, 3, 29, 1, tzinfo=UTC), datetime(2026, 10, 25, 1, tzinfo=UTC))
+
+    def _summer(self, utc: datetime) -> bool:
+        return self._SUMMER[0] <= utc < self._SUMMER[1]
+
+    def utcoffset(self, dt: datetime | None) -> timedelta:
+        assert dt is not None
+        return self._offset(dt.replace(tzinfo=None) - timedelta(hours=1))
+
+    def _offset(self, naive_utc: datetime) -> timedelta:
+        return timedelta(hours=1 if self._summer(naive_utc.replace(tzinfo=UTC)) else 0)
+
+    def dst(self, dt: datetime | None) -> timedelta:
+        return self.utcoffset(dt) - timedelta(hours=1)
+
+    def tzname(self, dt: datetime | None) -> str:
+        return "IST" if self.utcoffset(dt) else "GMT"
+
+    def fromutc(self, dt: datetime) -> datetime:
+        return dt + self._offset(dt.replace(tzinfo=None))
+
+
 SURCHARGE = Money(Decimal("0.0765"), "EUR")
 
 
@@ -87,10 +117,16 @@ def test_40_a_night_limit_applies_on_its_side_of_22_and_06() -> None:
         (datetime(2026, 10, 25, 8, 30), False),  # winter again from the last Sunday of October
     ],
 )
-def test_37_irelands_night_is_read_on_standard_time(wall: datetime, night: bool) -> None:
-    """IE's 23–08 night is 00–09 on the wall clock while summer time is in force, exactly."""
+@pytest.mark.parametrize("zone", [DUBLIN, _MainFormatDublin()], ids=["host", "main-format"])
+def test_37_irelands_night_is_read_on_standard_time(
+    wall: datetime, night: bool, zone: tzinfo
+) -> None:
+    """IE's 23–08 night is 00–09 on the wall clock while summer time is in force, exactly.
+
+    On either sign tzdata gives Irish summer time (the nightly of 21 Nov 2026 failed on one).
+    """
     rule = TimeFilter(hours=((23 * 60, 8 * 60),), clock="standard")
-    assert rule.matches(wall.replace(tzinfo=DUBLIN), DUBLIN, Holidays()) is night
+    assert rule.matches(wall.replace(tzinfo=zone), zone, Holidays()) is night
 
 
 def test_41_italys_meter_allows_ten_percent_and_the_site_holds_the_contract() -> None:
