@@ -84,6 +84,20 @@ def _within(minute: int, start: int, end: int) -> bool:
     return minute >= start or minute < end
 
 
+def _ahead_of_winter(local: datetime, zone: tzinfo) -> timedelta:
+    """Return how far `local`'s wall clock runs ahead of the zone's winter clock.
+
+    Not `dst()`: tzdata's main format calls Irish summer time standard and its winter
+    a negative DST, its rearguard format the other way round, and which one a host has
+    is the build's choice.
+    """
+    year = local.year
+    winter = min(
+        datetime(year, month, 1, tzinfo=zone).utcoffset() or timedelta(0) for month in (1, 7)
+    )
+    return (local.utcoffset() or timedelta(0)) - winter
+
+
 @dataclass(frozen=True, slots=True)
 class TimeFilter:
     """months × weekdays × hours × holidays, evaluated in local time (D2 §2, §4).
@@ -107,7 +121,7 @@ class TimeFilter:
         """Return whether the instant `when` falls inside this filter."""
         local = when.astimezone(zone)
         if self.clock == "standard":
-            local = local - (local.dst() or timedelta(0))
+            local = local - _ahead_of_winter(local, zone)
         holiday = calendar.is_holiday(local.date())
         if holiday and self.holidays is HolidayMode.EXCLUDE:
             return False
