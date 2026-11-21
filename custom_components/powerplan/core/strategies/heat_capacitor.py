@@ -403,10 +403,18 @@ def _tau(store: StoreModel) -> float | None:
     tau = getattr(store, "coast_tau_h", None)
     if tau is not None and tau > 0.0:
         return float(tau)
+    loss = _loss(store)
+    return None if loss is None else store.capacity_kwh_per_unit() * 1000.0 / loss
+
+
+def _loss(store: StoreModel) -> float | None:
+    """Return the store's own loss coefficient in W/K - fitted, calibrated or answered - else `None`.
+
+    The one `holding.py` holds the target on (D5 §5.7), so the route and the hold column
+    read the same number (D-0856).
+    """
     loss = getattr(store, "loss_coeff_w_per_k", None) or getattr(store, "heat_loss_w_per_k", None)
-    if loss is None or loss <= 0.0:
-        return None
-    return store.capacity_kwh_per_unit() * 1000.0 / float(loss)
+    return float(loss) if loss is not None and loss > 0.0 else None
 
 
 def can_route(
@@ -540,8 +548,13 @@ def _model(
 ) -> _Model:
     """Return the store as the search sees it: per slot a band, a cap and a price (§5.7)."""
     sign = -1.0 if store.direction == "cool" else 1.0
-    capacity = store.capacity_kwh_per_unit()
-    loss = capacity * 1000.0 / tau
+    # `C/τ` is the loss, unless the store's own is lower: a τ held under `C/UA` by its band
+    # must not turn a measured 2.6 W/K back into the 150 W/K a room's mass over 6 h is. The
+    # capacity is then what that loss and τ imply, so the route stays one node (D-0874).
+    loss = store.capacity_kwh_per_unit() * 1000.0 / tau
+    if (own := _loss(store)) is not None and own < loss:
+        loss = own
+    capacity = loss * tau / 1000.0
     slots: list[_Slot] = []
     banking = _banking_now(ctx)
     step = _lever_step(ctx)
