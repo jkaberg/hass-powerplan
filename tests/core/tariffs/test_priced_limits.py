@@ -50,9 +50,6 @@ class _MainFormatDublin(tzinfo):
     def dst(self, dt: datetime | None) -> timedelta:
         return self.utcoffset(dt) - timedelta(hours=1)
 
-    def tzname(self, dt: datetime | None) -> str:
-        return "IST" if self.utcoffset(dt) else "GMT"
-
     def fromutc(self, dt: datetime) -> datetime:
         return dt + self._offset(dt.replace(tzinfo=None))
 
