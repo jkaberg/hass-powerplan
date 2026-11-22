@@ -4027,3 +4027,14 @@ On 21 Nov 2026 the live living-room foil ("Gulvvarme stua", 30 m², 1.74 kW, flo
 On the live foil the route now holds at 2.6 × 26 K = 68 W against 1 739 W (`test_08_a_clamped_tau_keeps_the_measured_loss`).
 
 **Rejected:** the store's own loss always (43 optimality cases fell under 0.97 of the best plan, `room40` to 0.92: its configured loss is not what its simulator loses); keeping the store's 0.9 kWh/K beside the lower loss (a fall of 1 K would be priced at 57× what the dynamics charge to recover it, so the route would sit at `lo`); lifting the clamp for calibrated fits (D-0863: TV-stua at 279 h planned eco for 14 h on a probe that falls 1 K in 45 minutes); a two-node floor model (v1.x, D-0778).
+
+### D-0875 · A price source is dead when a day it owes is 24 h late, and the repairs watch reconciles after a restart
+
+Found on the house, 22 Nov 2026: `price_source_dead` for `nordpool_action` raised 20 Nov 12:08:34 UTC and still up two days later, while every day's prices had arrived.
+
+| finding | measured | fix |
+|---|---|---|
+| The dead rule took the age of the newest slot's `fetched_at`. A source asked once a day is then 24 h old every day just before its next fetch | the fetches of 19 and 20 Nov landed at 12:07:58 and 12:16:42 UTC; the 12:08:34 attempt saw 24 h 0 min 36 s | `overdue_since`: a day falls due at the source's publication the day before, or its local midnight without one; dead when a due day is missing for 24 h |
+| `RepairsWatch.active` lives in memory and HA persists the issue, so an issue raised before a restart was never cleared after it | the issue outlived the recovery and every restart since | the watch's first evaluation reports every row, raising or clearing it |
+
+**Rejected:** raising `SOURCE_DEAD_H` to 25 or 26 h (moves the edge, a late publication still crosses it); counting from the first failure since the last success (in memory, so a restart restarts the clock; the store already holds what was owed).

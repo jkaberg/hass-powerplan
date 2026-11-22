@@ -244,6 +244,7 @@ from .providers.prices import (
     PriceSource,
     fetch_missing,
     formats,
+    overdue_since,
 )
 from .providers.profiles import registry as profiles
 from .providers.profiles.base import (
@@ -319,7 +320,7 @@ PLAN_SECOND = 20
 BOUNDARY_GUARD_S = 5.0
 #: How much raw price history the runtime keeps (D1 §5.5's same-weekday profile).
 RAW_KEEP_DAYS = 15
-#: A source without a fetch for this long is dead (D1 §5.1).
+#: A source that has owed a day for this long is dead (D1 §5.1, D-0875).
 SOURCE_DEAD_H = 24.0
 MINUTES_PER_HOUR = 60
 #: D10 §5.7: weather refreshes hourly (+ on the bound entity's own change).
@@ -554,11 +555,6 @@ class RawSlotStore:
         floor = now - timedelta(days=RAW_KEEP_DAYS)
         for source, rows in self._slots.items():
             self._slots[source] = {start: slot for start, slot in rows.items() if start >= floor}
-
-    def last_fetched(self, source: str) -> datetime | None:
-        """When `source` last delivered anything, for D1 §5.1's dead-source rule."""
-        rows = self._slots.get(source)
-        return max((slot.fetched_at for slot in rows.values()), default=None) if rows else None
 
     def to_data(self) -> dict[str, Any]:
         """Return the `prices` section."""
@@ -3746,8 +3742,8 @@ class Runtime:
             self._prices_received(report, now)
         dead: set[str] = set()
         for source in sources:
-            last = self.raw.last_fetched(source.key)
-            if last is not None and now - last > timedelta(hours=SOURCE_DEAD_H):
+            owed = overdue_since(source, self.raw, now, tz=build.cfg.tz)
+            if owed is not None and now - owed > timedelta(hours=SOURCE_DEAD_H):
                 _LOGGER.warning("site %s: price source %s is dead", self.site_name, source.key)
                 dead.add(source.key)
         self.dead_sources = dead

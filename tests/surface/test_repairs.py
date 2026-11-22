@@ -93,6 +93,22 @@ async def test_10c_a_dead_price_source_is_an_error_issue(
     assert _issue(hass, site.entry_id, "price_source_dead") is None
 
 
+async def test_10c_an_issue_raised_before_a_restart_clears_after_it(
+    hass: HomeAssistant, site: MockConfigEntry, runtime: Runtime
+) -> None:
+    """D-0875: issues outlive a restart, the watch's memory does not; the first tick reconciles.
+
+    The house's `price_source_dead` of 20 Nov 2026 stayed up for days after the
+    source recovered, because the new watch had never raised it and so never cleared it.
+    """
+    repairs.async_report(
+        hass, site.entry_id, "price_source_dead", active=True, placeholders={"source": "manual"}
+    )
+    runtime.repairs = repairs.RepairsWatch(runtime)  # what a restart starts with
+    await runtime.run_tick("heartbeat")
+    assert _issue(hass, site.entry_id, "price_source_dead") is None
+
+
 async def test_10d_an_outdated_preset_is_reported(hass: HomeAssistant, meter: FakeMeter) -> None:
     """A site set up with other version ids than the shipped preset's gets `preset_outdated`."""
     data = site_data(hass)

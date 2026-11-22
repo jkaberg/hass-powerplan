@@ -26,6 +26,7 @@ from custom_components.powerplan.providers.prices import (
     SourceEmptyError,
     SourceUnavailableError,
     fetch_missing,
+    overdue_since,
 )
 from custom_components.powerplan.providers.prices.markets import NORDPOOL_MARKETS
 from custom_components.powerplan.providers.prices.nordpool_action import (
@@ -186,6 +187,34 @@ async def test_tomorrow_is_asked_for_after_its_publication(
     assert action.asked_days == [TODAY.isoformat(), TOMORROW.isoformat()]
     assert report.calls == 2
     assert raw_store.count("nordpool_action") == 2 * HOURS_PER_DAY
+
+
+async def test_a_source_owes_a_day_from_its_publication_not_from_its_last_delivery(
+    hass: HomeAssistant,
+    action: FakeAction,
+    raw_store: InMemoryRawStore,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """D-0875: a daily fetch a few minutes later than yesterday's is not 24 h overdue.
+
+    On 20 Nov 2026 the house's Nord Pool fetch landed 24 h 36 s after the one
+    before, and the old rule (last delivery older than 24 h) called it dead.
+    """
+    nordpool = source(hass)
+    freezer.move_to(at("2026-09-19 13:08"))
+    raw_store.add(nordpool.key, await nordpool.fetch(TODAY))
+    raw_store.add(nordpool.key, await nordpool.fetch(TOMORROW))
+
+    assert overdue_since(nordpool, raw_store, at("2026-09-20 12:59"), tz=OSLO) is None
+    assert overdue_since(nordpool, raw_store, at("2026-09-20 13:20"), tz=OSLO) == at(
+        "2026-09-20 13:00"
+    ), "tomorrow is owed from its publication, a few minutes ago"
+
+    del raw_store.slots[nordpool.key]
+    raw_store.add(nordpool.key, await nordpool.fetch(TODAY))
+    assert overdue_since(nordpool, raw_store, at("2026-09-20 13:30"), tz=OSLO) == at(
+        "2026-09-19 13:00"
+    ), "a day never delivered is owed from the publication before it"
 
 
 def test_the_publication_is_thirteen_hundred_in_market_time(hass: HomeAssistant) -> None:

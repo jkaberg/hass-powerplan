@@ -82,7 +82,7 @@ For six hours, the power reading and the meter reading have disagreed by more th
 <a name="price_source_dead"></a>
 ### Electricity prices are missing
 
-Your price source has delivered nothing for a day. PowerPlan plans on estimated prices meanwhile.
+Your price source still has not delivered prices a day after they were due. PowerPlan plans on estimated prices meanwhile. The issue goes away by itself once prices arrive, also after a restart.
 
 **What to do:** Check that the price integration is running. For Nord Pool, check that its integration is loaded and has your area.
 

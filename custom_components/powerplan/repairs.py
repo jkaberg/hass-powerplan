@@ -191,6 +191,10 @@ class RepairsWatch:
     low_since: dict[str, datetime] = field(default_factory=dict)
     #: D8 §5.9, per battery: since when its command has been unreadable.
     control_off_since: dict[str, datetime] = field(default_factory=dict)
+    #: Whether the registry has been reconciled since start. Issues persist across
+    #: a restart and `active` does not, so the first evaluation reports every row,
+    #: and one raised before the restart clears once its condition has gone (D-0875).
+    reconciled: bool = False
 
     def evaluate(self, now: datetime, snapshot: Snapshot) -> None:
         """Compare the conditions to what is raised and change only what changed."""
@@ -223,7 +227,7 @@ class RepairsWatch:
             load = snapshot.loads.get(load_id)
             placeholders[issue_id] = {"load": load.name if load is not None else load_id}
         for issue_id, wanted in conditions.items():
-            if wanted == (issue_id in self.active):
+            if self.reconciled and wanted == (issue_id in self.active):
                 continue
             async_report(
                 self.runtime.hass,
@@ -237,6 +241,7 @@ class RepairsWatch:
                 self.active.add(issue_id)
             else:
                 self.active.discard(issue_id)
+        self.reconciled = True
 
     def _battery_control_off(
         self, now: datetime, snapshot: Snapshot

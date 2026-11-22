@@ -27,6 +27,7 @@ from .base import (
     fetch_missing,
     local_day_bounds,
     normalise,
+    overdue_since,
     within_local_day,
 )
 from .entity import EntitySource
@@ -55,5 +56,6 @@ __all__ = [
     "formats",
     "local_day_bounds",
     "normalise",
+    "overdue_since",
     "within_local_day",
 ]

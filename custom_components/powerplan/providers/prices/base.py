@@ -324,6 +324,37 @@ async def fetch_missing(
     return FetchReport(tuple(outcomes))
 
 
+def overdue_since(
+    source: PriceSource, store: RawStore, now: datetime, *, tz: tzinfo
+) -> datetime | None:
+    """Since when the source has owed a day the store still lacks, or None (D1 §5.1).
+
+    A day falls due at the source's publication on the day before, or at its
+    own local midnight for a source without one. Measuring from the day that
+    fell due, not from the last delivery, keeps a source that publishes once a
+    day from reading dead whenever today's fetch lands a minute later than
+    yesterday's (D-0875).
+    """
+    today = now.astimezone(tz).date()
+    owed: list[datetime] = []
+    for day in (today, today + timedelta(days=1)):
+        if store.has_day(source.key, day, tz):
+            continue
+        due = _due(source, day, tz)
+        if due <= now:
+            owed.append(due)
+    return min(owed, default=None)
+
+
+def _due(source: PriceSource, day: date, tz: tzinfo) -> datetime:
+    """When `day`'s slots are owed: the publication the day before, else its local midnight."""
+    publication = source.publication()
+    if publication is None:
+        return datetime.combine(day, time.min, tzinfo=tz)
+    market = ZoneInfo(publication.tz)
+    return datetime.combine(day - timedelta(days=1), publication.local_time, tzinfo=market)
+
+
 def _publication_passed(source: PriceSource, now: datetime) -> bool:
     """Return whether the source has had its chance to publish tomorrow (D1 §5.1)."""
     publication = source.publication()
@@ -373,5 +404,6 @@ __all__ = [
     "fetch_missing",
     "local_day_bounds",
     "normalise",
+    "overdue_since",
     "within_local_day",
 ]
