@@ -14,10 +14,10 @@
     "echarts": "6.1.0"
   },
   "devDependencies": {
-    "@vitest/browser-playwright": "5.1.0",
+    "@vitest/browser-playwright": "5.1.1",
     "esbuild": "0.28.2",
-    "knip": "6.45.1",
+    "knip": "6.48.0",
     "typescript": "7.0.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   }
 }
